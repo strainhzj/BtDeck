@@ -15,6 +15,7 @@ data class ServerProfile(
     val id: String = UUID.randomUUID().toString(),
     var displayName: String,
     var baseUrl: String,
+    var username: String = "",
     /** 用户已为该地址显式确认明文风险（仅私有 LAN 主机可生效，见 LanHostPolicy）。 */
     var cleartextAllowed: Boolean = false,
     var healthState: HealthState = HealthState.UNKNOWN,
@@ -38,6 +39,7 @@ data class ServerProfile(
         put(KEY_ID, id)
         put(KEY_DISPLAY_NAME, displayName)
         put(KEY_BASE_URL, baseUrl)
+        put(KEY_USERNAME, username)
         put(KEY_CLEARTEXT_ALLOWED, cleartextAllowed)
         put(KEY_HEALTH_STATE, healthState.name)
         put(KEY_SERVER_VERSION, serverVersion ?: JSONObject.NULL)
@@ -50,6 +52,7 @@ data class ServerProfile(
         private const val KEY_ID = "id"
         private const val KEY_DISPLAY_NAME = "displayName"
         private const val KEY_BASE_URL = "baseUrl"
+        private const val KEY_USERNAME = "username"
         private const val KEY_CLEARTEXT_ALLOWED = "cleartextAllowed"
         private const val KEY_HEALTH_STATE = "healthState"
         private const val KEY_SERVER_VERSION = "serverVersion"
@@ -62,6 +65,7 @@ data class ServerProfile(
             id = json.optString(KEY_ID, UUID.randomUUID().toString()),
             displayName = json.optString(KEY_DISPLAY_NAME, ""),
             baseUrl = json.optString(KEY_BASE_URL, ""),
+            username = json.optString(KEY_USERNAME, ""),
             cleartextAllowed = json.optBoolean(KEY_CLEARTEXT_ALLOWED, false),
             healthState = json.optString(KEY_HEALTH_STATE)
                 .let { name -> HealthState.entries.firstOrNull { it.name == name } } ?: HealthState.UNKNOWN,

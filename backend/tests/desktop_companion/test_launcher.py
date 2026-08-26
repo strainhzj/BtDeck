@@ -19,6 +19,7 @@ from app.desktop_companion.launcher import (
     load_stored_mode,
     save_stored_mode,
 )
+from app.desktop_companion.credentials import CredentialRecord, MemoryCredentialVault
 from app.desktop_companion.profiles import HEALTH_READY, ServerProfileStore
 
 
@@ -142,6 +143,69 @@ class TestManagerApi:
     def _api(self, tmp_path, stub_health=None):
         launcher = _launcher(tmp_path, stub_health)
         return _ManagerApi(launcher), launcher.store
+
+    def test_credentials_are_not_returned_or_written_to_profile_json(self, tmp_path):
+        vault = MemoryCredentialVault()
+        launcher = DesktopLauncher(
+            store=ServerProfileStore(tmp_path / "servers.json"),
+            credentials=vault,
+            mode_path=tmp_path / "desktop_mode.json",
+        )
+        api = _ManagerApi(launcher)
+        assert api.add_server("NAS", "http://192.168.5.51:5001", True, "alice", "secret") == {"ok": True}
+        item = api.list_servers()[0]
+        assert item["username"] == "alice"
+        assert item["hasSavedCredential"] is True
+        assert "password" not in item
+        raw = (tmp_path / "servers.json").read_text(encoding="utf-8")
+        assert "secret" not in raw
+        assert vault.get(item["id"]) == CredentialRecord("alice", "secret")
+
+    def test_clear_credentials_keeps_profile(self, tmp_path):
+        vault = MemoryCredentialVault()
+        launcher = DesktopLauncher(
+            store=ServerProfileStore(tmp_path / "servers.json"),
+            credentials=vault,
+            mode_path=tmp_path / "desktop_mode.json",
+        )
+        api = _ManagerApi(launcher)
+        api.add_server("NAS", "http://10.0.0.5:5001", True, "alice", "secret")
+        server_id = api.list_servers()[0]["id"]
+        assert api.clear_credentials(server_id) == {"ok": True}
+        assert api.list_servers()[0]["hasSavedCredential"] is False
+        assert api.list_servers()[0]["displayName"] == "NAS"
+
+    def test_update_blank_password_preserves_and_clear_removes(self, tmp_path):
+        vault = MemoryCredentialVault()
+        launcher = DesktopLauncher(
+            store=ServerProfileStore(tmp_path / "servers.json"),
+            credentials=vault,
+            mode_path=tmp_path / "desktop_mode.json",
+        )
+        api = _ManagerApi(launcher)
+        api.add_server("NAS", "http://10.0.0.5:5001", True, "alice", "secret")
+        server_id = api.list_servers()[0]["id"]
+        assert api.update_server(server_id, "NAS 2", "http://10.0.0.5:5001", True, "bob", "")["ok"] is True
+        assert vault.get(server_id) == CredentialRecord("bob", "secret")
+        assert api.update_server(
+            server_id, "NAS 2", "http://10.0.0.5:5001", True, "bob", "", True
+        )["ok"] is True
+        assert vault.get(server_id) is None
+
+    def test_update_url_does_not_reuse_old_password(self, tmp_path):
+        vault = MemoryCredentialVault()
+        launcher = DesktopLauncher(
+            store=ServerProfileStore(tmp_path / "servers.json"),
+            credentials=vault,
+            mode_path=tmp_path / "desktop_mode.json",
+        )
+        api = _ManagerApi(launcher)
+        api.add_server("NAS", "http://10.0.0.5:5001", True, "alice", "secret")
+        server_id = api.list_servers()[0]["id"]
+        assert api.update_server(server_id, "NAS", "http://10.0.0.6:5001", True, "alice", "")["ok"] is True
+        assert vault.get(server_id) is None
+        assert api.update_server(server_id, "NAS", "http://10.0.0.7:5001", True, "alice", "new-secret")["ok"] is True
+        assert vault.get(server_id) == CredentialRecord("alice", "new-secret")
 
     def test_add_list_roundtrip(self, tmp_path):
         api, store = self._api(tmp_path)

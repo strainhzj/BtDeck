@@ -44,6 +44,9 @@ HEALTH_LABELS: dict[str, str] = {
 class ServerProfile:
     display_name: str
     base_url: str
+    # 用户名属于可展示的 profile 元数据；密码由 desktop_companion.credentials 保存，
+    # 严禁进入 companion_servers.json 或 list_servers 返回值。
+    username: str = ""
     cleartext_allowed: bool = False
     health_state: str = HEALTH_UNKNOWN
     server_version: Optional[str] = None
@@ -56,6 +59,7 @@ class ServerProfile:
             "id": self.id,
             "displayName": self.display_name,
             "baseUrl": self.base_url,
+            "username": self.username,
             "cleartextAllowed": self.cleartext_allowed,
             "healthState": self.health_state,
             "serverVersion": self.server_version,
@@ -74,6 +78,7 @@ class ServerProfile:
             id=profile_id if isinstance(profile_id, str) and profile_id else uuid.uuid4().hex,
             display_name=str(data.get("displayName", "")),
             base_url=str(data.get("baseUrl", "")),
+            username=str(data.get("username", "")),
             cleartext_allowed=bool(data.get("cleartextAllowed", False)),
             health_state=health_state,
             server_version=data.get("serverVersion"),

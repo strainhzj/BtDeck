@@ -8,6 +8,7 @@
 | 关键词 | 子分支/文件 | 一句话职责 |
 |--------|------------|-----------|
 | 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 8 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
+| 桌面伴侣 desktop-companion | [desktop-companion.md](./desktop-companion.md) | `app/desktop_companion/`：服务器 profile/健康检查/内嵌 pywebview；用户名随 profile 保存，密码由 Windows DPAPI 保险库存储，首屏同源脚本恢复登录会话 |
 | HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 43 文件（endpoints 37 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`） |
 | 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 57 文件（services 47 + downloader_adapters 5 + tag_adapters 5，不计 `__init__.py`） |
 | 基础设施 core | [core/README.md](./core/README.md) | 基础设施 23 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |

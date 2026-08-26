@@ -2751,6 +2751,25 @@
           "evidence": "2026-08-25 桌面双模式对齐首批（后端逻辑层+GUI 落地）：新增 backend/app/desktop_companion 包对齐安卓 com.btdeck.companion 语义——①hosts.py：URL 解析规范化（仅 http/https、默认端口归一、IPv6 字面量、路径/query 剥离）+私有主机字面量判定（loopback/RFC1918/169.254/fc00::7/fe80::10/*.local/localhost，不做 DNS、fail-closed），与安卓 Hosts.kt 逐条对齐；②lan_policy.py：明文准入双层判定（https 放行；http 须私有主机+显式确认；公网 http 一律拒绝），RejectReason 四态与文案对齐安卓；③profiles.py：ServerProfile 字段/JSON 键名与安卓一致（displayName/baseUrl/cleartextAllowed/healthState/serverVersion/时间戳，五态健康；trustedCertFingerprints 为安卓 WebView 专用不落桌面），ServerProfileStore 原子写 JSON（tmp+os.replace）、脏数据容错（未知健康态回退 UNKNOWN、损坏文件回空列表）；④health.py：/health/live→/health/ready 链式探测（CommonResponse data.status alive/ready、data.version 版本、reasonCodes 详情），TLS 错误与不可达分类区分（SSL 证书类→TLS_ERROR），纯标准库 urllib（10s 超时；安卓 5s/10s 分离为已知差异）；⑤launcher.py：模式持久化 desktop_mode.json（BTDECK_MODE 环境变量>记录>未决弹向导）+DesktopLauncher 控制器（单次 webview.start() 事件驱动：向导默认高亮服务端/记住选择/管理页增删测试打开/远程窗口关闭回管理页/重跑向导/退出）+内嵌本地 HTML 两页（品牌 #059669，pywebview js_api 桥）；已知边界同安卓 README 口径：pywebview 私有会话凭据不落盘（重启需重登）、自签证书不做指纹信任流程。⑥desktop_main.py 集成：窗口环境先解析模式（未决或 companion 走启动器，server 直接返回原路径——历史行为不变）；无桌面环境（SESSIONNAME=services）忽略 companion 落回服务端并告警。deploy/ 无需改动（desktop_companion 为静态导入随 PyInstaller 分析；pywebview 依赖与 hiddenimports 现状已覆盖）。首批验证：新增 44 pytest 用例全过；mypy/black/flake8 全过（7 文件）。 追加（2026-08-25 第二批·窗口链路实测收尾，task .6 置 done）：桌面 GUI 会话全矩阵实测通过（btpManager env + pywebview 5.4，WebView2 经 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 开远程调试端口用 CDP 驱动页面、Win32 WM_CLOSE 驱动窗口），并发现+修复一个 GUI 真实缺陷：**向导选模式即崩**——on_wizard_chosen/rerun_wizard 原为「先 destroy 旧窗再建新窗」，pywebview(winforms) 销毁最后一个窗口会直接 Application.Exit() 结束 GUI 循环、且运行期 create_window 依赖既有窗口的 Invoke 通道，实测向导页点击任一模式卡后进程被 pythonnet InternalPythonnetException（Failed to create Python type for Task`1[VoidTaskResult]→NullReferenceException）杀死（打包 exe 同样中招）；修复为两处切换均「先建新窗、后销毁旧窗」，并补 2 个 webview-stub 回归单测锁定 create-before-destroy 顺序（44→46 例）。实测矩阵：①无记录首启向导（服务端卡「默认」标签/记住勾选默认 true/js_api 桥就绪；选伴侣+记住→desktop_mode.json 写入 mode=companion+管理页存活渲染）②管理页全链路（空名/地址无效/公网 http 拒/私有未确认拒四组校验文案；私有 http+确认添加落盘 companion_servers.json 键名值全对；测试连接→就绪 v1.0.5 落盘 READY/serverVersion/lastHealthCheckedAt；死端口→不可达；删除带 confirm→列表与落盘同步）③打开远程（1280×820 窗口连 http://127.0.0.1:5001 加载 SPA 登录页+PWA service-worker 注册、管理页隐藏、lastConnectedAt 落盘；关远程→管理页恢复显示+列表刷新）④重跑向导（记录删除/向导重现/服务器档案保留；选服务端+记住→迁移→uvicorn 5099→主窗口加载自家 SPA→关窗优雅退出 exit 0）⑤BTDECK_MODE 双向优先（记录 companion+env server→全程无向导直达服务端；记录 server+env companion→直达管理页；退出按钮→进程优雅退出；无记录+向导直接关窗→落服务端且不写记录）⑥PyInstaller exe 实测：deploy/build-windows.bat 全过（npm ci+build、PyInstaller 43.8MB/1982 条目、verify-package PASS、Inno 跳过=ISCC 未装），exe 实跑向导→伴侣→管理页→测试连接 就绪 v1.0.5→打开/关闭远程→重跑向导→服务端模式 5098 自起→关窗优雅退出 exit 0 全链路（desktop_main 入口+webview/WebView2 DLL+pythonnet 随包实证；launcher 修复已含在包内）。已知边界登记：wait_for_server_ready 不校验应答方身份——目标端口被其他进程占用且应答时，桌面主窗口会连到他人服务（历史行为，非本批引入；实测 5001 被 dev server 占用时兜底实例开窗连到 dev server，建议后续绑定失败 fail-fast 或就绪探测带实例标识）。质量门：desktop_companion 46 例+打包契约 10 例共 56 passed；mypy/black/flake8（black~=24.10+line-length=120）全过；根 ./init.sh 通过。测试环境注意：本机用户 Chrome 占用 127.0.0.1:9222 调试端口（自动化勿碰）；WebView2 调试端口回环栈不固定（127.0.0.1/[::1] 均可能出现，需探测）；btpManager env 无 pytest（用 anaconda base 跑测试），本会话向 btpManager 安装 pywebview~=5.4.0（与打包 requirements 同锚）。"
         },
         {
+          "id": "v1.0.6-dual-mode-client.8",
+          "name": "伴侣模式凭据记忆与会话恢复",
+          "description": "在 Android 与 Windows 桌面伴侣 profile 中增加用户名/密码录入与编辑；密码只进入平台安全存储，不进入 profile JSON；切换服务器时隔离旧 cookie/storage，并在有保存凭据时自动恢复登录。兼容旧 profile，空密码保留旧值、显式 clear 可清除，更换地址清理旧凭据/证书指纹，TOTP 仅临时使用。",
+          "status": "in-progress",
+          "scope": "fullstack",
+          "files": [
+            "android/app/src/main/java/com/btdeck/companion/data/ServerProfile.kt",
+            "android/app/src/main/java/com/btdeck/companion/data/CredentialVault.kt",
+            "android/app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt",
+            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
+            "backend/app/desktop_companion/profiles.py",
+            "backend/app/desktop_companion/credentials.py",
+            "backend/app/desktop_companion/launcher.py",
+            "backend/tests/desktop_companion/",
+            "android/app/src/test/"
+          ],
+          "evidence": "2026-08-26 已实现：桌面 profile username + Windows DPAPI 凭据保险库与自动登录脚本；Android profile username + Keystore AES-GCM 凭据保险库、异步 CookieManager 隔离与 WebView 自动登录/TOTP 临时 prompt；密码不返回管理 API、不写明文 profile。验证：desktop_companion 53 passed（含 DPAPI 密文不落明文、改地址清理旧密码回归）；Android :app:testDebugUnitTest 13 passed，:app:assembleDebug BUILD SUCCESSFUL。:app:lintDebug 因环境缺少未缓存 kotlin-compiler-31.7.3.jar 未完成。待完成：桌面 GUI 与 Android 真机的保存/切换/改密/失败登录实测，以及凭据保险库迁移升级演练。"
+        },
+        {
           "id": "v1.0.6-dual-mode-client.7",
           "name": "Play、侧载与跨模式发布验收",
           "description": "按提审时官方 target API 要求完成 Play App Signing、隐私政策、Data Safety、FGS 用途申报和明文流量说明；GitHub Release 提供通用/ABI APK 说明；用 bundletool 记录真实包体和 native 清单；覆盖 API 24、Android 14/15/16、四 ABI、冷启动、迁移升级、进程杀死、Doze、通知/存储权限、HTTP/HTTPS/坏证书、LAN 开关、版本不匹配和两种模式的首启/退出/恢复。完成既有 DoD、Gradle lint/test、wheel import matrix 与 release artifact 校验后才标记 done。",

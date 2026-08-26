@@ -21,6 +21,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.btdeck.companion.R
 import com.btdeck.companion.data.HealthClient
+import com.btdeck.companion.data.CredentialRecord
+import com.btdeck.companion.data.CredentialVault
 import com.btdeck.companion.data.ServerProfile
 import com.btdeck.companion.data.ServerProfileStore
 import com.btdeck.companion.net.LanHostPolicy
@@ -36,6 +38,7 @@ import java.util.Date
 class ServerListActivity : AppCompatActivity() {
 
     private lateinit var store: ServerProfileStore
+    private lateinit var credentials: CredentialVault
     private lateinit var adapter: ProfileAdapter
     private val healthClient = HealthClient()
 
@@ -45,6 +48,7 @@ class ServerListActivity : AppCompatActivity() {
         supportActionBar?.setTitle(R.string.server_list_title)
 
         store = ServerProfileStore(this)
+        credentials = CredentialVault(this)
         adapter = ProfileAdapter()
         val listView = findViewById<ListView>(R.id.server_list)
         listView.adapter = adapter
@@ -52,7 +56,7 @@ class ServerListActivity : AppCompatActivity() {
             adapter.profileAt(position)?.let(::openWeb)
         }
         listView.onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, position, _ ->
-            adapter.profileAt(position)?.let(::confirmForget)
+            adapter.profileAt(position)?.let(::showProfileActions)
             true
         }
         findViewById<Button>(R.id.btn_add_server).setOnClickListener { showAddDialog() }
@@ -102,7 +106,30 @@ class ServerListActivity : AppCompatActivity() {
             .setMessage("忘记 \"${profile.displayName}\"（${profile.baseUrl}）？\n将同时清除该服务器的本地记录与已信任的证书指纹。")
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 store.delete(profile.id)
+                credentials.delete(profile.id)
                 adapter.reload()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showProfileActions(profile: ServerProfile) {
+        val actions = arrayOf(
+            getString(R.string.edit_server),
+            getString(R.string.clear_saved_credentials),
+            getString(R.string.forget_server),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(profile.displayName)
+            .setItems(actions) { _, which ->
+                if (which == 0) {
+                    showAddDialog(profile)
+                } else if (which == 1) {
+                    credentials.delete(profile.id)
+                    Toast.makeText(this, R.string.credentials_cleared, Toast.LENGTH_SHORT).show()
+                } else {
+                    confirmForget(profile)
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -110,22 +137,43 @@ class ServerListActivity : AppCompatActivity() {
 
     // ============ 添加服务器对话框（URL 校验 + 明文风险确认） ============
 
-    private fun showAddDialog() {
+    private fun showAddDialog(existing: ServerProfile? = null) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), 0)
         }
-        val nameInput = EditText(this).apply { hint = getString(R.string.add_server_name) }
+        val nameInput = EditText(this).apply {
+            hint = getString(R.string.add_server_name)
+            setText(existing?.displayName.orEmpty())
+        }
         val urlInput = EditText(this).apply {
             hint = getString(R.string.add_server_url)
             inputType = InputType.TYPE_TEXT_VARIATION_URI
+            setText(existing?.baseUrl.orEmpty())
+        }
+        val usernameInput = EditText(this).apply {
+            hint = getString(R.string.add_server_username)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(existing?.username.orEmpty())
+        }
+        val passwordInput = EditText(this).apply {
+            hint = getString(R.string.add_server_password)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val clearSaved = CheckBox(this).apply {
+            text = getString(R.string.clear_saved_credentials)
+            visibility = if (existing == null) View.GONE else View.VISIBLE
         }
         val consent = CheckBox(this).apply {
             text = getString(R.string.cleartext_consent)
             visibility = View.GONE
+            isChecked = existing?.cleartextAllowed == true
         }
         container.addView(nameInput)
         container.addView(urlInput)
+        container.addView(usernameInput)
+        container.addView(passwordInput)
+        container.addView(clearSaved)
         container.addView(consent)
 
         urlInput.addTextChangedListener(object : android.text.TextWatcher {
@@ -136,9 +184,11 @@ class ServerListActivity : AppCompatActivity() {
             override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
             override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
         })
+        consent.visibility =
+            if (LanHostPolicy.needsCleartextConsent(urlInput.text.toString())) View.VISIBLE else View.GONE
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.add_server)
+            .setTitle(if (existing == null) R.string.add_server else R.string.edit_server)
             .setView(container)
             .setPositiveButton(android.R.string.ok, null)
             .setNegativeButton(android.R.string.cancel, null)
@@ -148,22 +198,44 @@ class ServerListActivity : AppCompatActivity() {
                     getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val name = nameInput.text.toString().trim()
                         val url = urlInput.text.toString().trim()
+                        val username = usernameInput.text.toString().trim()
+                        val password = passwordInput.text.toString()
                         val parsed = Hosts.parse(url)
                         when {
                             name.isEmpty() -> nameInput.error = "请输入显示名称"
+                            password.isNotEmpty() && username.isEmpty() ->
+                                usernameInput.error = "填写密码时必须输入用户名"
                             parsed == null -> urlInput.error = "地址无效（仅支持 http/https）"
                             else -> {
                                 val consentGranted = consent.isChecked
                                 when (val verdict =
                                     LanHostPolicy.checkParsed(parsed.scheme, parsed.host, consentGranted)) {
                                     is LanHostPolicy.Verdict.Ok -> {
-                                        store.upsert(
-                                            ServerProfile(
-                                                displayName = name,
-                                                baseUrl = parsed.baseUrl,
-                                                cleartextAllowed = consentGranted && parsed.scheme == "http",
-                                            )
+                                        val profile = existing ?: ServerProfile(
+                                            displayName = name,
+                                            baseUrl = parsed.baseUrl,
+                                            username = username,
+                                            cleartextAllowed = consentGranted && parsed.scheme == "http",
                                         )
+                                        val urlChanged = existing != null && profile.baseUrl != parsed.baseUrl
+                                        profile.displayName = name
+                                        profile.baseUrl = parsed.baseUrl
+                                        profile.username = username
+                                        profile.cleartextAllowed = consentGranted && parsed.scheme == "http"
+                                        if (urlChanged) profile.trustedCertFingerprints.clear()
+                                        store.upsert(profile)
+                                        when {
+                                            clearSaved.isChecked || username.isEmpty() ->
+                                                credentials.delete(profile.id)
+                                            password.isNotEmpty() ->
+                                                credentials.save(profile.id, CredentialRecord(username, password))
+                                            urlChanged -> credentials.delete(profile.id)
+                                            existing != null -> {
+                                                credentials.get(profile.id)?.let {
+                                                    credentials.save(profile.id, CredentialRecord(username, it.password))
+                                                }
+                                            }
+                                        }
                                         adapter.reload()
                                         dismiss()
                                     }

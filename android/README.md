@@ -6,10 +6,11 @@
 ## 功能范围（MVP）
 
 - 首启向导：连接已有服务器（伴侣模式）/ 运行本机服务（Phase 3 前给明确"未提供"状态）；可重跑。
-- 服务器 profile：显示名、http/https URL、最近健康状态、最后连接时间、健康检查到的服务端版本。
+- 服务器 profile：显示名、http/https URL、用户名、最近健康状态、最后连接时间、健康检查到的服务端版本；旧 profile 缺少用户名时按空值兼容。
 - 健康检查：`GET /health/live` → `GET /health/ready`（读取 `data.version`，Phase 2 后端已加）。
 - WebView：远程同源直连服务器自带前端，站内导航继续、外链交系统浏览器；加载超时/失败可重试；副标题展示版本与就绪状态。
-- 凭据隔离：BtDeck 前端 token 存 cookie（`frontend/src/utils/cookies.ts`），WebView CookieManager 是进程级单例，**切换 profile 即全量清除 cookie/localStorage**，access/refresh token 不跨服务器复用。
+- 凭据保存：用户名随 profile 保存；密码进入 `CredentialVault`，由 Android Keystore AES-GCM 加密后写入独立 SharedPreferences，manifest `allowBackup=false`。密码不进入 profile JSON，也不通过 `addJavascriptInterface` 暴露。
+- 会话恢复：WebView CookieManager 是进程级单例，**切换 profile 会等待异步 cookie 清理完成后再加载**；若保险库有密码，首屏同源登录脚本自动恢复 access/refresh cookie，TOTP 只在需要时临时询问、不落盘。
 - 自签证书：绝不无条件 `handler.proceed()`——指纹未记录时弹风险说明，用户确认后把 SHA-256 指纹记在该 profile（作用域=该服务器地址），证书更换需重新确认。
 - 明文 HTTP：双层防线见下。
 

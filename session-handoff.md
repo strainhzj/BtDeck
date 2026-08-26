@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-26：伴侣模式凭据记忆与会话恢复（v1.0.6-dual-mode-client.8）
+
+### 本批结果
+
+- 已实现 Android 与 Windows 桌面伴侣的用户名/密码录入与 profile 绑定。用户名进入 profile JSON；密码不进入 profile 文件或管理 API：Android 用 `CredentialVault`（Android Keystore AES-GCM），Windows 用当前用户 DPAPI 加密文件。
+- 切换 profile 时 Android 等待 `CookieManager.removeAllCookies` 回调后再加载，避免旧 token 竞态；桌面/Android 首屏在有保存密码时调用既有 `/api/v1/auth/login`，写入前端现有 access/refresh cookie。TOTP 只临时 prompt，不持久化；旧 profile 缺 username 仍按空值兼容。
+- 删除/忘记 profile 同步清理凭据；桌面与 Android 管理 UI 均提供编辑/清除入口，编辑时密码留空保留旧密码，显式 clear 才清除；更换地址会清理旧凭据/证书指纹。
+
+### 验证与待办
+
+- `backend/tests/desktop_companion`：53 passed（含 DPAPI 密文不落明文、改地址清理旧密码回归）；Android `:app:testDebugUnitTest`：13 passed，`:app:assembleDebug` BUILD SUCCESSFUL。
+- Android `:app:lintDebug` 受环境限制未完成：在线解析 `kotlin-compiler-31.7.3.jar` 超时，离线无缓存；需在完整 Gradle 缓存/网络 CI 复核。
+- 未做真实远程登录、TOTP、密码变更后的桌面 GUI/Android 真机验收；`.8` 保持 `in-progress`，下一步应在测试服务器上覆盖保存→切换→重启→失败登录/清除，以及自签 HTTPS/明文 LAN 组合。
+- 本批未执行 Git stage/commit/push；既有未跟踪 `.tmp-desktop-gui-test/` 保留不动。
+
 ## 2026-08-26：GitHub CI 审计枚举断言修复
 
 ### 已完成

@@ -11,8 +11,8 @@
   可再次切换模式。
 
 已知边界（MVP，与安卓 README 同口径登记）：
-- pywebview 以私有会话运行（private_mode 默认），凭据不落盘，应用重启后
-  需重新登录；单会话内切换服务器共享同一私有存储；
+- pywebview 以私有会话运行（private_mode 默认）；密码由 Windows DPAPI 保险库
+  保存，首屏同源登录脚本恢复会话，单会话内切换服务器会清理上一个 profile 的 token；
 - 自签 https 在健康检查侧归类 TLS_ERROR；内嵌 WebView 的证书错误由渲染
   引擎呈现，不做指纹信任流程（与安卓 TrustScope 的差异）。
 """
@@ -25,6 +25,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from app.desktop_companion import lan_policy
+from app.desktop_companion.credentials import (
+    CredentialRecord,
+    CredentialVault,
+    build_auto_login_script,
+    default_credential_vault,
+)
 from app.desktop_companion.health import HealthClient, health_label
 from app.desktop_companion.profiles import ServerProfile, ServerProfileStore
 
@@ -118,12 +124,23 @@ class _ManagerApi:
         for profile in profiles:
             item = profile.to_json()
             item["healthLabel"] = health_label(profile.health_state)
+            item["hasSavedCredential"] = self._controller.credentials.has(profile.id)
             items.append(item)
         return items
 
-    def add_server(self, name: str, url: str, consent: bool) -> dict[str, Any]:
+    def add_server(
+        self,
+        name: str,
+        url: str,
+        consent: bool,
+        username: str = "",
+        password: str = "",
+    ) -> dict[str, Any]:
         if not name.strip():
             return {"ok": False, "error": "请输入显示名称"}
+        username = username.strip()
+        if password and not username:
+            return {"ok": False, "error": "填写密码时必须输入用户名"}
         verdict = lan_policy.check(url, bool(consent))
         if not verdict.ok or verdict.parsed is None:
             reason = verdict.reason or lan_policy.RejectReason.MALFORMED_URL
@@ -131,9 +148,58 @@ class _ManagerApi:
         profile = ServerProfile(
             display_name=name.strip(),
             base_url=verdict.parsed.base_url,
+            username=username,
             cleartext_allowed=verdict.parsed.scheme == "http",
         )
         self._controller.store.upsert(profile)
+        if username and password:
+            try:
+                self._controller.credentials.put(profile.id, CredentialRecord(username, password))
+            except Exception as exc:  # noqa: BLE001 - 保险库失败时不留下无凭据 profile
+                self._controller.store.remove(profile.id)
+                logger.warning("保存伴侣凭据失败：%s", exc)
+                return {"ok": False, "error": "无法保存安全凭据"}
+        return {"ok": True}
+
+    def update_server(
+        self,
+        server_id: str,
+        name: str,
+        url: str,
+        consent: bool,
+        username: str = "",
+        password: str = "",
+        clear_credentials: bool = False,
+    ) -> dict[str, Any]:
+        profile = self._find(server_id)
+        if profile is None:
+            return {"ok": False, "error": "服务器不存在"}
+        if not name.strip():
+            return {"ok": False, "error": "请输入显示名称"}
+        username = username.strip()
+        if password and not username:
+            return {"ok": False, "error": "填写密码时必须输入用户名"}
+        verdict = lan_policy.check(url, bool(consent))
+        if not verdict.ok or verdict.parsed is None:
+            reason = verdict.reason or lan_policy.RejectReason.MALFORMED_URL
+            return {"ok": False, "error": lan_policy.REJECT_MESSAGES[reason]}
+        old_record = self._controller.credentials.get(profile.id)
+        old_base_url = profile.base_url
+        profile.display_name = name.strip()
+        profile.base_url = verdict.parsed.base_url
+        profile.username = username
+        profile.cleartext_allowed = verdict.parsed.scheme == "http"
+        self._controller.store.upsert(profile)
+        if clear_credentials or not username:
+            self._controller.credentials.delete(profile.id)
+        elif password:
+            self._controller.credentials.put(profile.id, CredentialRecord(username, password))
+        elif old_record and old_base_url == profile.base_url:
+            # 编辑时密码留空表示保留旧密码，仅更新账号名。
+            self._controller.credentials.put(profile.id, CredentialRecord(username, old_record.password))
+        elif old_base_url != profile.base_url:
+            # 更换服务器地址时不能把旧服务器密码带到新地址。
+            self._controller.credentials.delete(profile.id)
         return {"ok": True}
 
     def test_server(self, server_id: str) -> dict[str, Any]:
@@ -154,7 +220,16 @@ class _ManagerApi:
         }
 
     def remove_server(self, server_id: str) -> dict[str, Any]:
-        return {"ok": self._controller.store.remove(server_id)}
+        removed = self._controller.store.remove(server_id)
+        if removed:
+            self._controller.credentials.delete(server_id)
+        return {"ok": removed}
+
+    def clear_credentials(self, server_id: str) -> dict[str, Any]:
+        if self._find(server_id) is None:
+            return {"ok": False, "error": "服务器不存在"}
+        self._controller.credentials.delete(server_id)
+        return {"ok": True}
 
     def open_server(self, server_id: str) -> dict[str, Any]:
         ok = self._controller.open_remote_window(server_id)
@@ -186,10 +261,17 @@ class DesktopLauncher:
         store: Optional[ServerProfileStore] = None,
         health: Optional[HealthClient] = None,
         mode_path: Optional[Path] = None,
+        credentials: Optional[CredentialVault] = None,
     ):
         self.store = store if store is not None else ServerProfileStore(default_store_path())
         self.health = health if health is not None else HealthClient()
         self._mode_path = mode_path if mode_path is not None else default_mode_path()
+        if credentials is not None:
+            self.credentials = credentials
+        else:
+            from app.core.config import settings
+
+            self.credentials = default_credential_vault(settings.CONFIG_PATH)
         self._mode: Optional[str] = None
         self._wizard_window: Optional["webview.Window"] = None
         self._manager_window: Optional["webview.Window"] = None
@@ -252,6 +334,22 @@ class DesktopLauncher:
             height=820,
             min_size=(1024, 680),
         )
+
+        # pywebview 的私有会话在同一进程内可能被多个远程窗口共享；脚本会在
+        # 同源页面首屏清理上一个 profile 的 token，再用保险库中的账号登录。
+        record = self.credentials.get(profile.id)
+        if record is not None and record.username and record.password:
+            auto_login_script = build_auto_login_script(profile.id, record.username, record.password)
+
+            def on_remote_loaded(*_args: Any) -> None:
+                try:
+                    remote.evaluate_js(auto_login_script)
+                except Exception as exc:  # noqa: BLE001 - 登录失败不应阻塞窗口
+                    logger.debug("伴侣自动登录脚本执行失败：%s", exc)
+
+            loaded_event = getattr(remote.events, "loaded", None)
+            if loaded_event is not None:
+                loaded_event += on_remote_loaded
 
         def on_remote_closed() -> None:
             if manager is not None:
@@ -388,7 +486,7 @@ _MANAGER_HTML = f"""<!DOCTYPE html>
   .panel {{ background: #fff; border: 1px solid #e4e7ed; border-radius: 10px;
            padding: 14px; margin-bottom: 14px; }}
   .panel h2 {{ font-size: 14px; margin-bottom: 10px; }}
-  input[type=text] {{ width: 100%; border: 1px solid #dcdfe6; border-radius: 6px;
+  input[type=text], input[type=password] {{ width: 100%; border: 1px solid #dcdfe6; border-radius: 6px;
                      padding: 7px 10px; font-size: 13px; margin-bottom: 8px; }}
   input[type=text]:focus {{ outline: none; border-color: {_BRAND_COLOR}; }}
   .row {{ display: flex; align-items: center; gap: 8px; }}
@@ -428,6 +526,8 @@ _MANAGER_HTML = f"""<!DOCTYPE html>
     <h2>添加服务器</h2>
     <input type="text" id="name" placeholder="显示名称（如：NAS 服务器）">
     <input type="text" id="url" placeholder="服务器地址（http/https，如 http://192.168.1.10:5001）">
+    <input type="text" id="username" placeholder="用户名（可选）">
+    <input type="password" id="password" placeholder="密码（可选）" autocomplete="new-password">
     <div class="consent">
       <input type="checkbox" id="consent">
       <label for="consent">我已了解：明文 HTTP 仅限私有局域网地址，凭据可能被同网段截获</label>
@@ -485,6 +585,8 @@ _MANAGER_HTML = f"""<!DOCTYPE html>
           + '<div class="actions">'
           + '<button class="primary" onclick="openServer(\\'' + it.id + '\\')">打开</button>'
           + '<button class="plain" onclick="testServer(\\'' + it.id + '\\')">测试连接</button>'
+          + '<button class="plain" onclick="editServer(\\'' + it.id + '\\')">编辑</button>'
+          + (it.hasSavedCredential ? '<button class="plain" onclick="clearCredentials(\\'' + it.id + '\\')">清除凭据</button>' : '')
           + '<button class="danger" onclick="removeServer(\\'' + it.id + '\\')">删除</button>'
           + '</div></div>';
       }}).join('');
@@ -499,12 +601,16 @@ _MANAGER_HTML = f"""<!DOCTYPE html>
     if (!api()) return;
     var name = document.getElementById('name').value;
     var url = document.getElementById('url').value;
+    var username = document.getElementById('username').value;
+    var password = document.getElementById('password').value;
     var consent = document.getElementById('consent').checked;
     setMsg('add-msg', '');
-    api().add_server(name, url, consent).then(function (res) {{
+    api().add_server(name, url, consent, username, password).then(function (res) {{
       if (res && res.ok) {{
         document.getElementById('name').value = '';
         document.getElementById('url').value = '';
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
         document.getElementById('consent').checked = false;
         setMsg('add-msg', '已添加');
         loadServers();
@@ -527,6 +633,32 @@ _MANAGER_HTML = f"""<!DOCTYPE html>
     if (!api()) return;
     if (!window.confirm('确定删除该服务器吗？')) return;
     api().remove_server(id).then(function () {{ loadServers(); }});
+  }}
+  function editServer(id) {{
+    if (!api()) return;
+    api().list_servers().then(function (items) {{
+      var it = (items || []).find(function (item) {{ return item.id === id; }});
+      if (!it) return;
+      var name = window.prompt('显示名称', it.displayName);
+      if (name === null) return;
+      var url = window.prompt('服务器地址', it.baseUrl);
+      if (url === null) return;
+      var username = window.prompt('用户名（留空表示清除）', it.username || '');
+      if (username === null) return;
+      var password = window.prompt('密码（留空表示保留原密码）', '');
+      if (password === null) return;
+      var clear = it.hasSavedCredential && window.confirm('是否清除已保存凭据？');
+      var consent = it.cleartextAllowed || window.confirm('新地址若为明文局域网 HTTP，是否确认风险？');
+      api().update_server(id, name, url, consent, username, password, clear).then(function (res) {{
+        if (res && res.ok) loadServers();
+        else if (res && res.error) window.alert(res.error);
+      }});
+    }});
+  }}
+  function clearCredentials(id) {{
+    if (!api()) return;
+    if (!window.confirm('Clear saved credentials for this server?')) return;
+    api().clear_credentials(id).then(function () {{ loadServers(); }});
   }}
   function rerun() {{
     if (!api()) return;

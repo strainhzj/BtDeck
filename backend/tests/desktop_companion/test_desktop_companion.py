@@ -174,6 +174,7 @@ class TestServerProfileStore:
             "id",
             "displayName",
             "baseUrl",
+            "username",
             "cleartextAllowed",
             "healthState",
             "serverVersion",

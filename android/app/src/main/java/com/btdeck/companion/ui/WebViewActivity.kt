@@ -22,9 +22,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.btdeck.companion.R
+import com.btdeck.companion.data.CredentialVault
 import com.btdeck.companion.data.HealthClient
 import com.btdeck.companion.data.ServerProfile
 import com.btdeck.companion.data.ServerProfileStore
+import com.btdeck.companion.data.buildAutoLoginScript
 import com.btdeck.companion.net.LanHostPolicy
 import com.btdeck.companion.net.TrustScope
 import com.btdeck.companion.util.Hosts
@@ -41,6 +43,7 @@ import kotlinx.coroutines.launch
 class WebViewActivity : AppCompatActivity() {
 
     private lateinit var store: ServerProfileStore
+    private lateinit var credentials: CredentialVault
     private lateinit var profile: ServerProfile
     private lateinit var webView: WebView
     private lateinit var errorOverlay: LinearLayout
@@ -48,6 +51,7 @@ class WebViewActivity : AppCompatActivity() {
 
     private val timeoutHandler = Handler(Looper.getMainLooper())
     private var loadFinished = false
+    private var autoLoginStarted = false
     private val healthClient = HealthClient()
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -56,6 +60,7 @@ class WebViewActivity : AppCompatActivity() {
         setContentView(R.layout.activity_web)
 
         store = ServerProfileStore(this)
+        credentials = CredentialVault(this)
         val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
         profile = profileId?.let { store.find(it) } ?: run {
             finish()
@@ -101,9 +106,10 @@ class WebViewActivity : AppCompatActivity() {
             is LanHostPolicy.Verdict.Ok -> Unit
         }
 
-        isolateCredentialsIfNeeded()
-        refreshVersionHint()
-        load()
+        prepareSession {
+            refreshVersionHint()
+            load()
+        }
     }
 
     override fun onDestroy() {
@@ -114,6 +120,7 @@ class WebViewActivity : AppCompatActivity() {
 
     private fun load() {
         loadFinished = false
+        autoLoginStarted = false
         hideError()
         timeoutHandler.postDelayed({
             if (!loadFinished && !isDestroyed) showError(getString(R.string.load_timeout))
@@ -122,13 +129,21 @@ class WebViewActivity : AppCompatActivity() {
     }
 
     /** profile 切换即清除凭据：cookie + localStorage 全量清（进程级单例的隔离手段）。 */
-    private fun isolateCredentialsIfNeeded() {
-        if (lastLoadedProfileId != profile.id) {
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.removeAllCookies(null)
-            cookieManager.flush()
-            WebStorage.getInstance().deleteAllData()
-            lastLoadedProfileId = profile.id
+    private fun prepareSession(onReady: () -> Unit) {
+        if (lastLoadedProfileId == profile.id) {
+            onReady()
+            return
+        }
+        val cookieManager = CookieManager.getInstance()
+        // removeAllCookies 是异步 API；必须等待回调后再加载新 profile，避免旧 token
+        // 与新页面竞态复用。WebStorage 没有回调，调用后再继续即可。
+        cookieManager.removeAllCookies {
+            runOnUiThread {
+                cookieManager.flush()
+                WebStorage.getInstance().deleteAllData()
+                lastLoadedProfileId = profile.id
+                onReady()
+            }
         }
     }
 
@@ -170,11 +185,22 @@ class WebViewActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView?, url: String?) {
             loadFinished = true
             timeoutHandler.removeCallbacksAndMessages(null)
+            maybeAutoLogin(view, url)
             if (url != null && isSameOrigin(url)) {
                 profile.lastConnectedAt = System.currentTimeMillis()
                 store.upsert(profile)
             }
             hideError()
+        }
+
+        private fun maybeAutoLogin(view: WebView?, url: String?) {
+            if (view == null || url == null || !isSameOrigin(url) || autoLoginStarted) return
+            val record = credentials.get(profile.id) ?: return
+            if (profile.username.isBlank() || record.password.isEmpty()) return
+            val cookie = CookieManager.getInstance().getCookie(profile.baseUrl).orEmpty()
+            if (cookie.contains("vue_typescript_admin_access_token=")) return
+            autoLoginStarted = true
+            view.evaluateJavascript(buildAutoLoginScript(profile.id, profile.username, record.password), null)
         }
 
         /** 主框架错误 → 覆盖层提示（可重试/返回）。 */
@@ -256,7 +282,7 @@ class WebViewActivity : AppCompatActivity() {
         const val EXTRA_PROFILE_ID = "profile_id"
         private const val LOAD_TIMEOUT_MS = 20_000L
 
-        /** 上一个加载的 profile：切换即触发凭据清除（见 isolateCredentialsIfNeeded）。 */
+        /** 上一个加载的 profile：切换时先异步清 cookie/storage，再加载新会话。 */
         private var lastLoadedProfileId: String? = null
     }
 }

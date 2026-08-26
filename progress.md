@@ -1,5 +1,22 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-26：伴侣模式用户名/密码记忆与会话恢复（v1.0.6-dual-mode-client.8）
+
+### 已完成
+
+- 桌面端 `ServerProfile` 增加 `username`；新增 `desktop_companion/credentials.py`，Windows 使用当前用户 DPAPI 加密 profile 凭据文件，密码不进入 `companion_servers.json`/管理 API。管理页增加用户名/密码字段、编辑（空密码保留）与显式清除，删除 profile 会同步删除凭据。
+- 桌面端远程窗口首屏接入一次性同源登录脚本：按 profile 清理共享 WebView 的旧 token/localStorage，再用保险库凭据调用既有 `/api/v1/auth/login`，成功后写入前端现有 access/refresh cookie；TOTP 只临时 prompt，不落盘。
+- Android `ServerProfile` 增加 `username`；新增 `CredentialVault`（Android Keystore AES-GCM + 独立 SharedPreferences，`allowBackup=false`），伴侣列表增加用户名/密码录入、编辑（空密码保留）与清除凭据，忘记服务器同步清除凭据。
+- Android `WebViewActivity` 修复 `CookieManager.removeAllCookies` 异步竞态：等待回调后再加载 profile；有凭据时以同源脚本恢复会话，切换不跨服务器复用 token。
+- 记录与路线图：`android/README.md`、`docs/roadmap/README.md`、`docs/roadmap/backend/README.md`、`feature_list.json` 已同步；新增 `.8` 子任务并登记待真机/桌面 GUI 验收项。
+
+### 验证
+
+- `python -m pytest backend/tests/desktop_companion -q`：53 passed（含 DPAPI 密文不落明文、改地址清理旧密码回归）。
+- `gradle :app:testDebugUnitTest --no-daemon`：13 passed；`:app:assembleDebug` BUILD SUCCESSFUL（首次测试受沙箱网络限制，获准后复跑通过）。
+- `:app:lintDebug` 未完成：在线解析 `kotlin-compiler-31.7.3.jar` 超过 120 秒，离线模式因该依赖未缓存退出；不是源码编译错误，待具备完整 Gradle 缓存/网络的 CI 复核。
+- 尚未执行 Git stage/commit；保留既有未跟踪 `.tmp-desktop-gui-test/`。
+
 ## 2026-08-26：修复 GitHub CI 审计枚举成员数断言
 
 ### 结果

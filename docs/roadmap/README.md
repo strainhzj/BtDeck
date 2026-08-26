@@ -64,6 +64,7 @@ BtDeck/
 |------|-----------|------|
 | **backend** | FastAPI 后端总览与跨分支依赖骨架 | [backend/README.md](./backend/README.md) |
 | ↳ app-root | `backend/app/` 包根 8 文件：应用工厂、DB 引擎、异常处理、配置入口、版本、桌面/WebSocket main | [backend/app-root.md](./backend/app-root.md) |
+| ↳ desktop-companion | 桌面伴侣 profile、LAN 策略、健康检查、Windows DPAPI 凭据与 pywebview 会话恢复 | [backend/desktop-companion.md](./backend/desktop-companion.md) |
 | ↳ api | HTTP 路由层（37 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
 | ↳ services | 业务服务层 + downloader_adapters + tag_adapters | [backend/services/README.md](./backend/services/README.md) |
 | ↳ core | 基础设施（config/path_mapping/file_ops/tracker_*），⚠ 含 4 个 0 引用孤儿文件 | [backend/core/README.md](./backend/core/README.md) |
@@ -72,7 +73,7 @@ BtDeck/
 | ↳ tasks | 定时任务（cron）+ scheduler + 后台任务管理 | [backend/tasks/README.md](./backend/tasks/README.md) |
 | ↳ domain | 领域目录：downloader / torrents / tracker / auth / user | [backend/domain/README.md](./backend/domain/README.md) |
 | ↳ infra | utils（audit_logger/encryption/log_sanitizer/connectivity）+ startup + migrations + alembic | [backend/infra/README.md](./backend/infra/README.md) |
-| **android** ✨2026-08-23 | 伴侣模式 App（Kotlin；不含 Python，服务端壳是 Phase 3） | [../android/README.md](../../android/README.md) |
+| **android** ✨2026-08-23 | 伴侣模式 App（Kotlin；不含 Python，服务端壳是 Phase 3） | [android-companion.md](./android-companion.md) / [../android/README.md](../../android/README.md) |
 | **frontend** | Vue 2 + TypeScript 前端总览与分支索引 | [frontend/README.md](./frontend/README.md) |
 | ↳ entry | 应用入口：Vue 实例化 / 路由 / 路由守卫 / 根组件 | [frontend/entry/README.md](./frontend/entry/README.md) |
 | ↳ api | axios 封装的 12 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
@@ -130,6 +131,7 @@ BtDeck/
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 2026-08-25 增量 | 前端主 Logo 接入：新增 `components/common/AppLogo.vue`，桌面/移动布局与登录页统一使用 full/mark 品牌资源，PWA/favicons 由 `generate-pwa-icons.py` 按 mark 生成 |
+| 2026-08-26 增量 | 伴侣凭据记忆：Android `CredentialVault`（Keystore AES-GCM）与桌面 `desktop_companion/credentials.py`（Windows DPAPI），profile 增加 username；WebView/pywebview 切换时先隔离旧 cookie，再用一次性同源登录恢复 access/refresh token；新增 Android/桌面回归覆盖。 |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
