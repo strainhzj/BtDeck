@@ -130,6 +130,73 @@ describe('API 请求契约', () => {
       )
     })
 
+    it('列表多选数组参数归一化为逗号分隔字符串（后端 Optional[str] 契约）', () => {
+      expectRequest(
+        () => getTorrentList({
+          downloader_id: ['d1', 'd2'],
+          status: ['seeding', 'error'],
+          tracker_domain: ['tracker.example.com'],
+          name_like: '关键词',
+          skip: 0,
+          limit: 20
+        }),
+        {
+          url: '/torrents/getList',
+          method: 'get',
+          params: {
+            downloader_id: 'd1,d2',
+            status: 'seeding,error',
+            tracker_domain: 'tracker.example.com',
+            name_like: '关键词',
+            skip: 0,
+            limit: 20
+          }
+        }
+      )
+    })
+
+    it('列表空数组剔除参数键，字符串形态原样透传', () => {
+      expectRequest(
+        () => getTorrentList({
+          downloader_id: [],
+          status: 'paused',
+          skip: 0,
+          limit: 20
+        }),
+        {
+          url: '/torrents/getList',
+          method: 'get',
+          params: {
+            status: 'paused',
+            skip: 0,
+            limit: 20
+          }
+        }
+      )
+    })
+
+    it('列表数组归一化不修改调用方传入的参数对象', () => {
+      const original = {
+        downloader_id: ['d1', 'd2'],
+        status: ['error'],
+        tracker_domain: [],
+        skip: 0
+      }
+      const snapshot = JSON.parse(JSON.stringify(original))
+      getTorrentList(original)
+      // 归一化必须基于浅拷贝：调用方（桌面 listQuery 拷贝、移动 filters）不感知形态变化
+      expect(original).toEqual(snapshot)
+      expect(Array.isArray(original.downloader_id)).toBe(true)
+      expect(Array.isArray(original.status)).toBe(true)
+    })
+
+    it('列表接口无参调用：params 归一化为 undefined 不抛错', () => {
+      expectRequest(
+        () => getTorrentList(),
+        { url: '/torrents/getList', method: 'get', params: undefined }
+      )
+    })
+
     it('速度快照使用轻量活动接口', () => {
       expectRequest(
         () => getActiveTorrents(),

@@ -214,11 +214,38 @@ export interface TorrentListResponseData {
   activeSnapshotStatus?: ActiveSnapshotStatus
 }
 
+/**
+ * getList 多选参数的后端契约为逗号分隔字符串（FastAPI Optional[str]）。
+ * axios 无自定义 paramsSerializer，数组会默认序列化成 `key[]=v` 形式，
+ * 与后端参数名不匹配而被静默忽略——数组在此统一归一化为 join(',')，
+ * 空数组剔除该键（桌面 index.vue 调用前的 join 由此成为无害冗余）。
+ */
+function normalizeTorrentListArrayParams(params?: TorrentListParams): TorrentListParams | undefined {
+  if (!params) return params
+  const normalized = { ...params }
+  const multiValueKeys: Array<'downloader_id' | 'status' | 'tracker_domain'> = [
+    'downloader_id',
+    'status',
+    'tracker_domain'
+  ]
+  multiValueKeys.forEach((key) => {
+    const value = normalized[key]
+    if (Array.isArray(value)) {
+      if (value.length > 0) {
+        normalized[key] = value.join(',')
+      } else {
+        delete normalized[key]
+      }
+    }
+  })
+  return normalized
+}
+
 export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<TorrentListResponseData>> {
   return request({
     url: '/torrents/getList',
     method: 'get',
-    params: params
+    params: normalizeTorrentListArrayParams(params)
   }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
 }
 
