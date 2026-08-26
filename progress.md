@@ -5852,3 +5852,27 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - `npm run typecheck`、改动文件 ESLint、`python -m py_compile scripts/generate-pwa-icons.py`、`npm run build`、`git diff --check`、根 `./init.sh --ci` 通过；生产构建仅保留既有 Sass/包体积/顺序警告。
 - 完整 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关，未擅自重生成契约。
 - 已按用户后续指令提交本批改动（`feat(frontend): align logo display and app icons`），未执行 push/deploy；并行任务的 Playwright E2E 工作区变动未纳入本批，`.release-build-v1.0.5/` 与 `data/` 保持原样。
+
+## 2026-08-26：移动端仪表盘全 0 显示修复
+
+### 当前结果
+
+- 用户报告重新部署环境后，移动端 /m/dashboard 数据全显示 0（Network 有正常请求）。实测本机 5001 后端 /api/v1/dashboard 返回完整数据（4 下载器在线、20677 活跃种子、实时速度），排除环境与后端因素。
+- 根因：`views/mobile/dashboard.vue`（Phase 4 M1 引入）模板误读 `torrent_stats`/`downloader_stats`/`system_stats`，而契约键为 `torrents`/`downloaders`/`system`（types/dashboard.ts 与 dashboard_service.py 双向核实），`?? 0` 兜底致全 0；速度/页脚因 `formatSpeedValue(undefined)` 显 '-'。该组件此前无任何测试导入，错误从未被 vue-jest 编译暴露。
+- 连带两缺陷同修：① 下载器列表 computed 返回 `downloaders` 统计对象（无 length，`v-if` 恒假，区块永不渲染）→ 改 `downloaderList` 取 `downloader_list`；② `formatSpeedValue` 把 bytes/s 当 KB/s（错 1024 倍）→ 删除，新增 `formatSpeedDisplay` 复用桌面 `formatSpeed`（bytes/s，null→'--'、0→'0 B/s'）。
+- 实现要点：vue-jest 模板走 buble 不支持 `?.`/`??`（M3 三坑再次实证，修复过程中首次编译即触发 buble 解析错误），字段兜底全部收敛到 `torrentStats`/`downloaderStats`/`systemStats`/`downloaderList` computed，模板仅普通属性访问；桌面端/移动壳/API 层零改动。
+- 新增 `tests/unit/mobile-dashboard.spec.ts` 5 用例：卡片按位置精确断言（2/100/3、3/4）、速度换算（286720 B/s→280.00 KB/s，断言不出现 280.00 MB/s）、下载器列表与页脚渲染、源码契约双锁定（禁旧字段名 + 模板块禁 `?.`/`??`）、接口失败走 `$message.error` 留空态。
+- feature_list.json `v1.0.6-dual-mode-client.5` evidence 已追加本批记录；docs/roadmap 无 views/mobile 引用，无需同步。
+
+### 验证
+
+- `npm run test:unit -- mobile-dashboard.spec.ts`：5/5 通过。
+- `npm run lint` 通过：前置 `contract:check` 曾被行尾差异拦为 stale（工作区遗留，与本次改动无关），`npm run contract:generate` 重写后内容与 HEAD 零差异（仅行尾）；`vue-cli-service lint --fix` 顺手修复 `PullIndicator.vue` 的 `:style` 空格风格（遗留项，与本批无关但保留）。
+- `npm run typecheck`（tsc --noEmit）零错误；`npm run build` 生产构建通过。
+- 后端 paused 恒为 0 是 dashboard_stats 任务已知限制（暂不统计），不在本批范围；未执行 Git 提交。
+
+### 回归测试加固（2026-08-26 同日追加）
+
+- `mobile-dashboard.spec.ts` 5→10 用例，新增五类保护：① 旧错误契约负例——响应只含 `torrent_stats`/`downloader_stats`/`system_stats` 旧键时卡片必须显示 0、页脚不得出现旧键携带值（对原始 bug 的直接锁死）；② 信封契约——code=500 与 code=200+data:null 均停留空态、不渲染 0 假数据、不误报 `$message.error`；③ 刷新链路——`.m-refresh` 按钮 click 与下拉刷新 `onPullRefresh` 均重新拉取并渲染新值（1.50 MB/s）；④ `formatSpeedDisplay` 方法契约（`--`/`0 B/s`/`1.00 KB/s`/`280.00 KB/s`/`1.50 MB/s`）；⑤ computed 兜底（data 空时 `downloaderList=[]`、统计归零、`version`/`uptime_display='-'`）。
+- 变异验证实证保护有效：临时把 `torrentStats` 改回读 `torrent_stats` → 3 用例红；把 `downloaderList` 改回 `downloaders` 统计对象 → 列表用例红；还原后 10/10 全绿。
+- 验证：单套件 10/10、lint 通过、tsc 零错误；未执行 Git 提交。
