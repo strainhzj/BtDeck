@@ -112,13 +112,16 @@ class DashboardService:
         for downloader in cached_downloaders:
             downloading = 0
             seeding = 0
+            paused = 0
             torrent_stats = getattr(downloader, "torrent_stats", None)
             if isinstance(torrent_stats, dict):
                 downloading = int(torrent_stats.get("downloading", 0) or 0)
                 seeding = int(torrent_stats.get("seeding", 0) or 0)
+                paused = int(torrent_stats.get("paused", 0) or 0)
             else:
                 downloading = int(getattr(downloader, "downloading_count", 0) or 0)
                 seeding = int(getattr(downloader, "seeding_count", 0) or 0)
+                paused = int(getattr(downloader, "paused_count", 0) or 0)
 
             downloader_list.append(
                 {
@@ -128,6 +131,7 @@ class DashboardService:
                     "status": "online" if getattr(downloader, "fail_time", 0) == 0 else "offline",
                     "downloading": downloading,
                     "seeding": seeding,
+                    "paused": paused,
                     # 缓存速度单位为 KB/s，转 bytes/s 输出（与前端 formatSpeed 一致）
                     "download_speed": int(getattr(downloader, "download_speed", 0) or 0) * 1024,
                     "upload_speed": int(getattr(downloader, "upload_speed", 0) or 0) * 1024,

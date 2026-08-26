@@ -52,7 +52,7 @@ class DashboardStatsJob:
                     # 这些值由状态更新任务（initialization.py）维护，使用精确的状态匹配
                     downloading = getattr(downloader, "downloading_count", 0) or 0
                     seeding = getattr(downloader, "seeding_count", 0) or 0
-                    paused = 0  # 暂不支持从缓存读取paused统计
+                    paused = getattr(downloader, "paused_count", 0) or 0
 
                     total_downloading += downloading
                     total_seeding += seeding

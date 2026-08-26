@@ -1672,6 +1672,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
             if update_cold:
                 downloader.downloading_count = status_data.get("downloading_count", 0) or 0
                 downloader.seeding_count = status_data.get("seeding_count", 0) or 0
+                downloader.paused_count = status_data.get("paused_count", 0) or 0
 
             downloader.last_update = time.time()
 
@@ -1687,6 +1688,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                     f"下载={status_data.get('download_speed')} KB/s, "
                     f"下载中={status_data.get('downloading_count')}, "
                     f"做种中={status_data.get('seeding_count')}, "
+                    f"已暂停={status_data.get('paused_count')}, "
                     f"耗时={elapsed:.2f}秒"
                 )
             else:
@@ -1734,14 +1736,15 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         downloader: 下载器对象
         force_full_sync: 强制全量统计
 
-    Returns:
-        统计结果：{
-            'downloading_count': int,
-            'seeding_count': int,
-            'sync_mode': 'full' | 'incremental',
-            'elapsed': float,
-            'from_cache': bool
-        }
+        Returns:
+            统计结果：{
+                'downloading_count': int,
+                'seeding_count': int,
+                'paused_count': int,
+                'sync_mode': 'full' | 'incremental',
+                'elapsed': float,
+                'from_cache': bool
+            }
     """
     from app.downloader.torrent_fetcher import TorrentFetcher
 
@@ -1903,6 +1906,7 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         return {
             "downloading_count": stats["downloading"],
             "seeding_count": stats["seeding"],
+            "paused_count": stats["paused"],
             "sync_mode": sync_mode,
             "elapsed": elapsed_total,
             "from_cache": False,
@@ -1922,6 +1926,7 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         return {
             "downloading_count": stats["downloading"],
             "seeding_count": stats["seeding"],
+            "paused_count": stats["paused"],
             "sync_mode": "cache",
             "elapsed": elapsed_total,
             "from_cache": True,
@@ -1956,12 +1961,14 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
 
             result["downloading_count"] = stats_result.get("downloading_count", 0)
             result["seeding_count"] = stats_result.get("seeding_count", 0)
+            result["paused_count"] = stats_result.get("paused_count", 0)
 
             # 添加调试信息
             logger.debug(
                 f"  └─ qBittorrent冷数据获取: "
                 f"下载中={result['downloading_count']}, "
                 f"做种中={result['seeding_count']}, "
+                f"已暂停={result['paused_count']}, "
                 f"模式={stats_result.get('sync_mode', 'unknown')}, "
                 f"耗时={stats_result.get('elapsed', 0):.2f}秒"
             )
@@ -1969,6 +1976,7 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
             result["downloading_count"] = 0
             result["seeding_count"] = 0
+            result["paused_count"] = 0
 
         return result
 
@@ -2008,12 +2016,14 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
 
             result["downloading_count"] = stats_result.get("downloading_count", 0)
             result["seeding_count"] = stats_result.get("seeding_count", 0)
+            result["paused_count"] = stats_result.get("paused_count", 0)
 
             # 添加调试信息
             logger.debug(
                 f"  └─ Transmission冷数据获取: "
                 f"下载中={result['downloading_count']}, "
                 f"做种中={result['seeding_count']}, "
+                f"已暂停={result['paused_count']}, "
                 f"模式={stats_result.get('sync_mode', 'unknown')}, "
                 f"耗时={stats_result.get('elapsed', 0):.2f}秒"
             )
@@ -2021,6 +2031,7 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
             result["downloading_count"] = 0
             result["seeding_count"] = 0
+            result["paused_count"] = 0
 
         return result
 

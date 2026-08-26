@@ -154,6 +154,7 @@ class DownloaderCheckVO(BaseModel):
     download_speed: float | None = Field(default=None, description="下载速度(KB/s)", examples=[2048.7])
     downloading_count: int | None = Field(default=None, description="下载中种子数量", examples=[5])
     seeding_count: int | None = Field(default=None, description="做种中种子数量", examples=[10])
+    paused_count: int | None = Field(default=None, description="已暂停种子数量", examples=[3])
     delay: float | None = Field(default=None, description="网络延迟(毫秒)", examples=[15.5])
     is_online: bool | None = Field(default=False, description="是否在线（基于端口连通性）", examples=[True])
     last_update: float | None = Field(default=None, description="最后更新时间戳", examples=[1234567890.123])
