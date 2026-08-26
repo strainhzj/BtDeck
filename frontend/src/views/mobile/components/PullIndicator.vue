@@ -2,7 +2,7 @@
   <div
     class="m-pull-indicator"
     :class="{'is-ready': ready, 'is-refreshing': refreshing}"
-    :style="{ height: indicatorHeight + 'px' }"
+    :style="{height: indicatorHeight + 'px'}"
   >
     <span v-if="refreshing" class="m-pull-indicator-text">刷新中…</span>
     <span v-else-if="ready" class="m-pull-indicator-text">↓ 松手刷新</span>
