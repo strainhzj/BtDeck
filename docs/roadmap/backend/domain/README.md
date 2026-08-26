@@ -35,7 +35,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L13，`error_reason` Text L25，`auxiliary_seed_count` Integer L28)、`TrackerInfo`(L257)、`TrackerKeywordConfig`(L315)、`TrackerMessageLog`(L401)、`TrackerReannounceConfig`(L490) |
-| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 47 成员) + `AuditOperationResult`(L254) |
+| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 48 成员) + `AuditOperationResult`(L257) |
 | 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L22) 种子审计日志表 |
 | 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L39 与 `auxiliary_seed_count` L46 自动输出为 camelCase |
 | Tracker VO tracker-vo | `trackerVO.py` | `TrackerInfoVO`(L5) |

@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-26：修复 GitHub CI 审计枚举成员数断言
+
+### 结果
+
+- 根因：`AuditOperationType` 已新增 `SCHEDULED_TASK_INTERRUPT`，实际成员数为 48，但枚举测试仍断言 47。
+- 修复：补齐 `scheduled_task_interrupt` 的合法值、显示名、分类、构造和字符串行为测试参数；成员数断言更新为 48。
+- 文档：路线图同步 `AuditOperationType` 为 48 个成员，`AuditOperationResult` 行号同步为 L257；`feature_list.json` 已补充 CI 修复证据。
+- 验证：`python -m pytest tests/enums/test_audit_enums.py -q`，291 passed，4 warnings；审计 API 操作类型回归 4 passed；Flake8、JSON 解析和 `git diff --check` 通过。Black 24.10.0 CLI 在 Windows 上超时，但 Black 纯库格式化接口返回 `NothingChanged`，确认文件已符合 line-length=120 格式。
+- 环境限制：根目录 `bash ./init.sh` 仍因当前 Windows 环境缺少可用 WSL 发行版无法执行，与本次 pytest 失败无关。
+
 ## 2026-08-25（第二批） - 定时任务停止治理：超时强杀 + interrupt 真取消 + MissingGreenlet 根修
 
 ### 背景（生产事故诊断）

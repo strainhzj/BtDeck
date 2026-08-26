@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-26：GitHub CI 审计枚举断言修复
+
+### 已完成
+
+- 保留业务需要的 `AuditOperationType.SCHEDULED_TASK_INTERRUPT`，将枚举测试成员数更新为 48。
+- `backend/tests/enums/test_audit_enums.py` 新增 `scheduled_task_interrupt` 参数覆盖；专用测试 291 passed。
+- 审计 API 操作类型回归 4 passed；Flake8、JSON 解析和 `git diff --check` 通过。Black CLI 在本机超时，但纯库格式化检查返回 `NothingChanged`。
+- `docs/roadmap/backend/domain/README.md`、`feature_list.json`、`progress.md` 已同步。
+
+### 工作区状态
+
+- 未执行 Git stage/commit/push。
+- 现有未跟踪目录 `.tmp-desktop-gui-test/` 未修改、未删除。
+- 根目录 `bash ./init.sh` 受 Windows WSL 环境限制未完成；后续可在 GitHub CI/Linux 环境复核全量 pytest。
+
 ## 2026-08-25（第二批）：定时任务停止治理——超时强杀 + interrupt 真取消 + MissingGreenlet 根修
 
 ### 结果

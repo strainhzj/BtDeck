@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.5",
   "release_note": "产品发布号与内部里程碑编号相互独立：发布 v1.0.5（见 backend/app/version.py）打包里程碑 v1.0.5（查询模板）、v1.0.6（孤儿文件管理）、v1.0.9（一键部署）及 2026-06~08 全部修复与安全加固。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-25",
+  "last_updated": "2026-08-26",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4724,7 +4724,7 @@
             "backend/app/api/endpoints/cron_tasks.py",
             "frontend/src/views/logs/audit.vue"
           ],
-          "evidence": "eslint 通过；test_cron_tasks_outcome.py 10 例 passed（端点行为回归）。 回归保护批次（+3）：interrupt 端点审计接线（成功/失败均落审计，operation_type/operator/task_name/operation_result 断言，隔离 AsyncSessionLocal）；statistics cancelled 口径（success=True+cancelled 计入成功卡片，防误改 success=False 连带统计回归）。"
+          "evidence": "eslint 通过；test_cron_tasks_outcome.py 10 例 passed（端点行为回归）。 回归保护批次（+3）：interrupt 端点审计接线（成功/失败均落审计，operation_type/operator/task_name/operation_result 断言，隔离 AsyncSessionLocal）；statistics cancelled 口径（success=True+cancelled 计入成功卡片，防误改 success=False 连带统计回归）。2026-08-26：修复 GitHub CI 审计枚举成员数断言，成员数由 47 更新为 48，并补齐 scheduled_task_interrupt 的枚举测试覆盖；tests/enums/test_audit_enums.py 291 passed。"
         },
         {
           "id": "cron-task-stop-governance-2026-08-25.7",
