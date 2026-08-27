@@ -19,6 +19,7 @@ import {
   hasTrackerError,
   showTrackerErrorTag,
   getTorrentErrorReason,
+  countMatchedTrackerRows,
   assertSameDownloader,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -483,6 +484,38 @@ describe('hasTrackerError / showTrackerErrorTag / getTorrentErrorReason', () => 
     expect(
       getTorrentErrorReason({ status: 'error', hasTrackerError: true, errorReason: '403' } as never)
     ).toBe('403')
+  })
+})
+
+// ============ tracker 域名筛选命中标记契约 ============
+
+describe('countMatchedTrackerRows - tracker 域名筛选命中标记统计', () => {
+  it('统计含 matched_domain / matchedDomain 的 tracker 行所在种子数，snake/camel 双读', () => {
+    const torrents = [
+      {
+        tracker_info: [
+          { tracker_url: 'https://a.example/announce', matched_domain: 'a.example' },
+          { tracker_url: 'https://b.example/announce' }
+        ]
+      },
+      { trackerInfo: [{ trackerUrl: 'https://b.example/announce' }] },
+      {
+        trackerInfo: [
+          { trackerUrl: 'https://c.example/announce', matchedDomain: 'c.example' },
+          { trackerUrl: 'https://d.example/announce', matchedDomain: 'd.example' }
+        ]
+      },
+      {}
+    ] as never[]
+
+    // 第 1/3 行命中（第 3 行两个 tracker 都带标记也只计 1 行），第 2/4 行不命中
+    expect(countMatchedTrackerRows(torrents)).toBe(2)
+  })
+
+  it('空 tracker 列表与 null/undefined 种子不计数、不抛错', () => {
+    expect(countMatchedTrackerRows([])).toBe(0)
+    expect(countMatchedTrackerRows([null, undefined])).toBe(0)
+    expect(countMatchedTrackerRows([{ tracker_info: [] }, { trackerInfo: [] }] as never[])).toBe(0)
   })
 })
 

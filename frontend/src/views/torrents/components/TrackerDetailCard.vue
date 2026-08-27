@@ -54,9 +54,17 @@
               <tr
                 v-for="(tracker, index) in trackerInfo"
                 :key="index"
+                :class="{'tracker-row-matched': !!matchedDomainOf(tracker)}"
               >
                 <td>
-                  <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
+                  <div class="tracker-name-cell">
+                    <span>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</span>
+                    <span
+                      v-if="matchedDomainOf(tracker)"
+                      class="tracker-matched-tag"
+                      :title="`命中当前 Tracker 域名筛选：${matchedDomainOf(tracker)}`"
+                    >命中筛选</span>
+                  </div>
                   <div
                     class="tracker-url-mini"
                     :title="tracker.tracker_url || tracker.trackerUrl || '-'"
@@ -153,6 +161,11 @@ export default class TrackerDetailCard extends Vue {
 
   private getAnnounceStatus(tracker: TrackerDetailRow): string | undefined {
     return tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded
+  }
+
+  /** 命中当前 tracker 域名筛选的域名（后端 matched_domain，snake/camel 双读）；未命中返回 undefined */
+  private matchedDomainOf(tracker: TrackerDetailRow): string | undefined {
+    return tracker.matched_domain || tracker.matchedDomain || undefined
   }
 
   private getScrapeStatus(tracker: TrackerDetailRow): string | undefined {

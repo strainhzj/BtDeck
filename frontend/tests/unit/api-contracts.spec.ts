@@ -6,7 +6,8 @@ import {
   getBatchDeleteStatus,
   getTorrentList,
   pauseTorrents,
-  resumeTorrents
+  resumeTorrents,
+  saveSimpleQueryAsTemplate
 } from '@/api/torrents'
 import {
   cleanupOrphans,
@@ -173,6 +174,44 @@ describe('API 请求契约', () => {
           }
         }
       )
+    })
+
+    it('saveSimpleQueryAsTemplate 把 tracker_domain 写入 simple 模板 conditions（缺省为空数组）', () => {
+      mockRequest.mockReset()
+      saveSimpleQueryAsTemplate('我的模板', {
+        name_like: '关键词',
+        status: ['seeding'],
+        tracker_domain: ['tracker.a.example.com', 'tracker.b.example.com']
+      })
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/advanced-search/search-templates',
+        method: 'post',
+        data: expect.objectContaining({
+          conditions: {
+            source: 'simple',
+            version: 1,
+            listQuery: expect.objectContaining({
+              tracker_domain: ['tracker.a.example.com', 'tracker.b.example.com']
+            })
+          }
+        })
+      })
+
+      mockRequest.mockReset()
+      saveSimpleQueryAsTemplate('无域名模板', { name_like: '' })
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/advanced-search/search-templates',
+        method: 'post',
+        data: expect.objectContaining({
+          conditions: {
+            source: 'simple',
+            version: 1,
+            listQuery: expect.objectContaining({
+              tracker_domain: []
+            })
+          }
+        })
+      })
     })
 
     it('列表数组归一化不修改调用方传入的参数对象', () => {

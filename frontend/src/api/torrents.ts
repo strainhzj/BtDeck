@@ -91,6 +91,9 @@ export interface TrackerInfo {
   leecher_count?: number | null
   downloadCount?: number | null
   download_count?: number | null
+  // 命中当前 tracker 域名筛选的域名；未启用筛选或未命中时为 undefined
+  matchedDomain?: string
+  matched_domain?: string
 }
 
 export interface TorrentListData {
@@ -805,6 +808,7 @@ export interface QueryTemplateConditions {
     tags_like?: string
     downloader_id?: string[]
     status?: string[]
+    tracker_domain?: string[]
     showActiveOnly?: boolean
     sort_by?: string
     sort_order?: 'asc' | 'desc'
@@ -854,6 +858,7 @@ export function saveSimpleQueryAsTemplate(
       tags_like: listQuery?.tags_like ?? '',
       downloader_id: listQuery?.downloader_id ? [...listQuery.downloader_id] : [],
       status: listQuery?.status ? [...listQuery.status] : [],
+      tracker_domain: listQuery?.tracker_domain ? [...listQuery.tracker_domain] : [],
       showActiveOnly: listQuery?.showActiveOnly ?? false,
       sort_by: listQuery?.sort_by ?? 'added_date',
       sort_order: listQuery?.sort_order ?? 'desc'

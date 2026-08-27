@@ -173,6 +173,40 @@ describe('TrackerDetailCard shared view contract', () => {
     expect(wrapper.find('tbody tr').text()).toContain('✗ 发送中')
   })
 
+  it('tracker 域名筛选命中行高亮并显示"命中筛选"标签，未命中行不打标', () => {
+    wrapper = mountCard([
+      {
+        tracker_name: '命中站',
+        tracker_url: 'https://tracker.a.example/announce',
+        matched_domain: 'tracker.a.example'
+      },
+      {
+        trackerName: '其它站',
+        trackerUrl: 'https://tracker.b.example/announce'
+      },
+      {
+        trackerName: 'camel 命中站',
+        trackerUrl: 'https://tracker.c.example/announce',
+        matchedDomain: 'tracker.c.example'
+      }
+    ])
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(3)
+
+    // snake_case 与 camelCase 的 matched 字段都识别
+    expect(rows.at(0).classes()).toContain('tracker-row-matched')
+    expect(rows.at(0).find('.tracker-matched-tag').exists()).toBe(true)
+    expect(rows.at(0).find('.tracker-matched-tag').text()).toBe('命中筛选')
+
+    expect(rows.at(2).classes()).toContain('tracker-row-matched')
+    expect(rows.at(2).find('.tracker-matched-tag').text()).toBe('命中筛选')
+
+    // 未命中行：无高亮类、无标签
+    expect(rows.at(1).classes()).not.toContain('tracker-row-matched')
+    expect(rows.at(1).find('.tracker-matched-tag').exists()).toBe(false)
+  })
+
   it('展示对齐判定：Announce 文本被覆写为工作失败时显示红色失败标识与消息', () => {
     // 后端在消息命中失败关键词池时覆写 announce 文本（Transmission 200+failure
     // reason 场景），详情卡无需改动即应显示 ✗ 工作失败，而非 ✓ 工作

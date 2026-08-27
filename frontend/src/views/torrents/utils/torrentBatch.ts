@@ -486,6 +486,17 @@ export function hasTrackerError(torrent: Torrent | null | undefined): boolean {
 }
 
 /**
+ * 统计本页含 tracker 域名筛选命中标记（后端 matched_domain）的行数。
+ * 供两视图 getList 观察日志汇总，与后端 [tracker-domain-filter] debug 日志对账。
+ */
+export function countMatchedTrackerRows(torrents: Array<Torrent | null | undefined>): number {
+  return torrents.filter(torrent => {
+    const trackers = torrent?.trackerInfo ?? torrent?.tracker_info ?? []
+    return trackers.some(tracker => !!(tracker.matched_domain || tracker.matchedDomain))
+  }).length
+}
+
+/**
  * 状态列是否显示"Tracker异常"标签：
  * status='error' 已有"错误"徽标不重复打；其余状态（如做种中）叠加红色小标签。
  */

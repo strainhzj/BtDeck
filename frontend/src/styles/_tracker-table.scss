@@ -50,5 +50,34 @@
     tbody tr:hover .tracker-sticky-col {
       background: var(--color-bg-hover);
     }
+
+    /* 命中当前 tracker 域名筛选的行：浅主色高亮 + 名称旁"命中筛选"标签 */
+    .tracker-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .tracker-matched-tag {
+      flex-shrink: 0;
+      padding: 0 4px;
+      color: var(--color-primary);
+      font-size: 10px;
+      line-height: 16px;
+      background: var(--color-primary-light);
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+    }
+
+    tbody tr.tracker-row-matched td,
+    tbody tr.tracker-row-matched .tracker-sticky-col {
+      background: var(--color-primary-lightest);
+    }
+
+    tbody tr.tracker-row-matched:hover td,
+    tbody tr.tracker-row-matched:hover .tracker-sticky-col {
+      background: var(--color-bg-hover);
+    }
   }
 }

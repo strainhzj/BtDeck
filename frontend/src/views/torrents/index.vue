@@ -899,7 +899,8 @@ import {
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
   getTorrentErrorReason as sharedErrorReason,
-  showTrackerErrorTag as sharedShowTrackerErrorTag
+  showTrackerErrorTag as sharedShowTrackerErrorTag,
+  countMatchedTrackerRows
 } from './utils/torrentBatch'
 import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
@@ -1251,6 +1252,14 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
       this.list = normalizedList
       this.total = total
+
+      // 观察日志：与后端 [tracker-domain-filter] debug 日志对账，验证命中标记口径
+      console.debug(
+        '[tracker-filter] total=%d 本页=%d 命中标记行=%d',
+        total,
+        normalizedList.length,
+        countMatchedTrackerRows(normalizedList)
+      )
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('获取种子列表失败:', error)

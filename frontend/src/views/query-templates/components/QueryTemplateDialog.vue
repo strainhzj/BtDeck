@@ -46,6 +46,18 @@
         <el-form-item label="标签关键词">
           <el-input v-model="simpleForm.tags_like" placeholder="标签模糊匹配（可选）" />
         </el-form-item>
+        <el-form-item label="Tracker域名">
+          <AdvancedMultiSelect
+            v-model="simpleForm.tracker_domain"
+            placeholder="选择tracker域名（可多选）"
+            :options="trackerDomainOptions"
+            :allow-create="false"
+            :show-mode-toggle="false"
+            :virtual-scroll-threshold="100"
+            :list-height="240"
+            style="width: 100%;"
+          />
+        </el-form-item>
         <el-form-item label="排序字段">
           <el-select v-model="simpleForm.sort_by" style="width: 60%">
             <el-option label="添加时间" value="added_date" />
@@ -89,15 +101,21 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
+import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import {
   createSearchTemplate,
   updateSearchTemplate,
+  getTrackerDomains,
   SearchTemplate,
   QueryTemplateConditions
 } from '@/api/torrents'
 
 @Component({
-  name: 'QueryTemplateDialog'
+  name: 'QueryTemplateDialog',
+  components: {
+    AdvancedMultiSelect
+  }
 })
 export default class QueryTemplateDialog extends Vue {
   @Prop({ type: Boolean, default: false }) visible!: boolean
@@ -118,10 +136,13 @@ export default class QueryTemplateDialog extends Vue {
     name_like: '',
     category_like: '',
     tags_like: '',
+    tracker_domain: [] as string[],
     showActiveOnly: false,  // 活动种子开关（H2修复：编辑保存不覆写，保持存取对称）
     sort_by: 'added_date',
     sort_order: 'desc' as 'asc' | 'desc'
   }
+
+  private trackerDomainList: string[] = []
 
   get isEdit(): boolean {
     return this.template !== null
@@ -136,11 +157,19 @@ export default class QueryTemplateDialog extends Vue {
     }
   }
 
+  get trackerDomainOptions(): SelectOption[] {
+    return this.trackerDomainList.map(domain => ({
+      label: domain,
+      value: domain
+    }))
+  }
+
   @Watch('visible')
   onVisibleChange(val: boolean) {
     this.dialogVisible = val
     if (val) {
       this.resetForm()
+      this.loadTrackerDomainOptions()
     }
   }
 
@@ -162,6 +191,9 @@ export default class QueryTemplateDialog extends Vue {
         this.simpleForm.name_like = conditions.listQuery.name_like || ''
         this.simpleForm.category_like = conditions.listQuery.category_like || ''
         this.simpleForm.tags_like = conditions.listQuery.tags_like || ''
+        this.simpleForm.tracker_domain = conditions.listQuery.tracker_domain
+          ? [...conditions.listQuery.tracker_domain]
+          : []
         // H2修复：回填活动种子开关，避免编辑保存时被 buildConditions 覆写为 false
         this.simpleForm.showActiveOnly = conditions.listQuery.showActiveOnly ?? false
         this.simpleForm.sort_by = conditions.listQuery.sort_by || 'added_date'
@@ -180,10 +212,23 @@ export default class QueryTemplateDialog extends Vue {
         name_like: '',
         category_like: '',
         tags_like: '',
+        tracker_domain: [],
         showActiveOnly: false,
         sort_by: 'added_date',
         sort_order: 'desc'
       }
+    }
+  }
+
+  private async loadTrackerDomainOptions() {
+    if (this.trackerDomainList.length > 0) return
+    try {
+      const response = await getTrackerDomains()
+      if (response.code === '200' && Array.isArray(response.data)) {
+        this.trackerDomainList = response.data
+      }
+    } catch (error) {
+      console.error('获取 Tracker 主域名失败:', error)
     }
   }
 
@@ -198,6 +243,7 @@ export default class QueryTemplateDialog extends Vue {
           tags_like: this.simpleForm.tags_like,
           downloader_id: [],
           status: [...this.simpleForm.status],
+          tracker_domain: [...this.simpleForm.tracker_domain],
           showActiveOnly: this.simpleForm.showActiveOnly,
           sort_by: this.simpleForm.sort_by,
           sort_order: this.simpleForm.sort_order
