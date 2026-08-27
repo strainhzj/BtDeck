@@ -1,18 +1,43 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-27：移动端回收站 info_id 契约修复（自查缺陷）
+
+### 本批结果
+
+- **两串联确定性缺陷**（诊断实证）：移动端回收站恢复/彻底删除把 `item.torrent_id`（InfoHash）当批量接口 ID 传，后端实际按 `TorrentInfo.info_id` 查询→「种子不存在」；前端又读 `failed_list[0].error`（后端键恒为 `reason`）→「未知原因」兜底。
+- **修复**：`mobile/recycle-bin.vue` 守卫与载荷统一改 `item.info_id`、恢复/删除失败提示均展示 `reason`、彻底删除按钮禁用去掉 `|| !item.torrent_id`（同根缺陷）；`api/recycle-bin.ts` failed_list 项类型改 `{torrent_id; torrent_name?; reason}`、success_list 项 `name→torrent_name`；`mobile-recycle-bin.spec` 7→9 例（`['t1']→['i1']` 契约锁 + 用例 6 改造 + reason 展示 2 例）。
+- **后端契约测试（源码零改动）**：`test_recycle_bin_api.py` 新增 `TestBatchPayloadRequiresInfoId` 2 例——restore/cleanup 传 torrent_id 值→`reason=="种子不存在"` 且无 `error` 键；cleanup 传 info_id→`success_count==1`（`get_audit_service` 依赖 override None 规避同步 session `await commit()` 假失败）。
+- 方案经双子代理独立审查修订：补 spec 用例 6 连锁改造、后端审计坑、feature_list.json 两处语法修复（L94 残留 `}` + L93 尾逗号，brand-logo-2026-08.3 删除残留，已修复合法）。
+
+### 变更文件
+
+修改：`frontend/src/views/mobile/recycle-bin.vue`、`frontend/src/api/recycle-bin.ts`、`frontend/tests/unit/mobile-recycle-bin.spec.ts`、`backend/tests/api/test_recycle_bin_api.py`、`docs/roadmap/perspectives/test-coverage.md`（mobile-recycle-bin 行）、`feature_list.json`（语法修复 + `.5` evidence/files）、`progress.md`。
+
+### 验证与待办
+
+- 前端定向 9/9 全绿 + 定向 ESLint（`--no-fix --max-warnings 0`）+ `tsc --noEmit` 零错误 + grep 无 failed_list `.error` 残留；后端定向 16 passed + black/flake8 通过；根 `./init.sh`（ci）通过。
+- 已知错位登记待后续：恢复按钮禁用/L37 文案按 torrent_id 判定，与后端 `can_restore`（备份存在性）判据错位；`/restore-manual`（501 stub）未来实现应接受 info_id；后端 `torrent_ids` 实为 info_id 语义的命名歧义（42 处/9 文件）另行立项。
+- 未执行 Git 提交；工作区其他未提交/未跟踪文件（并行会话痕迹）保持不动。
+
+### 回归测试加固（同日追加）
+
+- **三层保护**：`mobile-recycle-bin.spec` 9→13 例——fixture 堵变异盲区（item2 改 `torrent_id:'t2'` 无 info_id、新增 item3 测按钮态），新增按钮禁用态契约（缺 torrent_id 仅禁恢复、彻底删除可用、busyKey 双禁）、reason 缺失兜底「未知原因」、destroy reject 分支、源码契约（载荷/守卫/reason/两按钮 disabled 表达式逐项锁定）；`api-contracts.spec` 新增回收站响应类型源码锁定 describe（failed_list 项 reason+torrent_name?、禁 error/name 回流、success_list 项 torrent_name、请求字段 torrent_ids 不变式）；后端 `TestBatchPayloadRequiresInfoId` 2→4 例（失败项精确键集 `{torrent_id,reason}`、cleanup 成功项 `{torrent_id,torrent_name}` 值锁、混合批量逐项独立判定+回显语义）。
+- **变异验证 10 组全部精确拦截**（备份-变异-红-还原-cmp 字节校验）：前端 M1-M7 覆盖两处载荷回退、reason→error、恢复提示去 reason、彻底删除禁用加回、守卫改回、类型 reason→error；后端 M8-M9 查询字段 info_id→torrent_id（M8 双红含既有 service 级用例）、M10 reason 键→error。还原后源码零残留（git diff + cmp 双核实）。
+- 全量复验：前端 **84 套件 1178 例全绿** + tsc 零错误 + 定向 ESLint；后端 **18 passed** + black/flake8；根 `./init.sh`（ci）通过。仍未执行 Git 提交。
+
 ## 2026-08-27 交接：种子列表错误提示滚动收起与查询全屏蒙版
 
 ### 当前结果
 
 - 列表视图与传统视图的错误原因 tooltip 已统一设置为不可进入，并通过共享 mixin 在 `wheel`、页面滚动或嵌套列表滚动时主动 `hide()`；销毁阶段会解除全局监听。
 - 两视图查询 loading 已改为 `v-loading.fullscreen.lock`：蒙版覆盖完整视口，加载期间锁定页面滚动，并由现有请求 `finally` 可靠解除。
-- 新增行为测试覆盖多提示框、非冒泡子容器滚动和销毁解绑；扩展双视图源码契约，`docs/roadmap/` 已同步。
+- 回归保护已加固为三层：mixin 7 个运行时边界与真实 Element UI Tooltip；真实 Loading 指令的 body mask/锁滚动/销毁清理；两视图编译后 directive modifiers 与请求失败复位。新增 `torrent-loading-mask.spec.ts` 和共享 `loadingDirectiveProbe.ts`。
 
 ### 验证与后续
 
-- 前端全量 Jest **83 suites / 1160 tests passed**；`npm run typecheck`、完整 `npm run lint`、`npm run build` 及 Git Bash 根 `./init.sh --ci` 全部通过。
+- 前端全量 Jest **84 suites / 1169 tests passed**，定向 5 suites / 70 tests passed；`npm run typecheck`、完整 `npm run lint`、`npm run build` 及 Git Bash 根 `./init.sh --ci` 全部通过。
 - 构建仅有既有 Sass、CSS 顺序、资源体积及 Browserslist 警告；无本批新增错误。
-- Git 提交范围仅限本批修复；安装包重建记录及其产物、其他既有工作区状态不纳入本提交。可选人工复核：让错误原因提示出现后滚动列表/页面，确认提示立即收起；慢请求期间确认视口不可滚动到蒙版外。
+- 原修复提交为 `db6d24b`，本轮回归加固与其分为独立提交；安装包重建记录及其产物、其他既有工作区状态保持不动。可选人工复核：让错误原因提示出现后滚动列表/页面，确认提示立即收起；慢请求期间确认视口不可滚动到蒙版外。
 
 ## 2026-08-27：Tracker 域名筛选命中可视化（matched_domain 标记 + 高亮 + 观察日志）
 
@@ -3401,18 +3426,3 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 应用户要求三套件 51→62 例：util +6（语法严格性/语法集交叉契约/端到端快照/跨行内联合并/分隔线交错）、mobile +3（摘要与详情双层分离契约/空摘要不渲染块/纯函数不污染原始 content）、desktop +3（精确全文/空串路径/props 响应式重算）。
 - 变异验证四组全部精确拦截（回退双端摘要→各 5 红；删分隔线丢弃→三层 7 红；删粗体替换→8 红），备份-变异-恢复（源码未提交不可 checkout 还原）；锚点跨行尾会因 CRLF 匹配失败，行内锚点+唯一性断言可避开。
 - 还原后 62 例全绿，全量复验与文档同步见 progress.md；仍未提交。
-
-## 2026-08-27 交接：Windows EXE/安装包运行图标统一
-
-### 已完成
-
-- 根因确认：`deploy/btdeck-windows.spec` 仍为 `icon=None`；pywebview WinForms 从 `sys.executable` 提取窗口图标，导致 EXE、任务栏/标题栏、快捷方式与卸载项沿用 PyInstaller 默认图标。
-- 品牌 ICO 从 16/32/48 扩为 16~256px 九档；PyInstaller 显式嵌入，缺图标时 fail-fast；Inno Setup 的安装器、卸载项及三类快捷方式全部复用该品牌图标。
-- 新增 3 项 Windows 品牌图标打包契约；deploy/root/test-coverage 路线图与 feature/progress 已同步。
-
-### 验证与后续
-
-- 打包契约 13/13、PWA 契约 6/6；mypy/flake8/black、npm lint/build、verify-package、git diff check 与根 init.sh --ci 通过。
-- 实际品牌 EXE：`build/icon-verification-dist/btdeck.exe`，45,801,446 字节，SHA256 `BE277418974FCF3BF3F318557E7532089111F1FA481732D0C5A048583E2CAF40`；提取图标视觉确认是绿色 BtDeck mark。
-- 未替换 `dist/btdeck.exe`：PID 25040/37132 正在占用，未擅自中断服务。若需要正式安装包，先停止该实例并安装 Inno Setup（当前无 `ISCC.exe`），再执行 `deploy/build-windows.bat`。
-- 未执行 Git 提交；用户原有工作区改动和未跟踪目录均保留。

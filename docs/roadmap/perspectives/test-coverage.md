@@ -2,30 +2,29 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 195 个 test_*.py）
+## 后端测试分布（共 180 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 64 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 51 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 20 | `app/tasks/` | 🟡 部分覆盖（20 对 34） |
-| `tests/core/` | 23 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/api/` | 63 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
+| `tests/services/` | 50 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
+| `tests/tasks/` | 18 | `app/tasks/` | 🟡 部分覆盖（18 对 34） |
+| `tests/core/` | 21 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
-| `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好 |
+| `tests/utils/` | 5 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
 | `tests/auth/` | 5 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
-| `tests/downloader/` | 4 | `app/downloader/` | 🟡 部分覆盖（4 对 9） |
+| `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
 | `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 37，仅 `test_active_only_filter.py`） |
-| `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描 + PyInstaller 资源/Windows 品牌图标打包契约） |
-| `tests/desktop_companion/` | 4 | `app/desktop_companion/` | 桌面 profile、健康检查、启动器窗口链路与凭据保险库回归 |
+| `tests/architecture/` | 1 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **195** 个 test_*.py。
+> 合计：当前实测 **180** 个 test_*.py。
 
-> 注：`tests/api/`（64 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（63 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -129,7 +128,7 @@
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
-| `api-contracts.spec.ts` | API 契约一致性 |
+| `api-contracts.spec.ts` ✨2026-08-27 | API 契约一致性；回收站响应类型源码锁定（failed_list 项 reason/torrent_name?、success_list 项 torrent_name、请求字段 torrent_ids 不变式） |
 | `clipboard.spec.ts` ✨v1.0.6.36 | `utils/clipboard.ts`（剪贴板复制回退：Clipboard API / execCommand 降级） |
 | `column-resize-mixin.spec.ts` | 表格列宽调整 mixin 契约 |
 | `column-resize-regression.spec.ts` | 列宽调整回归 |
@@ -150,7 +149,7 @@
 | `mobile-notifications.spec.ts` ✨2026-08-27 | 移动通知中心：摘要剥离 Markdown 记号纯文本三行截断（共享 plainNotificationContent）、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
 | `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
 | `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用按来源分流（简单→/m/torrents，高级→/m/search）、系统模板只可应用不可删除 |
-| `mobile-recycle-bin.spec.ts` ✨2026-08-24 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除 |
+| `mobile-recycle-bin.spec.ts` ✨2026-08-27 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除、载荷必须传 info_id（≠torrent_id 契约锁）、守卫按 info_id、失败提示展示 reason 与兜底、按钮禁用态契约、源码契约锁定 |
 | `mobile-search.spec.ts` ✨2026-08-26 | 移动高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索同源）、简单搜索迁出负例锁死、高级模板回填执行/简单模板转种子页、下拉刷新重放 |
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
 | `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
