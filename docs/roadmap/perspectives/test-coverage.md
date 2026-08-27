@@ -180,7 +180,8 @@
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
 | `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
-| `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
+| `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
+| `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：滚轮/捕获阶段滚动收起全部错误 tooltip，销毁后解绑全局监听 |
 | `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种/同内容列表模式数据源守卫 |
 | `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留查询/分页/选择状态 |
 | `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归 |

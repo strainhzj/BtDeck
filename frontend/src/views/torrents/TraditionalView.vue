@@ -306,7 +306,7 @@
         <div
           ref="tableContainer"
           class="table-container"
-          v-loading="listLoading"
+          v-loading.fullscreen.lock="listLoading"
           @scroll="handleTableScroll"
         >
           <table
@@ -558,8 +558,10 @@
                 <td v-if="getColumnSetting('name').visible" class="col-name">
                   <div class="torrent-name-cell">
                     <el-tooltip
+                      ref="torrentErrorTooltips"
                       :disabled="!getTorrentErrorReason(torrent)"
                       :content="getTorrentErrorReason(torrent)"
+                      :enterable="false"
                       placement="top"
                     >
                       <span
@@ -908,6 +910,7 @@ import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
 import ColumnResizeMixin from './mixins/columnResize'
+import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
@@ -1005,7 +1008,12 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     AdvancedMultiSelect
   }
 })
-export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin) {
+export default class extends mixins(
+  TorrentBatchMixin,
+  SpeedPollingMixin,
+  ColumnResizeMixin,
+  TorrentErrorTooltipDismissMixin
+) {
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 

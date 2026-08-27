@@ -5014,6 +5014,30 @@
         "frontend/tests/unit/torrent-batch.spec.ts",
         "frontend/tests/unit/api-contracts.spec.ts"
       ]
+    },
+    {
+      "id": "torrent-list-tooltip-loading-2026-08-27",
+      "title": "种子列表错误提示滚动收起与查询全屏锁定蒙版",
+      "status": "completed",
+      "scope": "frontend",
+      "description": "修复列表视图与传统视图中错误原因 tooltip 在滚轮或列表/页面滚动后滞留的问题：共享 mixin 在 wheel 与捕获阶段 scroll 时主动隐藏全部错误提示，并关闭 tooltip 可进入性以确保鼠标移出即收起；同时将两视图查询 loading 改为 Element UI fullscreen + lock，蒙版覆盖完整视口且加载期间锁定页面滚动。",
+      "evidence": {
+        "tests": "前端全量 Jest 83 suites / 1160 tests passed；新增 tooltip 收起行为测试及双视图源码契约，相关 4 suites / 61 tests passed。",
+        "lint": "npm run typecheck、改动文件 ESLint、完整 npm run lint 均通过；advancedSearch.generated.ts 生成契约内容与 HEAD blob 完全一致，无语义差异。",
+        "build": "npm run build 通过（仅既有 Sass、CSS 顺序、资源体积及 Browserslist 警告）；E:/Git/bin/bash.exe -lc './init.sh --ci' 仓库级校验通过。",
+        "behavior": "错误种子提示框会在鼠标移出、滚轮操作以及列表或页面滚动时主动收起；种子查询期间蒙版覆盖完整视口并锁定页面滚动，直到请求 finally 解除 listLoading。"
+      },
+      "files": [
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/torrents/mixins/errorTooltipDismiss.ts",
+        "frontend/tests/unit/torrent-error-reason-ui.spec.ts",
+        "frontend/tests/unit/torrent-error-tooltip-dismiss.spec.ts",
+        "docs/roadmap/README.md",
+        "docs/roadmap/frontend/views/README.md",
+        "docs/roadmap/tests/README.md",
+        "docs/roadmap/perspectives/test-coverage.md"
+      ]
     }
   ]
 }

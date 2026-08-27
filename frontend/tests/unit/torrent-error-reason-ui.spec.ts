@@ -23,6 +23,10 @@ const batchSource = readFileSync(
   resolve(__dirname, '../../src/views/torrents/utils/torrentBatch.ts'),
   'utf8'
 )
+const tooltipDismissSource = readFileSync(
+  resolve(__dirname, '../../src/views/torrents/mixins/errorTooltipDismiss.ts'),
+  'utf8'
+)
 
 describe('种子错误原因展示契约', () => {
   it('API 类型同时兼容 camelCase 与 snake_case', () => {
@@ -41,6 +45,8 @@ describe('种子错误原因展示契约', () => {
   ])('%s 在名称悬浮展示错误原因并透传给 Tracker 详情卡', (_label, source) => {
     expect(source).toContain(':disabled="!getTorrentErrorReason(torrent)"')
     expect(source).toContain(':content="getTorrentErrorReason(torrent)"')
+    expect(source).toContain('ref="torrentErrorTooltips"')
+    expect(source).toContain(':enterable="false"')
     expect(source).toContain(':error-reason="getTorrentErrorReason(currentRow)"')
     // 回退链收敛到共享 helper，视图保留薄包装委托（防回归：不再各自复制实现）
     expect(source).toContain('return sharedErrorReason(torrent)')
@@ -53,6 +59,23 @@ describe('种子错误原因展示契约', () => {
     expect(batchSource).toContain('export function showTrackerErrorTag')
     expect(batchSource).toContain('torrent.status !== \'error\'')
     expect(batchSource).toContain('Tracker 宣告失败')
+  })
+
+  it.each([
+    ['列表视图', listSource],
+    ['传统视图', traditionalSource]
+  ])('%s 查询期间使用全屏蒙版并锁定页面滚动', (_label, source) => {
+    expect(source).toContain('v-loading.fullscreen.lock="listLoading"')
+    expect(source).toContain("import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'")
+    expect(source).toContain('TorrentErrorTooltipDismissMixin')
+  })
+
+  it('错误提示收起 mixin 同时监听滚轮与捕获阶段滚动，并在销毁时解绑', () => {
+    expect(tooltipDismissSource).toContain("window.addEventListener('scroll', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain("window.addEventListener('wheel', this.tooltipDismissListener")
+    expect(tooltipDismissSource).toContain("window.removeEventListener('scroll', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain("window.removeEventListener('wheel', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain('tooltip.hide()')
   })
 
   it.each([

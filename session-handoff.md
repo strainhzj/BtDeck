@@ -1,5 +1,19 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-27 交接：种子列表错误提示滚动收起与查询全屏蒙版
+
+### 当前结果
+
+- 列表视图与传统视图的错误原因 tooltip 已统一设置为不可进入，并通过共享 mixin 在 `wheel`、页面滚动或嵌套列表滚动时主动 `hide()`；销毁阶段会解除全局监听。
+- 两视图查询 loading 已改为 `v-loading.fullscreen.lock`：蒙版覆盖完整视口，加载期间锁定页面滚动，并由现有请求 `finally` 可靠解除。
+- 新增行为测试覆盖多提示框、非冒泡子容器滚动和销毁解绑；扩展双视图源码契约，`docs/roadmap/` 已同步。
+
+### 验证与后续
+
+- 前端全量 Jest **83 suites / 1160 tests passed**；`npm run typecheck`、完整 `npm run lint`、`npm run build` 及 Git Bash 根 `./init.sh --ci` 全部通过。
+- 构建仅有既有 Sass、CSS 顺序、资源体积及 Browserslist 警告；无本批新增错误。
+- Git 提交范围仅限本批修复；安装包重建记录及其产物、其他既有工作区状态不纳入本提交。可选人工复核：让错误原因提示出现后滚动列表/页面，确认提示立即收起；慢请求期间确认视口不可滚动到蒙版外。
+
 ## 2026-08-27：Tracker 域名筛选命中可视化（matched_domain 标记 + 高亮 + 观察日志）
 
 ### 本批结果

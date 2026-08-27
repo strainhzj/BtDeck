@@ -1,13 +1,13 @@
 # frontend/views — 页面视图
 
-> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（55 个），仅 3 处 Options API（技术债候选）。
+> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 76 个，含子组件/mixin）；views 分支仅 2 处 Options API，另 1 处技术债位于 `components/torrents/CompactTable.vue`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/views/README.md`，命中行即含模块入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 23 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区与 Tracker 完整详情弹框、状态语义；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss） |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss） |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（16 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
@@ -22,12 +22,12 @@
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
 
-## torrents/ 详情（最大模块，23 个文件）
+## torrents/ 详情（最大模块，24 个文件）
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，class L932，extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin)）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（`showTrackerErrorTag`，error 状态不重复打）、错误原因 tooltip 走共享回退链；✨2026-08-27 筛选命中可视化：`getList()` L1182 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`，响应后 `console.debug('[tracker-filter]')` 观察日志（共享 `countMatchedTrackerRows` 统计命中标记行）；Tracker 完整详情弹框 L668 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin)，L1007）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（col-status 加宽 90→145px、表 min-width 1435px），状态图标 title 同步提示；Tracker 主域名过滤 L271、快捷入口命令分发 L1884；✨2026-08-27 筛选命中可视化：`getList()` L1334 响应后输出 `[tracker-filter]` 观察日志（共享 `countMatchedTrackerRows`）；Tracker 完整详情弹框 L744 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式 |
+| `index.vue` | 种子管理主入口（列表模式，class L936，extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin, TorrentErrorTooltipDismissMixin)）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（`showTrackerErrorTag`，error 状态不重复打）、错误原因 tooltip 走共享回退链；✨2026-08-27 筛选命中可视化：`getList()` L1190 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`，响应后 `console.debug('[tracker-filter]')` 观察日志（共享 `countMatchedTrackerRows` 统计命中标记行）；✨2026-08-27 交互修复：L277 查询蒙版全屏锁滚动、L549 错误 tooltip 接入滚动收起 mixin；Tracker 完整详情弹框 L670 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin, TorrentErrorTooltipDismissMixin)，L1011）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（col-status 加宽 90→145px、表 min-width 1435px），状态图标 title 同步提示；Tracker 主域名过滤 L271、快捷入口命令分发 L1902；✨2026-08-27 筛选命中可视化：`getList()` L1342 响应后输出 `[tracker-filter]` 观察日志（共享 `countMatchedTrackerRows`）；✨2026-08-27 交互修复：L309 查询蒙版全屏锁滚动、L561 错误 tooltip 接入滚动收起 mixin；Tracker 完整详情弹框 L746 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式 |
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L704 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
@@ -44,6 +44,7 @@
 | `mixins/torrentBatch.ts` | 批量操作薄封装层；异步删除处理占用跳过统计、提交即刷新与无任务短路 |
 | `mixins/columnResize.ts` | 列宽拖拽 mixin（列表/传统两视图共用）：th 右缘手柄拖拽调宽、mouseup 一次性写入 localStorage（key 由子类覆写 `columnWidthStorageKey`，默认宽度覆写 `defaultColumnWidths`）；双击恢复单列默认、`resetColumnWidths` 供列设置菜单整体重置；拖拽中 body 加 `column-resizing` 全局光标，beforeDestroy 成对解绑 |
 | `mixins/speedPolling.ts` | 实时速度轮询 mixin：两视图重复的 1 秒链式轮询单点维护（`loadActiveSpeed` 由子类实现），暂停/销毁期间在途请求不再重启定时器，后台标签页停止轮询、恢复可见先补一次刷新 |
+| `mixins/errorTooltipDismiss.ts` | 错误原因 tooltip 收起 mixin（50 行）：window 捕获阶段监听 scroll/wheel，滚动时关闭两视图 `torrentErrorTooltips` 引用；beforeDestroy 成对解绑，避免全局监听残留 |
 | `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测）；✨2026-08-20 展示对齐判定新增共享 helper：`hasTrackerError` L482、`showTrackerErrorTag` L492（error 状态不打标）、`getTorrentErrorReason` L502（errorReason → tracker 消息 → 兜底回退链，两视图委托调用）；✨2026-08-27 新增 `countMatchedTrackerRows` L492（统计含 tracker 域名筛选命中标记的行数，供两视图 `[tracker-filter]` 观察日志） |
 | `utils/traditionalTorrentIdentity.ts` | 任务行标识（infoId + downloaderId + hash） |
 | `utils/traditionalStatusFilter.ts` | 传统视图状态筛选 |
@@ -123,4 +124,4 @@
 
 ## 第三层详情
 
-- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 3001 行主入口、`TraditionalView.vue` 2715 行）
+- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 3018 行主入口、`TraditionalView.vue` 2732 行）

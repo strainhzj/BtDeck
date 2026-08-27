@@ -1,5 +1,20 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-27：种子列表错误提示滚动收起与查询全屏蒙版
+
+### 已完成
+
+- 根因：两种桌面种子视图的错误原因 `el-tooltip` 仅依赖触发元素 hover 生命周期，滚轮及嵌套滚动容器滚动不会触发离开事件；查询 loading 又挂在局部容器上，蒙版随容器范围结束且未锁定页面滚动。
+- 实现：新增共享 `errorTooltipDismiss` mixin，在捕获阶段监听页面/列表 `scroll` 与 `wheel` 并调用 tooltip `hide()`，组件销毁时对称解绑；两视图 tooltip 设置 `enterable=false`。两视图查询蒙版统一改为 `v-loading.fullscreen.lock`，沿用现有 `try/finally` 的 `listLoading` 生命周期。
+- 测试与路线图：新增 mixin 行为测试（多 tooltip、非冒泡子容器滚动、销毁解绑），扩展双视图源码契约，并同步 `docs/roadmap/` 根索引、前端视图与测试覆盖记录。
+
+### 验证
+
+- 前端全量 Jest：**83 suites / 1160 tests passed**；相关 4 suites / 61 tests passed。
+- `npm run typecheck`、改动文件 ESLint、完整 `npm run lint`、`npm run build` 均通过；构建仅有既有 Sass/CSS 顺序/资源体积/Browserslist 警告。
+- `E:\\Git\\bin\\bash.exe -lc './init.sh --ci'` 仓库级校验通过；系统 WSL bash 的 `E_ACCESSDENIED` 以 Git Bash 规避。
+- Git 提交仅包含本批修复；安装包重建记录、未跟踪产物目录及生成契约的无语义行尾状态继续保留在工作区。
+
 ## 2026-08-26：伴侣模式用户名/密码记忆与会话恢复（v1.0.6-dual-mode-client.8）
 
 ### 已完成

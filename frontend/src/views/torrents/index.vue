@@ -274,7 +274,7 @@
     <!-- 种子列表表格 -->
     <section
       class="torrents-table-wrapper"
-      v-loading="listLoading"
+      v-loading.fullscreen.lock="listLoading"
       element-loading-text="加载中..."
       element-loading-spinner="el-icon-loading"
       element-loading-background="rgba(0, 0, 0, 0.2)"
@@ -546,8 +546,10 @@
                   />
                 </div>
                 <el-tooltip
+                  ref="torrentErrorTooltips"
                   :disabled="!getTorrentErrorReason(torrent)"
                   :content="getTorrentErrorReason(torrent)"
+                  :enterable="false"
                   placement="top"
                 >
                   <div
@@ -857,6 +859,7 @@ import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
 import ColumnResizeMixin from './mixins/columnResize'
+import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'
 import {
   getTorrentList,
   deleteTorrentsWithLevel,
@@ -930,7 +933,12 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
-export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin) {
+export default class extends mixins(
+  TorrentBatchMixin,
+  SpeedPollingMixin,
+  ColumnResizeMixin,
+  TorrentErrorTooltipDismissMixin
+) {
   // 视图模式管理
   private viewModeModule = ViewModeModule
 
