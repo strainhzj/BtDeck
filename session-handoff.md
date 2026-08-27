@@ -3328,3 +3328,24 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 浏览器桌面登录页与 390×844 移动登录页视觉复核通过；3 套相关 Jest 共 37 例通过。
 - typecheck、改动文件 ESLint、图标脚本 py_compile、生产 build、git diff --check、根 init.sh --ci 通过。
 - 全量 lint 仅失败于既有 advanced-search-contract 过期检查；并行任务的 Playwright E2E 工作区变动未纳入本批，其它未跟踪目录未触碰。
+
+## 2026-08-27 交接：移动/桌面通知列表摘要剥离 Markdown 记号
+
+### 已完成
+
+- 用户报告移动通知页未打开详情前预览仍显示 `##` 等渲染字符。根因：两端列表摘要均纯文本直出原始 content（上批 cb6890d 只对齐详情弹层渲染，摘要"纯文本+三行截断"设计遗留记号裸露）。
+- 方案经 AskUserQuestion 确认：剥离 Markdown 记号为纯文本摘要（不渲染 HTML）；范围移动+桌面一起修。
+- `utils/notification-markdown.ts` 新增 `plainNotificationContent`（块级记号逐行剥离、分隔线/空行丢弃、内联去 `**`/反引号；不做 HTML 转义，职责与 `renderNotificationContent` 分离）；`views/mobile/notifications.vue`（summaryText）与 `NotificationDrawer/NotificationItem.vue`（plainContent computed）双端同源接入，v-if 改剥离后判空。
+- 测试三层 51 例全绿（util 22→31；mobile 摘要契约反转+源码契约禁直塞；drawer-detail 7→10 新增 NotificationItem 摘要 describe）；roadmap（components-layout 通知项行 + test-coverage 三行）、progress.md、feature_list.json `v1.0.6-dual-mode-client.5` evidence 已同步。
+
+### 验证与后续
+
+- `tsc --noEmit` 零错误；改动 6 文件 ESLint 通过；根 `./init.sh`（ci 模式）通过；前端全量单测见 progress.md 复验记录。
+- Git 未提交（遵循仅用户要求时提交）；`.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 未跟踪目录保持不动。
+- 经验：块注释内书写 Markdown 记号示例时 `**/` 恰构成 `*/` 会提前终止注释，导致后续反引号被解析为模板字符串边界（整套件 TS2304）——块注释内避免 `**/` 序列。
+
+### 回归加固追加（2026-08-27 二）
+
+- 应用户要求三套件 51→62 例：util +6（语法严格性/语法集交叉契约/端到端快照/跨行内联合并/分隔线交错）、mobile +3（摘要与详情双层分离契约/空摘要不渲染块/纯函数不污染原始 content）、desktop +3（精确全文/空串路径/props 响应式重算）。
+- 变异验证四组全部精确拦截（回退双端摘要→各 5 红；删分隔线丢弃→三层 7 红；删粗体替换→8 红），备份-变异-恢复（源码未提交不可 checkout 还原）；锚点跨行尾会因 CRLF 匹配失败，行内锚点+唯一性断言可避开。
+- 还原后 62 例全绿，全量复验与文档同步见 progress.md；仍未提交。

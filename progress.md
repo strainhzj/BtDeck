@@ -5953,3 +5953,36 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **变异验证四组全部精确拦截**：①删 normalize 直传数组 → 2 红（join 契约 + 空数组剔除）；②归一化去浅拷贝直接 mutate → 1 红（不可变用例）；③torrents.vue 移除 tracker_domain 透传 → 2 红（四字段透传 + 源码契约）；④advanced 转发分支误触发 reload → 1 红（不误刷用例）；⑤search.vue simple 模板不转发 → 1 红；⑥query-templates 分流回退统一跳搜索页 → 1 红。还原后全绿。
 - 过程事故与处置：变异脚本 str.replace 全局替换误伤 torrents.ts 另外三处 `params: params`（enabled 参数/search-templates/backup list），导致套件编译失败；按 url 上下文精确还原并经 git diff 核对差异恰好只剩预期归一化函数后重做变异（改用唯一锚点断言 count==1），后续变异脚本均带唯一性断言。
 - 全量复验：**82 套件 1135 例全绿**（较上批 +14）；tsc 零错误；三 spec ESLint `--max-warnings 0` 通过；`npm run lint`、`npm run build` 通过；未执行 Git 提交。
+
+## 2026-08-27：移动通知列表预览裸露 Markdown 记号修复
+
+### 根因
+
+- 用户报告：移动端通知页面在未打开详情前，列表预览摘要仍显示 `##` 等渲染字符。
+- 定位：`views/mobile/notifications.vue` 列表摘要 `{{ n.content }}` 纯文本直出原始 Markdown（2026-08-26 cb6890d 批次只对齐了详情弹层渲染，摘要按"纯文本+三行截断"设计保留，记号裸露成为遗留缺口）；桌面 `NotificationDrawer/NotificationItem.vue` 摘要同病（`{{ notification.content }}`）。
+- 方案（AskUserQuestion 确认）：摘要剥离 Markdown 记号为纯文本（不渲染 HTML，保留三行截断与纯文本插值的安全面）；范围移动+桌面一起修，共享 util 单一实现。
+
+### 修复
+
+- `utils/notification-markdown.ts` 新增 `plainNotificationContent`：块级记号逐行剥离（`#`/`##`/`###` 标题前缀、`- ` 列表标记；空行与 `---` 分隔线整行丢弃），片段单空格合并后内联去 `**粗体**` 与 `` `行内代码` `` 记号；不做 HTML 转义（摘要走纯文本插值，转义由框架负责，与 renderNotificationContent 职责边界明确）。语法集合与渲染函数保持一致。
+- `views/mobile/notifications.vue`：新增 `summaryText(n)` 方法委托共享函数，摘要插值与 v-if 判空均用剥离后文本；样式注释同步。
+- `NotificationDrawer/NotificationItem.vue`：新增 `plainContent` computed 委托共享函数，摘要插值与 v-if 判空同改——两端列表摘要从此同源。
+
+### 验证
+
+- 测试三层 51 例全绿：util `notification-markdown.spec` 22→31 例（标题/列表剥离、分隔线与空行丢弃、内联记号覆盖全部片段、输出不含 HTML 转义职责、CRLF、未配对记号字面量、trim/缩进）；`mobile-notifications.spec` 摘要契约反转（原"记号原样可见"用例改为"记号剥离正文保留"）+ 源码契约禁 `{{ n.content }}` 直塞；`notification-drawer-detail.spec` 7→10 例，新增 NotificationItem describe（摘要剥离断言、剥离后空不渲染摘要块、源码契约禁模板直塞原始 content）。
+- `tsc --noEmit` 零错误；改动 6 文件 ESLint 通过；前端全量 **82 套件 1147 例全绿**（较上批 +12，恰为本批新增用例数）；`npm run lint`（含 contract:check/vuex-action 检查）通过（contract stale 为已知行尾假警报：generator 重写后与 HEAD 内容零差异，已恢复）；`npm run build` 生产构建通过；根 `./init.sh`（ci 模式）通过。
+- 过程踩坑：spec 块注释中书写 `（##/- **/`/---）` 时 `**/` 恰构成 `*/` 提前终止块注释，后续反引号被解析为模板字符串边界导致整个套件 TS2304——块注释内避免 `**/` 序列（已改中文顿号措辞）。
+- roadmap 同步：`docs/roadmap/frontend/components-layout/README.md` 通知项行补摘要纯文本化；`docs/roadmap/perspectives/test-coverage.md` 三行描述更新（notification-drawer-detail/notification-markdown ✨2026-08-27）。
+- feature_list.json `v1.0.6-dual-mode-client.5` evidence 已追加本批记录；未执行 Git 提交（遵循仅用户要求时提交）。
+
+### 回归测试加固（2026-08-27 通知摘要批次追加）
+
+- 按用户要求为"通知列表摘要剥离 Markdown 记号"修改补足回归保护，三套件 51→62 例：
+  - **util 层** `notification-markdown.spec` 31→37：新增语法严格性（`#`/`##`/`###`/`-` 后无空格不视为块级记号原样保留）、语法集交叉契约（renderNotificationContent 可识别的每种块级前缀在摘要中不残留记号字符，逐前缀精确值锁定）、完整版本更新通知端到端快照（摘要全文精确匹配）、跨行配对内联记号合并语义（行级剥离→单空格连接→内联替换，`**第一行\n第二行**`→`第一行 第二行`）、连续分隔线与空行交错全部丢弃且片段间恒单空格。
+  - **移动组件层** `mobile-notifications.spec` 12→15：新增摘要与详情双层分离契约（同一条通知摘要精确全文 `'v1.0.6 更新 新增：查询模板管理 优化 docker compose 部署 详情见 Release'` + 点击后详情完整 h3/strong/code 渲染，锁死两层各走各的共享函数）；剥离后无可见文本的通知（content 仅分隔线/空行）不渲染摘要块（v-if 判空路径）；summaryText 纯函数契约（不修改通知原始 content，详情渲染源不被摘要污染）。
+  - **桌面组件层** `notification-drawer-detail.spec` 10→13：新增摘要全文精确匹配、content 空串不渲染摘要块、notification prop 更新时摘要响应式重算（setProps 后 computed 依赖跟踪）。
+- **变异验证四组全部精确拦截**（备份-变异-恢复方式，本批源码未提交不可 git checkout 还原；变异脚本锚点带唯一性断言）：①移动 summaryText 回退 `return n.content` → 5 红；②桌面 plainContent 回退 `return this.notification.content` → 5 红；③util 删分隔线丢弃分支 → 三层 7 红（含两端空摘要块用例，跨层拦截实证）；④util 删粗体内联替换 → 8 红。还原后 62 例全绿。
+- 变异过程踩坑：锚点含行尾 `\n` 时因源文件 CRLF 行尾匹配失败（ANCHOR NOT UNIQUE 防线拦截），改用不含行尾的行内锚点重试——后续变异脚本锚点避免跨行尾。
+- 还原完整性复核：源码 3 文件 git status 与变异前一致；tsc 零错误；三 spec ESLint 通过。
+- 全量复验：**82 套件 1158 例全绿**（较加固前 +11）；feature_list.json evidence 与 session-handoff.md 已追加加固记录；roadmap test-coverage util 行补语法严格性要点。未执行 Git 提交。

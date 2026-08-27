@@ -146,7 +146,7 @@
 | `mobile-downloader.spec.ts` ✨2026-08-24 | 移动下载器监控页：卡片/在线徽标/测试连接 data.success 契约 |
 | `mobile-downloader-settings.spec.ts` ✨2026-08-24 | 移动下载器设置页：整页复用桌面 DownloaderSettingsDialog 的挂载与返回 |
 | `mobile-logs.spec.ts` ✨2026-08-24 | 移动审计日志：结果筛选值契约（success/failed/partial）与三态展示 |
-| `mobile-notifications.spec.ts` ✨2026-08-26 | 移动通知中心：摘要纯文本三行截断、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
+| `mobile-notifications.spec.ts` ✨2026-08-27 | 移动通知中心：摘要剥离 Markdown 记号纯文本三行截断（共享 plainNotificationContent）、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
 | `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
 | `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用按来源分流（简单→/m/torrents，高级→/m/search）、系统模板只可应用不可删除 |
 | `mobile-recycle-bin.spec.ts` ✨2026-08-24 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除 |
@@ -157,8 +157,8 @@
 | `mobile-torrents.spec.ts` ✨2026-08-26 | 移动种子页简单搜索（自搜索页迁入）：筛选面板四字段透传、重置/下拉刷新带条件重载、简单模板回填执行/高级模板转搜索页、空态区分 |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
-| `notification-drawer-detail.spec.ts` ✨2026-08-26 | 桌面通知详情：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
-| `notification-markdown.spec.ts` ✨2026-08-26 | `utils/notification-markdown.ts`：Markdown-lite 分块渲染（标题/列表/粗体/行内代码/分隔线/CRLF/转义防注入）与失败明细目标回退链，桌面/移动同源行为锁 |
+| `notification-drawer-detail.spec.ts` ✨2026-08-27 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
+| `notification-markdown.spec.ts` ✨2026-08-27 | `utils/notification-markdown.ts`：Markdown-lite 分块渲染（标题/列表/粗体/行内代码/分隔线/CRLF/转义防注入）、摘要纯文本化 plainNotificationContent（记号剥离/语法严格性/分隔线丢弃/跨行内联合并/不做 HTML 转义）与失败明细目标回退链，桌面/移动同源行为锁 |
 | `pwa-manifest.spec.ts` ✨2026-08-26 | 完整 `BtDeck` 字标、微型 mark 资源、favicon/PWA manifest 与图标生成源契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接、清理/隔离工作流，以及扁平/文件夹模式展开列切换、普通行展开保护、子表表头/数据/选择事件契约 |
