@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import request from '@/utils/request'
 import {
   deleteBatchAsync,
@@ -634,6 +636,49 @@ describe('API 请求契约', () => {
         () => manualCleanup(cleanupData),
         { url: '/recycle/cleanup', method: 'post', data: cleanupData }
       )
+    })
+  })
+
+  describe('回收站响应类型契约（api/recycle-bin.ts 源码锁定）', () => {
+    const readApiSource = (): string =>
+      fs.readFileSync(path.resolve(__dirname, '../../src/api/recycle-bin.ts'), 'utf-8')
+
+    // 截取单个 interface 声明块（至行首闭合大括号；嵌套 }> 不受影响）
+    const interfaceBlock = (source: string, typeName: string): string => {
+      const start = source.indexOf(`export interface ${typeName} `)
+      expect(start).toBeGreaterThanOrEqual(0)
+      return source.slice(start, source.indexOf('\n}', start))
+    }
+
+    it('RestoreResponse/CleanupResponse 的 failed_list 项声明 reason 与可选 torrent_name，禁止回退 error/name', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreResponse', 'CleanupResponse']) {
+        const block = interfaceBlock(source, typeName)
+        const failedBlock = block.slice(block.indexOf('failed_list'))
+        expect(failedBlock).toContain('torrent_name?: string')
+        expect(failedBlock).toContain('reason: string')
+        expect(failedBlock).not.toContain('error: string')
+        expect(failedBlock).not.toContain('name: string')
+      }
+    })
+
+    it('RestoreResponse/CleanupResponse 的 success_list 项声明必填 torrent_name', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreResponse', 'CleanupResponse']) {
+        const block = interfaceBlock(source, typeName)
+        const successBlock = block.slice(block.indexOf('success_list'), block.indexOf('failed_list'))
+        expect(successBlock).toContain('torrent_name: string')
+      }
+    })
+
+    it('RestoreRequest/CleanupRequest 字段名保持 torrent_ids（后端契约不变式）', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreRequest', 'CleanupRequest']) {
+        const block = interfaceBlock(source, typeName)
+        expect(block).toContain('torrent_ids: string[]')
+        expect(block).not.toContain('info_ids')
+        expect(block).not.toContain('record_ids')
+      }
     })
   })
 

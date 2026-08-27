@@ -40,7 +40,7 @@
           size="mini"
           type="danger"
           plain
-          :disabled="busyKey === item.info_id || !item.torrent_id"
+          :disabled="busyKey === item.info_id"
           @click="destroy(item)"
         >
           彻底删除
@@ -136,14 +136,14 @@ export default class MobileRecycleBin extends Mixins(PullToRefresh) {
   }
 
   private async restore(item: RecycleBinItem): Promise<void> {
-    if (!item.torrent_id) return
+    if (!item.info_id) return
     this.busyKey = item.info_id
     try {
-      const res = await restoreTorrents({ torrent_ids: [item.torrent_id] })
+      const res = await restoreTorrents({ torrent_ids: [item.info_id] })
       if (res.code === '200' && res.data) {
         const { success_count: ok, failed_count: fail } = res.data
         if (fail > 0) {
-          this.$message.warning(`恢复 ${ok} 条成功、${fail} 条失败`)
+          this.$message.warning(`恢复 ${ok} 条成功、${fail} 条失败：${res.data.failed_list?.[0]?.reason || '未知原因'}`)
         } else {
           this.$message.success(`已恢复「${item.name}」`)
         }
@@ -157,7 +157,7 @@ export default class MobileRecycleBin extends Mixins(PullToRefresh) {
   }
 
   private destroy(item: RecycleBinItem): void {
-    if (!item.torrent_id) return
+    if (!item.info_id) return
     this.$confirm(
       `彻底删除「${item.name}」？种子与文件将被永久删除，无法恢复。`,
       '彻底删除确认',
@@ -166,9 +166,9 @@ export default class MobileRecycleBin extends Mixins(PullToRefresh) {
       .then(async() => {
         this.busyKey = item.info_id
         try {
-          const res = await manualCleanup({ torrent_ids: [item.torrent_id as string] })
+          const res = await manualCleanup({ torrent_ids: [item.info_id] })
           if (res.code === '200' && res.data && res.data.failed_count > 0) {
-            this.$message.error(`删除失败：${res.data.failed_list?.[0]?.error || '未知原因'}`)
+            this.$message.error(`删除失败：${res.data.failed_list?.[0]?.reason || '未知原因'}`)
           } else {
             this.$message.success('已彻底删除')
           }
