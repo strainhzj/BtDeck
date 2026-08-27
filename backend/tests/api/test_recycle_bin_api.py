@@ -2,13 +2,14 @@
 """
 回收站列表查询 GET /api/v1/recycle/bin + POST /recycle/cleanup-preview 的 API 级回归测试
 
-覆盖范围（约 9 个测试）：
+覆盖范围（约 18 个测试）：
 - 认证拒绝 / 空数据
 - 软删除双过滤（deleted_at IS NOT NULL AND dr=0）—— 写错会把已彻底删除数据显示出来
 - search LIKE 搜索
 - 排序（deleted_at desc）
 - 分页（page/page_size / 超范围）
 - 清理预览聚合（时间窗口 deleted_at < cutoff + sum(size)）
+- 批量载荷契约（restore/cleanup 的 torrent_ids 必须是 info_id；失败项键是 reason 非 error）
 
 关键架构点（经探索确认）：
 - RecycleBinService 是同步的，内部 `from app.database import SessionLocal` 自建同步 session
@@ -32,11 +33,14 @@ from app.api.api import api_router
 from app.auth.dependencies import get_current_user
 from app.database import Base, get_async_db
 from app.downloader.models import BtDownloaders
+from app.services.audit_service import get_audit_service
 from app.torrents.models import TorrentInfo, TrackerInfo
 from tests.api.conftest import make_torrent
 
 URL_BIN = "/api/v1/recycle/bin"
 URL_PREVIEW = "/api/v1/recycle/cleanup-preview"
+URL_RESTORE = "/api/v1/recycle/restore"
+URL_CLEANUP = "/api/v1/recycle/cleanup"
 
 
 # ==================== Fixtures ====================
@@ -471,3 +475,136 @@ class TestAuxiliaryCountOnRestore:
         )
         assert len(active) == 3
         assert [row.auxiliary_seed_count for row in active] == [3, 3, 3]
+
+
+# ==================== 组7：批量载荷契约（必须是 info_id） ====================
+
+
+class TestBatchPayloadRequiresInfoId:
+    """restore / cleanup 的 torrent_ids 载荷按 TorrentInfo.info_id 查库。
+
+    移动端故障复盘：客户端误传 torrent_id（InfoHash 等）值时查不到行，
+    failed 项契约精确为 {"torrent_id": <收到的值>, "reason": "种子不存在"}
+    （无 error 键、无 torrent_name 混入）；success 项契约精确为
+    {"torrent_id": ..., "torrent_name": ...}；混合批量逐项独立判定，
+    failed 项回显收到的值。
+    """
+
+    @staticmethod
+    def _seed_two_id_row(db_session):
+        """造一行 info_id 与 torrent_id 取值不同的回收站种子，区分两种 ID。"""
+        make_torrent(
+            db_session,
+            info_id="i1",
+            torrent_id="t1",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="payload-contract",
+            deleted_at=datetime(2026, 8, 1, 12, 0, 0),
+        )
+
+    @staticmethod
+    def _post_cleanup(client, torrent_ids):
+        """POST cleanup 并屏蔽审计依赖（返回 TestClient 响应）。
+
+        审计依赖坑：cleanup 成功路径会 await audit_service.log_operation(...)，
+        真实 AuditLogService 在测试注入的同步 Session 上 await commit() 抛 TypeError，
+        被服务层外层 except 捕获计入 failed_list（假失败「清理异常」）。
+        因此 override get_audit_service 返回 None（服务层支持 None 时跳过审计），
+        请求结束后移除 override（client fixture teardown 也会兜底 clear）。
+        """
+        client.app.dependency_overrides[get_audit_service] = lambda: None
+        try:
+            return client.post(URL_CLEANUP, json={"torrent_ids": torrent_ids})
+        finally:
+            client.app.dependency_overrides.pop(get_audit_service, None)
+
+    def test_restore_rejects_torrent_id_value_with_reason(self, client, db_session):
+        """restore 传 torrent_id 值 → failed（reason="种子不存在"，键集精确相等）。
+
+        键集断言为精确相等（而非仅"不含 error"）：锁无多余键、无缺失键、
+        无 torrent_name 混入。
+
+        info_id 成功路径不在此重复：TestAuxiliaryCountOnRestore.test_restore_sets_all_active_group_rows_to_new_count
+        已覆盖（service 级传 rows[2].info_id 断言 success_count == 1）。
+        """
+        self._seed_two_id_row(db_session)
+
+        r = client.post(URL_RESTORE, json={"torrent_ids": ["t1"]})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["status"] == "success"
+        data = body["data"]
+        assert data["success_count"] == 0
+        assert data["failed_count"] == 1
+        failed = data["failed_list"][0]
+        assert failed["torrent_id"] == "t1"
+        assert failed["reason"] == "种子不存在"
+        assert set(failed.keys()) == {"torrent_id", "reason"}
+
+    def test_cleanup_rejects_torrent_id_value_and_accepts_info_id(self, client, db_session):
+        """cleanup 传 torrent_id 值 → failed（键集精确相等）；传 info_id 值 → success。"""
+        self._seed_two_id_row(db_session)
+
+        # 错误值：torrent_id → 按 info_id 查不到 → failed + reason
+        r = self._post_cleanup(client, ["t1"])
+        assert r.status_code == 200
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["status"] == "success"
+        data = body["data"]
+        assert data["success_count"] == 0
+        assert data["failed_count"] == 1
+        failed = data["failed_list"][0]
+        assert failed["torrent_id"] == "t1"
+        assert failed["reason"] == "种子不存在"
+        assert set(failed.keys()) == {"torrent_id", "reason"}
+
+        # 正确值：info_id → 清理成功（服务层置 dr=1）
+        r_ok = self._post_cleanup(client, ["i1"])
+        body_ok = r_ok.json()
+        assert body_ok["code"] == "200"
+        assert body_ok["data"]["success_count"] == 1
+        assert body_ok["data"]["failed_count"] == 0
+
+    def test_cleanup_success_item_contract_has_torrent_name(self, client, db_session):
+        """cleanup 成功项契约：精确 {"torrent_id": info_id 值, "torrent_name": 种子名}。
+
+        前端类型 torrent_name: string 的后端侧锁：success_list 长度、键集精确
+        （无 reason 混入）、torrent_id 回显收到的 info_id、torrent_name 为造行时的 name。
+        """
+        self._seed_two_id_row(db_session)
+
+        r = self._post_cleanup(client, ["i1"])
+        body = r.json()
+        assert body["code"] == "200"
+        data = body["data"]
+        assert data["success_count"] == 1
+        assert data["failed_count"] == 0
+        success_list = data["success_list"]
+        assert len(success_list) == 1
+        assert set(success_list[0].keys()) == {"torrent_id", "torrent_name"}
+        assert success_list[0]["torrent_id"] == "i1"
+        assert success_list[0]["torrent_name"] == "payload-contract"
+
+    def test_cleanup_mixed_batch_judges_each_id_independently(self, client, db_session):
+        """混合批量 [info_id 值, torrent_id 值]：逐项独立判定，互不中断整体。
+
+        "i1" → success；"t1" → failed 且 failed 项回显收到的原始值（torrent_id == "t1"），
+        reason=种子不存在、键集精确相等。
+        """
+        self._seed_two_id_row(db_session)
+
+        r = self._post_cleanup(client, ["i1", "t1"])
+        body = r.json()
+        assert body["code"] == "200"
+        data = body["data"]
+        assert data["success_count"] == 1
+        assert data["failed_count"] == 1
+        failed = data["failed_list"][0]
+        assert failed["torrent_id"] == "t1", "failed 项应回显收到的 torrent_id 值"
+        assert failed["reason"] == "种子不存在"
+        assert set(failed.keys()) == {"torrent_id", "reason"}
+        assert data["success_list"][0]["torrent_id"] == "i1"
