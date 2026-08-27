@@ -13,7 +13,7 @@
         <el-tag v-if="!n.is_read" size="mini" type="danger">未读</el-tag>
         <span class="m-notice-title-text">{{ n.title }}</span>
       </div>
-      <div v-if="n.content" class="m-notice-content">{{ n.content }}</div>
+      <div v-if="summaryText(n)" class="m-notice-content">{{ summaryText(n) }}</div>
       <div class="m-notice-time">{{ formatTime(n.created_at) }}</div>
     </div>
     <el-button class="m-refresh" size="small" :loading="loading" @click="load">刷新</el-button>
@@ -65,7 +65,7 @@
 import { Component, Mixins } from 'vue-property-decorator'
 import { getNotificationList, markAsRead, NotificationFailureItem, NotificationItem } from '@/api/notification'
 import { extractErrorMessage } from '@/utils/formatters'
-import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
+import { notificationFailureTarget, plainNotificationContent, renderNotificationContent } from '@/utils/notification-markdown'
 import { NotificationModule } from '@/store/modules/notification'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
@@ -127,6 +127,11 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   private formatTime(value: string): string {
     if (!value) return ''
     return value.replace('T', ' ').slice(0, 16)
+  }
+
+  // 列表摘要走共享纯文本化（与桌面列表同源）：剥离 Markdown 记号，未打开详情前不裸露 ## 等字符
+  private summaryText(n: NotificationItem): string {
+    return plainNotificationContent(n.content)
   }
 
   // --- 详情弹层（渲染逻辑与桌面 NotificationDrawer 共用 utils/notification-markdown） ---
@@ -197,7 +202,7 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   color: #303133;
 }
 
-/* 与桌面通知列表一致：摘要纯文本 + 三行截断，完整渲染进详情 */
+/* 与桌面通知列表一致：摘要为剥离 Markdown 记号的纯文本 + 三行截断，完整渲染进详情 */
 .m-notice-content {
   margin-top: 4px;
   font-size: 13px;

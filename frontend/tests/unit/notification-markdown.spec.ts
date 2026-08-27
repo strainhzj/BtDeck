@@ -5,7 +5,7 @@
  * 由桌面 NotificationDrawer 详情与移动通知详情共用，本测试锁定两端一致的行为：
  * 结构分块正确、输入先转义防注入、内联格式在结构化输出上替换。
  */
-import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
+import { notificationFailureTarget, plainNotificationContent, renderNotificationContent } from '@/utils/notification-markdown'
 
 const countOf = (source: string, re: RegExp): number => (source.match(re) || []).length
 
@@ -104,6 +104,97 @@ describe('renderNotificationContent', () => {
   it('连续分隔线渲染为两个 hr', () => {
     const html = renderNotificationContent('---\n---')
     expect(countOf(html, /<hr \/>/g)).toBe(2)
+  })
+})
+
+describe('plainNotificationContent', () => {
+  it('空内容返回空串', () => {
+    expect(plainNotificationContent('')).toBe('')
+  })
+
+  it('一至三级标题剥离 # 记号保留文本，多行片段以单空格相连', () => {
+    expect(plainNotificationContent('# 大标题\n## 中标题\n### 小标题')).toBe('大标题 中标题 小标题')
+  })
+
+  it('分隔线与空行不产出片段', () => {
+    expect(plainNotificationContent('上\n---\n\n下')).toBe('上 下')
+    expect(plainNotificationContent('---\n---')).toBe('')
+  })
+
+  it('列表标记剥离，条目文本保留', () => {
+    expect(plainNotificationContent('- 甲\n- 乙')).toBe('甲 乙')
+  })
+
+  it('粗体与行内代码去记号，覆盖标题/列表/段落全部片段', () => {
+    const text = plainNotificationContent('## **重要** 更新\n- 使用 `docker compose` 部署\n详情见 **Release**')
+    expect(text).not.toContain('**')
+    expect(text).not.toContain('`')
+    expect(text).toContain('重要 更新')
+    expect(text).toContain('使用 docker compose 部署')
+    expect(text).toContain('详情见 Release')
+  })
+
+  it('不做 HTML 转义（摘要走纯文本插值，转义由框架负责），尖括号内容原样保留', () => {
+    const text = plainNotificationContent('<script>alert(1)</script> ## 标题')
+    expect(text).toContain('<script>alert(1)</script>')
+    expect(text).toContain('标题')
+  })
+
+  it('CRLF 行尾兼容：\\r 去除不残留', () => {
+    expect(plainNotificationContent('段落\r\n## 标题\r\n')).not.toContain('\r')
+  })
+
+  it('未配对的 ** 与 ` 保持字面量', () => {
+    expect(plainNotificationContent('a ** b 与 c ` d')).toBe('a ** b 与 c ` d')
+  })
+
+  it('首尾空白被 trim，缩进行先去前导空白', () => {
+    expect(plainNotificationContent('  ## 标题  \n   段落  ')).toBe('标题 段落')
+  })
+
+  it('语法严格性与渲染函数一致：#/##/###/- 后无空格不视为块级记号，原样保留', () => {
+    expect(plainNotificationContent('#标题')).toBe('#标题')
+    expect(plainNotificationContent('##标题')).toBe('##标题')
+    expect(plainNotificationContent('###标题')).toBe('###标题')
+    expect(plainNotificationContent('-甲')).toBe('-甲')
+  })
+
+  it('语法集交叉契约：renderNotificationContent 可识别的每种块级前缀，摘要中不残留记号字符', () => {
+    const cases: Array<[string, string]> = [
+      ['# 标题', '标题'],
+      ['## 标题', '标题'],
+      ['### 标题', '标题'],
+      ['- 条目', '条目'],
+      ['---', ''],
+      ['普通段落', '普通段落'],
+      ['', '']
+    ]
+    for (const [input, expected] of cases) {
+      expect(plainNotificationContent(input)).toBe(expected)
+    }
+  })
+
+  it('完整版本更新通知端到端快照：摘要全文精确匹配', () => {
+    const content = [
+      '## v1.0.7 更新',
+      '',
+      '- **新增**：查询模板管理',
+      '- 修复：列表多选参数序列化',
+      '',
+      '---',
+      '',
+      '详情见 `Release` 页面'
+    ].join('\n')
+    expect(plainNotificationContent(content)).toBe('v1.0.7 更新 新增：查询模板管理 修复：列表多选参数序列化 详情见 Release 页面')
+  })
+
+  it('跨行配对的内联记号在片段合并后同样去除（行级剥离→单空格连接→内联替换语义）', () => {
+    expect(plainNotificationContent('**第一行\n第二行**')).toBe('第一行 第二行')
+    expect(plainNotificationContent('代码 `foo\nbar` 结束')).toBe('代码 foo bar 结束')
+  })
+
+  it('连续分隔线与空行交错全部丢弃，片段间恒单空格不叠加', () => {
+    expect(plainNotificationContent('上\n---\n\n---\n\n\n下')).toBe('上 下')
   })
 })
 

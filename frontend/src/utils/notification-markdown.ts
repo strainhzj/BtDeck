@@ -67,6 +67,32 @@ export function renderNotificationContent(content: string): string {
     .replace(/`(.*?)`/g, '<code>$1</code>')
 }
 
+/**
+ * 通知列表摘要纯文本化：剥离 Markdown-lite 语法记号（标题 #/##/###、分隔线 ---、
+ * 列表 -、粗体 **、行内代码 `），供桌面/移动列表摘要纯文本插值共用，
+ * 避免未打开详情前裸露渲染字符；完整渲染仍走 renderNotificationContent。
+ * 语法集合与其保持一致，块级记号逐行剥离，内联记号在合并后替换。
+ */
+export function plainNotificationContent(content: string): string {
+  if (!content) return ''
+  const lines: string[] = []
+  for (const raw of content.split('\n')) {
+    const trimmed = raw.trim()
+    // 空行与分隔线不产出摘要片段
+    if (trimmed === '' || trimmed === '---') continue
+    if (trimmed.startsWith('### ')) lines.push(trimmed.slice(4))
+    else if (trimmed.startsWith('## ')) lines.push(trimmed.slice(3))
+    else if (trimmed.startsWith('# ')) lines.push(trimmed.slice(2))
+    else if (trimmed.startsWith('- ')) lines.push(trimmed.slice(2))
+    else lines.push(trimmed)
+  }
+  return lines
+    .join(' ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .trim()
+}
+
 /** 失败明细展示目标名：按文件名/路径字段依次回退，缺省显示记录 id */
 export function notificationFailureTarget(item: NotificationFailureItem): string {
   return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')

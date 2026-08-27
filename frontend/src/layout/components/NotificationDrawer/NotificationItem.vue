@@ -11,8 +11,8 @@
         <span class="notification-title">{{ notification.title }}</span>
         <span class="notification-time">{{ formattedTime }}</span>
       </div>
-      <div v-if="notification.content" class="notification-body">
-        {{ notification.content }}
+      <div v-if="plainContent" class="notification-body">
+        {{ plainContent }}
       </div>
     </div>
 
@@ -40,10 +40,16 @@
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import { NotificationItem } from '@/api/notification'
+import { plainNotificationContent } from '@/utils/notification-markdown'
 
 @Component({ name: 'NotificationItem' })
 export default class extends Vue {
   @Prop({ required: true }) private notification!: NotificationItem
+
+  // 列表摘要走共享纯文本化（与移动列表同源）：剥离 Markdown 记号，未打开详情前不裸露 ## 等字符
+  get plainContent(): string {
+    return plainNotificationContent(this.notification.content)
+  }
 
   get iconName(): string {
     const map: Record<string, string> = {

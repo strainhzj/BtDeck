@@ -1,10 +1,12 @@
 /**
- * 移动通知中心契约（2026-08-26 内容渲染对齐桌面）：
- * - 列表摘要纯文本三行截断，点击卡片打开详情弹层；
+ * 移动通知中心契约（2026-08-26 内容渲染对齐桌面；2026-08-27 摘要纯文本化）：
+ * - 列表摘要经 utils/notification-markdown plainNotificationContent 剥离 Markdown
+ *   记号（标题、列表、粗体、行内代码、分隔线）后纯文本三行截断，未打开详情前
+ *   不裸露渲染字符；
  * - 详情内容经 utils/notification-markdown 与桌面同源渲染（标题/列表/粗体/行内代码），
  *   含失败明细与 Release 外链（本页此前 {{ content }} 裸文本裸露 Markdown 记号的直接锁死）；
  * - 查看未读即标记已读并联动布局壳角标（FetchUnreadCount）；
- * - 源码契约：必须复用共享渲染函数，禁止回退裸文本直渲/复制私有实现。
+ * - 源码契约：必须复用共享渲染/纯文本化函数，禁止回退裸文本直渲/复制私有实现。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -118,13 +120,61 @@ describe('views/mobile/MobileNotifications', () => {
     expect(wrapper.text()).toContain('2026-08-26 10:30')
   })
 
-  it('列表摘要为纯文本：Markdown 记号原样可见但不渲染 HTML（渲染只发生在详情弹层）', async() => {
+  it('列表摘要剥离 Markdown 记号：纯文本可见且不渲染 HTML（渲染只发生在详情弹层）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const summary = wrapper.find('.m-notice-content')
-    expect(summary.text()).toContain('## v1.0.6 更新')
+    // 记号 ##/- **/`/--- 已剥离，正文文本保留
+    expect(summary.text()).toContain('v1.0.6 更新')
+    expect(summary.text()).toContain('新增：查询模板管理')
+    expect(summary.text()).toContain('优化 docker compose 部署')
+    expect(summary.text()).toContain('详情见 Release')
+    expect(summary.text()).not.toContain('##')
+    expect(summary.text()).not.toContain('**')
+    expect(summary.text()).not.toContain('`')
+    // 摘要保持纯文本插值，不产生 HTML 节点
     expect(summary.element.innerHTML).not.toContain('<h3>')
     expect(summary.element.innerHTML).not.toContain('<strong>')
+    expect(summary.element.innerHTML).not.toContain('<code>')
+  })
+
+  it('摘要与详情双层分离契约：同一条通知摘要剥离记号（精确全文）、详情完整 Markdown 渲染', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    // 列表层：摘要精确全文（锁死行级剥离 + 单空格连接 + 内联去记号的整体行为）
+    const summary = wrapper.find('.m-notice-content')
+    expect(summary.text()).toBe('v1.0.6 更新 新增：查询模板管理 优化 docker compose 部署 详情见 Release')
+    // 详情层：同一通知点击后走 renderNotificationContent 完整渲染
+    await wrapper.findAll('.m-notice').at(0).trigger('click')
+    await flushLifecycle()
+    const html = wrapper.find('.m-detail-content').element.innerHTML
+    expect(html).toContain('<h3>v1.0.6 更新</h3>')
+    expect(html).toContain('<strong>新增</strong>')
+    expect(html).toContain('<code>docker compose</code>')
+    wrapper.destroy()
+  })
+
+  it('剥离后无可见文本的通知（content 仅分隔线/空行）不渲染摘要块', async() => {
+    jest.mocked(getNotificationList).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 1, page: 1, pageSize: 50, list: [makeItem({ id: 99, title: '空摘要通知', content: '---\n \n---' })] }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect(wrapper.findAll('.m-notice').length).toBe(1)
+    expect(wrapper.find('.m-notice-content').exists()).toBe(false)
+    wrapper.destroy()
+  })
+
+  it('summaryText 为纯函数：不修改通知原始 content（详情渲染源不被摘要污染）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as { list: NotificationItem[], summaryText(n: NotificationItem): string }
+    const original = vm.list[0].content
+    const summary = vm.summaryText(vm.list[0])
+    expect(summary).not.toContain('##')
+    expect(vm.list[0].content).toBe(original)
+    wrapper.destroy()
   })
 
   it('点击未读卡片：打开详情 + 标记已读 + 联动布局壳角标（FetchUnreadCount）', async() => {
@@ -262,11 +312,14 @@ describe('views/mobile/MobileNotifications', () => {
     expect(getNotificationList).toHaveBeenCalledTimes(3)
   })
 
-  it('源码契约：必须复用共享渲染函数渲染详情，禁止裸文本直渲与私有实现复制', () => {
+  it('源码契约：必须复用共享渲染/纯文本化函数，禁止裸文本直渲与私有实现复制', () => {
     const source = readSource()
     // 同源渲染：详情内容必须经 utils/notification-markdown 渲染
     expect(source).toContain("from '@/utils/notification-markdown'")
     expect(source).toContain('renderNotificationContent(')
+    // 同源摘要：列表必须走共享纯文本化，禁止模板直塞原始 content
+    expect(source).toContain('plainNotificationContent(')
+    expect(source).not.toContain('{{ n.content }}')
     // 禁止回退：v-html 直塞原始 content、或模板内联大段转换
     expect(source).not.toContain('v-html="detail.content"')
     expect(source).not.toContain('v-html="n.content"')

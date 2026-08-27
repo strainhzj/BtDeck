@@ -1,7 +1,10 @@
 /**
- * 桌面 NotificationDrawer 详情契约（2026-08-26 渲染逻辑抽共享后回归锁）：
+ * 桌面 NotificationDrawer 渲染契约（2026-08-26 渲染逻辑抽共享后回归锁；
+ * 2026-08-27 列表摘要纳入同源纯文本化）：
  * - detailHtml 必须委托 utils/notification-markdown（与移动端同源），禁止内联
  *   Markdown 转换回归（本组件曾是渲染逻辑唯一持有者，抽取属行为零变化重构）；
+ * - 列表 NotificationItem 摘要走共享 plainNotificationContent 剥离 Markdown 记号，
+ *   未打开详情前不裸露 ## 等渲染字符（与移动列表同源）；
  * - handleView 打开详情：未读自动标记已读、已读不重复调用；失败明细目标回退链
  *   与 Release 外链同移动端。
  */
@@ -10,6 +13,7 @@ import { shallowMount, Wrapper } from '@vue/test-utils'
 import fs from 'fs'
 import path from 'path'
 import NotificationDrawer from '@/layout/components/NotificationDrawer/index.vue'
+import NotificationItemComp from '@/layout/components/NotificationDrawer/NotificationItem.vue'
 import { NotificationItem } from '@/api/notification'
 import { NotificationModule } from '@/store/modules/notification'
 
@@ -180,5 +184,62 @@ describe('layout/components/NotificationDrawer 详情渲染', () => {
     jest.advanceTimersByTime(120000)
     expect(NotificationModule.FetchUnreadCount).toHaveBeenCalledTimes(3)
     jest.useRealTimers()
+  })
+})
+
+describe('NotificationItem 列表摘要纯文本化', () => {
+  const mountItem = (notification: NotificationItem): Wrapper<Vue> =>
+    shallowMount(NotificationItemComp, { propsData: { notification } })
+
+  it('摘要剥离 Markdown 记号：正文保留、##/**/` 不裸露、无 HTML 节点', () => {
+    const wrapper = mountItem(makeItem({ id: 31 }))
+    const body = wrapper.find('.notification-body')
+    expect(body.exists()).toBe(true)
+    expect(body.text()).toContain('新特性')
+    expect(body.text()).toContain('查询模板：支持保存')
+    expect(body.text()).toContain('使用 docker compose 部署')
+    expect(body.text()).not.toContain('##')
+    expect(body.text()).not.toContain('**')
+    expect(body.text()).not.toContain('`')
+    expect(body.element.innerHTML).not.toContain('<h3>')
+    expect(body.element.innerHTML).not.toContain('<strong>')
+    expect(body.element.innerHTML).not.toContain('<code>')
+    wrapper.destroy()
+  })
+
+  it('剥离后无可见文本（如 content 仅分隔线）时不渲染摘要块', () => {
+    const wrapper = mountItem(makeItem({ id: 32, content: '---\n\n---' }))
+    expect(wrapper.find('.notification-body').exists()).toBe(false)
+    wrapper.destroy()
+  })
+
+  it('摘要全文精确匹配（行级剥离 + 单空格连接 + 内联去记号整体行为锁死）', () => {
+    const wrapper = mountItem(makeItem({ id: 33 }))
+    expect(wrapper.find('.notification-body').text()).toBe('新特性 查询模板：支持保存 使用 docker compose 部署')
+    wrapper.destroy()
+  })
+
+  it('content 为空串时不渲染摘要块', () => {
+    const wrapper = mountItem(makeItem({ id: 34, content: '' }))
+    expect(wrapper.find('.notification-body').exists()).toBe(false)
+    wrapper.destroy()
+  })
+
+  it('notification prop 更新时摘要响应式重算', async() => {
+    const wrapper = mountItem(makeItem({ id: 35, content: '## 第一版' }))
+    expect(wrapper.find('.notification-body').text()).toBe('第一版')
+    await wrapper.setProps({ notification: makeItem({ id: 35, content: '- **第二条** 通知' }) })
+    expect(wrapper.find('.notification-body').text()).toBe('第二条 通知')
+    wrapper.destroy()
+  })
+
+  it('源码契约：摘要必须委托共享 plainNotificationContent，禁止模板直塞原始 content', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../src/layout/components/NotificationDrawer/NotificationItem.vue'),
+      'utf-8'
+    )
+    expect(source).toContain("from '@/utils/notification-markdown'")
+    expect(source).toContain('plainNotificationContent(this.notification.content)')
+    expect(source).not.toContain('{{ notification.content }}')
   })
 })
