@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.5",
   "release_note": "产品发布号与内部里程碑编号相互独立：发布 v1.0.5（见 backend/app/version.py）打包里程碑 v1.0.5（查询模板）、v1.0.6（孤儿文件管理）、v1.0.9（一键部署）及 2026-06~08 全部修复与安全加固。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-26",
+  "last_updated": "2026-08-27",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4987,6 +4987,32 @@
         "btdeck-wiki/docs/.vitepress/theme/custom.css",
         "btdeck-wiki/docs/index.md",
         "btdeck-wiki/.gitlab-ci.yml"
+      ]
+    },
+    {
+      "id": "tracker-domain-filter-visibility-2026-08-27",
+      "title": "Tracker 域名筛选命中可视化：matched_domain 标记 + 高亮 + 观察日志",
+      "status": "completed",
+      "description": "种子列表 tracker_domain 筛选为 EXISTS/ANY 语义（种子任一 tracker 命中所选域名即整行返回），但返回行携带全部 tracker 且无命中标记，辅种场景一籽挂多站 tracker 叠加造成「搜出与所选域名不同」的观感（双独立子代理静态+内存库动态复现双重验证，SQL 锚定无误匹配）。本任务保留 ANY 语义，在 TrackerInfoVO 上返回 matched_domain 命中标记（Python 谓词与 SQL 8 条件同口径），Tracker 详情行高亮+「命中筛选」标签；同批修复三项次要问题：tracker_like 关键字空结果静默返回全部（改返回空）、查询模板保存端丢失 tracker_domain（类型+QueryTemplateDialog simple 表单域名多选+saveSimpleQueryAsTemplate 透传）、like 未转义 _/% 通配（escape 字面量化，语义收紧）。观察日志：后端 4 条 debug 锚点（[tracker-domain-filter] 归一输入/命中汇总、[tracker-filter] 关键字命中行数、[torrent-list] total/页）+ 前端两视图 [tracker-filter] console.debug 汇总，LOG_LEVEL=DEBUG 开启验证。",
+      "evidence": {
+        "tests": "后端定向 tests/api/test_torrent_list_api.py 40 passed（新增 4：ANY 语义+matched 标记 / 多选各自标记 / 未筛选不标记 / 下划线字面量转义；改写 1：tracker_like 空结果由「返回全部」改为「返回空」）；关联面 test_duplicate_torrents_api + test_advanced_search_pagination 50 passed；后端全量 pytest 4052 passed / 7 skipped。前端定向：tracker-detail-card +1（命中行高亮+标签+snake/camel 双读）、torrent-batch +2（countMatchedTrackerRows 统计/空安全）、api-contracts +1（saveSimpleQueryAsTemplate 透传 tracker_domain、缺省空数组）；前端全量 82 suites / 1155 passed。",
+        "lint": "black 改动文件格式化后通过（app/ 另有存量未格式化 tracker_sync_task.py，非本次引入未动）；flake8 改动文件通过；mypy torrent_helpers.py + trackerVO.py 0 issues；npm run typecheck 零错误；npm run lint（契约检查+ESLint+vuex 门）通过。",
+        "behavior": "行为变化：①Tracker 详情列表中命中当前 tracker 域名筛选的行浅主色高亮并显示「命中筛选」标签（未筛选/未命中不打标）；②tracker_like（API 参数，UI 未暴露）无匹配时返回空列表而不再静默返回全部；③like 匹配中 _/% 按字面量（语义收紧）；④查询模板 simple 类型新建/编辑支持 Tracker 域名多选并随 conditions 持久化，应用模板后 tracker 筛选不再丢失；⑤LOG_LEVEL=DEBUG 时后端输出 [tracker-domain-filter]/[tracker-filter]/[torrent-list] 观察日志，前端 devtools console 输出 [tracker-filter] 汇总。"
+      },
+      "files": [
+        "backend/app/torrents/trackerVO.py",
+        "backend/app/api/endpoints/torrent_helpers.py",
+        "backend/tests/api/test_torrent_list_api.py",
+        "frontend/src/api/torrents.ts",
+        "frontend/src/views/torrents/components/TrackerDetailCard.vue",
+        "frontend/src/styles/_tracker-table.scss",
+        "frontend/src/views/query-templates/components/QueryTemplateDialog.vue",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/tests/unit/tracker-detail-card.spec.ts",
+        "frontend/tests/unit/torrent-batch.spec.ts",
+        "frontend/tests/unit/api-contracts.spec.ts"
       ]
     }
   ]

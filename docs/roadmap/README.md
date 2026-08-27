@@ -133,6 +133,7 @@ BtDeck/
 | 2026-08-26 增量 | 前端 Logo 按效果图收口：完整横版改为绿色 D 形轨道、三条深色甲板线与 `Bt` 绿/`Deck` 深色字标，移除实验编号/中文说明；移动头部及 PWA/Apple/Android/favicons 全部使用绿色底反白 `micro` 光学版，生成脚本同步输出横版 PNG |
 | 2026-08-26 增量 | 伴侣凭据记忆：Android `CredentialVault`（Keystore AES-GCM）与桌面 `desktop_companion/credentials.py`（Windows DPAPI），profile 增加 username；WebView/pywebview 切换时先隔离旧 cookie，再用一次性同源登录恢复 access/refresh token；新增 Android/桌面回归覆盖。 |
 | 2026-08-27 增量 | 移动端三项调整：①移动查询模板页 `/m/query-templates` 裁撤（仅保留高级搜索，深链 redirect 至 `/m/search`，`m2-template-cache.ts` 与种子页/搜索页模板回填链路移除）；②高级搜索条件组移动适配：`AdvancedSearchBuilder.vue` 内联定宽全部类化 + 768px 断点强化（选择器铺满/组头换行/AND/OR 标签避让/对话框窄屏压宽），`ConditionValueInput.vue` 日期范围窄屏弹性对分；③新增 `/m/settings` 移动设置页（整页复用桌面设置组件），守卫强制改密落点/放行白名单按 UI 模式分流（移动落 `/m/settings`），`toMobilePath('/settings')` 映射补齐；entry 分支路由表与守卫行号全量重测 |
+| 2026-08-27 增量（第二批） | Tracker 域名筛选命中可视化：`torrent_helpers.py` 保留 EXISTS/ANY 语义，入口统一归一域名后 SQL（like `escape` 字面量化）与 Python 谓词 `tracker_row_matches_domains` 同口径过滤，VO `tracker_info[].matched_domain` 标记命中行；`tracker_like` 空结果改返回空列表；前端 TrackerDetailCard 命中行高亮+「命中筛选」标签（`_tracker-table.scss`）、两视图 `[tracker-filter]` 观察日志（共享 `countMatchedTrackerRows`）、后端 `[tracker-domain-filter]`/`[tracker-filter]`/`[torrent-list]` debug 锚点；查询模板 simple 表单补 Tracker 域名多选（修复保存丢失 tracker 筛选）；torrents 视图分支与 torrent_crud 三层 md 同步 |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |

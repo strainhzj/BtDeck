@@ -1,5 +1,25 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-27：Tracker 域名筛选命中可视化（matched_domain 标记 + 高亮 + 观察日志）
+
+### 本批结果
+
+- **根因**（双独立子代理静态+内存库动态复现验证）：`tracker_domain` 筛选为 EXISTS/ANY 语义——种子任一 tracker 命中所选域名即整行返回（辅种一籽挂多站 tracker 常态），返回行携带全部 tracker 且无命中标记，Tracker 详情平铺造成「搜出与所选域名不同」观感；SQL 锚定严格无误匹配。
+- **后端**：`TrackerInfoVO` 新增 `matched_domain`（default None，duplicate/advanced_search 复用路径零改动兼容）；`torrent_helpers.py` 域名归一前移入口、`tracker_row_matches_domains` Python 谓词与 SQL 8 条件同口径（like `escape` 字面量化）、`convert_to_vo(s)_with_trackers` 新增可选参数计算标记；修复 `tracker_like` 空结果静默返回全部（改返回空）。
+- **前端**：`TrackerDetailCard` 命中行浅主色高亮 + 「命中筛选」标签（snake/camel 双读）；两视图 `getList` 输出 `[tracker-filter]` console.debug（共享 `countMatchedTrackerRows`）；查询模板缺口修复（类型 + `QueryTemplateDialog` simple 表单域名多选 + `saveSimpleQueryAsTemplate` 透传，还原端本就兼容）。
+- **观察日志**：后端 `[tracker-domain-filter]`（归一输入/命中汇总）、`[tracker-filter]`（关键字命中行数）、`[torrent-list]`（total/页/参数）三组 debug 锚点，`LOG_LEVEL=DEBUG` 开启；前端 devtools console 对账。
+
+### 变更文件
+
+修改：`backend/app/torrents/trackerVO.py`、`backend/app/api/endpoints/torrent_helpers.py`、`backend/tests/api/test_torrent_list_api.py`、`frontend/src/api/torrents.ts`、`frontend/src/views/torrents/{index.vue,TraditionalView.vue,components/TrackerDetailCard.vue,utils/torrentBatch.ts}`、`frontend/src/styles/_tracker-table.scss`、`frontend/src/views/query-templates/components/QueryTemplateDialog.vue`、`frontend/tests/unit/{tracker-detail-card.spec.ts,torrent-batch.spec.ts,api-contracts.spec.ts}`、`docs/roadmap/` 三件（根 README 增量行 + frontend/views 分支 + torrent_crud 三层 md）、`feature_list.json`（新增 task）、`progress.md`。
+
+### 验证与待办
+
+- 后端全量 pytest **4052 passed / 7 skipped**（定向 test_torrent_list_api 40 passed：新增 ANY+标记/多选标记/未筛选不标记/下划线字面量 4 例 + 改写 tracker_like 空结果语义 1 例；关联面 duplicates+advanced_search 50 passed）；前端全量 **82 suites / 1155 passed**（定向 3 spec 新增 4 用例）。
+- black（改动文件）/flake8/mypy 通过——app/ 存量未格式化 `tracker_sync_task.py` 非本次引入未动；`tsc --noEmit` 零错误；`npm run lint` 通过；根 `./init.sh`（ci）通过。
+- 运行时复核可选：`LOG_LEVEL=DEBUG` 启动后端后筛一个域名，核对 `[tracker-domain-filter]` 归一输入与 `[torrent-list]` total，UI 详情卡命中行高亮。
+- 未执行 Git 提交；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保留不动。
+
 ## 2026-08-27：移动端搜索收敛与系统设置移动化（三项调整）
 
 ### 本批结果

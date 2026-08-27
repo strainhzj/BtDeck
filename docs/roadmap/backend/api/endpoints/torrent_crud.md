@@ -264,7 +264,7 @@ def get_torrents(
 - **定位**：`torrent_crud.py:597`
 - **职责**：支持普通筛选、Tracker 主域名、活动快照、同内容/错误单种条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
 - **活动种子特殊处理**（L641–657）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial）。
-- **Tracker 主域名筛选**（L611–614、L680）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/tracker-domains` 提供。
+- **Tracker 主域名筛选**（L611–614、L680）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/torrents/tracker-domains` 提供。✨2026-08-27（torrent_helpers.py）：EXISTS/ANY 语义保留（种子任一 tracker 命中即返回），入口统一归一 `requested_tracker_domains` 后由 SQL 8 条件（like 已 `escape="\\"` 字面量化，`_`/`%` 不再通配）与 Python 谓词 `tracker_row_matches_domains`（L53）同口径过滤，并在 VO 的 `tracker_info[].matched_domain` 上标记命中的域名（`convert_to_vo(s)_with_trackers` 新增 `requested_tracker_domains` 可选参数）；同批修复 `tracker_like` 子查询空结果由“静默返回全部”改为“返回空列表”。观察日志：`[tracker-domain-filter]`/`[tracker-filter]`/`[torrent-list]` 三组 debug 锚点，`LOG_LEVEL=DEBUG` 开启。
 - **同内容筛选**（L624–627、L682）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
 - **错误单种筛选**（L628–631、L683）：`single_error_only=True` 只保留错误任务，并用不受当前 Tracker/状态筛选影响的全局名称+大小分组确认任务唯一；同一任务的多个 Tracker 服务不增加任务计数。
 - **响应字段**：`total/list/pageSize`（分页固定字段，见 [API 响应格式约束](../../../../backend/docs/constraints/api-response-format.md)）。
