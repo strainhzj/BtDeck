@@ -1,5 +1,26 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-27：EXE 与 APK 构建脚本生成
+
+### 结论
+
+- 既有 `deploy/build-windows.bat` 保持不变，新增 `deploy/build-android.bat` 与根目录 `build-packages.bat`。
+- Android 脚本默认构建严格版和 LAN 明文测试版；每个变体先跑 JVM 单测，再 assemble、复制、签名校验和 badging 校验。工具链路径支持环境变量覆盖，并拒绝/跳过 JDK 8，自动选择有效 JDK 17+。
+- 根入口默认构建 EXE + 两个 APK，也支持按 Windows、Android 或单个 APK 变体选择。
+
+### 验证
+
+- `cmd /c deploy\build-android.bat`：严格版、LAN 版均 BUILD SUCCESSFUL；每个变体 `LanHostPolicyTest` 11 + `ServerProfileTest` 2，共 13 个 JVM 用例通过；`apksigner verify`、`aapt2 dump badging` 通过。
+- `cmd /c build-packages.bat --android-strict-only`：根入口参数转发成功并完成严格版构建。
+- 严格版 APK：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`，6,281,055 bytes，SHA-256 `036079612252AE55871BA2CC3003E80FD8E67DE1FC8837E71696FB9DB4C4C773`。
+- LAN 版 APK：`android/dist/btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`，6,281,023 bytes，SHA-256 `08008D79EAA3EC3C650B6C314D41073BD86499378FB48E3CA0CE5CDBF726D2C8`。
+- 既有 Windows EXE 产物：`dist/btdeck.exe`，45,814,476 bytes，SHA-256 `41B586C2A5A8892AFE181EA45E88953B2D68CD9FEAD3C7D4156AC6A6AA07C56F`；ISCC 未安装，安装器步骤跳过。
+
+### 后续
+
+- 运行 `build-packages.bat` 即可重建全部 EXE/APK；首次在新机器使用时设置 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME` 和 `ANDROID_SDK_ROOT`，或生成 `android\gradlew.bat`。
+- 本任务未执行 Git stage/commit；工作区其他已有修改与未跟踪目录保持不动。
+
 ## 2026-08-27：移动端回收站 info_id 契约修复（自查缺陷）
 
 ### 本批结果

@@ -1,6 +1,16 @@
 # android/app — 伴侣模式凭据与会话
 
-> 2026-08-26 源码实测。Android 端只保存 profile 元数据和加密凭据，不包含本地 Python 服务端。
+> 2026-08-27 源码与构建链实测。Android 端只保存 profile 元数据和加密凭据，不包含本地 Python 服务端。
+
+## 构建入口
+
+- `deploy/build-android.bat`：从仓库根目录可直接调用；默认构建严格版与 LAN 明文版，
+  每个变体先跑 `:app:testDebugUnitTest`，再 assemble、复制到 `android/dist/`，并执行
+  `apksigner`/`aapt2` 产物校验。`--strict-only` 与 `--lan-only` 可单独构建变体。
+- `build-packages.bat`：根目录 EXE + APK 统一入口；`--android`、
+  `--android-strict-only`、`--android-lan-only` 可选择 Android 目标。
+- 工具链路径支持 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME`、`ANDROID_SDK_ROOT`，
+  SDK 版本与 `android/local.properties` 保持一致。
 
 | 文件 | 关键入口（当前行号） | 职责 |
 |------|----------------------|------|

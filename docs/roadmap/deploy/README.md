@@ -11,7 +11,7 @@
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
 | PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO；SPA fallback = `factory.py:_mount_frontend_static` |
-| 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-linux.sh` | Windows 一键构建（PyInstaller + Inno Setup）；Linux 一键构建（PyInstaller + fpm） |
+| 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-android.bat` / `deploy/build-linux.sh` / `build-packages.bat` | Windows EXE、Android 双变体 APK、Linux 包构建；根入口可统一调用 Windows + Android 链 |
 | Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包；安装器、卸载项及快捷方式复用主程序品牌图标 |
 | fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包 |
 | 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
@@ -112,15 +112,19 @@
 | 文件 | 用途 |
 |------|------|
 | `deploy/build-windows.bat` | Windows 一键构建（PyInstaller + Inno Setup） |
+| `deploy/build-android.bat` | Android debug APK 一键构建；严格版/LAN 明文版均先跑 JVM 单测，复制并校验 APK |
 | `deploy/build-linux.sh` | Linux 一键构建（PyInstaller + fpm） |
+| `build-packages.bat` | 根目录统一入口；默认构建 Windows EXE 与 Android 两个 APK，可按参数选择目标 |
 
-### 产物（仓库根 `dist/` 与 `build/`，均已 .gitignore 不入库）
+### 产物（均已 .gitignore，不入库）
 
 | 文件/目录 | 用途 |
 |-----------|------|
 | `dist/btdeck.exe` | Windows 可执行 |
 | `dist/btdeck-linux` | Linux 可执行 |
 | `dist/BtDeck-v1.0.9-linux-amd64.deb` / `.rpm` | fpm 打包的 Linux deb/rpm 安装包 |
+| `android/dist/btdeck-companion-*-strict-debug.apk` | Android 默认严格明文策略 debug APK |
+| `android/dist/btdeck-companion-*-lan-cleartext-debug.apk` | Android 显式 LAN 明文测试 debug APK |
 | `dist/config` | 打包配套配置 |
 | `build/btdeck-windows/` | PyInstaller 中间产物（Analysis/EXE/PYZ/PKG .toc 等） |
 

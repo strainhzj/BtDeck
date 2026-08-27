@@ -1,5 +1,23 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-27：EXE 与 APK 构建脚本生成
+
+### 已完成
+
+- 保留既有 `deploy/build-windows.bat` 行为，新增 `deploy/build-android.bat`：脚本按自身位置解析仓库路径，检查 Gradle/JDK/Android SDK/build-tools，默认构建严格版与 LAN 明文测试版两个 APK。
+- Android 每个变体均执行 `:app:testDebugUnitTest` + `:app:assembleDebug`，构建后复制到 `android/dist/`，并执行 `apksigner verify`、`aapt2 dump badging` 与 SHA-256 输出；支持 `--strict-only`/`--lan-only`。
+- 新增根目录 `build-packages.bat`：默认统一构建 Windows EXE + Android 双 APK，支持 `--windows`、`--android`、`--android-strict-only`、`--android-lan-only`。
+- 工具链解析补充 JDK 主版本校验：全局 `JAVA_HOME` 为 JDK 8 时不会误用，自动选择工作区 JDK 21；其他机器可通过 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME`、`ANDROID_SDK_ROOT` 覆盖。
+- README、Android 构建说明、`docs/roadmap/`、`feature_list.json` 与本交接记录已同步；未执行 Git 提交。
+
+### 验证
+
+- `cmd /c deploy\build-android.bat`：严格版与 LAN 版均 `BUILD SUCCESSFUL`；每个变体 13 个 JVM 用例通过，签名校验通过。
+- 严格版：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`，6,281,055 bytes，SHA-256 `036079612252AE55871BA2CC3003E80FD8E67DE1FC8837E71696FB9DB4C4C773`，manifest 指向严格 NSC `@0x7f110000`。
+- LAN 版：`android/dist/btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`，6,281,023 bytes，SHA-256 `08008D79EAA3EC3C650B6C314D41073BD86499378FB48E3CA0CE5CDBF726D2C8`，manifest 指向 LAN NSC `@0x7f110001`。
+- `cmd /c build-packages.bat --android-strict-only`：根入口参数转发与严格版构建通过。
+- 既有 `deploy/build-windows.bat` 已在本会话完整跑通：`dist/btdeck.exe` 45,814,476 bytes，SHA-256 `41B586C2A5A8892AFE181EA45E88953B2D68CD9FEAD3C7D4156AC6A6AA07C56F`；ISCC 未安装，Inno Setup 安装器按设计跳过。
+
 ## 2026-08-27：种子列表错误提示滚动收起与查询全屏蒙版
 
 ### 已完成
@@ -6045,3 +6063,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **后端契约层**（`TestBatchPayloadRequiresInfoId` 2→4 例）：失败项键集升级精确相等 `{torrent_id, reason}`；新增 cleanup 成功项契约（`success_list` 键集 `{torrent_id, torrent_name}` 且 torrent_name 值锁）与混合批量 `['i1','t1']` 逐项独立判定 + failed 回显收到的值。
 - **变异验证 10 组全部拦截**（python 定点变异，锚点唯一性预断言、不含行尾，备份-变异-红-还原-cmp 字节校验）：前端 M1 恢复载荷回退→载荷用例+源码契约红；M2 删除载荷回退→同上；M3 `.reason`→`.error`→删除 reason 用例+源码契约红；M4 恢复提示去 reason 尾段→恢复 reason 用例红；M5 彻底删除禁用加回 `|| !item.torrent_id`→按钮态+源码契约红；M6 守卫改回 `!item.torrent_id`→item2 穿透守卫用例红；M7 类型 `reason`→`error`→api-contracts 用例红。后端 M8 restore 查询 `info_id`→`torrent_id`→契约用例+既有 service 级用例双红；M9 cleanup 查询同样变异→cleanup 三用例红；M10 L211 `reason` 键→`error`→精确键集断言红。还原后 `backend/app/` 与前端源码零残留（git diff + cmp 双核实）。
 - **验证**：前端定向 57 例 + 全量 **84 套件 1178 例全绿**、`tsc --noEmit` 零错误、两 spec 定向 ESLint `--max-warnings 0` 通过；后端 `pytest tests/api/test_recycle_bin_api.py` **18 passed**、black/flake8 通过；根 `./init.sh`（ci）通过。未执行 Git 提交。
+
+## 2026-08-27：等级3删除文件缺失容错（无可操作文件 → 提醒+跳过文件操作+直接入回收站）
+
+- **需求**：种子列表等级3（回收站）删除时，若没有可操作的文件，提醒用户并跳过文件操作，直接把种子数据加入回收站。
+- **根因链**：文件缺失时 `_move_torrent_files_for_recycle` 单/多文件分支均 `return success=False`（「单文件不存在」/「原文件夹不存在」）→ `_delete_level3` 回滚数据库软删除 + 删标记文件 → 整体失败，种子永远进不了回收站。且两分支的幂等检测（already_moved）写在「原路径存在」检查之后，属不可达死代码——上次已移动过的重试同样必失败。
+- **后端（torrent_deletion_by_level.py）**：`_move_torrent_files_for_recycle` 原路径不存在时先查 `.pending_delete` 目标——存在 → 幂等跳过（`already_moved=True`，顺带修复不可达缺陷，多文件智能合并块同步清理）；不存在 → `file_missing=True` 跳过（单/多文件两分支对称，返回均带 `skipped/already_moved/file_missing`）。`_delete_level3` 对 file_missing 记 warning 日志、审计 `operation_detail` 落 `torrent_moved=False/file_missing=True/skip_reason=file_missing`、返回 `file_missing/torrent_name` 与提醒 message（「未找到种子文件，已跳过文件操作，仅将种子移入回收站」）；辅种数量照常扣减。`delete_batch_by_level` 收集 `level3_file_missing: [{torrent_id, torrent_name}]`。
+- **API（torrent_deletion.py）**：同步 `delete-with-level` 成功/部分失败两分支 data 透出 `level3_file_missing`，msg 拼接「N个种子未找到文件，已跳过文件操作直接移入回收站」。异步链路 `results` 已含每种子 result（file_missing 字段随 `success_items` 自然透出），无需改动。
+- **前端**：`utils/torrentBatch.ts` 两解析器新增 `fileMissingDetail`——`parseSyncDeleteResponse` 读 `level3_file_missing`、`parseDeleteTaskResult` 从异步 `results` 提取 `result.file_missing`（新增 `extractFileMissingFromResults`/`buildFileMissingDetail` 纯函数，前5名+「等N个」截断与既有 failedDetail 同风格）；主 message 追加「其中 N 个未找到文件，已跳过文件操作」。`mixins/torrentBatch.ts` 单删与批量轮询两处对 `fileMissingDetail` 发 `$notify.warning('文件缺失提醒')`。
+- **生命周期兼容性核实**：回收站还原时 `.pending_delete` 重命名失败本就 warning 降级继续重新添加种子；彻底清理按 `original_file_list`/文件存在性逐项处理——跳过移动的记录还原/清理均无阻断。真实移动失败（目标冲突、数据不一致、部分文件失败）仍走原回滚失败路径，语义不变。
+- **测试**：后端新增 7 例（移动函数四分支真实临时目录验证 + level3 file_missing 集成 + 幂等集成 + batch 收集），`test_torrent_deletion_by_level_api.py` 35 passed；deletion/recycle/file_operations 关联面 143 passed。前端 torrent-batch.spec 新增 7 例，87 passed；全量构建/lint/tsc 通过。
+- 质量门：后端 black(24.10.0)/flake8/mypy 改动文件全过；前端 `npm run lint`、`tsc --noEmit`、`npm run build` 通过。feature_list.json 追加 `level3-delete-file-missing-skip-2026-08-27`。未执行 Git 提交。

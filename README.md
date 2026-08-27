@@ -104,7 +104,9 @@ BtDeck/
 │   ├── btdeck.iss           # Inno Setup (Windows)
 │   ├── build-linux.sh       # Linux 构建脚本
 │   ├── build-windows.bat    # Windows 构建脚本
+│   ├── build-android.bat    # Android APK 构建脚本
 │   └── btdeck.service       # systemd 服务
+├── build-packages.bat        # Windows EXE + Android APK 统一入口
 ├── docker-compose.yml        # 全栈 Docker 部署
 ├── CLAUDE.md                 # 开发指导
 ├── AGENTS.md                 # 全栈工作流路由
@@ -114,14 +116,34 @@ BtDeck/
 
 ## 安装包构建
 
-### Windows
+### Windows EXE / 安装包
 
-```bash
-cd deploy
-build-windows.bat
+```bat
+deploy\build-windows.bat
 ```
 
-生成 `dist/BtDeck-v1.0.5-windows-x64-setup.exe`
+始终生成 `dist\btdeck.exe` 便携版；安装 Inno Setup 且 `ISCC` 可用时，额外生成
+`dist\BtDeck-v1.0.5-windows-x64-setup.exe`。
+
+### Android APK
+
+```bat
+deploy\build-android.bat
+```
+
+默认运行 JVM 单测并生成两个 debug APK 到 `android\dist\`：严格版
+`btdeck-companion-0.1.0-mvp-strict-debug.apk` 与局域网明文测试版
+`btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`。只构建单个变体可使用
+`deploy\build-android.bat --strict-only` 或 `--lan-only`。
+
+### EXE + APK 统一构建
+
+```bat
+build-packages.bat
+```
+
+也可使用 `build-packages.bat --windows`、`--android`、
+`--android-strict-only` 或 `--android-lan-only` 选择目标。
 
 ### Linux
 

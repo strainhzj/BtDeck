@@ -12,7 +12,74 @@
     "gate_status": "pending_final_verify",
     "evidence": "security-remediation-2026-08"
   },
+  "build_scripts": {
+    "date": "2026-08-27",
+    "windows_entry": "deploy/build-windows.bat",
+    "android_entry": "deploy/build-android.bat",
+    "unified_entry": "build-packages.bat",
+    "android_variants": [
+      "strict-debug",
+      "lan-cleartext-debug"
+    ],
+    "evidence": "deploy/build-android.bat 双变体真实构建通过：每个变体均执行 :app:testDebugUnitTest（LanHostPolicyTest 11 + ServerProfileTest 2，共 13 例）与 :app:assembleDebug，随后 apksigner verify、aapt2 dump badging 通过；build-packages.bat --android-strict-only 参数转发通过。脚本检测到全局 JDK 8 时自动选择工作区 JDK 21。"
+  },
+  "build_artifacts": {
+    "date": "2026-08-27",
+    "windows_exe": {
+      "path": "dist/btdeck.exe",
+      "size_bytes": 45814476,
+      "sha256": "41B586C2A5A8892AFE181EA45E88953B2D68CD9FEAD3C7D4156AC6A6AA07C56F",
+      "verification": "deploy/build-windows.bat 完成；verify-package 通过；ISCC 未安装，Inno Setup 安装器按设计跳过"
+    },
+    "android_strict": {
+      "path": "android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk",
+      "size_bytes": 6281055,
+      "sha256": "036079612252AE55871BA2CC3003E80FD8E67DE1FC8837E71696FB9DB4C4C773",
+      "package": "com.btdeck.companion",
+      "version_name": "0.1.0-mvp",
+      "network_security_config": "@0x7f110000"
+    },
+    "android_lan_cleartext": {
+      "path": "android/dist/btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk",
+      "size_bytes": 6281023,
+      "sha256": "08008D79EAA3EC3C650B6C314D41073BD86499378FB48E3CA0CE5CDBF726D2C8",
+      "package": "com.btdeck.companion",
+      "version_name": "0.1.0-mvp+lan",
+      "network_security_config": "@0x7f110001"
+    },
+    "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
+  },
   "features": [
+    {
+      "id": "package-build-scripts-2026-08",
+      "name": "EXE 与 APK 构建脚本",
+      "description": "保留既有 Windows EXE 打包链，新增 Android 双变体 APK 构建脚本与根目录统一入口，所有路径按脚本位置解析并检查工具链。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "package-build-scripts-2026-08.1",
+          "name": "Windows EXE 与 Android APK 一键构建",
+          "description": "deploy/build-android.bat 构建严格版/LAN 明文版 APK 并校验；build-packages.bat 统一调度既有 EXE 链与 Android 链，支持按目标和变体选择。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "build-packages.bat",
+            "deploy/build-windows.bat",
+            "deploy/build-android.bat",
+            "README.md",
+            "android/README.md",
+            "docs/roadmap/README.md",
+            "docs/roadmap/deploy/README.md",
+            "docs/roadmap/android-companion.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "2026-08-27：Android 双变体均 BUILD SUCCESSFUL，13/13 JVM 单测通过，apksigner/aapt2 校验通过；严格版 manifest networkSecurityConfig=@0x7f110000、LAN 版=@0x7f110001；根入口 build-packages.bat --android-strict-only 转发通过。Windows 既有链此前已完整跑通并产出 dist/btdeck.exe；ISCC 缺失时安装器步骤按设计跳过。"
+        }
+      ]
+    },
     {
       "id": "brand-logo-2026-08",
       "name": "BtDeck 主 Logo 品牌资源接入",
@@ -5044,6 +5111,26 @@
         "docs/roadmap/tests/README.md",
         "docs/roadmap/perspectives/test-coverage.md"
       ]
+    },
+    {
+      "id": "level3-delete-file-missing-skip-2026-08-27",
+      "title": "等级3删除文件缺失容错：无可操作文件时提醒并跳过文件操作，种子数据直接入回收站",
+      "status": "completed",
+      "scope": "fullstack",
+      "description": "种子列表等级3（回收站）删除时，若种子文件在文件系统上不存在（含单文件与多文件夹两种形态），此前 _move_torrent_files_for_recycle 返回失败（单文件不存在/原文件夹不存在），_delete_level3 回滚数据库，整个删除失败——种子永远无法进回收站。本任务将该场景改为容错：原路径与 .pending_delete 目标均不存在时跳过文件移动（file_missing 标记），完成软删除让种子数据直接入回收站，并在结果消息、系统通知、审计日志中提醒。顺带修复两分支幂等检测不可达缺陷（原文件不存在时先 return 失败，永远到不了 already_moved 判定）：现原路径不存在但 .pending_delete 存在时按幂等跳过（already_moved），重试不再误报失败。回收站生命周期兼容性核实：还原时文件重命名失败本就降级继续（recycle_bin_service.py），彻底清理按文件存在性逐项处理，跳过移动的记录无阻断。",
+      "files": [
+        "backend/app/services/torrent_deletion_by_level.py",
+        "backend/app/api/endpoints/torrent_deletion.py",
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/src/views/torrents/mixins/torrentBatch.ts",
+        "backend/tests/api/test_torrent_deletion_by_level_api.py",
+        "frontend/tests/unit/torrent-batch.spec.ts"
+      ],
+      "evidence": {
+        "tests": "后端 test_torrent_deletion_by_level_api.py 35 passed（新增 7 例：移动函数单/多文件 file_missing 与 already_moved 四分支真实临时目录验证、level3 file_missing 集成（软删除生效+辅种照常扣减+审计 skip_reason=file_missing+标记文件不回滚）、幂等 already_moved 集成、batch 收集 level3_file_missing）；deletion/recycle/file_operations 相关面 143 passed 全绿。前端 torrent-batch.spec.ts 87 passed（新增 7 例：同步 level3_file_missing 解析、等N个截断、null 兜底、等级2 无影响；异步 results 提取 file_missing、failed 分支 null）。",
+        "lint": "后端 black(24.10.0)/flake8/mypy 改动文件全过；前端 npm run lint 通过（自动修复仅格式）、tsc --noEmit 零错误、npm run build 通过。",
+        "contract": "同步接口 data 新增 level3_file_missing: [{torrent_id, torrent_name}]，msg 追加「N个种子未找到文件，已跳过文件操作直接移入回收站」；异步任务 results 每项 result.file_missing=true 标记；前端 parseSyncDeleteResponse/parseDeleteTaskResult 输出 fileMissingDetail 供 $notify 展示。移动失败的真实错误（目标冲突、智能合并不一致、部分文件移动失败）仍走原回滚失败路径不受影响。"
+      }
     }
   ]
 }

@@ -29,7 +29,22 @@ Android NSC 是构建期配置，无法运行时按主机开闭、也不支持 C
 
 DNS 名称指向内网主机但非 *.local 的场景按公网处理（fail-closed）。
 
-## 构建（JDK 17/21 + Android SDK；2026-08-23 本机首次编译验证通过）
+## 构建（JDK 17/21 + Android SDK；2026-08-27 脚本化验证通过）
+
+推荐从仓库根目录使用脚本；脚本会独立解析项目路径、检查 Gradle/JDK/SDK，
+运行 `:app:testDebugUnitTest`，构建两个变体后复制到 `android/dist/`，并执行
+`apksigner verify` 与 `aapt2 dump badging`：
+
+```bat
+deploy\build-android.bat
+deploy\build-android.bat --strict-only
+deploy\build-android.bat --lan-only
+build-packages.bat --android
+```
+
+工具链不在默认位置时，可设置 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME`、
+`ANDROID_SDK_ROOT`（或编辑 `android/local.properties`）。APK 文件名版本可用
+`BTDECK_APK_VERSION` 覆盖。
 
 ```bash
 cd android
