@@ -3401,3 +3401,18 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 应用户要求三套件 51→62 例：util +6（语法严格性/语法集交叉契约/端到端快照/跨行内联合并/分隔线交错）、mobile +3（摘要与详情双层分离契约/空摘要不渲染块/纯函数不污染原始 content）、desktop +3（精确全文/空串路径/props 响应式重算）。
 - 变异验证四组全部精确拦截（回退双端摘要→各 5 红；删分隔线丢弃→三层 7 红；删粗体替换→8 红），备份-变异-恢复（源码未提交不可 checkout 还原）；锚点跨行尾会因 CRLF 匹配失败，行内锚点+唯一性断言可避开。
 - 还原后 62 例全绿，全量复验与文档同步见 progress.md；仍未提交。
+
+## 2026-08-27 交接：Windows EXE/安装包运行图标统一
+
+### 已完成
+
+- 根因确认：`deploy/btdeck-windows.spec` 仍为 `icon=None`；pywebview WinForms 从 `sys.executable` 提取窗口图标，导致 EXE、任务栏/标题栏、快捷方式与卸载项沿用 PyInstaller 默认图标。
+- 品牌 ICO 从 16/32/48 扩为 16~256px 九档；PyInstaller 显式嵌入，缺图标时 fail-fast；Inno Setup 的安装器、卸载项及三类快捷方式全部复用该品牌图标。
+- 新增 3 项 Windows 品牌图标打包契约；deploy/root/test-coverage 路线图与 feature/progress 已同步。
+
+### 验证与后续
+
+- 打包契约 13/13、PWA 契约 6/6；mypy/flake8/black、npm lint/build、verify-package、git diff check 与根 init.sh --ci 通过。
+- 实际品牌 EXE：`build/icon-verification-dist/btdeck.exe`，45,801,446 字节，SHA256 `BE277418974FCF3BF3F318557E7532089111F1FA481732D0C5A048583E2CAF40`；提取图标视觉确认是绿色 BtDeck mark。
+- 未替换 `dist/btdeck.exe`：PID 25040/37132 正在占用，未擅自中断服务。若需要正式安装包，先停止该实例并安装 Inno Setup（当前无 `ISCC.exe`），再执行 `deploy/build-windows.bat`。
+- 未执行 Git 提交；用户原有工作区改动和未跟踪目录均保留。

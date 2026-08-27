@@ -6020,3 +6020,21 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **前端**：`torrents.ts` TrackerInfo 加 `matchedDomain/matched_domain` 双读字段；`TrackerDetailCard.vue` 命中行 `tracker-row-matched` 高亮 + 名称旁「命中筛选」标签（tooltip 显示命中域名），样式进共享 `_tracker-table.scss`（sticky 操作列同色跟随、hover 让位）；查询模板缺口修复——`QueryTemplateConditions['listQuery']` 加 `tracker_domain?: string[]`、`QueryTemplateDialog` simple 表单加 AdvancedMultiSelect 域名多选（options 懒加载 getTrackerDomains、编辑回填、buildConditions 写入）、`saveSimpleQueryAsTemplate` 同步透传；还原端两视图本就兼容未动。
 - **测试**：后端 `test_torrent_list_api.py` 40 passed（新增 ANY+标记/多选标记/未筛选不标记/下划线字面量 4 例；改写 tracker_like 空结果 1 例为新语义）；关联面 duplicates+advanced_search 50 passed；全量 4052 passed / 7 skipped。前端 tracker-detail-card +1、torrent-batch +2、api-contracts +1；全量 82 suites / 1155 passed。
 - **质量门**：black（改动文件）/flake8/mypy 通过（app/ 存量未格式化 `tracker_sync_task.py` 非本次引入未动）；`tsc --noEmit` 零错误；`npm run lint` 通过；根 `./init.sh`（ci）通过。roadmap 同步 torrent_crud 三层 md 与前端 views/components 分支条目。未执行 Git 提交。
+
+## 2026-08-27：Windows EXE/安装包运行图标统一为项目 Logo
+
+### 根因与修复
+
+- 根因：`deploy/btdeck-windows.spec` 的 `EXE(..., icon=None)` 从未嵌入项目图标；pywebview WinForms 会从 `sys.executable` 提取窗口 Icon，因此主程序、标题栏/任务栏、安装后快捷方式与卸载项最终均显示 PyInstaller 默认图标。
+- `frontend/scripts/generate-pwa-icons.py` 继续复用现有 `btdeck-mark-micro-inverse.png`，将 `favicon.ico` 从 16/32/48 扩为 16/20/24/32/40/48/64/128/256 多尺寸品牌 ICO，兼顾 Windows Shell 与高 DPI。
+- `deploy/btdeck-windows.spec` 新增 `WINDOWS_ICON` 存在性 fail-fast，并通过 `icon=WINDOWS_ICON` 嵌入主程序；`deploy/btdeck.iss` 保留安装器 `SetupIconFile`，同时为开始菜单、卸载和桌面三类快捷方式显式指定主程序图标。
+- `backend/tests/architecture/test_packaging_contract.py` 新增 3 项契约：ICO 常用/256px 尺寸、PyInstaller 禁止回退 `icon=None`、Inno 安装器/卸载项/快捷方式同源。
+- `roadmap-maintain` 已同步 deploy 分支、根元信息及测试覆盖矩阵；顺带按源码实测将后端 test_*.py 总数 180→195、architecture 1→2，并补 desktop_companion 4 文件行。
+
+### 验证与产物
+
+- `test_packaging_contract.py`：13/13；`pwa-manifest.spec.ts`：6/6；mypy、flake8、black、图标脚本 py_compile、`npm run lint`、`npm run build`、`git diff --check` 通过。
+- 由于现有 `dist/btdeck.exe` 被 PID 25040/37132 占用，未中断正在运行的服务；改用 `build/icon-verification-dist/btdeck.exe` 实际构建验证（45,801,446 字节，SHA256 `BE277418974FCF3BF3F318557E7532089111F1FA481732D0C5A048583E2CAF40`）。
+- `verify-package.py` 对验证 EXE 通过；Windows `ExtractAssociatedIcon` 实测旧产物为 PyInstaller 默认图标，新产物为绿色 BtDeck mark（32×32 提取预览）。
+- 本机无 Inno Setup `ISCC.exe`，因此未生成新的 setup.exe；`btdeck.iss` 已通过静态契约覆盖，安装 ISCC 后运行 `deploy/build-windows.bat` 即会生成带品牌图标的安装包。
+- 未执行 Git 提交；保留用户原有未提交文件与 `.release-build-v1.0.5/`、`data/` 目录。

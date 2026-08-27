@@ -12,6 +12,10 @@ block_cipher = None
 PROJECT_ROOT = os.path.abspath(SPECPATH + '/..')
 BACKEND_DIR = os.path.join(PROJECT_ROOT, 'backend')
 FRONTEND_DIST = os.path.join(PROJECT_ROOT, 'frontend', 'dist')
+WINDOWS_ICON = os.path.join(PROJECT_ROOT, 'frontend', 'public', 'favicon.ico')
+
+if not os.path.isfile(WINDOWS_ICON):
+    raise FileNotFoundError(f"Windows application icon not found: {WINDOWS_ICON}")
 
 # 收集前端静态文件（如果存在）
 datas = [
@@ -215,5 +219,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # TODO: 添加应用图标
+    # pywebview WinForms 会从 sys.executable 提取窗口图标；这里同时决定
+    # btdeck.exe、任务栏、快捷方式与 Inno Setup 卸载项所显示的品牌图标。
+    icon=WINDOWS_ICON,
 )

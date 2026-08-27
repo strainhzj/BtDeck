@@ -2,29 +2,30 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 180 个 test_*.py）
+## 后端测试分布（共 195 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 63 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 50 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 18 | `app/tasks/` | 🟡 部分覆盖（18 对 34） |
-| `tests/core/` | 21 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/api/` | 64 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
+| `tests/services/` | 51 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
+| `tests/tasks/` | 20 | `app/tasks/` | 🟡 部分覆盖（20 对 34） |
+| `tests/core/` | 23 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
-| `tests/utils/` | 5 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
+| `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好 |
 | `tests/auth/` | 5 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
-| `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
+| `tests/downloader/` | 4 | `app/downloader/` | 🟡 部分覆盖（4 对 9） |
 | `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 37，仅 `test_active_only_filter.py`） |
-| `tests/architecture/` | 1 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
+| `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描 + PyInstaller 资源/Windows 品牌图标打包契约） |
+| `tests/desktop_companion/` | 4 | `app/desktop_companion/` | 桌面 profile、健康检查、启动器窗口链路与凭据保险库回归 |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **180** 个 test_*.py。
+> 合计：当前实测 **195** 个 test_*.py。
 
-> 注：`tests/api/`（63 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（64 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -181,13 +182,14 @@
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
 | `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
-| `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：滚轮/捕获阶段滚动收起全部错误 tooltip，销毁后解绑全局监听 |
-| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种/同内容列表模式数据源守卫 |
+| `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
+| `torrent-loading-mask.spec.ts` ✨2026-08-27 | Element UI 2.15.13 真实 Loading 指令：fullscreen mask 挂 body、lock/unlock、隐藏状态与加载中销毁清理 |
+| `torrent-list-view-component.spec.ts` ✨2026-08-27 | 列表视图异步删除与分页/排序、Tracker 筛选、错误单种/同内容数据源；编译后 fullscreen/lock binding 与请求失败 loading 复位 |
 | `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留查询/分页/选择状态 |
 | `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归 |
 | `tracker-operation-dialog-contract.spec.ts` | Tracker 操作对话框契约 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤与快捷入口；静态契约锁定共用 TrackerDetailCard 与视觉样式 |
+| `traditional-view-component.spec.ts` ✨2026-08-27 | 传统视图组件、Tracker 主域名过滤与快捷入口；编译后 fullscreen/lock binding 与请求失败 loading 复位；共用 TrackerDetailCard 契约 |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |

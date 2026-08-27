@@ -23,6 +23,7 @@ INVERSE_LOGO_PATH = BRAND_DIR / "btdeck-logo-inverse.png"
 ICON_BACKGROUND = (5, 150, 105, 255)
 RESAMPLING = getattr(Image, "Resampling", Image).LANCZOS
 WORDMARK_DARK = (31, 41, 55, 255)
+WINDOWS_ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 WORDMARK_FONT_CANDIDATES = (
     Path("C:/Windows/Fonts/segoeuib.ttf"),
     Path("C:/Windows/Fonts/arialbd.ttf"),
@@ -154,13 +155,16 @@ def main() -> None:
             mark_scale=mark_scale,
         )
 
-    favicon = render_icon(app_mark, 48, maskable=False, mark_scale=0.70)
-    favicon.save(
+    windows_icon = render_icon(app_mark, 256, maskable=False, mark_scale=0.70)
+    windows_icon.save(
         PUBLIC_DIR / "favicon.ico",
         format="ICO",
-        sizes=[(16, 16), (32, 32), (48, 48)],
+        sizes=[(size, size) for size in WINDOWS_ICON_SIZES],
     )
-    print(f"wrote {PUBLIC_DIR / 'favicon.ico'} (16/32/48)")
+    print(
+        f"wrote {PUBLIC_DIR / 'favicon.ico'} "
+        f"({'/'.join(str(size) for size in WINDOWS_ICON_SIZES)})"
+    )
 
 
 if __name__ == "__main__":

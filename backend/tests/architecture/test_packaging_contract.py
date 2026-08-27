@@ -21,6 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[3]  # tests/architecture/ → tests/ → backend/ → 仓库根
 BACKEND_DIR = REPO_ROOT / "backend"
 DEPLOY_DIR = REPO_ROOT / "deploy"
+FRONTEND_PUBLIC_DIR = REPO_ROOT / "frontend" / "public"
 
 
 class TestRepositoryPackageResources:
@@ -96,6 +97,44 @@ class TestSpecDatasContract:
             hiddenimports_block = text.split("hiddenimports = [", 1)[1].split("\n]", 1)[0]
             for banned in ("'pandas'", "'numpy'"):
                 assert banned not in hiddenimports_block, f"{name} hiddenimports 重新引入 {banned}"
+
+
+class TestWindowsBrandIconContract:
+    """Windows 主程序、运行窗口、安装器和快捷方式必须复用同一品牌 ICO。"""
+
+    def test_brand_ico_contains_shell_and_high_dpi_sizes(self):
+        from PIL import Image
+
+        icon_path = FRONTEND_PUBLIC_DIR / "favicon.ico"
+        assert icon_path.is_file(), "Windows 品牌图标缺失"
+        with Image.open(icon_path) as icon:
+            assert icon.format == "ICO"
+            sizes = set(icon.info.get("sizes", set()))
+
+        required_sizes = {(16, 16), (32, 32), (48, 48), (256, 256)}
+        assert (
+            required_sizes <= sizes
+        ), f"Windows ICO 缺少常用/高 DPI 尺寸: {required_sizes - sizes}"
+
+    def test_pyinstaller_embeds_brand_icon(self):
+        spec = (DEPLOY_DIR / "btdeck-windows.spec").read_text(encoding="utf-8")
+        assert "WINDOWS_ICON" in spec
+        assert "favicon.ico" in spec
+        assert "icon=WINDOWS_ICON" in spec
+        assert "icon=None" not in spec
+
+    def test_inno_installer_and_shortcuts_use_brand_icon(self):
+        inno = (DEPLOY_DIR / "btdeck.iss").read_text(encoding="utf-8")
+        assert r"SetupIconFile=..\frontend\public\favicon.ico" in inno
+        assert r"UninstallDisplayIcon={app}\{#AppExeName}" in inno
+        shortcut_lines = [
+            line for line in inno.splitlines() if line.startswith("Name:")
+        ]
+        btdeck_shortcuts = [line for line in shortcut_lines if "{#AppName}" in line]
+        assert len(btdeck_shortcuts) == 3
+        assert all(
+            r'IconFilename: "{app}\{#AppExeName}"' in line for line in btdeck_shortcuts
+        )
 
 
 class TestRuntimeRequirementsSlimming:

@@ -10,9 +10,9 @@
 | Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
-| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；SPA fallback = `factory.py:_mount_frontend_static` |
+| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO；SPA fallback = `factory.py:_mount_frontend_static` |
 | 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-linux.sh` | Windows 一键构建（PyInstaller + Inno Setup）；Linux 一键构建（PyInstaller + fpm） |
-| Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包 |
+| Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包；安装器、卸载项及快捷方式复用主程序品牌图标 |
 | fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包 |
 | 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
 | 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
@@ -105,7 +105,7 @@
 | 文件 | 平台 | 用途 |
 |------|------|------|
 | `deploy/btdeck.spec` | Linux | PyInstaller 打包配置 |
-| `deploy/btdeck-windows.spec` | Windows | PyInstaller 打包配置（含 Windows 特殊处理） |
+| `deploy/btdeck-windows.spec` | Windows | PyInstaller 打包配置（含 Windows 特殊处理）；L15/L224 校验并嵌入 `frontend/public/favicon.ico`，供 EXE 与 pywebview 运行窗口提取品牌图标 |
 
 ### 构建脚本
 
@@ -144,7 +144,7 @@
 | 文件 | 用途 |
 |------|------|
 | `deploy/ChineseSimplified.isl` | Inno Setup 中文语言包 |
-| `deploy/btdeck.iss` | Inno Setup 安装脚本 |
+| `deploy/btdeck.iss` | Inno Setup 安装脚本；L30 安装器品牌图标，L53-55 快捷方式显式复用主程序图标 |
 | `deploy/analyze-package-size.py` | 打包体积分析 |
 | `deploy/verify-package.py` | 打包产物校验 |
 
