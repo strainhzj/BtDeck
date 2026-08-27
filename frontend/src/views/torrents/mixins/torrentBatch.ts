@@ -221,6 +221,9 @@ export default class TorrentBatchMixin extends Vue {
         if (parsed.downgradeDetail) {
           this.$notify.warning({ title: '降级详情', message: parsed.downgradeDetail, duration: 5000 })
         }
+        if (parsed.fileMissingDetail) {
+          this.$notify.warning({ title: '文件缺失提醒', message: parsed.fileMissingDetail, duration: 5000 })
+        }
       }
       await this.getList()
     } catch (error: any) {
@@ -264,6 +267,9 @@ export default class TorrentBatchMixin extends Vue {
           this.$message[parsed.type](parsed.message)
           if (parsed.failedDetail) {
             this.$notify.warning({ title: '删除失败详情', message: parsed.failedDetail, duration: 5000 })
+          }
+          if (parsed.fileMissingDetail) {
+            this.$notify.warning({ title: '文件缺失提醒', message: parsed.fileMissingDetail, duration: 5000 })
           }
           break
         }

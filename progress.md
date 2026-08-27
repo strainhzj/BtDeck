@@ -6074,3 +6074,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **生命周期兼容性核实**：回收站还原时 `.pending_delete` 重命名失败本就 warning 降级继续重新添加种子；彻底清理按 `original_file_list`/文件存在性逐项处理——跳过移动的记录还原/清理均无阻断。真实移动失败（目标冲突、数据不一致、部分文件失败）仍走原回滚失败路径，语义不变。
 - **测试**：后端新增 7 例（移动函数四分支真实临时目录验证 + level3 file_missing 集成 + 幂等集成 + batch 收集），`test_torrent_deletion_by_level_api.py` 35 passed；deletion/recycle/file_operations 关联面 143 passed。前端 torrent-batch.spec 新增 7 例，87 passed；全量构建/lint/tsc 通过。
 - 质量门：后端 black(24.10.0)/flake8/mypy 改动文件全过；前端 `npm run lint`、`tsc --noEmit`、`npm run build` 通过。feature_list.json 追加 `level3-delete-file-missing-skip-2026-08-27`。未执行 Git 提交。
+
+## 2026-08-27：等级3删除文件缺失容错·回归加固（三层保护 + 变异验证）
+
+- 按用户要求为上一批修复补足回归保护并提交：后端 7→23 新增用例（35→44 passed）、前端 7→13 新增（86→93 passed），变异验证 12 组全部精确拦截。
+- **后端正常路径回归**（`TestMoveTorrentFilesForRecycleFileMissing` 扩充，真实临时目录）：单文件正常重命名（skipped=False + 文件落位）、多文件整体搬移（moved_count=2 + 子目录结构 + 原文件夹留空目录的既有语义）、单文件目标冲突真实失败（文件系统零改动——锁"容错只作用于原路径不存在场景，不得吞目标冲突"）、智能合并子集残留清理重移、空 .pending_delete 残留清理、内容不相交数据损坏失败 + inconsistent_state 不自动处置（保护清理智能合并死代码时的行为不变）。
+- **后端 HTTP 级契约**（`TestDeleteWithLevelFileMissingPayload` 3 例，monkeypatch delete_batch_by_level）：成功/部分失败分支 data.level3_file_missing 精确值锁 + msg 含「N个种子未找到文件，已跳过文件操作直接移入回收站」（部分失败分支同样要提醒）；无缺失时 msg 干净不含「未找到文件」。前端 fileMissingDetail 依赖 data 字段，丢字段即静默失去提醒——HTTP 级透出是最后一道锁。
+- **前端并存场景 + 源码接线契约**（6 例）：降级与文件缺失并存（downgradeDetail 与 fileMissingDetail 同时输出——锁降级分支 return 透传）、部分失败与缺失并存、异步 partial+results 提取并存；源码契约锁 utils 读 `data?.level3_file_missing`/`result?.file_missing` 契约字段名、两接口 `fileMissingDetail: string | null` 声明计数（3=两接口+局部变量）、mixin 单删与轮询两处 `if (parsed.fileMissingDetail)` + `title: '文件缺失提醒'` 计数各 2——行为测试锁纯函数，源码契约拦"解析了但没展示/字段名对不上"的静默失效。
+- **变异验证 12 组全部拦截**（python 定点变异，锚点唯一性预断言、备份-变异-红-还原-cmp 字节校验，还原后 git status 零残留）：后端 M1 单文件 file_missing 反转、M2 多文件幂等 already_moved 反转、M3 `_delete_level3` 标志传递断开、M4 batch 收集条件失效、M5 endpoint msg 拼接移除（两处）、M6 endpoint data 透出移除（两处）、M7 单文件目标冲突被吞（success False→True）、M8 审计 skip_reason 键改名；前端 M9 异步提取 return false、M10 同步字段名错位（level3_file_missing→_x）、M11 mixin 轮询处通知移除（缩进锚点定位 10 空格块）、M12 提醒文案丢失。
+- **验证**：后端全量 **4075 passed / 7 skipped**；`test_torrent_deletion_by_level_api.py` 44 passed；改动文件 black(24.10.0)/flake8/mypy 通过。前端全量 **84 套件 1191 passed**；定向 ESLint `--no-fix --max-warnings 0` 与 `tsc --noEmit` 零错误。feature_list.json evidence 已更新加固记录。

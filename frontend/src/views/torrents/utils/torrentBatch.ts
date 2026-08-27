@@ -852,23 +852,31 @@ export interface ParsedDeleteTaskResult {
   message: string
   /** 失败项详情（前5个名称），供 $notify 展开；无则 null */
   failedDetail: string | null
+  /** 文件缺失详情（等级3未找到种子文件，跳过文件操作直接入回收站），供 $notify；无则 null */
+  fileMissingDetail: string | null
 }
 
 /**
  * 解析异步批量删除任务结果（completed/failed/partial）
- * @param taskData 后端返回的任务数据 { status, total_count, success_count, failed_count, failed_items, error_message }
+ * @param taskData 后端返回的任务数据 { status, total_count, success_count, failed_count, failed_items, error_message, results }
  * @param list 当前种子列表（用于反查失败项名称，注意用 list 不用 tableData）
  */
 export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteTaskResult {
-  const { status, success_count, failed_count, failed_items, error_message } = taskData
+  const { status, success_count, failed_count, failed_items, error_message, results } = taskData
+
+  const missing = extractFileMissingFromResults(results)
+  const fileMissingDetail = missing.length > 0 ? buildFileMissingDetail(missing) : null
 
   if (status === 'completed') {
     return {
       successCount: success_count,
       failedCount: 0,
       type: 'success',
-      message: `批量删除完成，成功删除 ${success_count} 个种子`,
-      failedDetail: null
+      message: missing.length > 0
+        ? `批量删除完成，成功删除 ${success_count} 个种子（其中 ${missing.length} 个未找到文件，已跳过文件操作）`
+        : `批量删除完成，成功删除 ${success_count} 个种子`,
+      failedDetail: null,
+      fileMissingDetail
     }
   }
 
@@ -878,7 +886,8 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
       failedCount: failed_count,
       type: 'error',
       message: `批量删除失败：${error_message || '未知错误'}`,
-      failedDetail: null
+      failedDetail: null,
+      fileMissingDetail: null
     }
   }
 
@@ -899,26 +908,64 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
     failedCount: failed_count,
     type: 'warning',
     message: `批量删除部分完成：成功 ${success_count} 个，失败 ${failed_count} 个`,
-    failedDetail
+    failedDetail,
+    fileMissingDetail
   }
 }
 
-/** 解析同步删除响应（处理降级 + 部分成功 + 成功计数） */
+/** 解析同步删除响应（处理降级 + 文件缺失 + 部分成功 + 成功计数） */
 export interface ParsedSyncDeleteResult {
   type: 'success' | 'warning'
   message: string
   /** 降级详情（等级3备份失败降级为等级4），供 $notify；无则 null */
   downgradeDetail: string | null
+  /** 文件缺失详情（等级3未找到种子文件，跳过文件操作直接入回收站），供 $notify；无则 null */
+  fileMissingDetail: string | null
+}
+
+/** 等级3删除成功但未找到种子文件的条目（后端 level3_file_missing / 异步 results 提取） */
+interface FileMissingItem {
+  torrent_id: string
+  torrent_name: string
+}
+
+/**
+ * 构造等级3"未找到种子文件"提醒文案（已跳过文件操作，种子直接移入回收站）
+ * @param missing 文件缺失条目列表
+ */
+function buildFileMissingDetail(missing: FileMissingItem[]): string {
+  const names = (missing.length <= 5 ? missing : missing.slice(0, 5))
+    .map(item => item.torrent_name || item.torrent_id)
+    .join('、')
+  const suffix = missing.length <= 5 ? '' : ` 等${missing.length}个`
+  return `以下种子未找到文件，已跳过文件操作直接移入回收站：${names}${suffix}`
+}
+
+/**
+ * 从异步删除任务 results（每项 {info_id, result}）提取等级3文件缺失条目
+ */
+function extractFileMissingFromResults(results: unknown): FileMissingItem[] {
+  if (!Array.isArray(results)) return []
+  return results
+    .filter((item): item is { info_id: string, result: { file_missing?: boolean, torrent_name?: string } } => {
+      const result = (item as { result?: { file_missing?: boolean } })?.result
+      return Boolean(result?.file_missing)
+    })
+    .map(item => ({
+      torrent_id: item.info_id || '',
+      torrent_name: item.result?.torrent_name || ''
+    }))
 }
 
 /**
  * 解析同步删除接口响应（deleteTorrentsWithLevel）
- * 处理等级3降级、部分成功、各等级成功计数。
+ * 处理等级3降级、文件缺失提醒、部分成功、各等级成功计数。
  * @param data 响应数据
  * @param level 删除等级
  */
 export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDeleteResult {
   let downgradeDetail: string | null = null
+  let fileMissingDetail: string | null = null
 
   // 等级3降级处理
   if (level === 3 && data?.level4_downgraded && data.level4_downgraded.length > 0) {
@@ -930,6 +977,11 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
       : `以下种子备份失败，已降级为等级4：${names} 等${downgraded.length}个`
   }
 
+  // 等级3文件缺失：未找到种子文件，已跳过文件操作直接移入回收站
+  if (level === 3 && Array.isArray(data?.level3_file_missing) && data.level3_file_missing.length > 0) {
+    fileMissingDetail = buildFileMissingDetail(data.level3_file_missing as FileMissingItem[])
+  }
+
   // 统计各等级成功数
   const successCount =
     (data?.level1_success?.length || 0) +
@@ -939,24 +991,33 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
 
   // 有降级时不显示成功消息（已在 downgradeDetail 提示）
   if (downgradeDetail) {
-    return { type: 'warning', message: `已将 ${data.level4_downgraded.length} 个种子降级为等级4删除（备份失败）`, downgradeDetail }
+    return {
+      type: 'warning',
+      message: `已将 ${data.level4_downgraded.length} 个种子降级为等级4删除（备份失败）`,
+      downgradeDetail,
+      fileMissingDetail
+    }
   }
 
   // 部分失败
   if (data?.failed && data.failed.length > 0) {
-    return { type: 'warning', message: `删除完成：失败 ${data.failed.length} 个`, downgradeDetail: null }
+    return { type: 'warning', message: `删除完成：失败 ${data.failed.length} 个`, downgradeDetail: null, fileMissingDetail }
   }
 
   // 完全成功
   if (level === 3) {
     const level3Count = data?.level3_success?.length || 0
+    const missingCount = fileMissingDetail ? data.level3_file_missing.length : 0
     return {
       type: 'success',
-      message: level3Count > 0 ? `等级3删除成功 ${level3Count} 个` : `删除完成，成功 ${successCount} 个`,
-      downgradeDetail: null
+      message: missingCount > 0
+        ? `等级3删除成功 ${level3Count} 个（其中 ${missingCount} 个未找到文件，已跳过文件操作）`
+        : (level3Count > 0 ? `等级3删除成功 ${level3Count} 个` : `删除完成，成功 ${successCount} 个`),
+      downgradeDetail: null,
+      fileMissingDetail
     }
   }
-  return { type: 'success', message: `等级${level}删除完成，成功 ${successCount} 个`, downgradeDetail: null }
+  return { type: 'success', message: `等级${level}删除完成，成功 ${successCount} 个`, downgradeDetail: null, fileMissingDetail }
 }
 
 

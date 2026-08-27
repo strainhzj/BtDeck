@@ -31,6 +31,8 @@ import {
   needsActiveSnapshotRefresh
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
 
@@ -942,6 +944,156 @@ describe('P2 - parseSyncDeleteResponse', () => {
       failed_items: [{ info_id: 'i1' }]
     }, [{ info_id: 'i1', name: '查到了' }])
     expect(r.failedDetail).toContain('查到了')
+  })
+})
+
+// ============ 等级3文件缺失提醒：未找到种子文件时跳过文件操作直接入回收站 ============
+// 后端契约：level3 删除成功但文件缺失时 data.level3_file_missing 携带
+// [{torrent_id, torrent_name}]；异步任务 results 每项 {info_id, result} 中
+// result.file_missing=true 标记该种子。前端负责转成提醒文案（$notify 展示）。
+
+describe('等级3文件缺失提醒 - parseSyncDeleteResponse', () => {
+  it('level3_file_missing 非空 → success 主提示带计数 + fileMissingDetail 列出名称', () => {
+    const data = {
+      level3_success: ['t1', 't2'],
+      level3_file_missing: [
+        { torrent_id: 't1', torrent_name: '幽灵种子A' },
+        { torrent_id: 't2', torrent_name: '幽灵种子B' }
+      ]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('2 个未找到文件')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+    expect(r.fileMissingDetail).toContain('幽灵种子B')
+    expect(r.fileMissingDetail).toContain('已跳过文件操作直接移入回收站')
+  })
+
+  it('level3_file_missing 超5个 → fileMissingDetail 带"等N个"', () => {
+    const missing = Array.from({ length: 7 }, (_, i) => ({
+      torrent_id: `t${i}`, torrent_name: `种子${i}`
+    }))
+    const r = parseSyncDeleteResponse({ level3_success: ['t0'], level3_file_missing: missing }, 3)
+    expect(r.fileMissingDetail).toContain('等7个')
+  })
+
+  it('无 level3_file_missing → fileMissingDetail 为 null，主提示保持原样', () => {
+    const r = parseSyncDeleteResponse({ level3_success: ['t1'] }, 3)
+    expect(r.fileMissingDetail).toBeNull()
+    expect(r.message).toBe('等级3删除成功 1 个')
+  })
+
+  it('等级2响应不受影响 → fileMissingDetail 为 null', () => {
+    const r = parseSyncDeleteResponse({ level2_success: [{}] }, 2)
+    expect(r.fileMissingDetail).toBeNull()
+  })
+})
+
+describe('等级3文件缺失提醒 - parseDeleteTaskResult', () => {
+  it('completed 且 results 含 file_missing → 主提示带计数 + fileMissingDetail', () => {
+    const taskData = {
+      status: 'completed',
+      success_count: 2,
+      failed_count: 0,
+      failed_items: [],
+      results: [
+        { info_id: 't1', result: { success: true, file_missing: true, torrent_name: '幽灵种子A' } },
+        { info_id: 't2', result: { success: true, file_missing: false, torrent_name: '正常种子' } }
+      ]
+    }
+    const r = parseDeleteTaskResult(taskData, [])
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('1 个未找到文件')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+    expect(r.fileMissingDetail).not.toContain('正常种子')
+  })
+
+  it('completed 无 results / 无 file_missing → fileMissingDetail 为 null 且主提示原样', () => {
+    const r = parseDeleteTaskResult({
+      status: 'completed', success_count: 5, failed_count: 0, failed_items: []
+    }, [])
+    expect(r.fileMissingDetail).toBeNull()
+    expect(r.message).not.toContain('未找到文件')
+  })
+
+  it('failed → fileMissingDetail 为 null', () => {
+    const r = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 3, error_message: '下载器离线',
+      results: [{ info_id: 't1', result: { file_missing: true, torrent_name: '幽灵种子A' } }]
+    }, [])
+    expect(r.fileMissingDetail).toBeNull()
+  })
+
+  it('partial + results 含 file_missing → fileMissingDetail 保留（与 failedDetail 并存）', () => {
+    const r = parseDeleteTaskResult({
+      status: 'partial', success_count: 1, failed_count: 1,
+      failed_items: [{ info_id: 'i1' }],
+      results: [
+        { info_id: 't1', result: { file_missing: true, torrent_name: '幽灵种子A' } },
+        { info_id: 't2', result: { success: true, torrent_name: '正常种子' } }
+      ]
+    }, [{ info_id: 'i1', name: '失败种子' }])
+    expect(r.type).toBe('warning')
+    expect(r.failedDetail).toContain('失败种子')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+})
+
+describe('等级3文件缺失提醒 - 并存场景', () => {
+  it('降级与文件缺失并存 → downgradeDetail 与 fileMissingDetail 同时输出', () => {
+    const data = {
+      level3_success: [],
+      level4_downgraded: [{ torrent_name: '备份失败种子' }],
+      level3_file_missing: [{ torrent_id: 't1', torrent_name: '幽灵种子A' }]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('warning')
+    expect(r.downgradeDetail).toContain('降级为等级4')
+    // 降级分支 return 也必须透传 fileMissingDetail
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+
+  it('部分失败与文件缺失并存 → failed 提示 + fileMissingDetail 保留', () => {
+    const data = {
+      level3_success: ['t1'],
+      level3_file_missing: [{ torrent_id: 't1', torrent_name: '幽灵种子A' }],
+      failed: [{ torrent_id: 't2', message: 'move failed' }]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('warning')
+    expect(r.message).toContain('失败 1')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+})
+
+// ============ 等级3文件缺失提醒：源码契约（展示层接线） ============
+// 行为契约锁纯函数；此处锁「接线」——mixin 必须把 fileMissingDetail 发成通知，
+// utils 必须读后端约定的字段名。丢接线时行为测试不红（纯函数仍正确），
+// 只有源码契约能拦住「解析了但没展示」「字段名对不上」这类静默失效。
+
+describe('等级3文件缺失提醒 - 源码接线契约', () => {
+  const utilsSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/utils/torrentBatch.ts'),
+    'utf-8'
+  )
+  const mixinSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/mixins/torrentBatch.ts'),
+    'utf-8'
+  )
+
+  it('utils 解析后端契约字段：同步 level3_file_missing / 异步 result.file_missing', () => {
+    expect(utilsSource).toContain('data?.level3_file_missing')
+    expect(utilsSource).toContain('result?.file_missing')
+  })
+
+  it('两解析结果接口均声明 fileMissingDetail 字段', () => {
+    // 3 = ParsedSyncDeleteResult 接口 + ParsedDeleteTaskResult 接口 + parseSyncDeleteResponse 局部声明
+    expect(utilsSource.match(/fileMissingDetail: string \| null/g)?.length).toBe(3)
+  })
+
+  it('mixin 单删与批量轮询两处都发文件缺失提醒通知', () => {
+    expect(mixinSource.match(/if \(parsed\.fileMissingDetail\)/g)?.length).toBe(2)
+    expect(mixinSource.match(/title: '文件缺失提醒'/g)?.length).toBe(2)
   })
 })
 

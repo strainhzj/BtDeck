@@ -707,10 +707,13 @@ async def delete_torrent_with_level(
             elif delete_level == 3:
                 level3_count = len(result.get("level3_success", []))
                 level4_count = len(result.get("level4_downgraded", []))
+                file_missing_count = len(result.get("level3_file_missing", []))
                 if level3_count > 0:
                     msg_parts.append(f"等级3删除成功{level3_count}个")
                 if level4_count > 0:
                     msg_parts.append(f"降级为等级4删除{level4_count}个")
+                if file_missing_count > 0:
+                    msg_parts.append(f"{file_missing_count}个种子未找到文件，已跳过文件操作直接移入回收站")
                 msg = "、".join(msg_parts) if msg_parts else "删除完成"
             else:  # delete_level == 4
                 msg = f"等级4删除完成，成功{len(result.get('level4_success', []))}个"
@@ -724,6 +727,7 @@ async def delete_torrent_with_level(
                     "level1_success": result.get("level1_success", []),
                     "level2_success": result.get("level2_success", []),
                     "level3_success": result.get("level3_success", []),
+                    "level3_file_missing": result.get("level3_file_missing", []),
                     "level4_downgraded": result.get("level4_downgraded", []),
                     "level4_success": result.get("level4_success", []),
                     "failed": result.get("failed", []),
@@ -741,10 +745,13 @@ async def delete_torrent_with_level(
             if delete_level == 3:
                 level3_count = len(result.get("level3_success", []))
                 level4_count = len(result.get("level4_downgraded", []))
+                file_missing_count = len(result.get("level3_file_missing", []))
                 if level3_count > 0:
                     msg_parts.append(f"等级3删除成功{level3_count}个")
                 if level4_count > 0:
                     msg_parts.append(f"降级为等级4删除{level4_count}个")
+                if file_missing_count > 0:
+                    msg_parts.append(f"{file_missing_count}个种子未找到文件，已跳过文件操作直接移入回收站")
             elif delete_level == 4:
                 level4_count = len(result.get("level4_success", []))
                 if level4_count > 0:
@@ -762,6 +769,7 @@ async def delete_torrent_with_level(
                 data={
                     "total": result["total"],
                     "level3_success": result.get("level3_success", []),
+                    "level3_file_missing": result.get("level3_file_missing", []),
                     "level4_downgraded": result.get("level4_downgraded", []),
                     "level4_success": result.get("level4_success", []),
                     "failed": result.get("failed", []),

@@ -213,7 +213,8 @@ class TorrentDeletionByLevelService:
         支持所有4个等级的删除
         - Level 1: 删除任务和数据
         - Level 2: 删除任务保留数据
-        - Level 3: 移到回收站（备份失败时自动降级为等级4）
+        - Level 3: 移到回收站（备份失败时自动降级为等级4；
+          未找到种子文件时跳过文件操作，种子数据直接入回收站并记录到 level3_file_missing）
         - Level 4: 添加"待删除"标签
 
         Args:
@@ -229,6 +230,7 @@ class TorrentDeletionByLevelService:
         level1_success = []  # 等级1删除成功
         level2_success = []  # 等级2删除成功
         level3_success = []  # 等级3删除成功
+        level3_file_missing = []  # 等级3删除成功但未找到种子文件（跳过了文件操作）
         level4_downgraded = []  # 降级到等级4的种子
         level4_success = []  # 等级4删除成功
         failed = []  # 完全失败的种子
@@ -269,6 +271,13 @@ class TorrentDeletionByLevelService:
                     level2_success.append(torrent_id)
                 elif delete_level == 3:
                     level3_success.append(torrent_id)
+                    if result.get("file_missing"):
+                        level3_file_missing.append(
+                            {
+                                "torrent_id": torrent_id,
+                                "torrent_name": result.get("torrent_name", ""),
+                            }
+                        )
                 elif delete_level == 4:
                     level4_success.append(torrent_id)
             else:
@@ -280,6 +289,7 @@ class TorrentDeletionByLevelService:
             "level1_success": level1_success,
             "level2_success": level2_success,
             "level3_success": level3_success,
+            "level3_file_missing": level3_file_missing,
             "level4_downgraded": level4_downgraded,
             "level4_success": level4_success,
             "failed": failed,
@@ -938,6 +948,17 @@ class TorrentDeletionByLevelService:
                     "rolled_back": True,
                 }
 
+            # 文件缺失/已移动时 move 返回 success + skipped，种子数据仍已入回收站
+            file_missing = bool(move_result.get("file_missing"))
+            already_moved = bool(move_result.get("already_moved"))
+            if file_missing:
+                logger.warning(
+                    f"[等级3删除] 种子文件不存在，已跳过文件操作，仅将种子移入回收站: "
+                    f"{torrent.name} (save_path={torrent.save_path})"
+                )
+            elif already_moved:
+                logger.info(f"[等级3删除] 种子文件此前已移至 .pending_delete，跳过移动: {torrent.name}")
+
             # 文件移动成功后才扣减辅种数量，避免后续回滚时影响仍然有效的分组。
             decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
@@ -959,7 +980,11 @@ class TorrentDeletionByLevelService:
                         "backup_file_path": backup_file_path if backup_success else None,
                         "file_list_obtained": original_file_list is not None,
                         "file_count": len(original_file_list) if original_file_list else 0,
-                        "torrent_moved": True,
+                        "torrent_moved": not file_missing and not already_moved,
+                        "file_missing": file_missing,
+                        "skip_reason": (
+                            "file_missing" if file_missing else ("already_moved" if already_moved else None)
+                        ),
                         "torrent_type": move_result.get("torrent_type"),
                         "is_directory": move_result.get("is_directory"),
                         "original_name": move_result.get("original_name"),
@@ -988,12 +1013,23 @@ class TorrentDeletionByLevelService:
                 "operation": "delete_level3",
                 "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
                 "original_filename": torrent.original_filename,
-                "torrent_moved": True,
+                "torrent_name": torrent.name,
+                "torrent_moved": not file_missing and not already_moved,
+                "file_missing": file_missing,
+                "already_moved": already_moved,
                 "torrent_type": move_result.get("torrent_type"),
                 "is_directory": move_result.get("is_directory"),
                 "original_name": move_result.get("original_name"),
                 "new_name": move_result.get("new_name"),
-                "message": f"已移至回收站 ({move_result.get('torrent_type')})",
+                "message": (
+                    "未找到种子文件，已跳过文件操作，仅将种子移入回收站"
+                    if file_missing
+                    else (
+                        f"种子文件已在回收站，跳过移动 ({move_result.get('torrent_type')})"
+                        if already_moved
+                        else f"已移至回收站 ({move_result.get('torrent_type')})"
+                    )
+                ),
             }
 
         except Exception as e:
@@ -1405,14 +1441,9 @@ class TorrentDeletionByLevelService:
 
                 logger.info(f"[单文件重命名] {torrent_name} -> {new_name}")
 
-                # 检查原文件是否存在
+                # 原文件不存在：已移动过（幂等跳过）或无文件可操作（file_missing 跳过）
                 if not os.path.exists(original_path):
-                    return {"success": False, "error": f"单文件不存在: {original_path}", "torrent_type": torrent_type}
-
-                # 🔥 幂等性检测：检查目标是否已存在
-                if os.path.exists(new_path):
-                    # 原文件不存在 → 已移动，跳过
-                    if not os.path.exists(original_path):
+                    if os.path.exists(new_path):
                         logger.warning(
                             f"[幂等性处理] 检测到单文件已移动到 .pending_delete，" f"跳过移动操作: {new_name}"
                         )
@@ -1425,10 +1456,27 @@ class TorrentDeletionByLevelService:
                             "new_name": new_name,
                             "torrent_type": torrent_type,
                             "skipped": True,  # 🔥 标记为跳过
+                            "already_moved": True,
                         }
-                    else:
-                        # 原文件仍在 → 目标文件冲突
-                        return {"success": False, "error": f"目标文件已存在: {new_path}", "torrent_type": torrent_type}
+                    logger.warning(
+                        f"[文件缺失] 单文件与 .pending_delete 目标均不存在，" f"跳过文件操作: {original_path}"
+                    )
+                    return {
+                        "success": True,
+                        "original_path": original_path,
+                        "new_path": new_path,
+                        "is_directory": False,
+                        "original_name": torrent_name,
+                        "new_name": new_name,
+                        "torrent_type": torrent_type,
+                        "skipped": True,
+                        "already_moved": False,
+                        "file_missing": True,  # 🔥 无可操作文件，由调用方提醒
+                    }
+
+                # 🔥 幂等性检测：原文件仍在但目标已存在 → 目标文件冲突
+                if os.path.exists(new_path):
+                    return {"success": False, "error": f"目标文件已存在: {new_path}", "torrent_type": torrent_type}
 
                 # 执行重命名
                 loop = asyncio.get_event_loop()
@@ -1455,18 +1503,9 @@ class TorrentDeletionByLevelService:
 
                 logger.info(f"[多文件移动] {torrent_name}/ -> {new_folder_name}/")
 
-                # 检查原文件夹是否存在
+                # 原文件夹不存在：已移动过（幂等跳过）或无文件可操作（file_missing 跳过）
                 if not os.path.exists(original_folder):
-                    return {
-                        "success": False,
-                        "error": f"原文件夹不存在: {original_folder}",
-                        "torrent_type": torrent_type,
-                    }
-
-                # 🔥 幂等性检测 + 智能合并：检查目标文件夹是否已存在
-                if os.path.exists(new_folder):
-                    # 原文件夹不存在 → 已移动，跳过
-                    if not os.path.exists(original_folder):
+                    if os.path.exists(new_folder):
                         logger.warning(
                             f"[幂等性处理] 检测到多文件文件夹已移动到 .pending_delete，"
                             f"跳过移动操作: {new_folder_name}/"
@@ -1480,8 +1519,26 @@ class TorrentDeletionByLevelService:
                             "new_name": new_folder_name,
                             "torrent_type": torrent_type,
                             "skipped": True,  # 🔥 标记为跳过
+                            "already_moved": True,
                         }
+                    logger.warning(
+                        f"[文件缺失] 原文件夹与 .pending_delete 目标均不存在，" f"跳过文件操作: {original_folder}"
+                    )
+                    return {
+                        "success": True,
+                        "original_path": original_folder,
+                        "new_path": new_folder,
+                        "is_directory": True,
+                        "original_name": torrent_name,
+                        "new_name": new_folder_name,
+                        "torrent_type": torrent_type,
+                        "skipped": True,
+                        "already_moved": False,
+                        "file_missing": True,  # 🔥 无可操作文件，由调用方提醒
+                    }
 
+                # 🔥 幂等性检测 + 智能合并：原文件夹仍在，检查目标文件夹是否已存在
+                if os.path.exists(new_folder):
                     # 原文件夹仍在 → 智能合并逻辑
                     try:
                         new_folder_contents = set(os.listdir(new_folder))

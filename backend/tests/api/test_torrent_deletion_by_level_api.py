@@ -33,6 +33,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
 from app.auth.dependencies import require_authenticated_user
+from app.core.file_operations import FileOperationService
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
 from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
@@ -590,6 +591,379 @@ class TestAuxiliaryCountOnDeleteLevels:
         )
         assert restored.deleted_at is None
         assert [row.auxiliary_seed_count for row in active] == [3, 3, 3]
+
+
+# ==================== 组4.5：L3 文件缺失跳过（无文件可操作 → 直接入回收站） ====================
+
+
+class TestMoveTorrentFilesForRecycleFileMissing:
+    """_move_torrent_files_for_recycle：原文件/文件夹不存在时的跳过语义（真实临时目录）。
+
+    - 原路径与 .pending_delete 目标均不存在 → success + file_missing（无可操作文件）
+    - 原路径不存在但 .pending_delete 存在 → success + already_moved（幂等，此前该分支不可达）
+    """
+
+    @staticmethod
+    def _make_service(db_session):
+        _make_downloader(db_session)
+        return TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+
+    @pytest.mark.asyncio
+    async def test_single_file_missing_returns_file_missing_skip(self, db_session, tmp_path):
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="movie.mkv"
+        )
+        assert result["success"] is True, "文件缺失应跳过而非失败"
+        assert result["skipped"] is True
+        assert result["file_missing"] is True
+        assert result["already_moved"] is False
+        assert result["torrent_type"] == "single_file"
+
+    @pytest.mark.asyncio
+    async def test_single_file_already_moved_returns_idempotent_skip(self, db_session, tmp_path):
+        (tmp_path / "movie.pending_delete.mkv").write_bytes(b"data")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="movie.mkv"
+        )
+        assert result["success"] is True
+        assert result["already_moved"] is True
+        assert result.get("file_missing") is not True, "已移动过不是文件缺失"
+        assert (tmp_path / "movie.pending_delete.mkv").read_bytes() == b"data", "幂等跳过不得改动已有目标"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_missing_returns_file_missing_skip(self, db_session, tmp_path):
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="SomeFolder"
+        )
+        assert result["success"] is True, "文件夹缺失应跳过而非失败"
+        assert result["file_missing"] is True
+        assert result["already_moved"] is False
+        assert result["torrent_type"] == "multi_file"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_already_moved_returns_idempotent_skip(self, db_session, tmp_path):
+        """多文件幂等：原文件夹不在、.pending_delete 文件夹在 → already_moved（回归保护：此前不可达）。"""
+        pending = tmp_path / "SomeFolder.pending_delete"
+        pending.mkdir()
+        (pending / "a.mkv").write_bytes(b"a")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="SomeFolder"
+        )
+        assert result["success"] is True
+        assert result["already_moved"] is True
+        assert (pending / "a.mkv").exists()
+
+    # ========== 正常路径/真实失败回归：保护重构不破坏既有移动语义 ==========
+
+    @pytest.mark.asyncio
+    async def test_single_file_normal_rename_succeeds(self, db_session, tmp_path):
+        """原文件在、目标不在 → 真实重命名（skipped=False，文件落位 .pending_delete）。"""
+        original = tmp_path / "movie.mkv"
+        original.write_bytes(b"movie-data")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="movie.mkv"
+        )
+        assert result["success"] is True
+        assert result["skipped"] is False
+        assert result.get("file_missing") is not True
+        assert result.get("already_moved") is not True
+        assert not original.exists()
+        assert (tmp_path / "movie.pending_delete.mkv").read_bytes() == b"movie-data"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_normal_move_succeeds(self, db_session, tmp_path):
+        """原文件夹在 → 创建 .pending_delete 并整体搬移（含子目录，moved_count=2）。"""
+        folder = tmp_path / "Pack"
+        sub = folder / "sub"
+        sub.mkdir(parents=True)
+        (folder / "a.mkv").write_bytes(b"a")
+        (sub / "b.txt").write_bytes(b"b")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="Pack"
+        )
+        assert result["success"] is True
+        assert result["skipped"] is False
+        assert result["moved_count"] == 2
+        new_folder = tmp_path / "Pack.pending_delete"
+        assert (new_folder / "a.mkv").read_bytes() == b"a"
+        assert (new_folder / "sub" / "b.txt").read_bytes() == b"b"
+        # 既有语义：只搬内容，原文件夹保留为空目录
+        assert folder.exists() and list(folder.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_single_file_target_conflict_fails(self, db_session, tmp_path):
+        """原文件与目标同时存在 → 真实失败（目标冲突），文件系统零改动。
+
+        回归保护：file_missing 容错只作用于"原路径不存在"场景，
+        不得吞掉目标冲突这类需要人工介入的真实失败。
+        """
+        (tmp_path / "movie.mkv").write_bytes(b"original")
+        (tmp_path / "movie.pending_delete.mkv").write_bytes(b"target")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="movie.mkv"
+        )
+        assert result["success"] is False
+        assert "目标文件已存在" in result["error"]
+        assert (tmp_path / "movie.mkv").read_bytes() == b"original"
+        assert (tmp_path / "movie.pending_delete.mkv").read_bytes() == b"target"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_smart_merge_subset_cleans_and_removes(self, db_session, tmp_path):
+        """.pending_delete 内容是原文件夹子集（上次移动失败残留）→ 删残留后重新移动。
+
+        回归保护：清理智能合并块死代码时不得改变该分支行为。
+        """
+        folder = tmp_path / "Pack"
+        folder.mkdir()
+        (folder / "a.mkv").write_bytes(b"a")
+        (folder / "b.mkv").write_bytes(b"b")
+        stale = tmp_path / "Pack.pending_delete"
+        stale.mkdir()
+        (stale / "a.mkv").write_bytes(b"stale-residue")  # 子集残留
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="Pack"
+        )
+        assert result["success"] is True
+        assert result["skipped"] is False
+        new_folder = tmp_path / "Pack.pending_delete"
+        assert sorted(p.name for p in new_folder.iterdir()) == ["a.mkv", "b.mkv"]
+        assert (new_folder / "a.mkv").read_bytes() == b"a", "残留须删除后从原文件夹重新移动"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_empty_pending_delete_residual_cleaned(self, db_session, tmp_path):
+        """空 .pending_delete 残留文件夹 → 删除后继续正常移动。"""
+        folder = tmp_path / "Pack"
+        folder.mkdir()
+        (folder / "a.mkv").write_bytes(b"a")
+        (tmp_path / "Pack.pending_delete").mkdir()  # 空残留
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="Pack"
+        )
+        assert result["success"] is True
+        assert (tmp_path / "Pack.pending_delete" / "a.mkv").read_bytes() == b"a"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_disjoint_contents_fails_inconsistent(self, db_session, tmp_path):
+        """两文件夹内容完全不相交（数据损坏）→ 真实失败 + inconsistent_state，不自动处置。"""
+        folder = tmp_path / "Pack"
+        folder.mkdir()
+        (folder / "a.mkv").write_bytes(b"a")
+        new_folder = tmp_path / "Pack.pending_delete"
+        new_folder.mkdir()
+        (new_folder / "z.mkv").write_bytes(b"z")
+        svc = self._make_service(db_session)
+        result = await svc._move_torrent_files_for_recycle(
+            file_op_service=FileOperationService(), save_path=str(tmp_path), torrent_name="Pack"
+        )
+        assert result["success"] is False
+        assert result["inconsistent_state"] is True
+        assert (folder / "a.mkv").exists(), "不一致状态不得动原文件夹"
+        assert (new_folder / "z.mkv").exists()
+
+
+class TestLevel3FileMissingSkip:
+    """等级3删除：未找到种子文件 → 跳过文件操作，种子数据直接入回收站并提醒。"""
+
+    @pytest.mark.asyncio
+    async def test_level3_file_missing_still_soft_deletes(self, db_session, tmp_path):
+        """文件缺失跳过移动：success=True + file_missing 提醒 + 软删除生效 + 辅种照常扣减 + 审计记录。"""
+        rows = TestAuxiliaryCountOnDeleteLevels._make_group(db_session)
+        downloader = db_session.query(BtDownloaders).filter_by(downloader_id="dl-1").first()
+        if downloader is None:
+            downloader = _make_downloader(db_session)
+        downloader.path_mapping = "{}"
+        backup_path = tmp_path / "seed.torrent"
+        backup_path.write_bytes(b"torrent")
+        rows[0].backup_file_path = str(backup_path)
+        db_session.commit()
+
+        file_service = MagicMock()
+        file_service.create_marker_file = AsyncMock(return_value={"success": True})
+        file_service.delete_marker_file = AsyncMock(return_value={"success": True})
+        adapter = MagicMock()
+        adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
+        audit = AsyncMock()
+        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service._get_adapter = MagicMock(return_value=adapter)
+        service._delete_from_downloader = AsyncMock(return_value=(True, None))
+        service._move_torrent_files_for_recycle = AsyncMock(
+            return_value={
+                "success": True,
+                "skipped": True,
+                "file_missing": True,
+                "torrent_type": "single_file",
+            }
+        )
+
+        with patch.object(
+            BtDownloaders, "file_operations_service", new_callable=PropertyMock, return_value=file_service
+        ):
+            result = await service.delete_by_level(rows[0].info_id, 3, operator="tester", audit_service=audit)
+
+        assert result["success"] is True, "文件缺失应跳过文件操作而非整体失败"
+        assert result["file_missing"] is True
+        assert result["torrent_moved"] is False
+        assert "未找到种子文件" in result["message"]
+
+        # 种子数据已入回收站（软删除），不可回滚
+        db_session.expire_all()
+        deleted = db_session.query(TorrentInfo).filter_by(info_id=rows[0].info_id).one()
+        assert deleted.deleted_at is not None
+        active = (
+            db_session.query(TorrentInfo)
+            .filter(
+                TorrentInfo.name == "same-content",
+                TorrentInfo.size == 1024,
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        assert [row.auxiliary_seed_count for row in active] == [2, 2], "跳过文件操作仍应扣减辅种数量"
+        # 失败时不回滚标记文件（删除成功）
+        file_service.delete_marker_file.assert_not_awaited()
+
+        # 审计记录文件缺失事实
+        audit.log_operation.assert_awaited_once()
+        kwargs = audit.log_operation.await_args.kwargs
+        assert kwargs["operation_detail"]["file_missing"] is True
+        assert kwargs["operation_detail"]["torrent_moved"] is False
+        assert kwargs["operation_detail"]["skip_reason"] == "file_missing"
+
+    @pytest.mark.asyncio
+    async def test_level3_already_moved_reports_moved_false(self, db_session, tmp_path):
+        """幂等已移动：success 且 already_moved=True，message 提醒文件已在回收站。"""
+        rows = TestAuxiliaryCountOnDeleteLevels._make_group(db_session)
+        downloader = db_session.query(BtDownloaders).filter_by(downloader_id="dl-1").first()
+        if downloader is None:
+            downloader = _make_downloader(db_session)
+        downloader.path_mapping = "{}"
+        backup_path = tmp_path / "seed.torrent"
+        backup_path.write_bytes(b"torrent")
+        rows[0].backup_file_path = str(backup_path)
+        db_session.commit()
+
+        file_service = MagicMock()
+        file_service.create_marker_file = AsyncMock(return_value={"success": True})
+        adapter = MagicMock()
+        adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service._get_adapter = MagicMock(return_value=adapter)
+        service._delete_from_downloader = AsyncMock(return_value=(True, None))
+        service._move_torrent_files_for_recycle = AsyncMock(
+            return_value={
+                "success": True,
+                "skipped": True,
+                "already_moved": True,
+                "torrent_type": "single_file",
+            }
+        )
+
+        with patch.object(
+            BtDownloaders, "file_operations_service", new_callable=PropertyMock, return_value=file_service
+        ):
+            result = await service.delete_by_level(rows[0].info_id, 3, operator="tester")
+
+        assert result["success"] is True
+        assert result["already_moved"] is True
+        assert result["file_missing"] is False
+        assert "已在回收站" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_batch_collects_level3_file_missing(self, db_session, monkeypatch):
+        """delete_batch_by_level：L3 成功但 file_missing → level3_file_missing 透出名单位置。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="ghost-movie")
+        _make_downloader(db_session)
+        svc = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+
+        async def fake_level3(torrent, operator, audit_service=None):
+            return {
+                "success": True,
+                "file_missing": True,
+                "torrent_name": torrent.name,
+                "operation": "delete_level3",
+            }
+
+        monkeypatch.setattr(svc, "_delete_level3", fake_level3)
+
+        result = await svc.delete_batch_by_level(["t1"], 3, operator="tester")
+
+        assert result["success"] is True
+        assert result["level3_success"] == ["t1"]
+        assert result["level3_file_missing"] == [{"torrent_id": "t1", "torrent_name": "ghost-movie"}]
+
+
+class TestDeleteWithLevelFileMissingPayload:
+    """HTTP 级契约：delete-with-level 响应须透出 level3_file_missing 并在 msg 拼接提醒。
+
+    service 层行为已有 service 级覆盖；此处锁定 endpoint 的字段透出与文案拼接
+    （前端 fileMissingDetail 依赖 data.level3_file_missing，丢字段即静默失去提醒）。
+    """
+
+    @staticmethod
+    def _batch_result(*, with_failed: bool):
+        failed = [{"torrent_id": "t2", "message": "move failed"}] if with_failed else []
+        return {
+            "success": not failed,
+            "total": 2 if failed else 1,
+            "level1_success": [],
+            "level2_success": [],
+            "level3_success": ["t1"],
+            "level3_file_missing": [{"torrent_id": "t1", "torrent_name": "幽灵种子A"}],
+            "level4_downgraded": [],
+            "level4_success": [],
+            "failed": failed,
+        }
+
+    def test_success_response_carries_file_missing_list_and_msg(self, client, monkeypatch):
+        monkeypatch.setattr(
+            TorrentDeletionByLevelService,
+            "delete_batch_by_level",
+            AsyncMock(return_value=self._batch_result(with_failed=False)),
+        )
+        r = client.delete(URL, params={"torrent_info_ids": "t1", "delete_level": 3})
+        body = r.json()
+        assert body["code"] == "200"
+        assert "等级3删除成功1个" in body["msg"]
+        assert "1个种子未找到文件" in body["msg"]
+        assert "已跳过文件操作直接移入回收站" in body["msg"]
+        assert body["data"]["level3_file_missing"] == [{"torrent_id": "t1", "torrent_name": "幽灵种子A"}]
+
+    def test_partial_response_carries_file_missing_list_and_msg(self, client, monkeypatch):
+        monkeypatch.setattr(
+            TorrentDeletionByLevelService,
+            "delete_batch_by_level",
+            AsyncMock(return_value=self._batch_result(with_failed=True)),
+        )
+        r = client.delete(URL, params={"torrent_info_ids": "t1,t2", "delete_level": 3})
+        body = r.json()
+        assert body["code"] == "207"
+        assert "失败1个" in body["msg"]
+        assert "1个种子未找到文件" in body["msg"], "部分失败分支同样要提醒文件缺失"
+        assert body["data"]["level3_file_missing"] == [{"torrent_id": "t1", "torrent_name": "幽灵种子A"}]
+
+    def test_no_file_missing_keeps_msg_clean(self, client, monkeypatch):
+        result = self._batch_result(with_failed=False)
+        result["level3_file_missing"] = []
+        monkeypatch.setattr(
+            TorrentDeletionByLevelService,
+            "delete_batch_by_level",
+            AsyncMock(return_value=result),
+        )
+        r = client.delete(URL, params={"torrent_info_ids": "t1", "delete_level": 3})
+        body = r.json()
+        assert body["code"] == "200"
+        assert "未找到文件" not in body["msg"]
+        assert body["data"]["level3_file_missing"] == []
 
 
 # ==================== 组5：delete_batch_by_level 降级编排（service 自身方法） ====================
