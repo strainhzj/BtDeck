@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # 自定义序列化器处理特殊类型
 def custom_serializer(obj):
-    """处理 JSON 不支持的数据类型"""
+    """处理 JSON 不支持的特殊类型"""
     if isinstance(obj, datetime):
         return obj.isoformat()  # 转换为 ISO 8601 字符串
     if isinstance(obj, set):
@@ -43,6 +43,42 @@ def custom_serializer(obj):
     if hasattr(obj, "__dict__"):
         return obj.__dict__  # 自定义对象转字典
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def _escape_like_literal(value: str, escape_char: str = "\\") -> str:
+    """转义 LIKE 模式中的通配符（%/_/转义符本身），配合 like(escape=...) 按字面量匹配。"""
+    return "".join(f"{escape_char}{ch}" if ch in ("%", "_", escape_char) else ch for ch in value)
+
+
+def tracker_row_matches_domains(
+    tracker_host: Optional[str], tracker_url: Optional[str], domains: Optional[List[str]]
+) -> Optional[str]:
+    """判断单个 tracker 行是否命中域名筛选，返回命中的域名（无命中返回 None）。
+
+    与 ``get_torrent_infos`` 内 SQL 侧的 8 个域名匹配条件一一对应（均按小写、
+    字面量比较；SQL 侧 like 已加 autoescape，``_``/``%`` 均为字面量），两侧
+    口径必须同步修改并由回归测试保证一致。
+    """
+    if not domains:
+        return None
+    host_lower = (tracker_host or "").lower()
+    url_lower = (tracker_url or "").lower()
+    for domain in domains:
+        domain_lower = (domain or "").lower()
+        if not domain_lower:
+            continue
+        if (
+            host_lower == domain_lower
+            or host_lower.startswith(f"{domain_lower}:")
+            or url_lower == domain_lower
+            or url_lower.startswith(f"{domain_lower}/")
+            or url_lower.startswith(f"{domain_lower}:")
+            or url_lower.endswith(f"://{domain_lower}")
+            or f"://{domain_lower}/" in url_lower
+            or f"://{domain_lower}:" in url_lower
+        ):
+            return domain_lower
+    return None
 
 
 # 通用查询方法
@@ -87,6 +123,15 @@ def get_torrent_infos(
     if active_deletion_exclusion is not None:
         query = query.filter(active_deletion_exclusion)
         count_query = count_query.filter(active_deletion_exclusion)
+
+    # tracker_domain 在过滤闭包与 VO 命中标记两处使用，统一在入口归一一次，
+    # 避免两处各自解析造成口径漂移。
+    requested_tracker_domains: List[str] = []
+    if tracker_domain is not None:
+        requested_tracker_domains = extract_domains_from_trackers(
+            [value.strip() for value in tracker_domain.split(",") if value.strip()]
+        )
+        logger.debug("[tracker-domain-filter] 原始输入=%r 归一域名=%s", tracker_domain, requested_tracker_domains)
 
     # 添加过滤条件
     if downloader_id:
@@ -174,19 +219,22 @@ def get_torrent_infos(
         if tracker:
             tracker_query_result = (
                 db.query(TrackerInfo.torrent_info_id)
-                .filter(TrackerInfo.tracker_url.like(f"%{tracker}%"))
+                .filter(TrackerInfo.tracker_url.like(f"%{_escape_like_literal(tracker)}%", escape="\\"))
                 .filter(TrackerInfo.dr == 0)
                 .all()
             )
-            if tracker_query_result.__len__() > 0:
-                info_id_list = [row[0] for row in tracker_query_result]
+            logger.debug("[tracker-filter] 关键字=%r 命中tracker行数=%d", tracker, len(tracker_query_result))
+            info_id_list = [row[0] for row in tracker_query_result]
+            if info_id_list:
                 q = q.filter(TorrentInfo.info_id.in_(info_id_list))
                 cq = cq.filter(TorrentInfo.info_id.in_(info_id_list))
+            else:
+                # 无任何匹配 tracker 行时应返回空列表；跳过过滤会静默放宽为返回全部。
+                q = q.filter(false())
+                cq = cq.filter(false())
 
         if tracker_domain is not None:
-            requested_domains = extract_domains_from_trackers(
-                [value.strip() for value in tracker_domain.split(",") if value.strip()]
-            )
+            requested_domains = requested_tracker_domains
             if not requested_domains:
                 q = q.filter(false())
                 cq = cq.filter(false())
@@ -196,17 +244,20 @@ def get_torrent_infos(
                 lowered_host = func.lower(TrackerInfo.tracker_host)
                 for domain in requested_domains:
                     # tracker_host 由同步任务保存为 netloc（可能带端口）；URL 作为
-                    # 旧数据/手动写入数据的回退，均只匹配 URL 的主机部分。
+                    # 旧数据/手动写入数据的回退，均只匹配 URL 的主机部分。like 绑定
+                    # escape 使域名中的 _/% 按字面量匹配；Python 侧同口径谓词见
+                    # tracker_row_matches_domains。
+                    escaped = _escape_like_literal(domain)
                     domain_conditions.append(
                         or_(
                             lowered_host == domain,
-                            lowered_host.like(f"{domain}:%"),
+                            lowered_host.like(f"{escaped}:%", escape="\\"),
                             lowered_url == domain,
-                            lowered_url.like(f"{domain}/%"),
-                            lowered_url.like(f"{domain}:%"),
-                            lowered_url.like(f"%://{domain}"),
-                            lowered_url.like(f"%://{domain}/%"),
-                            lowered_url.like(f"%://{domain}:%"),
+                            lowered_url.like(f"{escaped}/%", escape="\\"),
+                            lowered_url.like(f"{escaped}:%", escape="\\"),
+                            lowered_url.like(f"%://{escaped}", escape="\\"),
+                            lowered_url.like(f"%://{escaped}/%", escape="\\"),
+                            lowered_url.like(f"%://{escaped}:%", escape="\\"),
                         )
                     )
                 tracker_domain_exists = (
@@ -385,7 +436,34 @@ def get_torrent_infos(
 
         # 分页查询
         query_result_list = query.offset(skip).limit(limit).all()
-        data = convert_to_vos_with_trackers(db, query_result_list)
+        data = convert_to_vos_with_trackers(
+            db,
+            query_result_list,
+            requested_tracker_domains=requested_tracker_domains or None,
+        )
+
+        logger.debug(
+            "[torrent-list] total=%d 本页=%d tracker=%r tracker_domain=%r same_content=%s single_error=%s",
+            total,
+            len(data),
+            tracker,
+            tracker_domain,
+            same_content_only,
+            single_error_only,
+        )
+        if requested_tracker_domains:
+            matched_rows = sum(
+                1 for vo in data if any(getattr(row, "matched_domain", None) for row in (vo.tracker_info or []))
+            )
+            matched_marks = sum(
+                1 for vo in data for row in (vo.tracker_info or []) if getattr(row, "matched_domain", None)
+            )
+            logger.debug(
+                "[tracker-domain-filter] 本页%d行中%d行含命中tracker，共%d个命中标记",
+                len(data),
+                matched_rows,
+                matched_marks,
+            )
 
         return {"total": total, "data": data}
     finally:
@@ -484,6 +562,7 @@ def convert_to_vo_with_trackers(
     trackers: Optional[List[TrackerInfo]] = None,
     downloader_type: Optional[str] = None,
     tracker_keyword_map: Optional[Dict[str, str]] = None,
+    requested_tracker_domains: Optional[List[str]] = None,
 ) -> TorrentInfoVO:
     """将数据库模型转换为VO对象，包含tracker信息"""
     prefetched_downloader_type = downloader_type
@@ -597,7 +676,8 @@ def convert_to_vo_with_trackers(
         ):
             scrape_status_text = FAILED_DISPLAY_TEXT
 
-        # 构建tracker_info对象数组
+        # 构建tracker_info对象数组；requested_tracker_domains 非空时按同一口径
+        # 标记命中筛选的 tracker 行（tracker_row_matches_domains 与 SQL 条件同口径）。
         tracker_vo = TrackerInfoVO(
             tracker_id=tracker.tracker_id,
             tracker_name=tracker.tracker_name,
@@ -606,6 +686,11 @@ def convert_to_vo_with_trackers(
             last_announce_msg=tracker.last_announce_msg,
             last_scrape_succeeded=scrape_status_text,  # 返回中文状态
             last_scrape_msg=tracker.last_scrape_msg,
+            matched_domain=(
+                tracker_row_matches_domains(tracker.tracker_host, tracker.tracker_url, requested_tracker_domains)
+                if requested_tracker_domains
+                else None
+            ),
         )
         tracker_info_list.append(tracker_vo)
 
@@ -679,6 +764,7 @@ def convert_to_vos_with_trackers(
     torrents: Sequence[torrentInfoModel],
     *,
     batch_size: Optional[int] = None,
+    requested_tracker_domains: Optional[List[str]] = None,
 ) -> List[TorrentInfoVO]:
     """Convert torrent rows with bounded batched related-data prefetching."""
     torrent_list = list(torrents)
@@ -745,6 +831,7 @@ def convert_to_vos_with_trackers(
             trackers=tracker_map.get(str(torrent.info_id), []),
             downloader_type=downloader_type_map.get(str(torrent.downloader_id), "qbittorrent"),
             tracker_keyword_map=tracker_keyword_map,
+            requested_tracker_domains=requested_tracker_domains,
         )
         for torrent in torrent_list
     ]
