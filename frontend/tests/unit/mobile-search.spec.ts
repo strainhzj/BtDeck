@@ -3,8 +3,9 @@
  * - 纯高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索与 Web 端同源），
  *   search 事件 → buildAdvancedSearchRequest → POST advancedSearch；
  * - 简单搜索已迁至种子页（/m/torrents），本页不再有简单查询表单与 getList；
- * - 模板应用：advanced 回填工作区并执行 / simple 交回缓存转种子页；
- * - 下拉刷新：已搜索过经 workspace.onSearch 重放，未搜索过刷新字段与模板候选。
+ * - 移动端查询模板页已裁撤（仅保留高级搜索）：m2-template-cache 应用链路移除，
+ *   模板能力收敛进工作区左侧已保存搜索；
+ * - 下拉刷新：已搜索过经 workspace.onSearch 重放，未搜索过刷新字段候选。
  * 工作区以轻量 stub 替身（真实组件契约由桌面侧 spec 覆盖）。
  */
 
@@ -13,10 +14,6 @@ import Vue from 'vue'
 import MobileSearch from '@/views/mobile/search.vue'
 import { advancedSearch } from '@/api/torrents'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
-import {
-  setAppliedTemplateConditions,
-  takeAppliedTemplateConditions
-} from '@/views/mobile/m2-template-cache'
 
 jest.mock('@/api/torrents', () => ({
   advancedSearch: jest.fn()
@@ -25,11 +22,6 @@ jest.mock('@/api/torrents', () => ({
 jest.mock('@/components/torrents/AdvancedSearchWorkspace.vue', () => ({
   name: 'AdvancedSearchWorkspace',
   render: (h: (t: string) => unknown) => h('div')
-}))
-
-jest.mock('@/views/mobile/m2-template-cache', () => ({
-  setAppliedTemplateConditions: jest.fn(),
-  takeAppliedTemplateConditions: jest.fn().mockReturnValue(null)
 }))
 
 jest.mock('@/views/mobile/torrent-detail-cache', () => ({
@@ -92,7 +84,6 @@ async function flushLifecycle(): Promise<void> {
 describe('views/mobile/MobileSearch', () => {
   beforeEach(() => {
     jest.mocked(advancedSearch).mockReset()
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue(null)
     onSearchMock.mockReset()
     refreshFieldOptionsMock.mockReset()
     applyTemplateGroupsMock.mockReset()
@@ -155,42 +146,6 @@ describe('views/mobile/MobileSearch', () => {
     vm.openDetail(resultTorrent)
     expect(setCachedTorrent).toHaveBeenCalledWith(resultTorrent)
     expect(vm.$router.push).toHaveBeenCalledWith('/m/torrents/detail/d1/abc')
-  })
-
-  it('模板应用（advanced）：回填工作区并执行 advancedSearch', async() => {
-    const groups = [{ conditions: [{ field: 'name', operator: 'contains', value: 'x' }], logic: 'AND' }]
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '高级模板',
-      conditions: { source: 'advanced', version: 1, condition_groups: groups, sort_by: 'added_date', sort_order: 'desc' }
-    })
-    jest.mocked(advancedSearch).mockResolvedValue({
-      code: '200',
-      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
-    } as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(applyTemplateGroupsMock).toHaveBeenCalledWith(groups, { sort_by: 'added_date', sort_order: 'desc' })
-    expect(advancedSearch).toHaveBeenCalledTimes(1)
-    expect(vm.appliedTip).toContain('高级模板')
-  })
-
-  it('模板应用（simple）：交回缓存并转种子页（本页不执行搜索）', async() => {
-    const simpleConditions = {
-      source: 'simple' as const,
-      version: 1,
-      listQuery: { name_like: '关键词', downloader_id: ['d1'], status: ['seeding'] }
-    }
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '常用查询',
-      conditions: simpleConditions
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(setAppliedTemplateConditions).toHaveBeenCalledWith(simpleConditions, '常用查询')
-    expect(vm.$router.push).toHaveBeenCalledWith('/m/torrents')
-    expect(advancedSearch).not.toHaveBeenCalled()
   })
 
   it('下拉刷新：已搜索过经 workspace.onSearch 重放', async() => {
@@ -261,26 +216,6 @@ describe('views/mobile/MobileSearch', () => {
     expect(vm.searched).toBe(false)
   })
 
-  it('模板应用（advanced 无效条件组）：提示格式错误且不发起搜索', async() => {
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '坏模板',
-      conditions: {
-        source: 'advanced',
-        version: 1,
-        // 空条件组触发 buildAdvancedSearchRequestFromTemplateGroups 校验失败
-        condition_groups: [{ logic: 'and', conditions: [] }],
-        sort_by: 'added_date',
-        sort_order: 'desc'
-      }
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect(wrapper.vm.$message.error).toHaveBeenCalledWith(
-      expect.stringContaining('模板条件组1没有条件')
-    )
-    expect(advancedSearch).not.toHaveBeenCalled()
-  })
-
   it('rerunAdvanced：工作区 ref 缺失时静默不抛错（optional 防御）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
@@ -301,5 +236,8 @@ describe('views/mobile/MobileSearch', () => {
     expect(source).not.toContain('runSimpleSearch')
     expect(source).not.toContain('simpleForm')
     expect(source).not.toContain('getTorrentList')
+    // 查询模板页已裁撤：模板应用链路（m2-template-cache）禁回流
+    expect(source).not.toContain('m2-template-cache')
+    expect(source).not.toContain('applyPendingTemplate')
   })
 })

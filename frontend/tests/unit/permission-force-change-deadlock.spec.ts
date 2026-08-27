@@ -56,11 +56,22 @@ const viewStub = (name: string, marker: string) => ({
 })
 
 jest.mock('@/views/settings/index.vue', () => viewStub('SettingsPageMock', 'mock-settings-page'))
+jest.mock('@/views/mobile/settings.vue', () => viewStub('MobileSettingsPageMock', 'mock-m-settings-page'))
+// 移动用例起点页：真实组件 mounted 会发起 API 取数（jsdom 下报错），一并 stub
+jest.mock('@/views/mobile/dashboard.vue', () => viewStub('MobileDashboardPageMock', 'mock-m-dashboard-page'))
 // /torrents/index 路由挂的真实组件是 TorrentViewSwitcher（非 torrents/index.vue）
 jest.mock('@/views/torrents/TorrentViewSwitcher.vue', () => viewStub('TorrentsPageMock', 'mock-torrents-page'))
 jest.mock('@/views/dashboard/index.vue', () => viewStub('DashboardPageMock', 'mock-dashboard-page'))
 jest.mock('@/views/login/index.vue', () => viewStub('LoginPageMock', 'mock-login-page'))
 jest.mock('@/views/404.vue', () => viewStub('NotFoundMock', 'mock-404-page'))
+// 移动布局壳真实组件会拉起 Vuex 通知轮询等副作用，回归内以 router-view 壳替身
+jest.mock('@/layout/mobile/index.vue', () => ({
+  __esModule: true,
+  default: {
+    name: 'MobileLayoutMock',
+    render: (h: CreateElement): VNode => h('div', { class: 'mock-mobile-layout' }, [h('router-view')])
+  }
+}))
 
 // ---- 真实路由表 + 真实守卫 --------------------------------------------------
 
@@ -121,6 +132,7 @@ describe('W9 强制改密路由（生产事故修复回归）', () => {
 
   afterEach(() => {
     dateNowSpy.mockRestore()
+    localStorage.clear()
     app.$destroy()
     if (app.$el && app.$el.parentNode) {
       app.$el.parentNode.removeChild(app.$el)
@@ -226,6 +238,20 @@ describe('W9 强制改密路由（生产事故修复回归）', () => {
 
     expect(mockWarning).toHaveBeenCalledTimes(2)
     expect(router.currentRoute.path).toBe('/settings/index')
+  })
+
+  it('移动模式：拦截落点是移动设置页 /m/settings（整页复用桌面设置组件，不出死锁）', async() => {
+    localStorage.setItem('btdeck_ui_mode', 'mobile')
+    await startFrom('/m/dashboard')
+
+    // 移动用户点桌面顶层菜单：先经 UI 模式分流到 /m/torrents，再被强制改密
+    // 拦截——落点必须是移动设置页（白名单含 /m/settings），否则重定向循环
+    await navigate('/torrents/index')
+
+    expect(router.currentRoute.path).toBe('/m/settings')
+    expect(router.currentRoute.query.forceChange).toBe('1')
+    expect(app.$el.innerHTML).toContain('mock-m-settings-page')
+    expect(app.$el.innerHTML).not.toContain('mock-torrents-page')
   })
 
   it('对照组：标志为 false 时一切正常（dashboard 可达且渲染）', async() => {

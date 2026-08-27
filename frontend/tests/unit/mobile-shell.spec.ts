@@ -90,7 +90,7 @@ describe('layout/mobile/MobileLayout', () => {
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉，抽屉含移动组 11 项 + 桌面组 3 项完整菜单（M4 重组）', async() => {
+  it('汉堡按钮打开抽屉，抽屉含移动组 11 项 + 桌面组 2 项完整菜单（系统设置移动化）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
@@ -98,14 +98,16 @@ describe('layout/mobile/MobileLayout', () => {
     expect((wrapper.vm as any).drawerVisible).toBe(true)
 
     const items = wrapper.findAll('.mobile-menu-item')
-    expect(items.length).toBe(14)
+    expect(items.length).toBe(13)
     const mobileLabels = (wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)
-    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '查询模板', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件'])
+    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置'])
     const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
     expect(desktopLabels).toEqual(
-      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）', '系统设置'])
+      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）'])
     )
-    // M4 已移动化/有意保留的页面不在桌面组
+    // 已移动化/裁撤的页面不在桌面组（系统设置已移动化、查询模板已裁撤仅保留高级搜索）
+    expect(desktopLabels).not.toContain('系统设置')
+    expect(desktopLabels).not.toContain('查询模板')
     expect(desktopLabels).not.toContain('孤儿文件')
     expect(desktopLabels).not.toContain('下载器管理')
     expect(desktopLabels).not.toContain('定时任务')

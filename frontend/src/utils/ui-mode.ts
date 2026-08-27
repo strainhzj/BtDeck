@@ -47,7 +47,10 @@ export function toMobilePath(path: string): string {
   // M2 已移动化的管理页（与守卫重定向清单保持同步）
   if (path.startsWith('/recycle-bin')) return '/m/recycle-bin'
   if (path.startsWith('/logs')) return '/m/logs'
-  if (path.startsWith('/query-templates')) return '/m/query-templates'
+  // 移动端查询模板页已裁撤（仅保留高级搜索）：模板能力收敛进 /m/search 工作区
+  if (path.startsWith('/query-templates')) return '/m/search'
+  // 系统设置已移动化（/m/settings 整页复用桌面设置组件）
+  if (path.startsWith('/settings')) return '/m/settings'
   // M3：定时任务整页移动化（含日志页签，编辑/新建走桌面完整版）；
   // Tracker 仅看板/搜索两子页移动化，汇报配置与测试工具保留桌面直达（守卫精确拦截）
   if (path.startsWith('/tasks')) return '/m/tasks'

@@ -14,7 +14,7 @@
                 v-if="group.editing"
                 v-model="group.name"
                 size="mini"
-                style="width: 120px; margin-right: 8px;"
+                class="group-name-input"
                 @blur="finishEditingGroup(group)"
                 @keyup.enter.native="finishEditingGroup(group)"
                 placeholder="组名称"
@@ -30,7 +30,7 @@
               <el-tag
                 :type="getLogicTagType(group.logic)"
                 size="mini"
-                style="margin-left: 8px;"
+                class="group-logic-tag"
               >
                 {{ (group.logic || 'and').toUpperCase() }}
               </el-tag>
@@ -66,8 +66,8 @@
             <el-select
               v-model="group.logic"
               size="mini"
+              class="group-logic-select"
               @change="onGroupLogicChange(group)"
-              style="width: 100px;"
             >
               <el-option label="AND (并且)" value="and" />
               <el-option label="OR (或者)" value="or" />
@@ -104,8 +104,8 @@
                     v-model="condition.field"
                     placeholder="选择字段"
                     size="small"
+                    class="condition-field-select"
                     @change="onFieldChange(condition)"
-                    style="width: 140px;"
                   >
                     <el-option-group label="高级信息">
                       <el-option
@@ -156,8 +156,8 @@
                     v-model="condition.operator"
                     placeholder="选择操作"
                     size="small"
+                    class="condition-operator-select"
                     @change="onOperatorChange(condition)"
-                    style="width: 120px;"
                     :disabled="!condition.field"
                   >
                     <el-option-group
@@ -244,8 +244,8 @@
             <el-select
               v-model="group.betweenGroupLogic"
               size="small"
+              class="between-logic-select"
               @change="onBetweenGroupLogicChange(group)"
-              style="width: 100px;"
             >
               <el-option label="AND" value="and" />
               <el-option label="OR" value="or" />
@@ -306,6 +306,7 @@
       title="搜索条件预览"
       :visible.sync="previewVisible"
       width="600px"
+      custom-class="advanced-search-dialog"
       :modal-append-to-body="true"
       :append-to-body="true"
       :close-on-click-modal="false"
@@ -322,6 +323,7 @@
       title="保存搜索模板"
       :visible.sync="saveTemplateVisible"
       width="400px"
+      custom-class="advanced-search-dialog"
       :modal-append-to-body="true"
       :append-to-body="true"
       :close-on-click-modal="false"
@@ -1154,6 +1156,32 @@ export default class AdvancedSearchBuilder extends Vue {
     }
   }
 
+  /* 内联定宽全部类化（桌面宽度不变）：窄屏断点可整体铺满（移动端 /m/search 适配） */
+  .group-name-input {
+    width: 120px;
+    margin-right: 8px;
+  }
+
+  .group-logic-tag {
+    margin-left: 8px;
+  }
+
+  .group-logic-select {
+    width: 100px;
+  }
+
+  .condition-field-select {
+    width: 140px;
+  }
+
+  .condition-operator-select {
+    width: 120px;
+  }
+
+  .between-logic-select {
+    width: 100px;
+  }
+
   .condition-groups {
     margin-bottom: 12px;
   }
@@ -1360,13 +1388,36 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 }
 
-// 响应式设计
+// 响应式设计（移动端条件组适配，/m/search 整页复用本组件）：
+// 选择器铺满整行、组头可换行、组内逻辑说明折行下移、AND/OR 悬浮标签
+// 不压字段选择器、组间逻辑卡片通栏、操作按钮纵向铺满
 @media (max-width: 768px) {
   .advanced-search-builder {
     .condition-group {
       padding: 12px;
 
+      .group-header {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .group-logic-settings {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+
+        .logic-desc {
+          margin-left: 0;
+        }
+      }
+
       .condition-item {
+        // 逻辑连接标签（absolute，top:-8px）自第 2 条条件起存在：
+        // 加顶部内边距避免悬浮标签压住铺满后的字段选择器
+        &:not(:first-child) {
+          padding-top: 20px;
+        }
+
         .condition-content {
           flex-direction: column;
           align-items: stretch;
@@ -1385,13 +1436,46 @@ export default class AdvancedSearchBuilder extends Vue {
       }
     }
 
+    .condition-field-select,
+    .condition-operator-select,
+    .group-logic-select,
+    .between-logic-select {
+      width: 100%;
+    }
+
+    .group-name-input {
+      width: 110px;
+    }
+
+    .group-between-logic {
+      .logic-connector {
+        width: 100%;
+
+        .logic-description {
+          white-space: normal;
+          text-align: center;
+        }
+      }
+    }
+
     .search-actions {
       flex-direction: column;
 
       .el-button {
         width: 100%;
+        margin-left: 0;
       }
     }
+  }
+}
+</style>
+
+<!-- 预览/保存模板对话框挂 body（append-to-body），scoped 够不到；
+     el-dialog 的 width prop 是内联样式，窄屏压宽须 !important 覆盖 -->
+<style>
+@media (max-width: 768px) {
+  .advanced-search-dialog {
+    width: 94% !important;
   }
 }
 </style>

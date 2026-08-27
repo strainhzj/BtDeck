@@ -60,11 +60,18 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/torrents/traditional')).toBe('/m/torrents')
     })
 
-    it('M2 已移动化管理页映射到对应移动页', () => {
+    it('M2 已移动化管理页映射到对应移动页；查询模板裁撤后落高级搜索', () => {
       expect(uiMode.toMobilePath('/recycle-bin')).toBe('/m/recycle-bin')
       expect(uiMode.toMobilePath('/recycle-bin/index')).toBe('/m/recycle-bin')
       expect(uiMode.toMobilePath('/logs/audit')).toBe('/m/logs')
-      expect(uiMode.toMobilePath('/query-templates')).toBe('/m/query-templates')
+      // 移动端查询模板页已裁撤（仅保留高级搜索）：模板能力收敛进 /m/search 工作区
+      expect(uiMode.toMobilePath('/query-templates')).toBe('/m/search')
+      expect(uiMode.toMobilePath('/query-templates/index')).toBe('/m/search')
+    })
+
+    it('系统设置映射到移动设置页（整页复用桌面设置组件）', () => {
+      expect(uiMode.toMobilePath('/settings')).toBe('/m/settings')
+      expect(uiMode.toMobilePath('/settings/index')).toBe('/m/settings')
     })
 
     it('M3 定时任务整页映射到移动任务页', () => {
@@ -88,7 +95,7 @@ describe('utils/ui-mode', () => {
 
     it('无对应关系的路径兜底移动仪表盘（不落到空白页）', () => {
       expect(uiMode.toMobilePath('/downloader')).toBe('/m/dashboard')
-      expect(uiMode.toMobilePath('/settings/index')).toBe('/m/dashboard')
+      expect(uiMode.toMobilePath('/tracker/reannounce-config')).toBe('/m/dashboard')
     })
   })
 

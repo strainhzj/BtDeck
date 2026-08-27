@@ -2,8 +2,7 @@
  * 移动种子页契约（Phase 4 M1 + 简单搜索迁入）：
  * - 简单搜索自移动高级搜索页迁入：筛选面板（name/下载器/状态/tracker 域）
  *   → getList 透传 name_like/downloader_id/status/tracker_domain；
- * - 查询模板页「应用」简单模板经 m2 缓存回填筛选并执行；
- *   高级模板交回缓存转 /m/search（本页不执行高级搜索）；
+ * - 查询模板页已裁撤（仅保留高级搜索）：m2 模板缓存回填链路移除；
  * - 下拉刷新带当前筛选重载；空态区分「暂无种子/没有匹配的种子」。
  */
 
@@ -12,10 +11,6 @@ import Vue from 'vue'
 import MobileTorrents from '@/views/mobile/torrents.vue'
 import { getTorrentList, getTrackerDomains } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
-import {
-  setAppliedTemplateConditions,
-  takeAppliedTemplateConditions
-} from '@/views/mobile/m2-template-cache'
 
 jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
@@ -27,11 +22,6 @@ jest.mock('@/api/torrents', () => ({
 
 jest.mock('@/api/downloader', () => ({
   getList: jest.fn()
-}))
-
-jest.mock('@/views/mobile/m2-template-cache', () => ({
-  setAppliedTemplateConditions: jest.fn(),
-  takeAppliedTemplateConditions: jest.fn().mockReturnValue(null)
 }))
 
 jest.mock('@/views/mobile/torrent-detail-cache', () => ({
@@ -85,7 +75,6 @@ describe('views/mobile/MobileTorrents', () => {
     jest.mocked(getTrackerDomains).mockResolvedValue({ code: '200', data: ['tracker.example.com'] } as never)
     jest.mocked(getDownloaderList).mockReset()
     jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [{ id: 'd1', nickname: 'QB' }] } as never)
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue(null)
   })
 
   afterEach(() => {
@@ -162,46 +151,6 @@ describe('views/mobile/MobileTorrents', () => {
       expect(lastArgs.name_like).toBeUndefined()
       expect(lastArgs.downloader_id).toBeUndefined()
     }
-  })
-
-  it('模板应用（simple）：回填筛选、展开面板并执行 getList', async() => {
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '常用查询',
-      conditions: {
-        source: 'simple',
-        version: 1,
-        listQuery: { name_like: '关键词', downloader_id: ['d1'], status: ['seeding'] }
-      }
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.filters.name).toBe('关键词')
-    expect(vm.filters.downloaders).toEqual(['d1'])
-    expect(vm.filters.statuses).toEqual(['seeding'])
-    expect(vm.filtersExpanded).toBe(true)
-    expect(vm.appliedTip).toContain('常用查询')
-    expect(getTorrentList).toHaveBeenCalledWith(expect.objectContaining({ name_like: '关键词' }))
-  })
-
-  it('模板应用（advanced）：交回缓存并转高级搜索页（本页不执行高级搜索）', async() => {
-    const advancedConditions = {
-      source: 'advanced' as const,
-      version: 1,
-      condition_groups: [{ conditions: [{ field: 'name', operator: 'contains', value: 'x' }], logic: 'AND' }]
-    }
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '高级模板',
-      conditions: advancedConditions
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(setAppliedTemplateConditions).toHaveBeenCalledWith(advancedConditions, '高级模板')
-    expect(vm.$router.push).toHaveBeenCalledWith('/m/search')
-    // 不回填筛选、不因模板触发带条件请求
-    expect(vm.filters.name).toBe('')
-    expect(vm.filtersExpanded).toBe(false)
   })
 
   it('空态区分：无筛选显示「暂无种子」，有筛选显示「没有匹配的种子」', async() => {
@@ -307,49 +256,15 @@ describe('views/mobile/MobileTorrents', () => {
     expect(vm.activeFilterCount).toBe(0)
   })
 
-  it('模板应用（advanced 转发）：不触发本页 getList（无默认重载）', async() => {
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '高级模板',
-      conditions: {
-        source: 'advanced',
-        version: 1,
-        condition_groups: [{ conditions: [{ field: 'name', operator: 'contains', value: 'x' }], logic: 'AND' }]
-      }
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect((wrapper.vm as any).$router.push).toHaveBeenCalledWith('/m/search')
-    expect(getTorrentList).not.toHaveBeenCalled()
-    expect(wrapper.text()).not.toContain('已应用模板')
-  })
-
-  it('模板应用（simple）：trackerDomains 恒空（模板无此字段，防串味）', async() => {
-    jest.mocked(takeAppliedTemplateConditions).mockReturnValue({
-      templateName: '常用查询',
-      conditions: {
-        source: 'simple',
-        version: 1,
-        listQuery: { name_like: '关键词', status: ['seeding'] }
-      }
-    })
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.filters.trackerDomains).toEqual([])
-    const firstCall = jest.mocked(getTorrentList).mock.calls[0]
-    expect(firstCall).toBeTruthy()
-    const firstArgs = firstCall && firstCall[0]
-    expect(firstArgs && firstArgs.tracker_domain).toBeUndefined()
-  })
-
-  it('源码契约：简单搜索迁入落位（四字段 + 模板缓存 + 分流）', () => {
+  it('源码契约：简单搜索迁入落位（四字段），模板缓存链路禁回流', () => {
     const fs = require('fs') as typeof import('fs')
     const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
     expect(source).toContain('name_like')
     expect(source).toContain('downloader_id')
     expect(source).toContain('tracker_domain')
-    expect(source).toContain('takeAppliedTemplateConditions')
-    expect(source).toContain("'/m/search'")
+    // 查询模板页已裁撤：m2 模板缓存回填链路禁回流
+    expect(source).not.toContain('m2-template-cache')
+    expect(source).not.toContain('takeAppliedTemplateConditions')
     // 防回流：不再使用单一状态筛选（被多选状态取代）
     expect(source).not.toContain('statusFilter')
   })

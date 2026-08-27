@@ -287,6 +287,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
+import { loginPathForMode } from '@/utils/ui-mode'
 import request from '@/utils/request'
 
 @Component({
@@ -689,9 +690,10 @@ export default class extends Vue {
       // 改密会话终结（跨标签续期修复）：后端 change_password 已撤销该用户
       // 全部 refresh token（W9），本地会话不可再续期——主动登出语义全清
       // （ResetToken 含强制改密标志清除），跳登录页用新密码重登。
-      // forceChange query 清理随整页跳转自然失效，无需单独处理
+      // forceChange query 清理随整页跳转自然失效，无需单独处理；
+      // 登录页按 UI 模式分流（本组件被 /m/settings 整页复用，移动模式回 /m/login）
       UserModule.ResetToken()
-      this.$router.push('/login').catch(() => undefined)
+      this.$router.push(loginPathForMode()).catch(() => undefined)
     } catch (error) {
       this.$message({
         message: '密码修改失败',

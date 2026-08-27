@@ -23,7 +23,8 @@ const loginPaths = ['/login', '/m/login']
  */
 const uiModeRedirectPath = (to: Route): string | null => {
   if (currentUiMode() === 'mobile') {
-    // 已移动化的桌面顶层页统一分流（M2 后含回收站/日志/查询模板；M3 含定时任务整页与 Tracker 看板/搜索两子页；M4 含孤儿文件整页）
+    // 已移动化的桌面顶层页统一分流（M2 后含回收站/日志；M3 含定时任务整页与 Tracker 看板/搜索两子页；
+    // M4 含孤儿文件整页；后续系统设置整页移动化，查询模板裁撤后由 toMobilePath 落 /m/search）
     if (
       to.path === '/' || to.path === '/dashboard' || to.path === '/torrents' || to.path.startsWith('/torrents/') ||
       to.path === '/recycle-bin' || to.path.startsWith('/recycle-bin/') ||
@@ -31,6 +32,7 @@ const uiModeRedirectPath = (to: Route): string | null => {
       to.path === '/query-templates' || to.path.startsWith('/query-templates/') ||
       to.path === '/tasks' || to.path.startsWith('/tasks/') ||
       to.path === '/orphan-files' || to.path.startsWith('/orphan-files/') ||
+      to.path === '/settings' || to.path.startsWith('/settings/') ||
       to.path === '/tracker' || to.path === '/tracker/keywords-board' || to.path === '/tracker/keywords-search'
     ) {
       return toMobilePath(to.path)
@@ -40,6 +42,7 @@ const uiModeRedirectPath = (to: Route): string | null => {
   if (to.path.startsWith('/m/')) {
     if (to.path === '/m/login') return null
     if (to.path.startsWith('/m/torrents')) return '/torrents'
+    if (to.path.startsWith('/m/settings')) return '/settings'
     return '/dashboard'
   }
   return null
@@ -49,7 +52,8 @@ const uiModeRedirectPath = (to: Route): string | null => {
 // 改密页。真实页面挂在子路由 /settings/index（父路由 redirect 前置解析
 // 后守卫不会再见到 '/settings'，防御性保留）——此前白名单写父路径导致
 // 落点内容区空白、真实路径又被弹回，改密表单不可达形成死锁（生产事故）
-const forceChangeAllowedPaths = ['/settings/index', '/settings']
+// 移动模式落点为 /m/settings（整页复用桌面设置组件，同样必须放行）
+const forceChangeAllowedPaths = ['/settings/index', '/settings', '/m/settings']
 
 const isForceChangeBlocked = (to: Route): boolean =>
   UserModule.mustChangePassword && !forceChangeAllowedPaths.includes(to.path)
@@ -58,6 +62,10 @@ const isForceChangeBlocked = (to: Route): boolean =>
 // 菜单毫无反馈——须由守卫弹窗告知；连续点多个菜单时避免弹窗堆叠
 const FORCE_CHANGE_HINT_INTERVAL_MS = 3000
 let lastForceChangeHintAt = 0
+
+/** 强制改密拦截落点按 UI 模式选择（移动模式落 /m/settings，桌面落 /settings/index） */
+const forceChangeTargetPath = (): string =>
+  currentUiMode() === 'mobile' ? '/m/settings' : '/settings/index'
 
 const forceChangeRedirect = (next: any): void => {
   const now = Date.now()
@@ -68,7 +76,7 @@ const forceChangeRedirect = (next: any): void => {
       duration: 3000
     })
   }
-  next({ path: '/settings/index', query: { forceChange: '1' }, replace: true })
+  next({ path: forceChangeTargetPath(), query: { forceChange: '1' }, replace: true })
   NProgress.done()
 }
 

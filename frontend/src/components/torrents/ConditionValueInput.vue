@@ -72,7 +72,7 @@
         size="small"
         format="yyyy-MM-dd HH:mm:ss"
         value-format="yyyy-MM-dd HH:mm:ss"
-        style="width: 180px;"
+        class="range-date-picker"
         @input="handleInput"
         @change="handleChange"
       />
@@ -84,7 +84,7 @@
         size="small"
         format="yyyy-MM-dd HH:mm:ss"
         value-format="yyyy-MM-dd HH:mm:ss"
-        style="width: 180px;"
+        class="range-date-picker"
         @input="handleInput"
         @change="handleChange"
       />
@@ -727,6 +727,11 @@ export default class ConditionValueInput extends Vue {
     align-items: center;
     gap: 8px;
 
+    /* 内联定宽类化（桌面 180px 不变）：窄屏断点可弹性铺满（移动端条件组适配） */
+    .range-date-picker {
+      width: 180px;
+    }
+
     .range-separator {
       font-size: 12px;
       color: #606266;
@@ -857,6 +862,15 @@ export default class ConditionValueInput extends Vue {
 
       .range-separator {
         display: none;
+      }
+    }
+
+    /* 日期范围 2×180px+分隔符超窄屏宽度：两个时间选择器弹性对分整行 */
+    .date-range-input {
+      .range-date-picker {
+        width: auto;
+        flex: 1;
+        min-width: 0;
       }
     }
   }

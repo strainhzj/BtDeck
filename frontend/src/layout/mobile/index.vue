@@ -199,23 +199,22 @@ export default class MobileLayout extends Vue {
     NotificationModule.FetchUnreadCount().catch(() => undefined)
   }
 
-  /** 移动版已有页面（抽屉内导航）：底部 Tab 四项 + M2 管理页四项。 */
+  /** 移动版已有页面（抽屉内导航）：底部 Tab 四项 + 管理页。 */
   private mobileMenuItems: MobileTab[] = [
     ...this.tabs,
     { label: '高级搜索', path: '/m/search' },
-    { label: '查询模板', path: '/m/query-templates' },
     { label: '回收站', path: '/m/recycle-bin' },
     { label: '日志', path: '/m/logs' },
     { label: 'Tracker关键词', path: '/m/tracker/keywords-board' },
     { label: '定时任务', path: '/m/tasks' },
-    { label: '孤儿文件', path: '/m/orphan-files' }
+    { label: '孤儿文件', path: '/m/orphan-files' },
+    { label: '系统设置', path: '/m/settings' }
   ]
 
-  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；M4 后孤儿文件已移动化，桌面组仅余有意保留的桌面页。 */
+  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；系统设置已移动化（/m/settings）。 */
   private desktopMenuItems: MobileTab[] = [
     { label: '种子列表（桌面）', path: '/torrents' },
-    { label: 'Tracker 汇报/测试（桌面）', path: '/tracker/reannounce-config' },
-    { label: '系统设置', path: '/settings' }
+    { label: 'Tracker 汇报/测试（桌面）', path: '/tracker/reannounce-config' }
   ]
 
   private isActive(tab: MobileTab): boolean {

@@ -73,16 +73,17 @@ const router = new Router({
           meta: { hidden: true, title: '种子详情' }
         },
         {
-          // 高级搜索（Phase 4 M2）：简单筛选 + 复用桌面 AdvancedSearchBuilder
+          // 高级搜索（Phase 4 M2）：简单筛选 + 复用桌面 AdvancedSearchBuilder；
+          // 已保存搜索与 Web 端同源（移动端查询模板页裁撤后模板能力收敛于此）
           path: 'search',
           component: () => import(/* webpackChunkName: "m-search" */ '@/views/mobile/search.vue'),
           meta: { hidden: true, title: '高级搜索' }
         },
         {
-          // 查询模板（Phase 4 M2）：应用交由 /m/search 执行
+          // 旧移动查询模板页深链兜底：仅保留高级搜索后统一落到高级搜索页
           path: 'query-templates',
-          component: () => import(/* webpackChunkName: "m-query-templates" */ '@/views/mobile/query-templates.vue'),
-          meta: { hidden: true, title: '查询模板' }
+          redirect: '/m/search',
+          meta: { hidden: true }
         },
         {
           // 回收站（Phase 4 M2）：单条恢复/彻底删除
@@ -130,6 +131,12 @@ const router = new Router({
           path: 'notifications',
           component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
           meta: { hidden: true, title: '通知' }
+        },
+        {
+          // 系统设置（整页复用桌面设置页组件：双因素认证 + 修改密码）
+          path: 'settings',
+          component: () => import(/* webpackChunkName: "m-settings" */ '@/views/mobile/settings.vue'),
+          meta: { hidden: true, title: '系统设置' }
         }
       ]
     },

@@ -14,7 +14,6 @@
     </div>
 
     <!-- 结果区 -->
-    <div v-if="appliedTip" class="m-search-applied">{{ appliedTip }}</div>
     <div v-if="searched && !searching && results.length === 0" class="m-hint">没有匹配的种子</div>
     <div
       v-for="t in results"
@@ -48,22 +47,14 @@ import {
   advancedSearch,
   Torrent,
   AdvancedSearchRequest,
-  AdvancedSearchBuilderParams,
-  QueryTemplateConditionGroup
+  AdvancedSearchBuilderParams
 } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
-import {
-  buildAdvancedSearchRequest,
-  buildAdvancedSearchRequestFromTemplateGroups
-} from '@/views/torrents/utils/torrentBatch'
+import { buildAdvancedSearchRequest } from '@/views/torrents/utils/torrentBatch'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
-import {
-  takeAppliedTemplateConditions,
-  setAppliedTemplateConditions
-} from '@/views/mobile/m2-template-cache'
 import {
   torrentStatusLabel,
   torrentStatusTagType,
@@ -74,10 +65,6 @@ import {
 interface SearchWorkspaceRef extends Vue {
   onSearch(): void
   refreshFieldOptions(): void
-  applyTemplateGroups(
-    groups: QueryTemplateConditionGroup[],
-    options?: { sort_by?: string, sort_order?: string }
-  ): void
 }
 
 const RESULT_LIMIT = 20
@@ -87,9 +74,9 @@ const RESULT_LIMIT = 20
  * - 直接复用桌面 AdvancedSearchWorkspace——已保存搜索列表与 Web 端同源
  *   （getSearchTemplates({is_public:true}) 过滤 source=advanced），选择/新建/
  *   保存更改/删除全量对齐桌面；简单搜索已迁至移动种子页（/m/torrents）；
- * - search 事件 → buildAdvancedSearchRequest → advancedSearch POST；
- * - 查询模板页「应用」高级模板经 m2-template-cache 进入本页自动回填并执行
- *   （builder.applyTemplateGroups + FromTemplateGroups 构建；简单模板转回种子页）。
+ * - search 事件 → buildAdvancedSearchRequest → advancedSearch POST。
+ * 移动端查询模板页已裁撤（仅保留高级搜索）：模板能力收敛进工作区左侧
+ * 已保存搜索，跨页模板应用缓存链路随之移除。
  */
 @Component({
   name: 'MobileSearch',
@@ -103,14 +90,9 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
   private total = 0
   private searching = false
   private searched = false
-  private appliedTip = ''
 
   private get workspace(): SearchWorkspaceRef | undefined {
     return this.$refs.workspace as SearchWorkspaceRef | undefined
-  }
-
-  mounted(): void {
-    this.applyPendingTemplate()
   }
 
   protected async onPullRefresh(): Promise<void> {
@@ -163,31 +145,6 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
     this.searched = false
   }
 
-  // ============ 模板应用（查询模板页跳转进入） ============
-
-  private async applyPendingTemplate(): Promise<void> {
-    const pending = takeAppliedTemplateConditions()
-    if (!pending) return
-    const { conditions, templateName } = pending
-    if (conditions.source !== 'advanced') {
-      // 简单模板交回缓存并转种子页执行（简单搜索已迁入 /m/torrents）
-      setAppliedTemplateConditions(conditions, templateName)
-      this.$router.push('/m/torrents').catch(() => undefined)
-      return
-    }
-    this.appliedTip = `已应用模板「${templateName}」`
-    const groups = conditions.condition_groups ?? []
-    const sortBy = conditions.sort_by || 'added_date'
-    const sortOrder = conditions.sort_order || 'desc'
-    this.workspace?.applyTemplateGroups(groups, { sort_by: sortBy, sort_order: sortOrder })
-    const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(groups, sortBy, sortOrder, RESULT_LIMIT)
-    if (!request || error) {
-      this.$message.error(error || '模板条件格式错误')
-      return
-    }
-    await this.executeAdvanced(request)
-  }
-
   private openDetail(t: Torrent): void {
     setCachedTorrent(t)
     this.$router
@@ -224,13 +181,6 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
   border-radius: 8px;
   padding: 8px;
   margin-bottom: 10px;
-}
-
-.m-search-applied {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--color-primary);
-  text-align: center;
 }
 
 .m-search-card {

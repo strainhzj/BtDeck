@@ -65,7 +65,6 @@
       </div>
     </div>
 
-    <div v-if="appliedTip" class="m-torrents-applied">{{ appliedTip }}</div>
     <div v-if="!loading && list.length === 0" class="m-hint">{{ hasFilters ? '没有匹配的种子' : '暂无种子' }}</div>
 
     <div
@@ -125,10 +124,6 @@ import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
 import {
-  takeAppliedTemplateConditions,
-  setAppliedTemplateConditions
-} from '@/views/mobile/m2-template-cache'
-import {
   TORRENT_STATUS_OPTIONS,
   torrentStatusLabel,
   torrentStatusTagType,
@@ -145,8 +140,8 @@ interface SelectOption {
 /**
  * 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/删除入回收站）；
  * 卡片点击进入详情页（快照缓存传递整行数据）；顶部下拉刷新。
- * 简单搜索自移动高级搜索页迁入（与桌面 torrents 快捷筛选同字段集）；查询模板页
- * 「应用」简单模板经 m2-template-cache 进入本页自动回填筛选并执行（高级模板转回 /m/search）。
+ * 简单搜索自移动高级搜索页迁入（与桌面 torrents 快捷筛选同字段集）；移动端查询模板页
+ * 已裁撤（仅保留高级搜索），本页不再承接模板应用回填（跨页缓存链路随之移除）。
  */
 @Component({
   name: 'MobileTorrents',
@@ -158,7 +153,6 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   private loading = false
   private busyKey = ''
   private filtersExpanded = false
-  private appliedTip = ''
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -172,7 +166,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
 
   mounted(): void {
     this.loadFilterOptions()
-    this.applyPendingTemplate()
+    this.reload()
   }
 
   protected async onPullRefresh(): Promise<void> {
@@ -232,33 +226,6 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
       statuses: [],
       trackerDomains: []
     }
-    await this.reload()
-  }
-
-  // ============ 模板应用（查询模板页跳转进入） ============
-
-  private async applyPendingTemplate(): Promise<void> {
-    const pending = takeAppliedTemplateConditions()
-    if (!pending) {
-      await this.reload()
-      return
-    }
-    const { conditions, templateName } = pending
-    if (conditions.source !== 'simple') {
-      // 高级模板交回缓存并转高级搜索页执行
-      setAppliedTemplateConditions(conditions, templateName)
-      this.$router.push('/m/search').catch(() => undefined)
-      return
-    }
-    const lq = conditions.listQuery ?? {}
-    this.filters = {
-      name: lq.name_like ?? '',
-      downloaders: Array.isArray(lq.downloader_id) ? [...lq.downloader_id] : [],
-      statuses: Array.isArray(lq.status) ? [...lq.status] : [],
-      trackerDomains: []
-    }
-    this.filtersExpanded = true
-    this.appliedTip = `已应用模板「${templateName}」`
     await this.reload()
   }
 
@@ -397,13 +364,6 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
 .m-torrents-filter-actions .el-button {
   flex: 1;
   margin-left: 0;
-}
-
-.m-torrents-applied {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--color-primary);
-  text-align: center;
 }
 
 .m-torrent-card {
