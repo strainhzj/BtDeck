@@ -132,6 +132,7 @@ BtDeck/
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 2026-08-26 增量 | 前端 Logo 按效果图收口：完整横版改为绿色 D 形轨道、三条深色甲板线与 `Bt` 绿/`Deck` 深色字标，移除实验编号/中文说明；移动头部及 PWA/Apple/Android/favicons 全部使用绿色底反白 `micro` 光学版，生成脚本同步输出横版 PNG |
 | 2026-08-26 增量 | 伴侣凭据记忆：Android `CredentialVault`（Keystore AES-GCM）与桌面 `desktop_companion/credentials.py`（Windows DPAPI），profile 增加 username；WebView/pywebview 切换时先隔离旧 cookie，再用一次性同源登录恢复 access/refresh token；新增 Android/桌面回归覆盖。 |
+| 2026-08-27 增量 | 移动端三项调整：①移动查询模板页 `/m/query-templates` 裁撤（仅保留高级搜索，深链 redirect 至 `/m/search`，`m2-template-cache.ts` 与种子页/搜索页模板回填链路移除）；②高级搜索条件组移动适配：`AdvancedSearchBuilder.vue` 内联定宽全部类化 + 768px 断点强化（选择器铺满/组头换行/AND/OR 标签避让/对话框窄屏压宽），`ConditionValueInput.vue` 日期范围窄屏弹性对分；③新增 `/m/settings` 移动设置页（整页复用桌面设置组件），守卫强制改密落点/放行白名单按 UI 模式分流（移动落 `/m/settings`），`toMobilePath('/settings')` 映射补齐；entry 分支路由表与守卫行号全量重测 |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |

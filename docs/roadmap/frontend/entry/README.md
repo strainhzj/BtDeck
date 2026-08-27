@@ -28,38 +28,43 @@
 - router.ts L7 `Vue.use(Router)`；store/index.ts L8 `Vue.use(Vuex)`
 - L74-78：`new Vue({ router, store, render: (h) => h(App) }).$mount('#app')`
 
-## router.ts 路由表（L29-265，文件共 349 行）
+## router.ts 路由表（L30-368，文件共 452 行）
 
 | 路径 | 组件 | 行号 |
 |------|------|------|
-| `/login` | `@/views/login/index.vue` | L31 |
-| `/404` | `@/views/404.vue` | L36 |
-| `/` → `/dashboard`（Layout） | `@/views/dashboard/index.vue` | L41 |
-| `/downloader` | `@/views/downloader/index.vue` | L56 |
-| `/torrents`（4 children，redirect → `/torrents/index`） | TorrentViewSwitcher / TraditionalView / FileManagement / index(detail) | L70 |
-| `/tasks` | `@/views/tasks/index.vue` | L114 |
-| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L128 |
-| `/task-logs` | `@/views/task-logs/index.vue` | L173 |
-| `/logs/audit` | `@/views/logs/audit.vue` | L180 |
-| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L199 |
-| `/orphan-files` | `@/views/orphan-files/index.vue` | L213 |
-| `/settings`（redirect → `/settings/index`，L233） | `@/views/settings/index.vue` | L229 |
-| `/query-templates` | `@/views/query-templates/index.vue` | L246 |
-| `*` | redirect `/404` | L261 |
+| `/login` | `@/views/login/index.vue` | L32 |
+| `/404` | `@/views/404.vue` | L37 |
+| `/m/login` | `@/views/mobile/login.vue` | L43 |
+| `/m`（MobileLayout，redirect → `/m/dashboard`，L49-51；13 children） | dashboard / downloader / torrents(+detail) / search / query-templates(redirect→`/m/search`) / recycle-bin / logs / downloader-settings / tracker×2 / tasks / orphan-files / notifications / settings | L53-141 |
+| `/` → `/dashboard`（Layout） | `@/views/dashboard/index.vue` | L144 |
+| `/downloader` | `@/views/downloader/index.vue` | L159 |
+| `/torrents`（4 children，redirect → `/torrents/index`） | TorrentViewSwitcher / TraditionalView / FileManagement / index(detail) | L173 |
+| `/tasks` | `@/views/tasks/index.vue` | L218 |
+| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L232 |
+| `/task-logs` | redirect `/tasks?tab=logs` | L277 |
+| `/logs/audit` | `@/views/logs/audit.vue` | L284 |
+| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L303 |
+| `/orphan-files` | `@/views/orphan-files/index.vue` | L317 |
+| `/settings`（redirect → `/settings/index`） | `@/views/settings/index.vue` | L332 |
+| `/query-templates` | `@/views/query-templates/index.vue` | L349 |
+| `*` | redirect `/404` | L364 |
 
-文件末尾 L268-304 自定义 `router.push`（及 `router.replace`）捕获 `NavigationFailure`（守卫改道/中止/重复导航不再作为异常上抛）；L338 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
+> `/m/query-templates` 移动查询模板页已裁撤（仅保留高级搜索）：路由表保留深链 redirect 到 `/m/search`；`/m/settings`（L137）整页复用桌面设置组件（双因素认证 + 修改密码）。
 
-## permission.ts 关键（L1-203）
+文件末尾 L380-437 自定义 `router.push`（及 `router.replace`）捕获 `NavigationFailure`（守卫改道/中止/重复导航不再作为异常上抛）；L441 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
 
-- L13 `whiteList = ['/login']`（仅登录页白名单）
-- L19 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings']`（放行白名单，含真实改密页子路径）+ `isForceChangeBlocked()` 判定 + `forceChangeRedirect()` 重定向 `/settings/index?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
-- L48 `isTransientError`（ApiError 网络 '0' 与业务 5xx 瞬时失败判定）+ L56 `abortNavigation`：`next(false)` 中止导航 + 网络波动提示 + 手动 `NProgress.done()`（中止导航 afterEach 不触发，进度条须手动收尾），保留令牌与会话现场
-- L88 `router.beforeEach`：
-  - L96-122 会话主动过期检查三态分流：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`——renewed 继续导航；transient 网络抖动不杀会话（roles 已有放行自愈 / roles 空中止导航）；rejected `ExpireSession()` 跳登录（保留 refresh cookie，防跨标签轮换竞态）
-  - L93 若 `UserModule.token` 存在：访问 `/login` 重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L142），**成功后 L146 同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败 L151-168 分流——网络错误（ApiError code '0' 原样上抛）`abortNavigation`，其余 `ExpireSession()` 跳登录
-  - L169-179 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径被弹回 = 死锁）
-- L181-190 无 token：白名单放行，否则跳登录带 redirect
-- L194 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
+## permission.ts 关键（L1-252）
+
+- L15 `loginPaths = ['/login', '/m/login']`（双模式登录白名单）
+- L24 `uiModeRedirectPath()`（UI 模式分流，认证前执行）：移动模式访问已移动化桌面顶层页（含 `/settings` 与裁撤后的 `/query-templates`）经 `toMobilePath()` 落对应 `/m/*` 页；桌面模式访问 `/m/*` 回对应桌面页（`/m/torrents`→`/torrents`、`/m/settings`→`/settings`，其余落 `/dashboard`）
+- L56 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings', '/m/settings']`（放行白名单，含移动设置页）+ `isForceChangeBlocked()` 判定 + `forceChangeTargetPath()` 按当前 UI 模式选落点（移动 `/m/settings`、桌面 `/settings/index`）+ `forceChangeRedirect()`（L70）重定向 `?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
+- L89 `isTransientError`（ApiError 网络 '0' 与业务 5xx 瞬时失败判定）+ L97 `abortNavigation`：`next(false)` 中止导航 + 网络波动提示 + 手动 `NProgress.done()`（中止导航 afterEach 不触发，进度条须手动收尾），保留令牌与会话现场
+- L129 `router.beforeEach`：
+  - L145-168 会话主动过期检查三态分流：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`——续期成功继续导航；transient 网络抖动不杀会话（roles 已有放行自愈 / roles 空中止导航，连续中止 3 次回落登出）；rejected `ExpireSession()` 跳登录（保留 refresh cookie，防跨标签轮换竞态）
+  - L142 若 `UserModule.token` 存在：访问登录页重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L191），**成功后同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败分流——瞬时失败中止导航，其余 `ExpireSession()` 跳登录（全部经 `loginPathForMode` 按模式选登录页）
+  - L210-221 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径又被弹回 = 死锁）
+- L231-240 无 token：白名单放行，否则跳登录带 redirect
+- L243 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
 
 > **守卫不在 router.ts**：router.ts 只导出 `router` 实例；守卫逻辑由 `permission.ts` 通过 `router.beforeEach` 注册，由 `main.ts` L37 `import '@/permission'` 触发副作用。
 > **标志双通道下发**：`mustChangePassword` 由登录响应与 `/user/info`（后端 cuser.py）下发，store `GetUserInfo` 同步（字段缺失不覆盖，防滚动部署误清）。

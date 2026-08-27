@@ -1,5 +1,23 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-27：移动端搜索收敛与系统设置移动化（三项调整）
+
+### 本批结果
+
+- **移动端仅保留高级搜索**：裁撤 `/m/query-templates` 页与 `m2-template-cache.ts`（模板应用跨页缓存成死代码），种子页/搜索页移除回填链路；深链 redirect 至 `/m/search`，模板能力收敛进工作区左侧已保存搜索（与 Web 端同源）。
+- **高级搜索条件组移动适配**：`AdvancedSearchBuilder.vue` 内联定宽全部类化（桌面宽度不变）+ 768px 断点强化（选择器铺满/组头换行/AND/OR 标签避让/操作按钮纵排），预览与保存模板对话框窄屏 94% 压宽；`ConditionValueInput.vue` 日期范围窄屏弹性对分（修 375px 溢出）。
+- **系统设置移动化**：新增 `/m/settings`（`views/mobile/settings.vue` 整页复用桌面设置组件，2FA + 改密零重复实现）；桌面设置页改密跳转改 `loginPathForMode()`；守卫强制改密落点按 UI 模式分流（移动落 `/m/settings`，白名单增补防循环）；`toMobilePath` 补 `/settings` 映射；抽屉菜单系统设置入移动组。
+
+### 变更文件
+
+删除：`frontend/src/views/mobile/query-templates.vue`、`frontend/src/views/mobile/m2-template-cache.ts`、`frontend/tests/unit/mobile-query-templates.spec.ts`。新增：`frontend/src/views/mobile/settings.vue`、`frontend/tests/unit/mobile-settings.spec.ts`。修改：`router.ts`、`layout/mobile/index.vue`、`permission.ts`、`utils/ui-mode.ts`、`views/mobile/{search,torrents}.vue`、`views/settings/index.vue`、`components/torrents/{AdvancedSearchBuilder,ConditionValueInput}.vue`、测试 5 件（search/torrents/shell/ui-mode/force-change-deadlock）、e2e `mobile-routes.spec.ts`、roadmap 三件、`feature_list.json`（`.5` evidence）、`progress.md`。
+
+### 验证与待办
+
+- 全量 82 套件 1151 例全绿（首跑 1 套件 worker 偶发崩溃，复跑两轮均全绿）；`tsc --noEmit` 零错误；`npm run lint` 通过（契约 stale 为已知行尾假警报，重生成内容与 HEAD 零差异，工作区保留 LF 归一化版本）；`npm run build` 通过（`m-settings` chunk 实证、`m-query-templates` 消失）；根 `./init.sh`（ci）通过。
+- 浏览器 390×844 交互级复核可选（条件组铺满/设置页改密链路已由单测与真实路由守卫回归锁定）。
+- 未执行 Git 提交；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保留不动。
+
 ## 2026-08-26：移动通知内容渲染与 Web 端一致
 
 ### 本批结果

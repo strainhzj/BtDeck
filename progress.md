@@ -5986,3 +5986,13 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 变异过程踩坑：锚点含行尾 `\n` 时因源文件 CRLF 行尾匹配失败（ANCHOR NOT UNIQUE 防线拦截），改用不含行尾的行内锚点重试——后续变异脚本锚点避免跨行尾。
 - 还原完整性复核：源码 3 文件 git status 与变异前一致；tsc 零错误；三 spec ESLint 通过。
 - 全量复验：**82 套件 1158 例全绿**（较加固前 +11）；feature_list.json evidence 与 session-handoff.md 已追加加固记录；roadmap test-coverage util 行补语法严格性要点。未执行 Git 提交。
+
+## 2026-08-27：移动端搜索收敛与系统设置移动化（三项调整）
+
+- 用户要求移动端三项调整：①高级搜索与查询模板仅保留高级搜索；②高级搜索条件组做移动端适配；③系统设置增加移动页适配。
+- **①裁撤移动查询模板页**：`/m/search` 已整页复用桌面 `AdvancedSearchWorkspace`（左侧已保存搜索与 Web 端同源，新建/保存更改/删除全量对齐），独立模板页成冗余——删除 `views/mobile/query-templates.vue` 与 `m2-template-cache.ts`（唯一写入方消失后跨页缓存链路成死代码），种子页/搜索页 `applyPendingTemplate` 回填逻辑移除；`/m/query-templates` 路由保留深链 redirect 至 `/m/search`，`toMobilePath('/query-templates')` 同步改落 `/m/search`，抽屉菜单移除「查询模板」项；构建产物 `m-query-templates` chunk 消失、`m-search` 保留实证。
+- **②条件组移动适配**（共享组件，桌面零回归）：`AdvancedSearchBuilder.vue` 内联定宽全部类化（组名输入 120px/组内逻辑 100px/字段 140px/操作符 120px/组间逻辑 100px，桌面值不变），768px 断点强化——选择器铺满整行（原断点只把容器拉满、内联宽度穿透导致 140px 小控件残留）、组头换行、组内逻辑说明折行下移、AND/OR 悬浮标签经 `:not(:first-child)` padding-top 避让铺满后的字段选择器、组间逻辑卡片通栏、操作按钮纵向铺满；预览/保存模板对话框（append-to-body）加 `advanced-search-dialog` 全局块窄屏 94% 压宽（内联 width 须 !important 覆盖）；`ConditionValueInput.vue` 日期范围 2×180px 类化为 `range-date-picker`，窄屏 flex:1 弹性对分（修 375px 视口横向溢出，桌面 180px 不变）。
+- **③新增 `/m/settings`**：`views/mobile/settings.vue` 整页复用桌面 `views/settings/index.vue`（参照 downloader-settings 先例，2FA 全状态机 + 改密零重复实现），`::v-deep` 剥离桌面外层留白；桌面设置页改密成功跳转 `loginPathForMode()`（桌面行为不变，移动回 `/m/login`）；守卫 `forceChangeTargetPath()` 按模式选落点（移动 `/m/settings`/桌面 `/settings/index`）+ `forceChangeAllowedPaths` 增补 `/m/settings`（防重定向循环）；`uiModeRedirectPath` 移动分支收编 `/settings`、桌面分支补 `/m/settings→/settings`；`toMobilePath` 增 `/settings` 映射；抽屉移动组加「系统设置」（11 项）、桌面组移除（余 2 项）。
+- 测试：删 `mobile-query-templates.spec`（-5 例）；`mobile-search.spec` 13→10（移除模板应用例，源码契约加 m2 禁回流）；`mobile-torrents.spec` 移除 4 模板例 + 契约禁回流；`mobile-shell.spec` 菜单 14→13 项断言；`ui-mode.spec` +1（settings 映射 + 兜底改写）；`permission-force-change-deadlock.spec` 7→8（新增移动模式真实路由拦截落 `/m/settings` 用例，需 stub `layout/mobile` 与 `mobile/dashboard` 防 jsdom API 副作用）；新增 `mobile-settings.spec` 3 例；e2e `mobile-routes.spec` 路由全集换入 settings。
+- 验证：全量 **82 套件 1151 例全绿**（首跑 1 套件 worker 偶发崩溃，复跑两轮均全绿）；`tsc --noEmit` 零错误；`npm run lint`（契约检查+ESLint+vuex 门）通过——契约 stale 为已知行尾假警报，重生成后与 HEAD 内容零差异仅 LF 归一化（保留生成版本使 check 通过）；`npm run build` 通过（m-settings chunk 实证）；根 `./init.sh`（ci）通过。
+- roadmap 同步：entry 分支路由表/守卫行号全量重测（原表漂移至 349 行旧版，现 452 行），components-layout 分支 Builder/Workspace/ConditionValueInput 条目更新，根 README 元信息加 2026-08-27 增量行。feature_list.json `.5` evidence 追加；未执行 Git 提交。
