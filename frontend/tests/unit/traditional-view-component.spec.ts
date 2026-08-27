@@ -18,6 +18,10 @@ import {
 } from '@/api/torrents'
 import type { ApiResponse, Torrent, TorrentListResponseData } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
+import {
+  getLoadingDirectiveSnapshot,
+  installLoadingDirectiveProbe
+} from './helpers/loadingDirectiveProbe'
 
 jest.mock('@/store/modules/viewMode', () => ({
   ViewModeModule: {
@@ -80,6 +84,7 @@ jest.mock('@/components/torrents/FilterGroup.vue', () => ({
 }))
 
 const localVue = createLocalVue()
+installLoadingDirectiveProbe(localVue)
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
@@ -1021,6 +1026,41 @@ describe('TraditionalView component regressions', () => {
     vm.handlePageChange(2)
     expect(vm.currentRow).toBeNull()
     await flushLifecycle()
+  })
+
+  it('查询等待期间向 loading 指令传入 fullscreen+lock，失败后解除 loading', async() => {
+    let rejectRequest: (reason?: unknown) => void = () => undefined
+    const pendingRequest = new Promise<never>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+    mockGetTorrentList.mockImplementationOnce(() => pendingRequest)
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation()
+
+    try {
+      wrapper = mountTraditionalView()
+      await flushLifecycle()
+      const vm = wrapper.vm as unknown as TraditionalViewVm
+      const loadingTarget = wrapper.find('.table-container').element
+
+      expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+      expect(vm.listLoading).toBe(true)
+      expect(getLoadingDirectiveSnapshot(loadingTarget)).toEqual({
+        value: true,
+        modifiers: { fullscreen: true, lock: true }
+      })
+
+      rejectRequest(new Error('network unavailable'))
+      await flushLifecycle()
+
+      expect(vm.listLoading).toBe(false)
+      expect(getLoadingDirectiveSnapshot(loadingTarget)).toEqual({
+        value: false,
+        modifiers: { fullscreen: true, lock: true }
+      })
+      expect(message.error).toHaveBeenCalledTimes(1)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('忽略过期分页响应且旧请求结束不会提前关闭新请求 loading', async() => {

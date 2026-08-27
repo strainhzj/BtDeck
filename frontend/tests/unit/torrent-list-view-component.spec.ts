@@ -15,6 +15,10 @@ import {
   getTorrentList
 } from '@/api/torrents'
 import type { Torrent } from '@/api/torrents'
+import {
+  getLoadingDirectiveSnapshot,
+  installLoadingDirectiveProbe
+} from './helpers/loadingDirectiveProbe'
 
 jest.mock('@/store/modules/viewMode', () => ({
   ViewModeModule: {
@@ -61,7 +65,7 @@ const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof ge
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
 const mockGetBatchDeleteStatus = getBatchDeleteStatus as jest.MockedFunction<typeof getBatchDeleteStatus>
-localVue.directive('loading', {})
+installLoadingDirectiveProbe(localVue)
 
 const SwitchStub = localVue.extend({
   name: 'ElSwitchStub',
@@ -104,6 +108,7 @@ interface TorrentListViewVm extends Vue {
   pageSize: number
   pageSizeInput: string
   pageSizeDropdownExpanded: boolean
+  listLoading: boolean
   showingDuplicates: boolean
   showingSameContent: boolean
   showingSingleErrors: boolean
@@ -360,6 +365,41 @@ describe('torrent list view pagination and sorting', () => {
     expect(rows.at(1).find('.tracker-error-tag').exists()).toBe(false)
     // 正常种子无标签
     expect(rows.at(2).find('.tracker-error-tag').exists()).toBe(false)
+  })
+
+  it('查询等待期间向 loading 指令传入 fullscreen+lock，失败后解除 loading', async() => {
+    let rejectRequest: (reason?: unknown) => void = () => undefined
+    const pendingRequest = new Promise<never>((_resolve, reject) => {
+      rejectRequest = reject
+    })
+    mockGetTorrentList.mockImplementationOnce(() => pendingRequest)
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation()
+
+    try {
+      wrapper = mountListView()
+      await flushLifecycle()
+      const vm = wrapper.vm as unknown as TorrentListViewVm
+      const loadingTarget = wrapper.find('.torrents-table-wrapper').element
+
+      expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+      expect(vm.listLoading).toBe(true)
+      expect(getLoadingDirectiveSnapshot(loadingTarget)).toEqual({
+        value: true,
+        modifiers: { fullscreen: true, lock: true }
+      })
+
+      rejectRequest(new Error('network unavailable'))
+      await flushLifecycle()
+
+      expect(vm.listLoading).toBe(false)
+      expect(getLoadingDirectiveSnapshot(loadingTarget)).toEqual({
+        value: false,
+        modifiers: { fullscreen: true, lock: true }
+      })
+      expect(message.error).toHaveBeenCalledTimes(1)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
   })
 
   it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {
