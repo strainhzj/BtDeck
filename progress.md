@@ -29,6 +29,15 @@
 - 记录同步：feature_list.json 新增 feature `mobile-ux-enhancements-2026-08-28`（6 task + evidence）、PLANS/mobile-ux-enhancements.md、docs/roadmap/README.md 增量行。
 - 已知限制：速度行/无限滚动的真机视觉验证需接入真实下载器（本地空库仅单测锚定）；e2e 新用例待 `npm run test:mobile` 环境复核；未执行 Git 提交。
 
+### 提交后验证（同日第二批：891405b 提交后独立验证）
+
+- git 完整性：HEAD 891405b，已跟踪文件零残留；质量门重跑全绿（Jest 1214→1216、tsc、lint）。
+- Playwright e2e 双引擎首次跑通：安装 WebKit 二进制后 chromium 19 passed + webkit 19 passed（2 个数据依赖用例空库按条件跳过）；首次 webkit 冷启动一次仪表盘冒烟偶发失败，复跑通过。
+- 模拟器 mock 数据视觉验证（page.route 注入 45 条种子 + active 速度）：速度行渲染/无限滚动自动两页加载/45 条满载后计数消失/返回顶部/乐观状态（暂停→已暂停、恢复→下载中）全部通过。
+- **验证抓出并修复 2 个真 bug（fix 追加提交）**：
+  1. 返回顶部浮标监听了 `.mobile-content` 的 scroll，但该布局实际滚动容器是 window（`.mobile-layout min-height:100vh` 被长列表撑高，`.mobile-content` scrollHeight==clientHeight 不内部滚动；技术审查的"容器内滚动"推演与事实不符）——改为监听 window.scrollY + window.scrollTo。
+  2. `onListScroll` 最初写成箭头函数类字段：vue-class-component 装饰组件类时收集 data 会 new 一次类并丢弃，**组件类自身的箭头字段 this 指向被丢弃的收集实例**，`this.showBackTop=true` 静默写到死对象（mixin 基类的箭头字段不受影响，桌面 speedPolling 探针证实正常）——改为 prototype 方法。此坑已写入代码注释与单测（直调 + vm 断言锚定）。
+
 ## 2026-08-27：EXE 与 APK 构建脚本生成
 
 ### 已完成

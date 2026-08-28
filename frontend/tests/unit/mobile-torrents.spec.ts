@@ -372,4 +372,28 @@ describe('views/mobile/MobileTorrents', () => {
     expect(source).not.toContain('加载更多（')
     expect(source).toContain('m-backtop')
   })
+
+  it('返回顶部浮标：按 window scrollY 阈值显隐（实际滚动容器是 window）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    // 布局事实：.mobile-content 不内部滚动（min-height:100vh 被撑高），window 才是滚动容器
+    const original = window.scrollY
+    Object.defineProperty(window, 'scrollY', { value: 700, configurable: true, writable: true })
+    vm.onListScroll()
+    expect(vm.showBackTop).toBe(true)
+    Object.defineProperty(window, 'scrollY', { value: 100, configurable: true, writable: true })
+    vm.onListScroll()
+    expect(vm.showBackTop).toBe(false)
+    Object.defineProperty(window, 'scrollY', { value: original, configurable: true, writable: true })
+    wrapper.destroy()
+  })
+
+  it('源码契约：滚动监听与回滚目标为 window（.mobile-content 不产生内部滚动）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    expect(source).toContain("window.addEventListener('scroll', this.onListScroll")
+    expect(source).toContain('window.scrollY || document.documentElement.scrollTop')
+    expect(source).toContain('window.scrollTo({ top: 0, behavior: \'smooth\' })')
+  })
 })

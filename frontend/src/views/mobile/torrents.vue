@@ -199,7 +199,6 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private filtersExpanded = false
   private optionsLoaded = false
   private showBackTop = false
-  private scrollEl: HTMLElement | null = null
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -217,19 +216,15 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   mounted(): void {
     this.loadFilterOptions()
     this.reload()
-    this.scrollEl = (this.$el as HTMLElement).closest('.mobile-content')
-    if (this.scrollEl) {
-      this.scrollEl.addEventListener('scroll', this.onListScroll, { passive: true })
-    }
+    // 实际滚动容器是 window（.mobile-layout min-height:100vh 会被长列表撑高，
+    // .mobile-content 不产生内部滚动——2026-08-28 模拟器实测 scrollHeight==clientHeight）
+    window.addEventListener('scroll', this.onListScroll, { passive: true })
     this.startSpeedPolling(false)
   }
 
   beforeDestroy(): void {
     this.stopSpeedPolling()
-    if (this.scrollEl) {
-      this.scrollEl.removeEventListener('scroll', this.onListScroll)
-      this.scrollEl = null
-    }
+    window.removeEventListener('scroll', this.onListScroll)
   }
 
   protected async onPullRefresh(): Promise<void> {
@@ -269,13 +264,16 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     return this.loading || this.list.length >= this.total
   }
 
-  private onListScroll = (): void => {
-    if (!this.scrollEl) return
-    this.showBackTop = this.scrollEl.scrollTop > BACK_TOP_THRESHOLD_PX
+  // 注意：必须用方法而非箭头函数类字段——vue-class-component 收集 data 时
+  // new 一次类即丢弃，箭头字段的 this 指向被丢弃的收集实例，写 this 数据
+  // 会静默失效（2026-08-28 视觉验证抓出：浮标因此永不显示）
+  private onListScroll(): void {
+    const top = window.scrollY || document.documentElement.scrollTop
+    this.showBackTop = top > BACK_TOP_THRESHOLD_PX
   }
 
   private scrollToTop(): void {
-    if (this.scrollEl) this.scrollEl.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   private get hasFilters(): boolean {

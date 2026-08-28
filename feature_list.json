@@ -134,7 +134,7 @@
           "files": [
             "frontend/tests/e2e/mobile/mobile-interactions.spec.ts"
           ],
-          "evidence": "Jest 84 suites / 1214 tests passed（基线 1169 净增 45）；tsc --noEmit 通过；npm run lint（contract:check+ESLint+vuex action 检查）零错误；e2e 待具备多页数据环境复核（速度行/无限滚动本地空库仅单测锚定）。"
+          "evidence": "Jest 84 suites / 1216 tests passed（含返回顶部 window 滚动行为与源码契约锚定）；tsc --noEmit 通过；npm run lint 零错误；Playwright e2e 双引擎 chromium 19 + webkit 19 passed（安装 WebKit 后首跑，2 数据依赖用例空库条件跳过）；模拟器 mock 数据视觉验证：速度行/无限滚动两页自动加载/返回顶部/乐观状态全部通过；提交后验证抓出返回顶部滚动容器误判与箭头类字段 this 陷阱两处缺陷并修复。"
         }
       ]
     },
