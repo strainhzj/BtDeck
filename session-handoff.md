@@ -1,5 +1,13 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-28：安全修复与质量门禁可信化人工闭环
+
+### 状态更新
+
+- 根据用户人工确认，`security-remediation-2026-08` 与 `quality-gate-hardening` 已闭环。
+- `feature_list.json` 中两个父 Feature 均已标记为 `done`；子任务及既有 evidence 未改动。
+- 本次未修改业务源码；顶层 `verification.gate_status` 未作联动调整。
+
 ## 2026-08-28：MCP 服务与可选能力开放计划
 
 ### 结论

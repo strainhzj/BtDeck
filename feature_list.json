@@ -2380,7 +2380,7 @@
       "id": "quality-gate-hardening",
       "name": "质量门禁可信化",
       "description": "消除 init/lint 吞错、规则自证通过和前后端门禁不一致；严格命令必须传播失败退出码，并以负向样例验证自定义扫描规则。",
-      "status": "in-progress",
+      "status": "done",
       "branch": "dev",
       "tasks": [
         {
@@ -4539,7 +4539,7 @@
       "id": "security-remediation-2026-08",
       "name": "安全修复（两轮对抗验证驱动）",
       "description": "修复两轮对抗验证确认的 8 项高危 + 中危发现：serve_frontend 未认证路径穿越、cron task_type=4 认证后 RCE、备份导入任意写入、source_file_path 任意读取、下载器密码明文入库 + encrypt fail-open、git 公开真实密钥 + 密码可逆存储、默认凭据无强制改密 + 登录无限速、发行包内嵌 config 目录；另含审计归档/导出穿越、2FA 端点越权、DEBUG/docs/compose 配置加固、starlette CVE 升级、删错文件兜底与前端两处加固。",
-      "status": "implemented",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/security-remediation.md",
       "tasks": [

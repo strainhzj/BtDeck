@@ -1,5 +1,11 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-28：安全修复与质量门禁可信化人工闭环
+
+- 用户确认 `security-remediation-2026-08` 与 `quality-gate-hardening` 已完成人工闭环。
+- `feature_list.json` 中两个父 Feature 状态分别由 `implemented` / `in-progress` 更新为 `done`；现有子任务状态与证据保持不变（安全修复 14/14、质量门禁 2/2）。
+- 本次仅调整任务状态与会话记录，未修改业务源码；顶层 `verification` 独立字段保持原值。
+
 ## 2026-08-28：MCP 服务与可选能力开放计划（默认关闭 + 强制脱敏）
 
 ### 背景与决策
