@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "feature_id": "release-artifact-equivalence-gate-2026-08-28",
+  "generated_at": "2026-08-28",
+  "candidate": {
+    "product_version": "1.0.6",
+    "git_tag": "v1.0.6",
+    "planning_baseline_sha": "433f729fd9945afbff259d66b6a7ccb9efbc696d",
+    "planning_baseline_note": "dev@433f729 仅为规划基线；正式 RC 必须来自受保护标签 v1.0.6 的干净检出（G0）",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "frontend/src/contracts/advancedSearch.generated.ts"
+    ]
+  },
+  "upgrade_baseline": {
+    "git_tag": "v1.0.5",
+    "git_sha": "29c6f6f68ab35e25f8cf7237ee187de359c77714",
+    "git_tag_verified": true,
+    "official_artifacts_available": false,
+    "official_artifacts_evidence": "GitHub Release API /repos/strainhzj/BtDeck/releases/tags/v1.0.5 返回 404（2026-08-28 实测）；仅存在 git 标签，无发布制品",
+    "fixture_strategy": "local-release-build",
+    "fixture_note": "本地 .release-build-v1.0.5/assets/ 有完整制品集（DEB/RPM/Windows portable EXE+ZIP，SHA256 见 w0-environment-report.md §2）；来源对账 = v1.0.5 标签树 971 文件中仅 4 处差异（1 处 feature_list 记录在案的 py3.11 f-string 热修 + 3 个发布记录文件）。作为升级夹具标注 reconstructed=true, source=local-release-build；无 v1.0.5 Inno 安装器，Windows 升级生命周期只能用 portable/重建夹具（G6 报告须注明局限）"
+  },
+  "toolchain": {
+    "python_target": "3.11",
+    "python_current_drift": {
+      "docker_backend": "python:3.11-slim（浮动 tag）",
+      "ci_regression": "3.12",
+      "windows_local_packaging_venv": "3.12.4（PATH python）",
+      "linux_package_script_default": "3.11"
+    },
+    "node_strategy": "W0 以 Node 22 容器全量验证后固定精确版本；失败回退顺序 22 → 20 → 18.20.x",
+    "node_current_drift": {
+      "frontend_dockerfile": "18.20.1",
+      "ci_regression": "20",
+      "windows_local_path": "24.19.0"
+    },
+    "docker_base_images_unpinned": [
+      "python:3.11-slim",
+      "node:18.20.1-slim",
+      "nginx:1.25-alpine"
+    ],
+    "w0_probes": {
+      "node22_frontend_matrix": {
+        "status": "PASS",
+        "detail": "node:22-bookworm-slim = Node v22.23.2 + npm 10.9.8；npm ci/contract:check/typecheck/test:coverage(84套件1233测试)/build 全绿",
+        "evidence": "release/evidence/w0/w0-node22-frontend.log"
+      },
+      "glibc_cheap_check": {
+        "status": "PASS",
+        "detail": "现有 Debian 12 构建二进制：rocky9 失败（libpython3.11.so.1.0 需 GLIBC_2.35 > 2.34，exit 255）；debian:12 正常启动。R10 实锤",
+        "evidence": "release/evidence/w0/w0-glibc-rocky9-existing.log"
+      },
+      "glibc_bullseye_rebuild": {
+        "status": "PASS",
+        "detail": "python:3.11-bullseye 重建后单二进制在 rocky9 + debian12 双发行版均完整启动；单二进制方案成立，Linux 构建基线定格 bullseye",
+        "evidence": "release/evidence/w0/w0-bullseye-build.log + w0-glibc-{rocky9,debian12}-bullseye.log"
+      },
+      "systemd_container_smoke": {
+        "status": "PASS",
+        "detail": "官方基础镜像均不含 systemd；自建（官方基+装 systemd，debian 须补 /sbin/init 符号链接）+ --privileged --cgroupns=host 下双发行版单元生命周期全通",
+        "evidence": "release/evidence/w0/w0-systemd-smoke.log"
+      },
+      "windows_runner_inno_nssm": {
+        "status": "NOT_RUN",
+        "evidence": null,
+        "blocker": "release-gate.yml 已写入（w0-windows-runner job：choco innosetup 6.3.3 + ISCC 编译/静默装卸 + NSSM 生命周期），需推送 workflow 到 origin 后在 GitHub 托管 Runner 执行；本地无 ISCC 且约定不改本机系统"
+      }
+    },
+    "w0_decisions": {
+      "linux_build_baseline": "python:3.11-bullseye（glibc 2.31），单二进制覆盖 Debian 12 + Rocky 9，无需拆发行版制品",
+      "frontend_node": "22.23.2（22 线，探针实测）；W1 统一 Dockerfile/CI/本地脚本",
+      "windows_build_venue": "仅 CI windows-2022 Runner，不在本机构建正式 Windows 制品"
+    }
+  },
+  "dependency_forks": {
+    "qbittorrent-api": {
+      "backend_requirements": "~=2025.2.0",
+      "windows_package": "~=2025.5.0",
+      "linux_package": "~=2025.5.0",
+      "resolution": "W1 统一到 ~=2025.2.0（backend 主清单 2026-08-25 生产实证锁定）"
+    },
+    "packaging_only_extras": [
+      "passlib[bcrypt]~=1.7.4",
+      "email-validator~=2.2.0"
+    ],
+    "note": "两个 deploy/requirements-*-package.txt 是 backend/requirements.txt 的手工全量拷贝（漂移面大）；W1 改为公共锁 + 平台增量白名单"
+  },
+  "certified_artifacts": [
+    "windows-exe",
+    "windows-setup",
+    "linux-deb",
+    "linux-rpm",
+    "docker-backend",
+    "docker-frontend"
+  ],
+  "gate_status": {
+    "G0": "NOT_RUN",
+    "G1": "NOT_RUN",
+    "G2": "NOT_RUN",
+    "G3": "NOT_RUN",
+    "G4": "NOT_RUN",
+    "G5": "NOT_RUN",
+    "G6": "NOT_RUN",
+    "G7": "NOT_RUN",
+    "G8": "NOT_RUN",
+    "G9": "NOT_RUN",
+    "G10": "NOT_RUN"
+  }
+}

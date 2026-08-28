@@ -31,6 +31,9 @@ build/
 *.temp
 *.bak
 *.backup
+# 发布门禁证据链例外：release/evidence/ 下的探针日志必须可提交
+# （release-artifact-equivalence-gate G0～G10 证据可追溯性要求）
+!release/evidence/**/*.log
 
 # ================================
 # Python

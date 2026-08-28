@@ -1,5 +1,50 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-28（夜）：v1.0.6 制品等价门禁 W0 本地探针批次
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- 基线冻结：`release/release-config.json` + `release/evidence/w0/baseline.json`（v1.0.5=29c6f6f 与计划一致；GitHub Release API 对 v1.0.5 返回 404）。
+- v1.0.5 升级夹具策略升级：本地 `.release-build-v1.0.5/assets/` 存在完整制品集（DEB/RPM/portable EXE+ZIP，SHA256 已归档）；与 `git archive v1.0.5` 对账 971 文件仅 4 差异（cleanup_executor.py 的 py3.11 热修即 R9 事故修复 + 3 个记录文件）→ 夹具标注 local-release-build/reconstructed；注意无 v1.0.5 Inno 安装器。
+- R10 定案：现有 Debian 12 构建二进制在 Rocky 9 启动失败（libpython3.11.so.1.0 需 GLIBC_2.35 > 2.34）；python:3.11-bullseye 重建后单二进制在 Debian 12 + Rocky 9 均完整启动 → Linux 构建基线定格 bullseye，不拆发行版制品。
+- Node 工具链：Node v22.23.2 + npm 10.9.8 全量矩阵全绿（npm ci/contract:check/typecheck/84 套件 1233 测试/build）→ 前端统一锁 22 线。
+- systemd 容器拓扑：官方 rockylinux:9 / debian:12 基础镜像均不含 systemd；自建配方（官方基+仓库装 systemd；debian 必须补 `ln -sf /lib/systemd/systemd /sbin/init`）+ `--privileged --cgroupns=host` 下双发行版单元生命周期全通；`is-system-running=degraded` 属容器正常态。
+- `.github/workflows/release-gate.yml`：4 个 W0 探针 job（windows Inno+NSSM / 双发行版 systemd / Node 22 矩阵 / bullseye+双发行版），workflow_dispatch 触发、fail-closed、报告 artifact 强制上传；复用本地已验证配方，YAML 校验通过。
+- 文档同步：PLANS §18 W0 结论、feature_list task .1 evidence（保持 pending）、progress.md W0 节。
+
+### 阻断与下一步
+
+- **阻断：release-gate.yml 未推送**（用户未授权 push）→ CI 侧 4 探针全部 NOT_RUN；Windows Inno+NSSM 能力结论只能来自 CI。授权推送并触发后，task .1 方可评估 done。
+- W1 批次（待用户确认开工）：release-config 单一版本源、build-info schema+生成器、健康接口 build 字段、qB 统一 2025.2.0、公共依赖锁、Node 22/Dockerfile/CI 工具链统一。
+- 环境备忘：本机 Docker 引擎需先启动 Docker Desktop（非自启）；Git Bash 下 docker 命令须 `export MSYS_NO_PATHCONV=1` 防 `/app` 被改写；本机 grep 为 ugrep，`grep -E` 兼容、`\|` 分隔会误报。
+
+## 2026-08-28（晚）：Phase 0 判据 1-4 达成——android-wheels 首建与导入矩阵
+
+### 已完成
+
+- 远端仓库 `strainhzj/android-wheels`（公开）经 API 建仓并推送；Pages PEP 503 索引 live：https://strainhzj.github.io/android-wheels/simple/pydantic-core/
+- 闸门判据 1/2/3/4 达成（详见 wheels 仓 docs/gate.md 执行记录与主仓 progress.md）：两 ABI wheel 构建+形态校验+索引发布+CI 模拟器导入矩阵全绿（run 33180505344）。
+- 目标矩阵修正为两 ABI（Chaquopy py3.12 弃 32 位，三重实证）；自建面收窄至 pydantic-core。
+- 主仓 feature_list.json `.1` evidence、progress.md 已同步。
+
+### 环境与工具链备忘
+
+- GitHub 操作：本机无 gh CLI，用 `git credential fill` 取 token 走 REST API（建仓/Pages 启用/触发 workflow/取日志）。写死轮询脚本在 /tmp（会话级）。
+- wheels 仓库构建要点全部沉淀在 scripts/*.py 注释与 gate.md 决策记录；本地改动后必须让 build-pydantic-core 先绿再触发 import-matrix（索引自 build 发布）。
+- GitHub runner：无 KVM，模拟器 `-accel off` 冷启动 8-11 分钟（boot-timeout 1800）；android-35 镜像（default+google_atd）有 droid.bluetooth SIGABRT 系统崩溃，勿在 CI 强测 API35；16KB 用 `google_apis_ps16k` target。
+
+### 下一步（按用户确认的优先级）
+
+1. 判据 6 专项：本地重建 AVD（用户已批准下载 emulator+system-image，SDK 在 C:/software/android-build-env，JAVA_HOME 需显式指 jdk-21.0.2）；用 ps16k 镜像验 16KB + 冷启动/升级。
+2. 判据 5：import-matrix full-graph 阶段 2 实装（BtDeck backend alembic/契约/frontend dist 注入 testapp）。
+3. 批次 A：重跑定向后端测试组收口 `.2` 置 done（首轮核查已确认七项证据齐全）。
+4. Phase 2 设备项：离线/认证失败/版本不兼容状态、多 profile 隔离、自签证书真机全流程（OkHttp 指纹接入已实现，2026-08-28 晚，17/17 单测绿，真实 TLS 待设备）；`.5` capability 矩阵 API/UI 接线（用户拍板现在做，未开工）；`.8` 桌面 GUI 实测。
+5. Android 真机 arm64-v8a 导入验证（Phase 5 设备矩阵合并）。
+
+### 注意
+
+- wheels 仓 16 轮迭代均已推送（origin/main @ 231a5f0）；主仓本批仅改 feature_list.json/progress.md/session-handoff.md，未提交（遵循仅用户要求时提交）。
+- 唯一工作区"修改"仍是 advancedSearch.generated.ts 行尾假警报（零内容差异）。
 ## 2026-08-28：安全修复与质量门禁可信化人工闭环
 
 ### 状态更新

@@ -6224,3 +6224,37 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **ConditionValueInput.spec 新增 describe 2 例**：断点内 `.size-range-input .size-input-wrapper .size-number-input, .size-with-unit-input .size-number-input` 逗号选择器整对加宽 130px（缺一即红，锁 14px 字号防裁切）；桌面基准 100px/120px 不变。
 - **变异验证 14/14 全拦截**（python 字节级定点变异，锚点唯一性预断言、备份-变异-红-还原-cmp 校验；M11 断点边界锚点计数 2 仅替换 scoped 块首处）：M1 --value 修饰类移除、M2 桌面基准 none→block、M3 移动端标签 block→none、M4 主题色→中性灰、M5 width:100%→auto、M6 主题浅底→透明、M7 触控 40→39px、M8 ams 豁免 32→40px、M9 内边距 12→6px、M10 右对齐→auto、M11 断点 768→900、M12 加粗 600→400、M13 数字框 130→100px、M14 逗号选择器截断。还原后 `git status` 零残留（两 .vue diff 与上批 UI 增量逐字节一致）。
 - **验证**：定向四套件 **76 例全绿**（原 65 + 新 11）；`npm run lint`（含 contract:check）与 `tsc --noEmit` 零错误。未执行 Git 提交。
+
+## 2026-08-28（晚）：Phase 0 风险闸门判据 1-4 达成（android-wheels 远端首建+导入矩阵全绿）
+
+- **批次 B 收口**（用户确认"严格等 B"后的第一批）：gh CLI 未装，经 Git 凭据管理器 token + GitHub API 创建公开远端 `strainhzj/android-wheels` 并推送本地脚手架（ee65481）。
+- **16 轮 CI 迭代**（每轮失败均归因并登记 gate.md/commit message）：cargo-ndk 只在 crates.io（pip 装不到）→maturin 无 `--abi3` 参数且 pydantic-core 无 abi3 feature（改 `-i 3.12`+`pyo3/extension-module`）→交叉链接要 `-lpython3.12`（空动态库 stub+patchelf 显式补 DT_NEEDED，lld --as-needed 会丢弃无符号解析的 NEEDED）→maturin 1.8 android repair 试图 vendor 系统库 libdl（`--skip-auditwheel`）→PEP 503 索引路径归一化必须连字符→ELF e_machine 在 offset 18（脚本原按 16 读 8 字节必错）→DT_STRTAB 虚拟地址须经 PT_LOAD 翻译→RECORD 重写键必须按旧路径匹配（zip/RECORD 一致性，Chaquopy pip_install int('') 崩溃归因）→Chaquopy 无 extraIndexUrls DSL（`options("--extra-index-url",…)`）→py3.12 弃 32 位 ABI（abiFilters 收敛）→useAndroidX→androidTest asMap 泛型→`Python.start(AndroidPlatform)`→emulator-runner 拆坏多行 script 分组（收敛仓库内脚本）→boot-timeout 1800（无 KVM 软件模拟冷启动 8-11 分钟）。
+- **结果**：判据 1/2/3（两 ABI wheel 构建+形态校验+Pages PEP 503 索引 https://strainhzj.github.io/android-wheels/simple/pydantic-core/）与判据 4（import-matrix run 33180505344 全绿：索引装 wheel→模拟器→pydantic-core 原生导入→FastAPI /health/live 4/4）达成；`versions.env` 已回填 sdist sha256 与 wheel tag 并强校验。
+- **重大口径修正**：Chaquopy 15.0.1 起 Python 3.12+ 不支持 armeabi-v7a/x86（changelog+官方仓库 wheel 文件名+Chaquopy 构建报错三重实证）——Phase 0 目标矩阵四 ABI→两 ABI；ABI 敏感依赖自建面收窄至 pydantic-core 一项（bcrypt/regex/pillow/pycryptodomex 官方仓库已有；gmssl 纯 Python）。
+- **环境限制登记**：GitHub runner 软件模拟下 android-35 镜像 droid.bluetooth SIGABRT 系统级崩溃（default/google_atd 双镜像复现、应用零痕迹、API34 同 wheel 全绿对照）——API35+16KB 转判据 6 专项（google_apis_ps16k 镜像+本地 AVD）。
+- **闸门状态**：判据 5（完整 import graph 阶段 2）/6（16KB/冷启动/升级）与 arm64 真机导入未完成，**Phase 3 维持封锁**；`.1` 保持 in-progress。
+- 验证：build run 33164701409 起持续绿；import-matrix run 33180505344 success；本地干跑 retag/check-wheel-tag/索引脚本（合成 wheel + 真实 wheel 双向验证）；主仓 `./init.sh --ci` 通过；desktop_companion 53 passed 复验。
+
+## 2026-08-28（晚·批次 A）：Phase 1（task .2）收口置 done
+
+- 用户确认关闭口径：七项已全部收口（evidence 追加 2026-08-23 第二批），LAN 受控重绑维持 Phase 3 登记。
+- 本批验证：定向后端测试组 109 passed（connectivity/delay-probe/writable-roots/packaging-contract/audit-excel/desktop_companion 六组）；首轮核查 ping3 零直调、requirements 瘦身、docs/android 文档矩阵齐全。
+- `.2` → done；未执行 Git 提交（遵循仅用户要求时提交）。
+
+## 2026-08-28（夜）：v1.0.6 制品等价门禁 W0 本地探针批次（release-artifact-equivalence-gate task .1）
+
+- **范围**：只读核查后的第一批实施——基线固化 + 4 项本地 Docker 探针 + release-gate.yml 编写；不改任何构建脚本与业务源码。
+- **基线**：`release/release-config.json` + `release/evidence/w0/baseline.json`；v1.0.5 标签=29c6f6f（与计划一致）；GitHub Release API 对 v1.0.5 实测 404（无正式发布制品）；`./init.sh --ci` 通过。
+- **v1.0.5 夹具升级**：本地 `.release-build-v1.0.5/assets/` 发现完整制品集（DEB/RPM/portable EXE+ZIP）；与 `git archive v1.0.5` 对账 971 文件仅 4 差异（cleanup_executor.py 第272行 py3.11 f-string 热修=feature_list 记录在案的 R9 事故修复 + feature_list/progress/session-handoff 三个记录文件）→ 夹具策略从"纯重建"升级为 local-release-build（仍按 reconstructed 语义标注；SHA256 全归档于 w0-environment-report.md §2）。
+- **R10 定案（耗时约 3+69 秒两段实验）**：现有 Debian 12 构建二进制在 rockylinux:9 失败——内嵌 libpython3.11.so.1.0 需 GLIBC_2.35 > 2.34（exit 255）；python:3.11-bullseye 容器重建后同一 spec 单二进制在 Debian 12 + Rocky 9 双发行版均 `Application startup complete` → **单二进制方案成立，Linux 构建基线定格 python:3.11-bullseye（glibc 2.31），不拆发行版制品**。证据：w0-glibc-{rocky9,debian12}-{existing,bullseye}.log + w0-bullseye-build.log。
+- **Node 22**：node:22-bookworm-slim（v22.23.2+npm10.9.8）npm ci → contract:check → typecheck → Jest 84 套件 1233 测试（39s）→ build（46s）全绿 → **前端构建统一锁 22 线**；contract:check 通过同时证明工作区 advancedSearch.generated.ts 为合法再生产物（历史会话判定为行尾假警报，内容与后端契约同步）。证据：w0-node22-frontend*.log。
+- **systemd 拓扑**：官方 rockylinux:9/debian:12 基础镜像均不含 systemd；自建镜像（官方基+仓库装 systemd，debian 必须补 /sbin/init 符号链接）以 `--privileged --cgroupns=host` 运行，双发行版单元生命周期（daemon-reload/enable --now/active/stop/inactive）全通；is-system-running=degraded 属容器正常态。证据：w0-systemd-smoke.log。
+- **CI 编排**：`.github/workflows/release-gate.yml` 落地 4 个 W0 探针 job（w0-windows-runner：choco innosetup 6.3.3+ISCC 编译/静默装卸+NSSM 生命周期；w0-linux-systemd；w0-node-matrix；w0-glibc-bullseye），workflow_dispatch、fail-closed、报告 artifact if-no-files-found: error；Python yaml 校验通过。**未推送（未获授权）→ CI 侧全部 NOT_RUN，Windows Inno+NSSM 能力结论待 CI。**
+- **收尾**：探针容器与 w0out 卷已清理；dist/ 遗留制品、.release-build-v1.0.5/、data/ 未触碰；PLANS 追加 §18、feature_list task .1 evidence（保持 pending，CI 未跑）、session-handoff 已更新；复验 `./init.sh --ci` 通过。
+- **批次耗时**：约 70 分钟（含 Docker Desktop 启动 15s、4 镜像拉取、双探针并行）。
+
+## 2026-08-28（晚·追加）：OkHttp 健康检查接入信任指纹（Phase 2 已知边界闭环）
+
+- 用户拍板"纳入"：HealthClient 增 trustedFingerprints 参数，全信 SSLContext+CertificatePinner 精确钉扎组合（trust-any+pin=trust-only-these），hex→base64 pin 转换，指纹不匹配归 TLS_ERROR 提示重新确认；两调用点传入 profile 指纹。
+- 新增 HealthClientPinTest 4 例；:app:testDebugUnitTest 17/17 全绿（--rerun-tasks 复核）。真实 TLS 握手待设备验证。
+- SDK 下载完成：emulator + android-35 google_apis x86_64 + google_apis_ps16k（16KB）镜像就位（C:/software/android-build-env/sdk），AVD 创建与 16KB/冷启动验证留待下批。

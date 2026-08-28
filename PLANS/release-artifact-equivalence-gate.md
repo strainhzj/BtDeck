@@ -654,3 +654,15 @@ Windows 生命周期使用 `windows-2022` Runner。DEB/RPM 优先使用带 syste
 6. 用负向变异证明 SHA、版本、qB 版本漂移会阻断。
 
 第一批完成后再进入制品构建改造，可把后续风险建立在可验证的身份和依赖基础上。
+
+## 18. W0 执行结论（2026-08-28 实测）
+
+> 证据根目录：`release/evidence/w0/`（含 w0-environment-report.md 与全部探针日志）；配置固化：`release/release-config.json`。
+
+1. **基线**：v1.0.5 标签 = `29c6f6f…`（与计划一致）；候选规划基线 dev@433f729；`./init.sh --ci` 通过。
+2. **升级基线制品**：GitHub Release API 对 v1.0.5 为 404；本地 `.release-build-v1.0.5/assets/` 有完整制品集（DEB/RPM/portable EXE+ZIP，SHA256 已归档）。来源对账：与 `git archive v1.0.5` 相比 971 文件仅 4 处差异（cleanup_executor.py 的 py3.11 f-string 热修即 R9 事故修复 + 3 个记录文件）。夹具策略改为 local-release-build（reconstructed 语义）；无 v1.0.5 Inno 安装器，Windows 升级生命周期测试范围相应受限并须在 G6 报告注明。
+3. **R10 定案与治理**：现有 Debian 12 构建二进制在 Rocky 9 失败（libpython3.11.so.1.0 需 GLIBC_2.35 > 2.34）；python:3.11-bullseye 重建后**单二进制在 Debian 12 + Rocky 9 均完整启动** → §5.1.5 裁决为"单二进制 + bullseye 构建基线"，不拆发行版制品。
+4. **Node 22 兼容**：Node v22.23.2 + npm 10.9.8 全量矩阵通过（contract:check/typecheck/84 套件 1233 测试/build）→ 前端构建统一锁定 22 线，§5.1.2 的 Node 22 验证完成。
+5. **systemd 拓扑**：官方 rockylinux:9 / debian:12 基础镜像均不含 systemd；自建镜像配方（官方基 + 仓库安装 systemd；debian 必须补 `/sbin/init` 符号链接）在 `--privileged --cgroupns=host` 下双发行版单元生命周期全通；`is-system-running=degraded` 为容器正常态。
+6. **CI 探针**：`.github/workflows/release-gate.yml` 已落地（4 个 W0 job、workflow_dispatch、fail-closed、报告 artifact 强制上传，复用本地已验证配方）；**尚未推送，CI 侧全部 NOT_RUN**——Windows Inno+NSSM 能力结论待推送后取得。
+7. **移交**：未提交漂移 `advancedSearch.generated.ts` 已证实为合法再生成（contract:check 通过），G0 冻结前须提交；本机 Node/Python 工具链漂移由 W1 收口。

@@ -1,0 +1,311 @@
+# BtDeck Release Gate（W0 探针阶段）
+#
+# 职责（PLANS/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
+#   w0-windows-runner : windows-2022 上验证 Inno Setup 安装/静默安装卸载 + NSSM 服务生命周期
+#   w0-linux-systemd  : ubuntu Runner 上验证 Debian 12 / Rocky 9 systemd 特权容器拓扑
+#   w0-node-matrix    : Node 22 下前端全量矩阵（contract:check/typecheck/Jest/build）
+#   w0-glibc-bullseye : python:3.11-bullseye 构建 Linux 二进制并在两发行版运行验证
+#
+# 本文件当前只承载 W0 能力探针；G0～G10 完整门禁 DAG 在后续批次（W2+/W5）加入。
+# 语义：fail-closed —— 任一探针失败/超时/证据缺失即 job 失败，不允许跳过。
+# 触发：仅 workflow_dispatch（推送后手动触发；后续 RC 阶段再接 tag 触发）。
+#
+# 2026-08-28 本地等价探针已通过（见 release/evidence/w0/）：
+#   - systemd 拓扑配方（含 debian:12 需补 /sbin/init 符号链接的细节）
+#   - bullseye 单二进制在 rocky9/debian12 双发行版启动
+#   - Node 22.23.2 前端 84 套件 1233 测试全绿
+# 本 workflow 的目的是在 GitHub 托管 Runner 上复现同一配方，证明 CI 环境等效。
+
+name: Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_windows:
+        description: "Run w0-windows-runner probe"
+        type: boolean
+        default: true
+      run_linux_systemd:
+        description: "Run w0-linux-systemd probe"
+        type: boolean
+        default: true
+      run_node_matrix:
+        description: "Run w0-node-matrix probe"
+        type: boolean
+        default: true
+      run_glibc:
+        description: "Run w0-glibc-bullseye probe"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # W0 探针锁定的工具链（与 release/release-config.json 对齐；W1 起由 config 单一来源化）
+  W0_NODE_VERSION: "22.23.2"
+  W0_PYTHON_BUILD_IMAGE: python:3.11-bullseye
+  W0_TEST_DISTROS: '["debian:12", "rockylinux:9"]'
+
+jobs:
+  w0-windows-runner:
+    name: "W0 probe / Windows runner (Inno + NSSM lifecycle)"
+    if: ${{ inputs.run_windows }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup (choco)
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.3.3 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+          (& $iscc /?) 2>&1 | Select-Object -First 2
+          Write-Output "ISCC_VERSION_LINE_OK"
+
+      - name: Compile probe installer with ISCC (fail-closed)
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "w0-inno-probe"
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          Set-Content -Path (Join-Path $probeDir "dummy.txt") -Value "btdeck w0 probe"
+          $iss = @"
+          [Setup]
+          AppId={{9A6C1B2D-1111-4222-8333-W0PROBE00001}
+          AppName=BtDeckW0Probe
+          AppVersion=0.0.1
+          DefaultDirName={autopf}\BtDeckW0Probe
+          OutputDir=$probeDir
+          OutputBaseFilename=w0probe-setup
+          PrivilegesRequired=admin
+          [Files]
+          Source: "$probeDir\dummy.txt"; DestDir: "{app}"
+          "@
+          $issPath = Join-Path $probeDir "probe.iss"
+          # Inno 不接受 UTF-16 BOM 之外的奇字符，统一 ASCII 写入
+          [System.IO.File]::WriteAllText($issPath, $iss, (New-Object System.Text.UTF8Encoding($false)))
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" $issPath
+          if ($LASTEXITCODE -ne 0) { throw "ISCC compile failed" }
+          $setup = Join-Path $probeDir "w0probe-setup.exe"
+          if (-not (Test-Path $setup)) { throw "probe setup exe not produced" }
+          (Get-FileHash $setup -Algorithm SHA256).Hash | Set-Content (Join-Path $probeDir "setup.sha256")
+
+      - name: Silent install / uninstall probe setup
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "w0-inno-probe"
+          $setup = Join-Path $probeDir "w0probe-setup.exe"
+          $installDir = "C:\Program Files (x86)\BtDeckW0Probe"
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          if (-not (Test-Path (Join-Path $installDir "dummy.txt"))) { throw "silent install did not place dummy.txt" }
+          Write-Output "SILENT_INSTALL_OK"
+          $uninst = Join-Path $installDir "unins000.exe"
+          if (-not (Test-Path $uninst)) { throw "uninstaller missing" }
+          Start-Process -FilePath $uninst -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          if (Test-Path $installDir) { throw "silent uninstall left artifacts" }
+          Write-Output "SILENT_UNINSTALL_OK"
+
+      - name: NSSM service lifecycle probe
+        shell: pwsh
+        run: |
+          $nssm = Join-Path $PWD "deploy\nssm.exe"
+          if (-not (Test-Path $nssm)) { throw "deploy/nssm.exe missing from checkout" }
+          $svc = "BtDeckW0Probe"
+          & $nssm install $svc "C:\Windows\System32\cmd.exe" "/c ping -n 9999 127.0.0.1 > NUL"
+          if ($LASTEXITCODE -ne 0) { throw "nssm install failed" }
+          & $nssm set $svc Start SERVICE_DEMAND_START | Out-Null
+          & $nssm start $svc
+          if ($LASTEXITCODE -ne 0) { throw "nssm start failed" }
+          $status = (& $nssm status $svc) -join ""
+          if ($status -notmatch "SERVICE_RUNNING") { throw "service not RUNNING, got: $status" }
+          & $nssm stop $svc
+          & $nssm remove $svc confirm
+          if ($LASTEXITCODE -ne 0) { throw "nssm remove failed" }
+          $left = Get-Service -Name $svc -ErrorAction SilentlyContinue
+          if ($left) { throw "service still exists after remove" }
+          Write-Output "NSSM_LIFECYCLE_OK"
+
+      - name: Write W0 windows report
+        shell: pwsh
+        run: |
+          $report = @{
+            probe = "w0-windows-runner"
+            runner = "${{ runner.name }}-${{ runner.os }}"
+            inno_setup = "6.3.3"
+            checks = @{
+              iscc_compile = "PASS"
+              silent_install_uninstall = "PASS"
+              nssm_lifecycle = "PASS"
+            }
+            executed_at = (Get-Date -AsUTC -Format "yyyy-MM-ddTHH:mm:ssZ")
+          }
+          $report | ConvertTo-Json | Set-Content w0-windows-runner.json
+
+      - name: Upload W0 windows report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w0-windows-runner
+          path: w0-windows-runner.json
+          retention-days: 30
+          if-no-files-found: error
+
+  w0-linux-systemd:
+    name: "W0 probe / Debian 12 + Rocky 9 systemd containers"
+    if: ${{ inputs.run_linux_systemd }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build systemd test images (official bases only)
+        run: |
+          docker build -t w0-debian-systemd - <<'EOF'
+          FROM debian:12
+          RUN apt-get update && apt-get install -y --no-install-recommends systemd \
+              && ln -sf /lib/systemd/systemd /sbin/init \
+              && rm -f /etc/machine-id
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t w0-rocky-systemd - <<'EOF'
+          FROM rockylinux:9
+          RUN dnf -y install systemd && rm -f /etc/machine-id && systemctl set-default multi-user.target
+          CMD ["/sbin/init"]
+          EOF
+
+      - name: systemd unit lifecycle probe (both distros)
+        run: |
+          set -euo pipefail
+          probe_distro() {
+            local image="$1" cname="$2"
+            docker run -d --name "$cname" --privileged --cgroupns=host "$image" >/dev/null
+            sleep 8
+            echo "== $image =="
+            docker exec "$cname" systemctl is-system-running || true  # degraded 是容器正常态，非失败
+            docker exec "$cname" bash -c 'printf "[Unit]\nDescription=w0 probe\n[Service]\nType=oneshot\nExecStart=/bin/touch /tmp/w0-started\nRemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n" > /etc/systemd/system/w0-probe.service'
+            docker exec "$cname" systemctl daemon-reload
+            docker exec "$cname" systemctl enable --now w0-probe.service
+            docker exec "$cname" test -f /tmp/w0-started
+            docker exec "$cname" systemctl is-active w0-probe.service | grep -qx active
+            docker exec "$cname" systemctl stop w0-probe.service
+            test "$(docker exec "$cname" systemctl is-active w0-probe.service)" = inactive
+            docker exec "$cname" systemctl disable w0-probe.service
+            echo "$image UNIT_LIFECYCLE_OK"
+            docker rm -f "$cname" >/dev/null
+          }
+          probe_distro w0-debian-systemd w0-sysd-deb
+          probe_distro w0-rocky-systemd w0-sysd-rocky
+          {
+            echo '{"probe":"w0-linux-systemd","runner":"${{ runner.name }}","checks":{"debian12_systemd":"PASS","rocky9_systemd":"PASS"},"executed_at":"'$(date -u +%FT%TZ)'"}'
+          } > w0-linux-systemd.json
+
+      - name: Upload W0 systemd report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w0-linux-systemd
+          path: w0-linux-systemd.json
+          retention-days: 30
+          if-no-files-found: error
+
+  w0-node-matrix:
+    name: "W0 probe / Node 22 frontend matrix"
+    if: ${{ inputs.run_node_matrix }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.W0_NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci + full matrix (fail-closed)
+        run: |
+          node -v && npm -v
+          npm ci --legacy-peer-deps
+          npm run contract:check
+          npm run typecheck
+          npm run test:coverage -- --silent
+          npm run build
+          echo NODE22_CI_MATRIX_PASS
+
+      - name: Write W0 node report
+        if: always()
+        run: |
+          cat > w0-node-matrix.json <<EOF
+          {"probe":"w0-node-matrix","node":"$(node -v)","runner":"${{ runner.name }}","executed_at":"$(date -u +%FT%TZ)"}
+          EOF
+
+      - name: Upload W0 node report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w0-node-matrix
+          path: frontend/w0-node-matrix.json
+          retention-days: 30
+          if-no-files-found: error
+
+  w0-glibc-bullseye:
+    name: "W0 probe / bullseye build + dual-distro run"
+    if: ${{ inputs.run_glibc }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build frontend once (probe scope; W2 起由独立 frontend-dist 制品替代)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src/frontend node:22-bookworm-slim bash -c "\
+            npm ci --legacy-peer-deps && npm run build"
+
+      - name: PyInstaller build in python:3.11-bullseye
+        run: |
+          docker volume rm w0out >/dev/null 2>&1 || true
+          docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.11-bullseye bash -c "\
+            pip install --no-cache-dir --prefer-binary -r deploy/requirements-linux-package.txt \
+            && pyinstaller --clean --noconfirm --distpath /out --workpath /tmp/pyi-build deploy/btdeck.spec"
+
+      - name: Run binary on Debian 12 + Rocky 9 (fail-closed)
+        run: |
+          set -euo pipefail
+          for distro in debian:12 rockylinux:9; do
+            echo "== $distro =="
+            docker run --rm -v w0out:/artifacts:ro "$distro" bash -c '
+              cp /artifacts/btdeck /tmp/btdeck && chmod +x /tmp/btdeck
+              timeout 15 /tmp/btdeck >/tmp/run.log 2>&1 || rc=$?
+              rc=${rc:-0}
+              grep -q "Application startup complete" /tmp/run.log \
+                || { echo "STARTUP FAILED on $1"; cat /tmp/run.log | tail -20; exit 1; }
+              echo "rc=$rc STARTUP_OK"
+            ' _ "$distro"
+          done
+          cat > w0-glibc-bullseye.json <<EOF
+          {"probe":"w0-glibc-bullseye","build_image":"python:3.11-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
+          EOF
+
+      - name: Upload W0 glibc report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w0-glibc-bullseye
+          path: w0-glibc-bullseye.json
+          retention-days: 30
+          if-no-files-found: error
