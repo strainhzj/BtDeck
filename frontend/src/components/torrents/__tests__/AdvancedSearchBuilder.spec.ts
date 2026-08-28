@@ -198,6 +198,16 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(componentSource).toMatch(/\.add-condition\s*\{[^}]*justify-content:\s*center;/s)
   })
 
+  it('移动端条件行标签：每条件渲染 字段/操作/内容/方式 四行标签，内容行带 --value 强调修饰类', () => {
+    const labels = wrapper.findAll('.condition-row-label')
+    expect(labels).toHaveLength(4)
+    expect(labels.at(0).text()).toBe('字段')
+    expect(labels.at(1).text()).toBe('操作')
+    expect(labels.at(2).text()).toBe('内容')
+    expect(labels.at(3).text()).toBe('方式')
+    expect(labels.at(2).classes()).toContain('condition-row-label--value')
+  })
+
   it('组间 AND/OR 选择器位于条件组卡片外', async() => {
     vm.addConditionGroup()
     await Vue.nextTick()
@@ -682,5 +692,66 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
     const callsAfterReopen = (getAllCategories as jest.MockedFunction<typeof getAllCategories>).mock.calls.length
     expect(callsAfterReopen).toBe(2) // created 一次 + refreshFieldOptions 一次
+  })
+})
+
+/**
+ * 移动端条件组辨识度源码契约（2026-08-28 UX 改造回归）。
+ *
+ * 改造的可回归面（行标签/内容行主题强调/触控目标）全部是模板 class 与
+ * ≤768px 媒体查询里的 SCSS 静态结构——jsdom 不级联媒体查询，无法用挂载断言
+ * 计算样式，故按 field-types-consistency.spec.ts 范式锁源码字符串：
+ * - 断点内（mediaBlock）锁定标签显示、强调卡片、40px 触控、单选拉伸、删除钮右对齐；
+ * - 断点外（baseBlock）锁定桌面零变化：标签 display:none、.condition-value 仍 flex:1。
+ */
+describe('移动端条件组辨识度源码契约（≤768px 断点，桌面零变化）', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../AdvancedSearchBuilder.vue'), 'utf8')
+  const mediaIndex = source.indexOf('@media (max-width: 768px)')
+  const baseBlock = source.slice(0, mediaIndex)
+  const mediaBlock = source.slice(mediaIndex)
+
+  it('断点边界固定 768px：scoped 主样式与对话框压宽块两处均为 768px', () => {
+    const boundaries = source.match(/@media \(max-width:\s*768px\)/g)
+    expect(boundaries).not.toBeNull()
+    expect(boundaries).toHaveLength(2)
+  })
+
+  it('行标签桌面基准隐藏、断点内显示', () => {
+    expect(mediaIndex).toBeGreaterThan(0)
+    expect(baseBlock).toMatch(/\.condition-row-label\s*\{[^}]*display:\s*none\s*;/)
+    expect(mediaBlock).toMatch(/\.condition-row-label\s*\{[^}]*?display:\s*block\s*;/)
+  })
+
+  it('内容行标签断点内用主题色加粗（--value 修饰块）', () => {
+    expect(mediaBlock).toMatch(/&--value\s*\{[^}]*color:\s*var\(--color-primary/)
+    expect(mediaBlock).toMatch(/&--value\s*\{[^}]*font-weight:\s*600\s*;/)
+  })
+
+  it('内容行强调卡片：显式整行宽（防 align-items:center 特异性收缩）+ 主题浅底 + 主题色边框', () => {
+    // width:100% 是承重声明：基础 .condition-content{align-items:center} 多一层
+    // .conditions 特异性更高，缺宽度时强调卡收缩为内容宽（截图实测踩过）
+    expect(mediaBlock).toMatch(/\.condition-value\s*\{[^}]*width:\s*100%\s*;/)
+    expect(mediaBlock).toMatch(/\.condition-value\s*\{[^}]*background:\s*var\(--color-primary-lightest/)
+    expect(mediaBlock).toMatch(/\.condition-value\s*\{[^}]*border:\s*1px solid rgba\(var\(--color-primary-rgb/)
+  })
+
+  it('触控目标 40px 且 AdvancedMultiSelect 玻璃搜索框豁免 32px', () => {
+    expect(mediaBlock).toMatch(/\.el-input__inner\s*\{[^}]*height:\s*40px\s*;\s*line-height:\s*40px\s*;/)
+    expect(mediaBlock).toMatch(/\.el-input__icon\s*\{[^}]*line-height:\s*40px\s*;/)
+    expect(mediaBlock).toMatch(/\.ams__search-box \.el-input__inner\s*\{[^}]*height:\s*32px\s*;\s*line-height:\s*32px\s*;/)
+  })
+
+  it('包含/排除等宽大按钮：单选组 flex 铺满、按钮 flex:1、内边距 12px', () => {
+    expect(mediaBlock).toMatch(/\.el-radio-group\s*\{[^}]*display:\s*flex\s*;\s*width:\s*100%\s*;/)
+    expect(mediaBlock).toMatch(/\.el-radio-button\s*\{\s*flex:\s*1\s*;/)
+    expect(mediaBlock).toMatch(/\.el-radio-button__inner\s*\{[^}]*width:\s*100%\s*;\s*padding:\s*12px 0\s*;/)
+  })
+
+  it('删除条件按钮断点内右对齐不拉伸通栏', () => {
+    expect(mediaBlock).toMatch(/\.condition-actions\s*\{[^}]*align-self:\s*flex-end\s*;/)
+  })
+
+  it('桌面零变化锁：断点外 .condition-value 仍为 flex:1 + min-width:200px', () => {
+    expect(baseBlock).toMatch(/\.condition-value\s*\{[^}]*flex:\s*1\s*;\s*min-width:\s*200px\s*;/)
   })
 })

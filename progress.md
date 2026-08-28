@@ -6168,3 +6168,22 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **前端并存场景 + 源码接线契约**（6 例）：降级与文件缺失并存（downgradeDetail 与 fileMissingDetail 同时输出——锁降级分支 return 透传）、部分失败与缺失并存、异步 partial+results 提取并存；源码契约锁 utils 读 `data?.level3_file_missing`/`result?.file_missing` 契约字段名、两接口 `fileMissingDetail: string | null` 声明计数（3=两接口+局部变量）、mixin 单删与轮询两处 `if (parsed.fileMissingDetail)` + `title: '文件缺失提醒'` 计数各 2——行为测试锁纯函数，源码契约拦"解析了但没展示/字段名对不上"的静默失效。
 - **变异验证 12 组全部拦截**（python 定点变异，锚点唯一性预断言、备份-变异-红-还原-cmp 字节校验，还原后 git status 零残留）：后端 M1 单文件 file_missing 反转、M2 多文件幂等 already_moved 反转、M3 `_delete_level3` 标志传递断开、M4 batch 收集条件失效、M5 endpoint msg 拼接移除（两处）、M6 endpoint data 透出移除（两处）、M7 单文件目标冲突被吞（success False→True）、M8 审计 skip_reason 键改名；前端 M9 异步提取 return false、M10 同步字段名错位（level3_file_missing→_x）、M11 mixin 轮询处通知移除（缩进锚点定位 10 空格块）、M12 提醒文案丢失。
 - **验证**：后端全量 **4075 passed / 7 skipped**；`test_torrent_deletion_by_level_api.py` 44 passed；改动文件 black(24.10.0)/flake8/mypy 通过。前端全量 **84 套件 1191 passed**；定向 ESLint `--no-fix --max-warnings 0` 与 `tsc --noEmit` 零错误。feature_list.json evidence 已更新加固记录。
+
+## 2026-08-28：移动端高级搜索条件组 UI 辨识度优化（行标签 + 内容行主题强调 + 触控放大）
+
+- **需求**：移动端 /m/search 条件组堆叠后四个控件（字段/操作/值/方式）同为灰底圆角框且无标签，用户难以分辨哪一格是内容输入框。
+- **改动**（全部限于 ≤768px 断点，桌面零变化；`AdvancedSearchBuilder.vue` + `ConditionValueInput.vue`）：
+  - 条件四行加行标签「字段/操作/内容/方式」（`condition-row-label`，桌面 `display:none` 基准隐藏，模板标签+类名锁内容行）；
+  - 「内容」行主题强调卡片：`--color-primary-lightest` 底 + `rgba(--color-primary-rgb,0.35)` 边框（随绿/橙主题联动，不写死色相），标签主题色加粗；`width:100%` 必须显式——基础 `.condition-content{align-items:center}` 多一层 `.conditions` 特异性更高会压掉媒体查询的 stretch（截图实测暴露后修复）；
+  - 触控目标：条件行内输入/选择控件 32→40px（含 `.el-input__icon` 行高同步；`.ams__search-box` 玻璃搜索框豁免保持自绘 32px）；包含/排除单选组 flex 等宽拉伸、padding 12px；删除圆钮 `align-self:flex-end` 不再拉伸通栏；
+  - ConditionValueInput 移动端 `.size-number-input` 100→130px：14px 字号下「0.00」末位被步进按钮裁切（截图实测暴露后修复）。
+- **验证**：定向 65 例（AdvancedSearchBuilder/ConditionValueInput/field-types-consistency/mobile-search 四套件）全绿；`npm run lint`（含 contract:check）与 `tsc --noEmit` 零错误；Playwright 双栈实测（iPhone 12 视口登录 → /m/search）：390px 断点标签 block/内容行主题底/输入 40px/删除钮 flex-end、1280px 桌面标签 none/无底色/32px 全部断言 PASS，sizeRange 与多选两复杂变体截图复核无溢出无裁切。未执行 Git 提交。
+
+## 2026-08-28：移动端条件组辨识度改造·回归加固（源码契约 + DOM 断言 + 变异验证）
+
+- 按用户要求为上一批移动端 /m/search 条件组 UI 改造补足回归保护，新增 11 例（Builder 9 + ConditionValueInput 2），变异验证 14 组全部精确拦截。
+- **DOM 层**（AdvancedSearchBuilder.spec 新增 1 例）：每条件渲染「字段/操作/内容/方式」四个 `condition-row-label` 且文案顺序锁定、「内容」行带 `--value` 修饰类（模板 class 契约）。
+- **源码契约层**（AdvancedSearchBuilder.spec 新增 describe 8 例，范式同 field-types-consistency：jsdom 不级联媒体查询，锁源码字符串）：以首个 `@media (max-width: 768px)` 切分 baseBlock/mediaBlock 分区断言——①断点边界 768px 精确 ×2（scoped 主样式 + 对话框压宽块，防误改破坏桌面或移动覆盖）；②行标签桌面 `display:none` 基准 / 断点内 `display:block`；③`&--value` 主题色 + 加粗 600；④内容行强调卡三件套：显式 `width:100%`（防 `.condition-content{align-items:center}` 多层 `.conditions` 特异性压掉 stretch 的收缩回归，即上轮截图实测踩过的坑）+ `--color-primary-lightest` 底 + `rgba(--color-primary-rgb)` 边框（主题联动不写死色相）；⑤触控 40px（height+line-height 成对）与 `.ams__search-box` 玻璃框 32px 豁免；⑥单选组 flex/width:100%、按钮 flex:1、内边距 12px；⑦删除钮 `align-self:flex-end`；⑧桌面零变化锁：断点外 `.condition-value` 仍 `flex:1 + min-width:200px`。
+- **ConditionValueInput.spec 新增 describe 2 例**：断点内 `.size-range-input .size-input-wrapper .size-number-input, .size-with-unit-input .size-number-input` 逗号选择器整对加宽 130px（缺一即红，锁 14px 字号防裁切）；桌面基准 100px/120px 不变。
+- **变异验证 14/14 全拦截**（python 字节级定点变异，锚点唯一性预断言、备份-变异-红-还原-cmp 校验；M11 断点边界锚点计数 2 仅替换 scoped 块首处）：M1 --value 修饰类移除、M2 桌面基准 none→block、M3 移动端标签 block→none、M4 主题色→中性灰、M5 width:100%→auto、M6 主题浅底→透明、M7 触控 40→39px、M8 ams 豁免 32→40px、M9 内边距 12→6px、M10 右对齐→auto、M11 断点 768→900、M12 加粗 600→400、M13 数字框 130→100px、M14 逗号选择器截断。还原后 `git status` 零残留（两 .vue diff 与上批 UI 增量逐字节一致）。
+- **验证**：定向四套件 **76 例全绿**（原 65 + 新 11）；`npm run lint`（含 contract:check）与 `tsc --noEmit` 零错误。未执行 Git 提交。
