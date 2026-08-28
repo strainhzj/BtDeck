@@ -100,6 +100,8 @@
               <div class="condition-content">
                 <!-- 字段选择器 -->
                 <div class="condition-field">
+                  <!-- 行标签仅移动端堆叠布局显示（桌面横排自明，见底部媒体查询） -->
+                  <span class="condition-row-label">字段</span>
                   <el-select
                     v-model="condition.field"
                     placeholder="选择字段"
@@ -152,6 +154,7 @@
 
                 <!-- 操作符选择器 -->
                 <div class="condition-operator">
+                  <span class="condition-row-label">操作</span>
                   <el-select
                     v-model="condition.operator"
                     placeholder="选择操作"
@@ -177,6 +180,7 @@
 
                 <!-- 条件值输入 -->
                 <div class="condition-value">
+                  <span class="condition-row-label condition-row-label--value">内容</span>
                   <ConditionValueInput
                     :field="condition.field"
                     :operator="condition.operator"
@@ -190,6 +194,7 @@
 
                 <!-- 排除/包含切换 -->
                 <div class="condition-mode">
+                  <span class="condition-row-label">方式</span>
                   <el-radio-group
                     v-model="condition.mode"
                     size="small"
@@ -1156,6 +1161,11 @@ export default class AdvancedSearchBuilder extends Vue {
     }
   }
 
+  /* 条件行小标签：桌面横排自明不显示，仅移动端堆叠布局显示（见底部媒体查询） */
+  .condition-row-label {
+    display: none;
+  }
+
   /* 内联定宽全部类化（桌面宽度不变）：窄屏断点可整体铺满（移动端 /m/search 适配） */
   .group-name-input {
     width: 120px;
@@ -1418,10 +1428,30 @@ export default class AdvancedSearchBuilder extends Vue {
           padding-top: 20px;
         }
 
+        // 删除按钮：堆叠布局下不随容器拉伸为通栏，右对齐保持紧凑
+        .condition-actions {
+          align-self: flex-end;
+        }
+
         .condition-content {
           flex-direction: column;
           align-items: stretch;
           gap: 8px;
+
+          // 行标签：堆叠后四个控件同为灰底圆角框，无标签难以分辨“哪一格填内容”
+          .condition-row-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            line-height: 1;
+            color: #909399;
+
+            // “内容”行是用户要找的填写目标，用主题色与中性行区分
+            &--value {
+              color: var(--color-primary, #059669);
+              font-weight: 600;
+            }
+          }
 
           .condition-field,
           .condition-operator,
@@ -1429,8 +1459,54 @@ export default class AdvancedSearchBuilder extends Vue {
             width: 100%;
           }
 
+          // 内容输入行唯一强调底色：让“填内容”从一排灰框里跳出来
+          // 边框走 --color-primary-rgb：随主题色阶联动（绿色/橙色主题均适配）。
+          // width:100% 必须显式：基础 align-items:center（多一层 .conditions，
+          // 特异性更高）会压掉这里的 stretch，缺宽度会收缩为内容宽。
           .condition-value {
+            width: 100%;
             min-width: auto;
+            padding: 8px;
+            background: var(--color-primary-lightest, #d1fae5);
+            border: 1px solid rgba(var(--color-primary-rgb, 5, 150, 105), 0.35);
+            border-radius: 6px;
+          }
+
+          // 移动端触控目标：条件行内输入/选择控件 32px→40px
+          ::v-deep {
+            .el-input__inner {
+              height: 40px;
+              line-height: 40px;
+              font-size: 14px;
+            }
+
+            .el-input__icon {
+              line-height: 40px;
+            }
+
+            // AdvancedMultiSelect 玻璃搜索框自绘 32px，不参与触控放大
+            .ams__search-box .el-input__inner {
+              height: 32px;
+              line-height: 32px;
+            }
+          }
+
+          // 包含/排除：等宽拉伸为大触控按钮
+          .condition-mode {
+            ::v-deep .el-radio-group {
+              display: flex;
+              width: 100%;
+            }
+
+            ::v-deep .el-radio-button {
+              flex: 1;
+            }
+
+            ::v-deep .el-radio-button__inner {
+              width: 100%;
+              padding: 12px 0;
+              font-size: 14px;
+            }
           }
         }
       }

@@ -865,6 +865,12 @@ export default class ConditionValueInput extends Vue {
       }
     }
 
+    /* 移动端条件行字号 12→14px 后，100px 定宽的数字框末位被步进按钮裁切（如 0.00） */
+    .size-range-input .size-input-wrapper .size-number-input,
+    .size-with-unit-input .size-number-input {
+      width: 130px;
+    }
+
     /* 日期范围 2×180px+分隔符超窄屏宽度：两个时间选择器弹性对分整行 */
     .date-range-input {
       .range-date-picker {
