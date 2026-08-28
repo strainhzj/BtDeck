@@ -1,5 +1,35 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-28：v1.0.6 交付制品等价性与发布阻断门禁计划
+
+### 结论
+
+- 详细实施计划已落到 `PLANS/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
+- v1.0.6 在 G0～G10 非豁免门禁全部 PASS 前不得发布；测试失败、制品/证据缺失和基础设施不确定都按阻断处理。
+- 升级基线使用正式标签 `v1.0.5@29c6f6f68ab35e25f8cf7237ee187de359c77714`；若只能从标签重建旧制品，必须标记 reconstructed，不能冒充正式历史制品。
+
+### 规划范围
+
+- 同一 SHA 与版本身份、公共依赖锁及 qB 版本统一、唯一前端构建。
+- EXE/Setup/DEB/RPM/Docker 严格构建和静态内容等价。
+- Windows、Debian 12、Rocky Linux 9、Docker 首装/重装/升级/重启/卸载与数据保留。
+- C01～C12 外部黑盒契约、SBOM/漏洞/秘密/签名、不可变制品晋级及故障注入演练。
+- `feature_list.json` 已登记 9 个 pending 任务；本批没有实施 CI/脚本/源码改动。
+- 已删除过期 `PLANS/v1.0.9.md` 并清理 README/feature_list 路径引用；一键部署的历史完成证据仍保留在结构化 tasks/evidence 中。
+
+### 下一步
+
+1. 只实施 W0 环境能力探针，不先大改构建脚本。
+2. 根据探针固定 Python 3.11 patch、Node LTS、低 glibc Linux builder 和 Runner 方案。
+3. 实施 W1 release config/build-info/依赖锁，并用负向变异建立可信阻断。
+4. W1 通过后再进入 W2 制品构建和 W3 生命周期，避免在无身份、无统一依赖的制品上继续叠加测试。
+
+### 验证
+
+- `feature_list.json` JSON 解析通过，新 feature 及 9 个 pending task 结构检查通过。
+- `PLANS/README.md` 链接目标存在；`git diff --check` 通过。
+- Git Bash 根 `./init.sh` 退出 0；仅有既有 jq/venv/null-byte 环境警告。
+
 ## 2026-08-27：EXE 与 APK 构建脚本生成
 
 ### 结论

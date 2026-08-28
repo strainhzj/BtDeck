@@ -1,5 +1,34 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-28：v1.0.6 交付制品等价性与发布阻断门禁计划
+
+### 背景与裁决
+
+- 对 Windows EXE/Inno Setup、DEB、RPM、Docker backend/frontend 的构建输入、运行入口、依赖、既有制品和 CI 回归完成专项审计。
+- 结论：当前不能声明四种交付物核心功能等价或安装生命周期幂等；现有 `dist/btdeck.exe` 可启动，但内嵌前端 SHA256 与当前 `frontend/dist` 不同，已明确不是当前 HEAD 的等价制品。
+- 关键阻断：Docker/源码回归使用 `qbittorrent-api~=2025.2.0`，Windows/Linux 包使用 `~=2025.5.0`；CI 仅有 Ubuntu Python 3.12/Node 20 源码回归；Inno、RPM、当前 Docker 组合、重装/升级/卸载和跨制品黑盒比较均未覆盖。
+- 用户确认目标候选为 v1.0.6，以正式标签 `v1.0.5@29c6f6f68ab35e25f8cf7237ee187de359c77714` 作为升级基线；平台服务管理和 Nginx/GUI 差异允许登记，但核心 API、数据、迁移和 SPA 必须等价。
+
+### 规划交付
+
+- 新增 `PLANS/release-artifact-equivalence-gate.md`，定义 G0～G10 发布门、C01～C12 黑盒场景、Windows/DEB/RPM/Docker 生命周期矩阵、证据格式、失败/重试/豁免策略和 6 个实施波次。
+- 强制原则：同一 SHA、前端只构建一次、公共依赖统一锁定、严格模式缺任一制品即失败、build once/promote same bits、`latest` 不作为发布身份、FAIL/INDETERMINATE/NOT_RUN 全部阻断。
+- `feature_list.json` 新增 feature `release-artifact-equivalence-gate-2026-08-28`，拆成 9 个 pending 任务，覆盖基线探针、构建身份、依赖锁、严格构建、Windows/Linux/Docker 生命周期、黑盒等价和安全/晋级/演练。
+- `PLANS/README.md` 已增加专项计划入口。本批仅制定计划与门禁，未修改 CI、打包脚本或业务源码，未构建/发布/部署制品。
+- 经用户确认删除 2024 年且已与实际完成状态冲突的 `PLANS/v1.0.9.md`；`PLANS/README.md` 移除过期入口，`feature_list.json` 移除失效 `plan_file`，一键部署历史完成证据继续保留在 feature tasks/evidence 与本日志中。
+
+### 首批实施建议
+
+1. W0：验证 Windows Inno/NSSM、Debian/Rocky systemd Runner、低 glibc 构建和 Node 22 兼容性。
+2. W1：落地单一 release config、build-info、健康接口构建身份、Python 公共依赖锁及 qB 版本统一。
+3. 以负向变异证明版本、SHA 和依赖漂移会触发门禁，再进入安装生命周期改造。
+
+### 计划资产验证
+
+- `feature_list.json` 经 PowerShell `ConvertFrom-Json` 解析通过；新 feature 为 pending，9 个子任务全部 pending。
+- 专项计划共 657 行，`PLANS/README.md` 入口存在且目标文件可达；`git diff --check` 通过。
+- 使用 Git Bash 执行根 `./init.sh` 退出 0；仅保留既有环境警告（jq 未安装、后端虚拟环境未激活、前端 init 的 null-byte warning）。
+
 ## 2026-08-28：移动端 UX 增强（mobile-ux-enhancements，P0+P1）
 
 ### 背景

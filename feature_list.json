@@ -1545,9 +1545,8 @@
       "name": "一键部署",
       "description": "Docker + Windows + Linux 三种部署方式",
       "status": "done",
-      "plan_file": "PLANS/v1.0.9.md",
       "deviation_from_plan": {
-        "reason": "提前完成：全栈仓库整合与一键部署优先落地（早于 v1.0.5~v1.0.8）",
+        "reason": "提前完成：全栈仓库整合与一键部署优先落地（早于 v1.0.5~v1.0.8）；2024 年过期计划文件已于 2026-08-28 删除，完成状态以本节点 tasks/evidence 为准",
         "evidence": "commit c7ce2f4 + 后续 fix(deploy) 系列（5e4baf8/6f8e3e0/78033bc/fb380b9/b80a7f6）"
       },
       "tasks": [
@@ -4990,6 +4989,157 @@
             "backend/tests/downloader/test_auth_client_timeout.py"
           ],
           "evidence": "新增回归保护：TestSentinelLossSelfHealing 4 例覆盖慢拉取时序、producer 哨兵重试、全部哨兵丢失时 worker 轮询自愈，以及 enrich 取消后的 producer/worker 清理；TestQbClientSchemeAndRetryHardening 5 例覆盖认证参数、_qb_host_with_scheme scheme 保留/补全，以及缓存 qB 客户端实际构造路径的 FORCE_SCHEME_FROM_HOST、max_retries=0、timeout=30 接线。取消回归暴露并修复 producer 在外层取消时仍进入 30 秒哨兵收尾的问题，enrich 统一回收子任务。定向回归 56 passed；flake8、mypy、py_compile、git diff --check 通过。"
+        }
+      ]
+    },
+    {
+      "id": "release-artifact-equivalence-gate-2026-08-28",
+      "name": "v1.0.6 交付制品等价性与发布阻断门禁",
+      "description": "为 Windows EXE/Inno Setup、DEB、RPM、Docker backend/frontend 建立同一 Git SHA、统一依赖和唯一前端构建的证据链；补齐首次安装、同版本重装、v1.0.5 升级、重启、卸载、数据保留、跨制品黑盒契约、安全扫描、签名与不可变晋级。G0～G10 任一非豁免门禁失败、未运行或证据缺失均阻断发布。",
+      "status": "pending",
+      "branch": "dev",
+      "plan_file": "PLANS/release-artifact-equivalence-gate.md",
+      "planning_evidence": "2026-08-28 审计确认：现有 EXE 可启动但内嵌前端哈希与当前源码产物不同；Docker/源码与 Windows/Linux 包的 qbittorrent-api 依赖分叉；CI 无 Windows、PyInstaller、Inno、DEB/RPM 安装和 Docker 组合门禁；历史仅有旧 DEB 首装、RPM 构建、Docker 后端与 EXE 冒烟证据。正式 v1.0.5 标签存在，SHA=29c6f6f68ab35e25f8cf7237ee187de359c77714，可作为升级基线。",
+      "tasks": [
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.1",
+          "name": "W0 基线固化与 CI 能力探针",
+          "description": "固化 v1.0.5 正式/重建基线和当前候选证据；验证 Windows Runner 的 Inno+NSSM 生命周期、Debian 12/Rocky 9 systemd 测试拓扑、低 glibc Linux 构建兼容性及 Node 22 前端兼容性。无法自动化的 P0 项必须落到受控 self-hosted Runner，不得改成人工跳过。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "PLANS/release-artifact-equivalence-gate.md",
+            "release/release-config.json",
+            ".github/workflows/release-gate.yml"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.2",
+          "name": "W1 统一版本与构建身份",
+          "description": "建立单一产品版本输入、build-info/source/frontend manifest schema 和生成器；EXE、Setup、DEB、RPM、Docker OCI label 与健康接口暴露同一完整 SHA、版本、Alembic head 和前端 manifest SHA，并保持 CommonResponse 与伴侣客户端向后兼容。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "release/schemas/build-info.schema.json",
+            "release/schemas/release-manifest.schema.json",
+            "scripts/release/generate_build_info.py",
+            "backend/app/core/build_info.py",
+            "backend/app/api/endpoints/health.py",
+            "backend/app/version.py",
+            "frontend/package.json",
+            "feature_list.json"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.3",
+          "name": "W1 工具链与公共依赖锁定",
+          "description": "统一 Python 3.11 目标运行时和单一 Node LTS；建立带哈希公共运行依赖锁及平台增量依赖白名单，关闭 qbittorrent-api 2025.2/2025.5 分叉；从制品真实环境导出 dependency manifest 并逐包比较关键依赖。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "backend/requirements.txt",
+            "backend/requirements-dev.txt",
+            "deploy/requirements-windows-package.txt",
+            "deploy/requirements-linux-package.txt",
+            "backend/Dockerfile",
+            "frontend/Dockerfile",
+            "frontend/Dockerfile.prod",
+            ".github/workflows/regression.yml"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.4",
+          "name": "W2 唯一前端构建、严格制品构建与静态等价验证",
+          "description": "前端仅构建一次并注入全部制品；release 模式缺 Inno/fpm/元数据/任一制品必须失败；增强 archive/package/image 验证，校验 EXE 与 Setup 内主程序、DEB/RPM 与 Linux 中间二进制、前端资源、源码、迁移和依赖清单一致，并用旧 index、缺契约 JSON、依赖漂移、混入 app.db、SHA 篡改五类变异自证。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "deploy/build-windows.bat",
+            "deploy/build-linux.sh",
+            "deploy/btdeck-windows.spec",
+            "deploy/btdeck.spec",
+            "deploy/btdeck.iss",
+            "build-images.sh",
+            "build-and-export-images.bat",
+            "backend/Dockerfile",
+            "frontend/Dockerfile.prod",
+            "deploy/verify-package.py",
+            "scripts/release/verify_release_bundle.py",
+            "backend/tests/release/"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.5",
+          "name": "W3 Windows EXE/Setup 生命周期幂等",
+          "description": "在 Windows Runner 覆盖免安装 EXE 隔离启动/重复启动/停止和 Setup 静默首装、同版本覆盖、v1.0.5 升级、服务重启、卸载；断言 NSSM 服务与端口单实例，secret/配置/数据库保留，卸载移除服务和程序且默认保留数据。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "scripts/release/lifecycle/windows.ps1",
+            "deploy/btdeck.iss",
+            "deploy/build-windows.bat",
+            ".github/workflows/release-gate.yml"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.6",
+          "name": "W3 DEB/RPM 生命周期幂等与跨发行版兼容",
+          "description": "在 Debian 12、Rocky Linux 9 覆盖首装、同版本重装、v1.0.5 升级、服务重启、remove/purge 边界和数据保留；修正 maintainer script 对 upgrade/remove 参数的处理，验证最终 systemd enabled+active、SECRET_KEY 不重置及单 Alembic head。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "scripts/release/lifecycle/deb.sh",
+            "scripts/release/lifecycle/rpm.sh",
+            "deploy/build-linux.sh",
+            "deploy/btdeck.service",
+            ".github/workflows/release-gate.yml"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.7",
+          "name": "W3 Docker 不可变组合与卷升级幂等",
+          "description": "用 backend/frontend digest 固定组合替代发布链的 latest；覆盖重复 compose up、restart、force-recreate、同 digest reload 和 v1.0.5 卷升级，断言 secret、配置、数据库和迁移保持，禁止前后端混装不同 SHA。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "scripts/release/lifecycle/docker.sh",
+            "docker-compose.yml",
+            "backend/Dockerfile",
+            "frontend/Dockerfile.prod",
+            "build-images.sh",
+            ".github/workflows/release-gate.yml"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.8",
+          "name": "W4 跨制品黑盒契约与允许差异治理",
+          "description": "实现不 import app.* 的外部 contract runner、受控 qB/TR stub、稳定 v1.0.5 数据夹具和规范化快照；覆盖健康身份、OpenAPI、认证、设置、下载器、种子查询、查询模板、定时任务、通知审计、迁移重启、SPA 和路径边界 12 场景，未登记字段差异即失败。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "release/equivalence-exceptions.json",
+            "scripts/release/contract_runner.py",
+            "scripts/release/compare_snapshots.py",
+            "scripts/release/fixtures/",
+            "backend/tests/release/"
+          ]
+        },
+        {
+          "id": "release-artifact-equivalence-gate-2026-08-28.9",
+          "name": "W5/W6 安全供应链、门禁编排、不可变晋级与 RC 演练",
+          "description": "生成 CycloneDX SBOM并执行漏洞/秘密/许可证扫描，接入 Windows 与 Docker 签名，汇聚 G0～G10 gate report；晋级只消费已验证 digest。完成一次全绿 RC 和旧前端、qB 漂移、缺契约、RPM 升级停服、Docker 混装、digest 篡改六类故障注入演练并更新发布/回滚/豁免 runbook。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            ".github/workflows/release-gate.yml",
+            "release/schemas/release-manifest.schema.json",
+            "scripts/release/verify_release_bundle.py",
+            "docs/release/",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ]
         }
       ]
     }
