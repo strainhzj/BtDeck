@@ -4,6 +4,7 @@
 
 | 计划 | 范围 | 状态 |
 |------|------|------|
+| [MCP 服务与可选能力开放](./mcp-service-capabilities.md) | 同进程 MCP、全局/逐能力开关、统一认证、Tracker/路径脱敏、六项首批工具与 G0～G11 实现门禁 | 📝 已规划，待实施 |
 | [v1.0.6 交付制品等价性与发布阻断门禁](./release-artifact-equivalence-gate.md) | EXE/Setup/DEB/RPM/Docker 同源构建、生命周期幂等、黑盒等价、安全与不可变晋级 | 📝 已规划，待实施 |
 | [同步任务数据库阻塞与接口超时修复](./sync-database-blocking-remediation.md) | Tracker/种子同步、SQLite 写锁、请求响应性、观测与演进 | 待实施 |
 | [8 项已验证问题修复](./verified-bugfix-remediation.md) | 轮询生命周期、标签同步、添加时间、路径清理、转移假成功、令牌续期、删除日志 IP、折叠面板 | 📝 计划中 |
@@ -60,4 +61,4 @@ v1.1.0: ░░░░░░░░░░ 0%
 ---
 
 **维护者**: BtDeck 开发团队  
-**最后更新**: 2024-04-22
+**最后更新**: 2026-08-28

@@ -51,6 +51,311 @@
   },
   "features": [
     {
+      "id": "mcp-service-capabilities-2026-08-28",
+      "name": "MCP 服务与可选能力开放（默认关闭 + 强制脱敏）",
+      "description": "在 FastAPI 同进程内提供 MCP 服务，首批开放高级种子查询、等级4 pending_delete 标记、添加种子、创建高级查询组合、仪表盘读取和定时任务触发。服务全局开关与6项预置能力均可独立配置且默认关闭；关闭能力不可发现、缓存直调仍拒绝。所有 MCP 查询结果、错误与日志强制执行数据最小化和脱敏，首版不允许返回原始 Tracker URL/消息、passkey/token、绝对路径或下载器凭据。G0～G11 任一门禁失败、未运行或证据缺失均阻止开放或进入发布制品。",
+      "status": "pending",
+      "branch": "dev",
+      "plan_file": "PLANS/mcp-service-capabilities.md",
+      "planning_evidence": "2026-08-28 只读核验：torrents_async.py 实测4510行且0路由；app.state.store 在应用 lifespan 内初始化，首批实时能力必须同进程共享；高级查询/模板可直接复用业务核心，仪表盘小改，等级4与Cron中改，单种添加必须先抽 service。当前无 MCP 实现或依赖声明，PyInstaller 规格显式排除 fastmcp。根 ./init.sh --ci 通过；高级搜索/模板/仪表盘46项、等级删除/添加57项、Cron安全与执行器36项，共139项定向回归通过。",
+      "security_defaults": {
+        "global_enabled": false,
+        "all_capabilities_enabled": false,
+        "redaction_bypass_allowed": false,
+        "custom_script_cron_allowed": false,
+        "fail_closed_on_missing_or_invalid_config": true,
+        "emergency_kill_switch": "BTDECK_MCP_FORCE_DISABLED"
+      },
+      "capabilities": [
+        {
+          "code": "torrent.advanced_search",
+          "tool": "torrent_advanced_search",
+          "risk": "read",
+          "default_enabled": false
+        },
+        {
+          "code": "torrent.mark_pending_delete",
+          "tool": "torrent_mark_pending_delete",
+          "risk": "write",
+          "default_enabled": false,
+          "semantic_note": "仅添加 pending_delete 标签，不删除任务或文件"
+        },
+        {
+          "code": "torrent.add",
+          "tool": "torrent_add_file",
+          "risk": "high",
+          "default_enabled": false
+        },
+        {
+          "code": "search_template.create",
+          "tool": "advanced_search_template_create",
+          "risk": "write",
+          "default_enabled": false
+        },
+        {
+          "code": "dashboard.read",
+          "tool": "dashboard_get",
+          "risk": "read",
+          "default_enabled": false
+        },
+        {
+          "code": "cron.trigger",
+          "tool": "cron_task_trigger",
+          "risk": "high",
+          "default_enabled": false
+        }
+      ],
+      "implementation_gates": [
+        {
+          "id": "MCP-G0",
+          "name": "同进程架构与协议边界",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "MCP 与 FastAPI 共享 lifespan/store/cron executor，挂载早于 SPA fallback；工具不得调用 endpoint、导入全局 app 或创建下载器客户端。",
+          "evidence_required": "架构约束测试、import/route 顺序扫描、store 单实例断言"
+        },
+        {
+          "id": "MCP-G1",
+          "name": "默认关闭与故障关闭",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "配置缺失、损坏、未知版本、首次安装和升级均为全局关闭且6项能力全部关闭；环境 kill switch 优先。",
+          "evidence_required": "首次安装/升级/重启/损坏JSON/未知schema/kill switch 参数化测试"
+        },
+        {
+          "id": "MCP-G2",
+          "name": "逐能力发现与执行双门禁",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "关闭能力不出现在 tools/list；客户端缓存旧工具直调仍返回 CAPABILITY_DISABLED；revision 热更新无需重启。",
+          "evidence_required": "6能力组合矩阵、缓存绕过、并发切换和revision冲突测试"
+        },
+        {
+          "id": "MCP-G3",
+          "name": "统一认证与操作者防伪造",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "HTTP/MCP 共用 token→principal 内核；校验用户存在、启用和强制改密状态；user_id/operator 只能来自 principal。",
+          "evidence_required": "HTTP/MCP认证矩阵、伪造主体、禁用用户、强制改密和旧token负向测试"
+        },
+        {
+          "id": "MCP-G4",
+          "name": "HTTP/MCP 共用业务 Service",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "Service 不接收 FastAPI Request、UploadFile 或 CommonResponse；两种协议只负责输入映射和结果呈现。",
+          "evidence_required": "AST/import门禁、六能力领域结果等价测试"
+        },
+        {
+          "id": "MCP-G5",
+          "name": "敏感数据最小化与强制脱敏",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "响应、错误和日志不得出现原始Tracker URL/消息、passkey/token、绝对路径、下载器凭据或审计IP/UA；首版无绕过开关。",
+          "evidence_required": "嵌套canary、URL编码、camel/snake、异常文本、日志捕获和变异测试"
+        },
+        {
+          "id": "MCP-G6",
+          "name": "查询与响应资源预算",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "高级查询 pageSize 最大200、序列化结果最大1MiB，timeout与正则预算生效，超限稳定失败且不返回破损JSON。",
+          "evidence_required": "分页/大小/超时/正则/大结果边界与资源基准"
+        },
+        {
+          "id": "MCP-G7",
+          "name": "写操作确认、幂等、逐项结果与审计",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "等级4、添加种子、Cron触发必须显式确认和幂等键；保留部分成功语义并记录真实principal审计。",
+          "evidence_required": "重复/并发/部分失败/审计失败/恢复测试"
+        },
+        {
+          "id": "MCP-G8",
+          "name": "Cron 白名单与上传安全",
+          "blocking": true,
+          "waiver": "forbidden",
+          "status": "pending",
+          "requirement": "Cron仅允许显式内置task_code，task_type 0-3永不开放；上传不接受服务器路径并校验大小、bencode、扩展名和info hash。",
+          "evidence_required": "命令注入、恶意executor、路径穿越、超限、伪torrent和重复hash负向测试"
+        },
+        {
+          "id": "MCP-G9",
+          "name": "运行时就绪与关闭语义",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "store/scheduler未就绪稳定拒绝；全局关闭后无新调用；在途写操作完成审计/回滚收尾且不产生半提交。",
+          "evidence_required": "lifespan、启停竞态、在途读写和优雅关闭测试"
+        },
+        {
+          "id": "MCP-G10",
+          "name": "依赖锁与多制品可用性",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "MCP依赖锁定且打包规格不排除运行时；源码、EXE、DEB、RPM、Docker均验证默认关闭、部分能力发现和脱敏。",
+          "evidence_required": "依赖manifest、制品黑盒smoke、跨制品工具清单快照"
+        },
+        {
+          "id": "MCP-G11",
+          "name": "观测、回滚与发布证据",
+          "blocking": true,
+          "status": "pending",
+          "requirement": "配置变更和写工具可审计且日志脱敏；kill switch、回滚、安全事件处置演练通过；所有门禁证据可追溯。",
+          "evidence_required": "gate report、脱敏审计样本、故障注入、kill switch和回滚记录"
+        }
+      ],
+      "tasks": [
+        {
+          "id": "mcp-service-capabilities-2026-08-28.1",
+          "name": "W0 架构、威胁模型与 MCP 运行时兼容探针",
+          "description": "固化6项工具schema、错误码、风险分级、能力目录和隐私数据字典；选择并锁定MCP SDK/transport，验证FastAPI lifespan、路由顺序、PyInstaller和现有依赖兼容；建立G0～G11门禁骨架。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "PLANS/mcp-service-capabilities.md",
+            "backend/app/mcp/contracts.py",
+            "backend/app/mcp/errors.py",
+            "backend/tests/mcp/test_architecture_constraints.py",
+            "docs/security/mcp-threat-model.md"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.2",
+          "name": "W1 默认关闭配置、逐能力控制面与设置 UI",
+          "description": "复用configs表的mcp.runtime.v1版本化JSON，实现revision CAS、fail-closed默认、内存原子快照和BTDECK_MCP_FORCE_DISABLED；设置页提供全局与6项能力开关、风险说明和环境强制关闭提示，移动端复用桌面设置组件。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/mcp_settings_service.py",
+            "backend/app/api/endpoints/mcp_settings.py",
+            "backend/app/data/default_mcp_settings.py",
+            "backend/app/api/api.py",
+            "backend/app/core/config.py",
+            "frontend/src/api/mcp-settings.ts",
+            "frontend/src/views/settings/components/McpSettingsPanel.vue",
+            "frontend/src/views/settings/index.vue",
+            "backend/tests/api/test_mcp_settings.py",
+            "frontend/tests/unit/mcp-settings.spec.ts"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.3",
+          "name": "W2 同进程 MCP、RuntimeContext 与统一认证",
+          "description": "在SPA fallback前挂载同进程MCP应用，显式注入父应用store/统计/cron/session factory；抽取HTTP/MCP共用token→principal认证内核，落实全局开关、能力开关和认证三重执行门禁。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/server.py",
+            "backend/app/mcp/runtime.py",
+            "backend/app/mcp/catalog.py",
+            "backend/app/mcp/auth.py",
+            "backend/app/factory.py",
+            "backend/app/auth/dependencies.py",
+            "backend/tests/mcp/test_auth.py",
+            "backend/tests/mcp/test_capability_gates.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.4",
+          "name": "W2 MCP 输出 DTO、Tracker/路径脱敏与泄漏扫描",
+          "description": "所有工具使用显式allowlist DTO；Tracker只返回域名和规范状态，移除原始消息/passkey；绝对路径和下载器连接信息不输出；自由错误文本与日志统一清洗，最终序列化前fail-closed扫描敏感canary。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/redaction.py",
+            "backend/app/mcp/contracts.py",
+            "backend/tests/mcp/test_redaction.py",
+            "backend/tests/mcp/test_redaction_mutations.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.5",
+          "name": "W3 高级查询、查询模板与仪表盘工具",
+          "description": "优先接入3项低改造能力；高级查询限制pageSize≤200和响应≤1MiB，Tracker输入仅允许域名；模板用户ID来自principal；DashboardService改注入RuntimeContext并只返回脱敏聚合数据。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/tools/torrents.py",
+            "backend/app/mcp/tools/search_templates.py",
+            "backend/app/mcp/tools/dashboard.py",
+            "backend/app/services/advanced_search.py",
+            "backend/app/services/dashboard_service.py",
+            "backend/tests/mcp/test_query_tools.py",
+            "backend/tests/mcp/test_dashboard_tool.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.6",
+          "name": "W3 等级4 pending_delete 标记工具",
+          "description": "以store+AuditContext替换TorrentDeletionByLevelService/AsyncDeletionExecutor的FastAPI Request依赖；工具明确不删除任务/文件，要求confirm和幂等键、最多100项，并把下载器成功但DB失败返回partial。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/tools/torrents.py",
+            "backend/app/services/torrent_deletion_by_level.py",
+            "backend/app/services/async_deletion_executor.py",
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/tests/mcp/test_pending_delete_tool.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.7",
+          "name": "W3 内置定时任务触发工具",
+          "description": "按稳定task_code解析显式MCP allowlist；启动前校验enabled/running/执行策略，永拒task_type 0-3；返回accepted+run_id并记录真实principal审计，不开放任务定义和启停修改。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/tools/cron.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/api/endpoints/cron_tasks.py",
+            "backend/tests/mcp/test_cron_tool.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.8",
+          "name": "W3 统一 TorrentAddService 与添加种子工具",
+          "description": "从torrent_crud单添加和batch service抽取协议无关TorrentAddService，HTTP/MCP共用；首版只接收受控.torrent内容，不接受磁力/URL/服务器路径，实施10MiB默认/64MiB硬上限、bencode/info hash、确认、幂等和审计。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/torrent_add_service.py",
+            "backend/app/mcp/tools/torrents.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/services/torrent_batch_add_service.py",
+            "backend/tests/mcp/test_torrent_add_tool.py",
+            "backend/tests/services/test_torrent_add_service.py"
+          ]
+        },
+        {
+          "id": "mcp-service-capabilities-2026-08-28.9",
+          "name": "W4 等价回归、负向安全、制品与上线回滚门禁",
+          "description": "完成6能力HTTP/MCP领域结果等价、开关组合、认证、脱敏canary/变异、启停竞态、prompt注入和资源边界测试；锁定依赖并修正PyInstaller/Docker，验证EXE/DEB/RPM/Docker默认关闭、部分能力与脱敏黑盒；交付runbook和G0～G11证据。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "backend/requirements.txt",
+            "deploy/requirements-windows-package.txt",
+            "deploy/requirements-linux-package.txt",
+            "deploy/btdeck.spec",
+            "deploy/btdeck-windows.spec",
+            "backend/Dockerfile",
+            "backend/tests/mcp/",
+            "backend/tests/release/",
+            "docs/operations/mcp-runbook.md",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mobile-ux-enhancements-2026-08-28",
       "name": "移动端 UX 增强（速度轮询/无限滚动/返回导航/空态引导）",
       "description": "移动端实测审查后的 P0+P1 改进：种子卡片实时速度行（SpeedPollingMixin 复用+未命中清零）、仪表盘/通知静默自动刷新（后台暂停）、通知分页追加、无限滚动+返回顶部、二级页 header 固定映射返回、Tab 图标、44px 触控区、空状态 CTA、任务删除按钮分隔、下拉刷新指示条跳变修复。",

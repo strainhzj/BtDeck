@@ -1,5 +1,42 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-28：MCP 服务与可选能力开放计划
+
+### 结论
+
+- 专项计划已落到 `PLANS/mcp-service-capabilities.md`，feature 为 `mcp-service-capabilities-2026-08-28`，当前状态 pending；本批没有实现 MCP 代码。
+- 首批范围固定为 6 项：高级种子查询、等级4 `pending_delete` 标记、添加 `.torrent`、创建高级查询组合/模板、仪表盘读取、立即触发定时任务。
+- MCP 必须与 FastAPI 同进程，共享父应用 lifespan、`app.state.store` 和全局 Cron executor；挂载顺序必须早于 SPA fallback。
+- 全局服务和6项能力均默认关闭。关闭能力必须从 `tools/list` 消失，缓存客户端旧调用仍由 `tools/call` 门禁拒绝；配置复用 `configs` 表的 `mcp.runtime.v1`，损坏/缺失/未知版本 fail-closed，并提供 `BTDECK_MCP_FORCE_DISABLED` 紧急关闭。
+- 首版强制脱敏且无绕过：Tracker 仅返回域名与规范状态；原始 URL/消息/passkey/token、绝对路径、下载器凭据、审计 IP/UA 不得出现在响应、错误或日志。
+
+### 实现门禁
+
+- `feature_list.json` 已登记 MCP-G0～G11 共 12 个 blocking gate，G1/G2/G3/G5/G7/G8 禁止豁免。
+- 核心阻断：默认关闭与逐能力双门禁、统一 token→principal、HTTP/MCP 共用 service、敏感 canary 零泄漏、查询预算、写操作确认/幂等/审计、Cron 内置白名单、上传安全、运行时关闭语义、多制品验证与回滚演练。
+- 任一 gate 为 FAIL、NOT_RUN、INDETERMINATE 或证据缺失，均不得启用对应能力或纳入发布制品。
+
+### 实施顺序
+
+1. W0：运行时兼容探针、工具 schema、威胁模型和门禁骨架。
+2. W1：复用 configs 的控制面、revision CAS、设置页全局/逐能力开关。
+3. W2：同进程 MCP、RuntimeContext、统一认证、显式 DTO 和脱敏扫描。
+4. W3：先查询/模板/仪表盘，再等级4/Cron，最后抽 TorrentAddService 接入添加种子。
+5. W4：HTTP/MCP 等价、负向安全、启停竞态、依赖锁、EXE/DEB/RPM/Docker 黑盒及 runbook。
+
+### 验证
+
+- `feature_list.json` 解析与结构化不变量检查通过：feature 唯一、6 项 capability 全部默认关闭、12 项 gate 全部 blocking/pending、6 项禁止豁免门禁正确、9 项 task 全部 pending，plan_file 与计划索引可达。
+- `git diff --check` 通过；Git Bash 根 `./init.sh --ci` 退出 0，仅有既有 jq/venv/null-byte 环境警告。
+
+### 下一步注意
+
+- 等级4不是物理删除，工具名固定建议 `torrent_mark_pending_delete`，输出必须保留 DB 更新失败的 partial 状态。
+- MCP 高级查询不得沿用 HTTP 的 100000 条上限；计划规定 pageSize≤200、响应≤1 MiB。
+- Cron 首版只按稳定 `task_code` 触发显式内置 allowlist，永不开放 task_type 0～3 或任务定义修改。
+- 添加种子前必须先抽协议无关 `TorrentAddService`；首版禁止磁力、URL 和服务器本地路径输入。
+- 未执行 Git stage/commit；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保持不动。
+
 ## 2026-08-28：v1.0.6 交付制品等价性与发布阻断门禁计划
 
 ### 结论

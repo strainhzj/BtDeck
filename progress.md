@@ -1,5 +1,36 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-28：MCP 服务与可选能力开放计划（默认关闭 + 强制脱敏）
+
+### 背景与决策
+
+- 用户确认首批 MCP 能力包含：种子高级查询、等级4操作、添加种子、创建高级查询组合、仪表盘读取、定时任务触发；本批只制定计划和实现门禁，不实现 MCP 代码。
+- MCP 与 FastAPI 同进程并共享 `app.state.store`、数据库会话工厂和全局 Cron 执行器；工具只调用协议无关 service，不调用 HTTP endpoint，也不创建第二套下载器连接。
+- 采用默认拒绝：实例级 MCP 全局开关默认关闭，6 项预置 capability 均独立开关且默认关闭。关闭能力不出现在工具发现结果；客户端缓存旧定义直调时仍由执行门禁拒绝。
+- 配置计划复用现有 `configs(key/value)` 表，以 `mcp.runtime.v1` 保存版本化 JSON 和 revision CAS；配置缺失/损坏/未知版本全部 fail-closed。新增最高优先级环境 kill switch `BTDECK_MCP_FORCE_DISABLED`。
+- 当前用户模型没有角色字段，控制面按现有模型要求认证用户仍存在、`is_active=True` 且 `must_change_password=False`；不在计划中伪造不存在的 RBAC。首版复用短期访问 JWT，不引入长期 MCP API Key。
+
+### 隐私与安全边界
+
+- MCP 不直接序列化现有 Torrent/Tracker VO 或 ORM。每个工具输出显式 allowlist DTO，并在最终序列化前经过统一 sanitizer 与泄漏扫描器。
+- Tracker 只返回规范化域名和 `working/error/unknown` 等安全状态，永不返回原始 URL path/query/fragment、passkey/token 或 announce/scrape 原始消息。
+- 绝对保存路径/种子文件路径仅返回脱敏显示值或省略；下载器 host/username/password/cookie/token、审计 IP/UA 永不进入 MCP 响应。首版不提供关闭脱敏选项。
+- 高级查询 MCP `pageSize` 最大 200、序列化响应最大 1 MiB；Tracker 输入只接受域名条件。日志同样禁止记录原始工具参数、返回 payload、Tracker URL/消息、上传内容和绝对路径。
+- 等级4工具明确语义为添加 `pending_delete` 标签，不删除任务/文件；下载器成功但 DB 失败必须返回 partial。Cron 仅允许显式内置 `task_code`，task_type 0～3 永拒。添加种子首版只接受受控 `.torrent` 内容，不接受磁力、URL 或服务器路径。
+
+### 规划资产
+
+- 新增 `PLANS/mcp-service-capabilities.md`：同进程架构、配置 schema、6 项 capability 目录、统一认证、数据分类/脱敏、查询预算、写操作安全、W0～W4 波次、测试矩阵、完成定义和回滚处置。
+- `feature_list.json` 新增 `mcp-service-capabilities-2026-08-28`：status=pending、6 项默认关闭 capability、12 个 blocking implementation gate（MCP-G0～G11）及 9 个 pending 实施任务。
+- G1 默认关闭、G2 逐能力门禁、G3 认证、G5 脱敏、G7 写操作安全、G8 Cron/上传安全明确禁止豁免；任一 gate 为 FAIL/NOT_RUN/INDETERMINATE 或缺证据均阻止开放和进入发布制品。
+- `PLANS/README.md` 已增加专项计划入口。本批未修改业务源码、数据库结构、依赖或打包配置，未执行 Git 提交。
+
+### 本批验证
+
+- `feature_list.json` PowerShell `ConvertFrom-Json` 解析通过：新 feature 唯一，6 capabilities、12/12 pending gates、9/9 pending tasks，plan_file 存在。
+- 结构化不变量验证通过：6 个 capability code/工具名唯一且全部 `default_enabled=false`；12 个 gate ID 唯一且全部 blocking/pending；G1/G2/G3/G5/G7/G8 均为 `waiver=forbidden`；9 个 task ID 唯一且全部 pending；计划索引、progress、handoff 链路可达。
+- `git diff --check` 通过；Git Bash 根 `./init.sh --ci` 退出 0，仅保留既有 jq 未安装、虚拟环境未激活和前端 init null-byte 警告。
+
 ## 2026-08-28：悬浮玻璃按钮件·回归加固（源码契约 6 例 + 变异验证 24 组）
 
 - 按用户要求为上一批"Tab 栏悬浮圆角玻璃条 + 返回顶部浮标玻璃化"补足回归保护，沿用项目既有加固范式（源码契约切片 + 定点变异验证；jsdom 无法计算 scoped CSS 实际渲染，源码契约是本仓库 CSS 回归的唯一可行层）。
