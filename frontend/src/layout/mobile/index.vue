@@ -483,7 +483,8 @@ export default class MobileLayout extends Vue {
 
 .mobile-content {
   flex: 1;
-  padding: 12px 12px 72px;
+  /* 底部留白 = 悬浮 Tab 栏高 56 + 底距 8 + 16px 间距，并补偿安全区 */
+  padding: 12px 12px calc(80px + env(safe-area-inset-bottom));
   overflow-y: auto;
 }
 
@@ -518,16 +519,30 @@ export default class MobileLayout extends Vue {
   }
 }
 
+/* 悬浮圆角玻璃 Tab 栏：安全区避让由 bottom 偏移承担 */
 .mobile-tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
   display: flex;
-  background: #fff;
-  border-top: 1px solid #e4e7ed;
-  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+  border: var(--glass-border, 1px solid rgba(255, 255, 255, 0.3));
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
   z-index: 10;
+}
+
+/* @supports 条件须用字面量 blur(12px)：var() 写进条件会被部分引擎判 unknown 使 not() 恒真
+   （勿对齐 Navbar 的 var() 写法）；无前缀检测对 iOS ≤17 误降实色，属保守取舍，
+   目标环境 Android WebView + 桌面均原生支持无前缀 backdrop-filter */
+@supports not (backdrop-filter: blur(12px)) {
+  .mobile-tabbar {
+    background: var(--color-bg-primary, #FFFFFF);
+    border: 1px solid var(--color-border-primary, #E5E7EB);
+  }
 }
 
 .mobile-tab {

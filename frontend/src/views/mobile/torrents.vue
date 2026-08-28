@@ -585,20 +585,30 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   padding: 10px 0;
 }
 
-/* 返回顶部浮标：固定于 tabbar 上方，避开安全区 */
+/* 返回顶部浮标：固定于悬浮 Tab 栏上方，避开安全区；玻璃底与 Tab 栏同源（theme-variables.scss --glass-*） */
 .m-backtop {
   position: fixed;
   right: 16px;
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: calc(80px + env(safe-area-inset-bottom));
   width: 40px;
   height: 40px;
-  border: none;
-  border-radius: 50%;
-  background: #fff;
+  border: var(--glass-border, 1px solid rgba(255, 255, 255, 0.3));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
   color: var(--color-primary);
   font-size: 18px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06));
   z-index: 9;
+}
+
+/* 降级条件用字面量（同 .mobile-tabbar 注释）；无前缀检测对 iOS ≤17 误降实色属保守取舍 */
+@supports not (backdrop-filter: blur(12px)) {
+  .m-backtop {
+    background: var(--color-bg-primary, #FFFFFF);
+    border: 1px solid var(--color-border-primary, #E5E7EB);
+  }
 }
 
 /* 空状态引导（无下载器 CTA） */
