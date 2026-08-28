@@ -2,21 +2,33 @@
   <div class="m-notifications">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div v-if="!loading && list.length === 0" class="m-hint">暂无通知</div>
+    <!-- 无限滚动分页追加（滚动容器为布局壳 .mobile-content） -->
     <div
-      v-for="n in list"
-      :key="n.id"
-      class="m-notice"
-      :class="{'is-unread': !n.is_read}"
-      @click="openDetail(n)"
+      v-infinite-scroll="loadMore"
+      :infinite-scroll-disabled="infiniteDisabled"
+      :infinite-scroll-distance="60"
     >
-      <div class="m-notice-title">
-        <el-tag v-if="!n.is_read" size="mini" type="danger">未读</el-tag>
-        <span class="m-notice-title-text">{{ n.title }}</span>
+      <div
+        v-for="n in list"
+        :key="n.id"
+        class="m-notice"
+        :class="{'is-unread': !n.is_read}"
+        @click="openDetail(n)"
+      >
+        <div class="m-notice-title">
+          <el-tag v-if="!n.is_read" size="mini" type="danger">未读</el-tag>
+          <span class="m-notice-title-text">{{ n.title }}</span>
+        </div>
+        <div v-if="summaryText(n)" class="m-notice-content">{{ summaryText(n) }}</div>
+        <div class="m-notice-time">{{ formatTime(n.created_at) }}</div>
       </div>
-      <div v-if="summaryText(n)" class="m-notice-content">{{ summaryText(n) }}</div>
-      <div class="m-notice-time">{{ formatTime(n.created_at) }}</div>
+      <div v-if="list.length && list.length < total" class="m-load-more-hint">
+        已加载 {{ list.length }} / 共 {{ total }}
+      </div>
+      <div v-if="loading && list.length" class="m-load-more-hint">
+        <i class="el-icon-loading" /> 加载中…
+      </div>
     </div>
-    <el-button class="m-refresh" size="small" :loading="loading" @click="load">刷新</el-button>
 
     <!--
       通知详情：与桌面 NotificationDrawer 详情弹窗同源（utils/notification-markdown
@@ -67,34 +79,91 @@ import { getNotificationList, markAsRead, NotificationFailureItem, NotificationI
 import { extractErrorMessage } from '@/utils/formatters'
 import { notificationFailureTarget, plainNotificationContent, renderNotificationContent } from '@/utils/notification-markdown'
 import { NotificationModule } from '@/store/modules/notification'
+import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
-/** 移动通知中心（Phase 4 M1）：复用 /notifications API；点击打开详情并按桌面同源规则渲染内容，同时标记已读 */
+const NOTIFICATION_PAGE_SIZE = 50
+
+/**
+ * 移动通知中心（Phase 4 M1）：复用 /notifications API；点击打开详情并按桌面同源规则渲染内容，同时标记已读。
+ *
+ * 2026-08-28 UX 增强：v-infinite-scroll 分页追加（按 id 去重防跨页重复，解除
+ * 50 条封顶）；30s 静默自动刷新（未翻页整表替换、已翻页跳过本轮只同步未读角标，
+ * 避免把翻页用户重置回第 1 页）；移除底部刷新按钮（下拉+自动刷新覆盖）。
+ */
 @Component({
   name: 'MobileNotifications',
   components: { 'm-pull-indicator': MobilePullIndicator }
 })
-export default class MobileNotifications extends Mixins(PullToRefresh) {
+export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private list: NotificationItem[] = []
+  private total = 0
+  private page = 1
   private loading = false
   private detailVisible = false
   private detail: NotificationItem | null = null
 
+  /** 通知自动刷新节奏（非即时消息场景的省电版） */
+  protected speedPollIntervalMs = 30000
+
   mounted(): void {
     this.load()
+    this.startSpeedPolling(false)
+  }
+
+  beforeDestroy(): void {
+    this.stopSpeedPolling()
   }
 
   protected async onPullRefresh(): Promise<void> {
     await this.load()
   }
 
+  /** SpeedPollingMixin 轮询体：静默刷新；已翻页时跳过（防重置回第 1 页）只同步角标 */
+  protected async loadActiveSpeed(): Promise<boolean> {
+    if (this.page > 1) {
+      NotificationModule.FetchUnreadCount().catch(() => undefined)
+      return true
+    }
+    await this.load()
+    return true
+  }
+
+  private get infiniteDisabled(): boolean {
+    return this.loading || this.list.length >= this.total
+  }
+
+  /** 整表重载（首屏/下拉刷新）：重置回第 1 页 */
   private async load(): Promise<void> {
     this.loading = true
     try {
-      const res = await getNotificationList({ page: 1, pageSize: 50 })
+      const res = await getNotificationList({ page: 1, pageSize: NOTIFICATION_PAGE_SIZE })
       if (res.code === '200' && res.data) {
         this.list = res.data.list ?? []
+        this.total = res.data.total ?? 0
+        this.page = 1
+      }
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.loading = false
+    }
+  }
+
+  /** 无限滚动追加下一页：按 id 去重（新通知插入头部会使后页 offset 前移产生重复） */
+  private async loadMore(): Promise<void> {
+    if (this.infiniteDisabled) return
+    this.loading = true
+    try {
+      const nextPage = this.page + 1
+      const res = await getNotificationList({ page: nextPage, pageSize: NOTIFICATION_PAGE_SIZE })
+      if (res.code === '200' && res.data) {
+        const existing = new Set(this.list.map(n => n.id))
+        const fresh = (res.data.list ?? []).filter(n => !existing.has(n.id))
+        this.list = this.list.concat(fresh)
+        this.page = res.data.page ?? nextPage
+        this.total = res.data.total ?? this.total
       }
     } catch (e) {
       this.$message.error(extractErrorMessage(e))
@@ -220,9 +289,12 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   color: #c0c4cc;
 }
 
-.m-refresh {
-  display: flex;
-  margin: 8px auto 0;
+/* 无限滚动尾部非交互计数/加载提示 */
+.m-load-more-hint {
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+  padding: 10px 0;
 }
 
 .m-hint {

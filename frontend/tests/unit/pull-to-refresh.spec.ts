@@ -117,4 +117,23 @@ describe('views/mobile/mixins/pull-to-refresh', () => {
     vm().onTouchMove(touchAt(650, 280))
     expect(vm().pullDistance).toBe(Math.min(150 * 0.5, 100))
   })
+
+  it('同手势滚动回顶后再下拉：重置起点防指示条跳变（从 0 跟手）', () => {
+    scroller.scrollTop = 50
+    vm().onTouchStart(touchAt(500))
+    // 未到顶时下拉：交给原生滚动（scrollTop 递减），不进入拉动
+    vm().onTouchMove(touchAt(530))
+    expect(vm().pullDistance).toBe(0)
+    // 原生滚动追平，scrollTop 归 0；同手势继续下拉 30px
+    scroller.scrollTop = 0
+    // 回顶后第一帧：重置起点，距离归零（旧行为会把 (560-500)*0.5=30px 整段兑现成跳变）
+    vm().onTouchMove(touchAt(560))
+    expect(vm().pullDistance).toBe(0)
+    // 后续从重置点跟手：+40px → 20px
+    vm().onTouchMove(touchAt(600))
+    expect(vm().pullDistance).toBe(20)
+    // 阈值判定也从重置点起算：+130px → 65px 达到就绪
+    vm().onTouchMove(touchAt(690))
+    expect(vm().pullReady).toBe(true)
+  })
 })

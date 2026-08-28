@@ -1,14 +1,25 @@
 <template>
   <div class="mobile-layout">
     <header class="mobile-header">
-      <button type="button" class="mobile-header-menu" aria-label="打开功能菜单" @click="drawerVisible = true">
-        <span class="mobile-header-menu-bar" />
-        <span class="mobile-header-menu-bar" />
-        <span class="mobile-header-menu-bar" />
-      </button>
+      <div class="mobile-header-left">
+        <button
+          v-if="isSecondaryPage"
+          type="button"
+          class="mobile-header-back"
+          aria-label="返回"
+          @click="goBack"
+        >
+          <LucideIcon name="arrow-left" :size="20" />
+        </button>
+        <button type="button" class="mobile-header-menu" aria-label="打开功能菜单" @click="drawerVisible = true">
+          <span class="mobile-header-menu-bar" />
+          <span class="mobile-header-menu-bar" />
+          <span class="mobile-header-menu-bar" />
+        </button>
+      </div>
       <div class="mobile-header-brand">
-        <AppLogo variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
-        <span class="mobile-header-title">BtDeck</span>
+        <AppLogo v-if="!isSecondaryPage" variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
+        <span class="mobile-header-title">{{ headerTitle }}</span>
       </div>
       <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
         桌面版
@@ -34,6 +45,7 @@
         :class="{'is-active': isActive(tab)}"
         @click="go(tab)"
       >
+        <LucideIcon v-if="tab.icon" :name="tab.icon" :size="18" class="mobile-tab-icon" />
         <span class="mobile-tab-label">
           {{ tab.label }}<span
             v-if="tab.path === '/m/notifications' && unreadCount > 0"
@@ -110,6 +122,8 @@ import AppLogo from '@/components/common/AppLogo.vue'
 interface MobileTab {
   label: string
   path: string
+  /** 底部 Tab 图标（LucideIcon 已注册名）；抽屉菜单项无图标 */
+  icon?: string
 }
 
 const UNREAD_POLL_INTERVAL_MS = 60000
@@ -140,6 +154,10 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
  * （带切向过渡动画）；左边缘右滑打开汉堡抽屉；抽屉内左滑或点遮罩关闭。
  * 轴锁定判定与页面级下拉刷新 mixin 互斥（横向手势不触发刷新），子页面
  * （详情/管理页）横向滑动不切 Tab，避免误触。
+ *
+ * 2026-08-28 移动 UX 增强：底部 Tab 图标（LucideIcon 已注册名，与桌面
+ * 侧栏种子管理同用 download 保持跨端一致）；二级页头部 ← 返回（固定回退
+ * 映射，见 goBack）与汉堡并存；汉堡触控区 44×44；未读轮询后台标签页跳过。
  */
 @Component({
   name: 'MobileLayout',
@@ -169,14 +187,45 @@ export default class MobileLayout extends Vue {
   private drawerTouchHorizontal = false
 
   private tabs: MobileTab[] = [
-    { label: '仪表盘', path: '/m/dashboard' },
-    { label: '下载器', path: '/m/downloader' },
-    { label: '种子', path: '/m/torrents' },
-    { label: '通知', path: '/m/notifications' }
+    { label: '仪表盘', path: '/m/dashboard', icon: 'house' },
+    { label: '下载器', path: '/m/downloader', icon: 'hard-drive' },
+    { label: '种子', path: '/m/torrents', icon: 'download' },
+    { label: '通知', path: '/m/notifications', icon: 'bell' }
   ]
 
   private get unreadCount(): number {
     return NotificationModule.unreadCount
+  }
+
+  // ============ 二级页头部（← 返回 + 页面标题；汉堡保留保证抽屉全局可达） ============
+
+  /** 二级页：路由不精确落在四个底部 Tab 主页（与手势切 Tab 的精确匹配口径一致） */
+  private get isSecondaryPage(): boolean {
+    return !this.tabs.some(tab => this.$route.path === tab.path)
+  }
+
+  /** 头部标题：主页固定品牌名，二级页用路由 meta.title（空值兜底） */
+  private get headerTitle(): string {
+    if (!this.isSecondaryPage) return 'BtDeck'
+    const meta = this.$route.meta as { title?: string } | undefined
+    return (meta && meta.title) || 'BtDeck'
+  }
+
+  /**
+   * 二级页返回用固定回退映射（replace 单栈下 history.back 会弹回登录页/出站，
+   * 不可靠）：详情回归属列表、设置回归属下载器、关键词搜索回看板、其余回仪表盘。
+   */
+  private goBack(): void {
+    const path = this.$route.path
+    let target = '/m/dashboard'
+    if (path.startsWith('/m/torrents/detail/')) {
+      target = '/m/torrents'
+    } else if (path.startsWith('/m/downloader/settings/')) {
+      target = '/m/downloader'
+    } else if (path === '/m/tracker/keywords-search') {
+      target = '/m/tracker/keywords-board'
+    }
+    this.$router.replace(target).catch(() => undefined)
   }
 
   mounted(): void {
@@ -196,6 +245,8 @@ export default class MobileLayout extends Vue {
   }
 
   private fetchUnreadCount(): void {
+    // 后台标签页跳过本轮（省电；恢复可见后下一轮周期自然补拉）
+    if (document.hidden) return
     NotificationModule.FetchUnreadCount().catch(() => undefined)
   }
 
@@ -368,6 +419,9 @@ export default class MobileLayout extends Vue {
 .mobile-header-title {
   font-size: 16px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mobile-header-brand {
@@ -387,9 +441,10 @@ export default class MobileLayout extends Vue {
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  width: 36px;
-  height: 36px;
-  padding: 8px 7px;
+  /* 44×44 最低触控标准（2026-08-28 移动 UX 审查） */
+  width: 44px;
+  height: 44px;
+  padding: 10px 9px;
   border: none;
   background: transparent;
 }
@@ -406,6 +461,24 @@ export default class MobileLayout extends Vue {
 .mobile-header-desktop {
   color: #fff;
   padding: 4px 0;
+}
+
+/* 头部左侧操作组：二级页 ← 返回与汉堡并存（抽屉全局可达） */
+.mobile-header-left {
+  display: flex;
+  align-items: center;
+}
+
+.mobile-header-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  padding: 0;
 }
 
 .mobile-content {
@@ -465,8 +538,10 @@ export default class MobileLayout extends Vue {
   color: #909399;
   font-size: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   position: relative;
 }
 
@@ -480,10 +555,17 @@ export default class MobileLayout extends Vue {
   line-height: 1.2;
 }
 
-/* 通知未读角标：红底白字（语义色与桌面 Navbar el-badge 一致），绝对定位于 Tab 文案右上 */
+.mobile-tab-icon {
+  /* 图标描边走 currentColor，随 .mobile-tab / .is-active 的 color 生效 */
+  flex-shrink: 0;
+}
+
+/* 通知未读角标：红底白字（语义色与桌面 Navbar el-badge 一致），绝对定位于 Tab 右上 */
 .mobile-tab-badge {
+  position: absolute;
+  top: 5px;
+  right: 16px;
   display: inline-block;
-  margin-left: 4px;
   padding: 0 5px;
   min-width: 16px;
   box-sizing: border-box;

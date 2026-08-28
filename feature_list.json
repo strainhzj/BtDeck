@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.5",
   "release_note": "产品发布号与内部里程碑编号相互独立：发布 v1.0.5（见 backend/app/version.py）打包里程碑 v1.0.5（查询模板）、v1.0.6（孤儿文件管理）、v1.0.9（一键部署）及 2026-06~08 全部修复与安全加固。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-27",
+  "last_updated": "2026-08-28",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,94 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "mobile-ux-enhancements-2026-08-28",
+      "name": "移动端 UX 增强（速度轮询/无限滚动/返回导航/空态引导）",
+      "description": "移动端实测审查后的 P0+P1 改进：种子卡片实时速度行（SpeedPollingMixin 复用+未命中清零）、仪表盘/通知静默自动刷新（后台暂停）、通知分页追加、无限滚动+返回顶部、二级页 header 固定映射返回、Tab 图标、44px 触控区、空状态 CTA、任务删除按钮分隔、下拉刷新指示条跳变修复。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mobile-ux-enhancements.md",
+      "tasks": [
+        {
+          "id": "mobile-ux.1",
+          "name": "SpeedPollingMixin 增量扩展（间隔可覆写 + immediate 参数）",
+          "description": "桌面 mixin 加 speedPollIntervalMs（默认 1000）与 startSpeedPolling(immediate=true) 参数，桌面两视图零行为变化；移动端以 immediate=false 延迟首轮避免与页面初始加载双发。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/mixins/speedPolling.ts",
+            "frontend/tests/unit/speed-polling.spec.ts"
+          ],
+          "evidence": "speed-polling.spec.ts 9 tests passed（新增间隔覆写/immediate=false/暂停清理 3 例）；桌面行为默认值回归锚定。"
+        },
+        {
+          "id": "mobile-ux.2",
+          "name": "移动布局壳：Tab 图标 + 二级页 ← 返回 + 触控区 + 未读轮询门控",
+          "description": "四 Tab 加 LucideIcon（house/hard-drive/download/bell）；二级页 header ←（固定回退映射 replace，避免 history.back 在 replace 单栈下出站）与汉堡并存，标题用 meta.title；汉堡触控区 44×44；60s 未读轮询 document.hidden 门控。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/tests/unit/mobile-shell.spec.ts"
+          ],
+          "evidence": "mobile-shell.spec.ts 31 tests passed（新增 6 例：图标/二级页返回映射×3/标题兜底/hidden 门控）；主题色源码契约切片保持。"
+        },
+        {
+          "id": "mobile-ux.3",
+          "name": "种子列表：速度行 + 无限滚动 + 返回顶部 + 乐观状态 + 空态 CTA",
+          "description": "10s 速度轮询复用 buildSpeedSnapshot+traditionalTorrentIdentity 合并（ready 时未命中行清零防冻结）；v-infinite-scroll 替代加载更多按钮；返回顶部浮标；暂停/恢复乐观更新 status（不整表 reload）；空态区分无下载器（?create=1 直达新增）与零种子（桌面版引导）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "frontend/tests/unit/mobile-downloader.spec.ts"
+          ],
+          "evidence": "mobile-torrents.spec.ts 21 tests + mobile-downloader.spec.ts 11 tests passed（含挂载不双发/合并清零/速度行渲染/乐观状态/CTA/?create=1 六类新断言）。"
+        },
+        {
+          "id": "mobile-ux.4",
+          "name": "仪表盘与通知：静默自动刷新 + 通知分页 + 空态 CTA + 移除底部刷新按钮",
+          "description": "dashboard 15s/notifications 30s 静默刷新（silent 不置 loading 防整页闪断）；通知 v-infinite-scroll 按 id 去重追加，静默刷新与翻页互斥（已翻页只同步未读角标）；下载器空列表显示 CTA；两页移除 m-refresh。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/dashboard.vue",
+            "frontend/src/views/mobile/notifications.vue",
+            "frontend/tests/unit/mobile-dashboard.spec.ts",
+            "frontend/tests/unit/mobile-notifications.spec.ts"
+          ],
+          "evidence": "mobile-dashboard.spec.ts 15 tests + mobile-notifications.spec.ts 17 tests passed（silent 不闪 loading/分页去重/翻页互斥/CTA 断言）。"
+        },
+        {
+          "id": "mobile-ux.5",
+          "name": "详情页轮询迁移 + 任务删除分隔 + 下拉刷新指示条跳变修复",
+          "description": "torrent-detail 手写 setInterval 迁移 SpeedPollingMixin（5s+后台暂停），移除底部冗余返回排；tasks 删除按钮 margin-left:auto 分隔；pull-to-refresh 手势内滚动回顶重置起点防指示条跳变。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrent-detail.vue",
+            "frontend/src/views/mobile/tasks.vue",
+            "frontend/src/views/mobile/mixins/pull-to-refresh.ts",
+            "frontend/tests/unit/mobile-torrent-detail.spec.ts",
+            "frontend/tests/unit/pull-to-refresh.spec.ts"
+          ],
+          "evidence": "mobile-torrent-detail.spec.ts 7 tests + pull-to-refresh.spec.ts 9 tests passed（迁移等价/立即首拉不双发/回顶重置起点断言）。"
+        },
+        {
+          "id": "mobile-ux.6",
+          "name": "e2e 修复与新增 + 全量回归验证",
+          "description": "mobile-interactions e2e 修正查询模板存量失效断言（页面已裁撤）、新增二级页返回映射与 Tab 图标用例；全量单测/typecheck/lint/init.sh 验证。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/e2e/mobile/mobile-interactions.spec.ts"
+          ],
+          "evidence": "Jest 84 suites / 1214 tests passed（基线 1169 净增 45）；tsc --noEmit 通过；npm run lint（contract:check+ESLint+vuex action 检查）零错误；e2e 待具备多页数据环境复核（速度行/无限滚动本地空库仅单测锚定）。"
+        }
+      ]
+    },
     {
       "id": "package-build-scripts-2026-08",
       "name": "EXE 与 APK 构建脚本",

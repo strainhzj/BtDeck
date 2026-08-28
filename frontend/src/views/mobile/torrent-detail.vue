@@ -99,9 +99,6 @@
         <el-button size="small" :disabled="busy" @click="resume">恢复</el-button>
         <el-button size="small" type="danger" plain :disabled="busy" @click="remove">删除</el-button>
       </div>
-      <div class="m-detail-actions m-detail-actions--secondary">
-        <el-button size="small" @click="backToList">返回列表</el-button>
-      </div>
     </template>
   </div>
 </template>
@@ -123,6 +120,7 @@ import {
   isTrackerAnnounceSuccess,
   getTrackerStatusClass
 } from '@/views/torrents/utils/torrentBatch'
+import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { takeCachedTorrent } from '@/views/mobile/torrent-detail-cache'
@@ -139,7 +137,6 @@ function formatDetailSpeed(speed: number | null | undefined): string {
   return `${Math.round(speed)} KB/s`
 }
 
-const ACTIVE_POLL_INTERVAL_MS = 5000
 const BASE_REFETCH_LIMIT = 100
 
 /**
@@ -148,20 +145,23 @@ const BASE_REFETCH_LIMIT = 100
  *   后端单种子端点 /torrents/{info_id}/.. 实测返回空 data（ORM 实体直塞 CommonResponse
  *   会被序列化为 null），不可用，故不走该端点；
  * - 实时速度/进度/做种数：轮询 getActiveTorrents()（桌面 1s 轮询同款轻量接口），
- *   移动端 5s 节奏；非活跃种子由 live=null 自然回落到列表行字段；
+ *   移动端 5s 节奏（2026-08-28 迁移 SpeedPollingMixin，新增 visibilitychange 后台
+ *   暂停省电）；非活跃种子由 live=null 自然回落到列表行字段；
  * - 操作：暂停/恢复/删除（入回收站）复用现有 API，删除成功回列表。
  */
 @Component({
   name: 'MobileTorrentDetail',
   components: { 'm-pull-indicator': MobilePullIndicator }
 })
-export default class MobileTorrentDetail extends Mixins(PullToRefresh) {
+export default class MobileTorrentDetail extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private torrent: Torrent | null = null
   private loading = false
   private busy = false
   private trackerExpanded = false
   private live: ActiveTorrentSpeed | null = null
-  private pollTimer = 0
+
+  /** 详情页实时节奏（mixin 默认 1s 的省电版，保持原 5s） */
+  protected speedPollIntervalMs = 5000
 
   mounted(): void {
     this.torrent = takeCachedTorrent()
@@ -174,17 +174,13 @@ export default class MobileTorrentDetail extends Mixins(PullToRefresh) {
         this.loading = false
       })
     }
+    // 立即首拉一次（原语义），随后 5s 链式轮询（mixin 接管定时器与后台暂停）
     void this.pollActive()
-    this.pollTimer = window.setInterval(() => {
-      void this.pollActive()
-    }, ACTIVE_POLL_INTERVAL_MS)
+    this.startSpeedPolling(false)
   }
 
   beforeDestroy(): void {
-    if (this.pollTimer) {
-      window.clearInterval(this.pollTimer)
-      this.pollTimer = 0
-    }
+    this.stopSpeedPolling()
   }
 
   // ============ 路由与字段（camel/snake 双兼容，与桌面读取惯例一致） ============
@@ -308,6 +304,12 @@ export default class MobileTorrentDetail extends Mixins(PullToRefresh) {
     } catch {
       // 速度轮询失败静默，下个周期重试
     }
+  }
+
+  /** SpeedPollingMixin 轮询体 */
+  protected async loadActiveSpeed(): Promise<boolean> {
+    await this.pollActive()
+    return true
   }
 
   protected async onPullRefresh(): Promise<void> {

@@ -32,14 +32,15 @@ const readLayoutSource = (): string =>
   fs.readFileSync(path.resolve(__dirname, '../../src/layout/mobile/index.vue'), 'utf-8')
 
 describe('layout/mobile/MobileLayout', () => {
-  const mountLayout = (currentPath: string): Wrapper<Vue> =>
+  const mountLayout = (currentPath: string, meta: Record<string, unknown> = {}): Wrapper<Vue> =>
     shallowMount(MobileLayout, {
       mocks: {
-        $route: { path: currentPath },
+        $route: { path: currentPath, meta },
         $router: { replace: jest.fn().mockResolvedValue(undefined), push: jest.fn().mockResolvedValue(undefined) }
       },
       stubs: {
         'router-view': true,
+        'lucide-icon': true,
         // 透传默认插槽，让抽屉菜单内容可断言（避免 Element drawer 的 DOM 副作用）
         'el-drawer': { template: '<div class="drawer-stub"><slot /></div>' }
       }
@@ -311,5 +312,63 @@ describe('layout/mobile/MobileLayout', () => {
     menu.trigger('touchend', { changedTouches: [{ clientX: 250, clientY: 480 }] })
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).drawerVisible).toBe(true)
+  })
+
+  // ============ 2026-08-28 UX 增强：Tab 图标 + 二级页 ← 返回 ============
+
+  it('四个底部 Tab 均渲染图标（house/hard-drive/download/bell）且品牌页头部无返回按钮', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const icons = wrapper.findAll('.mobile-tab-icon')
+    expect(icons).toHaveLength(4)
+    expect(wrapper.find('.mobile-header-back').exists()).toBe(false)
+    expect(wrapper.find('.mobile-header-menu').exists()).toBe(true)
+  })
+
+  it('二级页：← 返回与汉堡并存，标题显示 meta.title 而非品牌 Logo', () => {
+    const wrapper = mountLayout('/m/search', { title: '高级搜索' })
+    expect(wrapper.find('.mobile-header-back').exists()).toBe(true)
+    expect(wrapper.find('.mobile-header-menu').exists()).toBe(true)
+    expect(wrapper.find('.mobile-header-title').text()).toBe('高级搜索')
+    expect(wrapper.findComponent(AppLogo).exists()).toBe(false)
+  })
+
+  it('二级页 meta.title 缺失时标题兜底 BtDeck', () => {
+    const wrapper = mountLayout('/m/recycle-bin')
+    expect(wrapper.find('.mobile-header-title').text()).toBe('BtDeck')
+  })
+
+  it('← 返回固定映射：种子详情→种子列表（replace，不依赖 history）', async() => {
+    const wrapper = mountLayout('/m/torrents/detail/d1/abcdef')
+    wrapper.find('.mobile-header-back').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/torrents')
+  })
+
+  it('← 返回固定映射：下载器设置→下载器、关键词搜索→关键词看板、其余→仪表盘', async() => {
+    const settings = mountLayout('/m/downloader/settings/d1')
+    settings.find('.mobile-header-back').trigger('click')
+    await settings.vm.$nextTick()
+    expect(settings.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+
+    const keywordSearch = mountLayout('/m/tracker/keywords-search')
+    keywordSearch.find('.mobile-header-back').trigger('click')
+    await keywordSearch.vm.$nextTick()
+    expect(keywordSearch.vm.$router.replace).toHaveBeenCalledWith('/m/tracker/keywords-board')
+
+    const generic = mountLayout('/m/logs')
+    generic.find('.mobile-header-back').trigger('click')
+    await generic.vm.$nextTick()
+    expect(generic.vm.$router.replace).toHaveBeenCalledWith('/m/dashboard')
+  })
+
+  it('未读轮询后台标签页跳过：document.hidden 时不调用 FetchUnreadCount', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).fetchUnreadCount()
+    expect(NotificationModule.FetchUnreadCount).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+    ;(wrapper.vm as any).fetchUnreadCount()
+    expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
   })
 })

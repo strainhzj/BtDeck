@@ -24,6 +24,8 @@ export class PullToRefresh extends Vue {
   public pullRefreshing = false
   private pullStartX: number | null = null
   private pullStartY: number | null = null
+  /** 本手势内是否发生过"未到顶的原生滚动"（回顶瞬间重置起点，防指示条跳变） */
+  private pullScrolledInGesture = false
 
   public get pullReady(): boolean {
     return this.pullDistance >= PULL_REFRESH_THRESHOLD
@@ -56,6 +58,7 @@ export class PullToRefresh extends Vue {
     const touch = e.touches[0]
     this.pullStartY = touch ? touch.clientY : null
     this.pullStartX = touch ? touch.clientX : null
+    this.pullScrolledInGesture = false
   }
 
   private onTouchMove(e: TouchEvent): void {
@@ -75,10 +78,24 @@ export class PullToRefresh extends Vue {
     const delta = touch.clientY - this.pullStartY
     if (delta <= 0) {
       this.pullDistance = 0
+      // 上滑（原生滚动/回弹方向）：标记本手势发生过滚动，回顶后再下拉需重置起点
+      this.pullScrolledInGesture = true
       return
     }
     // 未到顶时交给原生滚动，不拦截
-    if (!this.isScrolledToTop()) return
+    if (!this.isScrolledToTop()) {
+      this.pullScrolledInGesture = true
+      return
+    }
+    // 同一手势内从滚动回到顶部：重置起点为当前手指位置，防止指示条从 0 跳到半程
+    if (this.pullScrolledInGesture) {
+      this.pullScrolledInGesture = false
+      this.pullStartY = touch.clientY
+      this.pullStartX = touch.clientX
+      this.pullDistance = 0
+      if (e.cancelable) e.preventDefault()
+      return
+    }
     // 到顶下拉：阻止原生滚动/回弹，跟手移动指示条（带阻尼、封顶）
     if (e.cancelable) e.preventDefault()
     this.pullDistance = Math.min(delta * PULL_REFRESH_DAMPING, PULL_REFRESH_MAX_DISTANCE)

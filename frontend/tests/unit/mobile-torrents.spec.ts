@@ -9,12 +9,13 @@
 import { shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
 import MobileTorrents from '@/views/mobile/torrents.vue'
-import { getTorrentList, getTrackerDomains } from '@/api/torrents'
+import { getTorrentList, getTrackerDomains, getActiveTorrents } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
 
 jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
   getTrackerDomains: jest.fn(),
+  getActiveTorrents: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
   deleteTorrents: jest.fn()
@@ -267,5 +268,108 @@ describe('views/mobile/MobileTorrents', () => {
     expect(source).not.toContain('takeAppliedTemplateConditions')
     // 防回流：不再使用单一状态筛选（被多选状态取代）
     expect(source).not.toContain('statusFilter')
+  })
+
+  // ============ 2026-08-28 UX 增强：速度轮询 / 无限滚动 / 乐观状态 / 空态 CTA ============
+
+  it('挂载不触发速度轮询（startSpeedPolling(false) 首轮延迟一个周期）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect(getActiveTorrents).not.toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  it('速度轮询合并：活跃行写入速度/进度，未命中行速度清零防冻结', async() => {
+    const idleTorrent = { ...listTorrent, infoId: 'i2', hash: 'def', name: '停止的种子', downloadSpeed: 512, uploadSpeed: 0 }
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200',
+      data: { list: [listTorrent, idleTorrent], total: 2 }
+    } as never)
+    jest.mocked(getActiveTorrents).mockResolvedValue({
+      code: '200',
+      data: [{ hash: 'abc', downloaderId: 'd1', downloadSpeed: 2048, uploadSpeed: 1024, progress: 55 }]
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.loadActiveSpeed()
+    const active = vm.list.find((t: any) => t.hash === 'abc')
+    const idle = vm.list.find((t: any) => t.hash === 'def')
+    expect(active.downloadSpeed).toBe(2048)
+    expect(active.uploadSpeed).toBe(1024)
+    expect(active.progress).toBe(55)
+    // active 接口只含速度>0 的种子：未命中的 def 行旧速度必须清零
+    expect(idle.downloadSpeed).toBe(0)
+    expect(idle.uploadSpeed).toBe(0)
+    wrapper.destroy()
+  })
+
+  it('卡片速度行：速度>0 渲染 ↓/↑ 文本，零速度不渲染', async() => {
+    jest.mocked(getActiveTorrents).mockResolvedValue({
+      code: '200',
+      data: [{ hash: 'abc', downloaderId: 'd1', downloadSpeed: 2048, uploadSpeed: 1024, progress: 100 }]
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.loadActiveSpeed()
+    await vm.$nextTick()
+    const speedRow = wrapper.find('.m-torrent-speed')
+    expect(speedRow.exists()).toBe(true)
+    expect(speedRow.text()).toContain('↓')
+    expect(speedRow.text()).toContain('↑')
+    expect(speedRow.text()).toContain('2.00 KB/s')
+    wrapper.destroy()
+  })
+
+  it('暂停/恢复乐观状态：成功后行 status 立即更新（不整表 reload）', async() => {
+    const { pauseTorrents, resumeTorrents } = jest.requireMock('@/api/torrents') as {
+      pauseTorrents: jest.Mock
+      resumeTorrents: jest.Mock
+    }
+    pauseTorrents.mockResolvedValue({ code: '200' })
+    resumeTorrents.mockResolvedValue({ code: '200' })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.pause(vm.list[0])
+    expect(vm.list[0].status).toBe('paused')
+    await vm.resume(vm.list[0])
+    expect(vm.list[0].status).toBe('downloading')
+    // 乐观更新不整表重拉（保住无限滚动已加载页）
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    wrapper.destroy()
+  })
+
+  it('空态 CTA：无下载器显示"去添加下载器"，点击直达 /m/downloader?create=1', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [], total: 0 } } as never)
+    jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [] } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const cta = wrapper.find('.m-empty-cta')
+    expect(cta.exists()).toBe(true)
+    expect(wrapper.text()).toContain('先添加下载器')
+    await cta.trigger('click')
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({ path: '/m/downloader', query: { create: '1' } })
+    wrapper.destroy()
+  })
+
+  it('空态区分：有下载器零种子显示桌面版引导而非 CTA', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [], total: 0 } } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect(wrapper.find('.m-empty-cta').exists()).toBe(false)
+    expect(wrapper.text()).toContain('桌面版')
+    wrapper.destroy()
+  })
+
+  it('源码契约：无限滚动指令绑定与旧"加载更多"按钮移除', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    expect(source).toContain('v-infinite-scroll="loadMore"')
+    expect(source).toContain(':infinite-scroll-disabled="infiniteDisabled"')
+    expect(source).toContain(':infinite-scroll-distance="60"')
+    expect(source).not.toContain('加载更多（')
+    expect(source).toContain('m-backtop')
   })
 })

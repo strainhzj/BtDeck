@@ -1,5 +1,34 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-28：移动端 UX 增强（mobile-ux-enhancements，P0+P1）
+
+### 背景
+
+移动端实测（iPhone 12 模拟器 17 张截图巡检 + 源码走查）定位核心缺口：种子卡片无实时速度、页面无自动刷新、Tab 纯文字、按钮式分页、二级页无返回导航、通知 50 条封顶、空状态无引导、汉堡触控区 36px、任务删除紧邻常规操作。计划经 3 子代理独立审查（技术可行性/回归风险/UX 合理性）修订后实施。
+
+### 审查驱动的关键设计决策
+
+- **复用而非新建轮询 mixin**：`speedPolling.ts` 增量扩展（`speedPollIntervalMs` 默认 1000 + `startSpeedPolling(immediate=true)`），桌面零行为变化；移动端 `immediate=false` 延迟首轮——同步首拉会击穿 mobile-torrents.spec mock 工厂（缺 `getActiveTorrents`）并打破 dashboard 调用计数断言。
+- **返回按钮弃用 history.back()**：移动导航以 replace 单栈为主，back 会弹回登录页/出站；改固定回退映射（详情→种子列表、下载器设置→下载器、关键词搜索→看板、其余→仪表盘），二级页 ← 与汉堡并存保抽屉全局可达。
+- **速度合并补未命中清零**：active 接口只含速度>0 种子，停止种子从快照消失，ready 后未命中行速度清零防冻结。
+- **通知静默刷新与翻页互斥**：已翻页跳过本轮只同步未读角标，防重置回第 1 页；追加按 id 去重。
+- **v-infinite-scroll 可用性源码级验证**：`html/body/#app height:100%` 下 `.mobile-content` 是真实滚动容器，Element 指令正确挂载。
+
+### 已完成（6 子任务）
+
+1. `speedPolling.ts` 扩展 + speed-polling.spec（9 tests）。
+2. 布局壳：Tab 图标（house/hard-drive/download/bell）、二级页 ← 返回（meta.title 标题+空值防护）、44×44 触控区、未读轮询 hidden 门控（mobile-shell 31 tests）。
+3. 种子列表：10s 速度轮询合并（buildSpeedSnapshot+traditionalTorrentIdentity 复用）、速度行（>0 渲染+min-width）、v-infinite-scroll+尾部计数、返回顶部浮标、暂停/恢复乐观状态（不 reload 保已加载页）、空态 CTA + downloader.vue `?create=1` 直达新增（mobile-torrents 21 / mobile-downloader 11 tests）。
+4. 仪表盘 15s/通知 30s 静默刷新（load(silent) 不闪 loading）、通知分页去重追加、下载器空态 CTA、两页移除 m-refresh（mobile-dashboard 15 / mobile-notifications 17 tests）。
+5. 详情页轮询迁移 mixin（5s+后台暂停，立即首拉语义保留）+ 移除底部冗余返回排；tasks 删除按钮分隔；pull-to-refresh 手势内回顶重置起点防指示条跳变（mobile-torrent-detail 7 / pull-to-refresh 9 tests）。
+6. e2e：修正查询模板存量失效断言（页面已裁撤）、新增二级页返回映射与 Tab 图标用例。
+
+### 验证
+
+- 前端 Jest 全量：**84 suites / 1214 tests passed**（基线 1169 净增 45）；`tsc --noEmit` 通过；`npm run lint`（contract:check + ESLint --max-warnings 0 + vuex action 检查）零错误。
+- 记录同步：feature_list.json 新增 feature `mobile-ux-enhancements-2026-08-28`（6 task + evidence）、PLANS/mobile-ux-enhancements.md、docs/roadmap/README.md 增量行。
+- 已知限制：速度行/无限滚动的真机视觉验证需接入真实下载器（本地空库仅单测锚定）；e2e 新用例待 `npm run test:mobile` 环境复核；未执行 Git 提交。
+
 ## 2026-08-27：EXE 与 APK 构建脚本生成
 
 ### 已完成

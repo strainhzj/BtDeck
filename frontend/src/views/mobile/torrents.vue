@@ -65,46 +65,75 @@
       </div>
     </div>
 
-    <div v-if="!loading && list.length === 0" class="m-hint">{{ hasFilters ? '没有匹配的种子' : '暂无种子' }}</div>
+    <div v-if="!loading && list.length === 0" class="m-hint m-empty">
+      <template v-if="hasFilters">没有匹配的种子</template>
+      <template v-else-if="optionsLoaded && downloaderOptions.length === 0">
+        <div class="m-empty-title">还没有种子</div>
+        <div class="m-empty-desc">先添加下载器，同步后即可在这里管理种子</div>
+        <el-button size="small" type="primary" plain class="m-empty-cta" @click="goAddDownloader">
+          去添加下载器
+        </el-button>
+      </template>
+      <template v-else-if="optionsLoaded">
+        暂无种子——去<el-button type="text" size="mini" class="m-empty-link" @click="goDesktopTorrents">桌面版</el-button>添加，或等待下载器同步
+      </template>
+      <template v-else>暂无种子</template>
+    </div>
 
+    <!-- 无限滚动：滚动容器为布局壳 .mobile-content（Element 指令自动上溯挂载）；
+         尾部计数提示非交互（替代旧"加载更多"按钮） -->
     <div
-      v-for="t in list"
-      :key="`${t.downloaderId}-${t.hash}`"
-      class="m-torrent-card"
-      role="button"
-      @click="openDetail(t)"
+      v-infinite-scroll="loadMore"
+      class="m-torrents-list"
+      :infinite-scroll-disabled="infiniteDisabled"
+      :infinite-scroll-distance="60"
     >
-      <div class="m-torrent-name" :title="t.name">{{ t.name }}</div>
-      <div class="m-torrent-meta">
-        <el-tag size="mini" :type="statusTagType(t.status)">{{ statusLabel(t.status) }}</el-tag>
-        <span class="m-torrent-meta-text">{{ t.downloaderName }}</span>
-        <span class="m-torrent-meta-text">{{ formatSize(t.size) }}</span>
+      <div
+        v-for="t in list"
+        :key="`${t.downloaderId}-${t.hash}`"
+        class="m-torrent-card"
+        role="button"
+        @click="openDetail(t)"
+      >
+        <div class="m-torrent-name" :title="t.name">{{ t.name }}</div>
+        <div class="m-torrent-meta">
+          <el-tag size="mini" :type="statusTagType(t.status)">{{ statusLabel(t.status) }}</el-tag>
+          <span class="m-torrent-meta-text">{{ t.downloaderName }}</span>
+          <span class="m-torrent-meta-text">{{ formatSize(t.size) }}</span>
+        </div>
+        <el-progress
+          :percentage="progressOf(t)"
+          :status="t.status === 'error' ? 'exception' : undefined"
+          :stroke-width="6"
+          :show-text="false"
+        />
+        <div class="m-torrent-progress-text">
+          {{ progressOf(t).toFixed(1) }}%<template v-if="t.errorReason"> · {{ t.errorReason }}</template>
+        </div>
+        <!-- 实时速度（10s 轮询 active-torrents）：速度>0 才显示，min-width 防宽度抖动 -->
+        <div v-if="hasLiveSpeed(t)" class="m-torrent-speed">
+          <span v-if="speedValue(t, 'download') > 0" class="m-torrent-speed-item">↓ {{ formatSpeedText(t, 'download') }}</span>
+          <span v-if="speedValue(t, 'upload') > 0" class="m-torrent-speed-item">↑ {{ formatSpeedText(t, 'upload') }}</span>
+        </div>
+        <div class="m-torrent-actions" @click.stop>
+          <el-button size="mini" :disabled="actionBusy(t)" @click="pause(t)">暂停</el-button>
+          <el-button size="mini" :disabled="actionBusy(t)" @click="resume(t)">恢复</el-button>
+          <el-button size="mini" type="danger" plain :disabled="actionBusy(t)" @click="remove(t)">删除</el-button>
+        </div>
       </div>
-      <el-progress
-        :percentage="progressOf(t)"
-        :status="t.status === 'error' ? 'exception' : undefined"
-        :stroke-width="6"
-        :show-text="false"
-      />
-      <div class="m-torrent-progress-text">
-        {{ progressOf(t).toFixed(1) }}%<template v-if="t.errorReason"> · {{ t.errorReason }}</template>
+
+      <div v-if="list.length && list.length < total" class="m-load-more-hint">
+        已加载 {{ list.length }} / 共 {{ total }}
       </div>
-      <div class="m-torrent-actions" @click.stop>
-        <el-button size="mini" :disabled="actionBusy(t)" @click="pause(t)">暂停</el-button>
-        <el-button size="mini" :disabled="actionBusy(t)" @click="resume(t)">恢复</el-button>
-        <el-button size="mini" type="danger" plain :disabled="actionBusy(t)" @click="remove(t)">删除</el-button>
+      <div v-if="loading && list.length" class="m-load-more-hint">
+        <i class="el-icon-loading" /> 加载中…
       </div>
     </div>
 
-    <el-button
-      v-if="list.length < total"
-      class="m-load-more"
-      size="small"
-      :loading="loading"
-      @click="loadMore"
-    >
-      加载更多（{{ list.length }}/{{ total }}）
-    </el-button>
+    <!-- 长列表返回顶部浮标（滚动容器 scrollTop 超阈值显示） -->
+    <button v-show="showBackTop" type="button" class="m-backtop" aria-label="返回顶部" @click="scrollToTop">
+      <i class="el-icon-top" />
+    </button>
   </div>
 </template>
 
@@ -113,13 +142,21 @@ import { Component, Mixins } from 'vue-property-decorator'
 import {
   getTorrentList,
   getTrackerDomains,
+  getActiveTorrents,
   pauseTorrents,
   resumeTorrents,
   deleteTorrents,
   Torrent
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
-import { extractErrorMessage } from '@/utils/formatters'
+import { extractErrorMessage, formatSpeed } from '@/utils/formatters'
+import { setStoredUiMode } from '@/utils/ui-mode'
+import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
+import { buildSpeedSnapshot } from '@/views/torrents/utils/torrentBatch'
+import {
+  buildTorrentSpeedTargetIndex,
+  resolveTorrentSpeedTargets
+} from '@/views/torrents/utils/traditionalTorrentIdentity'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
@@ -131,6 +168,8 @@ import {
 } from '@/views/mobile/torrent-status'
 
 const PAGE_SIZE = 20
+/** 返回顶部浮标显示阈值（滚动容器 scrollTop） */
+const BACK_TOP_THRESHOLD_PX = 600
 
 interface SelectOption {
   label: string
@@ -142,17 +181,25 @@ interface SelectOption {
  * 卡片点击进入详情页（快照缓存传递整行数据）；顶部下拉刷新。
  * 简单搜索自移动高级搜索页迁入（与桌面 torrents 快捷筛选同字段集）；移动端查询模板页
  * 已裁撤（仅保留高级搜索），本页不再承接模板应用回填（跨页缓存链路随之移除）。
+ *
+ * 2026-08-28 UX 增强：卡片实时速度行（SpeedPollingMixin 10s 省电轮询 +
+ * visibilitychange 后台暂停，复用桌面 buildSpeedSnapshot 合并，未命中行清零防冻结）；
+ * v-infinite-scroll 无限滚动替代"加载更多"按钮 + 返回顶部浮标；暂停/恢复乐观状态
+ * 更新（active 轮询不含 status）；空状态 CTA（无下载器→去添加，零种子→桌面版引导）。
  */
 @Component({
   name: 'MobileTorrents',
   components: { 'm-pull-indicator': MobilePullIndicator }
 })
-export default class MobileTorrents extends Mixins(PullToRefresh) {
+export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private list: Torrent[] = []
   private total = 0
   private loading = false
   private busyKey = ''
   private filtersExpanded = false
+  private optionsLoaded = false
+  private showBackTop = false
+  private scrollEl: HTMLElement | null = null
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -164,13 +211,71 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
 
   private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
 
+  /** 移动端速度轮询节奏（桌面 1s 的省电版；mixin 默认值覆写） */
+  protected speedPollIntervalMs = 10000
+
   mounted(): void {
     this.loadFilterOptions()
     this.reload()
+    this.scrollEl = (this.$el as HTMLElement).closest('.mobile-content')
+    if (this.scrollEl) {
+      this.scrollEl.addEventListener('scroll', this.onListScroll, { passive: true })
+    }
+    this.startSpeedPolling(false)
+  }
+
+  beforeDestroy(): void {
+    this.stopSpeedPolling()
+    if (this.scrollEl) {
+      this.scrollEl.removeEventListener('scroll', this.onListScroll)
+      this.scrollEl = null
+    }
   }
 
   protected async onPullRefresh(): Promise<void> {
     await this.reload()
+  }
+
+  /** SpeedPollingMixin 轮询体：拉活跃速度并就地合并进列表行（桌面同款纯函数工具） */
+  protected async loadActiveSpeed(): Promise<boolean> {
+    try {
+      const res = await getActiveTorrents()
+      const snapshot = buildSpeedSnapshot(res)
+      if (!snapshot.ready) return false
+      const index = buildTorrentSpeedTargetIndex(this.list)
+      const activeKeys = new Set<string>()
+      snapshot.updates.forEach(update => {
+        resolveTorrentSpeedTargets(index, update).forEach(row => {
+          row.downloadSpeed = update.downloadSpeed
+          row.uploadSpeed = update.uploadSpeed
+          row.progress = update.progress
+          activeKeys.add(this.keyOf(row))
+        })
+      })
+      // active 接口只含速度>0 的种子：ready 后未命中的行速度清零，防止停止后冻结旧值
+      this.list.forEach(row => {
+        if (!activeKeys.has(this.keyOf(row))) {
+          row.downloadSpeed = 0
+          row.uploadSpeed = 0
+        }
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private get infiniteDisabled(): boolean {
+    return this.loading || this.list.length >= this.total
+  }
+
+  private onListScroll = (): void => {
+    if (!this.scrollEl) return
+    this.showBackTop = this.scrollEl.scrollTop > BACK_TOP_THRESHOLD_PX
+  }
+
+  private scrollToTop(): void {
+    if (this.scrollEl) this.scrollEl.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   private get hasFilters(): boolean {
@@ -210,6 +315,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
       }
     } catch {
       // 选项加载失败不阻塞手输条件
+    } finally {
+      this.optionsLoaded = true
     }
   }
 
@@ -280,11 +387,11 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   }
 
   private async pause(t: Torrent): Promise<void> {
-    await this.withBusy(t, () => pauseTorrents({ downloader_id: t.downloaderId, hashes: [t.hash] }))
+    await this.withBusy(t, () => pauseTorrents({ downloader_id: t.downloaderId, hashes: [t.hash] }), 'paused')
   }
 
   private async resume(t: Torrent): Promise<void> {
-    await this.withBusy(t, () => resumeTorrents({ downloader_id: t.downloaderId, hashes: [t.hash] }))
+    await this.withBusy(t, () => resumeTorrents({ downloader_id: t.downloaderId, hashes: [t.hash] }), 'downloading')
   }
 
   private remove(t: Torrent): void {
@@ -303,11 +410,17 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
       .catch(() => undefined)
   }
 
-  private async withBusy(t: Torrent, action: () => Promise<{ code?: string }>): Promise<void> {
+  private async withBusy(
+    t: Torrent,
+    action: () => Promise<{ code?: string }>,
+    nextStatus?: string
+  ): Promise<void> {
     this.busyKey = this.keyOf(t)
     try {
       const res = await action()
       if (res && res.code && res.code !== '200') return
+      // 乐观状态更新：active 速度轮询不含 status 字段，不更新标签会停留在旧值
+      if (nextStatus) t.status = nextStatus
       this.$message.success('操作成功')
     } catch (e) {
       this.$message.error(extractErrorMessage(e))
@@ -319,6 +432,36 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   private progressOf(t: Torrent): number {
     const value = typeof t.progress === 'number' ? t.progress : 0
     return Math.min(100, Math.max(0, value))
+  }
+
+  // ============ 实时速度展示（camel/snake 双兼容读取） ============
+
+  private speedValue(t: Torrent, field: 'download' | 'upload'): number {
+    const camel = field === 'download' ? t.downloadSpeed : t.uploadSpeed
+    const snake = field === 'download' ? t.download_speed : t.upload_speed
+    const value = camel ?? snake ?? 0
+    return typeof value === 'number' ? value : 0
+  }
+
+  private hasLiveSpeed(t: Torrent): boolean {
+    return this.speedValue(t, 'download') > 0 || this.speedValue(t, 'upload') > 0
+  }
+
+  private formatSpeedText(t: Torrent, field: 'download' | 'upload'): string {
+    return formatSpeed(this.speedValue(t, field))
+  }
+
+  // ============ 空状态 CTA 导航 ============
+
+  private goAddDownloader(): void {
+    this.$router
+      .replace({ path: '/m/downloader', query: { create: '1' } })
+      .catch(() => undefined)
+  }
+
+  private goDesktopTorrents(): void {
+    setStoredUiMode('desktop')
+    this.$router.replace('/torrents').catch(() => undefined)
   }
 
   private statusLabel(status: string): string {
@@ -410,6 +553,20 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   white-space: nowrap;
 }
 
+/* 实时速度行：min-width 防速度文本宽度变化引起卡片抖动 */
+.m-torrent-speed {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.m-torrent-speed-item {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 72px;
+}
+
 .m-torrent-actions {
   display: flex;
   justify-content: flex-end;
@@ -422,9 +579,52 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   padding: 5px 10px;
 }
 
-.m-load-more {
-  display: flex;
-  margin: 8px auto 0;
+/* 无限滚动尾部非交互计数/加载提示（替代旧"加载更多"按钮） */
+.m-load-more-hint {
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+  padding: 10px 0;
+}
+
+/* 返回顶部浮标：固定于 tabbar 上方，避开安全区 */
+.m-backtop {
+  position: fixed;
+  right: 16px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--color-primary);
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 9;
+}
+
+/* 空状态引导（无下载器 CTA） */
+.m-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 6px;
+}
+
+.m-empty-desc {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 12px;
+}
+
+.m-empty-cta {
+  margin-top: 2px;
+}
+
+.m-empty-link {
+  padding: 0 2px;
+  font-size: 12px;
+  vertical-align: baseline;
 }
 
 .m-hint {

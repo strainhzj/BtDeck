@@ -53,12 +53,13 @@ const mockedList = [
   }
 ]
 
-const mountPage = (): Wrapper<Vue> =>
+const mountPage = (query: Record<string, string> = {}): Wrapper<Vue> =>
   shallowMount(MobileDownloader, {
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
       $confirm: jest.fn().mockResolvedValue('confirm'),
-      $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) }
+      $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) },
+      $route: { query }
     }
   })
 
@@ -191,5 +192,14 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     expect(source).toContain('.m-dl-badge.is-online')
     expect(source).toContain('var(--color-primary)')
     expect(source).not.toContain('#409eff')
+  })
+
+  it('?create=1 直达新增：挂载即弹新增弹窗（种子页空态 CTA 落点）', async() => {
+    const wrapper = mountPage({ create: '1' })
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(vm.editDialogVisible).toBe(true)
+    expect(vm.editingItem).toBeNull()
+    wrapper.destroy()
   })
 })

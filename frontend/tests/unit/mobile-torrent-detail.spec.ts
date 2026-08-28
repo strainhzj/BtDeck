@@ -174,4 +174,19 @@ describe('views/mobile/torrent-detail', () => {
     })
     expect(vm().$router.replace).toHaveBeenCalledWith('/m/torrents')
   })
+
+  it('轮询迁移 SpeedPollingMixin：立即首拉一次 + 5s 间隔 + 底部冗余返回排已移除', async() => {
+    jest.mocked(takeCachedTorrent).mockReturnValue(baseTorrent)
+    jest.mocked(getActiveTorrents).mockClear()
+    wrapper = mountDetail()
+    await flushPromises()
+    // mounted 立即首拉一次；mixin immediate=false 不双发（真 timer 下 5s 周期不触发）
+    expect(jest.mocked(getActiveTorrents)).toHaveBeenCalledTimes(1)
+    expect(vm().speedPollIntervalMs).toBe(5000)
+    expect(vm().pollTimer).toBeUndefined()
+    // 底部操作区只剩 暂停/恢复/删除，冗余"返回列表"排由 header ← 返回承载
+    const actions = wrapper.findAll('.m-detail-actions')
+    expect(actions).toHaveLength(1)
+    expect(actions.at(0).text()).not.toContain('返回列表')
+  })
 })

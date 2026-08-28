@@ -104,6 +104,10 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
 
   mounted(): void {
     this.load()
+    // 种子页空态 CTA 直达新增（?create=1）：一步弹出新增表单，省掉找按钮
+    if (this.$route.query.create === '1') {
+      this.openCreate()
+    }
   }
 
   protected async onPullRefresh(): Promise<void> {

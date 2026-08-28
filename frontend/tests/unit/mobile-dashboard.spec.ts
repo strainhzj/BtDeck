@@ -58,7 +58,7 @@ const mountPage = (): Wrapper<Vue> =>
   shallowMount(MobileDashboard, {
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
-      $router: { push: jest.fn() }
+      $router: { push: jest.fn(), replace: jest.fn().mockResolvedValue(undefined) }
     }
   })
 
@@ -230,14 +230,11 @@ describe('views/mobile/MobileDashboard', () => {
     expect(vm.data).toBeNull()
   })
 
-  it('刷新链路：手动刷新按钮与下拉刷新 onPullRefresh 都重新拉取并渲染新值', async() => {
+  it('刷新链路：下拉刷新 onPullRefresh 重新拉取并渲染新值（silent 不置 loading）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     expect(getDashboardData).toHaveBeenCalledTimes(1)
-
-    await wrapper.find('.m-refresh').trigger('click')
-    await flushLifecycle()
-    expect(getDashboardData).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.m-refresh').exists()).toBe(false)
 
     const updated = makeData()
     updated.system.total_upload_speed = 1572864
@@ -250,9 +247,40 @@ describe('views/mobile/MobileDashboard', () => {
     const vm = wrapper.vm as any
     await vm.onPullRefresh()
     await flushLifecycle()
-    expect(getDashboardData).toHaveBeenCalledTimes(3)
+    expect(getDashboardData).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('1.50 MB/s')
     expect(wrapper.text()).not.toContain('280.00 KB/s')
+    // 下拉刷新走 silent：不整页切换到"加载中…"占位
+    expect(vm.loading).toBe(false)
+  })
+
+  it('15s 自动刷新静默：loadActiveSpeed 不置 loading 且重新拉取', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.loadActiveSpeed()
+    await flushLifecycle()
+    expect(getDashboardData).toHaveBeenCalledTimes(2)
+    expect(vm.loading).toBe(false)
+  })
+
+  it('下载器空列表：显示"去添加下载器"CTA，点击直达 /m/downloader?create=1', async() => {
+    const empty = makeData()
+    empty.downloader_list = []
+    empty.downloaders = { total: 0, online: 0, offline: 0 }
+    jest.mocked(getDashboardData).mockResolvedValue({
+      code: '200',
+      status: 'success',
+      msg: 'ok',
+      data: empty
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect(wrapper.text()).toContain('还没有下载器')
+    expect(wrapper.text()).toContain('去添加下载器')
+    const vm = wrapper.vm as any
+    vm.goAddDownloader()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({ path: '/m/downloader', query: { create: '1' } })
   })
 
   it('formatSpeedDisplay 方法契约（bytes/s 语义）：缺失 -- / 0→0 B/s / KB 与 MB 换算', async() => {

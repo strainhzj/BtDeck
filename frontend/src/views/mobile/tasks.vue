@@ -71,6 +71,7 @@
           size="mini"
           type="danger"
           plain
+          class="m-task-delete"
           :disabled="busyId === task.taskId"
           @click="confirmDelete(task)"
         >
@@ -369,6 +370,13 @@ export default class MobileTasks extends Mixins(PullToRefresh) {
 .m-task-actions .el-button {
   margin-left: 0;
   padding: 5px 10px;
+}
+
+/* 危险操作分隔（2026-08-28 UX 审查）：删除推到行尾与常规操作拉开距离，
+   换行时自然独占一行右端；触控区略放宽 */
+.m-task-actions .m-task-delete {
+  margin-left: auto;
+  padding: 5px 12px;
 }
 
 .m-load-more {

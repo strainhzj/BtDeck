@@ -299,17 +299,72 @@ describe('views/mobile/MobileNotifications', () => {
     wrapper.destroy()
   })
 
-  it('刷新链路：刷新按钮与下拉刷新 onPullRefresh 都重新拉取', async() => {
+  it('刷新链路：下拉刷新 onPullRefresh 重新拉取并重置回第 1 页（m-refresh 按钮已移除）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     expect(getNotificationList).toHaveBeenCalledTimes(1)
-    await wrapper.find('.m-refresh').trigger('click')
-    await flushLifecycle()
-    expect(getNotificationList).toHaveBeenCalledTimes(2)
-    const vm = wrapper.vm as unknown as { onPullRefresh(): Promise<void> }
+    expect(wrapper.find('.m-refresh').exists()).toBe(false)
+    const vm = wrapper.vm as unknown as { onPullRefresh(): Promise<void>, page: number }
     await vm.onPullRefresh()
     await flushLifecycle()
-    expect(getNotificationList).toHaveBeenCalledTimes(3)
+    expect(getNotificationList).toHaveBeenCalledTimes(2)
+    expect(getNotificationList).toHaveBeenLastCalledWith({ page: 1, pageSize: 50 })
+    expect(vm.page).toBe(1)
+  })
+
+  it('无限滚动追加：loadMore 拉下一页并按 id 去重（跨页重复被过滤）', async() => {
+    jest.mocked(getNotificationList).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 6, page: 1, pageSize: 3, list: makeList() }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    // 第 2 页返回两条：一条与第 1 页 id 重复（模拟新通知插入使 offset 前移），一条新
+    jest.mocked(getNotificationList).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok',
+      data: {
+        total: 6, page: 2, pageSize: 3,
+        list: [makeItem({ id: 11, title: '重复项' }), makeItem({ id: 14, title: '新通知' })]
+      }
+    } as never)
+    await vm.loadMore()
+    await flushLifecycle()
+    expect(getNotificationList).toHaveBeenLastCalledWith({ page: 2, pageSize: 50 })
+    expect(vm.list.map((n: NotificationItem) => n.id)).toEqual([11, 12, 13, 14])
+    expect(vm.page).toBe(2)
+    wrapper.destroy()
+  })
+
+  it('静默刷新互斥：未翻页整表替换；已翻页跳过本轮只同步未读角标', async() => {
+    jest.mocked(getNotificationList).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 6, page: 1, pageSize: 3, list: makeList() }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+
+    // 未翻页（page=1）：静默刷新 = 整表重载
+    await vm.loadActiveSpeed()
+    await flushLifecycle()
+    expect(getNotificationList).toHaveBeenCalledTimes(2)
+
+    // 翻到第 2 页后：静默刷新不再拉列表，只同步角标（防把用户重置回第 1 页）
+    jest.mocked(getNotificationList).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 6, page: 2, pageSize: 3, list: [makeItem({ id: 14 })] }
+    } as never)
+    await vm.loadMore()
+    await flushLifecycle()
+    const callsBefore = jest.mocked(getNotificationList).mock.calls.length
+    jest.mocked(NotificationModule.FetchUnreadCount).mockClear()
+    await vm.loadActiveSpeed()
+    await flushLifecycle()
+    expect(jest.mocked(getNotificationList).mock.calls.length).toBe(callsBefore)
+    expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
+    expect(vm.page).toBe(2)
+    wrapper.destroy()
   })
 
   it('源码契约：必须复用共享渲染/纯文本化函数，禁止裸文本直渲与私有实现复制', () => {
