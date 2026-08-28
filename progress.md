@@ -1,5 +1,23 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-28：悬浮玻璃按钮件·回归加固（源码契约 6 例 + 变异验证 24 组）
+
+- 按用户要求为上一批"Tab 栏悬浮圆角玻璃条 + 返回顶部浮标玻璃化"补足回归保护，沿用项目既有加固范式（源码契约切片 + 定点变异验证；jsdom 无法计算 scoped CSS 实际渲染，源码契约是本仓库 CSS 回归的唯一可行层）。
+- **mobile-shell.spec +4 例**：① Tab 栏悬浮形态全锁（left/right 12px、bottom calc(8px+安全区)、--radius-xl、--glass-bg/blur/-webkit- 前缀/--glass-border/--shadow-lg、z-index 10，且切片禁 padding-bottom 防安全区双倍避让）；② @supports 降级契约——条件必须字面量 `blur(12px)`（var() 内嵌条件在部分引擎判 unknown 使 not() 恒真、降级实色覆盖支持浏览器，即 Navbar 等桌面端 4 处的既有隐患形态），降级色必须走 --color-bg-primary/--color-border-primary 主题变量；③ 内容区底部留白 calc(80px+安全区)（72px 贴底旧值回归即红）；④ 跨文件几何契约——从两文件切片解析 Tab 高度/Tab 栏底距/浮标 bottom 三值，断言浮标与 Tab 栏顶边净空 ≥ 12px（单侧改动挤压即红，当前 16px）。
+- **mobile-torrents.spec +2 例**：⑤ 浮标 --radius-lg 12px 圆角方块 + 玻璃三件套 + --shadow-md + z-index 9（50% 全圆/实色白/硬编码阴影回归即红）；⑥ 浮标 @supports 降级契约（同②）。
+- **变异验证 24 组全部精确拦截**（`node .tmp-mobile-run/mutate_glass.mjs`：锚点唯一性预断言 → 内存备份 → 变异 → jest 必红 → 还原 → 字节校验；每源文件 14+10 组）：玻璃底→裸 #fff、删无前缀/-webkit- backdrop-filter、圆角→0/50%、内缩→贴边、bottom→0/72px、@supports 条件内嵌 var()、降级色→裸值 ×4、留白→72px、重加 padding-bottom 双倍安全区、Tab 高 56→64 挤压净空、描边→none ×2、投影→硬编码 ×2。L6/T2 触发双断言双红（直接断言 + 几何契约联动）。还原后 `frontend/src` 零残留（字节校验 + git status 复核）。
+- **变异脚本坑**：spawnSync 双 spec 运行遇 ENOBUFS（mobile-torrents 的 Vue 警告噪音超默认 1MB 输出缓冲，status=null 易误判基线未绿）——需 `maxBuffer: 20MB`。
+- **验证**：mobile-shell + mobile-torrents 60 tests passed（54+6）；定向 ESLint `--max-warnings 0` 与全量 `npm run lint`（含 contract:check）零错误。feature_list.json mobile-ux.7 补 spec files 与加固 evidence。未执行 Git 提交。
+
+## 2026-08-28：移动端悬浮按钮件质感升级（Tab 栏悬浮圆角玻璃条 + 浮标圆角方块玻璃化）
+
+- **需求与方案**：用户要求移动端按钮框改轻微圆角并加玻璃蒙版。经范围确认（Tab 栏 + 返回顶部浮标两项悬浮件，Tab 栏选悬浮圆角条形态）与子代理独立审查（无 P0；3 条 P1 修订全部采纳）后实施。
+- **改动（2 文件纯 CSS）**：`layout/mobile/index.vue` `.mobile-tabbar` 贴底直角实色 → 悬浮圆角条（left/right 12px、bottom 8px+安全区、`--radius-xl` 四角圆角、`--glass-bg`+`backdrop-filter blur(--glass-blur)`+`-webkit-` 前缀、`--glass-border` 描边、`--shadow-lg`）；`.mobile-content` 底部留白 72px → `calc(80px+env(safe-area-inset-bottom))`（首次正确补偿安全区）。`views/mobile/torrents.vue` `.m-backtop` 50% 全圆 → `--radius-lg` 12px 圆角方块，同款玻璃三件套 + `--shadow-md`，bottom 72px → 80px。两处各加 `@supports not (backdrop-filter: blur(12px))` 降级实色（`--color-bg-primary`/`--color-border-primary`）。
+- **审查驱动的关键决策**：① `@supports` 条件用字面量 `blur(12px)` 而非照搬 Navbar 的 `var()` 内嵌形式——var() 在部分引擎的条件中判 unknown 会使 `not()` 恒真、降级块在支持的浏览器上也生效（Navbar/Sidebar/layout/index.vue/AdvancedMultiSelect 既有 4 处带 var() 写法存此隐患，登记备忘未在本次处理）；② 降级块用主题变量不用裸 #fff；③ 无前缀检测对 iOS ≤17 误降实色属保守取舍，显式记录（目标环境 Android WebView Chromium 76+ 原生支持）。
+- **验证**：`npm run lint` 零错误（含 contract:check）；`npm run build` 通过；mobile-shell + mobile-torrents 54 tests passed（源码切片断言不受影响，@supports 块按审查建议插在 `.mobile-tabbar` 与 `.mobile-tab` 之间避开脆弱区）；复用 `.tmp-mobile-run` 模拟器基建（iPhone 12 视口 CDP 9333）实测截图与计算样式断言：Tab 栏 16px 圆角 + rgba(255,255,255,0.85) + blur(12px) 生效、浮标 12px 圆角 + 后方"删除"按钮虚化透出（蒙版真实生效）、触底末卡距 Tab 栏顶 22px 无遮挡、半透明白描边在 #f5f7fa 页底上边界感可接受（`--shadow-lg` 兜底，无需中性色 hairline）。
+- **测试环境假象排查**：自动化点击"回顶"后 scrollY 停滞——探针证实模拟器窗口被桌面遮挡时 Chromium 将 rAF 节流至 1 帧/500ms（visibilityState 仍 visible），rAF 驱动的平滑滚动因此停摆；属环境假象非改动回归（点击处理器正常触发，且本改动纯 CSS 不触 JS）。附带发现：`.mobile-content` 的 `overflow-y:auto` 实际不裁剪（真正滚动容器是 window/document），其 scrollTop 恒 0——既有事实，与本改动无冲突，登记备忘。
+- **登记**：feature_list.json `mobile-ux-enhancements-2026-08-28` 追加 mobile-ux.7（done + evidence）；备忘两项（不在本次范围）：index.html 缺 `viewport-fit=cover` 致 safe-area 恒 0（现体系自洽，边到边需求另立任务）；玻璃三件套已 7 处复制，可沉淀 SCSS mixin 回收。未执行 Git 提交。
+
 ## 2026-08-28：v1.0.6 交付制品等价性与发布阻断门禁计划
 
 ### 背景与裁决

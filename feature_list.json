@@ -135,6 +135,20 @@
             "frontend/tests/e2e/mobile/mobile-interactions.spec.ts"
           ],
           "evidence": "Jest 84 suites / 1216 tests passed（含返回顶部 window 滚动行为与源码契约锚定）；tsc --noEmit 通过；npm run lint 零错误；Playwright e2e 双引擎 chromium 19 + webkit 19 passed（安装 WebKit 后首跑，2 数据依赖用例空库条件跳过）；模拟器 mock 数据视觉验证：速度行/无限滚动两页自动加载/返回顶部/乐观状态全部通过；提交后验证抓出返回顶部滚动容器误判与箭头类字段 this 陷阱两处缺陷并修复。"
+        },
+        {
+          "id": "mobile-ux.7",
+          "name": "悬浮按钮件质感升级：Tab 栏悬浮圆角玻璃条 + 返回顶部浮标圆角方块玻璃化",
+          "description": "底部 Tab 栏由贴底直角实色改为悬浮圆角条（左右 12px/底距 8px+安全区、--radius-xl 四角圆角），返回顶部浮标 50% 全圆改 --radius-lg 圆角方块；两者套用既有 --glass-bg/--glass-blur/--glass-border 玻璃三件套（-webkit- 前缀 + 字面量 @supports 降级到 --color-bg-primary）；.mobile-content 底部留白改 calc(80px+env(safe-area-inset-bottom)) 适配悬浮形态。@supports 条件用字面量规避 var() 在部分引擎判 unknown 使 not() 恒真的坑（Navbar 等既有 4 处 var() 写法存在此隐患，未在本次处理）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-shell.spec.ts",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "npm run lint 零错误；npm run build 通过；mobile-shell + mobile-torrents 54 tests passed；模拟器（iPhone 12 视口）实测：计算样式断言 Tab 栏 16px/浮标 12px 圆角、rgba(255,255,255,0.85)+blur(12px) 生效，浮标后方元素虚化透出（蒙版真实生效），触底末卡距 Tab 栏 22px 无遮挡；独立审查（子代理）无 P0。2026-08-28 回归加固：新增 6 例源码契约测试（shell 4：悬浮定位/玻璃三件套/字面量 @supports 降级/内容留白/跨文件几何净空；torrents 2：圆角方块三件套/降级），60 tests passed；24 组定点变异（备份-变异-红-还原-字节校验，含 var() 条件恒真坑与双倍安全区两类隐患形态）全部精确拦截，还原后源码零残留；定向 ESLint --max-warnings 0 与全量 npm run lint 零错误。"
         }
       ]
     },

@@ -396,4 +396,42 @@ describe('views/mobile/MobileTorrents', () => {
     expect(source).toContain('window.scrollY || document.documentElement.scrollTop')
     expect(source).toContain('window.scrollTo({ top: 0, behavior: \'smooth\' })')
   })
+
+  // ============ 悬浮玻璃浮标源码契约（2026-08-28 质感升级回归保护） ============
+
+  it('源码契约：浮标为轻微圆角方块 + 玻璃三件套（50% 全圆/实色白回归即红）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    const backtopRule = source.slice(
+      source.indexOf('.m-backtop {'),
+      source.indexOf('@supports not (backdrop-filter: blur(12px))')
+    )
+    // 轻微圆角方块（--radius-lg 12px），不得回退 50% 全圆
+    expect(backtopRule).toContain('border-radius: var(--radius-lg, 12px)')
+    expect(backtopRule).not.toContain('50%')
+    // 与悬浮 Tab 栏（底距 8 + 高 56 = 顶边 64）保持净空：80 ≥ 64 + 12
+    expect(backtopRule).toContain('bottom: calc(80px + env(safe-area-inset-bottom))')
+    // 玻璃三件套与 Tab 栏同源（前缀齐全），描边/投影走主题变量
+    expect(backtopRule).toContain('background: var(--glass-bg')
+    expect(backtopRule).toContain('\n  backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(backtopRule).toContain('\n  -webkit-backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(backtopRule).toContain('border: var(--glass-border')
+    expect(backtopRule).toContain('box-shadow: var(--shadow-md')
+    // 层级：浮标（9）必须在 Tab 栏（10）之下
+    expect(backtopRule).toContain('z-index: 9')
+  })
+
+  it('源码契约：浮标 @supports 降级为主题变量实色，条件必须字面量（防 var() 恒真坑）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    // 字面量条件（同 Tab 栏契约，勿内嵌 var()）
+    expect(source).toContain('@supports not (backdrop-filter: blur(12px)) {')
+    const fallback = source.slice(
+      source.indexOf('@supports not (backdrop-filter: blur(12px))'),
+      source.indexOf('.m-empty-title')
+    )
+    expect(fallback).toContain('.m-backtop')
+    expect(fallback).toContain('background: var(--color-bg-primary, #FFFFFF)')
+    expect(fallback).toContain('border: 1px solid var(--color-border-primary, #E5E7EB)')
+  })
 })

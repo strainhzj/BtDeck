@@ -7,7 +7,9 @@
  * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
  *   + 60s 轮询（fake timers），>99 显示 99+；
  * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
- *   （静态契约，防回归到深灰 #27303f 头部 / Element 默认蓝 #409eff）。
+ *   （静态契约，防回归到深灰 #27303f 头部 / Element 默认蓝 #409eff）；
+ * - 悬浮玻璃按钮件源码契约（2026-08-28 质感升级）：Tab 栏悬浮圆角玻璃条
+ *   三件套 + 字面量 @supports 降级 + 内容区留白 + 与浮标的几何净空。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -370,5 +372,76 @@ describe('layout/mobile/MobileLayout', () => {
     Object.defineProperty(document, 'hidden', { value: false, configurable: true })
     ;(wrapper.vm as any).fetchUnreadCount()
     expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
+  })
+
+  // ============ 悬浮玻璃按钮件源码契约（2026-08-28 质感升级回归保护） ============
+
+  it('源码契约：Tab 栏为悬浮圆角玻璃条（内缩定位/圆角/玻璃三件套/无双重安全区）', () => {
+    const source = readLayoutSource()
+    const tabbarRule = source.slice(
+      source.indexOf('.mobile-tabbar {'),
+      source.indexOf('.mobile-tab {')
+    )
+    // 悬浮形态：左右内缩 + 底部偏移承担安全区（回退贴底 left/right: 0 即红）
+    expect(tabbarRule).toContain('left: 12px')
+    expect(tabbarRule).toContain('right: 12px')
+    expect(tabbarRule).toContain('bottom: calc(8px + env(safe-area-inset-bottom))')
+    // 安全区只能由 bottom 偏移承担：内部 padding-bottom 会叠加成双倍避让
+    expect(tabbarRule).not.toContain('padding-bottom')
+    // 轻微圆角 + 玻璃三件套（前缀齐全，缺任一则旧 WebView / 旧 iOS 无效果）
+    expect(tabbarRule).toContain('border-radius: var(--radius-xl, 16px)')
+    expect(tabbarRule).toContain('background: var(--glass-bg')
+    expect(tabbarRule).toContain('\n  backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(tabbarRule).toContain('\n  -webkit-backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(tabbarRule).toContain('border: var(--glass-border')
+    expect(tabbarRule).toContain('box-shadow: var(--shadow-lg')
+    // 层级：低于抽屉（el-drawer 2000+），浮标（z-index 9）须在其下
+    expect(tabbarRule).toContain('z-index: 10')
+  })
+
+  it('源码契约：Tab 栏 @supports 降级为主题变量实色，条件必须字面量（防 var() 恒真坑）', () => {
+    const source = readLayoutSource()
+    // 字面量条件：var() 写进 @supports 条件会被部分引擎判 unknown → not() 恒真
+    // → 降级实色在支持玻璃的浏览器上也生效（Navbar 等桌面端 4 处的既有隐患形态，勿"对齐"）
+    expect(source).toContain('@supports not (backdrop-filter: blur(12px)) {')
+    const fallback = source.slice(
+      source.indexOf('@supports not (backdrop-filter: blur(12px))'),
+      source.indexOf('.mobile-tab {')
+    )
+    // 降级走主题变量（为暗色模式留出路），不回退裸 #fff/#e4e7ed
+    expect(fallback).toContain('.mobile-tabbar')
+    expect(fallback).toContain('background: var(--color-bg-primary, #FFFFFF)')
+    expect(fallback).toContain('border: 1px solid var(--color-border-primary, #E5E7EB)')
+  })
+
+  it('源码契约：内容区底部留白适配悬浮条（80px + 安全区，72px 贴底旧值回归即红）', () => {
+    const source = readLayoutSource()
+    const contentRule = source.slice(
+      source.indexOf('.mobile-content {'),
+      source.indexOf('.mobile-content.swipe-anim-next')
+    )
+    expect(contentRule).toContain('padding: 12px 12px calc(80px + env(safe-area-inset-bottom))')
+  })
+
+  it('几何契约：返回顶部浮标与 Tab 栏顶边净空 ≥ 12px（跨文件联动，单侧改动挤压即红）', () => {
+    const layout = readLayoutSource()
+    const torrents = fs.readFileSync(
+      path.resolve(__dirname, '../../src/views/mobile/torrents.vue'), 'utf-8'
+    )
+    const tabRule = layout.slice(layout.indexOf('.mobile-tab {'), layout.indexOf('.mobile-tab.is-active'))
+    const barRule = layout.slice(layout.indexOf('.mobile-tabbar {'), layout.indexOf('.mobile-tab {'))
+    const backtopRule = torrents.slice(
+      torrents.indexOf('.m-backtop {'),
+      torrents.indexOf('@supports not (backdrop-filter: blur(12px))')
+    )
+    const heightMatch = tabRule.match(/height: (\d+)px/)
+    const barBottomMatch = barRule.match(/bottom: calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/)
+    const backtopBottomMatch = backtopRule.match(/bottom: calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/)
+    if (!heightMatch || !barBottomMatch || !backtopBottomMatch) {
+      throw new Error('几何契约锚点缺失：Tab 高度或 bottom calc 声明被改动')
+    }
+    // Tab 栏顶边 = 底距 + Tab 高（当前 8 + 56 = 64），浮标 bottom 当前 80 → 净空 16px
+    const gap = Number(backtopBottomMatch[1]) - (Number(barBottomMatch[1]) + Number(heightMatch[1]))
+    expect(gap).toBeGreaterThanOrEqual(12)
   })
 })
