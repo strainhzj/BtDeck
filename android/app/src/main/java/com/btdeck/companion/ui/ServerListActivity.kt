@@ -298,7 +298,7 @@ class ServerListActivity : AppCompatActivity() {
         fun testConnection(position: Int) {
             val profile = profileAt(position) ?: return
             lifecycleScope.launch {
-                val report = healthClient.check(profile.baseUrl)
+                val report = healthClient.check(profile.baseUrl, profile.trustedCertFingerprints.toSet())
                 profile.healthState = report.state
                 profile.serverVersion = report.version
                 profile.lastHealthCheckedAt = System.currentTimeMillis()

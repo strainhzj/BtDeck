@@ -150,7 +150,7 @@ class WebViewActivity : AppCompatActivity() {
     /** 服务端版本提示：后台健康检查，副标题展示 v{version} · 状态。 */
     private fun refreshVersionHint() {
         lifecycleScope.launch {
-            val report = healthClient.check(profile.baseUrl)
+            val report = healthClient.check(profile.baseUrl, profile.trustedCertFingerprints.toSet())
             profile.healthState = report.state
             profile.serverVersion = report.version ?: profile.serverVersion
             profile.lastHealthCheckedAt = System.currentTimeMillis()
