@@ -11,8 +11,8 @@ from app.auth.dependencies import require_authenticated_user, AuthenticatedUserI
 import app.auth.security as security
 from app.auth import models
 from typing import Annotated
-import qrcode
-from qrcode.image.pil import PilImage
+# qrcode/PIL 延迟导入：仅 2FA 二维码接口需要；顶层导入会把 PIL 拖进完整启动链
+# （Android 16KB 环境自建 pillow 兼容 wheel 攻破前会阻断服务端启动，桌面零差异）
 from io import BytesIO
 import base64
 import logging
@@ -166,6 +166,9 @@ def twofa_verify_qrcode(
         return ""
     # 用户2fa启用标识为0则返回二维码，1则返回空
     if user.two_factor_flag == "0":
+        import qrcode
+        from qrcode.image.pil import PilImage
+
         link = utils.get_totp_uri(str(user.two_factor_secret), str(user.username))
         qr = qrcode.make(
             data=link,
@@ -330,6 +333,9 @@ def verify_password_for_2fa(
             db.refresh(user)
 
         # 6. 生成二维码
+        import qrcode
+        from qrcode.image.pil import PilImage
+
         link = utils.get_totp_uri(str(user.two_factor_secret), str(user.username))
         qr = qrcode.make(
             data=link, version=3, error_correction=qrcode.ERROR_CORRECT_H, box_size=4, border=0, image_factory=PilImage

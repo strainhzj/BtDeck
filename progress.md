@@ -6290,3 +6290,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试结果**：后端定向三文件 **110 passed**；前端定向 5 suites / **237 passed**，前端全量 84 suites / **1258 passed**。后端全量 4145 collected，结果 **4136 passed / 7 skipped / 2 failed**；两项失败分别对应本任务开始前已存在的未暂存 `backend/app/api/endpoints/health.py` 新增 build 字段但旧断言未更新，以及 `deploy/requirements-linux-package.txt` 改为引用 lock 后旧测试仍要求本文件直接出现 openpyxl，均与本批 8 个测试文件无重叠。
 - **质量门禁**：前端 `npm run typecheck`、`npm run lint`、`npm run build` 通过；后端目标 mypy、flake8、py_compile、`scripts/lint_btdeck.py` 通过。Ruff format 120 对两个 API 测试通过，`test_active_only_filter.py` 只报告本批未触及的既有 L177 字符串拼接；Black 24.10 在当前 Windows 对测试文件按项目 120 线宽仍无输出挂起并已中止。根 `bash ./init.sh --ci` 仍在 WSL 创建阶段报 `Bash/Service/CreateInstance/E_ACCESSDENIED`。
 - **记录状态**：`feature_list.json`、`docs/roadmap/tests/README.md`、`docs/roadmap/perspectives/test-coverage.md` 与 `session-handoff.md` 已同步。本轮仅新增/扩展测试和证据，业务源码无需再改；回归加固尚未 Git 提交，保留工作区其它发布构建相关未提交内容。
+
+## 2026-08-29（晚）：判据 6 达成——完整后端 16KB 页 Android 全通，Phase 0 闸门全过（task .1 置 done）
+
+- **16KB ps16k AVD 全新安装 9/9 全绿**（完整导入/迁移/uvicorn 服务/静态首页+阶段1）；判据 1-6 全部达成，Phase 3 解锁（正式放行待用户确认 arm64 真机项）。
+- **16KB 全依赖面攻坚（~20 轮 CI）**：greenlet/regex/pycryptodomex/bcrypt 自建全绿。关键沉淀：CC/CXX wrapper 剥宿主 sysconfig 注入（-I/usr/include 连体+分体、-m64、--fix-cortex）+ -nostdinc 显式 NDK isystem 根治 + .so 自动 -shared + c-ext 必须补 DT_NEEDED libpython + NEEDED 改名表（libz.so.1→libz.so 等）。pillow 挂其自家后端深处（登记 ANDROID-DROP）。
+- **主仓后端小改**：cuser.py 的 qrcode/PIL 顶层导入改函数内延迟（桌面零差异，cuser 10 测试全绿）——完整启动链不再触碰 PIL。
+- wheels 仓推至 917bb89；索引常驻五包自建 wheel + bencodepy。
