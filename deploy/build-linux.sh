@@ -21,7 +21,9 @@ PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
 PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
 PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
 
-VERSION="1.0.5"
+# 产品版本唯一输入：release/release-config.json（candidate.product_version），
+# 本变量必须与之一致（版本一致性检查强制）
+VERSION="1.0.6"
 ARCH="amd64"
 
 GREEN='\033[0;32m'

@@ -2,7 +2,9 @@
 """
 版本信息集中管理模块
 
-所有版本相关信息在此处维护，发新版本时只需修改此文件。
+产品版本的唯一输入是 release/release-config.json（candidate.product_version）；
+本文件的 CURRENT_VERSION 必须与之一致，由 scripts/release/generate_build_info.py
+--check-versions 与 backend/tests/release/test_version_consistency.py 强制校验。
 
 使用方式：
     from app.version import CURRENT_VERSION, VERSION_HISTORY, get_version_info
@@ -13,13 +15,27 @@ from typing import Any, Dict, Optional
 # ============================================================
 # 当前版本（发版时只需修改这里）
 # ============================================================
-CURRENT_VERSION = "1.0.5"
+CURRENT_VERSION = "1.0.6"
 
 
 # ============================================================
 # 版本历史记录（按版本号倒序排列）
 # ============================================================
 VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
+    "1.0.6": {
+        "previous_version": "1.0.5",
+        "release_date": "TBD",
+        "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.6",
+        "summary": "交付制品等价性与发布门禁（开发中，正式发布前补全说明）",
+        "content": """
+## BtDeck v1.0.6 版本更新
+
+发布内容将在正式发布前补全。
+
+---
+感谢您使用 BtDeck！如有问题或建议，请通过导航栏的反馈按钮提交。
+""",
+    },
     "1.0.5": {
         "previous_version": "1.0.4",
         "release_date": "2026-08-21",

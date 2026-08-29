@@ -61,9 +61,12 @@ def test_liveness_does_not_touch_database(monkeypatch):
     body = response.json()
     assert body["status"] == "success"
     assert body["msg"] == "服务存活"
-    # version 供伴侣模式（dual-mode-client Phase 2）版本提示，进程内常量无 I/O
-    assert body["data"] == {"status": "alive", "version": health.CURRENT_VERSION}
-    assert body["data"]["version"] == version.CURRENT_VERSION
+    # version 供伴侣模式（dual-mode-client Phase 2）版本提示，进程内常量无 I/O；
+    # build 为 W1 发布身份块（G1，见 tests/release/test_health_build_identity.py
+    # 的专项回归），此处仅锁定原有两键不被破坏
+    assert body["data"]["status"] == "alive"
+    assert body["data"]["version"] == health.CURRENT_VERSION
+    assert "build" in body["data"]
     probe.assert_not_awaited()
 
 

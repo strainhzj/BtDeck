@@ -1,46 +1,14 @@
 # Runtime dependencies for Linux PyInstaller packaging.
-# Keep this separate from backend/requirements.txt so test/lint/dev tools do not
-# leak into packaged binaries through the global Python environment.
+# 结构（release-artifact-equivalence-gate W1 / G2）：
+#   公共运行依赖一律来自 backend/requirements-lock.txt（pip-compile --generate-hashes），
+#   本文件只允许追加 Linux 平台增量依赖（白名单见 scripts/release/check_dependencies.py
+#   的 PLATFORM_EXTRAS_WHITELIST），禁止在此复制/覆盖公共依赖版本。
+#   结构由 backend/tests/release/test_dependency_lock.py 强制。
+#
+# 历史说明：2026-08-28 前本文件是 backend/requirements.txt 的手工全量拷贝，
+# 导致 qbittorrent-api ~=2025.5.0 与主清单 ~=2025.2.0 分叉，且混入了运行时
+# 零使用的 passlib/email-validator。
+
+-r ../backend/requirements-lock.txt
 
 pyinstaller~=6.20.0
-
-werkzeug~=3.1.3
-uvicorn~=0.35.0
-sqlalchemy~=2.0.15
-setuptools~=75.8.0
-click~=8.1.8
-requests~=2.32.3
-pydantic~=2.12.4
-fastapi~=0.115.6
-pyotp~=2.9.0
-qrcode~=8.1
-pycryptodomex~=3.23.0
-python-dotenv~=0.21.0
-PyYAML~=6.0.1
-gmssl~=3.2.2
-qbittorrent-api~=2025.5.0
-regex>=2024.11.6,<2027.0.0
-ping3~=4.0.8
-pyjwt~=2.8.0
-aiosqlite~=0.21.0
-pillow~=11.1.0
-transmission-rpc~=7.0.11
-urllib3~=2.2.2
-# W13/CVE-2024-47874: align with backend/requirements.txt; fastapi 0.115.6+
-# is required so pip can resolve starlette 0.41.x instead of vulnerable 0.38.x
-starlette~=0.41.3
-alembic~=1.13.3
-bencodepy~=0.9.5
-apscheduler~=3.10.0
-python-multipart~=0.0.20
-passlib[bcrypt]~=1.7.4
-bcrypt~=5.0.0  # align with backend/requirements.txt (passlib extra does not pin)
-pydantic-settings~=2.12.0
-croniter~=3.0.4
-httpx~=0.28.0
-packaging~=24.0
-email-validator~=2.2.0
-
-# Audit log Excel export runtime dependency (openpyxl direct write; pandas removed
-# in dual-mode-client Phase 1.3 dependency slimming, zero imports verified).
-openpyxl~=3.1.0

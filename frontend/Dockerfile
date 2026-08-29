@@ -1,7 +1,8 @@
 # BTDeck 前端 Dockerfile（简化版）
 # 适用于快速构建和部署
 
-FROM node:18.20.1-slim
+# Node 22 线（与 Dockerfile.prod/regression.yml 统一，W0 实测 22.23.2），digest 固定（W1/G2）
+FROM node:22-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 前端应用"

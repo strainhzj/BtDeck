@@ -5,7 +5,9 @@
 # ============================================
 # 阶段1: builder - 编译所有依赖的 wheel
 # ============================================
-FROM python:3.11-slim AS builder
+# 基础镜像 digest 固定（release-artifact-equivalence-gate W1/G2）：
+# python:3.11-slim @ sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
+FROM python:3.11-slim@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6 AS builder
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端构建阶段 - wheel 编译"
@@ -35,22 +37,38 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖清单
-COPY requirements.txt .
+# 复制依赖清单（requirements.txt 为直接依赖源，lock 为唯一安装输入）
+COPY requirements.txt requirements-lock.txt ./
 
-# 升级打包工具，并将所有依赖编译为 wheel 到 /build/wheels
+# 升级打包工具，并将锁定的全部依赖编译为 wheel 到 /build/wheels
 # wheel 离线安装可让 runtime 阶段无需 gcc/联网
 # pip 镜像源由上面的 ENV 自动生效（PIP_INDEX_URL 为空时走官方 PyPI）
+# --require-hashes：锁内全量 ==+哈希，任何文件与哈希不符即失败（G2 fail-closed）
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
-    pip wheel --no-cache-dir --wheel-dir=/build/wheels -r requirements.txt
+    pip wheel --no-cache-dir --wheel-dir=/build/wheels --require-hashes -r requirements-lock.txt
 
 # ============================================
 # 阶段2: runtime - 生产运行时
 # ============================================
-FROM python:3.11-slim
+# digest 同 builder 阶段（python:3.11-slim）
+FROM python:3.11-slim@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端服务 - FastAPI + Python 3.11"
+
+# OCI 身份标签（G1/G10）：正式构建由 build-images.sh / release-gate 注入
+# --build-arg OCI_VERSION=1.0.6 OCI_REVISION=<40位SHA> OCI_CREATED=<RFC3339>
+# 本地未注入时为空串；W2 严格构建模式会校验非空
+ARG OCI_VERSION=""
+ARG OCI_REVISION=""
+ARG OCI_CREATED=""
+ARG OCI_SOURCE="https://github.com/strainhzj/BtDeck"
+LABEL org.opencontainers.image.title="BtDeck backend" \
+      org.opencontainers.image.description="BTDeck 后端服务 - FastAPI + Python 3.11" \
+      org.opencontainers.image.version="${OCI_VERSION}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.created="${OCI_CREATED}" \
+      org.opencontainers.image.source="${OCI_SOURCE}"
 
 # runtime 阶段只重新声明 APT_MIRROR（离线装 wheel 不需要 PIP_*）
 # 注意：ARG 不能跨 FROM 继承，必须在本阶段重新声明才能在 sed 中使用
@@ -82,12 +100,12 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 离线安装 wheel（不联网，不依赖 builder 镜像）
-# 用 -r requirements.txt 让 pip 自解析依赖与 extras，避免手动构造包名列表的歧义
-COPY requirements.txt /tmp/requirements.txt
+# --require-hashes 强制哈希校验：与构建环境解析结果逐字节一致（G2）
+COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY --from=builder /build/wheels /tmp/wheels
 RUN pip install --no-cache-dir --no-index --find-links=/tmp/wheels \
-    -r /tmp/requirements.txt \
-    && rm -rf /tmp/wheels /tmp/requirements.txt
+    --require-hashes -r /tmp/requirements-lock.txt \
+    && rm -rf /tmp/wheels /tmp/requirements-lock.txt
 
 # 创建必要的目录并设置权限
 RUN mkdir -p /app/logs /app/config /app/data && \

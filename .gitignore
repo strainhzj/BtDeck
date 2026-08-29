@@ -35,6 +35,12 @@ build/
 # （release-artifact-equivalence-gate G0～G10 证据可追溯性要求）
 !release/evidence/**/*.log
 
+# 发布生成物（按制品本地生成，不入库；正式制品与 manifest 由 CI 产出并归档）
+release/build-info.json
+release/source-manifest.json
+release/frontend-asset-manifest.json
+release/release-manifest.json
+
 # ================================
 # Python
 # ================================

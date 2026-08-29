@@ -20,6 +20,7 @@ from sqlalchemy import select, text
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import AuthenticatedUserInfo, require_authenticated_user
+from app.core import build_info
 from app.core.config import settings
 from app.core.startup_guard import StartupGuardError, resolve_runtime_info, validate_worker_count
 from app.database import AsyncSessionLocal
@@ -152,25 +153,42 @@ def _record_readiness_failures(reason_codes: Iterable[str]) -> None:
 
 
 @router.get("/health/live", summary="进程存活检查")
-async def health_live() -> CommonResponse[Dict[str, str]]:
+async def health_live() -> CommonResponse[Dict[str, Any]]:
     """只证明事件循环能处理请求；不访问数据库、下载器或其它外部依赖。
 
     version 供伴侣模式（dual-mode-client Phase 2）做服务端版本提示，
     读取的是进程内常量，不引入任何 I/O。
+    build 为发布身份块（G1）：liveness 即使身份非法也保持 200（进程活着），
+    身份是否阻断就绪由 /health/ready 判定。
     """
     return CommonResponse(
-        status="success", msg="服务存活", code="200", data={"status": "alive", "version": CURRENT_VERSION}
+        status="success",
+        msg="服务存活",
+        code="200",
+        data={"status": "alive", "version": CURRENT_VERSION, "build": build_info.build_identity_block()},
     )
 
 
 @router.get("/health/ready", summary="应用就绪检查")
 async def health_ready(request: Request):
-    """执行严格有界的只读 readiness 检查。"""
+    """执行严格有界的只读 readiness 检查。
+
+    build-info 非法（缺失字段/dirty/畸形）时 reasonCodes 追加
+    build_identity_invalid 并整体 503（fail-closed，G1）；dev 源码模式
+    （无嵌入身份）不阻断开发环境。
+    """
     worker_check, worker_reason = _worker_readiness_check()
     lag_check, lag_reason = _lag_readiness_check(request.app)
     database_check, database_reason = await _database_readiness_check()
 
-    reason_codes = [reason for reason in (database_reason, worker_reason, lag_reason) if reason]
+    identity_block = build_info.build_identity_block()
+    identity_reason = "build_identity_invalid" if identity_block.get("status") == "invalid" else None
+
+    reason_codes = [
+        reason
+        for reason in (database_reason, worker_reason, lag_reason, identity_reason)
+        if reason
+    ]
     checks = {"database": database_check, "worker": worker_check, "eventLoopLag": lag_check}
     if reason_codes:
         _record_readiness_failures(reason_codes)
@@ -185,6 +203,7 @@ async def health_ready(request: Request):
                     "version": CURRENT_VERSION,
                     "reasonCodes": reason_codes,
                     "checks": checks,
+                    "build": identity_block,
                 },
             ),
         )
@@ -193,7 +212,12 @@ async def health_ready(request: Request):
         status="success",
         msg="应用已就绪",
         code="200",
-        data={"status": "ready", "version": CURRENT_VERSION, "checks": checks},
+        data={
+            "status": "ready",
+            "version": CURRENT_VERSION,
+            "checks": checks,
+            "build": identity_block,
+        },
     )
 
 
