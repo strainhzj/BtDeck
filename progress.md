@@ -6266,3 +6266,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 验证：16KB AVD 6/6、常规 4096 AVD 6/6 全绿；install -r 升级安装覆盖。
 - 附带：深导入需大栈线程（16MB）——Phase 3 app.main 导入的前置技法。
 - 下一批主任务：判据 5 阶段 2 实装（backend/alembic/契约/frontend dist 注入 testapp + 全量依赖可解析性梳理）。
+
+## 2026-08-29：判据 5 达成——BtDeck 完整 import graph 在 Android 全通（Phase 0 闸门仅剩判据 6 收尾）
+
+- **实装**：android-wheels 仓 fullgraph 阶段 2（staging 脚本/bootstrap 运行体/Kotlin 测试/gradle 属性接线），backend+alembic+frontend dist 注入 testapp，路径锚定零后端改动。
+- **验证**：4096 x86_64 AVD **9/9 全绿**——完整导入/迁移（空库→head+幂等）/uvicorn loopback 服务（lifespan 完整初始化：调度器+三 lane runtime+仪表盘任务；/health/live 200；静态 SPA 首页 200）。
+- **自建 bcrypt 5.0.0**：官方 3.2.2 在 Android15 16K 镜像 dlopen 失败（老 NDK 形态）——走 setuptools-rust 原生后端（maturin 会误取 Cargo 元数据）；retag 泛化为"错误 libpython3.X 移除+目标补记"（abi3 链接形态）。bencodepy 入 extra-wheels（sdist-only+distutils）。tzdata 补充（Android 无系统 tz 库，调度器 GMT 报错实证）。
+- **新坑登记**：Chaquopy 源集丢孤儿 .py（.pymig+物化解）；包化目录会遮蔽同名库（PEP 420 语义）；testapp 需 INTERNET 权限否则 bind EPERM；uvicorn 拒绑 port 0；gradle 不追踪 -r 文件变化。
+- **16KB 限制**：官方仓库存量 C 扩展 wheel（bcrypt/regex 已证，pillow/pycryptodomex/greenlet 大概率同类）在 16K 镜像系统性不可载——判据 6 收尾=全依赖面 16KB 化，Phase 3 前必须解决。
+- `.1` 保持 in-progress（判据 6 未收）；wheels 仓已推 a9caf91。
