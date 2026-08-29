@@ -122,6 +122,14 @@
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 
+### 2026-08-29 实时终态收敛回归
+
+| 新增/扩展测试文件 | 覆盖源文件 | 覆盖内容 |
+|------------|-----------|---------|
+| `tests/api/test_torrent_speed_regression.py` | `app/api/endpoints/torrent_speed.py` | TTL 补查退避、超过 20 条任务的公平轮转、完成任务从队列移除 |
+| `tests/api/test_active_torrents_endpoint.py` | `app/api/endpoints/torrent_speed.py` | 速度字段新增 status/downloadComplete 契约；速度为 0 的完成态核验及 missing 复合键返回 |
+| `tests/endpoints/test_active_only_filter.py` | `app/api/endpoints/torrent_speed.py` | 终态证据同步进度 100、状态与 completed_date 的数据库写入；显式未完成优先级与完成后旧快照不回退 |
+
 ## 前端测试分布
 
 ### `frontend/tests/unit/`（70 个 spec）
@@ -154,7 +162,7 @@
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
 | `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
 | `mobile-torrent-detail.spec.ts` ✨2026-08-24 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新 |
-| `mobile-torrents.spec.ts` ✨2026-08-26 | 移动种子页简单搜索（自搜索页迁入）：筛选面板四字段透传、重置/下拉刷新带条件重载、简单模板回填执行/高级模板转搜索页、空态区分 |
+| `mobile-torrents.spec.ts` ✨2026-08-26 | 移动种子页简单搜索（自搜索页迁入）：筛选面板四字段透传、重置/下拉刷新带条件重载、简单模板回填执行/高级模板转搜索页、空态区分；实时速度终态按复合键更新与核验后状态筛选刷新 |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
 | `notification-drawer-detail.spec.ts` ✨2026-08-27 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
@@ -179,7 +187,7 @@
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
-| `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
+| `torrent-batch.spec.ts`（1300 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器；200/206 速度快照、终态 100% 归一与连续未命中核验候选） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
 | `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
 | `torrent-loading-mask.spec.ts` ✨2026-08-27 | Element UI 2.15.13 真实 Loading 指令：fullscreen mask 挂 body、lock/unlock、隐藏状态与加载中销毁清理 |

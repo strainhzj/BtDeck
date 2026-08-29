@@ -92,6 +92,31 @@ class TestTTLQueue:
         result = q.get_disappeared(set())
         assert len(result["dl_1"]) == _MAX_SUPPLEMENT_COUNT
 
+    def test_get_disappeared_rotates_large_group(self):
+        """同一下载器超过单次配额时，后半段任务下一轮也必须得到补查。"""
+        from app.api.endpoints.torrent_speed import _MAX_SUPPLEMENT_COUNT, _SUPPLEMENT_RETRY_INTERVAL
+
+        q = self._make_queue(ttl=60)
+        total = _MAX_SUPPLEMENT_COUNT + 5
+        for i in range(total):
+            q.put("dl_1", 0, f"hash_{i}")
+
+        first = q.get_disappeared(set())
+        assert len(first["dl_1"]) == _MAX_SUPPLEMENT_COUNT
+        # 模拟退避窗口结束，验证下一批不是固定的前 N 个。
+        for entry in q._store.values():
+            entry["next_probe_at"] = time.monotonic() - _SUPPLEMENT_RETRY_INTERVAL
+        second = q.get_disappeared(set())
+        second_hashes = {entry["hash"] for entry in second["dl_1"]}
+        assert second_hashes.intersection({f"hash_{i}" for i in range(_MAX_SUPPLEMENT_COUNT, total)})
+
+    def test_remove_completed_task(self):
+        """确认完成后从 TTL 队列移除，后续不再补查。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_done")
+        q.remove("dl_1", "hash_done")
+        assert q.get_disappeared(set()) == {}
+
     def test_get_disappeared_grouped_by_downloader(self):
         """消失种子应按 downloader_id 分组"""
         q = self._make_queue(ttl=60)
@@ -136,6 +161,19 @@ class TestTTLQueue:
 
 class TestSupplementSync:
     """测试补查同步函数"""
+
+    def test_runtime_state_normalizes_non_finite_progress(self):
+        """下载器偶发返回 NaN/Infinity 时不得被误判为 100% 完成。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        assert _normalize_runtime_state(float("nan"), "downloading", 0) == (0.0, "downloading", False)
+        assert _normalize_runtime_state(float("inf"), "downloading", 0) == (0.0, "downloading", False)
+
+    def test_explicit_incomplete_overrides_terminal_status_inference(self):
+        """显式 downloadComplete=false 不应被 seeding 状态推断覆盖。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        assert _normalize_runtime_state(80, "seeding", 0, explicit_complete=False) == (80.0, "seeding", False)
 
     def test_supplement_qb_sync_basic(self):
         """qBittorrent 补查应返回正确的字段"""

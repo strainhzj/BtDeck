@@ -143,16 +143,21 @@ import {
   getTorrentList,
   getTrackerDomains,
   getActiveTorrents,
+  reconcileRuntimeTorrentStates,
   pauseTorrents,
   resumeTorrents,
   deleteTorrents,
   Torrent
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
-import { extractErrorMessage, formatSpeed } from '@/utils/formatters'
+import { extractErrorMessage, formatSpeed, normalizeTorrentStatus } from '@/utils/formatters'
 import { setStoredUiMode } from '@/utils/ui-mode'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
-import { buildSpeedSnapshot } from '@/views/torrents/utils/torrentBatch'
+import {
+  buildSpeedSnapshot,
+  collectRuntimeStateReconcileCandidates
+} from '@/views/torrents/utils/torrentBatch'
+import type { SpeedUpdate } from '@/views/torrents/utils/torrentBatch'
 import {
   buildTorrentSpeedTargetIndex,
   resolveTorrentSpeedTargets
@@ -183,9 +188,9 @@ interface SelectOption {
  * 已裁撤（仅保留高级搜索），本页不再承接模板应用回填（跨页缓存链路随之移除）。
  *
  * 2026-08-28 UX 增强：卡片实时速度行（SpeedPollingMixin 10s 省电轮询 +
- * visibilitychange 后台暂停，复用桌面 buildSpeedSnapshot 合并，未命中行清零防冻结）；
+ * visibilitychange 后台暂停，复用桌面 buildSpeedSnapshot 合并状态与完成证据，未命中行清零防冻结）；
  * v-infinite-scroll 无限滚动替代"加载更多"按钮 + 返回顶部浮标；暂停/恢复乐观状态
- * 更新（active 轮询不含 status）；空状态 CTA（无下载器→去添加，零种子→桌面版引导）。
+ * 更新（active 轮询包含 status/完成证据）；空状态 CTA（无下载器→去添加，零种子→桌面版引导）。
  */
 @Component({
   name: 'MobileTorrents',
@@ -207,6 +212,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
   private downloaderOptions: SelectOption[] = []
   private trackerDomainOptions: string[] = []
+  private runtimeStateMisses: Record<string, number> = {}
+  private runtimeStateReconcileInFlight = false
 
   private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
 
@@ -231,30 +238,89 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     await this.reload()
   }
 
+  private applySpeedUpdates(updates: SpeedUpdate[]): boolean {
+    const index = buildTorrentSpeedTargetIndex(this.list)
+    let terminalObserved = false
+    updates.forEach(update => {
+      resolveTorrentSpeedTargets(index, update).forEach(row => {
+        row.downloadSpeed = update.downloadSpeed
+        row.uploadSpeed = update.uploadSpeed
+        row.progress = update.downloadComplete ? 100 : update.progress
+        if (update.status) {
+          row.status = normalizeTorrentStatus(update.status, update.status)
+        }
+        if (update.downloadComplete) {
+          row.downloadComplete = true
+          terminalObserved = true
+        }
+      })
+    })
+    return terminalObserved
+  }
+
+  private async reconcileRuntimeStates(
+    candidates: Array<{ downloader_id: string, hash: string }>
+  ): Promise<boolean> {
+    if (!candidates.length || this.runtimeStateReconcileInFlight) return false
+    this.runtimeStateReconcileInFlight = true
+    try {
+      const response = await reconcileRuntimeTorrentStates(candidates)
+      const data = response.code === '200' && response.data
+        ? response.data
+        : null
+      if (!data || !Array.isArray(data.list)) return false
+      const snapshot = buildSpeedSnapshot({
+        status: response.status,
+        msg: response.msg,
+        code: '200',
+        data: data.list
+      })
+      const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+      if (terminalObserved && this.filters.statuses.includes('downloading')) {
+        await this.reload()
+      }
+      return true
+    } catch {
+      return false
+    } finally {
+      this.runtimeStateReconcileInFlight = false
+    }
+  }
+
   /** SpeedPollingMixin 轮询体：拉活跃速度并就地合并进列表行（桌面同款纯函数工具） */
   protected async loadActiveSpeed(): Promise<boolean> {
     try {
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
-      if (!snapshot.ready) return false
+      if (!snapshot.ready && !snapshot.partial) return false
       const index = buildTorrentSpeedTargetIndex(this.list)
       const activeKeys = new Set<string>()
+      const terminalObserved = this.applySpeedUpdates(snapshot.updates)
       snapshot.updates.forEach(update => {
-        resolveTorrentSpeedTargets(index, update).forEach(row => {
-          row.downloadSpeed = update.downloadSpeed
-          row.uploadSpeed = update.uploadSpeed
-          row.progress = update.progress
-          activeKeys.add(this.keyOf(row))
+        resolveTorrentSpeedTargets(index, update).forEach(row => activeKeys.add(this.keyOf(row)))
+      })
+      // 206 只覆盖成功下载器，不能清掉其它下载器上一轮的速度；完整快照才允许清零未命中行。
+      if (snapshot.ready) {
+        this.list.forEach(row => {
+          if (!activeKeys.has(this.keyOf(row))) {
+            row.downloadSpeed = 0
+            row.uploadSpeed = 0
+          }
         })
-      })
-      // active 接口只含速度>0 的种子：ready 后未命中的行速度清零，防止停止后冻结旧值
-      this.list.forEach(row => {
-        if (!activeKeys.has(this.keyOf(row))) {
-          row.downloadSpeed = 0
-          row.uploadSpeed = 0
+        const reconcile = collectRuntimeStateReconcileCandidates(
+          this.list,
+          snapshot.updates,
+          this.runtimeStateMisses
+        )
+        this.runtimeStateMisses = reconcile.misses
+        if (reconcile.candidates.length) {
+          await this.reconcileRuntimeStates(reconcile.candidates)
         }
-      })
-      return true
+      }
+      if (terminalObserved && this.filters.statuses.includes('downloading')) {
+        await this.reload()
+      }
+      return snapshot.ready
     } catch {
       return false
     }
@@ -337,6 +403,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private async reload(): Promise<void> {
     this.list = []
     this.total = 0
+    this.runtimeStateMisses = {}
     await this.fetchPage()
   }
 
@@ -381,7 +448,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
 
   private keyOf(t: Torrent): string {
-    return `${t.downloaderId}-${t.hash}`
+    return `${t.downloaderId || t.downloader_id || ''}-${t.hash}`
   }
 
   private async pause(t: Torrent): Promise<void> {
@@ -417,7 +484,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     try {
       const res = await action()
       if (res && res.code && res.code !== '200') return
-      // 乐观状态更新：active 速度轮询不含 status 字段，不更新标签会停留在旧值
+      // 乐观状态更新：实时快照也会带 status；操作成功后立即覆盖，避免等待下一轮轮询
       if (nextStatus) t.status = nextStatus
       this.$message.success('操作成功')
     } catch (e) {

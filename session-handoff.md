@@ -3566,3 +3566,22 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 应用户要求三套件 51→62 例：util +6（语法严格性/语法集交叉契约/端到端快照/跨行内联合并/分隔线交错）、mobile +3（摘要与详情双层分离契约/空摘要不渲染块/纯函数不污染原始 content）、desktop +3（精确全文/空串路径/props 响应式重算）。
 - 变异验证四组全部精确拦截（回退双端摘要→各 5 红；删分隔线丢弃→三层 7 红；删粗体替换→8 红），备份-变异-恢复（源码未提交不可 checkout 还原）；锚点跨行尾会因 CRLF 匹配失败，行内锚点+唯一性断言可避开。
 - 还原后 62 例全绿，全量复验与文档同步见 progress.md；仍未提交。
+
+## 2026-08-29 交接：种子实时终态收敛与部分快照容错
+
+### 已完成
+
+- `backend/app/api/endpoints/torrent_speed.py`：实时速度响应增加归一化 `status`/`downloadComplete`；显式未完成标记优先于状态推断，且完成时间/完成状态/100% 一旦落库后不会被异步旧快照回退；完成态强制进度 100 并在响应前同步进度、状态、`completed_date`；TTL 补查按下载器独立轮转、2 秒退避，确认完成后移除；新增 `POST /torrents/runtime-state/reconcile`，按 `downloader_id + hash` 批量核验最多 100 项并返回 `list/missing`。
+- `frontend/src/api/torrents.ts`、`views/torrents/utils/torrentBatch.ts`、桌面列表/传统视图及移动种子页：兼容 200/206 快照，206 增量合并不清空旧值；状态/完成证据统一收敛，完整快照连续两次未命中后低频核验，三种视图均按复合键更新。
+- 回归测试与文档已同步：`feature_list.json`、`progress.md`、`docs/roadmap/`。
+
+### 验证
+
+- 后端定向套件 94 passed；前端 `torrent-batch.spec.ts` 98 passed，列表/传统/移动组件 75 passed（合计 173）。
+- `python -m py_compile`、mypy、flake8、前端 `npm run typecheck`、`npm run lint -- --no-fix`、前端生产 build 通过。Black 24.10 在当前 Windows 对该文件按项目 `line-length=120` 检查会挂起，`line-length=117` 快速检查无格式差异。
+- 根 `./init.sh --ci` 在当前 Windows/WSL 环境因既有 `E_ACCESSDENIED`/null-byte 输出限制未完成；未执行 Git 提交。
+
+### 后续
+
+- 部署或联调时重点观察完成瞬间：速度归零后列表是否收到 100%/终态；多下载器相同 hash 是否只更新对应行；206 部分快照是否保持其它下载器旧值。
+- 保留用户已有未提交修改：`frontend/src/contracts/advancedSearch.generated.ts` 以及未跟踪的 `.release-build-v1.0.5/`、`data/`。

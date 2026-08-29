@@ -28,7 +28,8 @@ import {
   parseDeleteTaskResult,
   parseSyncDeleteResponse,
   buildSpeedSnapshot,
-  needsActiveSnapshotRefresh
+  needsActiveSnapshotRefresh,
+  collectRuntimeStateReconcileCandidates
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
 import { readFileSync } from 'fs'
@@ -1140,7 +1141,7 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     expect(r.updates).toEqual([])
   })
 
-  it('code=206（部分下载器失败）→ ready=false，视图保留旧速度快照', () => {
+  it('code=206（部分下载器失败）→ ready=false 但应用可用增量', () => {
     const res = {
       code: '206',
       status: 'partial',
@@ -1149,8 +1150,9 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     }
     const r = buildSpeedSnapshot(res)
     expect(r.ready).toBe(false)
-    expect(r.activeSpeedMap).toBeNull()
-    expect(r.updates).toEqual([])
+    expect(r.partial).toBe(true)
+    expect(r.activeSpeedMap?.partial).toEqual({ downloadSpeed: 10, uploadSpeed: 0, progress: 5 })
+    expect(r.updates).toHaveLength(1)
   })
 
   it('data 为 null → ready=false', () => {
@@ -1210,6 +1212,63 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     })
     expect(r.updates.map(update => update.downloaderId)).toEqual(['dl-a', 'dl-b'])
     expect(r.count).toBe(2)
+  })
+
+  it('终态证据强制进度为100，并保留归一化状态', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        {
+          hash: 'done', downloader_id: 'dl-a', downloadSpeed: 0, uploadSpeed: 0,
+          progress: 98.7, status: 'seeding', downloadComplete: true
+        }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      hash: 'done', progress: 100, status: 'seeding', downloadComplete: true
+    })
+  })
+
+  it('只有完成证据没有状态时也补齐 completed，避免列表继续显示 downloading', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'done-without-status', progress: 99.5, downloadComplete: true }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      hash: 'done-without-status', progress: 100, status: 'completed', downloadComplete: true
+    })
+  })
+})
+
+describe('实时终态核验候选收敛', () => {
+  it('连续两次完整快照未命中后按复合键触发一次核验', () => {
+    const list = [
+      { hash: 'same', downloader_id: 'dl-a', status: 'downloading', progress: 50 },
+      { hash: 'same', downloader_id: 'dl-b', status: 'downloading', progress: 50 }
+    ]
+    const first = collectRuntimeStateReconcileCandidates(list, [], {})
+    expect(first.candidates).toEqual([])
+    const second = collectRuntimeStateReconcileCandidates(list, [], first.misses)
+    expect(second.candidates).toEqual([{ downloader_id: 'dl-a', hash: 'same' }, { downloader_id: 'dl-b', hash: 'same' }])
+    expect(second.misses['speed:dl-a:same']).toBe(0)
+  })
+
+  it('命中任务会清除未命中计数，避免误触发', () => {
+    const list = [{ hash: 'h1', downloader_id: 'dl-a', status: 'downloading', progress: 10 }]
+    const result = collectRuntimeStateReconcileCandidates(
+      list,
+      [{ hash: 'h1', downloaderId: 'dl-a', downloadSpeed: 10, uploadSpeed: 0, progress: 11 }],
+      { 'speed:dl-a:h1': 1 }
+    )
+    expect(result.candidates).toEqual([])
+    expect(result.misses['speed:dl-a:h1']).toBeUndefined()
+  })
+
+  it('旧列表归一为 unknown 且未完成时仍可进入终态核验', () => {
+    const list = [{ hash: 'legacy', downloader_id: 'dl-a', status: 'unknown', progress: 40 }]
+    const first = collectRuntimeStateReconcileCandidates(list, [], {})
+    const second = collectRuntimeStateReconcileCandidates(list, [], first.misses)
+    expect(second.candidates).toEqual([{ downloader_id: 'dl-a', hash: 'legacy' }])
   })
 })
 

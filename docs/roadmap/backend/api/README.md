@@ -42,7 +42,7 @@
 | 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
 | 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L49 复用普通筛选/排序/分页；`_apply_row_display_filters()` L173 收拢 tracker/tracker_domain/status 三类行级筛选——普通列表原位应用，`same_content_only` L292 延后到分组 join 后仅过滤组内显示行（v1.0.6.40）；`same_content_only` 从不含状态/Tracker 的候选集聚合同名同大小且不同规范化 Hash；`single_error_only` L324 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子；✨2026-08-20 展示对齐判定：`convert_to_vo_with_trackers` 接受可选 `tracker_keyword_map`（None 不覆写），announce/scrape 文本在消息命中失败池且非中性码时覆写"工作失败"（L569/L592），VO 透传 `has_tracker_error`（L466/L637），批量版 `convert_to_vos_with_trackers` 每次列表转换经 `load_active_keyword_map` 加载一次关键词池（L689） |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
-| 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
+| 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存）；`GET /active-torrents` 返回 status/downloadComplete 并区分 200/206 完整/部分快照，完成态进度强制 100；TTL 补查按下载器轮转退避，`POST /runtime-state/reconcile` 按 downloader_id+hash 低频核验消失任务并同步终态 |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |
 | 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；手动/兼容路径复用缓存客户端，sync-single 使用 AsyncSession；Transmission 兼容同步写入错误原因（L560），恢复时写空值清除，Tracker 状态在 L648–654 归一化 |
 | 种子聚合 torrents | `torrents.py` | 种子聚合路由器（include_router 合并 6 个子路由） |

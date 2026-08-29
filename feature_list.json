@@ -5689,6 +5689,31 @@
         "lint": "后端 black(24.10.0)/flake8/mypy 改动文件全过；前端 npm run lint 通过（自动修复仅格式）、tsc --noEmit 零错误、npm run build 通过。",
         "contract": "同步接口 data 新增 level3_file_missing: [{torrent_id, torrent_name}]，msg 追加「N个种子未找到文件，已跳过文件操作直接移入回收站」；异步任务 results 每项 result.file_missing=true 标记；前端 parseSyncDeleteResponse/parseDeleteTaskResult 输出 fileMissingDetail 供 $notify 展示。移动失败的真实错误（目标冲突、智能合并不一致、部分文件移动失败）仍走原回滚失败路径不受影响。"
       }
+    },
+    {
+      "id": "torrent-runtime-terminal-convergence-2026-08-29",
+      "title": "种子实时终态收敛与部分快照容错",
+      "status": "completed",
+      "scope": "fullstack",
+      "description": "实时速度接口补充下载器归一化 status 与 downloadComplete 证据，完成态强制进度 100 并在响应前同步数据库；TTL 补查按下载器公平轮转、退避并在确认完成后移除；新增低频复合键终态核验接口，前端三种种子列表可应用 206 增量快照、按 downloader_id+hash 更新并对连续未命中任务触发核验，避免任务完成后卡在 downloading 或进度冻结。",
+      "evidence": {
+        "tests": "后端定向 94 passed（TTL 退避/公平轮转、终态落库、显式未完成优先级、完成后旧快照不回退、非有限进度防误判、核验接口、既有活动筛选）；前端列表/传统/移动组件 75 passed，torrent-batch 98 passed（206 增量、进度/终态归一、复合键候选收敛）。",
+        "lint": "backend py_compile、mypy、flake8 通过；Black 24.10 在当前 Windows 对该文件按项目 line-length=120 检查会挂起，使用 line-length=117 的快速检查确认无格式差异；frontend npm run typecheck、npm run lint、npm run build 通过；仓库 ./init.sh --ci 在当前 Windows/WSL 环境因既有 E_ACCESSDENIED/null-byte 输出限制未完成。",
+        "contract": "GET /torrents/active-torrents 仍以 200/206 表示完整/部分快照，数据新增 status/downloadComplete；POST /torrents/runtime-state/reconcile 接收最多 100 个复合键并返回 list/missing。"
+      },
+      "files": [
+        "backend/app/api/endpoints/torrent_speed.py",
+        "frontend/src/api/torrents.ts",
+        "frontend/src/types/torrent.ts",
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/mobile/torrents.vue",
+        "backend/tests/api/test_torrent_speed_regression.py",
+        "backend/tests/api/test_active_torrents_endpoint.py",
+        "backend/tests/endpoints/test_active_only_filter.py",
+        "frontend/tests/unit/torrent-batch.spec.ts"
+      ]
     }
   ]
 }

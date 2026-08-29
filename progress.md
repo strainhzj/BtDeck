@@ -6275,3 +6275,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **新坑登记**：Chaquopy 源集丢孤儿 .py（.pymig+物化解）；包化目录会遮蔽同名库（PEP 420 语义）；testapp 需 INTERNET 权限否则 bind EPERM；uvicorn 拒绑 port 0；gradle 不追踪 -r 文件变化。
 - **16KB 限制**：官方仓库存量 C 扩展 wheel（bcrypt/regex 已证，pillow/pycryptodomex/greenlet 大概率同类）在 16K 镜像系统性不可载——判据 6 收尾=全依赖面 16KB 化，Phase 3 前必须解决。
 - `.1` 保持 in-progress（判据 6 未收）；wheels 仓已推 a9caf91。
+
+## 2026-08-29：种子实时终态收敛与部分快照容错
+
+- **根因**：`active-torrents` 原先只返回有速度任务，且 qB/Transmission 实时数据没有状态字段；任务完成后速度归零即从响应消失，TTL 补查固定取前 20 条并重复请求，数据库同步只依据进度 100 合成状态，前端还会丢弃 206 部分快照，导致列表继续显示 downloading 或进度冻结。
+- **后端**：新增运行态归一化（状态映射、进度 0–100 钳制、`downloadComplete` 完成证据）；显式未完成标记优先于状态推断，且完成时间/完成状态/100% 一旦落库后不会被异步旧快照回退；TTL 按下载器独立轮转并设置 2 秒补查退避，确认完成后移除；终态在速度接口返回前同步进度/状态/完成时间，普通进度仍按批次异步写入；新增 `POST /torrents/runtime-state/reconcile`，批量核验最多 100 个复合键并返回 `list/missing`。
+- **前端**：`buildSpeedSnapshot` 接受 206 并返回可合并增量；列表、传统、移动三视图按 `downloader_id + hash` 精确更新速度/状态/进度，完整快照连续两次未命中时低频调用终态核验；完成证据强制进度 100，状态筛选场景核验后刷新列表。
+- **回归与记录**：后端定向 94 passed；前端速度工具 98 passed、列表/传统/移动组件 75 passed（合计 173）；`tsc --noEmit`、`npm run lint`、mypy、flake8、py_compile、前端生产 build 通过。Black 24.10 在当前 Windows 对该文件按项目 `line-length=120` 检查会挂起，改用 `line-length=117` 快速检查确认无格式差异。`./init.sh --ci` 在当前 Windows/WSL 环境仍受既有 E_ACCESSDENIED/null-byte 输出限制；未执行 Git 提交。

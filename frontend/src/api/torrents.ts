@@ -59,6 +59,8 @@ export interface Torrent {
   download_speed?: number | null // 蛇形命名兼容
   uploadSpeed?: number | null
   upload_speed?: number | null // 蛇形命名兼容
+  downloadComplete?: boolean | null
+  download_complete?: boolean | null // 蛇形命名兼容
   peers?: number | null
   seeds?: number | null
 }
@@ -1351,8 +1353,23 @@ export interface ActiveTorrentSpeed {
   downloadSpeed: number  // bytes/s
   uploadSpeed: number    // bytes/s
   progress: number       // 下载进度（百分比，0-100）
+  /** 下载器归一化状态；旧服务端可能不返回，前端需兼容缺省。 */
+  status?: string
+  /** 与速度解耦的下载完成证据（速度为 0 时仍可能为 true）。 */
+  downloadComplete?: boolean
+  download_complete?: boolean
   num_seeds: number
   num_leechs: number
+}
+
+export interface RuntimeStateReconcileItem {
+  downloader_id: string
+  hash: string
+}
+
+export interface RuntimeStateReconcileData {
+  list: ActiveTorrentSpeed[]
+  missing: RuntimeStateReconcileItem[]
 }
 
 /**
@@ -1364,4 +1381,18 @@ export function getActiveTorrents(): Promise<ApiResponse<ActiveTorrentSpeed[]>> 
     url: '/torrents/active-torrents',
     method: 'get'
   }) as unknown as Promise<ApiResponse<ActiveTorrentSpeed[]>>
+}
+
+/**
+ * 低频核验当前可见但连续未出现在速度快照中的种子。
+ * 后端返回已找到的实时状态与暂未找到的复合键，missing 不代表已删除。
+ */
+export function reconcileRuntimeTorrentStates(
+  items: RuntimeStateReconcileItem[]
+): Promise<ApiResponse<RuntimeStateReconcileData>> {
+  return request({
+    url: '/torrents/runtime-state/reconcile',
+    method: 'post',
+    data: { items }
+  }) as unknown as Promise<ApiResponse<RuntimeStateReconcileData>>
 }

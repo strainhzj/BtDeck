@@ -37,6 +37,7 @@ import {
   getTorrentHashIdentity,
   getTorrentSpeedIdentity
 } from './traditionalTorrentIdentity'
+import type { TorrentIdentityLike } from './traditionalTorrentIdentity'
 
 // ============ 类型定义 ============
 
@@ -44,6 +45,8 @@ interface ActiveSpeed {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
 }
 
 interface SelectionState {
@@ -321,6 +324,8 @@ export interface SpeedSnapshotEntry {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
 }
 
 /** 列表种子命中快照后的速度更新（供视图层应用到 this.list） */
@@ -330,6 +335,8 @@ export interface SpeedUpdate {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
 }
 
 /** buildSpeedSnapshot 实际读取的种子字段（ActiveTorrentSpeed 的结构子集）。
@@ -343,13 +350,19 @@ interface ActiveTorrentSpeedInput {
   downloadSpeed?: number
   uploadSpeed?: number
   progress?: number
+  status?: string
+  state?: string
+  downloadComplete?: boolean
+  download_complete?: boolean
 }
 
 /** buildSpeedSnapshot 的计算结果（视图据此更新 activeSpeedMap / speedSnapshotReady / list） */
 export interface SpeedSnapshotResult {
-  /** 是否应把 speedSnapshotReady 置为 true（code='200' 且 data truthy） */
+  /** 是否应把 speedSnapshotReady 置为 true（完整 code='200' 快照） */
   ready: boolean
-  /** 新的 activeSpeedMap（ready=false 时为 null，视图应保留旧值） */
+  /** 响应是否为可应用的部分快照（code='206'）；视图应合并而非清空旧值。 */
+  partial: boolean
+  /** 新的 activeSpeedMap（无效响应时为 null，视图应保留旧值） */
   activeSpeedMap: Record<string, SpeedSnapshotEntry> | null
   /** 按 downloader_id + hash 建立的精确映射，供可能出现同 hash 的传统列表使用。 */
   torrentSpeedMap: Record<string, SpeedSnapshotEntry> | null
@@ -361,6 +374,137 @@ export interface SpeedSnapshotResult {
 
 interface ActiveSnapshotResponseData {
   activeSnapshotReady?: boolean
+}
+
+const TERMINAL_RUNTIME_STATUSES = new Set([
+  'completed',
+  'seeding',
+  'stalledup',
+  'queuedup',
+  'uploading',
+  'forcedup',
+  'pausedup',
+  'checkingup',
+  'seed pending'
+])
+
+const RECONCILE_RUNTIME_STATUSES = new Set([
+  'downloading',
+  'queuedDl',
+  'queuedDL',
+  'stalledDL',
+  'checking',
+  'checkingDL',
+  'metadl',
+  'forcedmetadl',
+  'allocating',
+  'forceddl',
+  // normalizeTorrent 将缺少状态的旧记录归一为 unknown；仍允许它们进入
+  // 低频核验，避免旧数据永远没有机会收敛到完成态。
+  'unknown'
+].map(status => status.toLowerCase()))
+
+function normalizeSnapshotNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeSnapshotProgress(value: unknown): number {
+  return Math.max(0, Math.min(100, Math.round(normalizeSnapshotNumber(value) * 100) / 100))
+}
+
+function isRuntimeComplete(status: unknown, progress: number, explicitComplete: unknown): boolean {
+  if (explicitComplete === true || progress >= 100) return true
+  // 新后端明确返回 false 时优先相信下载器证据；否则旧服务端的 seeding/
+  // pausedUP 等终态仍可通过状态回退识别。
+  if (explicitComplete === false) return false
+  return typeof status === 'string' && TERMINAL_RUNTIME_STATUSES.has(status.trim().toLowerCase())
+}
+
+function isRuntimeReconcileCandidate(torrent: TorrentIdentityLike & {
+  status?: unknown
+  state?: unknown
+  progress?: unknown
+  downloadComplete?: unknown
+  download_complete?: unknown
+  completedDate?: unknown
+  completed_date?: unknown
+}): boolean {
+  const progress = normalizeSnapshotProgress(torrent.progress)
+  if (
+    progress >= 100 ||
+    torrent.downloadComplete === true ||
+    torrent.download_complete === true ||
+    torrent.completedDate ||
+    torrent.completed_date
+  ) return false
+  const status = String(torrent.status || torrent.state || '').trim().toLowerCase()
+  // 兼容旧列表没有 status 的情况，但不把已暂停/错误/做种任务纳入低频补查。
+  return !status || RECONCILE_RUNTIME_STATUSES.has(status)
+}
+
+export interface RuntimeStateReconcileCandidate {
+  downloader_id: string
+  hash: string
+}
+
+export interface RuntimeStateReconcileCandidatesResult {
+  candidates: RuntimeStateReconcileCandidate[]
+  misses: Record<string, number>
+}
+
+/**
+ * 根据完整速度快照收敛“消失但仍显示下载中”的列表行。
+ * 连续 threshold 次未命中才触发一次低频服务端核验，并以复合键去重。
+ */
+export function collectRuntimeStateReconcileCandidates<T extends TorrentIdentityLike>(
+  torrents: T[],
+  updates: SpeedUpdate[],
+  previousMisses: Record<string, number> = {},
+  threshold = 2,
+  maxCandidates = 100
+): RuntimeStateReconcileCandidatesResult {
+  const observedIdentities = new Set<string>()
+  const observedWithoutDownloader = new Set<string>()
+  updates.forEach(update => {
+    const hash = getTorrentHashIdentity(update)
+    if (update.downloaderId && hash) {
+      observedIdentities.add(`speed:${String(update.downloaderId).trim()}:${hash}`)
+    } else if (hash) {
+      observedWithoutDownloader.add(hash)
+    }
+  })
+
+  const nextMisses: Record<string, number> = {}
+  const candidates: RuntimeStateReconcileCandidate[] = []
+  torrents.forEach(torrent => {
+    const identity = getTorrentSpeedIdentity(torrent)
+    const hash = getTorrentHashIdentity(torrent)
+    const downloaderId = getTorrentDownloaderId(torrent)
+    if (!identity || !hash || !downloaderId) return
+    const observed = observedIdentities.has(identity) || observedWithoutDownloader.has(hash)
+    if (observed || !isRuntimeReconcileCandidate(torrent as T & {
+      status?: unknown
+      state?: unknown
+      progress?: unknown
+      downloadComplete?: unknown
+      download_complete?: unknown
+      completedDate?: unknown
+      completed_date?: unknown
+    })) {
+      return
+    }
+
+    const count = (previousMisses[identity] || 0) + 1
+    if (count >= threshold && candidates.length < maxCandidates) {
+      candidates.push({ downloader_id: downloaderId, hash })
+      nextMisses[identity] = 0
+    } else {
+      nextMisses[identity] = count
+    }
+  })
+
+  return { candidates, misses: nextMisses }
 }
 
 /**
@@ -383,12 +527,14 @@ export function needsActiveSnapshotRefresh(
 /**
  * 从 active-torrents 接口响应计算速度快照状态（纯函数，无副作用）。
  *
- * 契约锁定（commit 466e18c）：
- * - code='200' 且 data truthy（含空数组 []）→ ready=true，activeSpeedMap 可能为空 {}。
+ * 契约：
+ * - code='200' 且 data 为数组（含空数组 []）→ ready=true，activeSpeedMap 可能为空 {}。
  *   空数组是 truthy，故空 data 仍置 ready=true——这是 deriveVisibleTorrentList
  *   空快照保护所依赖的前提。若此处改成「data.length>0 才 ready」，会导致
  *   「用户真零活动种子」时过滤永远不生效（另一个回归）。
- * - code≠'200' 或 data falsy → ready=false，activeSpeedMap=null（视图不更新）。
+ * - code='206' 且 data 为数组 → partial=true，返回可应用的增量 map，但 ready=false；
+ *   视图必须合并而不能清空上一次完整快照。
+ * - 其它 code 或 data 非数组 → ready=false、partial=false、map=null。
  *
  * 注意：原视图 loadActiveSpeed 对缺 hash 的条目会 console.warn，本纯函数不打 warn
  *（纯函数无副作用，调试噪声降级为静默跳过）。
@@ -399,9 +545,17 @@ export function needsActiveSnapshotRefresh(
 export function buildSpeedSnapshot(
   res: ApiResponse<ActiveTorrentSpeedInput[] | null> | null | undefined
 ): SpeedSnapshotResult {
-  if (!res || res.code !== '200' || !res.data) {
-    return { ready: false, activeSpeedMap: null, torrentSpeedMap: null, updates: [], count: 0 }
+  if (!res || (res.code !== '200' && res.code !== '206') || !Array.isArray(res.data)) {
+    return {
+      ready: false,
+      partial: false,
+      activeSpeedMap: null,
+      torrentSpeedMap: null,
+      updates: [],
+      count: 0
+    }
   }
+  const partial = res.code === '206'
   const map: Record<string, SpeedSnapshotEntry> = {}
   const torrentSpeedMap: Record<string, SpeedSnapshotEntry> = {}
   const updates: SpeedUpdate[] = []
@@ -411,10 +565,27 @@ export function buildSpeedSnapshot(
       // 防御性检查：跳过缺 hash 的无效种子（原视图会 console.warn，纯函数静默跳过）
       return
     }
-    const downloadSpeed = t.downloadSpeed ?? 0
-    const uploadSpeed = t.uploadSpeed ?? 0
-    const progress = t.progress ?? 0
-    const speed = { downloadSpeed, uploadSpeed, progress }
+    const downloadSpeed = normalizeSnapshotNumber(t.downloadSpeed)
+    const uploadSpeed = normalizeSnapshotNumber(t.uploadSpeed)
+    const rawStatus = typeof t.status === 'string'
+      ? t.status.trim()
+      : (typeof t.state === 'string' ? t.state.trim() : '')
+    const progress = normalizeSnapshotProgress(t.progress)
+    const explicitComplete = t.downloadComplete !== undefined
+      ? t.downloadComplete
+      : t.download_complete
+    const downloadComplete = isRuntimeComplete(rawStatus, progress, explicitComplete)
+    const statusLower = rawStatus.toLowerCase()
+    const status = downloadComplete && (!statusLower || statusLower === 'downloading' || statusLower === 'queueddl')
+      ? 'completed'
+      : rawStatus
+    const speed: SpeedSnapshotEntry = {
+      downloadSpeed,
+      uploadSpeed,
+      progress: downloadComplete ? 100 : progress,
+      ...(status ? { status } : {}),
+      ...(downloadComplete ? { downloadComplete: true } : {})
+    }
     const downloaderId = getTorrentDownloaderId(t)
     map[t.hash] = speed
     torrentSpeedMap[getTorrentSpeedIdentity(t)] = speed
@@ -423,11 +594,14 @@ export function buildSpeedSnapshot(
       ...(downloaderId ? { downloaderId } : {}),
       downloadSpeed,
       uploadSpeed,
-      progress
+      progress: downloadComplete ? 100 : progress,
+      ...(status ? { status } : {}),
+      ...(downloadComplete ? { downloadComplete: true } : {})
     })
   })
   return {
-    ready: true,
+    ready: !partial,
+    partial,
     activeSpeedMap: map,
     torrentSpeedMap,
     updates,

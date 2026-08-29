@@ -875,6 +875,7 @@ import {
   DownloaderSimple,
   reannounceTorrents,
   getActiveTorrents,
+  reconcileRuntimeTorrentStates,
   applySearchTemplate,
   type Torrent,
   type QueryTemplateConditions
@@ -884,6 +885,7 @@ import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status
 import ThemeManager, { ThemeType } from '@/utils/theme-manager'
 import {
   normalizeTorrent,
+  normalizeTorrentStatus,
   getTorrentId,
   getDownloaderId,
   formatFileSize,
@@ -898,6 +900,7 @@ import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
+  collectRuntimeStateReconcileCandidates,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -905,6 +908,11 @@ import {
   showTrackerErrorTag as sharedShowTrackerErrorTag,
   countMatchedTrackerRows
 } from './utils/torrentBatch'
+import type { SpeedUpdate } from './utils/torrentBatch'
+import {
+  buildTorrentSpeedTargetIndex,
+  resolveTorrentSpeedTargets
+} from './utils/traditionalTorrentIdentity'
 import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
 
@@ -987,9 +995,17 @@ export default class extends mixins(
 
   // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
-  private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeSpeedMap: Record<string, {
+    downloadSpeed: number
+    uploadSpeed: number
+    progress: number
+    status?: string
+    downloadComplete?: boolean
+  }> = {}
   private activeListRetryPending = false
   private activeListRetryInFlight = false
+  private runtimeStateMisses: Record<string, number> = {}
+  private runtimeStateReconcileInFlight = false
 
   // 分页相关
   private currentPage = 1
@@ -2447,6 +2463,63 @@ export default class extends mixins(
     return getTorrentSpeedFromSnapshot(torrent, type, this.activeSpeedMap, this.speedSnapshotReady)
   }
 
+  /** 将实时快照更新应用到当前列表，始终按 downloader_id + hash 精确命中。 */
+  private applySpeedUpdates(updates: SpeedUpdate[]): boolean {
+    const targetIndex = buildTorrentSpeedTargetIndex(this.list)
+    let terminalObserved = false
+    updates.forEach(update => {
+      const targets = resolveTorrentSpeedTargets(targetIndex, update)
+      targets.forEach(torrent => {
+        torrent.downloadSpeed = update.downloadSpeed
+        torrent.uploadSpeed = update.uploadSpeed
+        torrent.progress = update.downloadComplete ? 100 : update.progress
+        if (update.status) {
+          torrent.status = normalizeTorrentStatus(update.status, update.status)
+        }
+        if (update.downloadComplete) {
+          torrent.downloadComplete = true
+          terminalObserved = true
+        }
+      })
+    })
+    return terminalObserved
+  }
+
+  private async reconcileRuntimeStates(
+    candidates: Array<{ downloader_id: string, hash: string }>
+  ): Promise<boolean> {
+    if (!candidates.length || this.runtimeStateReconcileInFlight) return false
+    this.runtimeStateReconcileInFlight = true
+    try {
+      const response = await reconcileRuntimeTorrentStates(candidates)
+      const data = response.code === '200' && response.data
+        ? response.data
+        : null
+      if (!data || !Array.isArray(data.list)) return false
+
+      const reconcileSnapshot = buildSpeedSnapshot({
+        status: response.status,
+        msg: response.msg,
+        code: '200',
+        data: data.list
+      })
+      const terminalObserved = this.applySpeedUpdates(reconcileSnapshot.updates)
+      if (
+        terminalObserved &&
+        (this.listQuery.showActiveOnly ||
+          (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+      ) {
+        await this.getList()
+      }
+      return true
+    } catch (error) {
+      console.debug('[速度轮询] 终态核验失败:', error)
+      return false
+    } finally {
+      this.runtimeStateReconcileInFlight = false
+    }
+  }
+
   /** 加载活跃种子实时速度和进度 */
   protected async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
@@ -2454,18 +2527,24 @@ export default class extends mixins(
     try {
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
-      if (snapshot.ready && snapshot.activeSpeedMap) {
-        // 直接更新列表中命中种子的实时数据（副作用，留在视图层）
-        snapshot.updates.forEach(u => {
-          const torrentInList = this.list.find(item => item.hash === u.hash)
-          if (torrentInList) {
-            torrentInList.downloadSpeed = u.downloadSpeed
-            torrentInList.uploadSpeed = u.uploadSpeed
-            torrentInList.progress = u.progress
+      if ((snapshot.ready || snapshot.partial) && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
+        const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+        // 206 是可用但不完整的增量：合并已知键，不得清空上一轮完整快照。
+        this.activeSpeedMap = snapshot.ready
+          ? snapshot.torrentSpeedMap
+          : { ...this.activeSpeedMap, ...snapshot.torrentSpeedMap }
+        if (snapshot.ready) {
+          this.speedSnapshotReady = true
+          const reconcile = collectRuntimeStateReconcileCandidates(
+            this.list,
+            snapshot.updates,
+            this.runtimeStateMisses
+          )
+          this.runtimeStateMisses = reconcile.misses
+          if (reconcile.candidates.length) {
+            await this.reconcileRuntimeStates(reconcile.candidates)
           }
-        })
-        this.activeSpeedMap = snapshot.activeSpeedMap
-        this.speedSnapshotReady = true
+        }
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
 
         if (
@@ -2480,7 +2559,14 @@ export default class extends mixins(
             this.activeListRetryInFlight = false
           }
         }
-        return true
+        if (
+          terminalObserved &&
+          (this.listQuery.showActiveOnly ||
+            (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+        ) {
+          await this.getList()
+        }
+        return snapshot.ready
       }
       return false
     } catch (e) {

@@ -921,6 +921,7 @@ import {
   reannounceTorrents,
   getDownloaderList,
   getActiveTorrents,
+  reconcileRuntimeTorrentStates,
   advancedSearch,
   getDuplicateTorrents,
   applySearchTemplate,
@@ -938,6 +939,7 @@ import {
   formatDate,
   formatRatio,
   normalizeTorrent,
+  normalizeTorrentStatus,
   normalizePaginatedResponse,
   getTorrentId,
   getDownloaderId,
@@ -951,12 +953,14 @@ import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
+  collectRuntimeStateReconcileCandidates,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups,
   getTorrentErrorReason as sharedErrorReason,
   showTrackerErrorTag as sharedShowTrackerErrorTag,
   countMatchedTrackerRows
 } from './utils/torrentBatch'
+import type { SpeedUpdate } from './utils/torrentBatch'
 import {
   buildTraditionalStatusFilterItems,
   getTraditionalStatusFilterValue,
@@ -1059,10 +1063,18 @@ export default class extends mixins(
   // 实时速度轮询
   // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
-  private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeSpeedMap: Record<string, {
+    downloadSpeed: number
+    uploadSpeed: number
+    progress: number
+    status?: string
+    downloadComplete?: boolean
+  }> = {}
   private torrentSpeedTargetIndex: TorrentSpeedTargetIndex<TraditionalSpeedTarget> = buildTorrentSpeedTargetIndex([])
   private activeListRetryPending = false
   private activeListRetryInFlight = false
+  private runtimeStateMisses: Record<string, number> = {}
+  private runtimeStateReconcileInFlight = false
 
   // 分类和标签数据
   private categoryList: string[] = []
@@ -1479,6 +1491,62 @@ export default class extends mixins(
   // ====== 实时速度轮询 ======
   // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
+  /** 将实时快照更新应用到当前列表，始终按 downloader_id + hash 精确命中。 */
+  private applySpeedUpdates(updates: SpeedUpdate[]): boolean {
+    let terminalObserved = false
+    updates.forEach(update => {
+      const targets = resolveTorrentSpeedTargets(this.torrentSpeedTargetIndex, update)
+      targets.forEach(torrent => {
+        torrent.downloadSpeed = update.downloadSpeed
+        torrent.uploadSpeed = update.uploadSpeed
+        torrent.progress = update.downloadComplete ? 100 : update.progress
+        if (update.status) {
+          torrent.status = normalizeTorrentStatus(update.status, update.status)
+        }
+        if (update.downloadComplete) {
+          torrent.downloadComplete = true
+          terminalObserved = true
+        }
+      })
+    })
+    return terminalObserved
+  }
+
+  private async reconcileRuntimeStates(
+    candidates: Array<{ downloader_id: string, hash: string }>
+  ): Promise<boolean> {
+    if (!candidates.length || this.runtimeStateReconcileInFlight) return false
+    this.runtimeStateReconcileInFlight = true
+    try {
+      const response = await reconcileRuntimeTorrentStates(candidates)
+      const data = response.code === '200' && response.data
+        ? response.data
+        : null
+      if (!data || !Array.isArray(data.list)) return false
+
+      const reconcileSnapshot = buildSpeedSnapshot({
+        status: response.status,
+        msg: response.msg,
+        code: '200',
+        data: data.list
+      })
+      const terminalObserved = this.applySpeedUpdates(reconcileSnapshot.updates)
+      if (
+        terminalObserved &&
+        (this.listQuery.showActiveOnly ||
+          (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+      ) {
+        await this.getList()
+      }
+      return true
+    } catch (error) {
+      console.debug('[速度轮询] 终态核验失败:', error)
+      return false
+    } finally {
+      this.runtimeStateReconcileInFlight = false
+    }
+  }
+
   /**
    * 加载活跃种子实时速度和进度（对齐列表模式 index.vue:2177-2214）
    * 修复 Bug#3：原用原生 fetch + localStorage.getItem('token')，
@@ -1490,19 +1558,23 @@ export default class extends mixins(
     try {
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
-      if (snapshot.ready && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
-        // 列表替换时已建立 downloader_id + hash 索引；轮询只按键命中活动任务，
-        // 避免 10 万行场景为每条更新重复执行 Array.find。
-        snapshot.updates.forEach(u => {
-          const targets = resolveTorrentSpeedTargets(this.torrentSpeedTargetIndex, u)
-          targets.forEach(torrent => {
-            torrent.downloadSpeed = u.downloadSpeed
-            torrent.uploadSpeed = u.uploadSpeed
-            torrent.progress = u.progress
-          })
-        })
-        this.activeSpeedMap = snapshot.torrentSpeedMap
-        this.speedSnapshotReady = true
+      if ((snapshot.ready || snapshot.partial) && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
+        const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+        this.activeSpeedMap = snapshot.ready
+          ? snapshot.torrentSpeedMap
+          : { ...this.activeSpeedMap, ...snapshot.torrentSpeedMap }
+        if (snapshot.ready) {
+          this.speedSnapshotReady = true
+          const reconcile = collectRuntimeStateReconcileCandidates(
+            this.list,
+            snapshot.updates,
+            this.runtimeStateMisses
+          )
+          this.runtimeStateMisses = reconcile.misses
+          if (reconcile.candidates.length) {
+            await this.reconcileRuntimeStates(reconcile.candidates)
+          }
+        }
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
 
         if (
@@ -1517,7 +1589,14 @@ export default class extends mixins(
             this.activeListRetryInFlight = false
           }
         }
-        return true
+        if (
+          terminalObserved &&
+          (this.listQuery.showActiveOnly ||
+            (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+        ) {
+          await this.getList()
+        }
+        return snapshot.ready
       }
       return false
     } catch (e) {

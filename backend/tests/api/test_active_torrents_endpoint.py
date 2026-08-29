@@ -17,7 +17,7 @@ GET /api/v1/torrents/active-torrents 端点级回归测试。
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -29,13 +29,16 @@ from app.auth.dependencies import require_authenticated_user
 from app.services.downloader_api_runtime import DownloadLane
 
 URL = "/api/v1/torrents/active-torrents"
+RECONCILE_URL = "/api/v1/torrents/runtime-state/reconcile"
 
-# 前端 ActiveTorrentSpeed 接口声明的 6 个字段（torrents.ts:1188-1195）
+# 前端 ActiveTorrentSpeed 接口声明的实时字段（torrents.ts）
 EXPECTED_SPEED_FIELDS = {
     "hash",
     "downloadSpeed",
     "uploadSpeed",
     "progress",
+    "status",
+    "downloadComplete",
     "num_seeds",
     "num_leechs",
 }
@@ -264,6 +267,50 @@ class TestSpeedFieldContract:
         assert core_fields == EXPECTED_SPEED_FIELDS
         assert data[0]["progress"] == 25.0
         assert data[0]["downloadSpeed"] == 200
+
+
+class TestRuntimeStateReconcile:
+    """终态核验必须在速度为 0 时仍返回完成证据，并报告未找到项。"""
+
+    def test_reconcile_returns_terminal_state_and_missing_keys(self, client):
+        dl = _make_qb_downloader(
+            torrents=[
+                {
+                    "hash": "done-hash",
+                    "dlspeed": 0,
+                    "upspeed": 0,
+                    "progress": 0.75,
+                    "num_seeds": 0,
+                    "num_leechs": 0,
+                    "state": "seeding",
+                }
+            ]
+        )
+        _set_store(client.app, [dl])
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ) as sync_mock,
+        ):
+            response = client.post(
+                RECONCILE_URL,
+                json={
+                    "items": [
+                        {"downloader_id": "dl_qb", "hash": "done-hash"},
+                        {"downloader_id": "missing-dl", "hash": "missing-hash"},
+                    ]
+                },
+            )
+
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"]["list"][0]["progress"] == 100.0
+        assert body["data"]["list"][0]["downloadComplete"] is True
+        assert body["data"]["list"][0]["status"] == "seeding"
+        assert body["data"]["missing"] == [{"downloader_id": "missing-dl", "hash": "missing-hash"}]
+        sync_mock.assert_awaited_once()
 
 
 # ============ runtime 必经守护（sync-resource-governance） ============
