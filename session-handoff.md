@@ -35,7 +35,11 @@
 
 ### 下一步（按用户确认的优先级）
 
-1. 判据 5：import-matrix full-graph 阶段 2 实装（BtDeck backend alembic/契约/frontend dist 注入 testapp + backend requirements 在 Chaquopy/自建索引的可解析性梳理，greenlet 等潜在自建项）。**16KB 已达成**（ps16k 发现 p_align=4096 缺陷→-z max-page-size=16384 修复→16K/4096 双 AVD 6×6 全绿+CI 复验；深导入需 16MB 大栈线程，Phase 3 必用）。
+**Phase 0 闸门已全过（判据 1-6，2026-08-29 晚）——Phase 3 正式解锁**（正式放行待用户确认 arm64 真机项）。已完成：判据 5 fullgraph（staging/bootstrap/FullGraphTest，4096 AVD 9/9）；判据 6 16KB（ps16k AVD 全新安装 9/9；自建 greenlet/regex/pycryptodomex/bcrypt/pydantic-core；索引常驻 https://strainhzj.github.io/android-wheels/simple/）。
+
+1. Phase 3：安卓本地服务端壳工程（Chaquopy 17 + 单 worker uvicorn + Alembic fail-fast + FGS specialUse + 存储私有目录 + LAN 重绑；大栈线程导入 app.main 必用；testapp fullgraph 基建可直接迁移）。
+2. pillow 16KB wheel 攻坚（挂点在其自家构建后端的宿主 /usr/include 注入；ANDROID-DROP 期间 Android 2FA 二维码接口不可用——cuser 已延迟导入）。
+3. .5 capability 矩阵 API/UI 接线；C 批次 .8 桌面 GUI 实测；arm64 真机验证（Phase 5）。
 3. 批次 A：重跑定向后端测试组收口 `.2` 置 done（首轮核查已确认七项证据齐全）。
 4. Phase 2 设备项：离线/认证失败/版本不兼容状态、多 profile 隔离、自签证书真机全流程（OkHttp 指纹接入已实现，2026-08-28 晚，17/17 单测绿，真实 TLS 待设备）；`.5` capability 矩阵 API/UI 接线（用户拍板现在做，未开工）；`.8` 桌面 GUI 实测。
 5. Android 真机 arm64-v8a 导入验证（Phase 5 设备矩阵合并）。
