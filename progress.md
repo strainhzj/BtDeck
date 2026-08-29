@@ -6297,3 +6297,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **16KB 全依赖面攻坚（~20 轮 CI）**：greenlet/regex/pycryptodomex/bcrypt 自建全绿。关键沉淀：CC/CXX wrapper 剥宿主 sysconfig 注入（-I/usr/include 连体+分体、-m64、--fix-cortex）+ -nostdinc 显式 NDK isystem 根治 + .so 自动 -shared + c-ext 必须补 DT_NEEDED libpython + NEEDED 改名表（libz.so.1→libz.so 等）。pillow 挂其自家后端深处（登记 ANDROID-DROP）。
 - **主仓后端小改**：cuser.py 的 qrcode/PIL 顶层导入改函数内延迟（桌面零差异，cuser 10 测试全绿）——完整启动链不再触碰 PIL。
 - wheels 仓推至 917bb89；索引常驻五包自建 wheel + bencodepy。
+
+## 2026-08-29：桌面折叠侧栏多子菜单 Lucide 图标修复
+
+- **根因闭环**：种子管理与 Tracker 管理有多个可见子路由，因此 `SidebarItem` 进入 `el-submenu` 分支；桌面折叠样式原用 `> span { visibility: hidden; }` 隐藏标题。该规则早于 Lucide 迁移，迁移后 `LucideIcon` 的根节点也是 `span`，主图标遂与标题、箭头一起被隐藏。单子路由进入 `el-menu-item` 分支，不命中这条规则，形成表面上的“仅多子菜单图标异常”。
+- **修复**：在子菜单标题文字上增加 `.submenu-label`，折叠态仅隐藏 `.submenu-label` 与 `.submenu-chevron`，并显式保持 `.menu-icon` 可见；展开态及单子项渲染路径不变。
+- **回归**：新增 `frontend/tests/unit/sidebar-collapse-lucide.spec.ts`，真实挂载 `SidebarItem + Element UI + LucideIcon` 并编译组件实际 SCSS，5 项覆盖种子管理、Tracker 管理折叠态，展开态，单子项，以及禁止重新引入广泛 `> span` 选择器。
+- **验证**：相关 4 suites / 122 tests、前端全量 85 suites / 1263 tests、`npm run typecheck`、严格 `npm run lint`、`npm run build` 全部通过；构建仅保留 58 条既有 Sass/资源/CSS 顺序 warning。根 `bash ./init.sh --ci` 仍受当前 Windows/WSL `E_ACCESSDENIED` 环境限制；未执行 Git 提交，工作区其它既有修改均保留。

@@ -1094,9 +1094,10 @@
             "frontend/src/layout/components/Sidebar/SidebarItem.vue",
             "frontend/src/layout/components/NotificationDrawer/index.vue",
             "frontend/src/layout/components/NotificationDrawer/NotificationItem.vue",
+            "frontend/tests/unit/sidebar-collapse-lucide.spec.ts",
             "frontend/tests/unit/downloader-control-room-ui.spec.ts"
           ],
-          "evidence": "npm run typecheck 与严格 npm run lint 通过；新增定向回归 2 suites / 110 tests 通过；前端全量 Jest 29 suites / 498 tests 通过；npm run build 成功，仅有仓库既有的 48 条 Sass/Element UI/资源体积 warning；浏览器可见旧图标审计中管理总览无应用级 Element 字体图标，设置工作区自有图标均由 LucideIcon 渲染。"
+          "evidence": "npm run typecheck 与严格 npm run lint 通过；新增定向回归 2 suites / 110 tests 通过；前端全量 Jest 29 suites / 498 tests 通过；npm run build 成功，仅有仓库既有的 48 条 Sass/Element UI/资源体积 warning；浏览器可见旧图标审计中管理总览无应用级 Element 字体图标，设置工作区自有图标均由 LucideIcon 渲染。2026-08-29 追加桌面折叠侧栏回归：确认多子菜单走 el-submenu 后，旧 `> span` 隐藏规则会把根节点由 svg 迁移为 span 的 LucideIcon 一并隐藏；为标题增加 `.submenu-label`，折叠态只隐藏标题/箭头并显式保留 `.menu-icon`。新增真实挂载 Element UI/Lucide 且编译实际 SCSS 的 5 项回归；相关 4 suites / 122 tests、全量 85 suites / 1263 tests、typecheck、严格 lint 与生产 build 全部通过。"
         },
         {
           "id": "downloader-control-room-ui-redesign.3",

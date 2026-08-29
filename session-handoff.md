@@ -3596,3 +3596,18 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 新增后端 16、前端 20 个回归执行项（共 36）：完成状态矩阵、TTL 退避/恢复、旧快照三类数据库守卫、异常数值、复合键/100 项上限、API 契约，以及列表/传统/移动三视图终态核验行为。变更限于 8 个测试文件及 feature/progress/roadmap/handoff 证据，业务源码未再修改。
 - 验证：后端定向 110 passed；前端定向 237 passed、全量 1258 passed；typecheck、lint、生产 build、目标 mypy、flake8、py_compile、lint_btdeck 通过。后端全量 4136 passed / 7 skipped / 2 failed，两项失败均落在本轮开始前已有的未暂存 health build 字段与 Linux 依赖清单改造，不涉及终态链路。
 - 环境限制：Black 24.10 在当前 Windows 按项目线宽检查测试文件仍挂起；Ruff format 仅发现 `test_active_only_filter.py` 本批未触及的既有 L177 格式。根 init 仍因 WSL `E_ACCESSDENIED` 无法执行。本轮回归加固尚未提交；此前业务修复提交仍为 `67754e5`。
+
+## 桌面折叠侧栏 Lucide 父菜单修复（2026-08-29）
+
+### 已完成
+
+- 根因已证实：多子菜单路由进入 `el-submenu`，旧折叠规则 `> span { visibility: hidden; }` 会误伤根节点为 `span` 的 `LucideIcon`；单子项走 `el-menu-item`，所以不受影响。
+- `frontend/src/layout/components/Sidebar/SidebarItem.vue` 为标题增加 `.submenu-label`，折叠态只隐藏标题与 `.submenu-chevron`，显式保留 `.menu-icon`。
+- 新增 `frontend/tests/unit/sidebar-collapse-lucide.spec.ts`，以真实 Element UI/Lucide 组件和实际 SCSS 验证种子管理、Tracker 管理、展开态、单子项与选择器防退化。
+- `feature_list.json`、`progress.md` 与 `docs/roadmap/` 已同步。
+
+### 验证
+
+- 新增测试 1 suite / 5 tests；相关回归 4 suites / 122 tests；前端全量 85 suites / 1263 tests。
+- `npm run typecheck`、严格 `npm run lint`、`npm run build` 全部通过；构建仅有 58 条既有 warning。
+- 根 `bash ./init.sh --ci` 在当前 Windows/WSL 环境仍报 `Bash/Service/CreateInstance/E_ACCESSDENIED`；未执行 Git 提交，未触碰其它既有工作区修改。

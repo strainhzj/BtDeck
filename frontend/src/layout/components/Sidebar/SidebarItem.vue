@@ -41,6 +41,7 @@
         />
         <span
           v-if="item.meta && item.meta.title"
+          class="submenu-label"
           slot="title"
         >{{ item.meta.title }}</span>
         <LucideIcon
@@ -205,8 +206,14 @@ export default class extends Vue {
           display: none;
         }
 
-        &>span {
+        &>.submenu-label,
+        &>.submenu-chevron {
           visibility: hidden;
+        }
+
+        /* LucideIcon 的根节点是 span，不能随标题文字一起隐藏。 */
+        &>.menu-icon {
+          visibility: visible;
         }
       }
     }

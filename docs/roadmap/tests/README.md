@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（180 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（84 个 spec，当前源码实测）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（180 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（85 个 spec，当前源码实测）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -22,8 +22,8 @@
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 72 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起与真实全屏 loading 行为单独覆盖） |
-| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 9 个 spec：搜索/多选/已保存高级搜索组件单测 7 个 + LucideIcon/AppLogo 2 个 |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 73 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading 与桌面折叠侧栏 Lucide 父图标行为单独覆盖） |
+| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 12 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤各 1 个 |
 
 ## backend/tests/（180 个 test_*.py + 支持文件）
 
@@ -77,6 +77,7 @@ cd backend && pytest tests/api/               # API 层（63 个 test_*.py）
 - `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖辅种数量列、Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；通过共享 loading directive probe 验证两视图编译后的 fullscreen/lock modifiers 与请求异常后的 `listLoading` 复位；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
 - `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
 - `management-pages-ui.spec.ts`：管理页布局与信息层级契约；覆盖任务日志与孤儿文件统计摘要接入 `CollapsiblePanel`、独立 localStorage 键和折叠状态持久化入口。
+- `sidebar-collapse-lucide.spec.ts`：真实挂载 `SidebarItem + Element UI + LucideIcon` 并编译组件实际 SCSS，覆盖种子管理/Tracker 管理多子菜单折叠态主图标可见、标题与箭头隐藏、展开态恢复、单子项不回归及禁止广泛 `> span` 选择器。
 
 ### 组件内嵌测试
 
@@ -90,6 +91,7 @@ cd backend && pytest tests/api/               # API 层（63 个 test_*.py）
   - `FilterGroup.spec.ts`（97 行）
   - `QuickDeleteDuplicatesDialog.spec.ts`（176 行）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
+  - `AppLogo.spec.ts`（品牌资源与变体契约）
   - `LucideIcon.spec.ts`（185 行）
 - `frontend/src/components/BatchButton/__tests__/`
   - `BatchButton.spec.ts`（90 行）

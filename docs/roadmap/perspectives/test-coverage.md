@@ -180,6 +180,7 @@
 | `router-navigation-failure.spec.ts` | 路由导航失败（重复导航/重定向中止）处理契约 |
 | `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定、hash 登录跳转 URL 构造、cookie→内存快照回同步 |
 | `shared-utils.spec.ts` | 共享工具 |
+| `sidebar-collapse-lucide.spec.ts` ✨2026-08-29 | `layout/components/Sidebar/SidebarItem.vue`：真实 Element UI/Lucide 组件与实际 SCSS 回归；种子管理/Tracker 管理多子菜单折叠仅隐藏语义标题/箭头并保留父图标，兼顾展开态、单子项与选择器防退化 |
 | `sidebar-mobile-entry.spec.ts` ✨2026-08-24 | 桌面侧栏「移动版」入口：写显式偏好并跳 /m/dashboard |
 | `store-modules.spec.ts` | Vuex modules |
 | `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储 |
