@@ -61,15 +61,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Inno Setup (choco)
+      - name: Ensure Inno Setup available
         shell: pwsh
         run: |
-          choco install innosetup --version=6.3.3 -y --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          } else {
+            Write-Output "Inno Setup already preinstalled on runner"
+          }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
-          (& $iscc /?) 2>&1 | Select-Object -First 2
-          Write-Output "ISCC_VERSION_LINE_OK"
+          $ver = (Get-Item $iscc).VersionInfo.ProductVersion
+          Write-Output "ISCC_VERSION=$ver"
+          "ISCC_VERSION=$ver" | Set-Content -Path $env:GITHUB_ENV -Append
 
       - name: Compile probe installer with ISCC (fail-closed)
         shell: pwsh
@@ -139,7 +144,7 @@ jobs:
           $report = @{
             probe = "w0-windows-runner"
             runner = "${{ runner.name }}-${{ runner.os }}"
-            inno_setup = "6.3.3"
+            inno_setup = "${{ env.ISCC_VERSION }}"
             checks = @{
               iscc_compile = "PASS"
               silent_install_uninstall = "PASS"
