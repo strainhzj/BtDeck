@@ -6258,3 +6258,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 用户拍板"纳入"：HealthClient 增 trustedFingerprints 参数，全信 SSLContext+CertificatePinner 精确钉扎组合（trust-any+pin=trust-only-these），hex→base64 pin 转换，指纹不匹配归 TLS_ERROR 提示重新确认；两调用点传入 profile 指纹。
 - 新增 HealthClientPinTest 4 例；:app:testDebugUnitTest 17/17 全绿（--rerun-tasks 复核）。真实 TLS 握手待设备验证。
 - SDK 下载完成：emulator + android-35 google_apis x86_64 + google_apis_ps16k（16KB）镜像就位（C:/software/android-build-env/sdk），AVD 创建与 16KB/冷启动验证留待下批。
+
+## 2026-08-28（晚二）：判据 6 之 16KB page-size——缺陷发现、修复与双页验证
+
+- ps16k AVD 实测抓出旧 wheel p_align=4096 在 16KB 页 dlopen 即崩（linker LoadSegments SEGV_ACCERR，tombstone 实锤；CI 4096 镜像盲区）；"gradle 全量部分通过"系 runner 进程重启假象，solo 复测纠正。
+- 修复：`-Wl,-z,max-page-size=16384` + check-wheel-tag p_align≥16384 断言（对旧 wheel 验证拦截）。
+- 验证：16KB AVD 6/6、常规 4096 AVD 6/6 全绿；install -r 升级安装覆盖。
+- 附带：深导入需大栈线程（16MB）——Phase 3 app.main 导入的前置技法。
+- 下一批主任务：判据 5 阶段 2 实装（backend/alembic/契约/frontend dist 注入 testapp + 全量依赖可解析性梳理）。
