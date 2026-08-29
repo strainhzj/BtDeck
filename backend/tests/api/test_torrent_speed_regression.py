@@ -110,6 +110,30 @@ class TestTTLQueue:
         second_hashes = {entry["hash"] for entry in second["dl_1"]}
         assert second_hashes.intersection({f"hash_{i}" for i in range(_MAX_SUPPLEMENT_COUNT, total)})
 
+    def test_get_disappeared_respects_retry_backoff_and_retries_after_window(self):
+        """未完成补查必须退避，但不能因此永久失去再次核验机会。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_retry")
+
+        first = q.get_disappeared(set())
+        assert [entry["hash"] for entry in first["dl_1"]] == ["hash_retry"]
+        assert q.get_disappeared(set()) == {}
+
+        q._store[("dl_1", "hash_retry")]["next_probe_at"] = time.monotonic() - 0.01
+        retried = q.get_disappeared(set())
+        assert [entry["hash"] for entry in retried["dl_1"]] == ["hash_retry"]
+
+    def test_put_after_speed_recovers_resets_retry_backoff(self):
+        """任务恢复速度后再次消失，应立即补查而非沿用旧退避时间。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_flapping")
+        assert q.get_disappeared(set())["dl_1"]
+        assert q.get_disappeared(set()) == {}
+
+        q.put("dl_1", 0, "hash_flapping")
+        disappeared = q.get_disappeared(set())
+        assert [entry["hash"] for entry in disappeared["dl_1"]] == ["hash_flapping"]
+
     def test_remove_completed_task(self):
         """确认完成后从 TTL 队列移除，后续不再补查。"""
         q = self._make_queue(ttl=60)
@@ -161,6 +185,48 @@ class TestTTLQueue:
 
 class TestSupplementSync:
     """测试补查同步函数"""
+
+    @pytest.mark.parametrize(
+        ("raw_status", "expected_status"),
+        [
+            ("stalledUP", "seeding"),
+            ("seeding", "seeding"),
+            ("queuedUP", "seeding"),
+            ("forcedUP", "seeding"),
+            ("pausedUP", "pausedUP"),
+            ("checkingUP", "checkingUP"),
+        ],
+    )
+    def test_qb_download_complete_state_matrix_forces_100(self, raw_status, expected_status):
+        """qB 完成下载后的上传态都必须收敛到 100%，与是否仍有速度无关。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        progress, status, complete = _normalize_runtime_state(99.37, raw_status, 0)
+        assert (progress, status, complete) == (100.0, expected_status, True)
+
+    @pytest.mark.parametrize("raw_status", ["seed pending", "seeding"])
+    def test_transmission_download_complete_state_matrix_forces_100(self, raw_status):
+        """Transmission 的待做种/做种态必须被识别为下载完成。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        progress, status, complete = _normalize_runtime_state(98.5, raw_status, 1)
+        assert (progress, status, complete) == (100.0, "seeding", True)
+
+    def test_progress_100_is_terminal_even_when_status_lags_behind(self):
+        """下载器状态短暂仍为 downloading 时，100% 进度本身足以完成收敛。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        assert _normalize_runtime_state(100, "downloading", 0, explicit_complete=False) == (
+            100.0,
+            "completed",
+            True,
+        )
+
+    def test_transmission_terminal_error_preserves_error_status_and_completion(self):
+        """已完成下载随后报错时，错误可见性与完成证据不能互相覆盖。"""
+        from app.api.endpoints.torrent_speed import _normalize_runtime_state
+
+        assert _normalize_runtime_state(93, "seeding", 1, error=3) == (100.0, "error", True)
 
     def test_runtime_state_normalizes_non_finite_progress(self):
         """下载器偶发返回 NaN/Infinity 时不得被误判为 100% 完成。"""

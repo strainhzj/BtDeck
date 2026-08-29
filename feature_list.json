@@ -5697,8 +5697,8 @@
       "scope": "fullstack",
       "description": "实时速度接口补充下载器归一化 status 与 downloadComplete 证据，完成态强制进度 100 并在响应前同步数据库；TTL 补查按下载器公平轮转、退避并在确认完成后移除；新增低频复合键终态核验接口，前端三种种子列表可应用 206 增量快照、按 downloader_id+hash 更新并对连续未命中任务触发核验，避免任务完成后卡在 downloading 或进度冻结。",
       "evidence": {
-        "tests": "后端定向 94 passed（TTL 退避/公平轮转、终态落库、显式未完成优先级、完成后旧快照不回退、非有限进度防误判、核验接口、既有活动筛选）；前端列表/传统/移动组件 75 passed，torrent-batch 98 passed（206 增量、进度/终态归一、复合键候选收敛）。",
-        "lint": "backend py_compile、mypy、flake8 通过；Black 24.10 在当前 Windows 对该文件按项目 line-length=120 检查会挂起，使用 line-length=117 的快速检查确认无格式差异；frontend npm run typecheck、npm run lint、npm run build 通过；仓库 ./init.sh --ci 在当前 Windows/WSL 环境因既有 E_ACCESSDENIED/null-byte 输出限制未完成。",
+        "tests": "初始修复后端定向 94 passed、前端列表/传统/移动组件 75 passed + torrent-batch 98 passed。2026-08-29 回归加固新增后端 16 例、前端 20 例：覆盖先有速度后零速完成的两轮端点闭环、qB/Transmission 完成状态矩阵、TTL 重试/恢复、206 下终态交付、三种独立数据库完成证据防旧快照回退、异常数值、最多 100 项核验及三视图复合键行为。加固后后端定向 110 passed；前端定向 5 suites / 237 passed、全量 84 suites / 1258 passed。后端全量 4136 passed / 7 skipped / 2 failed，失败精确落在工作区既有未提交的 health build 字段与 Linux 打包依赖结构改动，和本任务文件无重叠。",
+        "lint": "backend py_compile、目标 mypy、flake8、lint_btdeck 通过；Ruff format 120 对两个 API 测试通过，active_only_filter 仅报告本批未触及的既有 L177 拼接格式；Black 24.10 在当前 Windows 对测试文件按项目 line-length=120 仍无输出挂起。frontend npm run typecheck、npm run lint、npm run build 通过；仓库 ./init.sh --ci 在当前 Windows/WSL 环境仍因既有 Bash/Service/CreateInstance/E_ACCESSDENIED 失败。",
         "contract": "GET /torrents/active-torrents 仍以 200/206 表示完整/部分快照，数据新增 status/downloadComplete；POST /torrents/runtime-state/reconcile 接收最多 100 个复合键并返回 list/missing。"
       },
       "files": [
@@ -5712,7 +5712,11 @@
         "backend/tests/api/test_torrent_speed_regression.py",
         "backend/tests/api/test_active_torrents_endpoint.py",
         "backend/tests/endpoints/test_active_only_filter.py",
-        "frontend/tests/unit/torrent-batch.spec.ts"
+        "frontend/tests/unit/torrent-batch.spec.ts",
+        "frontend/tests/unit/api-contracts.spec.ts",
+        "frontend/tests/unit/torrent-list-view-component.spec.ts",
+        "frontend/tests/unit/traditional-view-component.spec.ts",
+        "frontend/tests/unit/mobile-torrents.spec.ts"
       ]
     }
   ]

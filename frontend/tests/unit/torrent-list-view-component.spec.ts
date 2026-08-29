@@ -11,6 +11,7 @@ import {
   getBatchDeleteStatus,
   getDownloaderList,
   getDuplicateTorrents,
+  reconcileRuntimeTorrentStates,
   getTrackerDomains,
   getTorrentList
 } from '@/api/torrents'
@@ -52,6 +53,7 @@ jest.mock('@/api/torrents', () => ({
   getTrackerDomains: jest.fn(),
   reannounceTorrents: jest.fn(),
   getActiveTorrents: jest.fn(),
+  reconcileRuntimeTorrentStates: jest.fn(),
   applySearchTemplate: jest.fn(),
   createSearchTemplate: jest.fn()
 }))
@@ -62,6 +64,9 @@ const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorre
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
+const mockReconcileRuntimeTorrentStates = reconcileRuntimeTorrentStates as jest.MockedFunction<
+  typeof reconcileRuntimeTorrentStates
+>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
 const mockGetBatchDeleteStatus = getBatchDeleteStatus as jest.MockedFunction<typeof getBatchDeleteStatus>
@@ -104,6 +109,7 @@ interface ListQueryState {
 }
 
 interface TorrentListViewVm extends Vue {
+  list: Torrent[]
   currentPage: number
   pageSize: number
   pageSizeInput: string
@@ -125,6 +131,8 @@ interface TorrentListViewVm extends Vue {
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
+  loadActiveSpeed(): Promise<boolean>
+  runtimeStateMisses: Record<string, number>
 }
 
 const message = {
@@ -248,6 +256,12 @@ describe('torrent list view pagination and sorting', () => {
       msg: 'ok',
       code: '200',
       data: []
+    })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [], missing: [] }
     })
     mockGetTrackerDomains.mockResolvedValue({
       status: 'success',
@@ -850,6 +864,59 @@ describe('torrent list view pagination and sorting', () => {
     expect(vm.listQuery.sort_order).toBe('asc')
     expect(sizeHeader.attributes('aria-sort')).toBe('ascending')
     expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up')
+  })
+
+  it('连续完整快照未命中后核验零速终态，并把主列表行收敛到100%', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{ ...torrentFixture(), status: 'downloading', progress: 99 }],
+        total: 1,
+        pageSize: 20
+      }
+    })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{
+          hash: 'hash-1',
+          downloader_id: 'downloader-1',
+          downloadSpeed: 0,
+          uploadSpeed: 0,
+          progress: 99,
+          status: 'seeding',
+          downloadComplete: true,
+          num_seeds: 0,
+          num_leechs: 0
+        }],
+        missing: []
+      }
+    })
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.runtimeStateMisses = {}
+    mockGetActiveTorrents.mockClear()
+    mockReconcileRuntimeTorrentStates.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockReconcileRuntimeTorrentStates).not.toHaveBeenCalled()
+    await vm.loadActiveSpeed()
+
+    expect(mockReconcileRuntimeTorrentStates).toHaveBeenCalledWith([
+      { downloader_id: 'downloader-1', hash: 'hash-1' }
+    ])
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      status: 'seeding',
+      progress: 100,
+      downloadComplete: true,
+      downloadSpeed: 0,
+      uploadSpeed: 0
+    }))
   })
 })
 

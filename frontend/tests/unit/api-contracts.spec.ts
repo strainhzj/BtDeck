@@ -8,6 +8,7 @@ import {
   getBatchDeleteStatus,
   getTorrentList,
   pauseTorrents,
+  reconcileRuntimeTorrentStates,
   resumeTorrents,
   saveSimpleQueryAsTemplate
 } from '@/api/torrents'
@@ -242,6 +243,17 @@ describe('API 请求契约', () => {
       expectRequest(
         () => getActiveTorrents(),
         { url: '/torrents/active-torrents', method: 'get' }
+      )
+    })
+
+    it('终态核验按下载器与 hash 复合键提交 JSON', () => {
+      const items = [
+        { downloader_id: 'dl-a', hash: 'same-hash' },
+        { downloader_id: 'dl-b', hash: 'same-hash' }
+      ]
+      expectRequest(
+        () => reconcileRuntimeTorrentStates(items),
+        { url: '/torrents/runtime-state/reconcile', method: 'post', data: { items } }
       )
     })
 

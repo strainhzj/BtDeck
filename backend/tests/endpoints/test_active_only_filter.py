@@ -563,16 +563,19 @@ async def test_sync_realtime_terminal_state_sets_progress_and_completion_date():
 
 
 @pytest.mark.asyncio
-async def test_sync_realtime_stale_snapshot_cannot_regress_completed_torrent():
-    """终态确认后的旧轮询快照不得把进度/状态回写为下载中。"""
-    completed_at = datetime.now()
+@pytest.mark.parametrize("completion_guard", ["progress", "status", "completed_date"])
+async def test_sync_realtime_stale_snapshot_cannot_regress_completed_torrent(completion_guard):
+    """任一已落库完成证据都必须独立阻止旧轮询快照回退状态。"""
+    completed_at = datetime.now() if completion_guard == "completed_date" else None
     torrent = MagicMock(
         downloader_id="dl_a",
         hash="done-hash",
-        progress=100.0,
-        status="completed",
+        progress=100.0 if completion_guard == "progress" else 87.0,
+        status="completed" if completion_guard == "status" else "seeding",
         completed_date=completed_at,
     )
+    original_progress = torrent.progress
+    original_status = torrent.status
     session = _AsyncSessionContext([torrent])
     scope = _AsyncScope()
 
@@ -592,7 +595,7 @@ async def test_sync_realtime_stale_snapshot_cannot_regress_completed_torrent():
             ]
         )
 
-    assert torrent.progress == 100.0
-    assert torrent.status == "completed"
+    assert torrent.progress == original_progress
+    assert torrent.status == original_status
     assert torrent.completed_date == completed_at
     assert session.commit_count == 0

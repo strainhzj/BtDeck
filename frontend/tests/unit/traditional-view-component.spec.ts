@@ -12,6 +12,7 @@ import {
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
+  reconcileRuntimeTorrentStates,
   getTrackerDomains,
   getTorrentList,
   addTorrent
@@ -44,6 +45,7 @@ jest.mock('@/api/torrents', () => ({
   getDownloaderList: jest.fn(),
   getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
+  reconcileRuntimeTorrentStates: jest.fn(),
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
   applySearchTemplate: jest.fn(),
@@ -90,6 +92,9 @@ const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorre
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
+const mockReconcileRuntimeTorrentStates = reconcileRuntimeTorrentStates as jest.MockedFunction<
+  typeof reconcileRuntimeTorrentStates
+>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockAddTorrent = addTorrent as jest.MockedFunction<typeof addTorrent>
 const mockGetAllCategories = getAllCategories as jest.Mock
@@ -103,6 +108,7 @@ interface TorrentRow {
   checked?: boolean
   status?: string
   progress?: number | null
+  downloadComplete?: boolean
 }
 
 interface PageSizeSuggestion {
@@ -159,6 +165,7 @@ interface TraditionalViewVm extends Vue {
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   loadActiveSpeed(): Promise<boolean>
+  runtimeStateMisses: Record<string, number>
   getTorrentSpeed(row: TorrentRow, type: 'download' | 'upload'): number | null
 }
 
@@ -382,6 +389,12 @@ describe('TraditionalView component regressions', () => {
       msg: 'ok',
       code: '200',
       data: []
+    })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [], missing: [] }
     })
     mockAdvancedSearch.mockResolvedValue({
       status: 'success',
@@ -1262,6 +1275,63 @@ describe('TraditionalView component regressions', () => {
 
     expect(vm.list.map(row => row.progress)).toEqual([60, 60])
     expect(vm.list.map(row => vm.getTorrentSpeed(row, 'download'))).toEqual([300, 300])
+  })
+
+  it('终态核验按下载器与 hash 精确更新同 hash 任务，不串到另一下载器', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [
+          torrentFixture(1, {
+            infoId: 'info-a', downloaderId: 'dl-a', hash: 'same-hash',
+            status: 'downloading', progress: 99
+          }),
+          torrentFixture(2, {
+            infoId: 'info-b', downloaderId: 'dl-b', hash: 'same-hash',
+            status: 'downloading', progress: 99
+          })
+        ],
+        total: 2,
+        pageSize: 20
+      }
+    })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{
+          hash: 'same-hash', downloader_id: 'dl-b',
+          downloadSpeed: 0, uploadSpeed: 0, progress: 99,
+          status: 'seeding', downloadComplete: true,
+          num_seeds: 0, num_leechs: 0
+        }],
+        missing: [{ downloader_id: 'dl-a', hash: 'same-hash' }]
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.runtimeStateMisses = {}
+    mockGetActiveTorrents.mockClear()
+    mockReconcileRuntimeTorrentStates.mockClear()
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+
+    expect(mockReconcileRuntimeTorrentStates).toHaveBeenCalledWith([
+      { downloader_id: 'dl-a', hash: 'same-hash' },
+      { downloader_id: 'dl-b', hash: 'same-hash' }
+    ])
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      status: 'downloading', progress: 99
+    }))
+    expect(vm.list[0].downloadComplete).toBeUndefined()
+    expect(vm.list[1]).toEqual(expect.objectContaining({
+      status: 'seeding', progress: 100, downloadComplete: true
+    }))
   })
 
   it('长列表仅渲染当前虚拟窗口和上下缓冲行', async() => {

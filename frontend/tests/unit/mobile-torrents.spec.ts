@@ -9,13 +9,19 @@
 import { shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
 import MobileTorrents from '@/views/mobile/torrents.vue'
-import { getTorrentList, getTrackerDomains, getActiveTorrents } from '@/api/torrents'
+import {
+  getTorrentList,
+  getTrackerDomains,
+  getActiveTorrents,
+  reconcileRuntimeTorrentStates
+} from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
 
 jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
   getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
+  reconcileRuntimeTorrentStates: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
   deleteTorrents: jest.fn()
@@ -76,6 +82,12 @@ describe('views/mobile/MobileTorrents', () => {
     jest.mocked(getTrackerDomains).mockResolvedValue({ code: '200', data: ['tracker.example.com'] } as never)
     jest.mocked(getDownloaderList).mockReset()
     jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [{ id: 'd1', nickname: 'QB' }] } as never)
+    jest.mocked(getActiveTorrents).mockReset()
+    jest.mocked(getActiveTorrents).mockResolvedValue({ code: '200', data: [] } as never)
+    jest.mocked(reconcileRuntimeTorrentStates).mockReset()
+    jest.mocked(reconcileRuntimeTorrentStates).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok', data: { list: [], missing: [] }
+    } as never)
   })
 
   afterEach(() => {
@@ -301,6 +313,67 @@ describe('views/mobile/MobileTorrents', () => {
     // active 接口只含速度>0 的种子：未命中的 def 行旧速度必须清零
     expect(idle.downloadSpeed).toBe(0)
     expect(idle.uploadSpeed).toBe(0)
+    wrapper.destroy()
+  })
+
+  it('连续两个完整快照未命中后核验零速终态，并把下载中行收敛到100%', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200',
+      data: {
+        list: [{ ...listTorrent, status: 'downloading', progress: 99, completedDate: null }],
+        total: 1
+      }
+    } as never)
+    jest.mocked(reconcileRuntimeTorrentStates).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok', data: {
+        list: [{
+          hash: 'abc', downloader_id: 'd1', downloadSpeed: 0, uploadSpeed: 0,
+          progress: 99, status: 'seeding', downloadComplete: true
+        }],
+        missing: []
+      }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+
+    await vm.loadActiveSpeed()
+    expect(reconcileRuntimeTorrentStates).not.toHaveBeenCalled()
+    await vm.loadActiveSpeed()
+
+    expect(reconcileRuntimeTorrentStates).toHaveBeenCalledWith([
+      { downloader_id: 'd1', hash: 'abc' }
+    ])
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      status: 'seeding', progress: 100, downloadComplete: true,
+      downloadSpeed: 0, uploadSpeed: 0
+    }))
+    wrapper.destroy()
+  })
+
+  it('下载中筛选启用时，终态核验完成后重新拉表移除不再匹配的行', async() => {
+    jest.mocked(getTorrentList)
+      .mockResolvedValueOnce({
+        code: '200',
+        data: { list: [{ ...listTorrent, status: 'downloading', progress: 99 }], total: 1 }
+      } as never)
+      .mockResolvedValueOnce({ code: '200', data: { list: [], total: 0 } } as never)
+    jest.mocked(reconcileRuntimeTorrentStates).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok', data: {
+        list: [{ hash: 'abc', downloader_id: 'd1', progress: 100, status: 'seeding', downloadComplete: true }],
+        missing: []
+      }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.filters.statuses = ['downloading']
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+
+    expect(getTorrentList).toHaveBeenCalledTimes(2)
+    expect(vm.list).toEqual([])
     wrapper.destroy()
   })
 

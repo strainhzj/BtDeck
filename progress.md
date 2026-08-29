@@ -6282,3 +6282,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **后端**：新增运行态归一化（状态映射、进度 0–100 钳制、`downloadComplete` 完成证据）；显式未完成标记优先于状态推断，且完成时间/完成状态/100% 一旦落库后不会被异步旧快照回退；TTL 按下载器独立轮转并设置 2 秒补查退避，确认完成后移除；终态在速度接口返回前同步进度/状态/完成时间，普通进度仍按批次异步写入；新增 `POST /torrents/runtime-state/reconcile`，批量核验最多 100 个复合键并返回 `list/missing`。
 - **前端**：`buildSpeedSnapshot` 接受 206 并返回可合并增量；列表、传统、移动三视图按 `downloader_id + hash` 精确更新速度/状态/进度，完整快照连续两次未命中时低频调用终态核验；完成证据强制进度 100，状态筛选场景核验后刷新列表。
 - **回归与记录**：后端定向 94 passed；前端速度工具 98 passed、列表/传统/移动组件 75 passed（合计 173）；`tsc --noEmit`、`npm run lint`、mypy、flake8、py_compile、前端生产 build 通过。Black 24.10 在当前 Windows 对该文件按项目 `line-length=120` 检查会挂起，改用 `line-length=117` 快速检查确认无格式差异。`./init.sh --ci` 在当前 Windows/WSL 环境仍受既有 E_ACCESSDENIED/null-byte 输出限制；未执行 Git 提交。
+
+## 2026-08-29：种子实时终态修复回归加固与目的验证
+
+- **目的验证闭环**：新增端点级两轮场景，第一轮 qB 任务以 4096 B/s、99.37%、`downloading` 进入 TTL；第二轮活动接口不再返回该任务，TTL 按复合键补查到零速 `seeding` 且原始进度仍为 99.37%，响应最终稳定为 `progress=100`、`downloadComplete=true`、非下载中状态，终态在响应前同步并从 TTL 移除。另验证其它下载器失败导致 206 时，健康下载器已确认的终态仍会交付和同步。
+- **新增 36 个回归执行项**：后端 16 项覆盖 qB 6 种上传终态、Transmission 2 种做种终态、100%/显式 false 优先级、终态错误保留、TTL 退避/恢复、两轮闭环、206 终态，以及完成时间/完成状态/100% 三种落库证据独立防回退；前端 20 项覆盖旧服务端终态矩阵、异常数值、显式 false 与 100% 优先级、同 hash 复合键隔离、核验排除集/100 项上限、API 载荷和列表/传统/移动三视图行为。
+- **测试结果**：后端定向三文件 **110 passed**；前端定向 5 suites / **237 passed**，前端全量 84 suites / **1258 passed**。后端全量 4145 collected，结果 **4136 passed / 7 skipped / 2 failed**；两项失败分别对应本任务开始前已存在的未暂存 `backend/app/api/endpoints/health.py` 新增 build 字段但旧断言未更新，以及 `deploy/requirements-linux-package.txt` 改为引用 lock 后旧测试仍要求本文件直接出现 openpyxl，均与本批 8 个测试文件无重叠。
+- **质量门禁**：前端 `npm run typecheck`、`npm run lint`、`npm run build` 通过；后端目标 mypy、flake8、py_compile、`scripts/lint_btdeck.py` 通过。Ruff format 120 对两个 API 测试通过，`test_active_only_filter.py` 只报告本批未触及的既有 L177 字符串拼接；Black 24.10 在当前 Windows 对测试文件按项目 120 线宽仍无输出挂起并已中止。根 `bash ./init.sh --ci` 仍在 WSL 创建阶段报 `Bash/Service/CreateInstance/E_ACCESSDENIED`。
+- **记录状态**：`feature_list.json`、`docs/roadmap/tests/README.md`、`docs/roadmap/perspectives/test-coverage.md` 与 `session-handoff.md` 已同步。本轮仅新增/扩展测试和证据，业务源码无需再改；回归加固尚未 Git 提交，保留工作区其它发布构建相关未提交内容。

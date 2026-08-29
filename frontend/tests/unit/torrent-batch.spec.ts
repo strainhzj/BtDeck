@@ -1238,6 +1238,75 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
       hash: 'done-without-status', progress: 100, status: 'completed', downloadComplete: true
     })
   })
+
+  it.each([
+    'completed',
+    'seeding',
+    'stalledUP',
+    'queuedUP',
+    'uploading',
+    'forcedUP',
+    'pausedUP',
+    'checkingUP',
+    'seed pending'
+  ])('旧服务端未返回完成标记时，终态 %s 仍收敛到 100%%', (status) => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: `done-${status}`, progress: 91.25, status }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      progress: 100,
+      status,
+      downloadComplete: true
+    })
+  })
+
+  it('显式未完成优先于终态字符串，避免旧状态把 99% 误抬成 100%', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'not-done', progress: 99.4, status: 'seeding', downloadComplete: false }
+      ]
+    })
+    expect(r.updates[0]).toEqual({
+      hash: 'not-done',
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      progress: 99.4,
+      status: 'seeding'
+    })
+  })
+
+  it('100% 进度优先于滞后的 downloading/显式 false，并归一为 completed', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'progress-done', progress: 100, status: 'downloading', downloadComplete: false }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      progress: 100,
+      status: 'completed',
+      downloadComplete: true
+    })
+  })
+
+  it('异常数值不会生成 NaN/Infinity 或越界进度', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'nan', downloadSpeed: Number.NaN, uploadSpeed: Number.POSITIVE_INFINITY, progress: Number.NaN },
+        { hash: 'negative', progress: -4 },
+        { hash: 'overflow', progress: 100.01 }
+      ]
+    })
+    expect(r.updates).toEqual([
+      { hash: 'nan', downloadSpeed: 0, uploadSpeed: 0, progress: 0 },
+      { hash: 'negative', downloadSpeed: 0, uploadSpeed: 0, progress: 0 },
+      {
+        hash: 'overflow', downloadSpeed: 0, uploadSpeed: 0,
+        progress: 100, status: 'completed', downloadComplete: true
+      }
+    ])
+  })
 })
 
 describe('实时终态核验候选收敛', () => {
@@ -1262,6 +1331,52 @@ describe('实时终态核验候选收敛', () => {
     )
     expect(result.candidates).toEqual([])
     expect(result.misses['speed:dl-a:h1']).toBeUndefined()
+  })
+
+  it('同 hash 只清除实际命中的下载器，另一下载器仍按复合键触发核验', () => {
+    const list = [
+      { hash: 'same', downloader_id: 'dl-a', status: 'downloading', progress: 60 },
+      { hash: 'same', downloader_id: 'dl-b', status: 'downloading', progress: 60 }
+    ]
+    const result = collectRuntimeStateReconcileCandidates(
+      list,
+      [{ hash: 'same', downloaderId: 'dl-a', downloadSpeed: 1, uploadSpeed: 0, progress: 61 }],
+      { 'speed:dl-a:same': 1, 'speed:dl-b:same': 1 }
+    )
+    expect(result.candidates).toEqual([{ downloader_id: 'dl-b', hash: 'same' }])
+    expect(result.misses['speed:dl-a:same']).toBeUndefined()
+    expect(result.misses['speed:dl-b:same']).toBe(0)
+  })
+
+  it('暂停/错误/已完成行不进入核验，避免对稳定终态持续打下载器', () => {
+    const list = [
+      { hash: 'eligible', downloader_id: 'dl', status: 'downloading', progress: 80 },
+      { hash: 'paused', downloader_id: 'dl', status: 'paused', progress: 80 },
+      { hash: 'error', downloader_id: 'dl', status: 'error', progress: 80 },
+      { hash: 'seed', downloader_id: 'dl', status: 'seeding', progress: 80 },
+      { hash: 'complete-flag', downloader_id: 'dl', status: 'downloading', progress: 80, downloadComplete: true },
+      { hash: 'complete-date', downloader_id: 'dl', status: 'downloading', progress: 80, completed_date: '2026-08-29' },
+      { hash: 'complete-progress', downloader_id: 'dl', status: 'downloading', progress: 100 }
+    ]
+    const result = collectRuntimeStateReconcileCandidates(list, [], {}, 1)
+    expect(result.candidates).toEqual([{ downloader_id: 'dl', hash: 'eligible' }])
+    expect(Object.keys(result.misses)).toEqual(['speed:dl:eligible'])
+  })
+
+  it('一次最多核验 100 项，超出项保留未命中计数供下轮继续', () => {
+    const list = Array.from({ length: 105 }, (_, index) => ({
+      hash: `h-${index}`,
+      downloader_id: 'dl',
+      status: 'downloading',
+      progress: 50
+    }))
+    const result = collectRuntimeStateReconcileCandidates(list, [], {}, 1, 100)
+    expect(result.candidates).toHaveLength(100)
+    expect(result.candidates[0]).toEqual({ downloader_id: 'dl', hash: 'h-0' })
+    expect(result.candidates[99]).toEqual({ downloader_id: 'dl', hash: 'h-99' })
+    expect(result.misses['speed:dl:h-99']).toBe(0)
+    expect(result.misses['speed:dl:h-100']).toBe(1)
+    expect(result.misses['speed:dl:h-104']).toBe(1)
   })
 
   it('旧列表归一为 unknown 且未完成时仍可进入终态核验', () => {
