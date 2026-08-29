@@ -122,4 +122,42 @@ class LanHostPolicyTest {
         assertFalse(LanHostPolicy.needsCleartextConsent("https://10.0.0.2:5001"))
         assertFalse(LanHostPolicy.needsCleartextConsent("http://example.com"))
     }
+
+    // ============ 回环豁免（Phase 3 本机服务端） ============
+
+    @Test
+    fun loopbackHostDetection() {
+        assertTrue(Hosts.isLoopbackHost("127.0.0.1"))
+        assertTrue(Hosts.isLoopbackHost("127.3.4.5")) // 整个 127/8
+        assertTrue(Hosts.isLoopbackHost("LOCALHOST"))
+        assertTrue(Hosts.isLoopbackHost("::1"))
+        assertFalse(Hosts.isLoopbackHost("192.168.1.5"))
+        assertFalse(Hosts.isLoopbackHost("10.0.0.2"))
+        // 非 127 开头的 127 字样不得误判
+        assertFalse(Hosts.isLoopbackHost("127.0.0.1.example.com"))
+        // 残缺 IPv4 形态
+        assertFalse(Hosts.isLoopbackHost("127.0"))
+    }
+
+    @Test
+    fun httpLoopbackExemptFromConsent() {
+        // 本机服务端固定形态：无需明文确认记录
+        assertTrue(LanHostPolicy.check("http://127.0.0.1:36603", cleartextConsent = false).isOk)
+        assertTrue(LanHostPolicy.check("http://localhost:8300", cleartextConsent = false).isOk)
+        assertTrue(LanHostPolicy.check("http://[::1]:8300", cleartextConsent = false).isOk)
+    }
+
+    @Test
+    fun loopbackExemptDoesNotLeakToLan() {
+        // 豁免只覆盖回环；LAN 私有主机仍要求确认
+        val verdict = LanHostPolicy.check("http://192.168.5.51:5001", cleartextConsent = false)
+        assertTrue(verdict is LanHostPolicy.Verdict.Reject)
+        assertEquals(
+            LanHostPolicy.Reason.HTTP_LAN_WITHOUT_CONSENT,
+            (verdict as LanHostPolicy.Verdict.Reject).reason,
+        )
+        // loopback 不触发确认 UI
+        assertFalse(LanHostPolicy.needsCleartextConsent("http://127.0.0.1:8300"))
+        assertFalse(LanHostPolicy.needsCleartextConsent("http://localhost:8300"))
+    }
 }

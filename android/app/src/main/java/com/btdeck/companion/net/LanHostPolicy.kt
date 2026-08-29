@@ -44,15 +44,20 @@ object LanHostPolicy {
         return when {
             !Hosts.isPrivateLanHost(host) ->
                 Verdict.Reject(Reason.HTTP_PUBLIC_HOST, host)
+            // 回环豁免（Phase 3 本机服务端）：明文只走本机协议栈，无窃听面，
+            // 且默认构建 NSC 明确只对 loopback 放行 cleartext
+            Hosts.isLoopbackHost(host) -> Verdict.Ok
             !cleartextConsent ->
                 Verdict.Reject(Reason.HTTP_LAN_WITHOUT_CONSENT, host)
             else -> Verdict.Ok
         }
     }
 
-    /** 该 URL 是否需要展示明文风险确认（http + 私有主机）。 */
+    /** 该 URL 是否需要展示明文风险确认（http + 私有主机，回环豁免）。 */
     fun needsCleartextConsent(rawUrl: String): Boolean {
         val parsed = Hosts.parse(rawUrl) ?: return false
-        return parsed.scheme == "http" && Hosts.isPrivateLanHost(parsed.host)
+        return parsed.scheme == "http" &&
+            Hosts.isPrivateLanHost(parsed.host) &&
+            !Hosts.isLoopbackHost(parsed.host)
     }
 }

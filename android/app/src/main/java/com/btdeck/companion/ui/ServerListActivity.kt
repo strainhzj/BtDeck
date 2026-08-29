@@ -26,6 +26,8 @@ import com.btdeck.companion.data.CredentialVault
 import com.btdeck.companion.data.ServerProfile
 import com.btdeck.companion.data.ServerProfileStore
 import com.btdeck.companion.net.LanHostPolicy
+import com.btdeck.companion.server.LocalServerProfile
+import com.btdeck.companion.server.LocalServerState
 import com.btdeck.companion.util.Hosts
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -89,6 +91,11 @@ class ServerListActivity : AppCompatActivity() {
     }
 
     private fun openWeb(profile: ServerProfile) {
+        // 本机服务端 profile：服务未运行时引导回向导启动（WebView 直开只会报不可达）
+        if (LocalServerProfile.isLocal(profile) && !LocalServerState.snapshot.isRunning) {
+            Toast.makeText(this, R.string.local_server_not_running, Toast.LENGTH_LONG).show()
+            return
+        }
         // 每次打开前再校验一次策略（NSC 构建变体或 profile 数据变化后的兜底）
         when (val verdict = LanHostPolicy.check(profile.baseUrl, profile.cleartextAllowed)) {
             is LanHostPolicy.Verdict.Ok -> startActivity(

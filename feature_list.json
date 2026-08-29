@@ -3230,7 +3230,7 @@
           "id": "v1.0.6-dual-mode-client.4",
           "name": "Phase 3：安卓本地服务端、存储与 FGS 生命周期",
           "description": "以 Chaquopy 17 + Python 3.12 打包后端、Alembic、契约和 frontend dist；程序化启动单 worker Uvicorn，完成目录准备、迁移 fail-fast 与健康握手；服务端模式仅经用户操作启动，Foreground Service 提供通知、状态、停止/重启和进程恢复；specialUse manifest/Play 申报、Android 12+ 启动限制、Android 13+ 通知权限、Doze/OEM、电池、SAF、Keystore、backup rules、loopback 默认与 LAN 重绑全部纳入设备验收。",
-          "status": "pending",
+          "status": "in-progress",
           "scope": "fullstack",
           "files": [
             "android/",
@@ -3240,7 +3240,8 @@
             "backend/app/core/migration.py",
             "backend/app/factory.py",
             "backend/tests/"
-          ]
+          ],
+          "evidence": "2026-08-29 Phase 3 安卓本地服务端壳工程全量落地（双 AVD 实证；Phase 5 设备矩阵遗留故 in-progress 不置 done）。① Python 侧：android/tools/stage-server.py（移植 android-wheels staging：backend/app+alembic(.pymig)+alembic.ini+frontend/dist→app/src/server/ 源集，requirements 生成含 pillow ANDROID-DROP）；android/server-python/btdeck_server.py（start/stop/status JSON 契约：异步启动+状态轮询、Alembic fail-fast 且迁移前置于深导入[实证修复：导入期模块级查询打空库]、端口优先复用+SO_REUSEADDR[实证修复：重启 TIME_WAIT 端口被拒]、健康自检 trust_env=False[实证修复：Windows 注册表系统代理把 127.0.0.1 探测转发成代理 503]）；桌面冒烟 SMOKE PASS（start 4s→running、/health/live+/health/ready 200 v1.0.6、SPA 首页 200、stop 干净、重启 2s）。② 壳工程：Chaquopy 17.0.0 接线（Python 3.12 + --extra-index-url=strainhzj.github.io/android-wheels/simple + -r staged requirements；实证坑：pip 块无任何 install() 时整个 pip 配置含 options() 被判空跳过→requirements imy 22 字节空，tzdata install() 兼任生效锚点）；ndk.abiFilters 收敛 arm64-v8a/x86_64（32 位设备不可装，登记 README）；FGS specialUse（FOREGROUND_SERVICE(_SPECIAL_USE)+POST_NOTIFICATIONS 权限+PROPERTY_SPECIAL_USE_FGS_SUBTYPE+START_STICKY）；ServerService（通知 channel+停止 action+每秒轮询状态镜像+绑定变化完整重启+data 锚定 filesDir/btdeck-server）；ServerStates/LocalServerProfile/LocalServerState（纯 JVM 可测契约层）；LanHostPolicy 回环豁免（Hosts.isLoopbackHost：127/8+::1+localhost 免明文确认，LAN 私有主机仍需确认+单测锁定）。③ JVM 单测 28 绿（testImplementation org.json:json 修 not-mocked stub）。④ 向导集成：ABI 检测→通知权限请求（13+，拒绝不阻断）→确认对话框（LAN 开关默认关+威胁模型文案）→启动进度→running 自动写入本机 profile（固定 id local-server+动态端口 baseUrl）复用 WebViewActivity 全链→错误按 env/migration/import/bind/health 阶段归因；ServerList 本机 profile 未运行引导。⑤ 双 AVD 实证：btdeck-a35（Android 15，4096 页）connectedDebugAndroidTest 1/1 绿（start→空库迁移→健康握手→静态 SPA 首页→优雅停机→重启端口复用）；手动全流程实录（uiautomator dump/dumpsys 铁证）：向导→通知权限 Allow→确认框（LAN 默认不勾）→15s 内 running→WebViewActivity 自动打开→SPA 登录页渲染（截图视觉实证）→标题'本机服务端 v1.0.6 · 服务就绪'→常驻通知'BtDeck 本机服务 v1.0.6 · http://127.0.0.1:36519'+停止 action；FGS types=0x40000000（specialUse）+stopIfKilled=false；ACTION_STOP→服务销毁；ACTION_START 重启 running 端口 36519 复用；am crash 崩溃恢复：pid 3816→4301、ServiceRecord 重建、通知与端口 36519 复原（START_STICKY 生效）。btdeck-16k（ps16k，16KB 页）connectedDebugAndroidTest 绿 + 向导启动链抽验（10s WebView、通知 41241、types=0x40000000）。LAN 明文变体 -Pbtdeck.lanCleartext=true 构建通过（versionName 0.2.0-server+lan，双 ABI）。APK debug 90.4MB（依赖+前端 dist 全量）。⑥ 后端零源码改动（cuser 延迟导入已就位）。遗留登记：arm64 真机/升级安装迁移演练/OEM 电池与 Doze 设备矩阵属 Phase 5；pillow ANDROID-DROP 致 2FA 二维码接口暂不可用（其余零影响）；release+bundletool 体积精算 Phase 5。"
         },
         {
           "id": "v1.0.6-dual-mode-client.5",

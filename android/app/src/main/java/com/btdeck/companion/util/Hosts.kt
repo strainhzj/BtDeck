@@ -100,4 +100,21 @@ object Hosts {
         val first = firstGroup.toIntOrNull(16) ?: return false
         return (first and 0xFE00) == 0xFC00 || (first and 0xFFC0) == 0xFE80
     }
+
+    /**
+     * 是否回环主机（localhost、127/8、::1）。
+     * 回环明文 HTTP 无网络窃听面——LanHostPolicy 据此豁免明文确认
+     * （dual-mode-client Phase 3：本机服务端固定以 http://127.0.0.1 访问）。
+     */
+    fun isLoopbackHost(host: String): Boolean {
+        val h = host.lowercase().removeSuffix(".")
+        if (h == "localhost" || h == "::1") return true
+        if (h.contains(':')) return false
+        val parts = h.split('.')
+        if (parts.size != 4 || parts[0] != "127") return false
+        return parts.drop(1).all { part ->
+            part.isNotEmpty() && part.length <= 3 &&
+                part.all { it.isDigit() } && part.toInt() in 0..255
+        }
+    }
 }

@@ -9,3 +9,5 @@ captures/
 .cxx/
 *.apk
 *.aab
+# Phase 3 服务端源集（tools/stage-server.py 生成的 staged 产物，不入库）
+app/src/server/

@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Phase 3 本机服务端（Foreground Service specialUse；uvicorn socket bind 依赖 INTERNET） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Android 13+：服务状态常驻通知需要运行时通知权限（拒绝不阻断服务运行） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".CompanionApp"
@@ -30,5 +35,16 @@
         <activity
             android:name=".ui.WebViewActivity"
             android:exported="false" />
+
+        <!-- Phase 3 本机服务端：仅经用户操作启动（向导入口），START_STICKY 重建；
+             loopback 默认，LAN 开启由 Intent extra 控制（默认关，开前展示威胁模型） -->
+        <service
+            android:name=".server.ServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="btdeck.local_server: runs the BtDeck self-hosted web server on this device (user-initiated temporary server for the in-app WebView)" />
+        </service>
     </application>
 </manifest>

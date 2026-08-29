@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-29（深夜）：Phase 3 安卓本地服务端壳工程落地（task .4 → in-progress）
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- **Python 侧**：`android/tools/stage-server.py`（staging：backend/app+alembic(.pymig)+alembic.ini+frontend/dist → `android/app/src/server/` gitignored 源集；requirements 生成含 pillow ANDROID-DROP、tzdata 已挪至 DSL）；`android/server-python/btdeck_server.py`（start/stop/status JSON 契约、异步启动+轮询、迁移 fail-fast 前置于深导入、16MB 大栈、uvicorn 预取端口+SO_REUSEADDR 复用、健康自检 trust_env=False）。桌面冒烟 SMOKE PASS。
+- **壳工程**：Chaquopy 17.0.0（py3.12 + wheels 索引 + `-r`；`-Pbtdeck.server=off` 跳过）；abiFilters arm64-v8a/x86_64；FGS specialUse（权限+subtype+START_STICKY）；ServerService/ServerStates/LocalServerProfile/LocalServerState；LanHostPolicy 回环豁免+isLoopbackHost；向导本机服务端全流程（ABI 检测/通知权限/LAN 威胁模型/进度/阶段归因/运行态管理）；本机 profile 复用 WebView 链路。
+- **验证**：JVM 单测 28 绿；btdeck-a35（4096）connectedDebugAndroidTest 1/1 绿 + 手动全流程铁证（向导→15s running→WebView SPA 渲染→通知带端口→停止→重启→am crash 崩溃恢复 pid 3816→4301+端口复用）；btdeck-16k（ps16k）connectedDebugAndroidTest 绿+启动链抽验；LAN 变体构建通过；APK debug 90.4MB。后端零源码改动。
+- **三个新实证坑（已沉淀代码注释+README）**：① httpx trust_env 在 Windows 会采纳注册表系统代理把 127.0.0.1 探测变代理 503；② Chaquopy pip 块无任何 install() 时整个 pip 配置（含 options()）被判空跳过（requirements imy 22 字节空头）；③ 迁移必须前置于 app.main 深导入（导入链有模块级 DB 查询）。
+
+### 遗留与下一步
+
+- task .4 保持 in-progress：arm64 真机、升级安装迁移演练、OEM 电池/Doze 设备矩阵、release+bundletool 体积精算均属 Phase 5；2FA 二维码暂不可用（pillow ANDROID-DROP）。
+- 构建 SOP：先 frontend `npm run build` → `python android/tools/stage-server.py` → gradle assembleDebug；改 requirements 后 `--rerun-tasks` + 清 pip cache。
+- 下一步候选：task .5 capability 矩阵接线（用户已拍板"现在做"）或 .3/.8 设备级验证补全。
+
 ## 2026-08-28（夜）：v1.0.6 制品等价门禁 W0 本地探针批次
 
 ### 已完成（未提交，遵循仅用户要求时提交）
