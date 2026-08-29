@@ -35,8 +35,7 @@
 
 ### 下一步（按用户确认的优先级）
 
-1. 判据 6 专项：本地重建 AVD（用户已批准下载 emulator+system-image，SDK 在 C:/software/android-build-env，JAVA_HOME 需显式指 jdk-21.0.2）；用 ps16k 镜像验 16KB + 冷启动/升级。
-2. 判据 5：import-matrix full-graph 阶段 2 实装（BtDeck backend alembic/契约/frontend dist 注入 testapp）。
+1. 判据 5：import-matrix full-graph 阶段 2 实装（BtDeck backend alembic/契约/frontend dist 注入 testapp + backend requirements 在 Chaquopy/自建索引的可解析性梳理，greenlet 等潜在自建项）。**16KB 已达成**（ps16k 发现 p_align=4096 缺陷→-z max-page-size=16384 修复→16K/4096 双 AVD 6×6 全绿+CI 复验；深导入需 16MB 大栈线程，Phase 3 必用）。
 3. 批次 A：重跑定向后端测试组收口 `.2` 置 done（首轮核查已确认七项证据齐全）。
 4. Phase 2 设备项：离线/认证失败/版本不兼容状态、多 profile 隔离、自签证书真机全流程（OkHttp 指纹接入已实现，2026-08-28 晚，17/17 单测绿，真实 TLS 待设备）；`.5` capability 矩阵 API/UI 接线（用户拍板现在做，未开工）；`.8` 桌面 GUI 实测。
 5. Android 真机 arm64-v8a 导入验证（Phase 5 设备矩阵合并）。
