@@ -73,8 +73,9 @@ jobs:
           }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
           $ver = (Get-Item $iscc).VersionInfo.ProductVersion
+          if (-not $ver) { $ver = "0.0.0.0" }  # runner 预装版版本资源为空，记录占位
           Write-Output "ISCC_VERSION=$ver"
-          "ISCC_VERSION=$ver" | Set-Content -Path $env:GITHUB_ENV -Append
+          Add-Content -Path $env:GITHUB_ENV -Value "ISCC_VERSION=$ver"
 
       - name: Compile probe installer with ISCC (fail-closed)
         shell: pwsh
