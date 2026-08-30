@@ -16,14 +16,12 @@ fi
 mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup /opt/btdeck/torrents
 
 if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+    # 兜底链：openssl → coreutils(/dev/urandom)。不用 python3——最小化系统（W3 容器实测）
+    # 可能没有 openssl/python3，coreutils 的 head/od/tr 必在。
     if command -v openssl >/dev/null 2>&1; then
         SECRET_KEY="$(openssl rand -hex 32)"
     else
-        SECRET_KEY="$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-)"
+        SECRET_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     fi
 cat > /opt/btdeck/config/btdeck.env <<EOF
 SECRET_KEY=${SECRET_KEY}

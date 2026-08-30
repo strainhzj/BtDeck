@@ -50,8 +50,8 @@ CMD ["/sbin/init"]
 EOF
         docker build -q -t w3-rocky-sysd - <<'EOF'
 FROM rockylinux:9
-RUN sed -i 's|^mirrorlist=|#mirrorlist=|; s|^#baseurl=http://dl.rockylinux.org|baseurl=https://mirrors.aliyun.com/rockylinux|' /etc/yum.repos.d/Rocky-*.repo \
-    && dnf -y install systemd curl sqlite3 iproute \
+RUN sed -i 's|^mirrorlist=|#mirrorlist=|; s|^#baseurl=http://dl.rockylinux.org|baseurl=https://mirrors.aliyun.com/rockylinux|' /etc/yum.repos.d/rocky*.repo /etc/yum.repos.d/Rocky*.repo 2>/dev/null; \
+    dnf -y install systemd curl sqlite3 iproute \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]
