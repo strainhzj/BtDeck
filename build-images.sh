@@ -83,7 +83,8 @@ resolve_version() {
         VERSION=""
         return
     fi
-    VERSION="$("${PY}" - <<'PYEOF' "${FEATURE_LIST}"
+    # 相对路径传给原生 python（Git-Bash 下 /c/... 形式 Windows python 无法打开）
+    VERSION="$(cd "${SCRIPT_DIR}" && "${PY}" - <<'PYEOF' feature_list.json
 import json, sys
 with open(sys.argv[1], encoding='utf-8') as f:
     data = json.load(f)
@@ -125,9 +126,9 @@ PYEOF
 
 generate_identity() {
     local kind="$1"
-    local out="${GEN_ROOT}/${kind}"
+    local out="release/build/${kind}"
     local node_arg=""
-    local meta="${GEN_ROOT}/frontend/frontend-build-meta.json"
+    local meta="release/build/frontend/frontend-build-meta.json"
     if [[ -f "$meta" ]]; then
         node_arg="--node-version $("${PY}" -c "import json;print(json.load(open(r'${meta}',encoding='utf-8'))['toolchain']['node'])" 2>/dev/null || true)"
     fi
@@ -136,13 +137,13 @@ generate_identity() {
         args="${args} --allow-dirty"
     fi
     # shellcheck disable=SC2086
-    "${PY}" "${PROJECT_DIR}/scripts/release/generate_build_info.py" ${args} \
+    "${PY}" scripts/release/generate_build_info.py ${args} \
         || fail "生成 ${kind} 发布身份失败（release 模式要求干净工作区+六处版本一致）"
 }
 
 read_identity() {
-    # 读取 docker-backend 身份作为两镜像共享的 SHA/版本锚点
-    "${PY}" - "${GEN_ROOT}/docker-backend/build-info.json" <<'PYEOF'
+    # 读取 docker-backend 身份作为两镜像共享的 SHA/版本锚点（相对路径，见 generate_identity 注释）
+    "${PY}" - release/build/docker-backend/build-info.json <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
 
@@ -211,7 +212,7 @@ main() {
     if [[ "${RELEASE_MODE}" = "1" ]]; then
         # 唯一前端构建：校验一致性后组装独立上下文（绕开 frontend/.dockerignore 的 dist/ 排除）
         "${PY}" scripts/release/check_prebuilt_frontend.py \
-            "${GEN_ROOT}/frontend/frontend-asset-manifest.json" "${PROJECT_DIR}/frontend/dist" \
+            "release/build/frontend/frontend-asset-manifest.json" "frontend/dist" \
             || fail "frontend dist 与唯一构建 manifest 不一致；请先运行 scripts/release/build_frontend.py"
         frontend_ctx="${GEN_ROOT}/frontend-ctx"
         rm -rf "${frontend_ctx}"
