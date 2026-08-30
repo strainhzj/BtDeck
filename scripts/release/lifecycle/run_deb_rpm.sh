@@ -36,8 +36,13 @@ fail() { echo "[FATAL] $1" >&2; exit 2; }
 
 command -v docker >/dev/null 2>&1 || fail "docker 不可用"
 
+build_one() {  # build_one <tag>（heredoc 从 stdin）
+    local tag="$1"
+    docker build -q -t "$tag" - || fail "systemd 测试镜像构建失败：$tag"
+}
+
 build_sysd_images() {
-    echo "[SETUP] 构建 systemd 测试镜像（官方基 + 预装 curl/sqlite3/iproute/python3）..."
+    echo "[SETUP] 构建 systemd 测试镜像（官方基 + 预装 curl/sqlite/iproute/python3）..."
     # 镜像源加速：默认国内源；CI/网络良好环境可 BTDECK_SKIP_MIRROR=1 走官方源
     if [ "${BTDECK_SKIP_MIRROR:-0}" != "1" ]; then
         docker build -q -t w3-debian-sysd - <<'EOF'
@@ -53,7 +58,7 @@ EOF
 FROM rockylinux:9
 RUN rm -f /etc/yum.repos.d/rocky*.repo \
     && printf '[baseos]\nname=Rocky BaseOS\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/BaseOS/$basearch/os/\ngpgcheck=0\n[appstream]\nname=Rocky AppStream\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/AppStream/$basearch/os/\ngpgcheck=0\n' > /etc/yum.repos.d/btdeck.repo \
-    && dnf -y install systemd curl sqlite3 iproute python3 \
+    && dnf -y install systemd curl sqlite iproute python3 \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]
@@ -68,7 +73,7 @@ CMD ["/sbin/init"]
 EOF
         docker build -q -t w3-rocky-sysd - <<'EOF'
 FROM rockylinux:9
-RUN dnf -y install systemd curl sqlite3 iproute \
+RUN dnf -y install systemd curl sqlite iproute python3 \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]
