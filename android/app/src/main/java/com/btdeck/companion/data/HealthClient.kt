@@ -10,7 +10,6 @@ import java.io.IOException
 import java.net.URI
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
-import java.util.Base64
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
@@ -166,6 +165,8 @@ class HealthClient {
         /**
          * TrustScope 的指纹是"冒号分隔大写 hex"；OkHttp pin 是 "sha256/<base64>"。
          * 容忍大小写与冒号差异；非法 hex 返回 null（该指纹跳过）。
+         * Base64 自包含实现：java.util 是 API 26+（lint NewApi），android.util
+         * 在 JVM 单测是 not-mocked stub——手写编码让设备与测试行为一致。
          */
         @JvmStatic
         internal fun fingerprintToPin(fingerprint: String): String? = runCatching {
@@ -174,8 +175,35 @@ class HealthClient {
             val bytes = ByteArray(hex.length / 2) { i ->
                 ((Character.digit(hex[i * 2], 16) shl 4) or Character.digit(hex[i * 2 + 1], 16)).toByte()
             }
-            "sha256/${Base64.getEncoder().encodeToString(bytes)}"
+            "sha256/${base64NoWrap(bytes)}"
         }.getOrNull()
+
+        /** 标准 Base64（无换行，等价 NO_WRAP）；SHA-256 产物为 44 字符一个 '='。 */
+        private fun base64NoWrap(bytes: ByteArray): String {
+            val table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            val out = StringBuilder((bytes.size * 4 / 3) + 4)
+            var i = 0
+            while (i + 2 < bytes.size) {
+                val n = ((bytes[i].toInt() and 0xFF) shl 16) or
+                    ((bytes[i + 1].toInt() and 0xFF) shl 8) or
+                    (bytes[i + 2].toInt() and 0xFF)
+                out.append(table[(n ushr 18) and 0x3F]).append(table[(n ushr 12) and 0x3F])
+                    .append(table[(n ushr 6) and 0x3F]).append(table[n and 0x3F])
+                i += 3
+            }
+            when (bytes.size - i) {
+                1 -> {
+                    val n = (bytes[i].toInt() and 0xFF) shl 16
+                    out.append(table[(n ushr 18) and 0x3F]).append(table[(n ushr 12) and 0x3F]).append("==")
+                }
+                2 -> {
+                    val n = ((bytes[i].toInt() and 0xFF) shl 16) or ((bytes[i + 1].toInt() and 0xFF) shl 8)
+                    out.append(table[(n ushr 18) and 0x3F]).append(table[(n ushr 12) and 0x3F])
+                        .append(table[(n ushr 6) and 0x3F]).append('=')
+                }
+            }
+            return out.toString()
+        }
 
         private const val SHA256_HEX_LEN = 64
     }

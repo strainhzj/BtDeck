@@ -3301,7 +3301,7 @@
           "id": "v1.0.6-dual-mode-client.7",
           "name": "Play、侧载与跨模式发布验收",
           "description": "按提审时官方 target API 要求完成 Play App Signing、隐私政策、Data Safety、FGS 用途申报和明文流量说明；GitHub Release 提供通用/ABI APK 说明；用 bundletool 记录真实包体和 native 清单；覆盖 API 24、Android 14/15/16、四 ABI、冷启动、迁移升级、进程杀死、Doze、通知/存储权限、HTTP/HTTPS/坏证书、LAN 开关、版本不匹配和两种模式的首启/退出/恢复。完成既有 DoD、Gradle lint/test、wheel import matrix 与 release artifact 校验后才标记 done。",
-          "status": "pending",
+          "status": "in-progress",
           "scope": "fullstack",
           "files": [
             "android/",
@@ -3310,7 +3310,8 @@
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
-          ]
+          ],
+          "evidence": "2026-08-30 Phase 5 发布验收首批（A/B/C 批次全过；Play 上传/arm64 真机/跨版本升级演练三边界登记）。① 批次 A（release 构建+包体精算）：发布 keystore 生成（gitignored，凭据 local.properties 注入，缺失退化无签名不阻断 CI）；signingConfigs 内联接线；assembleRelease 87.7MB + bundleRelease AAB 67.7MB；apksigner 验签（CN=BtDeck，SHA-256 92abd2a7…d0e3）；bundletool 1.17 精算——universal 85.6MB、arm64/x86_64 native 拆分各 12.2MB、单设备下发 ≈73MB、每 ABI 8 个 native so 清单（全 Chaquopy 运行时）；minify 保持关闭（Chaquopy 反射链路，决策登记 play-release.md §9）。② 批次 B（设备矩阵）：API 24（google_apis x86_64 新建 AVD btdeck-a24，WHPX 5s 冷启动）——release APK 安装 6s、服务启动链 10s 打开 WebView（Python 3.12 在 minSdk 24 完整跑通：迁移+uvicorn+SPA）、FGS true+health 200 v1.0.6、WebView 登录页渲染、旋转后服务存活+health 200、LAN 绑定变化实测（restartWith 绑 0.0.0.0，ss 显示 *:54916 端口复用）、kill -9 崩溃恢复（pid 4462→5100、FGS 重建、端口复原）；**修复两个 API 24 真 bug**：ServerService.createChannel 无版本判断（NotificationChannel API 26+，API 24 实测 ClassNotFoundException 崩溃→补 Build.VERSION_CODES.O 守卫）与 HealthClient java.util.Base64（API 26+，lint NewApi 唯一违例→自包含 Base64 实现，设备与 JVM 测试行为一致）。API 34（新建 btdeck-a34）——release 链路 10s WebView+FGS+health 200+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（dumpsys deviceidle not enabled，环境限制登记真机补）。③ 批次 C：docs/android/play-release.md（FGS specialUse 申报口径/Data Safety 表（无第三方 SDK 不收集）/隐私政策要点/明文流量双层防线/按 ABI Release 说明/minify 决策/包体实测矩阵）；:app:lintDebug 全绿（两违例修复后）；testDebugUnitTest 32 绿含修复回归。④ 遗留边界（不可本机完成，均登记 play-release.md §10）：Play Console 实际上传与人工审查（需开发者账号）；arm64 真机矩阵（wheel 自建已全绿，导入/16KB 待真机）；跨版本升级迁移演练（需两个带服务端的发布版本对，建议 v1.0.7）；Doze 真机实测。"
         }
       ]
     },

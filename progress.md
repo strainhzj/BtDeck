@@ -6329,3 +6329,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **.3 认证路径**：AVD 后端复跑 login.spec 3/3（错误凭据 error message 停留登录页、正确凭据进仪表盘）；强制改密全流程与登录限流（429→服务重启清零）实证。
 - **过程坑**：adb UI 表单自动化脆弱（对话框外点即关/键盘位移/仪表化测试清数据卸 APK）——原生 UI 项转 Playwright+仪表化覆盖；E2E 全新库需先完成强制改密（forceChange 跳设置页，改密表单在"修改密码" tab 非 2FA tab）。
 - 遗留人工项：.3 离线 toast/自签证书弹窗/多 profile 原生切换肉眼验收；.8 桌面 GUI 侧与自动登录 UI 流程。未执行 Git 提交（验证产物待用户指示后一并提交）。
+
+## 2026-08-30（二）：Phase 5 发布验收首批（task .7 → in-progress）
+
+- **批次 A**：release keystore（gitignored+local.properties 凭据，缺失退化不阻断）+ signingConfig 接线；assembleRelease 87.7MB / AAB 67.7MB；apksigner 验签；bundletool 精算（universal 85.6MB、native 拆分各 12.2MB、单设备 ≈73MB、8 so/ABI 清单）；minify 关闭决策登记。
+- **批次 B 设备矩阵**：API 24（新建 btdeck-a24）——release 全链路 10s WebView（Python 3.12 on minSdk 24 跑通）、FGS+health 200、旋转存活、LAN 绑定变化（*:0.0.0.0 端口复用）、kill -9 崩溃恢复；**修复两个 API 24 真 bug**：NotificationChannel 无版本守卫（ClassNotFoundException 崩溃）、java.util.Base64 lint NewApi（改自包含 Base64，单测/设备一致）。API 34（新建 btdeck-a34）——链路+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（登记真机）。
+- **批次 C**：docs/android/play-release.md（Play 申报材料全家桶+包体实测）；:app:lintDebug 绿（修复后）；单测 32 绿。
+- 遗留边界（登记 task .7）：Play 上传、arm64 真机、跨版本升级演练（v1.0.7）、Doze 真机。

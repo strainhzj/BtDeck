@@ -1,5 +1,15 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-30（二）：Phase 5 发布验收首批（task .7 → in-progress）
+
+### 已完成
+
+- **批次 A**：release keystore（不入库，凭据 local.properties）+ signingConfig；assembleRelease 87.7MB / AAB 67.7MB；apksigner 验签；bundletool 精算（universal 85.6MB、native 12.2MB/ABI、单设备 ≈73MB、8 so/ABI）。
+- **批次 B 设备矩阵**：API 24 全链路（Python 3.12 on minSdk 24 实证；旋转/LAN 绑定变化 *:0.0.0.0 端口复用/kill -9 恢复）；API 34 链路 + capabilities 5/3；Doze deep idle 模拟器不可强制（登记真机）。**修两个 API 24 真 bug**：NotificationChannel 版本守卫、java.util.Base64 → 自包含 Base64（lint NewApi + JVM 测试一致性双杀）。
+- **批次 C**：docs/android/play-release.md（FGS 申报/Data Safety/隐私/明文流量/ABI 说明/minify 决策/包体实测）；lintDebug 绿；单测 32 绿。
+- 遗留边界（登记 task .7/play-release.md §10）：Play 上传、arm64 真机、跨版本升级演练（v1.0.7）、Doze 真机。
+- ⚠ 工作区有**非本会话**的功能改动（frontend torrents 视图的 RuntimeListMembershipTracker 相关、advancedSearch.generated.ts 等）——疑似用户/并行会话进行中工作，本会话未触碰、未提交。
+
 ## 2026-08-30：.3/.5/.8 设备级验证批次（Phase 4 已提交 b326378）
 
 ### 已完成

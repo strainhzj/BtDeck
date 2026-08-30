@@ -205,6 +205,10 @@ class ServerService : Service() {
     }
 
     private fun createChannel() {
+        // NotificationChannel 是 API 26+ 的类：低版本直接引用类会
+        // ClassNotFoundException（API 24 实测崩溃）。26 以下 startForeground
+        // 用无 channel 的普通通知，NotificationCompat 自动兼容。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
             NotificationChannel(

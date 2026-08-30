@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -45,10 +47,28 @@ android {
         buildConfig = true
     }
 
+    // Phase 5 发布签名：凭据经 local.properties（gitignored）注入，keystore 不入库；
+    // 缺失时不创建 signingConfig（退化为无签名 release，本地 CI 构建不阻断）。
+    signingConfigs {
+        val props = Properties()
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { props.load(it) }
+        val storePath = props.getProperty("RELEASE_STORE_FILE")
+        if (storePath != null && rootProject.file(storePath).exists()) {
+            create("release") {
+                storeFile = rootProject.file(storePath)
+                storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
