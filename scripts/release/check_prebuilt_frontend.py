@@ -35,9 +35,15 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - dist 缺失/为空等一律阻断
         print(f"[FAIL] frontend dist 不可用：{exc}", file=sys.stderr)
         return 1
-    if stored.get("manifest_sha256") != recomputed:
+    # 比较规范形态（canonical JSON），规避宿主/容器行尾差异
+    import hashlib  # noqa: PLC0415 - 就地导入保持模块头部最小
+
+    stored_canonical = hashlib.sha256(
+        json.dumps(stored, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if stored_canonical != recomputed:
         print(
-            f"[FAIL] frontend manifest mismatch: stored={stored.get('manifest_sha256')} "
+            f"[FAIL] frontend manifest mismatch: stored={stored_canonical} "
             f"recomputed={recomputed}（dist 与唯一构建不一致，禁止在制品构建中重建前端）",
             file=sys.stderr,
         )

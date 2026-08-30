@@ -94,11 +94,12 @@ def build(root: Path, output_dir: Path, *, skip_node_check: bool) -> Dict[str, o
 
     dist_dir = frontend_dir / "dist"
     manifest, manifest_sha = build_frontend_asset_manifest(dist_dir)
-    manifest["manifest_sha256"] = manifest_sha
 
+    # manifest 文件保持纯规范形态（与制品内嵌副本逐字节一致）；sha 只写入 meta。
+    # newline="\n"：跨平台字节一致。
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "frontend-asset-manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     meta: Dict[str, object] = {
         "schema_version": 1,

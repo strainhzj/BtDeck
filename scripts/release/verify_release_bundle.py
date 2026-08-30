@@ -179,7 +179,14 @@ def collect_bundle(bundle_dir: Path, dist_dir: Path) -> Dict[str, Dict[str, obje
 
     frontend_staging = bundle_dir / "frontend" / "frontend-asset-manifest.json"
     if frontend_staging.is_file():
-        add("frontend-build", frontend_staging, frontend_staging, None, "frontend-unique-build")
+        # 唯一前端构建只参与 manifest 比对（它不是运行制品，没有 build-info，
+        # 不能进入身份比对——否则伪制品身份为 None 会污染 G1）
+        artifacts["frontend-build"] = {
+            "identity_path": None,
+            "manifest_path": frontend_staging,
+            "binary": None,
+            "label": "frontend-unique-build",
+        }
 
     return artifacts
 
@@ -209,7 +216,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not artifacts:
             raise BundleVerificationError(f"bundle 为空：{bundle_dir}")
 
-        infos = {kind: load_json(Path(a["identity_path"])) for kind, a in artifacts.items()}
+        infos = {
+            kind: load_json(Path(a["identity_path"]))
+            for kind, a in artifacts.items()
+            if a["identity_path"]
+        }
         manifests = {
             kind: Path(a["manifest_path"]).read_bytes()
             for kind, a in artifacts.items()
@@ -248,6 +259,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             {
                 str(a["label"]): Path(a["binary"]) if a["binary"] else Path(a["identity_path"])
                 for a in artifacts.values()
+                if a["binary"] or a["identity_path"]
             },
             bundle_dir / "checksums.txt",
         )

@@ -350,14 +350,15 @@ def generate(
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    # newline="\n"：跨平台字节一致（Windows 文本模式会写 CRLF，破坏跨制品 manifest 逐字节比对）
     (output_dir / BUILD_INFO_FILENAME).write_text(
-        json.dumps(build_info, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(build_info, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     (output_dir / SOURCE_MANIFEST_FILENAME).write_text(
-        json.dumps(source_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(source_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     (output_dir / FRONTEND_MANIFEST_FILENAME).write_text(
-        json.dumps(frontend_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(frontend_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     return build_info
 
