@@ -168,7 +168,7 @@ verify_labels() {
 
 record_images() {
     : > "${GEN_ROOT}/docker-images.txt"
-    for image in "${BACKEND_IMAGE}:${VERSION#v}" "${FRONTEND_IMAGE}:${VERSION#v}"; do
+    for image in "${BACKEND_IMAGE}:${VERSION}" "${FRONTEND_IMAGE}:${VERSION}"; do
         docker inspect --format "${image} {{.Id}}" "$image" >> "${GEN_ROOT}/docker-images.txt"
     done
     print_success "镜像 ID 已记录：${GEN_ROOT}/docker-images.txt（registry digest 于推送/晋级时补记，W5）"
@@ -251,7 +251,7 @@ main() {
     print_success "前端镜像构建完成"
 
     # Step 4: label 校验（fail-closed；dev 身份同样携带真实 SHA）
-    local version_tag="${VERSION#v}"
+    local version_tag="${VERSION}"  # 镜像 tag 携带 v 前缀（与 OCI label 的裸版本区分）
     verify_labels "${BACKEND_IMAGE}:${version_tag:-latest}" "${OCI_VERSION}" "${OCI_REVISION}"
     verify_labels "${FRONTEND_IMAGE}:${version_tag:-latest}" "${OCI_VERSION}" "${OCI_REVISION}"
 
