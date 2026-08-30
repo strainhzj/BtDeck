@@ -170,56 +170,12 @@ if [ "$BUILD_PACKAGE" = "1" ]; then
     # 复制 systemd service 文件
     cp "${DEPLOY_DIR}/btdeck.service" "${PKG_STAGING}/etc/systemd/system/"
 
-    # 创建 post-install 脚本
-    cat > "${PKG_STAGING}/postinstall.sh" <<'POSTINSTALL'
-#!/bin/bash
-# 创建 btdeck 用户
-if ! id -u btdeck &>/dev/null; then
-    useradd --system --no-create-home --shell /bin/false btdeck
-fi
-# 预创建 systemd ReadWritePaths 声明的目录
-# (ProtectSystem=strict 下应用需这些目录可写，否则首次启动写入失败)
-mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup /opt/btdeck/torrents
-if [ ! -f /opt/btdeck/config/btdeck.env ]; then
-    if command -v openssl >/dev/null 2>&1; then
-        SECRET_KEY="$(openssl rand -hex 32)"
-    else
-        SECRET_KEY="$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-)"
-    fi
-cat > /opt/btdeck/config/btdeck.env <<EOF
-SECRET_KEY=${SECRET_KEY}
-# pydantic-settings 对 List[str] 环境变量强制 JSON 解析（逗号分隔会 SettingsError 启动崩溃），
-# 必须用 JSON 数组格式（与 desktop_main.py 一致）
-ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
-EOF
-    chmod 600 /opt/btdeck/config/btdeck.env
-fi
-# 设置权限
-chown -R btdeck:btdeck /opt/btdeck
-# 启用并启动服务
-if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
-    systemctl daemon-reload
-    systemctl enable btdeck
-    systemctl start btdeck
-    echo "BtDeck service started. Visit: http://localhost:5001"
-else
-    echo "BtDeck installed, but systemd is not active. Start manually with: systemctl start btdeck"
-    echo "After start, visit: http://localhost:5001"
-fi
-POSTINSTALL
-    chmod +x "${PKG_STAGING}/postinstall.sh"
-
-    # 创建 pre-remove 脚本
-    cat > "${PKG_STAGING}/preremove.sh" <<'PREREMOVE'
-#!/bin/bash
-systemctl stop btdeck || true
-systemctl disable btdeck || true
-PREREMOVE
-    chmod +x "${PKG_STAGING}/preremove.sh"
+    # maintainer scripts（W3/G6，R11 修复）：语义见 deploy/package-scripts/ 注释
+    # DEB: postinst + prerm(智能分支) + postrm(purge 清数据)；RPM 不传 postrm（%postun 数字参数不兼容）
+    cp "${DEPLOY_DIR}/package-scripts/postinst.sh" "${PKG_STAGING}/postinst.sh"
+    cp "${DEPLOY_DIR}/package-scripts/prerm.sh" "${PKG_STAGING}/prerm.sh"
+    cp "${DEPLOY_DIR}/package-scripts/postrm.sh" "${PKG_STAGING}/postrm.sh"
+    chmod +x "${PKG_STAGING}"/*.sh
 
     # 构建 .deb
     fpm -s dir --force \
@@ -230,8 +186,9 @@ PREREMOVE
         --description "BtDeck - BitTorrent Management Platform" \
         --url "https://github.com/strainhzj/BtDeck" \
         --license "GPL-3.0" \
-        --after-install "${PKG_STAGING}/postinstall.sh" \
-        --before-remove "${PKG_STAGING}/preremove.sh" \
+        --after-install "${PKG_STAGING}/postinst.sh" \
+        --before-remove "${PKG_STAGING}/prerm.sh" \
+        --after-remove "${PKG_STAGING}/postrm.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
         -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb" \
@@ -247,8 +204,8 @@ PREREMOVE
         --description "BtDeck - BitTorrent Management Platform" \
         --url "https://github.com/strainhzj/BtDeck" \
         --license "GPL-3.0" \
-        --after-install "${PKG_STAGING}/postinstall.sh" \
-        --before-remove "${PKG_STAGING}/preremove.sh" \
+        --after-install "${PKG_STAGING}/postinst.sh" \
+        --before-remove "${PKG_STAGING}/prerm.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
         -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm" \
