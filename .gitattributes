@@ -31,3 +31,9 @@ deploy/btdeck.service text eol=lf
 *.dll  binary
 *.so   binary
 *.db   binary
+
+# 依赖锁固定 LF（release-artifact-equivalence-gate W2）：
+# Windows autocrlf 检出会把 CRLF 带进 Docker 构建（pip 将 "\ + CRLF" 视为续行，
+# 全部 pins 拼成一行导致安装失败），并影响哈希模式语义。
+backend/requirements*.txt text eol=lf
+deploy/requirements*.txt text eol=lf

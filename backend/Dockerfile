@@ -111,7 +111,8 @@ WORKDIR /app
 #   端到端一致性 = 本步 pip check + W2 从镜像真实环境 pip freeze 与锁逐包比对。
 COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY --from=builder /build/wheels /tmp/wheels
-RUN sed -e '/^[[:space:]]*--hash/d' -e 's/[[:space:]]*\\$//' /tmp/requirements-lock.txt \
+RUN tr -d '\r' < /tmp/requirements-lock.txt \
+        | sed -e '/^[[:space:]]*--hash/d' -e 's/[[:space:]]*\\$//' \
         | grep -E '^[A-Za-z0-9]' > /tmp/pins.txt \
     && pip install --no-cache-dir --no-index --find-links=/tmp/wheels -r /tmp/pins.txt \
     && pip check \

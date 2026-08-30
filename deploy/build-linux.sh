@@ -115,25 +115,8 @@ if [ "$RELEASE_MODE" = "1" ]; then
     echo "[1/5] Consuming prebuilt frontend (single build)..."
     [ -f "$FRONTEND_MANIFEST" ] || fail "release 模式要求先运行 python scripts/release/build_frontend.py 生成唯一前端构建与 manifest"
     [ -f "${FRONTEND_DIST}/index.html" ] || fail "frontend/dist 缺失 index.html"
-    python3 - "$FRONTEND_MANIFEST" "$FRONTEND_DIST" <<'PY' || fail "frontend dist 与唯一构建 manifest 不一致（禁止在制品构建中重建前端）"
-import json
-import pathlib
-import sys
-
-manifest_path, dist_dir = sys.argv[1], pathlib.Path(sys.argv[2])
-sys.path.insert(0, str(pathlib.Path("scripts/release").resolve()))
-from generate_build_info import build_frontend_asset_manifest  # noqa: E402
-
-stored = json.loads(manifest_path.read_text(encoding="utf-8"))
-_, recomputed = build_frontend_asset_manifest(dist_dir)
-if stored.get("manifest_sha256") != recomputed:
-    print(
-        f"[FAIL] frontend manifest mismatch: stored={stored.get('manifest_sha256')} "
-        f"recomputed={recomputed}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-PY
+    python3 scripts/release/check_prebuilt_frontend.py "$FRONTEND_MANIFEST" "$FRONTEND_DIST" \
+        || fail "frontend dist 与唯一构建 manifest 不一致（禁止在制品构建中重建前端）"
     echo -e "${GREEN}[OK] frontend dist matches single-build manifest${NC}"
 else
     echo "[1/5] Building frontend (dev mode)..."
