@@ -90,10 +90,15 @@ if [ "$SCENARIO" = "fresh" ]; then
 elif [ "$SCENARIO" = "upgrade" ]; then
     [ -n "$OLD_RPM" ] && [ -f "$OLD_RPM" ] || die "upgrade 场景要求 --old-rpm（v1.0.5 正式本地制品）"
 
-    # v1.0.5 冻结制品的 postinst 守卫不接受容器 degraded 态，需显式启动（夹具侧适配，仅基线阶段）
+    # v1.0.5 冻结制品夹具适配（仅基线阶段）：postinst degraded 守卫 + 旧 unit 无
+    # PrivateTmp → 显式 enable/start 并以仓库现行 unit 覆写
     if install_rpm "$OLD_RPM"; then
-        systemctl start btdeck 2>/dev/null || true
+        if [ -f /src/deploy/btdeck.service ]; then
+            cp /src/deploy/btdeck.service /etc/systemd/system/btdeck.service
+        fi
+        systemctl daemon-reload 2>/dev/null || true
         systemctl enable btdeck 2>/dev/null || true
+        systemctl restart btdeck 2>/dev/null || true
     fi
     if wait_healthy "1.0.5"; then
         phase "v105_baseline_install" PASS

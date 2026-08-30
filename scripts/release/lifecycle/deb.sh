@@ -109,10 +109,17 @@ elif [ "$SCENARIO" = "upgrade" ]; then
     [ -n "$OLD_DEB" ] && [ -f "$OLD_DEB" ] || die "upgrade 场景要求 --old-deb（v1.0.5 正式本地制品）"
 
     # ---- v1.0.5 基线 ----
-    # v1.0.5 冻结制品的 postinst 守卫不接受容器 degraded 态，需显式启动（夹具侧适配，仅基线阶段）
+    # v1.0.5 冻结制品两处夹具适配（仅基线阶段；v1.0.6 全部用真实 scriptlet/unit）：
+    #   1) 旧 postinst 守卫不接受容器 degraded 态 → 显式 enable/start
+    #   2) 旧 btdeck.service 无 PrivateTmp（ProtectSystem=strict 下 /tmp 只读，
+    #      PyInstaller onefile 无法解压）→ 用仓库现行 unit 覆写后 daemon-reload
     if install_deb "$OLD_DEB"; then
-        systemctl start btdeck 2>/dev/null || true
+        if [ -f /src/deploy/btdeck.service ]; then
+            cp /src/deploy/btdeck.service /etc/systemd/system/btdeck.service
+        fi
+        systemctl daemon-reload 2>/dev/null || true
         systemctl enable btdeck 2>/dev/null || true
+        systemctl restart btdeck 2>/dev/null || true
     fi
     if wait_healthy "1.0.5"; then
         phase "v105_baseline_install" PASS

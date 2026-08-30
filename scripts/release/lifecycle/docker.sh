@@ -51,9 +51,10 @@ backend_exec() { docker exec w3-life-backend sh -c "$1"; }
 backend_health() {  # backend_health <version-substr> <max-sec>
     local i=0
     while [ $i -lt $(($2 / 5)) ]; do
-        if backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null | grep -q "\"version\": \"$1\""; then
-            return 0
-        fi
+        body="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null || true)"
+        case "$body" in
+            *"\"version\": \"$1\""*) return 0 ;;
+        esac
         sleep 5; i=$((i + 1))
     done
     return 1

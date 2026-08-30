@@ -19,12 +19,14 @@ die() { echo "[FATAL] $1" >&2; exit 2; }
 
 wait_http() {
     # wait_http <url> <expected-substr> <max-seconds>
+    # 匹配用 bash case 子串比较（字节级）：实测容器内 grep 对含引号/UTF-8 的
+    # 响应体存在环境相关的匹配异常，case 无 locale/引用层且零依赖。
     local url="$1" want="$2" max="${3:-120}" i=0 body=""
     while [ $i -lt $((max / 3)) ]; do
         body="$(curl -fsS --max-time 5 "$url" 2>/dev/null || true)"
-        if [ -n "$body" ] && echo "$body" | grep -q "$want"; then
-            return 0
-        fi
+        case "$body" in
+            *"$want"*) return 0 ;;
+        esac
         sleep 3
         i=$((i + 1))
     done
