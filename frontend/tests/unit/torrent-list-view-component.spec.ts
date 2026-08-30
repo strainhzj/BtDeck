@@ -132,6 +132,7 @@ interface TorrentListViewVm extends Vue {
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
   loadActiveSpeed(): Promise<boolean>
+  handleBatchAddCompleted(): Promise<void>
   runtimeStateMisses: Record<string, number>
 }
 
@@ -917,6 +918,77 @@ describe('torrent list view pagination and sorting', () => {
       downloadSpeed: 0,
       uploadSpeed: 0
     }))
+  })
+
+  it('完整快照出现新的未展示复合键时重拉数据库列表，并立即应用同轮进度', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+
+    // 显式建立“当前页之外活动键”的初始基线，避免把分页既有任务误判为新增。
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: []
+    })
+    await vm.loadActiveSpeed()
+    mockGetTorrentList.mockClear()
+
+    const newlyAdded = {
+      ...torrentFixture(),
+      infoId: 'new-info', downloaderId: 'downloader-1', hash: 'new-hash',
+      name: '刚入库种子', status: 'downloading', progress: 0
+    }
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200',
+      data: { list: [newlyAdded], total: 1, pageSize: 20 }
+    })
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: [{
+        hash: 'new-hash', downloader_id: 'downloader-1',
+        downloadSpeed: 4096, uploadSpeed: 0, progress: 37,
+        status: 'downloading', num_seeds: 0, num_leechs: 0
+      }]
+    })
+
+    await vm.loadActiveSpeed()
+
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(vm.list).toHaveLength(1)
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      hash: 'new-hash', name: '刚入库种子', progress: 37, downloadSpeed: 4096
+    }))
+  })
+
+  it('批量添加完成信号会再次拉取权威列表并补一次实时进度', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    mockGetTorrentList.mockClear()
+    mockGetActiveTorrents.mockClear()
+
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200',
+      data: {
+        list: [{ ...torrentFixture(), status: 'downloading', progress: 0 }],
+        total: 1,
+        pageSize: 20
+      }
+    })
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: [{
+        hash: 'hash-1', downloader_id: 'downloader-1',
+        downloadSpeed: 2048, uploadSpeed: 0, progress: 19,
+        status: 'downloading', num_seeds: 0, num_leechs: 0
+      }]
+    })
+
+    const addDialog = wrapper.findComponent({ name: 'TorrentAddDialog' })
+    expect(addDialog.exists()).toBe(true)
+    addDialog.vm.$emit('batch-complete')
+    await flushLifecycle()
+
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+    expect(vm.list[0]).toEqual(expect.objectContaining({ progress: 19, downloadSpeed: 2048 }))
   })
 })
 

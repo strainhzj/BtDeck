@@ -33,9 +33,11 @@ import {
 } from '@/components/torrents/advancedSearchState'
 import { ADVANCED_SEARCH_FIELDS } from '@/contracts/advancedSearch.generated'
 import {
+  buildTorrentSpeedTargetIndex,
   getTorrentDownloaderId,
   getTorrentHashIdentity,
-  getTorrentSpeedIdentity
+  getTorrentSpeedIdentity,
+  resolveTorrentSpeedTargets
 } from './traditionalTorrentIdentity'
 import type { TorrentIdentityLike } from './traditionalTorrentIdentity'
 
@@ -337,6 +339,95 @@ export interface SpeedUpdate {
   progress: number
   status?: string
   downloadComplete?: boolean
+}
+
+/**
+ * 跟踪“速度快照中存在、当前分页列表中不存在”的复合键。
+ *
+ * 首个完整快照只建立基线：分页之外的既有活动任务本来就不在当前 list，不能因此
+ * 每秒重拉列表。基线建立后，只有新出现的未展示复合键才返回给视图层触发一次
+ * 权威 getList/reload；206 部分快照只增量合并基线，不能删除其它下载器的已知键。
+ */
+export class RuntimeListMembershipTracker {
+  private initialized = false
+  private unlistedKeys = new Set<string>()
+  private refreshPromise: Promise<boolean> | null = null
+
+  observe<T extends TorrentIdentityLike>(
+    torrents: T[],
+    updates: SpeedUpdate[],
+    completeSnapshot: boolean
+  ): string[] {
+    const index = buildTorrentSpeedTargetIndex(torrents)
+    const currentUnlisted = new Set<string>()
+
+    updates.forEach(update => {
+      if (resolveTorrentSpeedTargets(index, update).length > 0) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (identity) currentUnlisted.add(identity)
+    })
+
+    if (!this.initialized) {
+      currentUnlisted.forEach(key => this.unlistedKeys.add(key))
+      if (completeSnapshot) {
+        this.initialized = true
+        this.unlistedKeys = currentUnlisted
+      }
+      return []
+    }
+
+    const discovered = Array.from(currentUnlisted).filter(key => !this.unlistedKeys.has(key))
+    if (completeSnapshot) {
+      this.unlistedKeys = currentUnlisted
+    } else {
+      currentUnlisted.forEach(key => this.unlistedKeys.add(key))
+    }
+    return discovered
+  }
+
+  /** 列表刷新后以同一速度快照重新建立基线，避免同一缺失键重复拉表。 */
+  rebaseline<T extends TorrentIdentityLike>(torrents: T[], updates: SpeedUpdate[]): void {
+    const index = buildTorrentSpeedTargetIndex(torrents)
+    const nextUnlisted = new Set<string>()
+    updates.forEach(update => {
+      if (resolveTorrentSpeedTargets(index, update).length > 0) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (identity) nextUnlisted.add(identity)
+    })
+    this.initialized = true
+    this.unlistedKeys = nextUnlisted
+  }
+
+  /**
+   * 串行执行一次权威列表刷新，并把同轮速度立即应用到新行。
+   * 列表/传统/移动三视图只需注入各自的 getList/reload，避免复制竞态控制。
+   */
+  async refresh<T extends TorrentIdentityLike>(
+    getTorrents: () => T[],
+    updates: SpeedUpdate[],
+    refreshList: () => Promise<void>,
+    applyUpdates: (speedUpdates: SpeedUpdate[]) => boolean
+  ): Promise<boolean> {
+    if (this.refreshPromise) return this.refreshPromise
+
+    const execute = async(): Promise<boolean> => {
+      try {
+        await refreshList()
+        const terminalObserved = applyUpdates(updates)
+        this.rebaseline(getTorrents(), updates)
+        return terminalObserved
+      } catch {
+        return false
+      }
+    }
+
+    this.refreshPromise = execute()
+    try {
+      return await this.refreshPromise
+    } finally {
+      this.refreshPromise = null
+    }
+  }
 }
 
 /** buildSpeedSnapshot 实际读取的种子字段（ActiveTorrentSpeed 的结构子集）。

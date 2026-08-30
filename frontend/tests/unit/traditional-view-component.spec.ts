@@ -165,6 +165,7 @@ interface TraditionalViewVm extends Vue {
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   loadActiveSpeed(): Promise<boolean>
+  handleBatchAddCompleted(): Promise<void>
   runtimeStateMisses: Record<string, number>
   getTorrentSpeed(row: TorrentRow, type: 'download' | 'upload'): number | null
 }
@@ -1332,6 +1333,67 @@ describe('TraditionalView component regressions', () => {
     expect(vm.list[1]).toEqual(expect.objectContaining({
       status: 'seeding', progress: 100, downloadComplete: true
     }))
+  })
+
+  it('完整快照出现新的未展示复合键时重拉数据库列表，并立即应用同轮进度', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: []
+    })
+    await vm.loadActiveSpeed()
+    mockGetTorrentList.mockClear()
+
+    const newlyAdded = torrentFixture(9, {
+      infoId: 'new-info', downloaderId: 'dl-new', hash: 'new-hash',
+      name: '刚入库种子', status: 'downloading', progress: 0
+    })
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([newlyAdded]))
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: [{
+        hash: 'new-hash', downloader_id: 'dl-new',
+        downloadSpeed: 8192, uploadSpeed: 0, progress: 42,
+        status: 'downloading', num_seeds: 0, num_leechs: 0
+      }]
+    })
+
+    await vm.loadActiveSpeed()
+
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(vm.list).toHaveLength(1)
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      hash: 'new-hash', name: '刚入库种子', progress: 42, downloadSpeed: 8192
+    }))
+  })
+
+  it('批量添加完成信号会再次拉取权威列表并补一次实时进度', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    mockGetTorrentList.mockClear()
+    mockGetActiveTorrents.mockClear()
+
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { status: 'downloading', progress: 0 })
+    ]))
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: [{
+        hash: 'hash-1', downloader_id: 'dl-1',
+        downloadSpeed: 3072, uploadSpeed: 0, progress: 23,
+        status: 'downloading', num_seeds: 0, num_leechs: 0
+      }]
+    })
+
+    const addDialog = wrapper.findComponent({ name: 'TorrentAddDialog' })
+    expect(addDialog.exists()).toBe(true)
+    addDialog.vm.$emit('batch-complete')
+    await flushLifecycle()
+
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+    expect(vm.list[0]).toEqual(expect.objectContaining({ progress: 23, downloadSpeed: 3072 }))
   })
 
   it('长列表仅渲染当前虚拟窗口和上下缓冲行', async() => {

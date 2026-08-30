@@ -3666,3 +3666,18 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 新增测试 1 suite / 5 tests；相关回归 4 suites / 122 tests；前端全量 85 suites / 1263 tests。
 - `npm run typecheck`、严格 `npm run lint`、`npm run build` 全部通过；构建仅有 58 条既有 warning。
 - 根 `bash ./init.sh --ci` 在当前 Windows/WSL 环境仍报 `Bash/Service/CreateInstance/E_ACCESSDENIED`；未执行 Git 提交，未触碰其它既有工作区修改。
+
+## 2026-08-30 交接：种子列表成员自愈补充修复
+
+### 已完成
+
+- 已确认此前终态收敛只能更新当前前端 `list` 中已有的行，不能解决“批量添加后台已入库，但 202 后的首次列表刷新过早，页面仍缺行”的竞态。
+- `frontend/src/views/torrents/utils/torrentBatch.ts` 新增 `RuntimeListMembershipTracker`：首个完整活动快照建立分页外基线，后续新出现且未展示的 `downloader_id + hash` 触发一次串行权威列表刷新；206 仅增量合并，刷新后重放同轮速度。
+- 列表、传统、移动三视图均接入成员自愈。`TorrentAddDialog.vue` 另按 202 响应的 `task_id` 轮询既有批量添加完成通知并发出 `batch-complete`，桌面两视图随后补拉列表与速度，覆盖零速度、暂停或瞬间完成的新增种子。
+- 新增 `torrent-add-dialog.spec.ts`，并扩展 `torrent-batch.spec.ts`、列表/传统/移动组件回归，共新增 12 个执行项；feature、progress 与 roadmap 证据已同步。
+
+### 验证与后续
+
+- 相关 5 suites / 204 passed；前端全量 90 suites / 1297 passed；`npm run typecheck`、`npm run lint`、`npm run build` 通过。构建仅保留既有 Browserslist/Sass 警告。
+- 根 `bash ./init.sh --ci` 仍被当前 Windows/WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+- 本批尚未 Git 提交。保留并未触碰工作区其它 Android、发布构建、生成契约与数据目录修改；后续提交时只暂存本批前端源码、测试和四类项目记录文件。

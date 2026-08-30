@@ -797,6 +797,7 @@
       :visible.sync="showAddDialog"
       :downloaders="downloaderList"
       @confirm="handleAdd"
+      @batch-complete="handleBatchAddCompleted"
     />
 
     <!-- P0新增：修改保存路径 -->
@@ -954,6 +955,7 @@ import {
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
   collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups,
   getTorrentErrorReason as sharedErrorReason,
@@ -1075,6 +1077,7 @@ export default class extends mixins(
   private activeListRetryInFlight = false
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
+  private runtimeListMembership = new RuntimeListMembershipTracker()
 
   // 分类和标签数据
   private categoryList: string[] = []
@@ -1559,10 +1562,25 @@ export default class extends mixins(
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
       if ((snapshot.ready || snapshot.partial) && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
-        const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+        const newlyUnlistedKeys = this.runtimeListMembership.observe(
+          this.list,
+          snapshot.updates,
+          snapshot.ready
+        )
+        let terminalObserved = this.applySpeedUpdates(snapshot.updates)
         this.activeSpeedMap = snapshot.ready
           ? snapshot.torrentSpeedMap
           : { ...this.activeSpeedMap, ...snapshot.torrentSpeedMap }
+        if (newlyUnlistedKeys.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-this-alias
+          const component = this
+          terminalObserved = (await component.runtimeListMembership.refresh(
+            () => component.list,
+            snapshot.updates,
+            () => component.getList(),
+            updates => component.applySpeedUpdates(updates)
+          )) || terminalObserved
+        }
         if (snapshot.ready) {
           this.speedSnapshotReady = true
           const reconcile = collectRuntimeStateReconcileCandidates(
@@ -1959,6 +1977,14 @@ export default class extends mixins(
     // 与 index.vue:1718 handleAdd 行为对齐。
     this.showAddDialog = false
     this.getList()
+  }
+
+  /** 202 后台添加真正完成后再拉一次权威列表，覆盖首次刷新早于入库的竞态。 */
+  private async handleBatchAddCompleted() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    await component.getList()
+    await component.loadActiveSpeed()
   }
 
   // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======

@@ -6336,3 +6336,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **批次 B 设备矩阵**：API 24（新建 btdeck-a24）——release 全链路 10s WebView（Python 3.12 on minSdk 24 跑通）、FGS+health 200、旋转存活、LAN 绑定变化（*:0.0.0.0 端口复用）、kill -9 崩溃恢复；**修复两个 API 24 真 bug**：NotificationChannel 无版本守卫（ClassNotFoundException 崩溃）、java.util.Base64 lint NewApi（改自包含 Base64，单测/设备一致）。API 34（新建 btdeck-a34）——链路+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（登记真机）。
 - **批次 C**：docs/android/play-release.md（Play 申报材料全家桶+包体实测）；:app:lintDebug 绿（修复后）；单测 32 绿。
 - 遗留边界（登记 task .7）：Play 上传、arm64 真机、跨版本升级演练（v1.0.7）、Doze 真机。
+
+## 2026-08-30（三）：种子列表成员自愈补充修复
+
+- **问题判定**：批量添加接口返回 202 后，父列表原有 `@confirm` 只立即调用一次 `getList()`；后台任务稍后才写数据库，因此会出现“实际已入库、页面仍没有该行”。实时速度更新又只修改当前 `list` 中已存在的行，无法让缺失行凭空出现，所以此前的终态收敛修复不能完整覆盖这一竞态。
+- **运行态自愈**：`torrentBatch.ts` 新增 `RuntimeListMembershipTracker`。首个 200 完整活动快照只建立分页外任务基线，后续新出现且当前列表未展示的 `downloader_id + hash` 才触发一次串行权威列表刷新；206 仅增量合并。刷新后立即重放同轮速度，列表、传统、移动三视图均能让新行直接显示当前进度与速度。
+- **后台完成兜底**：`TorrentAddDialog.vue` 在 202 后保留 `task_id`，每 2 秒查询既有系统通知的 `torrent_batch_add_completed` 事件；完成后发出 `batch-complete`，桌面列表/传统视图再次拉取权威列表并补一次速度。该路径覆盖新增种子零速度、暂停或瞬间完成、不出现在活动快照中的情况；10 分钟超时仍执行一次最终刷新，组件销毁会清理计时器。
+- **回归保护**：新增 12 个执行项，覆盖首次完整快照基线、206 增量、同 hash 跨下载器、重建基线、并发刷新单飞，三视图“已入库但未展示”闭环，桌面双视图完成信号刷新，以及添加对话框通知匹配与销毁清理。相关 5 suites / 204 passed；全量 90 suites / 1297 passed。
+- **质量门禁**：`npm run typecheck`、`npm run lint`、`npm run build` 全部通过；构建仅有既有 Browserslist/Sass 警告。根 `bash ./init.sh --ci` 仍受当前 Windows/WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 环境限制。`feature_list.json`、`docs/roadmap/` 与 `session-handoff.md` 已同步；本批尚未 Git 提交，工作区其它 Android/发布构建修改保持不动。

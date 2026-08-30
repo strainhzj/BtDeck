@@ -155,7 +155,8 @@ import { setStoredUiMode } from '@/utils/ui-mode'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import {
   buildSpeedSnapshot,
-  collectRuntimeStateReconcileCandidates
+  collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker
 } from '@/views/torrents/utils/torrentBatch'
 import type { SpeedUpdate } from '@/views/torrents/utils/torrentBatch'
 import {
@@ -214,6 +215,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private trackerDomainOptions: string[] = []
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
+  private runtimeListMembership = new RuntimeListMembershipTracker()
 
   private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
 
@@ -293,11 +295,26 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
       if (!snapshot.ready && !snapshot.partial) return false
-      const index = buildTorrentSpeedTargetIndex(this.list)
+      const newlyUnlistedKeys = this.runtimeListMembership.observe(
+        this.list,
+        snapshot.updates,
+        snapshot.ready
+      )
+      let terminalObserved = this.applySpeedUpdates(snapshot.updates)
+      if (newlyUnlistedKeys.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const component = this
+        terminalObserved = (await component.runtimeListMembership.refresh(
+          () => component.list,
+          snapshot.updates,
+          () => component.reload(),
+          updates => component.applySpeedUpdates(updates)
+        )) || terminalObserved
+      }
       const activeKeys = new Set<string>()
-      const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+      const currentIndex = buildTorrentSpeedTargetIndex(this.list)
       snapshot.updates.forEach(update => {
-        resolveTorrentSpeedTargets(index, update).forEach(row => activeKeys.add(this.keyOf(row)))
+        resolveTorrentSpeedTargets(currentIndex, update).forEach(row => activeKeys.add(this.keyOf(row)))
       })
       // 206 只覆盖成功下载器，不能清掉其它下载器上一轮的速度；完整快照才允许清零未命中行。
       if (snapshot.ready) {

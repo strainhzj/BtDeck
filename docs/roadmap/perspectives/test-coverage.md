@@ -132,7 +132,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（70 个 spec）
+### `frontend/tests/unit/`（78 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -162,7 +162,7 @@
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
 | `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
 | `mobile-torrent-detail.spec.ts` ✨2026-08-24 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新 |
-| `mobile-torrents.spec.ts` ✨2026-08-29 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行 |
+| `mobile-torrents.spec.ts` ✨2026-08-30 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行；新活动复合键未展示时重载列表并立即应用同轮进度与速度 |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
 | `notification-drawer-detail.spec.ts` ✨2026-08-27 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
@@ -188,16 +188,17 @@
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
-| `torrent-batch.spec.ts`（1415 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限） |
+| `torrent-add-dialog.spec.ts` ✨2026-08-30 | `views/torrents/components/TorrentAddDialog.vue`：202 响应 task_id 跟踪、完成通知精确匹配并发出 `batch-complete`、销毁清理轮询计时器 |
+| `torrent-batch.spec.ts`（1496 行）✨2026-08-30 | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限；运行态列表成员首次完整快照基线、206 增量、刷新重建基线及并发单飞） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
 | `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
 | `torrent-loading-mask.spec.ts` ✨2026-08-27 | Element UI 2.15.13 真实 Loading 指令：fullscreen mask 挂 body、lock/unlock、隐藏状态与加载中销毁清理 |
-| `torrent-list-view-component.spec.ts` ✨2026-08-29 | 列表视图异步删除与分页/排序、Tracker 筛选、错误单种/同内容数据源；连续完整快照未命中后核验零速终态并把主列表行收敛到 100% |
+| `torrent-list-view-component.spec.ts` ✨2026-08-30 | 列表视图异步删除与分页/排序、Tracker 筛选、错误单种/同内容数据源；连续完整快照未命中后核验零速终态并把主列表行收敛到 100%；数据库已入库但页面未展示的新活动键触发拉表并补同轮速度，批量添加完成信号再次刷新 |
 | `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留查询/分页/选择状态 |
 | `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归 |
 | `tracker-operation-dialog-contract.spec.ts` | Tracker 操作对话框契约 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` ✨2026-08-29 | 传统视图组件、Tracker 主域名过滤与快捷入口、共用 TrackerDetailCard；终态核验按 downloader_id+hash 精确更新同 hash 任务，missing 下载器不串写 |
+| `traditional-view-component.spec.ts` ✨2026-08-30 | 传统视图组件、Tracker 主域名过滤与快捷入口、共用 TrackerDetailCard；终态核验按 downloader_id+hash 精确更新同 hash 任务，missing 下载器不串写；新增未展示活动键自愈拉表与批量添加完成刷新 |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |

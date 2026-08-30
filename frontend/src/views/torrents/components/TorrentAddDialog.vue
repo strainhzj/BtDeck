@@ -166,7 +166,12 @@
 <script lang="ts">
 import { Component, Vue, Prop, Ref, Watch } from 'vue-property-decorator'
 import { addTorrentsBatch, getDownloaderPaths, type DownloaderPath } from '@/api/torrents'
+import { getNotificationList } from '@/api/notification'
 import { getTagList, TorrentTag } from '@/api/tag-management'
+
+const BATCH_COMPLETION_POLL_INTERVAL_MS = 2000
+const BATCH_COMPLETION_INITIAL_DELAY_MS = 500
+const BATCH_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000
 
 @Component
 export default class TorrentAddDialog extends Vue {
@@ -180,6 +185,10 @@ export default class TorrentAddDialog extends Vue {
   private loading = false
   private selectedFileNames: string[] = []
   private formErrors: Record<string, string> = {}
+  private batchCompletionTimer: number | null = null
+  private batchCompletionPollInFlight = false
+  private pendingBatchCompletions: Record<string, number> = {}
+  private batchCompletionWatcherActive = true
 
   // 种子文件列表（支持多个）
   private torrentFiles: File[] = []
@@ -202,6 +211,77 @@ export default class TorrentAddDialog extends Vue {
     torrent_file: [{ required: true, message: '请选择种子文件', trigger: 'change' }],
     downloader_id: [{ required: true, message: '请选择下载器', trigger: 'change' }],
     save_path: [{ required: true, message: '请输入保存路径', trigger: 'blur' }]
+  }
+
+  beforeDestroy(): void {
+    this.batchCompletionWatcherActive = false
+    this.pendingBatchCompletions = {}
+    if (this.batchCompletionTimer !== null) {
+      window.clearTimeout(this.batchCompletionTimer)
+      this.batchCompletionTimer = null
+    }
+  }
+
+  /** 后台批量添加以通知中心的 task_id 终态作为权威完成信号。 */
+  private watchBatchCompletion(taskId: string): void {
+    if (!taskId || !this.batchCompletionWatcherActive) return
+    this.pendingBatchCompletions[taskId] = Date.now() + BATCH_COMPLETION_TIMEOUT_MS
+    this.scheduleBatchCompletionPoll(BATCH_COMPLETION_INITIAL_DELAY_MS)
+  }
+
+  private scheduleBatchCompletionPoll(delay = BATCH_COMPLETION_POLL_INTERVAL_MS): void {
+    if (
+      !this.batchCompletionWatcherActive ||
+      this.batchCompletionTimer !== null ||
+      this.batchCompletionPollInFlight ||
+      Object.keys(this.pendingBatchCompletions).length === 0
+    ) return
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    component.batchCompletionTimer = window.setTimeout(() => {
+      component.batchCompletionTimer = null
+      component.pollBatchCompletions()
+    }, delay)
+  }
+
+  private async pollBatchCompletions(): Promise<void> {
+    if (this.batchCompletionPollInFlight) return
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    const pendingTaskIds = Object.keys(component.pendingBatchCompletions)
+    if (pendingTaskIds.length === 0) return
+    component.batchCompletionPollInFlight = true
+
+    try {
+      const response = await getNotificationList({ page: 1, pageSize: 100, type: 'system' })
+      if (response.code === '200' && response.data && Array.isArray(response.data.list)) {
+        response.data.list.forEach(notification => {
+          const extra = notification.extra_data
+          const taskId = extra?.task_id || ''
+          if (
+            extra?.event !== 'torrent_batch_add_completed' ||
+            !Object.prototype.hasOwnProperty.call(component.pendingBatchCompletions, taskId)
+          ) return
+          delete component.pendingBatchCompletions[taskId]
+          component.$emit('batch-complete', {
+            task_id: taskId,
+            task_status: extra?.task_status || 'completed'
+          })
+        })
+      }
+    } catch (error) {
+      console.debug('[种子添加] 查询后台任务完成通知失败:', error)
+    } finally {
+      component.batchCompletionPollInFlight = false
+      const now = Date.now()
+      Object.keys(component.pendingBatchCompletions).forEach(taskId => {
+        if (component.pendingBatchCompletions[taskId] > now) return
+        delete component.pendingBatchCompletions[taskId]
+        // 通知写入偶发失败时仍做一次最终权威刷新，避免页面永久停留在旧快照。
+        component.$emit('batch-complete', { task_id: taskId, task_status: 'timeout' })
+      })
+      component.scheduleBatchCompletionPoll()
+    }
   }
 
   // 监听下载器变化，加载路径和标签
@@ -374,6 +454,7 @@ export default class TorrentAddDialog extends Vue {
 
       if (response.code === '202') {
         component.$message.success(response.msg || `已提交 ${torrentFiles.length} 个种子到后台处理`)
+        component.watchBatchCompletion(response.data?.task_id || '')
         component.$emit('confirm', formSnapshot)
         component.handleClose()
       } else if (response.code === '200' || response.code === '207') {

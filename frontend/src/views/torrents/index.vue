@@ -782,6 +782,7 @@
       :visible.sync="showAddDialog"
       :downloaders="downloaderList"
       @confirm="handleAdd"
+      @batch-complete="handleBatchAddCompleted"
     />
 
     <!-- Tracker操作对话框 -->
@@ -901,6 +902,7 @@ import {
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
   collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -1006,6 +1008,7 @@ export default class extends mixins(
   private activeListRetryInFlight = false
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
+  private runtimeListMembership = new RuntimeListMembershipTracker()
 
   // 分页相关
   private currentPage = 1
@@ -2206,6 +2209,14 @@ export default class extends mixins(
     this.getList()
   }
 
+  /** 202 后台添加真正完成后再拉一次权威列表，覆盖首次刷新早于入库的竞态。 */
+  private async handleBatchAddCompleted() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    await component.getList()
+    await component.loadActiveSpeed()
+  }
+
   // Tracker操作
   private handleTrackerOperationSuccess() {
     this.getList()
@@ -2528,11 +2539,26 @@ export default class extends mixins(
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
       if ((snapshot.ready || snapshot.partial) && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
-        const terminalObserved = this.applySpeedUpdates(snapshot.updates)
+        const newlyUnlistedKeys = this.runtimeListMembership.observe(
+          this.list,
+          snapshot.updates,
+          snapshot.ready
+        )
+        let terminalObserved = this.applySpeedUpdates(snapshot.updates)
         // 206 是可用但不完整的增量：合并已知键，不得清空上一轮完整快照。
         this.activeSpeedMap = snapshot.ready
           ? snapshot.torrentSpeedMap
           : { ...this.activeSpeedMap, ...snapshot.torrentSpeedMap }
+        if (newlyUnlistedKeys.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-this-alias
+          const component = this
+          terminalObserved = (await component.runtimeListMembership.refresh(
+            () => component.list,
+            snapshot.updates,
+            () => component.getList(),
+            updates => component.applySpeedUpdates(updates)
+          )) || terminalObserved
+        }
         if (snapshot.ready) {
           this.speedSnapshotReady = true
           const reconcile = collectRuntimeStateReconcileCandidates(

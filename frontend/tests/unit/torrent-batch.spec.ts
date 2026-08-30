@@ -29,7 +29,8 @@ import {
   parseSyncDeleteResponse,
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
-  collectRuntimeStateReconcileCandidates
+  collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
 import { readFileSync } from 'fs'
@@ -1306,6 +1307,86 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
         progress: 100, status: 'completed', downloadComplete: true
       }
     ])
+  })
+})
+
+describe('实时列表成员自愈', () => {
+  const visible = [{ hash: 'visible', downloader_id: 'dl-a' }]
+  const update = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 1024,
+    uploadSpeed: 0,
+    progress: 25
+  })
+
+  it('首个完整快照只建立分页外活动键基线，后续新键才触发刷新', () => {
+    const tracker = new RuntimeListMembershipTracker()
+
+    expect(tracker.observe(visible, [update('old-off-page')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page'), update('newly-added')], true)).toEqual([
+      'speed:dl-a:newly-added'
+    ])
+    expect(tracker.observe(visible, [update('old-off-page'), update('newly-added')], true)).toEqual([])
+  })
+
+  it('206 部分快照只增量合并基线，不会让同一未知键反复触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    tracker.observe(visible, [update('old-off-page')], true)
+
+    expect(tracker.observe(visible, [update('new-partial')], false)).toEqual([
+      'speed:dl-a:new-partial'
+    ])
+    expect(tracker.observe(visible, [update('new-partial')], false)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page'), update('new-partial')], true)).toEqual([])
+  })
+
+  it('同 hash 按下载器复合键区分，当前列表已经存在的行不算未知', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    const sameHashVisible = [{ hash: 'same', downloader_id: 'dl-a' }]
+    tracker.observe(sameHashVisible, [update('same', 'dl-a'), update('same', 'dl-b')], true)
+
+    expect(tracker.observe(
+      sameHashVisible,
+      [update('same', 'dl-a'), update('same', 'dl-b'), update('same', 'dl-c')],
+      true
+    )).toEqual(['speed:dl-c:same'])
+  })
+
+  it('权威刷新纳入新行后重新建基线，不再重复刷新并可继续更新进度', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    tracker.observe(visible, [], true)
+    const newUpdate = update('newly-added')
+
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual(['speed:dl-a:newly-added'])
+    tracker.rebaseline([...visible, { hash: 'newly-added', downloader_id: 'dl-a' }], [newUpdate])
+    expect(tracker.observe(
+      [...visible, { hash: 'newly-added', downloader_id: 'dl-a' }],
+      [newUpdate],
+      true
+    )).toEqual([])
+  })
+
+  it('权威列表刷新并发时只执行一次，并在刷新后应用同轮速度', async() => {
+    const tracker = new RuntimeListMembershipTracker()
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>(resolve => {
+      releaseRefresh = resolve
+    })
+    const refreshList = jest.fn(() => refreshGate)
+    const applyUpdates = jest.fn(() => true)
+    const rows = [{ hash: 'newly-added', downloader_id: 'dl-a' }]
+    const updates = [update('newly-added')]
+
+    const first = tracker.refresh(() => rows, updates, refreshList, applyUpdates)
+    const second = tracker.refresh(() => rows, updates, refreshList, applyUpdates)
+    expect(refreshList).toHaveBeenCalledTimes(1)
+
+    releaseRefresh()
+    await expect(first).resolves.toBe(true)
+    await expect(second).resolves.toBe(true)
+    expect(applyUpdates).toHaveBeenCalledTimes(1)
   })
 })
 

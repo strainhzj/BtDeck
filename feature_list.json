@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-29",
+  "last_updated": "2026-08-30",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -5717,6 +5717,31 @@
         "backend/tests/endpoints/test_active_only_filter.py",
         "frontend/tests/unit/torrent-batch.spec.ts",
         "frontend/tests/unit/api-contracts.spec.ts",
+        "frontend/tests/unit/torrent-list-view-component.spec.ts",
+        "frontend/tests/unit/traditional-view-component.spec.ts",
+        "frontend/tests/unit/mobile-torrents.spec.ts"
+      ]
+    },
+    {
+      "id": "torrent-runtime-list-membership-convergence-2026-08-30",
+      "title": "种子运行态列表成员自愈与后台添加完成刷新",
+      "status": "completed",
+      "scope": "frontend",
+      "description": "修复批量添加接口 202 返回后首次列表刷新早于数据库入库，导致种子已入库但页面仍未展示、后续速度更新也无法命中行的问题。运行态成员追踪器以首个完整活动快照建立分页外基线，后续新出现且未展示的 downloader_id+hash 只触发一次串行权威列表刷新，并在新行落入列表后立即重放同轮速度；206 快照仅增量合并。添加对话框同时按 task_id 等待既有完成通知并发出 batch-complete，覆盖零速度、暂停或瞬间完成而不出现在活动快照中的新增种子。",
+      "evidence": {
+        "tests": "新增 12 个回归执行项：成员基线/206 增量/同 hash 跨下载器/重建基线/刷新单飞，列表、传统、移动三视图的数据库已入库但页面未展示闭环，桌面双视图 batch-complete 刷新，以及添加对话框完成通知/销毁清理。相关 5 suites / 204 passed；前端全量 90 suites / 1297 passed。",
+        "lint": "npm run typecheck、npm run lint、npm run build 全部通过；生产构建仅有仓库既有的 Browserslist 与 Sass 弃用警告。",
+        "environment": "根 bash ./init.sh --ci 在当前 Windows/WSL 环境仍被 Bash/Service/CreateInstance/E_ACCESSDENIED 阻断；前端完整测试、类型、lint 与构建门禁均已独立通过。",
+        "behavior": "数据库已存在但当前前端快照没有该行时，新活动复合键会触发权威列表自愈；前端发起的 202 批量添加还会在后台任务真正完成时补拉列表和速度，因此无须用户手动刷新。分页外既有活动任务只进入首次基线，不会造成每秒重复刷新。"
+      },
+      "files": [
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/src/views/torrents/components/TorrentAddDialog.vue",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/mobile/torrents.vue",
+        "frontend/tests/unit/torrent-add-dialog.spec.ts",
+        "frontend/tests/unit/torrent-batch.spec.ts",
         "frontend/tests/unit/torrent-list-view-component.spec.ts",
         "frontend/tests/unit/traditional-view-component.spec.ts",
         "frontend/tests/unit/mobile-torrents.spec.ts"

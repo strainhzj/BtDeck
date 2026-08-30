@@ -316,6 +316,43 @@ describe('views/mobile/MobileTorrents', () => {
     wrapper.destroy()
   })
 
+  it('完整快照出现新的未展示复合键时重载列表，并立即展示同轮进度与速度', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+
+    jest.mocked(getActiveTorrents).mockResolvedValue({ code: '200', data: [] } as never)
+    await vm.loadActiveSpeed()
+    jest.mocked(getTorrentList).mockClear()
+
+    const newlyAdded = {
+      ...listTorrent,
+      infoId: 'new-info', torrentId: 'new-torrent', hash: 'new-hash',
+      name: '刚入库种子', status: 'downloading', progress: 0,
+      downloadSpeed: 0, uploadSpeed: 0
+    }
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200', data: { list: [newlyAdded], total: 1 }
+    } as never)
+    jest.mocked(getActiveTorrents).mockResolvedValue({
+      code: '200', data: [{
+        hash: 'new-hash', downloader_id: 'd1',
+        downloadSpeed: 16384, uploadSpeed: 256, progress: 48,
+        status: 'downloading'
+      }]
+    } as never)
+
+    await vm.loadActiveSpeed()
+
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    expect(vm.list).toHaveLength(1)
+    expect(vm.list[0]).toEqual(expect.objectContaining({
+      hash: 'new-hash', name: '刚入库种子', progress: 48,
+      downloadSpeed: 16384, uploadSpeed: 256
+    }))
+    wrapper.destroy()
+  })
+
   it('连续两个完整快照未命中后核验零速终态，并把下载中行收敛到100%', async() => {
     jest.mocked(getTorrentList).mockResolvedValue({
       code: '200',
