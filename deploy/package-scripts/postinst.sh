@@ -38,7 +38,10 @@ fi
 chown -R btdeck:btdeck /opt/btdeck
 
 # 启用并启动服务（幂等：升级后重新拉起，重装不产生重复实例）
-if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+# degraded 是容器内 systemd 常见正常态，必须与 running 同等接受，
+# 否则容器/最小化环境下 postinst 会静默跳过 enable+start（W3 实测拦截）
+if command -v systemctl >/dev/null 2>&1 \
+    && systemctl is-system-running 2>/dev/null | grep -qE '^(running|degraded)$'; then
     systemctl daemon-reload
     systemctl enable btdeck
     if ! systemctl is-active --quiet btdeck; then

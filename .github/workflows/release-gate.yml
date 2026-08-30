@@ -49,6 +49,18 @@ on:
         description: "Run w2-strict-docker-build (G4/G5)"
         type: boolean
         default: false
+      run_w3_lifecycle_linux:
+        description: "Run w3-lifecycle-linux (G6 DEB/RPM)"
+        type: boolean
+        default: false
+      run_w3_lifecycle_docker:
+        description: "Run w3-lifecycle-docker (G6/G7)"
+        type: boolean
+        default: false
+      run_w3_lifecycle_windows:
+        description: "Run w3-lifecycle-windows (G6)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -512,5 +524,184 @@ jobs:
             release/build/docker-images.txt
             release/build/docker-backend/build-info.json
             release/build/docker-frontend/build-info.json
+          retention-days: 7
+          if-no-files-found: error
+
+  w3-lifecycle-linux:
+    name: "W3 lifecycle / DEB+RPM (G6)"
+    if: ${{ inputs.run_w3_lifecycle_linux }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once
+        run: python scripts/release/build_frontend.py
+
+      - name: Build strict Linux packages
+        run: |
+          docker build -t w2-linux-builder - <<'BUILDEREOF'
+          FROM python:3.11-bullseye
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+              && rm -rf /var/lib/apt/lists/* \
+              && gem install fpm --no-document
+          BUILDEREOF
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            bash deploy/build-linux.sh --release
+          '
+
+      - name: Prepare v1.0.5 upgrade baseline (reconstructed from tag)
+        run: |
+          mkdir -p .release-build-v1.0.5/assets
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash scripts/release/lifecycle/make_v105_baseline.sh
+          ls -la .release-build-v1.0.5/assets/
+
+      - name: Run DEB/RPM lifecycle scenarios (fail-closed)
+        run: bash scripts/release/lifecycle/run_deb_rpm.sh
+
+      - name: Upload lifecycle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w3-lifecycle-linux
+          path: |
+            release/evidence/w3/*.json
+            release/evidence/w3/*.container.log
+          retention-days: 14
+          if-no-files-found: error
+
+  w3-lifecycle-docker:
+    name: "W3 lifecycle / Docker compose (G6/G7)"
+    if: ${{ inputs.run_w3_lifecycle_docker }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once
+        run: python scripts/release/build_frontend.py
+
+      - name: Build v1.0.6 images (strict, labels verified)
+        run: bash build-images.sh --release
+
+      - name: Run docker lifecycle scenarios (fail-closed)
+        run: bash scripts/release/lifecycle/docker.sh
+
+      - name: Upload lifecycle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w3-lifecycle-docker
+          path: release/evidence/w3/lifecycle-docker.json
+          retention-days: 14
+          if-no-files-found: error
+
+  w3-lifecycle-windows:
+    name: "W3 lifecycle / Windows EXE+Setup (G6)"
+    if: ${{ inputs.run_w3_lifecycle_windows }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once
+        shell: pwsh
+        run: |
+          python scripts/release/build_frontend.py
+          if ($LASTEXITCODE -ne 0) { throw "frontend single build failed" }
+
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
+
+      - name: Build v1.0.6 strict Windows artifacts
+        shell: cmd
+        run: deploy\build-windows.bat --release
+
+      - name: Prepare v1.0.5 portable fixture (reconstructed from tag)
+        shell: pwsh
+        run: |
+          $fixtureDir = Join-Path $env:RUNNER_TEMP "v105-fixture"
+          git worktree add $fixtureDir v1.0.5
+          Push-Location "$fixtureDir/frontend"
+          $npm = (Get-Command npm.cmd).Source
+          & $npm ci --legacy-peer-deps
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm ci failed" }
+          & $npm run build
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm build failed" }
+          Pop-Location
+          Push-Location $fixtureDir
+          & python -m venv .venv-v105
+          & .venv-v105\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 packaging deps failed" }
+          & .venv-v105\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 pyinstaller failed" }
+          Pop-Location
+          "V105_FIXTURE=$(Join-Path $fixtureDir 'dist/btdeck.exe')" | Add-Content -Path $env:GITHUB_ENV
+
+      - name: Run Windows lifecycle scenarios (fail-closed)
+        shell: pwsh
+        run: |
+          $fixture = if ($env:V105_FIXTURE -and (Test-Path $env:V105_FIXTURE)) { $env:V105_FIXTURE } else { "" }
+          pwsh -File scripts\release\lifecycle\windows.ps1 -V105PortableExe $fixture
+          if ($LASTEXITCODE -ne 0) { throw "windows lifecycle failed" }
+
+      - name: Upload lifecycle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w3-lifecycle-windows
+          path: |
+            w3-lifecycle-windows.json
+            dist/btdeck.exe
+            dist/BtDeck-v*-windows-x64-setup.exe
           retention-days: 7
           if-no-files-found: error
