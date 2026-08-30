@@ -37,21 +37,23 @@ fail() { echo "[FATAL] $1" >&2; exit 2; }
 command -v docker >/dev/null 2>&1 || fail "docker 不可用"
 
 build_sysd_images() {
-    echo "[SETUP] 构建 systemd 测试镜像（官方基 + 预装 curl/sqlite3/iproute）..."
-    # 镜像源加速：默认 aliyun；CI/网络良好环境可 BTDECK_SKIP_MIRROR=1 走官方源
+    echo "[SETUP] 构建 systemd 测试镜像（官方基 + 预装 curl/sqlite3/iproute/python3）..."
+    # 镜像源加速：默认国内源；CI/网络良好环境可 BTDECK_SKIP_MIRROR=1 走官方源
     if [ "${BTDECK_SKIP_MIRROR:-0}" != "1" ]; then
         docker build -q -t w3-debian-sysd - <<'EOF'
 FROM debian:12
 RUN sed -i "s|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g; s|deb.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 \
+    && apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 python3 \
     && ln -sf /lib/systemd/systemd /sbin/init \
     && rm -f /etc/machine-id
 CMD ["/sbin/init"]
 EOF
+        # rocky：整体重写 repo 文件（USTC 布局），规避各家镜像 $contentdir 路径差异
         docker build -q -t w3-rocky-sysd - <<'EOF'
 FROM rockylinux:9
-RUN sed -i 's|^mirrorlist=|#mirrorlist=|; s|^#baseurl=http://dl.rockylinux.org|baseurl=https://mirrors.aliyun.com/rockylinux|' /etc/yum.repos.d/rocky*.repo /etc/yum.repos.d/Rocky*.repo 2>/dev/null; \
-    dnf -y install systemd curl sqlite3 iproute \
+RUN rm -f /etc/yum.repos.d/rocky*.repo \
+    && printf '[baseos]\nname=Rocky BaseOS\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/BaseOS/$basearch/os/\ngpgcheck=0\n[appstream]\nname=Rocky AppStream\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/AppStream/$basearch/os/\ngpgcheck=0\n' > /etc/yum.repos.d/btdeck.repo \
+    && dnf -y install systemd curl sqlite3 iproute python3 \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]
@@ -91,6 +93,7 @@ run_scenario() {
     local rc=$?
     docker cp "w3-${name}:/tmp/report.json" "${EVIDENCE_DIR}/lifecycle-${name}.json" >/dev/null 2>&1 \
         || cp /dev/null "${EVIDENCE_DIR}/lifecycle-${name}.json"
+    docker exec "w3-${name}" journalctl -u btdeck --no-pager > "${EVIDENCE_DIR}/lifecycle-${name}.journal.log" 2>&1 || true
     docker logs "w3-${name}" > "${EVIDENCE_DIR}/lifecycle-${name}.container.log" 2>&1
     docker rm -f "w3-${name}" >/dev/null 2>&1
     if [ $rc -ne 0 ]; then

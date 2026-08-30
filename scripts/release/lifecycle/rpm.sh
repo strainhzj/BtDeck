@@ -72,7 +72,7 @@ if [ "$SCENARIO" = "fresh" ]; then
     ok=yes
     systemctl restart btdeck || ok=no
     systemctl restart btdeck || ok=no
-    if [ "$ok" = yes ] && service_active && single_port_listener; then
+    if [ "$ok" = yes ] && wait_healthy 1.0.6 120 && service_active && single_port_listener; then
         phase "restart_twice" PASS
     else
         phase "restart_twice" FAIL "重启后状态异常"
@@ -90,9 +90,22 @@ if [ "$SCENARIO" = "fresh" ]; then
 elif [ "$SCENARIO" = "upgrade" ]; then
     [ -n "$OLD_RPM" ] && [ -f "$OLD_RPM" ] || die "upgrade 场景要求 --old-rpm（v1.0.5 正式本地制品）"
 
-    # v1.0.5 冻结制品夹具适配（仅基线阶段）：postinst degraded 守卫 + 旧 unit 无
-    # PrivateTmp → 显式 enable/start 并以仓库现行 unit 覆写
+    # v1.0.5 冻结制品三处夹具适配（同 deb.sh：env 补建 + unit 覆写 + 显式 enable/restart）
     if install_rpm "$OLD_RPM"; then
+        if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+            mkdir -p /opt/btdeck/config
+            if command -v openssl >/dev/null 2>&1; then
+                SK="$(openssl rand -hex 32)"
+            else
+                SK="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' 
+')"
+            fi
+            printf 'SECRET_KEY=%s
+ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
+' "$SK"                 > /opt/btdeck/config/btdeck.env
+            chmod 600 /opt/btdeck/config/btdeck.env
+            chown btdeck:btdeck /opt/btdeck/config/btdeck.env 2>/dev/null || true
+        fi
         if [ -f /src/deploy/btdeck.service ]; then
             cp /src/deploy/btdeck.service /etc/systemd/system/btdeck.service
         fi

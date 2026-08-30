@@ -79,7 +79,7 @@ if [ "$SCENARIO" = "fresh" ]; then
     ok=yes
     systemctl restart btdeck || ok=no
     systemctl restart btdeck || ok=no
-    if [ "$ok" = yes ] && service_active && single_port_listener \
+    if [ "$ok" = yes ] && wait_healthy 1.0.6 120 && service_active && single_port_listener \
         && assert_eq "$(systemctl show -p MainPID --value btdeck | grep -c .)" 1 "单主进程"; then
         phase "restart_twice" PASS
     else
@@ -109,11 +109,24 @@ elif [ "$SCENARIO" = "upgrade" ]; then
     [ -n "$OLD_DEB" ] && [ -f "$OLD_DEB" ] || die "upgrade 场景要求 --old-deb（v1.0.5 正式本地制品）"
 
     # ---- v1.0.5 基线 ----
-    # v1.0.5 冻结制品两处夹具适配（仅基线阶段；v1.0.6 全部用真实 scriptlet/unit）：
-    #   1) 旧 postinst 守卫不接受容器 degraded 态 → 显式 enable/start
-    #   2) 旧 btdeck.service 无 PrivateTmp（ProtectSystem=strict 下 /tmp 只读，
-    #      PyInstaller onefile 无法解压）→ 用仓库现行 unit 覆写后 daemon-reload
+    # v1.0.5 冻结制品三处夹具适配（仅基线阶段；v1.0.6 全部用真实 scriptlet/unit）：
+    #   1) 旧 postinst 守卫不接受容器 degraded 态且在 python3 兜底处中断 →
+    #      补建 btdeck.env（旧包 exit 127 时 env 根本没写，v1.0.5 生产模式缺 SECRET_KEY 拒启）
+    #   2) 旧 btdeck.service 无 PrivateTmp → 用仓库现行 unit 覆写
+    #   3) 显式 enable/restart
     if install_deb "$OLD_DEB"; then
+        if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+            mkdir -p /opt/btdeck/config
+            if command -v openssl >/dev/null 2>&1; then
+                SK="$(openssl rand -hex 32)"
+            else
+                SK="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+            fi
+            printf 'SECRET_KEY=%s\nALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]\n' "$SK" \
+                > /opt/btdeck/config/btdeck.env
+            chmod 600 /opt/btdeck/config/btdeck.env
+            chown btdeck:btdeck /opt/btdeck/config/btdeck.env 2>/dev/null || true
+        fi
         if [ -f /src/deploy/btdeck.service ]; then
             cp /src/deploy/btdeck.service /etc/systemd/system/btdeck.service
         fi
