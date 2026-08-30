@@ -1,5 +1,25 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-30：.3/.5/.8 设备级验证批次（Phase 4 已提交 b326378）
+
+### 已完成
+
+- Phase 4 capability 批次已提交 `b326378`（20 文件 +1181）。
+- .5：settings-capability E2E 4/4（Playwright 直连 AVD android-server 后端，与 WebView 同源等价）——矩阵 UI 设备级闭环。
+- .8：CredentialVaultAndroidTest 仪表化 6/6（Keystore 往返/密文落盘/改密/删除/约束）；connected 合计 7/7。
+- .3：AVD 后端 login.spec 3/3（认证失败提示+登录成功链路）；强制改密与登录限流（429）实证。
+- 遗留人工项：.3 离线 toast/自签证书弹窗/多 profile 原生切换；.8 桌面 GUI 侧。均已在 feature_list 对应 task evidence 登记。
+
+### 未提交（待用户指示）
+
+- android/app/src/androidTest/.../CredentialVaultAndroidTest.kt（新）
+- frontend/tests/e2e/mobile/settings-capability.spec.ts（新）
+- feature_list.json / progress.md / session-handoff.md
+
+### 下一步（按既定顺序）
+
+**Phase 5 发布验收（task .7，pending，最后执行）**：Play 提审材料（App Signing/隐私政策/Data Safety/FGS specialUse 申报）、GitHub Release APK、bundletool 包体精算（release 构建未做过）、设备矩阵（API 24 最低、Android 14/16、arm64 真机、升级安装迁移演练、Doze/OEM 电池、旋转、存储权限、LAN 开关实测）——建议新会话批次化推进（首轮出方案）。wheels 仓登记限制不变（pillow 攻坚、官方仓库存量 16KB 化随时间收敛复查）。
+
 ## 2026-08-29（深夜二）：Phase 4 capability 矩阵 API/UI 一致降级接线（task .5）
 
 ### 已完成（未提交，遵循仅用户要求时提交）

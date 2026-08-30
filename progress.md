@@ -6320,3 +6320,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **前端**：api 层单例缓存（失败按 supported/desktop 兜底）；settings 新增"主机能力"tab（表格/卡片双布局，移动端经包装自动同源）；桌面任务创建对话框 0-3 类型置灰+说明+提交兜底；移动任务列表 android-server 显示省电延迟提示条。
 - **验证**：后端定向 70+156 passed（mypy/black/flake8 过）；前端定向 22 例+全量 89 suites/1285 tests、tsc 零错、lint 过；AVD（btdeck-a35）端到端实证——服务 10s 就绪、`/platform/capabilities` 返回 android-server 14 项 5 降级/3 不支持（与冻结矩阵逐项一致）、cron add task_type=0 被拒并给出主机形态文案。
 - 过程修复一处测试自身问题（api spec 漏 mock 清理导致调用计数跨用例累积，mockReset 根治）。未执行 Git 提交。
+
+## 2026-08-30：.3/.5/.8 设备级验证批次 + Phase 4 提交
+
+- **提交**：`b326378`（Phase 4 capability 矩阵 API/UI 一致降级，20 文件 +1181）。
+- **.5 矩阵 UI 设备级目验**：Playwright 直连 AVD forward 的 android-server 后端自带前端（与 App WebView 同源等价），settings-capability.spec.ts 4/4——主机能力 tab、14 卡片、"Android 服务端"形态、降级 5/不支持 3 统计、danger/warning 徽标。
+- **.8 Keystore 设备级**：CredentialVaultAndroidTest 仪表化 6/6——加解密往返、密文落盘（无明文）、覆盖保存改密、删除、约束；connectedDebugAndroidTest 合计 7/7（含 LocalServerAndroidTest 回归）。
+- **.3 认证路径**：AVD 后端复跑 login.spec 3/3（错误凭据 error message 停留登录页、正确凭据进仪表盘）；强制改密全流程与登录限流（429→服务重启清零）实证。
+- **过程坑**：adb UI 表单自动化脆弱（对话框外点即关/键盘位移/仪表化测试清数据卸 APK）——原生 UI 项转 Playwright+仪表化覆盖；E2E 全新库需先完成强制改密（forceChange 跳设置页，改密表单在"修改密码" tab 非 2FA tab）。
+- 遗留人工项：.3 离线 toast/自签证书弹窗/多 profile 原生切换肉眼验收；.8 桌面 GUI 侧与自动登录 UI 流程。未执行 Git 提交（验证产物待用户指示后一并提交）。
