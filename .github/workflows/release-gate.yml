@@ -533,8 +533,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - name: Checkout
+      - name: Checkout (full history + tags for v1.0.5 baseline)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -592,8 +594,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout
+      - name: Checkout (full history + tags for v1.0.5 baseline)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -631,8 +635,10 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - name: Checkout
+      - name: Checkout (full history + tags for v1.0.5 baseline)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
