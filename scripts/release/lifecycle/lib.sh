@@ -31,6 +31,12 @@ wait_http() {
         i=$((i + 1))
     done
     echo "[wait_http] timeout waiting '$want' at $url; last: ${body:0:200}" >&2
+    if [ "${BTDECK_WAIT_DEBUG:-0}" = "1" ]; then
+        echo "[wait_http:debug] want bytes:" >&2
+        printf '%s' "$want" | od -c | head -3 >&2
+        echo "[wait_http:debug] body head bytes:" >&2
+        printf '%s' "${body:0:80}" | od -c | head -3 >&2
+    fi
     return 1
 }
 

@@ -34,7 +34,7 @@ done
 [ -f "$NEW_RPM" ] || die "新包不存在: $NEW_RPM"
 
 wait_healthy() {
-    wait_http "http://127.0.0.1:5001/health/live" "\"version\": \"$1\"" 180
+    wait_http "http://127.0.0.1:5001/health/live" "\"version\":\"$1\"" 180
 }
 
 install_rpm() { dnf -y install "$1" >/tmp/dnf-install.log 2>&1; }

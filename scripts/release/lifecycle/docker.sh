@@ -53,7 +53,7 @@ backend_health() {  # backend_health <version-substr> <max-sec>
     while [ $i -lt $(($2 / 5)) ]; do
         body="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null || true)"
         case "$body" in
-            *"\"version\": \"$1\""*) return 0 ;;
+            *"\"version\":\"$1\""*) return 0 ;;
         esac
         sleep 5; i=$((i + 1))
     done

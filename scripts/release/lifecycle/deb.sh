@@ -35,7 +35,7 @@ done
 [ -f "$NEW_DEB" ] || die "新包不存在: $NEW_DEB"
 
 wait_healthy() {  # wait_healthy <version-substr>
-    wait_http "http://127.0.0.1:5001/health/live" "\"version\": \"$1\"" 180
+    wait_http "http://127.0.0.1:5001/health/live" "\"version\":\"$1\"" 180
 }
 
 install_deb() { dpkg -i "$1" >/tmp/dpkg-install.log 2>&1; }
