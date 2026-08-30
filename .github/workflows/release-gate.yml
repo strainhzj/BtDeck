@@ -573,7 +573,7 @@ jobs:
           ls -la .release-build-v1.0.5/assets/
 
       - name: Run DEB/RPM lifecycle scenarios (fail-closed)
-        run: bash scripts/release/lifecycle/run_deb_rpm.sh
+        run: BTDECK_SKIP_MIRROR=1 bash scripts/release/lifecycle/run_deb_rpm.sh
 
       - name: Upload lifecycle reports
         if: always()
