@@ -1,5 +1,30 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-30：v1.0.6 制品等价门禁 W2 批次（task .4 done：唯一前端构建+严格制品构建+静态等价）
+
+### 已完成
+
+- 唯一前端构建链：`scripts/release/build_frontend.py`（Node 版本线校验）+ `check_prebuilt_frontend.py`（canonical 一致门）；所有制品构建只消费不重建。
+- 三构建入口 `--release` 严格模式（fail-closed）：预构建前端/fpm/ISCC 必需、干净树强制、双 spec 嵌发布身份、Windows 版本资源、OCI label 强校验；`frontend/Dockerfile.release` 消费唯一前端。
+- verify-package.py 内容级验证（CArchiveReader 逐文件哈希+禁入扫描）；verify_release_bundle.py 跨制品 G1/G4/G5。
+- **本地 E2E 全绿**（干净 clone @37bbccd）：Linux 严格（DEB/RPM）exit 0 → docker 严格 exit 0 → bundle 6 制品一致 PASS。证据 release/evidence/w2/（gate-report/checksums/docker-images/构建日志/build-info）。
+- 测试 78/78；CI 增 w2-strict 三 job（未推送首跑）。
+
+### 坑位（重要，复用）
+
+- 锁文件 CRLF 会被 pip 当续行符（整文件拼一行）——.gitattributes 已强制 LF，Dockerfile pins 生成带 `tr -d ''`。
+- Windows 原生 python/docker CLI 不认 `/c/...` 路径：脚本内 python/docker 调用一律 cd+相对路径。
+- python 写 shell 补丁时 `''` 必须字节级核对（本批踩过字面 CR 字节坑，MSYS 还会吞裸 CR 参数）。
+- Windows 检出的 CRLF 在 Linux 容器 git 视角是"修改"：容器内 `git config --global core.autocrlf true` 对齐，或干净 clone+LF 重检出。
+- 严格构建禁止并发跑在同一目录/同一镜像 tag（本批竞态实证）。
+- git worktree 的 .git 指回 Windows 主仓路径，容器内不可用——用本地 clone。
+
+### 下一步
+
+1. **W3（task .5/.6/.7）**：Windows/DEB/RPM/Docker 生命周期幂等（scripts/release/lifecycle/），v1.0.5 升级夹具（.release-build-v1.0.5/assets）。
+2. CI w2-strict 三 job 推送后首跑（release-gate.yml 已含）。
+3. 待办：btdeck.iss Setup 内 EXE SHA 校验（W3/W5）；build-and-export-images.bat latest 链改造（W5 digest 晋级）。
+
 ## 2026-08-29/30：v1.0.6 制品等价门禁 W0-CI 收口 + W1 全批次（.1/.2/.3 done，未提交）
 
 ### 已完成

@@ -6353,3 +6353,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **镜像级验证**：btdeck-backend:w1-smoke 构建成功，真实环境 pip freeze 与锁归一化比对 50/50 全一致（FREEZE_MATCHES_LOCK，G2 制品导出首例）；btdeck-frontend:w1-smoke 构建成功，配对网络冒烟（frontend healthy 200 / backend /health/live 携带 build 身份块 dev 模式）。
 - **坑位沉淀**：PyPI 直连限速 40KB/s、tuna 403、aliyun 可用（锁生成/镜像构建均走 aliyun，哈希为内容哈希不受镜像影响，已去除锁内 --index-url 行）；Docker Desktop 引擎间歇掉线两次（重启即恢复）；`tee|tail` 吞退出码。
 - 未提交（遵循仅用户要求时提交）；feature 整体保持 pending（.4~.9 待做，下一批 W2 唯一前端构建与严格制品构建）。
+
+## 2026-08-30：v1.0.6 制品等价门禁 W2 批次（task .4 → done：唯一前端构建/严格制品构建/静态等价 E2E 全绿）
+
+- **唯一前端构建链**：scripts/release/build_frontend.py（Node 版本线校验+纯规范 manifest+meta）；check_prebuilt_frontend.py 在所有制品构建消费前强制 canonical 一致——本地以 node:22 容器产出唯一构建（357 文件，v22.23.2），Linux/Docker 制品均消费该构建，零二次前端构建。
+- **严格模式**：三构建入口（build-linux.sh/build-windows.bat/build-images.sh）--release 均为 fail-closed：预构建前端必需、fpm/ISCC 必需且失败即败、干净工作区强制、双 spec 嵌 build-info/双 manifest（staging 缺失即败）、Windows EXE VSVersionInfo 版本资源（完整 SHA 备注）、OCI label 构建后强校验、frontend/Dockerfile.release 消费唯一前端（独立上下文绕开 .dockerignore）。
+- **本地 E2E 全绿**（临时干净 clone @37bbccd + bullseye/fpm/rpmbuild 构建容器 + 镜像源加速）：Linux 严格构建 exit 0（PyInstaller→verify-package 内容级 PASS→fpm DEB+RPM）；docker 严格构建 exit 0（label 校验+镜像内 build-info 断言）；**verify_release_bundle 6 制品一致 PASS（G1/G4/G5）**——同一 SHA、manifest 逐字节一致、DEB/RPM 解包二进制==中间二进制、checksums+镜像 ID 归档（release/evidence/w2/）。
+- **E2E 拦下的真实缺陷（fail-closed 七连实证）**：①严格模式正确拒绝脏工作区×2；②锁内 --hash 激活 pip 哈希模式与未哈希平台增量冲突→两段式安装；③CRLF 锁文件被 pip 视为续行→gitattributes 强制 LF+CR 剥离；④Windows python/docker CLI 不识别 /c/... 路径→统一 cd+相对路径；⑤python 补丁把 '\r' 写成字面 CR 字节、MSYS 吞裸 CR 参数→字节级修复；⑥并发严格构建互相覆盖镜像标签（竞态）→串行纪律；⑦Linux/docker 制品跨 SHA 不一致被 bundle 验证器拦截→对齐重建。
+- **测试**：tests/release/ 78 例全绿（新增 verify-package 五变异 8 例、构建脚本源码契约 19 例、bundle 纯函数 11 例）。
+- **CI**：release-gate.yml 增 w2-strict-{linux,windows,docker} job（workflow_dispatch，含制品上传与 EXE 版本资源断言）；尚未推送执行。
+- 工程修复沉淀：generator/build_frontend 统一 LF 写出（跨平台字节一致）、manifest 纯规范形态、bundle 验证器 frontend-build 仅参与 manifest 比对。
+- 未提交部分见下一提交；feature 整体 pending（W3 生命周期批次待做）。

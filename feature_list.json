@@ -5391,7 +5391,8 @@
             "deploy/verify-package.py",
             "scripts/release/verify_release_bundle.py",
             "backend/tests/release/"
-          ]
+          ],
+          "evidence": "2026-08-30 W2 完成（本地 E2E 全绿，证据 release/evidence/w2/）。①唯一前端构建：scripts/release/build_frontend.py（Node 版本线校验+纯规范 manifest+meta），制品构建消费前必须过 check_prebuilt_frontend.py（canonical 比较，禁止二次前端构建）。②严格模式：build-linux.sh/build-windows.bat/build-images.sh 均支持 --release——预构建前端必需、fpm/ISCC 必需且失败即败、干净工作区强制、OCI label 构建后强校验；frontend/Dockerfile.release 只消费唯一前端构建（独立组装上下文）；Windows spec 嵌 VSVersionInfo 版本资源（含完整 SHA 备注）。③内容级验证：verify-package.py（CArchiveReader 逐文件哈希/禁入扫描/build-info 校验）在 Linux 严格构建中实际 PASS。④bundle 验证：verify_release_bundle.py G1/G4/G5 全 PASS——6 制品（linux-binary/DEB/RPM/docker-backend/docker-frontend/frontend-build）同一 SHA=37bbccd、manifest 逐字节一致、DEB/RPM 解包二进制==Linux 中间二进制、checksums 与镜像 ID 归档。⑤测试 78 例全绿（新增五变异+脚本源码契约+bundle 纯函数）。⑥E2E 过程实证 fail-closed 七次（脏树拦截×2、并发镜像标签竞态、锁哈希模式与增量冲突、CRLF 续行陷阱、python/docker 路径形态、tr 字面 CR 字节、跨 SHA 不一致被 bundle 拦截）。⑦CI：release-gate 增 w2-strict-{linux,windows,docker} 严格构建 job（待推送后首跑）。遗留：btdeck.iss 仅版本号对齐（Setup 内 EXE SHA 校验入 W3/W5 编排）；build-and-export-images.bat 的 latest 导出链改造随 W5 digest 晋级一并处理。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.5",
