@@ -1,5 +1,26 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-29/30：v1.0.6 制品等价门禁 W0-CI 收口 + W1 全批次（.1/.2/.3 done，未提交）
+
+### 已完成
+
+- **W0 CI 全绿**：release-gate.yml 推 dev + master 注册（b357e07，仅注册键；dispatch ref=dev）。run 33236313405（Node22/bullseye/systemd）+ run 33237024759（Windows：ISCC/静默装卸/NSSM 三 PASS，报告归档 release/evidence/w0/）。Windows 两轮修复：runner 预装 Inno 6.7.1（版本资源 0.0.0.0）→预装探测跳过 choco；pwsh7 无 `Set-Content -Append`→`Add-Content`。task .1 → done。
+- **W1 版本与身份（task .2 done）**：六处版本统一 1.0.6 且被 `scripts/release/generate_build_info.py --check-versions` + tests/release/test_version_consistency.py 强制；build-info/release-manifest schema；生成器真实仓库冒烟通过；`backend/app/core/build_info.py` + 健康接口 build 字段（兼容外壳，身份非法 ready 503）；package.json engines/packageManager。回归 50/50 + 3 组真文件变异全拦截 + black/flake8/mypy 过。
+- **W1 依赖与工具链（task .3 done）**：`backend/requirements-lock.txt`（51 包全哈希，Py3.11）——**qB 分叉关闭 ==2025.2.0**；deploy 两 packaging = `-r 锁 + 白名单增量`（passlib/email-validator 零使用移除）；regression.yml → Py3.11 + Node 22.23.2；Dockerfile×3 digest 固定 + OCI label ARG 骨架 + trixie deb822 sed 修复 + runtime pins 离线安装。
+- **镜像验证**：btdeck-backend:w1-smoke freeze↔锁 50/50；btdeck-frontend:w1-smoke 配对冒烟 healthy；backend `/health/live` 实测返回 `build:{status:dev, productVersion:1.0.6}`。
+- 证据：release/evidence/w1/（lockgen/hash-dryrun/两镜像构建日志/freeze 比对）；PLANS §18/§19；feature_list .1/.2/.3 done。
+
+### 环境坑（复用）
+
+- PyPI 直连限速 ~40KB/s；tuna 403；**aliyun 镜像可用**（锁生成与镜像构建走它；哈希为内容哈希不受镜像影响；锁内 `--index-url` 行须删）。Docker Desktop 引擎间歇掉线（重启 15s 恢复）。`docker build | tee` 会吞退出码。Dockerfile APT_MIRROR 必须 host-only 且 trixie security 路径要单独映射（已修入三个 Dockerfile）。
+- 锁文件内嵌 --hash 会让 pip 自动进哈希模式：runtime 离线装本地 wheel 用去哈希 pins（builder 已 --require-hashes 锚定），镜像级一致性用 freeze↔锁比对。
+
+### 下一步
+
+1. **W2（task .4）**：唯一前端构建（frontend-dist 制品 + manifest 注入）、`--release --require-all` 严格模式（缺 ISCC/fpm/元数据即败）、EXE 版本资源、build-info 实际注入全部制品、verify-package 升级为内容级 + 五类变异。
+2. 遗留：advancedSearch.generated.ts（合法再生成）与并行 Android 改动待用户处置后 G0 才可冻结；W2 起构建脚本消费 release-config 的六处版本与 digest。
+3. 本批 17 个文件未提交，等用户指示。
+
 ## 2026-08-30（二）：Phase 5 发布验收首批（task .7 → in-progress）
 
 ### 已完成

@@ -184,11 +184,7 @@ async def health_ready(request: Request):
     identity_block = build_info.build_identity_block()
     identity_reason = "build_identity_invalid" if identity_block.get("status") == "invalid" else None
 
-    reason_codes = [
-        reason
-        for reason in (database_reason, worker_reason, lag_reason, identity_reason)
-        if reason
-    ]
+    reason_codes = [reason for reason in (database_reason, worker_reason, lag_reason, identity_reason) if reason]
     checks = {"database": database_check, "worker": worker_check, "eventLoopLag": lag_check}
     if reason_codes:
         _record_readiness_failures(reason_codes)

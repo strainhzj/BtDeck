@@ -43,8 +43,8 @@
     "w0_probes": {
       "node22_frontend_matrix": {
         "status": "PASS",
-        "detail": "node:22-bookworm-slim = Node v22.23.2 + npm 10.9.8；npm ci/contract:check/typecheck/test:coverage(84套件1233测试)/build 全绿",
-        "evidence": "release/evidence/w0/w0-node22-frontend.log"
+        "detail": "本地 node:22-bookworm-slim = v22.23.2 全量矩阵全绿；CI w0-node-matrix 同绿（run 33236313405）",
+        "evidence": "release/evidence/w0/w0-node22-frontend.log + CI run 33236313405"
       },
       "glibc_cheap_check": {
         "status": "PASS",
@@ -53,24 +53,34 @@
       },
       "glibc_bullseye_rebuild": {
         "status": "PASS",
-        "detail": "python:3.11-bullseye 重建后单二进制在 rocky9 + debian12 双发行版均完整启动；单二进制方案成立，Linux 构建基线定格 bullseye",
+        "detail": "bullseye 单二进制双发行版启动成功（本地 + CI run 33236313405）",
         "evidence": "release/evidence/w0/w0-bullseye-build.log + w0-glibc-{rocky9,debian12}-bullseye.log"
       },
       "systemd_container_smoke": {
         "status": "PASS",
-        "detail": "官方基础镜像均不含 systemd；自建（官方基+装 systemd，debian 须补 /sbin/init 符号链接）+ --privileged --cgroupns=host 下双发行版单元生命周期全通",
+        "detail": "本地双发行版单元生命周期全通；CI w0-linux-systemd 同绿（run 33236313405）",
         "evidence": "release/evidence/w0/w0-systemd-smoke.log"
       },
       "windows_runner_inno_nssm": {
-        "status": "NOT_RUN",
-        "evidence": null,
-        "blocker": "release-gate.yml 已写入（w0-windows-runner job：choco innosetup 6.3.3 + ISCC 编译/静默装卸 + NSSM 生命周期），需推送 workflow 到 origin 后在 GitHub 托管 Runner 执行；本地无 ISCC 且约定不改本机系统"
+        "status": "PASS",
+        "detail": "CI windows-2022：ISCC 编译/静默装卸/NSSM 生命周期全 PASS（run 33237024759 @621e7a5）；runner 预装 Inno（版本资源 0.0.0.0），无需 choco",
+        "evidence": "release/evidence/w0/w0-windows-runner.json + run 33237024759"
       }
     },
     "w0_decisions": {
       "linux_build_baseline": "python:3.11-bullseye（glibc 2.31），单二进制覆盖 Debian 12 + Rocky 9，无需拆发行版制品",
-      "frontend_node": "22.23.2（22 线，探针实测）；W1 统一 Dockerfile/CI/本地脚本",
-      "windows_build_venue": "仅 CI windows-2022 Runner，不在本机构建正式 Windows 制品"
+      "frontend_node": "22.23.2（22 线，本地+CI 双实证）；W1 已统一 Dockerfile/CI/engines",
+      "windows_build_venue": "仅 CI windows-2022 Runner（预装 Inno Setup），不在本机构建正式 Windows 制品"
+    },
+    "w1_pinned": {
+      "python": "3.11（regression.yml 主回归 3.11；本地打包/CI/Docker 一致）",
+      "node": "22.23.2（package.json engines >=22.23.2 <23 + packageManager npm@10.9.8；Dockerfile/prod/regression 统一）",
+      "docker_base_digests": {
+        "python:3.11-slim": "sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6（trixie）",
+        "python:3.11-bullseye": "sha256:df0bd610af061603b29d63eb82027b64d5a3f15506e39270422b10b2a55079fc",
+        "node:22-bookworm-slim": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+        "nginx:1.25-alpine": "sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00"
+      }
     }
   },
   "dependency_forks": {

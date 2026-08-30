@@ -26,9 +26,12 @@ WORKDIR /build
 
 # 安装编译工具链（仅 builder，不进 runtime）
 # gcc/build-essential: 编译 C 扩展；libffi-dev: bcrypt/cryptography 头文件；libssl-dev: SSL 头文件
-# 同时替换 deb.debian.org 和 security.debian.org（Bookworm deb822 格式）；APT_MIRROR 为空则跳过
+# 同时替换 deb.debian.org 和 security.debian.org（Bookworm/Trixie deb822 格式）；
+# APT_MIRROR 传 host-only 形态（如 mirrors.aliyun.com，apt 走 HTTP）。
+# security 源必须先按最长路径映射到 <mirror>/debian-security，否则 404 会导致整个 update 失败。
+# APT_MIRROR 为空则跳过
 RUN if [ -n "$APT_MIRROR" ]; then \
-        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+        sed -i "s|security.debian.org/debian-security|${APT_MIRROR}/debian-security|g; s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -85,8 +88,9 @@ ENV PYTHONPATH=/app \
 # 安装运行时系统依赖（最小集）
 # curl: 健康检查；tzdata: 时区数据
 # 创建非特权用户 appuser (uid=1001)
+# APT_MIRROR 为 host-only 形态；security 源路径映射同 builder 阶段说明
 RUN if [ -n "$APT_MIRROR" ]; then \
-        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+        sed -i "s|security.debian.org/debian-security|${APT_MIRROR}/debian-security|g; s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -100,12 +104,18 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 离线安装 wheel（不联网，不依赖 builder 镜像）
-# --require-hashes 强制哈希校验：与构建环境解析结果逐字节一致（G2）
+# 锁文件内嵌 --hash 行时 pip 会自动启用哈希校验模式；sdist 构建出的 wheel
+# （gmssl/ping3/bencodepy 等无二进制轮子）哈希必然不同于 PyPI 源哈希而误杀。
+# 因此运行时安装改用去哈希的 pins（版本全部 == 精确锁定）：
+#   完整性锚点 = builder 阶段 pip wheel --require-hashes 的下载校验；
+#   端到端一致性 = 本步 pip check + W2 从镜像真实环境 pip freeze 与锁逐包比对。
 COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY --from=builder /build/wheels /tmp/wheels
-RUN pip install --no-cache-dir --no-index --find-links=/tmp/wheels \
-    --require-hashes -r /tmp/requirements-lock.txt \
-    && rm -rf /tmp/wheels /tmp/requirements-lock.txt
+RUN sed -e '/^[[:space:]]*--hash/d' -e 's/[[:space:]]*\\$//' /tmp/requirements-lock.txt \
+        | grep -E '^[A-Za-z0-9]' > /tmp/pins.txt \
+    && pip install --no-cache-dir --no-index --find-links=/tmp/wheels -r /tmp/pins.txt \
+    && pip check \
+    && rm -rf /tmp/wheels /tmp/requirements-lock.txt /tmp/pins.txt
 
 # 创建必要的目录并设置权限
 RUN mkdir -p /app/logs /app/config /app/data && \

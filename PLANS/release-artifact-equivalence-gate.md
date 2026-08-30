@@ -666,3 +666,15 @@ Windows 生命周期使用 `windows-2022` Runner。DEB/RPM 优先使用带 syste
 5. **systemd 拓扑**：官方 rockylinux:9 / debian:12 基础镜像均不含 systemd；自建镜像配方（官方基 + 仓库安装 systemd；debian 必须补 `/sbin/init` 符号链接）在 `--privileged --cgroupns=host` 下双发行版单元生命周期全通；`is-system-running=degraded` 为容器正常态。
 6. **CI 探针**：`.github/workflows/release-gate.yml` 已落地（4 个 W0 job、workflow_dispatch、fail-closed、报告 artifact 强制上传，复用本地已验证配方）；**尚未推送，CI 侧全部 NOT_RUN**——Windows Inno+NSSM 能力结论待推送后取得。
 7. **移交**：未提交漂移 `advancedSearch.generated.ts` 已证实为合法再生成（contract:check 通过），G0 冻结前须提交；本机 Node/Python 工具链漂移由 W1 收口。
+
+## 19. W1 执行结论（2026-08-29 实测）
+
+> 证据根：`release/evidence/w1/`；任务 .1/.2/.3 已 done（feature_list 各 evidence）。
+
+1. **CI 探针 4/4 全绿**：workflow 推送 dev 并在 master 注册（b357e07，仅注册用，dispatch ref=dev）；run 33236313405（Node22/bullseye/systemd 三绿）+ run 33237024759（Windows 绿，报告 artifact 归档 w0/）。两轮修复均证明 fail-closed 链路有效（artifact if-no-files-found: error 把跳步变成失败）：①runner 预装 Inno 6.7.1 与钉死 6.3.3 冲突→改预装探测；②pwsh7 无 `Set-Content -Append`→`Add-Content`。
+2. **版本单一源落地**：release-config 1.0.6 为准，六处声明一致性强制（生成器 `--check-versions` + tests/release/test_version_consistency.py 13 例含 5 变异）。
+3. **build-info 体系**：双 schema + 生成器（git SHA/alembic 单 head/双 manifest，真实仓库冒烟通过）+ 运行时读取器 + 健康接口 build 字段（外壳与旧字段不变；身份非法 ready 503 / live 200）；伴侣兼容由更新后的旧断言与新增回归共同锚定。
+4. **依赖锁**：`backend/requirements-lock.txt`（51 包、全量哈希、Py3.11）落库，**qbittorrent-api==2025.2.0 分叉关闭**；打包 requirements 改为 `-r 锁 + 白名单增量`，手工拷贝面消除；干净容器 `--require-hashes --dry-run` 验证 OK。
+5. **工具链统一**：Python 3.11（CI 主回归/Docker/锁）；Node 22.23.2（engines/packageManager/两 Dockerfile/CI）；四个基础镜像 digest 固化入 release-config 与 Dockerfile。
+6. **镜像级 G2 首例闭环**：btdeck-backend:w1-smoke 构建成功（trixie deb822 镜像 sed 修复 + sdist wheel 哈希误杀改 pins 离线安装 + pip check），**真实环境 pip freeze 与锁归一化比对 50/50 全一致**；btdeck-frontend:w1-smoke 构建成功并配对冒烟（backend `/health/live` 携带 build 身份块 dev 模式返回）。
+7. **遗留到 W2**：build-info 实际注入 EXE/DEB/RPM/Docker 制品、EXE 版本资源、严格 `--release --require-all` 模式、verify-package 内容级验证、五类静态变异。

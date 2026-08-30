@@ -5327,20 +5327,20 @@
           "id": "release-artifact-equivalence-gate-2026-08-28.1",
           "name": "W0 基线固化与 CI 能力探针",
           "description": "固化 v1.0.5 正式/重建基线和当前候选证据；验证 Windows Runner 的 Inno+NSSM 生命周期、Debian 12/Rocky 9 systemd 测试拓扑、低 glibc Linux 构建兼容性及 Node 22 前端兼容性。无法自动化的 P0 项必须落到受控 self-hosted Runner，不得改成人工跳过。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "PLANS/release-artifact-equivalence-gate.md",
             "release/release-config.json",
             ".github/workflows/release-gate.yml"
           ],
-          "evidence": "2026-08-28 W0 本地批完成（证据根 release/evidence/w0/，报告 w0-environment-report.md）：①基线冻结 baseline.json（v1.0.5=29c6f6f，GitHub Release 404）；②本地 .release-build-v1.0.5/assets/ 发现完整 v1.0.5 制品集（DEB/RPM/portable EXE+ZIP，SHA256 归档），git archive 对账 971 文件仅 4 差异（1 处记录在案的 py3.11 热修+3 记录文件）→ 夹具策略 local-release-build；③R10 实锤：现有二进制 rocky9 失败（需 GLIBC_2.35），python:3.11-bullseye 重建后单二进制双发行版完整启动 → Linux 构建基线定格 bullseye，不拆包；④Node v22.23.2 全量矩阵全绿（1233 测试）；⑤systemd 拓扑配方双发行版全通（debian 须补 /sbin/init 链接，--privileged --cgroupns=host）；⑥release-gate.yml 4 探针 job 写入并过 YAML 校验。未完成：CI 侧 4 探针全部 NOT_RUN（需推送 workflow，未获授权不推）；Windows Inno+NSSM 能力结论待 CI。故保持 pending。"
+          "evidence": "2026-08-28/29 W0 完成（本地 4 探针 + CI 4 探针全绿）。本地：release/evidence/w0/（w0-environment-report.md + 11 证据文件）——R10 实锤与 bullseye 单二进制裁决、Node 22.23.2 全量矩阵、systemd 双发行版拓扑、v1.0.5 本地制品集对账（971 文件仅 4 差异，夹具策略 local-release-build）。CI（workflow 已推送并在 master 注册 b357e07，dev 侧同步）：w0-node-matrix/w0-glibc-bullseye/w0-linux-systemd 于 run 33236313405 全 success；w0-windows-runner 经两轮修复（runner 预装 Inno 6.7.1 与钉死版本冲突→预装探测跳过；pwsh7 无 Set-Content -Append→Add-Content）后 run 33237024759 @621e7a5 success，报告 artifact 归档 release/evidence/w0/w0-windows-runner.json（ISCC 编译/静默装卸/NSSM 生命周期三 PASS）。Windows Runner 无需 self-hosted 回退，全部 P0 项可自动化。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.2",
           "name": "W1 统一版本与构建身份",
           "description": "建立单一产品版本输入、build-info/source/frontend manifest schema 和生成器；EXE、Setup、DEB、RPM、Docker OCI label 与健康接口暴露同一完整 SHA、版本、Alembic head 和前端 manifest SHA，并保持 CommonResponse 与伴侣客户端向后兼容。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "release/schemas/build-info.schema.json",
@@ -5351,13 +5351,14 @@
             "backend/app/version.py",
             "frontend/package.json",
             "feature_list.json"
-          ]
+          ],
+          "evidence": "2026-08-29 W1 完成。①单一版本输入：release/release-config.json candidate.product_version=1.0.6，六处声明（version.py/package.json/feature_list.release_version/btdeck.iss/build-linux.sh/release-config）由 generate_build_info.py --check-versions 强制一致（实测 PASS）；package.json 增加 engines(node>=22.23.2<23)+packageManager(npm@10.9.8)。②build-info/release-manifest 双 schema 落地（draft-07，fail-closed 约束：40位SHA/12位head/dirty=true 拒绝）。③生成器端到端冒烟通过（真实仓库：git_sha/alembic单head/frontend-asset-manifest(sha aff6ff3f…)/source-manifest，--allow-dirty dev 模式）。④backend/app/core/build_info.py 运行时读取（MEIPASS/仓库/环境覆写，dev 模式不伪造身份，畸形即 BuildInfoError）。⑤健康接口 live/ready 增加 build 字段且外壳/旧字段不变；身份非法 → ready 503+build_identity_invalid、live 保持 200；旧全等断言按新契约更新。⑥回归：tests/release/ 40 例 + tests/api/test_health.py 10 例全绿；变异（version.py 漂移/deploy 白名单外加 qB/锁内 qB 漂移）全拦截，还原后复绿；black/flake8/mypy 全过。Docker OCI label 骨架已入两 Dockerfile（值注入在 task .4/W2）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.3",
           "name": "W1 工具链与公共依赖锁定",
           "description": "统一 Python 3.11 目标运行时和单一 Node LTS；建立带哈希公共运行依赖锁及平台增量依赖白名单，关闭 qbittorrent-api 2025.2/2025.5 分叉；从制品真实环境导出 dependency manifest 并逐包比较关键依赖。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/requirements.txt",
@@ -5368,7 +5369,8 @@
             "frontend/Dockerfile",
             "frontend/Dockerfile.prod",
             ".github/workflows/regression.yml"
-          ]
+          ],
+          "evidence": "2026-08-29 W1 完成。①qB 分叉关闭：backend/requirements-lock.txt（pip-compile --generate-hashes，Python 3.11，51 包）锁 qbittorrent-api==2025.2.0；两个 deploy/requirements-*-package.txt 重构为 -r ../backend/requirements-lock.txt + 白名单平台增量（pyinstaller/pywebview），手工全量拷贝与 passlib/email-validator 零使用多余项一并移除（passlib 属 dev 依赖）。②干净容器 --require-hashes --dry-run 安装验证 HASH_DRYRUN_OK（50 包清单归档）。③backend Dockerfile：双阶段 digest 固定 python:3.11-slim@sha256:1042b614…、builder pip wheel --require-hashes、runtime 离线装 pins+pip check、OCI label ARG 骨架、APT_MIRROR sed 修复（trixie deb822 security 路径映射）；镜像构建成功且 docker-backend 真实环境 pip freeze 与锁归一化比对 50/50 全一致（FREEZE_MATCHES_LOCK，即'从制品真实环境导出依赖清单'首例闭环；EXE/DEB/RPM 侧在 task .4）。④frontend Dockerfile/Dockerfile.prod：node:22-bookworm-slim@sha256:83f487e0…（22.23.2）+ nginx:1.25-alpine@sha256:516475cc…；frontend.prod 镜像构建成功并配对冒烟（healthy/200/首页）。⑤regression.yml 主回归切 Python 3.11 + Node 22.23.2。⑥结构与漂移检查器 scripts/release/check_dependencies.py + tests/release/test_dependency_lock.py 16 例（含 7 负向变异）；requirements.txt/dev 无需改动（qB 主清单已是 2025.2.0，passlib 已在 dev）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.4",

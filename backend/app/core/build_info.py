@@ -83,9 +83,7 @@ def _validate(payload: Any, origin: Path) -> Dict[str, Any]:
         raise BuildInfoError(f"build-info 缺少字段 {missing}：{origin}")
     if not isinstance(payload["git_sha"], str) or not _GIT_SHA_PATTERN.fullmatch(payload["git_sha"]):
         raise BuildInfoError(f"build-info git_sha 非完整 40 位：{origin}")
-    if not isinstance(payload["alembic_head"], str) or not _ALEMBIC_HEAD_PATTERN.fullmatch(
-        payload["alembic_head"]
-    ):
+    if not isinstance(payload["alembic_head"], str) or not _ALEMBIC_HEAD_PATTERN.fullmatch(payload["alembic_head"]):
         raise BuildInfoError(f"build-info alembic_head 非 12 位 revision：{origin}")
     if not isinstance(payload["frontend_manifest_sha256"], str) or not _SHA256_PATTERN.fullmatch(
         payload["frontend_manifest_sha256"]
