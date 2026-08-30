@@ -62,6 +62,15 @@ describe('下载器控制台视觉骨架', () => {
     expect(downloaderCard).toContain("$emit('delete'")
     expect(downloaderCard).toContain("$emit('toggle-enable'")
   })
+
+  it('同步按钮跟踪后台 task_id 到真实终态，并在销毁时取消状态轮询', () => {
+    expect(downloaderPage).toContain('const taskId = response.data?.task_id')
+    expect(downloaderPage).toContain('startTracking(validId, taskId, nickname)')
+    expect(downloaderPage).toContain('trackSyncTaskStatus(taskId')
+    expect(downloaderPage).toContain('buildSyncTaskNotice(task, nickname)')
+    expect(downloaderPage).toContain('this.syncTaskTrackers.forEach(tracker => tracker.cancel())')
+    expect(downloaderPage).not.toContain("Message.success('执行成功')")
+  })
 })
 
 describe('下载器设置工作台', () => {

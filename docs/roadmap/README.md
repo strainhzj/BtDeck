@@ -28,7 +28,7 @@ BtDeck/
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── android/          ← 伴侣模式 App（dual-mode-client Phase 2 MVP：向导/服务器 profile/健康检查/同源 WebView）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend/tests pytest 180 个 test_*.py + frontend Jest 84 个 spec）
+├── tests/            ← 测试（backend/tests pytest 206 个 test_*.py + frontend Jest 91 个 spec）
 └── perspectives/     ← 跨切专题（docs/roadmap/perspectives：调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -41,7 +41,7 @@ BtDeck/
 | 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（后台扫描轮询；文件夹展开后懒加载/独立分页；仅可见文件实时统计硬链接；快捷操作+筛选区一键"已定位副本"筛选读预扫描结果；副本位置弹窗行级删除副本——$confirm 二次确认、就地刷新行副本数（located 筛选时整页刷新）、seq 快照防迟到重查覆盖；超量批次显示可关闭提醒） | `api/endpoints/orphan_files.py`；`services/orphan_scan_job_service.py` / `orphan_file_service.py` / `orphan_scanner.py` / `orphan_lifecycle_service.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（持久化后台 scan_id、稳定明细复用、分批生命周期事务、超量提醒字段与通用实时清理安全校验、`hardlink-copies/delete` 副本删除端点）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
 | 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue、`components/TrackerDetailCard.vue`、`mixins/errorTooltipDismiss.ts`）、`api/torrents.ts`；两视图按已同步 Tracker 主机域名筛选，快捷操作排查错误且全局同名同大小内容唯一的单种；新增“辅种数量”列，数量由种子信息同步任务计算，删除/转移后增量校正；Tracker 完整详情弹框（标题/关闭/页签/内容区）由共享组件统一，表格视觉由 `_tracker-table.scss` 统一；错误原因 tooltip 在滚轮/滚动时主动收起，列表查询使用全屏锁滚动蒙版；实时速度快照支持 200/206，携带 status/downloadComplete，完成证据强制进度 100，三种视图按 downloader_id+hash 收敛终态；运行态新复合键触发一次权威列表重拉，批量添加完成信号兜底首次刷新早于入库的竞态 | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`getList` 支持 `tracker_domain` / `single_error_only`，域名来自 TrackerInfo 定时同步数据；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor，并全局按 `name + size` 校正辅种数量；`torrent_speed.py` TTL 补查按下载器轮转并提供 `/runtime-state/reconcile` 复合键终态核验；`services/auxiliary_seed_count_service.py` / `deletion_task_manager.py` / `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 错误单种排查 single-error torrent | `views/torrents/index.vue` / `TraditionalView.vue`（快捷操作、Tracker 主机域名多选和可退出排查提示） | `torrent_crud.py:get_torrents` + `torrent_helpers.py:get_torrent_infos`（`single_error_only`：错误且全局同名同大小内容唯一；同一任务的多个 Tracker 服务不影响唯一性） |
-| 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
+| 下载器管理 downloader | `views/downloader/`、`views/mobile/downloader.vue`、`api/downloader.ts`；手动种子同步提交后由 `views/downloader/sync-task.ts` 轮询真实后台终态，桌面/移动端不再将受理误报为完成 | `api/endpoints/downloader*.py`、`api/endpoints/torrent_sync.py`；`core/background_task_manager.py` 原子防重、runner 强引用与业务结果终态映射；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
 | 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts`（outcome/stale 展示 helper 由实例方法暴露给模板；查看日志保留可见任务筛选，清空后立即恢复全部日志） | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
 | 审计日志 audit | `views/logs/audit.vue`、`api/audit-logs.ts` | `api/endpoints/audit_logs.py`；`services/audit_service.py` / `audit_service_sync.py` |
@@ -82,7 +82,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（AppLogo/Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / Android APK / fpm；含根目录统一构建入口 | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（180 个 test_*.py，按子目录组织）+ 前端 Jest（84 个 spec） | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（206 个 test_*.py，按子目录组织）+ 前端 Jest（91 个 spec） | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -141,6 +141,7 @@ BtDeck/
 | 2026-08-29 增量（种子实时终态收敛） | `backend/app/api/endpoints/torrent_speed.py` 补充 qB/Transmission 状态与 `downloadComplete`，完成态强制进度 100 并同步数据库；TTL 补查按下载器轮转、退避且确认完成后移除；新增 `/torrents/runtime-state/reconcile` 复合键终态核验。`frontend/src/views/torrents/utils/torrentBatch.ts` 支持 206 部分快照、终态归一和连续未命中候选；列表、传统、移动三视图按 `downloader_id + hash` 更新并在核验后刷新状态筛选。 |
 | 2026-08-29 增量（桌面折叠侧栏 Lucide） | `SidebarItem.vue` 将折叠态从广泛隐藏 `el-submenu__title` 直接子 `span` 改为仅隐藏 `.submenu-label`/`.submenu-chevron`，显式保留 Lucide `.menu-icon`；修复种子管理与 Tracker 管理因多子菜单进入 `el-submenu` 分支后父图标消失。新增真实组件 + 实际 SCSS 回归 `sidebar-collapse-lucide.spec.ts`。 |
 | 2026-08-30 增量（种子列表成员自愈） | `RuntimeListMembershipTracker` 以首个完整活动快照建立分页外基线，随后仅对新出现且未展示的 `downloader_id + hash` 触发串行权威列表刷新，并立即重放同轮速度；206 仅增量合并基线。`TorrentAddDialog.vue` 在 202 返回后按 `task_id` 轮询既有完成通知，列表/传统视图收到 `batch-complete` 后再次拉表并补一次速度；覆盖首次刷新早于数据库写入，以及零速度、暂停或瞬间完成无法由活动快照发现的新增种子。 |
+| 2026-08-30 增量（下载器手动同步异步生命周期） | `POST /torrents/sync-single` 以原子 pending/running 占用立即返回 `task_id`，`BackgroundTaskManager` 保留 runner 强引用并将结构化 failed/cancelled 结果映射为真实终态；仍经 `SyncCoordinator(full/manual)` 且只使用 `app.state.store` 缓存客户端。桌面与移动下载器页共用 `sync-task.ts` 轮询 `/sync-status/{task_id}`，仅在 success/failed/cancelled 终态释放同步态并呈现真实结果。 |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |

@@ -17,6 +17,10 @@ import {
   upDownloader,
   deleteDownloader
 } from '@/api/downloader'
+import {
+  buildSyncTaskNotice,
+  trackSyncTaskStatus
+} from '@/views/downloader/sync-task'
 
 jest.mock('@/api/downloader', () => ({
   getList: jest.fn(),
@@ -25,6 +29,11 @@ jest.mock('@/api/downloader', () => ({
   addDownloader: jest.fn(),
   upDownloader: jest.fn(),
   deleteDownloader: jest.fn()
+}))
+
+jest.mock('@/views/downloader/sync-task', () => ({
+  buildSyncTaskNotice: jest.fn(),
+  trackSyncTaskStatus: jest.fn()
 }))
 
 jest.mock('@/views/downloader/components/DownloaderDialog.vue', () => ({
@@ -80,6 +89,10 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     jest.mocked(addDownloader).mockReset()
     jest.mocked(upDownloader).mockReset()
     jest.mocked(deleteDownloader).mockReset()
+    jest.mocked(buildSyncTaskNotice).mockReset().mockReturnValue({
+      level: 'success', message: '主力QB 同步完成'
+    })
+    jest.mocked(trackSyncTaskStatus).mockReset().mockReturnValue({ cancel: jest.fn() })
   })
 
   afterEach(() => {
@@ -132,14 +145,33 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     expect(wrapper.vm.$message.error).toHaveBeenCalled()
   })
 
-  it('同步：调 syncDownloader 并刷新', async() => {
+  it('同步：任务受理后保持 loading，真实终态到达才提示完成并刷新', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
-    jest.mocked(syncDownloader).mockResolvedValue({ code: '200' } as never)
+    jest.mocked(syncDownloader).mockResolvedValue({
+      code: '200',
+      msg: '同步任务已启动: 主力QB',
+      data: { task_id: 'sync_001' }
+    } as never)
     await vm.syncOne(vm.list[0])
+
     expect(syncDownloader).toHaveBeenCalledWith('d1')
+    expect(trackSyncTaskStatus).toHaveBeenCalledWith('sync_001', expect.objectContaining({
+      onTerminal: expect.any(Function),
+      onTimeout: expect.any(Function),
+      onError: expect.any(Function)
+    }))
+    expect(vm.syncingId).toBe('d1')
     expect(wrapper.vm.$message.success).toHaveBeenCalled()
+
+    const trackingOptions = jest.mocked(trackSyncTaskStatus).mock.calls[0][1]
+    trackingOptions.onTerminal({ status: 'success' } as never)
+    await flushLifecycle()
+
+    expect(vm.syncingId).toBe('')
+    expect(buildSyncTaskNotice).toHaveBeenCalled()
+    expect(getList).toHaveBeenCalledTimes(2)
   })
 
   it('设置：跳转移动设置页（携带 id）', async() => {

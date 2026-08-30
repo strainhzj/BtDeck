@@ -162,6 +162,12 @@ import {
   testConnection,
   syncDownloader
 } from '@/api/downloader'
+import { extractErrorMessage } from '@/utils/formatters'
+import {
+  buildSyncTaskNotice,
+  trackSyncTaskStatus
+} from './sync-task'
+import type { SyncTaskTrackingHandle } from './sync-task'
 import {
   Downloader,
   DownloaderStatus,
@@ -209,6 +215,7 @@ export default class DownloaderManager extends Vue {
 
   // 同步状态
   private syncingIds: string[] = []
+  private syncTaskTrackers: Map<string, SyncTaskTrackingHandle> = new Map()
 
   // 状态轮询相关（批量轮询）
   private continueGetStatus = true
@@ -253,6 +260,8 @@ export default class DownloaderManager extends Vue {
     // 组件销毁时清理轮询定时器
     this.continueGetStatus = false
     this.clearPollingTimer()
+    this.syncTaskTrackers.forEach(tracker => tracker.cancel())
+    this.syncTaskTrackers.clear()
     if (this.searchDebounceTimer !== null) {
       clearTimeout(this.searchDebounceTimer)
       this.searchDebounceTimer = null
@@ -724,7 +733,42 @@ export default class DownloaderManager extends Vue {
       }
     }
   }
-    // 同步下载器种子
+  private stopSyncTaskTracking(downloaderId: string): void {
+    const tracker = this.syncTaskTrackers.get(downloaderId)
+    if (tracker) {
+      tracker.cancel()
+      this.syncTaskTrackers.delete(downloaderId)
+    }
+    const index = this.syncingIds.indexOf(downloaderId)
+    if (index > -1) {
+      this.syncingIds.splice(index, 1)
+    }
+  }
+
+  private startSyncTaskTracking(downloaderId: string, taskId: string, nickname: string): void {
+    const previousTracker = this.syncTaskTrackers.get(downloaderId)
+    if (previousTracker) previousTracker.cancel()
+
+    const tracker = trackSyncTaskStatus(taskId, {
+      onTerminal: (task) => {
+        const notice = buildSyncTaskNotice(task, nickname)
+        this.stopSyncTaskTracking(downloaderId)
+        Message[notice.level](notice.message)
+        void this.getList()
+      },
+      onTimeout: () => {
+        this.stopSyncTaskTracking(downloaderId)
+        Message.info(`${nickname} 同步任务仍在后台执行，可稍后重新查看`)
+      },
+      onError: (error) => {
+        this.stopSyncTaskTracking(downloaderId)
+        Message.error(`同步状态查询失败：${extractErrorMessage(error)}`)
+      }
+    })
+    this.syncTaskTrackers.set(downloaderId, tracker)
+  }
+
+  // 同步下载器种子
   private async handleSync(id: string) {
     // 参数验证
     if (!id || typeof id !== "string" || id.trim() === "") {
@@ -733,60 +777,35 @@ export default class DownloaderManager extends Vue {
     }
 
     const validId = id.trim()
+    const nickname = this.downloaderMap.get(validId)?.info.nickname || validId
+    const syncingIds = this.syncingIds
+    const startTracking = this.startSyncTaskTracking.bind(this)
+    const stopTracking = this.stopSyncTaskTracking.bind(this)
 
     // 防止重复调用（竞态条件保护）
-    if (this.syncingIds.includes(validId)) {
+    if (syncingIds.includes(validId)) {
       console.warn(`下载器 ${validId} 正在同步中，忽略重复请求`)
       return
     }
 
     // 添加到同步列表
-    this.syncingIds.push(validId)
+    syncingIds.push(validId)
+    let trackingStarted = false
 
     try {
       const response = await syncDownloader(validId)
+      const taskId = response.data?.task_id
+      if (!taskId) throw new Error('同步任务响应缺少 task_id')
 
-      // 验证响应数据结构
-      if (!response?.data) {
-        throw new Error('响应数据格式异常')
-      }
-
-      const { code } = response
-
-      if (code === '200') {
-        Message.success('执行成功')
-
-        // 同步成功后，批量轮询会自动更新状态（无需手动触发）
-      } else {
-        Message.error('执行失败')
-      }
+      Message.success(response.msg || `${nickname} 同步任务已启动`)
+      startTracking(validId, taskId, nickname)
+      trackingStarted = true
     } catch (error: unknown) {
       console.error('同步下载器失败:', error)
-
-      // 提供更详细的错误信息（类型守卫）
-      let errorMsg = '同步失败'
-      if (error && typeof error === 'object') {
-        if ('response' in error) {
-          const err = error as { response?: { data?: { msg?: string } } }
-          if (err.response?.data?.msg) {
-            errorMsg = String(err.response.data.msg)
-          }
-        } else if ('message' in error) {
-          const err = error as { message?: string }
-          if (err.message) {
-            errorMsg = String(err.message)
-          }
-        }
-      } else if (error && typeof error === 'string') {
-        errorMsg = error
-      }
-      Message.error(errorMsg)
+      Message.error(extractErrorMessage(error) || '同步失败')
     } finally {
-      // 从同步列表移除
-      const index = this.syncingIds.indexOf(validId)
-      if (index > -1) {
-        this.syncingIds.splice(index, 1)
-      }
+      // 请求提交失败时立即释放；受理成功后由真实后台任务终态释放。
+      if (!trackingStarted) stopTracking(validId)
     }
   }
 

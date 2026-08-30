@@ -96,6 +96,7 @@ import {
   getDownloaderSettings,
   getStatus as getDownloaderStatus,
   getStatusAll,
+  getSyncTaskStatus,
   syncDownloader,
   testConnection
 } from '@/api/downloader'
@@ -943,6 +944,12 @@ describe('API 请求契约', () => {
       expectRequest(
         () => syncDownloader('dl-1'),
         { url: '/torrents/sync-single', method: 'post', data: { downloader_id: 'dl-1' } }
+      )
+
+      mockRequest.mockReset()
+      expectRequest(
+        () => getSyncTaskStatus('sync/1'),
+        { url: '/torrents/sync-status/sync%2F1', method: 'get' }
       )
 
       mockRequest.mockReset()

@@ -29,6 +29,7 @@
           <el-button
             size="mini"
             :loading="syncingId === d.id"
+            :disabled="syncingId !== ''"
             @click="syncOne(d)"
           >
             同步
@@ -67,6 +68,11 @@ import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import DownloaderDialog from '@/views/downloader/components/DownloaderDialog.vue'
 import { Downloader } from '@/views/downloader/types'
+import {
+  buildSyncTaskNotice,
+  trackSyncTaskStatus
+} from '@/views/downloader/sync-task'
+import type { SyncTaskTrackingHandle } from '@/views/downloader/sync-task'
 
 /** 单个下载器的移动卡片形状（getList 返回字段的子集，camelCase 与后端 VO 一致） */
 interface MobileDownloaderItem {
@@ -98,6 +104,7 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   private list: MobileDownloaderItem[] = []
   private testingId = ''
   private syncingId = ''
+  private syncTaskTracker: SyncTaskTrackingHandle | null = null
   private busyId = ''
   private editDialogVisible = false
   private editingItem: Downloader | null = null
@@ -107,6 +114,13 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
     // 种子页空态 CTA 直达新增（?create=1）：一步弹出新增表单，省掉找按钮
     if (this.$route.query.create === '1') {
       this.openCreate()
+    }
+  }
+
+  beforeDestroy(): void {
+    if (this.syncTaskTracker) {
+      this.syncTaskTracker.cancel()
+      this.syncTaskTracker = null
     }
   }
 
@@ -149,21 +163,56 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
     }
   }
 
-  private async syncOne(item: MobileDownloaderItem): Promise<void> {
-    if (!item.id) return
-    this.syncingId = item.id
-    try {
-      const res = await syncDownloader(item.id)
-      if (res.code === '200') {
-        this.$message.success(`${item.nickname || item.id}：同步完成`)
-        await this.load()
-      } else {
-        this.$message.error(res.msg || '同步失败')
+  private stopSyncTaskTracking(): void {
+    if (this.syncTaskTracker) {
+      this.syncTaskTracker.cancel()
+      this.syncTaskTracker = null
+    }
+    this.syncingId = ''
+  }
+
+  private startSyncTaskTracking(taskId: string, nickname: string): void {
+    if (this.syncTaskTracker) this.syncTaskTracker.cancel()
+
+    const tracker = trackSyncTaskStatus(taskId, {
+      onTerminal: (task) => {
+        const notice = buildSyncTaskNotice(task, nickname)
+        this.stopSyncTaskTracking()
+        if (notice.level === 'success') this.$message.success(notice.message)
+        else if (notice.level === 'warning') this.$message.warning(notice.message)
+        else this.$message.error(notice.message)
+        void this.load()
+      },
+      onTimeout: () => {
+        this.stopSyncTaskTracking()
+        this.$message.info(`${nickname} 同步任务仍在后台执行，可稍后重新查看`)
+      },
+      onError: (error) => {
+        this.stopSyncTaskTracking()
+        this.$message.error(`同步状态查询失败：${extractErrorMessage(error)}`)
       }
+    })
+    this.syncTaskTracker = tracker
+  }
+
+  private async syncOne(item: MobileDownloaderItem): Promise<void> {
+    if (!item.id || this.syncingId) return
+    const downloaderId = item.id
+    const nickname = item.nickname || downloaderId
+    const startTracking = this.startSyncTaskTracking.bind(this)
+    const stopTracking = this.stopSyncTaskTracking.bind(this)
+    const message = this.$message
+    this.syncingId = downloaderId
+
+    try {
+      const res = await syncDownloader(downloaderId)
+      const taskId = res.data?.task_id
+      if (!taskId) throw new Error('同步任务响应缺少 task_id')
+      message.success(res.msg || `${nickname} 同步任务已启动`)
+      startTracking(taskId, nickname)
     } catch (e) {
-      this.$message.error(extractErrorMessage(e))
-    } finally {
-      this.syncingId = ''
+      stopTracking()
+      message.error(extractErrorMessage(e))
     }
   }
 

@@ -1,5 +1,26 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-30：下载器手动种子同步异步生命周期修复（downloader-control-room-ui-redesign.4 done）
+
+### 已完成
+
+- 确认按钮调用链仍有效：`DownloaderCard.vue`/`mobile/downloader.vue` → `api/downloader.ts::syncDownloader` → `POST /torrents/sync-single` → `_execute_manual_sync_via_coordinator` → `SyncCoordinator(full/manual)` → `app.state.store` 缓存客户端。
+- 修复“提交受理即误报完成”：桌面/移动端共用 `views/downloader/sync-task.ts` 轮询既有 sync-status，同步 loading/禁用态保持到真实 success/failed/cancelled 终态，partial 单独警告。
+- `BackgroundTaskManager` 增加 pending/running 原子防重、runner 强引用与 done 释放，并把结构化 failed/cancelled 结果映射为真实任务终态。sync-single 后台体不再持有 ORM/请求对象，只使用纯数据快照。
+- 新增/扩展回归：后端任务生命周期 + 端点非阻塞/409 防重；前端状态轮询、终态文案、销毁取消、API URL 契约与桌面/移动占用行为。
+- 真实页面点击验证：先告知“同步任务已启动”；当本地下载器未进入 store 缓存时，随后正确告知 failed 原因，没有误报成功。
+
+### 验证
+
+- 后端同步专项：78 passed / 5 skipped（包含受控阻塞协调器的 HTTP 立即返回、重复 409 与单 runner 断言）。
+- 前端相关：4 suites / 87 tests；全量：91 suites / 1302 tests。
+- `npm run typecheck`、`npm run lint`、`npm run build`、目标 mypy/flake8、Git Bash 根 `./init.sh --ci`、feature_list JSON 解析与 `git diff --check` 通过；构建只有仓库已有 Browserslist/Sass 警告。新增测试经 Black formatter API 校验通过；其余已修改的后端存量文件在 HEAD 上已不符合当前 Black 版本，本批未做全文无关重排。
+
+### 交接注意
+
+- 无新 API、Schema 或 Alembic 迁移；运行路径仍强制复用 `app.state.store`，不创建额外下载器连接。
+- 未执行 Git stage/commit。工作区已有 `frontend/src/contracts/advancedSearch.generated.ts`、Android/发布制品目录及 release evidence 等其他会话改动，本批不删除、不覆盖、不纳入任务结论。
+
 ## 2026-08-30：v1.0.6 制品等价门禁 W2 批次（task .4 done：唯一前端构建+严格制品构建+静态等价）
 
 ### 已完成

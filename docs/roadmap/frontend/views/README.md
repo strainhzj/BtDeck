@@ -8,7 +8,7 @@
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
 | 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |
-| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（16 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
+| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
@@ -59,7 +59,9 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效 |
+| `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效；`handleSync()` L772 只将 sync-single 返回视为“已受理”，由任务跟踪器在真实终态提示成功/部分/失败/取消并释放占用 |
+| `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L29 统一终态文案，`trackSyncTaskStatus()` L53 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
+| `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询 |
 | `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签 |
 | `components/PathMappingTab.vue` | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
 | `components/TagManagementTab.vue` | 标签/分类检索、过滤、排序、同步与维护工作台 |

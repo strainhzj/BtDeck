@@ -44,7 +44,7 @@
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存）；`GET /active-torrents` 返回 status/downloadComplete 并区分 200/206 完整/部分快照，完成态进度强制 100；TTL 补查按下载器轮转退避，`POST /runtime-state/reconcile` 按 downloader_id+hash 低频核验消失任务并同步终态 |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |
-| 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；手动/兼容路径复用缓存客户端，sync-single 使用 AsyncSession；Transmission 兼容同步写入错误原因（L560），恢复时写空值清除，Tracker 状态在 L648–654 归一化 |
+| 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；`sync_single_downloader()` L1242 用 `create_task_if_idle` 原子拒绝同下载器 pending/running 重复提交，保存审计纯数据快照后立即返回 task_id，后台经 `SyncCoordinator(full/manual)` 与 `app.state.store` 缓存客户端执行；`get_sync_task_status()` L1414 查询真实 success/failed/cancelled 终态；Transmission 兼容同步仍写入/清理错误原因并归一 Tracker 状态 |
 | 种子聚合 torrents | `torrents.py` | 种子聚合路由器（include_router 合并 6 个子路由） |
 | 异步种子 DB torrents-async | `torrents_async.py` | 异步版种子 DB 操作（供定时任务用）；`extract_tracker_rows_from_torrent()` L689 与 `sync_add_tracker_async()` L939 分别归一 Transmission announce/scrape 状态；FULL 与 INFO-ONLY 写入错误原因（L1394/L3661），info/tracker 仍受单轮预算与 durable cursor 约束 |
 | Tracker 查询 tracker | `tracker.py` | Tracker 信息查询/同步（异步会话）；Transmission 新增/变更 Tracker 时在 L655–661、L834–840 写入归一状态码 |

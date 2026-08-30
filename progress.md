@@ -6364,3 +6364,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **CI**：release-gate.yml 增 w2-strict-{linux,windows,docker} job（workflow_dispatch，含制品上传与 EXE 版本资源断言）；尚未推送执行。
 - 工程修复沉淀：generator/build_frontend 统一 LF 写出（跨平台字节一致）、manifest 纯规范形态、bundle 验证器 frontend-build 仅参与 manifest 比对。
 - 未提交部分见下一提交；feature 整体 pending（W3 生命周期批次待做）。
+
+## 2026-08-30（四）：下载器手动种子同步异步生命周期修复
+
+- **根因**：下载器页同步按钮仍能调用 `POST /torrents/sync-single`，后端也仍经 `SyncCoordinator(sync_type=full, trigger=manual)` 执行并复用 `app.state.store` 缓存客户端；但桌面/移动端把“后台任务已受理”立即提示为“执行成功/同步完成”并释放 loading。后端另有三个生命周期缺口：结构化 `{status: failed}` 正常返回会被标成 SUCCESS；重复检查仅看 RUNNING 且先查后建非原子；fire-and-forget runner 未保留强引用。
+- **后端修复**：`BackgroundTaskManager` 新增 `create_task_if_idle()`，在同一把锁下占用 pending/running 任务；`start_task_runner()` 保留 asyncio.Task 且在 done callback 统一释放/消费异常；`execute_task()` 按结果 status/outcome 映射 SUCCESS/FAILED/CANCELLED。sync-single 只将下载器数据与审计上下文的纯数据快照传入后台执行体，并在重复请求上返回 409 + 同一 task_id。
+- **前端修复**：`api/downloader.ts` 补齐任务提交/状态类型与 `getSyncTaskStatus()`；新建共享 `views/downloader/sync-task.ts`，1s 轮询既有 sync-status，支持终态分类、销毁取消、10 分钟超时及连续查询错误上限。桌面与移动页均仅在真实后台终态后释放按钮，并区分 success/partial/failed/cancelled。
+- **真实页面验证**：本地启动 FastAPI + Vue 后使用开发登录账号进入“下载器管理”，点击 qb 的“同步”。界面先显示“同步任务已启动: qb”；由于当前 192.168.5.51 下载器未进入 `app.state.store`，协调器返回 failed，页面随后展示“不在 store 缓存中（可能离线或未启用）”的真实原因，没有再误报同步成功。
+- **回归与门禁**：后端同步专项 78 passed / 5 skipped；前端相关 4 suites / 87 tests，全量 91 suites / 1302 tests；`npm run typecheck`、严格 `npm run lint`、`npm run build`、目标 mypy/flake8 全通过。Git Bash 根 `./init.sh --ci`、feature_list JSON 解析与 `git diff --check` 通过。新增测试经 Black formatter API 校验通过；其余已修改的后端存量文件在 HEAD 上已不符合当前 Black 版本，本批不做全文无关重排。生产构建仅有已有 Browserslist/Sass 弃用警告。未新增 API 端点、数据表或 Alembic 迁移。
+- **交付记录**：`feature_list.json` 新增 `downloader-control-room-ui-redesign.4` 并置 done；`docs/roadmap/` 已按路线图维护规则同步入口、方法行号和当前实测测试文件计数。本批未执行 Git 提交，已有 Android/发布制品与 `advancedSearch.generated.ts` 工作保持不动。

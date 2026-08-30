@@ -213,7 +213,7 @@ class TestManualSyncNoLegacyFullBypass:
             patch.object(settings, "SYNC_CANONICAL_COORDINATOR_ENABLED", True),
             patch(
                 "app.api.endpoints.torrent_sync.asyncio.create_task",
-                side_effect=lambda coro: asyncio.ensure_future(coro),
+                side_effect=lambda coro, **_kwargs: asyncio.ensure_future(coro),
             ),
         ):
             mock_run_sync.return_value = SyncResult(outcome="success", run_id="r-arch", message="ok")
@@ -244,3 +244,70 @@ class TestManualSyncNoLegacyFullBypass:
             # 架构断言 2：手动入口调用链不再直接出现 legacy 全量函数
             assert mock_qb_full.await_count == 0, "手动入口不得直接调用 qb_add_torrents_async（旁路写者）"
             assert mock_tr_full.await_count == 0, "手动入口不得直接调用 tr_add_torrents_async（旁路写者）"
+
+    async def test_manual_sync_returns_before_completion_and_rejects_duplicate_runner(self):
+        """HTTP 立即返回 task_id；真实后台完成前同下载器不得创建第二个 runner。"""
+        from app.api.endpoints.torrent_sync import SyncSingleRequest, sync_single_downloader
+        from app.core.background_task_manager import TaskStatus, task_manager
+        from app.core.config import settings
+        from app.services.sync_coordinator import SyncResult
+
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.client.port = 12345
+        request.headers = {"user-agent": "test"}
+        request.url.path = "/api/v1/torrents/sync-single"
+
+        downloader = self._make_downloader_row()
+        downloader.downloader_id = "dl_async_nonblocking"
+        db = MagicMock()
+        execute_result = MagicMock()
+        execute_result.scalar_one_or_none.return_value = downloader
+        db.execute = AsyncMock(return_value=execute_result)
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocking_sync(_request):
+            started.set()
+            await release.wait()
+            return SyncResult(outcome="success", run_id="r-nonblocking", message="ok")
+
+        with (
+            patch("app.services.sync_coordinator.run_sync", new=AsyncMock(side_effect=blocking_sync)) as mock_run_sync,
+            patch.object(settings, "SYNC_CANONICAL_COORDINATOR_ENABLED", True),
+        ):
+            first_response = await asyncio.wait_for(
+                sync_single_downloader(
+                    request,
+                    SyncSingleRequest(downloader_id=downloader.downloader_id),
+                    _user=MagicMock(),
+                    db=db,
+                ),
+                timeout=0.5,
+            )
+
+            assert first_response.status == "success"
+            task_id = first_response.data["task_id"]
+            await asyncio.wait_for(started.wait(), timeout=0.5)
+            assert task_manager.get_task(task_id).status == TaskStatus.RUNNING
+
+            duplicate_response = await sync_single_downloader(
+                request,
+                SyncSingleRequest(downloader_id=downloader.downloader_id),
+                _user=MagicMock(),
+                db=db,
+            )
+            assert duplicate_response.status == "error"
+            assert duplicate_response.code == "409"
+            assert duplicate_response.data == {"task_id": task_id, "status": "running"}
+            assert mock_run_sync.await_count == 1
+
+            release.set()
+            for _ in range(100):
+                task = task_manager.get_task(task_id)
+                if task is not None and task.status == TaskStatus.SUCCESS:
+                    break
+                await asyncio.sleep(0.01)
+
+            assert task_manager.get_task(task_id).status == TaskStatus.SUCCESS

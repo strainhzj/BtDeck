@@ -1120,6 +1120,39 @@
             "session-handoff.md"
           ],
           "evidence": "四个根因经独立验证后分别修复：表单关闭规则变化自动校验、编辑模式空密码测试连接、详情规则传递到路径映射生成及限速控件可收缩布局。前端相关回归 3 suites / 37 tests、后端相关回归 58 tests、TypeScript、严格 lint、生产构建全部通过；构建仅保留仓库既有 Sass/Browserslist/资源体积 warning。"
+        },
+        {
+          "id": "downloader-control-room-ui-redesign.4",
+          "name": "下载器手动种子同步异步生命周期修复",
+          "description": "修复桌面与移动下载器页把 sync-single 后台任务受理误报为同步完成的问题；后端原子防止同下载器 pending/running 重复调度，保留 asyncio runner 生命周期，并将协调器结构化失败/取消结果映射为真实任务终态；前端持续轮询既有 sync-status 直到终态再释放按钮并呈现结果。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/core/background_task_manager.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/tests/core/test_background_task_manager.py",
+            "backend/tests/api/test_sync_governance_integration.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "frontend/src/api/downloader.ts",
+            "frontend/src/views/downloader/sync-task.ts",
+            "frontend/src/views/downloader/index.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/tests/unit/downloader-sync-task.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts",
+            "frontend/tests/unit/downloader-control-room-ui.spec.ts",
+            "frontend/tests/unit/mobile-downloader.spec.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/core/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "后端同步专项 83 collected：78 passed / 5 skipped；前端相关 4 suites / 87 tests 通过，全量 91 suites / 1302 tests 通过；TypeScript、严格 lint、生产构建、目标 mypy/flake8 通过。真实本地页面点击验证先显示“同步任务已启动”；因测试环境下载器未进入 app.state.store 缓存，后续按真实 failed 终态显示明确原因，未再误报成功。集成用例以受控阻塞协调器进一步证明 HTTP 立即返回、运行期重复请求 409 复用同一 task_id，且 full/manual 仅执行一次。Git Bash 根 `./init.sh --ci`、feature_list JSON 解析与 `git diff --check` 通过。新增测试文件经 Black 同步 formatter API 校验通过；其余 4 个已有后端文件在 HEAD 基线上已会被当前 Black 版本重排，本批未扩大该存量格式差异。"
         }
       ]
     },

@@ -11,6 +11,40 @@ import type {
   TemplateListResponse
 } from '@/views/downloader/types'
 
+export type SyncTaskState = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+
+export interface SyncTaskSubmission {
+  task_id: string
+  downloader_id: string
+  nickname: string
+  status: 'pending' | 'running'
+  query_url: string
+  message: string
+}
+
+export interface SyncTaskExecutionResult {
+  status?: string
+  message?: string
+  outcome?: string
+  run_id?: string
+  duration_ms?: number
+}
+
+export interface SyncTaskStatusData {
+  task_id: string
+  task_type: string
+  downloader_id: string
+  downloader_nickname: string
+  status: SyncTaskState
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  progress: number
+  result: SyncTaskExecutionResult | null
+  error: string | null
+  execution_time: number | null
+}
+
 export const getList = (data?: any) =>
   request({
     url: '/downloader/getList',
@@ -69,10 +103,17 @@ export const testConnection = (id: string) =>
 
 // 同步单个下载器种子
 export const syncDownloader = (downloaderId: string) =>
-  request({
+  request<ApiEnvelope<SyncTaskSubmission>>({
     url: '/torrents/sync-single',
     method: 'post',
     data: { downloader_id: downloaderId }
+  })
+
+// 查询单个下载器异步种子同步任务状态
+export const getSyncTaskStatus = (taskId: string) =>
+  request<ApiEnvelope<SyncTaskStatusData>>({
+    url: `/torrents/sync-status/${encodeURIComponent(taskId)}`,
+    method: 'get'
   })
 
 // ============================================================

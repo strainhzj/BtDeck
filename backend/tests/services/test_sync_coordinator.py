@@ -643,7 +643,7 @@ class TestLegacyAdapterCompatibility:
             # 让后台执行体真正调度到事件循环（等价 asyncio.create_task 语义）
             patch(
                 "app.api.endpoints.torrent_sync.asyncio.create_task",
-                side_effect=lambda coro: asyncio.ensure_future(coro),
+                side_effect=lambda coro, **_kwargs: asyncio.ensure_future(coro),
             ),
         ):
             mock_run_sync.return_value = SyncResult(outcome="success", run_id="r-http", message="ok")

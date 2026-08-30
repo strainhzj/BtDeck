@@ -96,6 +96,15 @@
 | `tests/services/test_sync_coordinator.py` | 1039 | `app/services/sync_coordinator.py`：Tracker 原始同步、行级状态同步顺序、下载器级硬超时/部分成功/关闭开关及取消语义 |
 | `tests/downloader/test_auth_client_timeout.py` | 143 | `app/downloader/initialization.py`：qB/Transmission 客户端请求超时、scheme 归一、关闭 SDK 探测与 urllib3 重试，以及缓存客户端实际构造参数 |
 
+### 2026-08-30 下载器手动同步异步生命周期回归
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/core/test_background_task_manager.py` | 96 | `app/core/background_task_manager.py`：pending/running 原子占用、结构化 failed 结果终态映射、runner 执行期强引用与完成释放 |
+| `tests/api/test_sync_governance_integration.py` | 313 | `app/api/endpoints/torrent_sync.py`：sync-single 立即返回 task_id、真实后台运行、同下载器重复提交 409，且仅调用一次 `SyncCoordinator(full/manual)` |
+| `frontend/tests/unit/downloader-sync-task.spec.ts` | 134 | `api/downloader.ts` + `views/downloader/sync-task.ts`：pending/running 轮询、success/partial/failed/cancelled 终态文案、销毁取消与连续查询失败上限 |
+| `frontend/tests/unit/downloader-control-room-ui.spec.ts` / `mobile-downloader.spec.ts` / `api-contracts.spec.ts` | 166 / 237 / 974 | 桌面与移动同步占用保持到真实终态、task_id 跟踪、状态查询 URL 编码契约 |
+
 ### 关键源文件测试覆盖抽样
 
 | 源文件 | 测试文件 | 状态 |

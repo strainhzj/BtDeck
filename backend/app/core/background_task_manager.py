@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Any, Coroutine, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,9 @@ class BackgroundTaskManager:
 
         self._tasks: Dict[str, BackgroundTask] = {}
         self._downloader_tasks: Dict[str, str] = {}  # downloader_id -> task_id
+        # 保留 asyncio.Task 强引用，避免 fire-and-forget 任务在执行期间被垃圾回收，
+        # 同时让完成回调可以统一消费未捕获异常。
+        self._runner_tasks: Dict[str, asyncio.Task[Any]] = {}
         self._max_concurrent_tasks = 3
         self._semaphore = asyncio.Semaphore(self._max_concurrent_tasks)
         self._initialized = True
@@ -102,6 +105,66 @@ class BackgroundTaskManager:
 
         logger.info(f"创建任务: {task_id} ({task_type}) - {downloader_nickname}")
         return task
+
+    async def create_task_if_idle(
+        self,
+        task_type: str,
+        downloader_id: str,
+        downloader_nickname: str,
+    ) -> tuple[BackgroundTask, bool]:
+        """仅在下载器没有待执行/运行中任务时原子创建任务。
+
+        返回 ``(task, created)``。当 ``created`` 为 False 时，task 是当前活动
+        任务；调用方不得再次调度执行体。检查与写入在同一把锁内完成，避免两个
+        并发请求同时通过端点层的先查后建检查。
+        """
+        async with self._lock:
+            existing_task_id = self._downloader_tasks.get(downloader_id)
+            existing_task = self._tasks.get(existing_task_id) if existing_task_id else None
+            if existing_task and existing_task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                return existing_task, False
+
+            task_id = self.generate_task_id(task_type)
+            task = BackgroundTask(
+                task_id=task_id,
+                task_type=task_type,
+                downloader_id=downloader_id,
+                downloader_nickname=downloader_nickname,
+            )
+            self._tasks[task_id] = task
+            self._downloader_tasks[downloader_id] = task_id
+
+        logger.info(f"创建任务: {task_id} ({task_type}) - {downloader_nickname}")
+        return task, True
+
+    def start_task_runner(self, task_id: str, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        """调度并保留后台执行体句柄，完成后自动释放并消费异常。"""
+        if task_id not in self._tasks:
+            raise ValueError(f"任务不存在: {task_id}")
+
+        runner = asyncio.create_task(coro, name=f"background-task:{task_id}")
+        self._runner_tasks[task_id] = runner
+        runner.add_done_callback(lambda finished: self._handle_runner_done(task_id, finished))
+        return runner
+
+    def _handle_runner_done(self, task_id: str, runner: asyncio.Task[Any]) -> None:
+        """释放后台句柄并确保异常不会成为未检索的 Task exception。"""
+        if self._runner_tasks.get(task_id) is runner:
+            self._runner_tasks.pop(task_id, None)
+
+        try:
+            runner.result()
+        except asyncio.CancelledError:
+            task = self._tasks.get(task_id)
+            if task and task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                task.status = TaskStatus.CANCELLED
+                task.finished_at = time.time()
+                task.error = "后台任务已取消"
+            logger.info("后台任务执行体已取消: %s", task_id)
+        except Exception:
+            # 正常执行路径应由 execute_task/端点包装器记录失败；这里作为最后兜底，
+            # 防止调度层异常被静默忽略。
+            logger.exception("后台任务执行体异常: %s", task_id)
 
     def get_task(self, task_id: str) -> Optional[BackgroundTask]:
         """获取任务信息"""
@@ -163,8 +226,26 @@ class BackgroundTaskManager:
                 # 执行任务
                 result = await coro
 
-                # 更新为成功
-                await self.update_task_status(task_id, TaskStatus.SUCCESS, result=result)
+                # 协程正常返回不等于业务成功。同步协调器会以结构化结果返回
+                # failed/cancelled；必须映射到真实终态，供 sync-status 与前端轮询使用。
+                outcome = str(result.get("outcome") or "") if isinstance(result, dict) else ""
+                result_status = str(result.get("status") or "") if isinstance(result, dict) else ""
+                result_message = str(result.get("message") or "") if isinstance(result, dict) else ""
+
+                if outcome == "cancelled":
+                    terminal_status = TaskStatus.CANCELLED
+                elif result_status in ("failed", "error"):
+                    terminal_status = TaskStatus.FAILED
+                else:
+                    terminal_status = TaskStatus.SUCCESS
+
+                await self.update_task_status(
+                    task_id,
+                    terminal_status,
+                    result=result,
+                    error=result_message if terminal_status != TaskStatus.SUCCESS else None,
+                    progress=100 if terminal_status == TaskStatus.SUCCESS else None,
+                )
 
                 return result
 

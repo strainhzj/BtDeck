@@ -7,7 +7,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署） |
+| 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署）；`create_task_if_idle()` L109 原子占用下载器 pending/running 任务，`start_task_runner()` L140 保留 asyncio runner 强引用并消费异常，`execute_task()` L215 把结构化 failed/cancelled 结果映射为真实终态 |
 | 全局配置 config | `config.py` | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
 | DB 结果封装 database-result | `database_result.py` | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
 | 迁移备份 db-backup | `db_backup.py` | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用 |
@@ -53,7 +53,7 @@
 |------|--------|
 | `core/db_backup.py` | `core/migration.py` + `core/ratio_data_diagnostics.py`（v1.0.6.27 起从 1 引用升为 2） |
 | `core/ratio_data_diagnostics.py` | `scripts/ratio_migration_report.py` + `tests/core/test_ratio_data_diagnostics.py` |
-| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:23` |
+| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:23`；手动下载器同步的原子防重、并发限制、runner 生命周期与查询终态均由该单例承载 |
 
 > 详见 [../../perspectives/risks.md](../../perspectives/risks.md) "孤儿文件" 章节。
 

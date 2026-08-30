@@ -20,7 +20,7 @@ from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
 from app.torrents.models import TrackerInfo as trackerInfoModel
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import extract_tracker_host, resolve_transmission_tracker_status_code
-from app.core.background_task_manager import task_manager, TaskStatus
+from app.core.background_task_manager import task_manager
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
 
@@ -1280,34 +1280,38 @@ async def sync_single_downloader(
                 status="error", msg=f"下载器未启用或已停用: {downloader.nickname}", code="400", data=None
             )
 
-        # 检查是否已有正在运行的同步任务
-        existing_task = task_manager.get_downloader_task(downloader_id)
-        if existing_task and existing_task.status == TaskStatus.RUNNING:
-            return CommonResponse(
-                status="error",
-                msg="该下载器正在同步中，请等待当前任务完成",
-                code="409",
-                data={"task_id": existing_task.task_id, "status": existing_task.status.value},
-            )
-
         # 构建下载器信息字典（用于同步）
+        downloader_nickname = downloader.nickname or ""
+        downloader_type = downloader.downloader_type
         downloader_info = {
             "downloader_id": downloader.downloader_id,
-            "nickname": downloader.nickname,
+            "nickname": downloader_nickname,
             "host": downloader.host,
             "port": downloader.port,
             "username": downloader.username,
             "password": downloader.password,
-            "downloader_type": downloader.downloader_type,
+            "downloader_type": downloader_type,
             "torrent_save_path": downloader.torrent_save_path,
             "enabled": "1",
             "status": "1",
         }
+        # 请求对象只在 handler 生命周期内有效；后台审计只保留所需的纯数据快照。
+        audit_context = extract_audit_info_from_request(request)
 
-        # 创建后台任务
-        task = await task_manager.create_task(
-            task_type="sync", downloader_id=downloader.downloader_id, downloader_nickname=downloader.nickname or ""
+        # 检查与创建在任务管理器同一把锁内原子完成，覆盖 pending/running 窗口，
+        # 防止并发请求为同一下载器调度两份同步执行体。
+        task, task_created = await task_manager.create_task_if_idle(
+            task_type="sync",
+            downloader_id=downloader_id,
+            downloader_nickname=downloader_nickname,
         )
+        if not task_created:
+            return CommonResponse(
+                status="error",
+                msg="该下载器正在同步中，请等待当前任务完成",
+                code="409",
+                data={"task_id": task.task_id, "status": task.status.value},
+            )
 
         # 定义后台执行函数
         async def execute_sync_task():
@@ -1337,9 +1341,9 @@ async def sync_single_downloader(
                             operator="admin",
                             torrent_info_id=None,
                             operation_detail={
-                                "downloader_id": downloader.downloader_id,
-                                "downloader_name": downloader.nickname,
-                                "downloader_type": downloader.downloader_type,
+                                "downloader_id": downloader_id,
+                                "downloader_name": downloader_nickname,
+                                "downloader_type": downloader_type,
                                 "sync_result": sync_result.get("status", "unknown"),
                                 "task_id": task.task_id,
                             },
@@ -1349,8 +1353,8 @@ async def sync_single_downloader(
                                 if sync_result.get("status") == "success"
                                 else AuditOperationResult.FAILED
                             ),
-                            downloader_id=downloader.downloader_id,
-                            **extract_audit_info_from_request(request),
+                            downloader_id=downloader_id,
+                            **audit_context,
                         )
                     except Exception as audit_error:
                         logger.error(f"记录审计日志失败: {str(audit_error)}")
@@ -1366,32 +1370,32 @@ async def sync_single_downloader(
                             operator="admin",
                             torrent_info_id=None,
                             operation_detail={
-                                "downloader_id": downloader.downloader_id,
+                                "downloader_id": downloader_id,
                                 "error_message": str(e),
                                 "task_id": task.task_id,
                             },
                             operation_result=AuditOperationResult.FAILED,
                             error_message=str(e),
-                            downloader_id=downloader.downloader_id,
-                            **extract_audit_info_from_request(request),
+                            downloader_id=downloader_id,
+                            **audit_context,
                         )
                 except Exception:
                     pass
 
-        # 在后台启动任务（不阻塞响应）
-        asyncio.create_task(execute_sync_task())
+        # 在后台启动任务（不阻塞响应），由任务管理器保留 runner 强引用并消费异常。
+        task_manager.start_task_runner(task.task_id, execute_sync_task())
 
-        logger.info(f"同步任务已启动: {task.task_id} - {downloader.nickname}")
+        logger.info(f"同步任务已启动: {task.task_id} - {downloader_nickname}")
 
         # 立即返回任务信息
         return CommonResponse(
             status="success",
-            msg=f"同步任务已启动: {downloader.nickname}",
+            msg=f"同步任务已启动: {downloader_nickname}",
             code="200",
             data={
                 "task_id": task.task_id,
-                "downloader_id": downloader.downloader_id,
-                "nickname": downloader.nickname,
+                "downloader_id": downloader_id,
+                "nickname": downloader_nickname,
                 "status": task.status.value,
                 "query_url": f"/torrents/sync-status/{task.task_id}",
                 "message": "任务正在后台执行，请使用 task_id 查询进度",
