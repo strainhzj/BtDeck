@@ -196,7 +196,7 @@ main() {
     generate_identity docker-backend
     generate_identity docker-frontend
 
-    mapfile -t IDENTITY < <(read_identity)
+    mapfile -t IDENTITY < <(read_identity | tr -d '')
     OCI_VERSION="${IDENTITY[0]}"
     OCI_REVISION="${IDENTITY[1]}"
     OCI_CREATED="${IDENTITY[2]}"
