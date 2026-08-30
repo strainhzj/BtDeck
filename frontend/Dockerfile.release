@@ -1,0 +1,62 @@
+# BTDeck 前端发布镜像（release-artifact-equivalence-gate W2）
+#
+# 与 Dockerfile.prod 的区别：本文件只消费唯一前端构建（release/dist + build-info），
+# 不在镜像内重建前端（计划 §0.2/§5.3：前端只允许构建一次）。
+# 构建上下文由 build-images.sh --release 组装（dist/ build-info.json nginx.conf），
+# 不复用 frontend/ 目录（其 .dockerignore 会排除 dist/）。
+#
+# digest 固定（W1/G2）：nginx:1.25-alpine @ sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
+FROM nginx:1.25-alpine@sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
+
+LABEL maintainer="BTDeck Team"
+LABEL description="BTDeck 前端生产环境 - Nginx 静态文件服务（唯一前端构建）"
+
+# OCI 身份标签（G1/G10）：由 build-images.sh --release 注入并校验
+ARG OCI_VERSION=""
+ARG OCI_REVISION=""
+ARG OCI_CREATED=""
+ARG OCI_SOURCE="https://github.com/strainhzj/BtDeck"
+LABEL org.opencontainers.image.title="BtDeck frontend" \
+      org.opencontainers.image.description="BTDeck 前端生产环境 - Nginx 静态文件服务（唯一前端构建）" \
+      org.opencontainers.image.version="${OCI_VERSION}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.created="${OCI_CREATED}" \
+      org.opencontainers.image.source="${OCI_SOURCE}"
+
+# 安装时区数据和 wget（用于健康检查）
+RUN apk add --no-cache tzdata wget && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    rm -rf /etc/nginx/conf.d/default.conf && \
+    rm -rf /usr/share/nginx/html/*
+
+# 唯一前端构建产物（G5：与 frontend-asset-manifest 逐文件一致）
+COPY dist/ /usr/share/nginx/html/
+
+# 发布身份（纯元数据）
+COPY build-info.json /usr/share/nginx/html/build-info.json
+
+# 复制 Nginx 配置
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# 创建非特权用户
+RUN addgroup -g 1001 -S nginx-group && \
+    adduser -S -D -H -u 1001 -h /usr/share/nginx/html -s /sbin/nologin -G nginx-group nginx-user && \
+    chown -R nginx-user:nginx-group /usr/share/nginx/html && \
+    chown -R nginx-user:nginx-group /var/cache/nginx && \
+    chown -R nginx-user:nginx-group /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx-user:nginx-group /var/run/nginx.pid
+
+# 切换到非特权用户
+USER nginx-user
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+
+# 启动 Nginx（前台模式）
+CMD ["nginx", "-g", "daemon off;"]

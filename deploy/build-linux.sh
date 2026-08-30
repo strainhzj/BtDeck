@@ -2,9 +2,16 @@
 
 # ============================================
 # BtDeck Linux 构建脚本
-# 1. 构建前端
-# 2. PyInstaller 打包后端+前端
-# 3. fpm 制作 .deb/.rpm 安装包
+# 1.（release 模式）校验并消费唯一前端构建
+# 2. 生成 build-info/source/frontend manifest（G1/G5）
+# 3. PyInstaller 打包后端+前端+发布身份
+# 4. fpm 制作 .deb/.rpm 安装包
+#
+# 模式（release-artifact-equivalence-gate W2）：
+#   默认（dev）   ：自建前端、--allow-dirty 生成身份、fpm 缺失仅告警跳过
+#   --release     ：必须消费 scripts/release/build_frontend.py 的唯一前端构建
+#                   （dist 与 manifest 哈希一致）、工作区必须干净、
+#                   fpm/任一制品/验证缺失即非零退出（fail-closed）
 # ============================================
 
 set -e
@@ -26,13 +33,30 @@ PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
 VERSION="1.0.6"
 ARCH="amd64"
 
+FRONTEND_DIST="${FRONTEND_DIR}/dist"
+FRONTEND_MANIFEST="${PROJECT_DIR}/release/build/frontend/frontend-asset-manifest.json"
+STAGING_DIR="${PROJECT_DIR}/release/build/linux-binary"
+
+RELEASE_MODE=0
+for arg in "$@"; do
+    case "$arg" in
+        --release) RELEASE_MODE=1 ;;
+        *)
+            echo "[ERROR] 未知参数: $arg（支持: --release）"
+            exit 2
+            ;;
+    esac
+done
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
+fail() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
+
 echo "============================================"
-echo "  BtDeck Linux Build"
+echo "  BtDeck Linux Build (mode: $([ "$RELEASE_MODE" = "1" ] && echo RELEASE || echo dev))"
 echo "============================================"
 echo ""
 
@@ -46,81 +70,119 @@ check_tool() {
 
 check_tool npm "https://nodejs.org/"
 check_tool node "https://nodejs.org/"
+check_tool python3 "https://www.python.org/"
 
 if [ ! -f "$PACKAGE_REQUIREMENTS" ]; then
-    echo -e "${RED}[ERROR] Packaging requirements not found: ${PACKAGE_REQUIREMENTS}${NC}"
-    exit 1
+    fail "Packaging requirements not found: ${PACKAGE_REQUIREMENTS}"
 fi
 
 if [ ! -x "$PACKAGE_PYTHON" ]; then
     echo "[SETUP] Creating packaging venv: ${PACKAGE_VENV}"
     if command -v uv &>/dev/null; then
         UV_LINK_MODE="${UV_LINK_MODE:-copy}" uv venv --seed --python "$PACKAGE_PYTHON_VERSION" "$PACKAGE_VENV"
-    elif command -v python3 &>/dev/null; then
-        python3 -m venv "$PACKAGE_VENV" || {
-            echo -e "${RED}[ERROR] Failed to create venv with python3.${NC}"
-            echo "        Install python3-venv/python3-pip, or install uv and retry."
-            exit 1
-        }
     else
-        echo -e "${RED}[ERROR] python3 not found. Install Python 3.11+ or uv.${NC}"
-        exit 1
+        python3 -m venv "$PACKAGE_VENV" || fail "Failed to create venv with python3 (install python3-venv/python3-pip, or install uv and retry)"
     fi
 fi
 
-echo "[SETUP] Installing packaging dependencies..."
+echo "[SETUP] Installing packaging dependencies (two-step: hash-verified lock + linux extras)..."
 "$PACKAGE_PYTHON" -m pip install --upgrade pip setuptools wheel
+"$PACKAGE_PYTHON" -m pip install --prefer-binary --require-hashes -r "${PROJECT_DIR}/backend/requirements-lock.txt"
 "$PACKAGE_PYTHON" -m pip install --prefer-binary -r "$PACKAGE_REQUIREMENTS"
 
 echo -e "${GREEN}[OK] packaging python: ${PACKAGE_PYTHON}${NC}"
 "$PACKAGE_PYTHON" --version
 echo -e "${GREEN}[OK] packaging pyinstaller: ${PACKAGE_PYINSTALLER}${NC}"
 
-# 检查 fpm（可选）
+# 检查 fpm
 if command -v fpm &>/dev/null; then
     BUILD_PACKAGE=1
 else
-    echo -e "${YELLOW}[WARN] fpm not found. Package build skipped.${NC}"
-    echo "       Install: gem install fpm"
+    if [ "$RELEASE_MODE" = "1" ]; then
+        fail "release 模式要求 fpm（gem install fpm 或在构建容器内提供）；不允许跳过打包"
+    fi
+    echo -e "${YELLOW}[WARN] fpm not found. Package build skipped (dev mode).${NC}"
     BUILD_PACKAGE=0
 fi
 
-# Step 1: 构建前端
-echo "[1/3] Building frontend..."
-cd "$FRONTEND_DIR"
-npm ci --legacy-peer-deps
-npm run build
-echo -e "${GREEN}[OK] Frontend built${NC}"
+# Step 0: 版本一致性（G1，fail-closed）
+echo "[0/5] Version consistency check..."
+cd "$PROJECT_DIR"
+python3 scripts/release/generate_build_info.py --check-versions || fail "版本声明不一致（六处必须等于 release-config）"
 
-# Step 2: PyInstaller 打包
-echo "[2/3] Building backend with PyInstaller..."
+# Step 1: 前端
+if [ "$RELEASE_MODE" = "1" ]; then
+    echo "[1/5] Consuming prebuilt frontend (single build)..."
+    [ -f "$FRONTEND_MANIFEST" ] || fail "release 模式要求先运行 python scripts/release/build_frontend.py 生成唯一前端构建与 manifest"
+    [ -f "${FRONTEND_DIST}/index.html" ] || fail "frontend/dist 缺失 index.html"
+    python3 - "$FRONTEND_MANIFEST" "$FRONTEND_DIST" <<'PY' || fail "frontend dist 与唯一构建 manifest 不一致（禁止在制品构建中重建前端）"
+import json
+import pathlib
+import sys
+
+manifest_path, dist_dir = sys.argv[1], pathlib.Path(sys.argv[2])
+sys.path.insert(0, str(pathlib.Path("scripts/release").resolve()))
+from generate_build_info import build_frontend_asset_manifest  # noqa: E402
+
+stored = json.loads(manifest_path.read_text(encoding="utf-8"))
+_, recomputed = build_frontend_asset_manifest(dist_dir)
+if stored.get("manifest_sha256") != recomputed:
+    print(
+        f"[FAIL] frontend manifest mismatch: stored={stored.get('manifest_sha256')} "
+        f"recomputed={recomputed}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+    echo -e "${GREEN}[OK] frontend dist matches single-build manifest${NC}"
+else
+    echo "[1/5] Building frontend (dev mode)..."
+    cd "$FRONTEND_DIR"
+    npm ci --legacy-peer-deps
+    npm run build
+    cd "$PROJECT_DIR"
+fi
+
+# Step 2: 生成发布身份（build-info + source/frontend manifest）
+echo "[2/5] Generating release identity..."
+GEN_ARGS="--artifact-kind linux-binary --output-dir ${STAGING_DIR} --node-version $(node -v | tr -d v)"
+if [ "$RELEASE_MODE" != "1" ]; then
+    GEN_ARGS="$GEN_ARGS --allow-dirty"
+fi
+python3 scripts/release/generate_build_info.py $GEN_ARGS || fail "生成发布身份失败（release 模式要求干净工作区）"
+
+# Step 3: PyInstaller 打包
+echo "[3/5] Building backend with PyInstaller..."
 cd "$PROJECT_DIR"
 "$PACKAGE_PYINSTALLER" --clean --noconfirm "${DEPLOY_DIR}/btdeck.spec"
 echo -e "${GREEN}[OK] Backend packaged${NC}"
 
-echo "[VERIFY] Checking package contents..."
+# Step 4: 内容级验证（G5，fail-closed；dev 构建同样包含发布身份，故无宽松分支）
+echo "[4/5] Verifying package contents..."
 "$PACKAGE_PYTHON" "${DEPLOY_DIR}/verify-package.py" --project-root "$PROJECT_DIR" --exe "${DIST_DIR}/btdeck"
 echo -e "${GREEN}[OK] Package verification passed${NC}"
 
 echo "[ANALYZE] Package size summary..."
 "$PACKAGE_PYTHON" "${DEPLOY_DIR}/analyze-package-size.py" --exe "${DIST_DIR}/btdeck" --top 15 || true
 
-# Step 3: fpm 制作安装包
+# Step 5: fpm 制作安装包
 if [ "$BUILD_PACKAGE" = "1" ]; then
-    echo "[3/3] Building Linux packages..."
+    echo "[5/5] Building Linux packages..."
 
     mkdir -p "$DIST_DIR"
 
     INSTALL_DIR="/opt/btdeck"
 
-    # 准备 fpm 输入目录
     PKG_STAGING=$(mktemp -d)
     mkdir -p "${PKG_STAGING}${INSTALL_DIR}"
     mkdir -p "${PKG_STAGING}/etc/systemd/system"
 
     # 复制可执行文件
-    cp "${PROJECT_DIR}/dist/btdeck" "${PKG_STAGING}${INSTALL_DIR}/"
+    cp "${DIST_DIR}/btdeck" "${PKG_STAGING}${INSTALL_DIR}/"
     chmod +x "${PKG_STAGING}${INSTALL_DIR}/btdeck"
+
+    # 发布身份随包分发（计划 §4.3：包内 /opt/btdeck/build-info.json 与二进制一致）
+    cp "${STAGING_DIR}/build-info.json" "${STAGING_DIR}/source-manifest.json" "${STAGING_DIR}/frontend-asset-manifest.json" "${PKG_STAGING}${INSTALL_DIR}/"
 
     # 复制 systemd service 文件
     cp "${DEPLOY_DIR}/btdeck.service" "${PKG_STAGING}/etc/systemd/system/"
@@ -215,7 +277,7 @@ PREREMOVE
 
     echo -e "${GREEN}[OK] Packages built at ${DIST_DIR}/${NC}"
 else
-    echo "[3/3] Skipping package build (fpm not found)"
+    echo "[5/5] Skipping package build (fpm not found, dev mode)"
     echo "       Executable ready at dist/btdeck"
 fi
 

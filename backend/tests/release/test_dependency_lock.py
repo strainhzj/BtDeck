@@ -61,7 +61,7 @@ def _write_dep_tree(root: Path, *, lock_text: str, packaging_text: str) -> None:
     deploy.mkdir(parents=True, exist_ok=True)
     (deploy / "requirements-windows-package.txt").write_text(packaging_text, encoding="utf-8")
     (deploy / "requirements-linux-package.txt").write_text(
-        "-r ../backend/requirements-lock.txt\npyinstaller~=6.20.0\n", encoding="utf-8"
+        "pyinstaller~=6.20.0\n", encoding="utf-8"
     )
 
 
@@ -76,11 +76,13 @@ _GOOD_LOCK = (
 
 
 class TestNegativeMutations:
+    _GOOD_PACKAGING = "pyinstaller~=6.20.0\npywebview~=5.4.0\n"
+
     def test_qb_fork_detected(self, checker, tmp_path):
         _write_dep_tree(
             tmp_path,
             lock_text=_GOOD_LOCK.replace("qbittorrent-api==2025.2.0", "qbittorrent-api==2025.5.0"),
-            packaging_text="-r ../backend/requirements-lock.txt\npyinstaller~=6.20.0\npywebview~=5.4.0\n",
+            packaging_text=self._GOOD_PACKAGING,
         )
         problems = checker.check_all(tmp_path)
         assert any("qbittorrent-api" in p and "漂移" in p for p in problems)
@@ -89,11 +91,7 @@ class TestNegativeMutations:
         _write_dep_tree(
             tmp_path,
             lock_text=_GOOD_LOCK,
-            packaging_text=(
-                "-r ../backend/requirements-lock.txt\n"
-                "pyinstaller~=6.20.0\n"
-                "passlib[bcrypt]~=1.7.4\n"
-            ),
+            packaging_text="pyinstaller~=6.20.0\npasslib[bcrypt]~=1.7.4\n",
         )
         problems = checker.check_all(tmp_path)
         assert any("白名单外依赖" in p and "passlib" in p for p in problems)
@@ -102,29 +100,26 @@ class TestNegativeMutations:
         _write_dep_tree(
             tmp_path,
             lock_text=_GOOD_LOCK,
-            packaging_text=(
-                "-r ../backend/requirements-lock.txt\n"
-                "pyinstaller~=6.20.0\n"
-                "fastapi~=0.99.0\n"
-            ),
+            packaging_text="pyinstaller~=6.20.0\nfastapi~=0.99.0\n",
         )
         problems = checker.check_all(tmp_path)
         assert any("fastapi" in p and "白名单外" in p for p in problems)
 
-    def test_missing_ref_to_common_lock_detected(self, checker, tmp_path):
+    def test_sneaky_ref_into_lock_bypass_detected(self, checker, tmp_path):
+        """W2 起 -r 引用本身违规（防止绕过两段式安装重新声明公共依赖）。"""
         _write_dep_tree(
             tmp_path,
             lock_text=_GOOD_LOCK,
-            packaging_text="pyinstaller~=6.20.0\npywebview~=5.4.0\n",
+            packaging_text="-r ../backend/requirements-lock.txt\n" + self._GOOD_PACKAGING,
         )
         problems = checker.check_all(tmp_path)
-        assert any("必须恰好引用一次公共锁" in p for p in problems)
+        assert any("不允许 -r 引用" in p for p in problems)
 
     def test_lock_entry_without_hash_detected(self, checker, tmp_path):
         _write_dep_tree(
             tmp_path,
             lock_text="fastapi==0.115.6\nqbittorrent-api==2025.2.0 \\\n    --hash=sha256:3" + "3" * 63 + "\n",
-            packaging_text="-r ../backend/requirements-lock.txt\npyinstaller~=6.20.0\npywebview~=5.4.0\n",
+            packaging_text=self._GOOD_PACKAGING,
         )
         problems = checker.check_all(tmp_path)
         assert any("缺哈希" in p and "fastapi" in p for p in problems)
@@ -133,7 +128,7 @@ class TestNegativeMutations:
         _write_dep_tree(
             tmp_path,
             lock_text="fastapi~=0.115.6\nqbittorrent-api==2025.2.0 \\\n    --hash=sha256:3" + "3" * 63 + "\n",
-            packaging_text="-r ../backend/requirements-lock.txt\npyinstaller~=6.20.0\npywebview~=5.4.0\n",
+            packaging_text=self._GOOD_PACKAGING,
         )
         problems = checker.check_all(tmp_path)
         assert any("未精确锁定" in p for p in problems)

@@ -30,7 +30,7 @@ PACKAGING_RELPATHS = {
     "windows": Path("deploy/requirements-windows-package.txt"),
     "linux": Path("deploy/requirements-linux-package.txt"),
 }
-PACKAGING_REF_VALUE = "../backend/requirements-lock.txt"  # 打包文件中 -r 引用目标（不带前缀）
+PACKAGING_REF_VALUE = "../backend/requirements-lock.txt"  # 历史值；W2 起打包文件只含增量（锁由脚本两段式安装）
 
 # 平台增量依赖白名单（只允许“新增”，不允许覆盖公共依赖版本）
 PLATFORM_EXTRAS_WHITELIST: Dict[str, Tuple[str, ...]] = {
@@ -157,8 +157,12 @@ def check_packaging(root: Path) -> List[str]:
         entries = parse_requirements(path)
         refs = [value for kind, value in entries if kind == "ref"]
         requirements = [value for kind, value in entries if kind == "requirement"]
-        if refs != [PACKAGING_REF_VALUE]:
-            problems.append(f"{relpath} 必须恰好引用一次公共锁（-r {PACKAGING_REF_VALUE}），实际：{refs}")
+        # W2 起锁与增量分两段安装（锁内哈希会激活 pip 哈希模式）：
+        # 打包文件只允许白名单增量，不允许任何 -r 引用（防止绕过锁重新声明公共依赖）
+        if refs:
+            problems.append(
+                f"{relpath} 不允许 -r 引用（公共锁由构建脚本以 --require-hashes 单独安装），实际：{refs}"
+            )
         allowed = set(PLATFORM_EXTRAS_WHITELIST[platform])
         for name in requirements:
             if name not in allowed:

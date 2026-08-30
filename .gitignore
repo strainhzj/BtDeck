@@ -92,3 +92,8 @@ import io;*/
 # 部署凭据（build-and-export-images.bat 从此未跟踪文件读取，严禁入库）
 # ================================
 .btdeck-deploy-credentials.bat
+
+# W2 发布构建生成物（由构建脚本生成进上下文/暂存区，不入库）
+backend/build-info.json
+frontend/build-info.json
+release/build/

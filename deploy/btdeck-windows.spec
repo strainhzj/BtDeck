@@ -44,6 +44,93 @@ if not os.path.isdir(FRONTEND_ASSETS):
 datas.append((FRONTEND_DIST, 'frontend_dist'))
 print(f"[INFO] Including frontend dist: {FRONTEND_DIST}")
 
+# === 发布身份（release-artifact-equivalence-gate W2 / G1 / G5）===
+# 嵌入 build-info 与双 manifest；staging 缺失即失败（fail-closed）。
+RELEASE_STAGING = os.environ.get(
+    'BTDECK_RELEASE_STAGING',
+    os.path.join(PROJECT_ROOT, 'release', 'build', 'windows-exe'),
+)
+
+def _staged(name):
+    path = os.path.join(RELEASE_STAGING, name)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"release staging 缺少 {name}: {path}\n"
+            "请先运行: python scripts/release/generate_build_info.py "
+            "--artifact-kind windows-exe [--allow-dirty]"
+        )
+    return path
+
+datas.append((_staged('build-info.json'), '.'))
+datas.append((_staged('source-manifest.json'), '.'))
+datas.append((_staged('frontend-asset-manifest.json'), '.'))
+print(f"[INFO] Including release identity from: {RELEASE_STAGING}")
+
+# === Windows 版本资源（计划 §4.3）：FileVersion/ProductVersion/ProductName 与完整 SHA 备注 ===
+import json  # noqa: E402
+from PyInstaller.utils.win32.versioninfo import (  # noqa: E402
+    FixedFileInfo,
+    StringFileInfo,
+    StringStruct,
+    StringTable,
+    VarFileInfo,
+    VarStruct,
+    VSVersionInfo,
+)
+
+with open(_staged('build-info.json'), encoding='utf-8') as _fh:
+    _BUILD_INFO = json.load(_fh)
+
+_PRODUCT_VERSION = str(_BUILD_INFO.get('product_version', '0.0.0'))
+_FILE_VERSION = _PRODUCT_VERSION + '.0'
+_GIT_SHA = str(_BUILD_INFO.get('git_sha', 'unknown'))
+
+def _version_tuple(text):
+    parts = []
+    for chunk in text.split('.'):
+        try:
+            parts.append(int(chunk))
+        except ValueError:
+            parts.append(0)
+    while len(parts) < 4:
+        parts.append(0)
+    return tuple(parts[:4])
+
+VERSION_RESOURCE = VSVersionInfo(
+    ffi=FixedFileInfo(
+        filevers=_version_tuple(_FILE_VERSION),
+        prodvers=_version_tuple(_FILE_VERSION),
+        mask=0x3F,
+        flags=0x0,
+        OS=0x40004,
+        fileType=0x1,
+        subtype=0x0,
+        date=(0, 0),
+    ),
+    kids=[
+        StringFileInfo(
+            [StringTable(
+                '040904B0',
+                [
+                    StringStruct('CompanyName', 'BtDeck Team'),
+                    StringStruct('FileDescription', 'BtDeck - BitTorrent 管理平台'),
+                    StringStruct('FileVersion', _FILE_VERSION),
+                    StringStruct('InternalName', 'btdeck'),
+                    StringStruct('OriginalFilename', 'btdeck.exe'),
+                    StringStruct('ProductName', 'BtDeck'),
+                    StringStruct('ProductVersion', _PRODUCT_VERSION),
+                    StringStruct(
+                        'Comments',
+                        f'BtDeck {_PRODUCT_VERSION} git_sha={_GIT_SHA} '
+                        f"tag={_BUILD_INFO.get('git_tag', 'unknown')}",
+                    ),
+                ],
+            )]
+        ),
+        VarFileInfo([VarStruct('Translation', [1033, 1200])]),
+    ],
+)
+
 # 隐式导入（PyInstaller 可能检测不到的模块）
 hiddenimports = [
     # === ASGI / 服务器 ===
@@ -222,4 +309,6 @@ exe = EXE(
     # pywebview WinForms 会从 sys.executable 提取窗口图标；这里同时决定
     # btdeck.exe、任务栏、快捷方式与 Inno Setup 卸载项所显示的品牌图标。
     icon=WINDOWS_ICON,
+    # 计划 §4.3：EXE 属性写入 FileVersion/ProductVersion 与完整 SHA 备注（G1）
+    version=VERSION_RESOURCE,
 )

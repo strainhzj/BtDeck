@@ -40,6 +40,30 @@ if not os.path.isdir(FRONTEND_ASSETS):
 datas.append((FRONTEND_DIST, 'frontend_dist'))
 print(f"[INFO] Including frontend dist: {FRONTEND_DIST}")
 
+# === 发布身份（release-artifact-equivalence-gate W2 / G1 / G5）===
+# 嵌入 build-info 与双 manifest；staging 缺失即失败（fail-closed）。
+# 构建脚本（dev 与 release 模式）都会先运行 scripts/release/generate_build_info.py
+# 生成 release/build/linux-binary/ 再进入 PyInstaller。
+RELEASE_STAGING = os.environ.get(
+    'BTDECK_RELEASE_STAGING',
+    os.path.join(PROJECT_ROOT, 'release', 'build', 'linux-binary'),
+)
+
+def _staged(name):
+    path = os.path.join(RELEASE_STAGING, name)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"release staging 缺少 {name}: {path}\n"
+            "请先运行: python scripts/release/generate_build_info.py "
+            "--artifact-kind linux-binary [--allow-dirty]"
+        )
+    return path
+
+datas.append((_staged('build-info.json'), '.'))
+datas.append((_staged('source-manifest.json'), '.'))
+datas.append((_staged('frontend-asset-manifest.json'), '.'))
+print(f"[INFO] Including release identity from: {RELEASE_STAGING}")
+
 # 隐式导入（PyInstaller 可能检测不到的模块）
 hiddenimports = [
     # === ASGI / 服务器 ===

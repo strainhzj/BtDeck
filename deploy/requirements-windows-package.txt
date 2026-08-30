@@ -1,16 +1,18 @@
-# Runtime dependencies for Windows PyInstaller packaging.
-# 结构（release-artifact-equivalence-gate W1 / G2）：
-#   公共运行依赖一律来自 backend/requirements-lock.txt（pip-compile --generate-hashes），
-#   本文件只允许追加 Windows 平台增量依赖（白名单见 scripts/release/check_dependencies.py
-#   的 PLATFORM_EXTRAS_WHITELIST），禁止在此复制/覆盖公共依赖版本。
-#   结构由 backend/tests/release/test_dependency_lock.py 强制；测试/lint/dev 工具
-#   依旧不得进入打包 venv（锁只含 backend/requirements.txt 的运行时闭包）。
+# Windows PyInstaller 打包的平台增量依赖（release-artifact-equivalence-gate W1/W2 / G2）。
+#
+# 安装方式（构建脚本两段式，见 deploy/build-windows.bat）：
+#   1. pip install --require-hashes -r backend/requirements-lock.txt   # 公共运行依赖，全量哈希校验
+#   2. pip install -r deploy/requirements-windows-package.txt          # 本文件（平台增量）
+#
+# 原因：requirements-lock.txt 内嵌 --hash 行会激活 pip 哈希模式，要求解析闭包内
+# 全部依赖带哈希；pyinstaller/pywebview 及其传递依赖不属于公共运行锁，无法并入。
+# 本文件只允许白名单增量（scripts/release/check_dependencies.py 的
+# PLATFORM_EXTRAS_WHITELIST），禁止在此复制/覆盖公共依赖版本；
+# 结构由 backend/tests/release/test_dependency_lock.py 强制。
 #
 # 历史说明：2026-08-28 前本文件是 backend/requirements.txt 的手工全量拷贝，
 # 导致 qbittorrent-api ~=2025.5.0 与主清单 ~=2025.2.0 分叉，且混入了运行时
 # 零使用的 passlib/email-validator（passlib 属 dev 依赖，见 requirements-dev.txt）。
-
--r ../backend/requirements-lock.txt
 
 pyinstaller~=6.20.0
 pywebview~=5.4.0

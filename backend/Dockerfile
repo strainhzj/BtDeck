@@ -124,6 +124,10 @@ RUN mkdir -p /app/logs /app/config /app/data && \
 # 复制应用代码（用 --chown 一步完成拷贝+属主设置，避免后续 chown -R 制造重复层）
 COPY --chown=appuser:appgroup . .
 
+# 发布身份（W2/G1）：由 build-images.sh 生成并复制进构建上下文；
+# backend/app/core/build_info.py 的候选路径包含 /app/build-info.json
+COPY --chown=appuser:appgroup build-info.json /app/build-info.json
+
 # 转换启动脚本的 CRLF→LF（防止 Windows 行尾导致 shebang 失效：exec ... no such file）
 # 并设置可执行权限
 RUN sed -i 's/\r$//' /app/btdeck_startup.sh && chmod +x /app/btdeck_startup.sh

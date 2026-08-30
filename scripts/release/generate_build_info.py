@@ -283,8 +283,8 @@ def _resolve_git_identity(root: Path, allow_dirty: bool) -> Tuple[str, str, int,
         raise BuildInfoGenerationError(f"git SHA 非完整 40 位：{sha!r}")
     commit_epoch = int(_git(root, "log", "-1", "--format=%ct").strip())
     status = _git(root, "status", "--porcelain").splitlines()
-    # 与运行时无关的本地噪音（发布工作目录、会话产物）不算 dirty
-    noisy_prefixes = (".release-build-", "data/", "dist/", "release/evidence/")
+    # 与运行时无关的本地噪音（发布工作目录、会话产物、构建输出）不算 dirty
+    noisy_prefixes = (".release-build-", "data/", "dist/", "release/evidence/", "release/build/")
     dirty_lines = [
         line
         for line in status
