@@ -92,7 +92,9 @@ elif [ "$SCENARIO" = "upgrade" ]; then
 
     # v1.0.5 冻结制品三处夹具适配（同 deb.sh：env 补建 + unit 覆写 + 显式 enable/restart）
     if install_rpm "$OLD_RPM"; then
-        if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+        # 存在性检查不够：v1.0.5 旧 postinst 在 openssl/python3 双缺时会写出
+        # 空 SECRET_KEY= 的 env（命令替换得空串仍继续），必须校验非空
+        if ! grep -q '^SECRET_KEY=.' /opt/btdeck/config/btdeck.env 2>/dev/null; then
             mkdir -p /opt/btdeck/config
             if command -v openssl >/dev/null 2>&1; then
                 SK="$(openssl rand -hex 32)"

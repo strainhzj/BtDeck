@@ -115,7 +115,9 @@ elif [ "$SCENARIO" = "upgrade" ]; then
     #   2) 旧 btdeck.service 无 PrivateTmp → 用仓库现行 unit 覆写
     #   3) 显式 enable/restart
     if install_deb "$OLD_DEB"; then
-        if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+        # 存在性检查不够：v1.0.5 旧 postinst 在 openssl/python3 双缺时会写出
+        # 空 SECRET_KEY= 的 env（命令替换得空串仍继续），必须校验非空
+        if ! grep -q '^SECRET_KEY=.' /opt/btdeck/config/btdeck.env 2>/dev/null; then
             mkdir -p /opt/btdeck/config
             if command -v openssl >/dev/null 2>&1; then
                 SK="$(openssl rand -hex 32)"
