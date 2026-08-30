@@ -74,13 +74,14 @@
     },
     "w1_pinned": {
       "python": "3.11（regression.yml 主回归 3.11；本地打包/CI/Docker 一致）",
-      "node": "22.23.2（package.json engines >=22.23.2 <23 + packageManager npm@10.9.8；Dockerfile/prod/regression 统一）",
+      "node": "22.23.2",
       "docker_base_digests": {
         "python:3.11-slim": "sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6（trixie）",
         "python:3.11-bullseye": "sha256:df0bd610af061603b29d63eb82027b64d5a3f15506e39270422b10b2a55079fc",
         "node:22-bookworm-slim": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
         "nginx:1.25-alpine": "sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00"
-      }
+      },
+      "node_note": "22 线（本地+CI 双实证，探针见 w0_probes）；W1 已统一 Dockerfile/CI/engines"
     }
   },
   "dependency_forks": {
