@@ -45,7 +45,7 @@ build_sysd_images() {
     echo "[SETUP] 构建 systemd 测试镜像（官方基 + 预装 curl/sqlite/iproute/python3）..."
     # 镜像源加速：默认国内源；CI/网络良好环境可 BTDECK_SKIP_MIRROR=1 走官方源
     if [ "${BTDECK_SKIP_MIRROR:-0}" != "1" ]; then
-        docker build -q -t w3-debian-sysd - <<'EOF'
+        build_one w3-debian-sysd <<'EOF'
 FROM debian:12
 RUN sed -i "s|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g; s|deb.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 python3 \
@@ -54,7 +54,7 @@ RUN sed -i "s|security.debian.org/debian-security|mirrors.aliyun.com/debian-secu
 CMD ["/sbin/init"]
 EOF
         # rocky：整体重写 repo 文件（USTC 布局），规避各家镜像 $contentdir 路径差异
-        docker build -q -t w3-rocky-sysd - <<'EOF'
+        build_one w3-rocky-sysd <<'EOF'
 FROM rockylinux:9
 RUN rm -f /etc/yum.repos.d/rocky*.repo \
     && printf '[baseos]\nname=Rocky BaseOS\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/BaseOS/$basearch/os/\ngpgcheck=0\n[appstream]\nname=Rocky AppStream\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/AppStream/$basearch/os/\ngpgcheck=0\n' > /etc/yum.repos.d/btdeck.repo \
@@ -64,14 +64,14 @@ RUN rm -f /etc/yum.repos.d/rocky*.repo \
 CMD ["/sbin/init"]
 EOF
     else
-        docker build -q -t w3-debian-sysd - <<'EOF'
+        build_one w3-debian-sysd <<'EOF'
 FROM debian:12
 RUN apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 \
     && ln -sf /lib/systemd/systemd /sbin/init \
     && rm -f /etc/machine-id
 CMD ["/sbin/init"]
 EOF
-        docker build -q -t w3-rocky-sysd - <<'EOF'
+        build_one w3-rocky-sysd <<'EOF'
 FROM rockylinux:9
 RUN dnf -y install systemd curl sqlite iproute python3 \
     && rm -f /etc/machine-id \
