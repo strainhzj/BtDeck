@@ -115,6 +115,10 @@ def build(root: Path, output_dir: Path, *, skip_node_check: bool) -> Dict[str, o
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    # Windows 控制台默认 cp1252：含中文的输出会 UnicodeEncodeError（CI 实测拦截）
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=DEFAULT_PROJECT_ROOT)
     parser.add_argument("--output-dir", type=Path, default=None, help="默认 <root>/release/build/frontend")
