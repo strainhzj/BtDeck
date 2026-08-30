@@ -202,11 +202,13 @@ main() {
     OCI_CREATED="${IDENTITY[2]}"
     print_info "identity: v${OCI_VERSION} @${OCI_REVISION:0:12} created=${OCI_CREATED}"
 
-    # Step 2: 组装上下文 / build args
-    cp "${GEN_ROOT}/docker-backend/build-info.json" backend/build-info.json
+    # Step 2: 组装上下文 / build args（相对路径：Git-Bash 下 /c/... 形式
+    # Windows docker/python CLI 均无法消费，脚本已在 PROJECT_DIR 下执行）
+    cp release/build/docker-backend/build-info.json backend/build-info.json
     local backend_tags=(-t "${BACKEND_IMAGE}:latest")
     [[ -n "${VERSION}" ]] && backend_tags+=(-t "${BACKEND_IMAGE}:${VERSION}")
-    local backend_ctx="${PROJECT_DIR}/backend"
+    local backend_ctx="backend"
+    local backend_file="backend/Dockerfile"
 
     local frontend_tags frontend_ctx frontend_file
     if [[ "${RELEASE_MODE}" = "1" ]]; then
@@ -214,17 +216,17 @@ main() {
         "${PY}" scripts/release/check_prebuilt_frontend.py \
             "release/build/frontend/frontend-asset-manifest.json" "frontend/dist" \
             || fail "frontend dist 与唯一构建 manifest 不一致；请先运行 scripts/release/build_frontend.py"
-        frontend_ctx="${GEN_ROOT}/frontend-ctx"
+        frontend_ctx="release/build/frontend-ctx"
         rm -rf "${frontend_ctx}"
         mkdir -p "${frontend_ctx}"
-        cp -r "${PROJECT_DIR}/frontend/dist" "${frontend_ctx}/dist"
-        cp "${GEN_ROOT}/docker-frontend/build-info.json" "${frontend_ctx}/build-info.json"
-        cp "${PROJECT_DIR}/frontend/nginx.conf" "${frontend_ctx}/nginx.conf"
-        frontend_file="${PROJECT_DIR}/frontend/Dockerfile.release"
+        cp -r frontend/dist "${frontend_ctx}/dist"
+        cp release/build/docker-frontend/build-info.json "${frontend_ctx}/build-info.json"
+        cp frontend/nginx.conf "${frontend_ctx}/nginx.conf"
+        frontend_file="frontend/Dockerfile.release"
     else
-        cp "${GEN_ROOT}/docker-frontend/build-info.json" frontend/build-info.json
-        frontend_ctx="${PROJECT_DIR}/frontend"
-        frontend_file="${PROJECT_DIR}/frontend/Dockerfile.prod"
+        cp release/build/docker-frontend/build-info.json frontend/build-info.json
+        frontend_ctx="frontend"
+        frontend_file="frontend/Dockerfile.prod"
     fi
     frontend_tags=(-t "${FRONTEND_IMAGE}:latest")
     [[ -n "${VERSION}" ]] && frontend_tags+=(-t "${FRONTEND_IMAGE}:${VERSION}")
