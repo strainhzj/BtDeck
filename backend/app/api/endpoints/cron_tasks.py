@@ -214,13 +214,34 @@ def _custom_script_error() -> CommonResponse:
     )
 
 
+def _platform_unsupported_error() -> CommonResponse:
+    """android-server 形态下自定义脚本unsupported 的统一降级响应（矩阵第 3 节）。"""
+    return CommonResponse(
+        status="error",
+        msg="当前主机形态（Android 服务端）不支持自定义脚本任务",
+        code="403",
+        data=None,
+    )
+
+
 def _validate_task_type_allowed(task_type: int) -> Optional[CommonResponse]:
-    """只允许内置任务；管理员显式开启后才允许 Shell/CMD/PowerShell/Python 脚本。"""
+    """只允许内置任务；管理员显式开启后才允许 Shell/CMD/PowerShell/Python 脚本。
+
+    android-server 形态下自定义脚本为 unsupported（主机能力矩阵），
+    安全开关不生效——形态判定优先于开关。
+    """
     if task_type in BUILTIN_TASK_TYPES:
         return None
-    if task_type in CUSTOM_SCRIPT_TASK_TYPES and settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
-        return None
     if task_type in CUSTOM_SCRIPT_TASK_TYPES:
+        from app.core.platform_capabilities import (
+            PLATFORM_ANDROID_SERVER,
+            resolve_platform,
+        )
+
+        if resolve_platform() == PLATFORM_ANDROID_SERVER:
+            return _platform_unsupported_error()
+        if settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
+            return None
         return _custom_script_error()
     return CommonResponse(status="error", msg=f"不支持的任务类型: {task_type}", code="400", data=None)
 

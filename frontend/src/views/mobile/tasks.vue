@@ -2,6 +2,11 @@
   <div class="m-tasks">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
 
+    <!-- 主机能力矩阵降级提示（仅 android-server 形态显示；矩阵单一来源） -->
+    <div v-if="scheduledTasksDegraded" class="m-capability-hint">
+      当前服务端运行于 Android 设备：系统省电策略可能使定时任务延迟执行。
+    </div>
+
     <div class="m-toolbar">
       <el-select v-model="enabledFilter" size="small" placeholder="全部任务" clearable @change="reload">
         <el-option label="已启用" :value="true" />
@@ -111,6 +116,10 @@ import {
 import { extractErrorMessage } from '@/utils/formatters'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import {
+  cachedCapabilityLevel,
+  loadPlatformCapabilities
+} from '@/api/platform-capabilities'
 
 const PAGE_SIZE = 20
 
@@ -131,9 +140,14 @@ export default class MobileTasks extends Mixins(PullToRefresh) {
   private enabledFilter: boolean | undefined = undefined
   private nameFilter = ''
   private busyId = 0
+  /** 定时任务是否处于降级形态（mounted 拉取矩阵后刷新；失败按 desktop 不显示）。 */
+  private scheduledTasksDegraded = false
 
   mounted(): void {
     this.reload()
+    loadPlatformCapabilities().then(() => {
+      this.scheduledTasksDegraded = cachedCapabilityLevel('scheduled_tasks') === 'degraded'
+    })
   }
 
   protected async onPullRefresh(): Promise<void> {
@@ -276,6 +290,17 @@ export default class MobileTasks extends Mixins(PullToRefresh) {
 </script>
 
 <style scoped>
+.m-capability-hint {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border: 1px solid var(--el-color-warning-light-7, #f3d19e);
+  color: var(--el-color-warning, #e6a23c);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .m-toolbar {
   display: flex;
   gap: 8px;

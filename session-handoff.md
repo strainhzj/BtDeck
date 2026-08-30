@@ -1,5 +1,15 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-29（深夜二）：Phase 4 capability 矩阵 API/UI 一致降级接线（task .5）
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- 后端：`platform_capabilities.py`（14 项矩阵单一真相源+环境判定）+ `GET /api/v1/platform/capabilities` + cron 拦截升级（android-server 形态优先于开关）+ 壳注入 `BTDECK_PLATFORM`；70+156 定向回归绿、三质量门过。
+- 前端：api 单例缓存（失败兜底 supported/desktop）+ settings"主机能力"tab（双端同源）+ 桌面任务类型置灰/提交兜底 + 移动省电提示条；22 定向 + 1285 全量测试绿、tsc/lint 过。
+- AVD 端到端实证：android-server 形态矩阵逐项一致（5 降级/3 不支持）、cron add 403 主机形态文案、服务 10s 就绪端口复用。
+- 遗留：矩阵 UI WebView 内人工目验未做（组件测试+API 已锁）；Phase 5 设备矩阵不变。
+- 下一步候选：task .3/.8 设备级验证补全、Phase 5 发布验收、或桌面伴侣模式（计划第 7 节桌面部分）。
+
 ## 2026-08-29（深夜）：Phase 3 安卓本地服务端壳工程落地（task .4 → in-progress）
 
 ### 已完成（未提交，遵循仅用户要求时提交）

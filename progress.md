@@ -6313,3 +6313,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **批次 C（向导集成）**：ABI 检测 → 通知权限请求（13+）→ 确认对话框（LAN 开关默认关+威胁模型）→ 启动进度 → running 自动写本机 profile（固定 id+动态端口）复用 WebViewActivity 全链 → 错误按阶段归因；ServerList 本机 profile 未运行引导。
 - **批次 D（双 AVD 实证）**：btdeck-a35（4096）connectedDebugAndroidTest 1/1 绿（start→迁移→健康握手→SPA→停机→重启端口复用）+ 手动全流程铁证（uiautomator/dumpsys）：向导→权限 Allow→确认框→15s running→WebView 自动开→SPA 登录页渲染→标题"本机服务端 v1.0.6 · 服务就绪"→常驻通知带端口+停止 action→FGS types=0x40000000→ACTION_STOP 销毁→重启→am crash 后 pid 3816→4301 START_STICKY 重建+端口 36519 复原。btdeck-16k（ps16k 16KB）connectedDebugAndroidTest 绿+启动链抽验（10s WebView、通知 41241）。LAN 变体构建 0.2.0-server+lan 通过。APK debug 90.4MB。
 - **后端零源码改动**。遗留（登记 feature_list task .4）：arm64 真机/升级安装演练/OEM 电池与 Doze 设备矩阵属 Phase 5；pillow ANDROID-DROP 致 2FA 二维码暂不可用；release+bundletool 精算 Phase 5。未执行 Git 提交。
+
+## 2026-08-29（深夜二）：Phase 4 capability 矩阵 API/UI 一致降级接线（task .5 追加）
+
+- **后端**：`app/core/platform_capabilities.py`（14 项能力矩阵单一真相源，`BTDECK_PLATFORM` 判定 desktop/android-server，非法值 fail-safe 回落 desktop，键集有单测锁定——新增能力必须先登记矩阵文档）；`GET /api/v1/platform/capabilities` 认证端点；cron 自定义脚本拦截升级（android-server 形态 403"当前主机形态不支持"，形态判定优先于安全开关，desktop 语义不变）；btdeck_server 注入 `BTDECK_PLATFORM=android-server`。
+- **前端**：api 层单例缓存（失败按 supported/desktop 兜底）；settings 新增"主机能力"tab（表格/卡片双布局，移动端经包装自动同源）；桌面任务创建对话框 0-3 类型置灰+说明+提交兜底；移动任务列表 android-server 显示省电延迟提示条。
+- **验证**：后端定向 70+156 passed（mypy/black/flake8 过）；前端定向 22 例+全量 89 suites/1285 tests、tsc 零错、lint 过；AVD（btdeck-a35）端到端实证——服务 10s 就绪、`/platform/capabilities` 返回 android-server 14 项 5 降级/3 不支持（与冻结矩阵逐项一致）、cron add task_type=0 被拒并给出主机形态文案。
+- 过程修复一处测试自身问题（api spec 漏 mock 清理导致调用计数跨用例累积，mockReset 根治）。未执行 Git 提交。

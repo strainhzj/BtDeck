@@ -71,6 +71,9 @@ def _prepare_env(root: Path) -> None:
     os.environ["CONFIG_DIR"] = str(root / "config")
     os.environ["DATABASE_PATH"] = str(root / "config" / "app.db")
     os.environ["TORRENTS_DIR"] = str(root / "torrents")
+    # 主机能力矩阵（Phase 4）：Android 服务端形态，能力集按矩阵降级下发。
+    # setdefault 不覆盖桌面调试场景的显式注入。
+    os.environ.setdefault("BTDECK_PLATFORM", "android-server")
 
 
 def _pick_port(host: str, preferred_port: int) -> int:

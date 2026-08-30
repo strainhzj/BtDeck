@@ -558,9 +558,13 @@
               :key="option.value"
               :label="option.label"
               :value="option.value"
+              :disabled="isTaskTypeDisabled(option.value)"
             >
               <LucideIcon :name="option.icon" :size="14" style="margin-right: 8px;" />
               {{ option.label }}
+              <span v-if="isTaskTypeDisabled(option.value)" class="task-type-unsupported-hint">
+                （当前主机形态不支持）
+              </span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -969,6 +973,7 @@ import {
 } from '@/api/tasks'
 import request from '@/utils/request'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { customScriptsUnsupported, loadPlatformCapabilities } from '@/api/platform-capabilities'
 
 // 导入新创建的组件
 import MonacoEditor from '@/components/tasks/MonacoEditor.vue'
@@ -1186,6 +1191,17 @@ export default class TaskManage extends Vue {
 
   created() {
     this.fetchTaskList()
+    // 主机能力矩阵预热（失败静默——选项禁用态走 supported 兜底，服务端仍兜底拦截）
+    loadPlatformCapabilities()
+  }
+
+  /**
+   * 任务类型是否被当前主机形态禁用（android-server 下自定义脚本 0-3
+   * unsupported，矩阵单一来源）。选项列表保留全量——历史任务的既有类型
+   * 仍可正常展示，仅禁止新建选择。
+   */
+  private isTaskTypeDisabled(value: number): boolean {
+    return value <= 3 && customScriptsUnsupported()
   }
 
   @Watch('activeTab')
@@ -1496,6 +1512,12 @@ export default class TaskManage extends Vue {
     try {
       await (this.$refs.taskForm as any).validate()
       this.submitLoading = true
+
+      // 主机形态兜底拦截（服务端同款判定，双保险——见 isTaskTypeDisabled）
+      if (this.isTaskTypeDisabled(this.taskForm.task_type)) {
+        this.$message.error('当前主机形态不支持自定义脚本任务')
+        return
+      }
 
       // 如果是清理任务类型，将 cleanupConfig 转为 JSON 赋值给 executor
       if (this.taskForm.task_type === 5) {
@@ -2209,6 +2231,12 @@ ${selectedLog.logDetail}`
 /* ========================================
    定时任务页面特定样式
    ======================================== */
+
+/* 主机能力矩阵：android-server 形态下自定义脚本类型置灰说明 */
+.task-type-unsupported-hint {
+  color: var(--el-color-danger, #f56c6c);
+  font-size: 12px;
+}
 
 /* 表单帮助文本 */
 .active-log-task-filter {

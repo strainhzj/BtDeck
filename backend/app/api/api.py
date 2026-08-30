@@ -42,6 +42,7 @@ from app.api.endpoints import notifications
 # 导入孤儿文件管理API
 from app.api.endpoints import orphan_files
 from app.api.endpoints import health
+from app.api.endpoints import platform_capabilities
 
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
@@ -52,6 +53,8 @@ api_router.include_router(torrents.router, prefix="/torrents", tags=["torrents"]
 api_router.include_router(tracker.router, prefix="/tracker", tags=["tracker"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(cron_tasks.router, prefix="/cronTasks", tags=["cron-tasks"])
+# 主机能力矩阵（dual-mode-client Phase 4：一致降级单一来源）
+api_router.include_router(platform_capabilities.router, prefix="/platform", tags=["platform-capabilities"])
 # Dashboard
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 # 添加高级搜索路由

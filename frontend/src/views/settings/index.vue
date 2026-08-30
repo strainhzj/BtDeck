@@ -279,6 +279,13 @@
           </div>
         </div>
       </el-tab-pane>
+
+      <!-- 主机能力（dual-mode-client Phase 4：一致降级单一来源，移动端经包装自动同源） -->
+      <el-tab-pane label="主机能力" name="platform">
+        <div class="settings-content">
+          <platform-capability-panel />
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -287,11 +294,13 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
+import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import request from '@/utils/request'
 
 @Component({
-  name: 'Settings'
+  name: 'Settings',
+  components: { PlatformCapabilityPanel }
 })
 export default class extends Vue {
   // 当前激活的标签页
