@@ -37,8 +37,10 @@ def _resolve_bash() -> str:
     found = shutil.which("bash")
     if found and "System32" not in found and "WindowsApps" not in found:
         candidates.append(Path(found))
-    for program_files in (os.environ.get("ProgramFiles", r"C:\Program Files"),
-                          os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+    for program_files in (
+        os.environ.get("ProgramFiles", r"C:\Program Files"),
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    ):
         candidates.append(Path(program_files) / "Git" / "bin" / "bash.exe")
     candidates.append(Path(r"E:\Git\bin\bash.exe"))
     for candidate in candidates:
@@ -106,7 +108,9 @@ class TestPostrmSemantics:
         env["BTDECK_PREFIX"] = tmp_path.as_posix()
         result = subprocess.run(
             [_resolve_bash(), str(self.SCRIPT), "purge"],
-            capture_output=True, text=True, env=env,
+            capture_output=True,
+            text=True,
+            env=env,
         )
         assert result.returncode == 0
         assert not (tmp_path / "opt" / "btdeck" / "config").exists()
@@ -119,7 +123,9 @@ class TestPostrmSemantics:
         marker.write_text("SECRET_KEY=x", encoding="utf-8")
         result = subprocess.run(
             [_resolve_bash(), str(self.SCRIPT), arg],
-            capture_output=True, text=True, cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
         )
         assert result.returncode == 0
         assert marker.exists()
@@ -127,7 +133,9 @@ class TestPostrmSemantics:
     def test_unknown_arg_fails_closed(self, tmp_path):
         result = subprocess.run(
             [_resolve_bash(), str(self.SCRIPT), "mystery"],
-            capture_output=True, text=True, cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
         )
         assert result.returncode == 1
 
@@ -160,16 +168,28 @@ class TestLifecycleDriversContract:
     def test_deb_driver_scenarios_and_asserts(self):
         text = (_LIFECYCLE / "deb.sh").read_text(encoding="utf-8")
         for marker in (
-            "fresh_install", "reinstall_same_version", "restart_twice",
-            "remove_keeps_data", "purge_removes_data", "v105_to_v106_upgrade",
-            "SECRET_KEY 未重置", "Alembic 单 head", "write_report",
+            "fresh_install",
+            "reinstall_same_version",
+            "restart_twice",
+            "remove_keeps_data",
+            "purge_removes_data",
+            "v105_to_v106_upgrade",
+            "SECRET_KEY 未重置",
+            "Alembic 单 head",
+            "write_report",
         ):
             assert marker in text, marker
 
     def test_rpm_driver_scenarios_and_asserts(self):
         text = (_LIFECYCLE / "rpm.sh").read_text(encoding="utf-8")
-        for marker in ("fresh_install", "reinstall_same_version", "v105_to_v106_upgrade",
-                       "remove_keeps_data", "R11/RPM", "write_report"):
+        for marker in (
+            "fresh_install",
+            "reinstall_same_version",
+            "v105_to_v106_upgrade",
+            "remove_keeps_data",
+            "R11/RPM",
+            "write_report",
+        ):
             assert marker in text, marker
 
     def test_orchestrator_fail_closed(self):
@@ -180,28 +200,87 @@ class TestLifecycleDriversContract:
 
     def test_docker_driver_scenarios(self):
         text = (_LIFECYCLE / "docker.sh").read_text(encoding="utf-8")
-        for marker in ("repeat_up_no_recreate", "force-recreate", "upgrade_to_v106",
-                       "same_digest_up_no_recreate", "down_up_keeps_volume",
-                       "reconstructed", "org.opencontainers.image.revision"):
+        for marker in (
+            "repeat_up_no_recreate",
+            "force-recreate",
+            "upgrade_to_v106",
+            "same_digest_up_no_recreate",
+            "down_up_keeps_volume",
+            "reconstructed",
+            "org.opencontainers.image.revision",
+        ):
             assert marker in text, marker
 
     def test_docker_compose_test_template_pins_images(self):
         text = (_LIFECYCLE / "docker-compose.test.yml").read_text(encoding="utf-8")
-        effective = "\n".join(
-            line for line in text.splitlines() if not line.lstrip().startswith("#")
-        )
+        effective = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
         assert "must pin explicit version tag" in effective
         assert "latest" not in effective.replace("must pin explicit version tag", "")
         assert "w3life_backend_data" in effective
 
     def test_windows_driver_scenarios(self):
         text = (_LIFECYCLE / "windows.ps1").read_text(encoding="utf-8")
-        for marker in ("portable_exe_start_identity", "setup_silent_install",
-                       "setup_same_version_reinstall", "upgrade_keeps_secret_and_data",
-                       "uninstall_removes_program_keeps_data"):
+        for marker in (
+            "portable_exe_start_identity",
+            "setup_silent_install",
+            "setup_same_version_reinstall",
+            "upgrade_keeps_secret_and_data",
+            "uninstall_removes_program_keeps_data",
+        ):
             assert marker in text, marker
 
     def test_lib_fail_closed_helpers(self):
         text = (_LIFECYCLE / "lib.sh").read_text(encoding="utf-8")
         assert "write_report" in text and "LIFECYCLE_FAILED" in text
         assert "single_port_listener" in text and "alembic_head" in text
+
+
+class TestV105HealthContract:
+    """v1.0.5 冻结制品健康契约（W3 CI 第七轮实测拦截）。
+
+    v1.0.5 的 /health/live 响应为 {"status":"success",...,"data":{"status":"alive"}}，
+    无 version/build 字段（version 是 v1.0.6 W1 引入）。四驱动的 v1.0.5 就绪谓词
+    必须断言 data.status=alive；等 "version":"1.0.5" 会必然超时（CI 420s 复现）。
+    """
+
+    def test_v105_predicates_use_alive(self):
+        for name in ("deb.sh", "rpm.sh", "docker.sh", "windows.ps1"):
+            text = (_LIFECYCLE / name).read_text(encoding="utf-8")
+            code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+            assert "1.0.5" in code, f"{name} 未区分 v1.0.5 基线就绪契约"
+            # alive 谓词分支必须存在（bash 驱动为转义形态，ps1 为字面形态）
+            bash_form = '\\"status\\":\\"alive\\"' in code
+            literal_form = '"status":"alive"' in code
+            assert bash_form or literal_form, f"{name} 缺 v1.0.5 alive 谓词"
+
+    def test_no_version_105_wait_regression(self):
+        # 负向变异拦截：任何驱动恢复 "version":"1.0.5" 等待串即失败
+        for name in ("deb.sh", "rpm.sh", "docker.sh", "windows.ps1"):
+            text = (_LIFECYCLE / name).read_text(encoding="utf-8")
+            assert (
+                '\\"version\\":\\"1.0.5\\"' not in text and '"version":"1.0.5"' not in text
+            ), f"{name} 出现 v1.0.5 version 等待串（v1.0.5 响应无该字段，必然超时）"
+
+    def test_windows_predicates_compact_json(self):
+        # 健康接口是紧凑 JSON（无空格分隔符）；带空格的 -match 串永远不命中（CI 实测）
+        text = (_LIFECYCLE / "windows.ps1").read_text(encoding="utf-8")
+        code = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+        joined = "\n".join(code)
+        for spaced in ('\'"version": "', '\'"status": "', '\'"build": {'):
+            assert spaced not in joined, f"ps1 存在带空格匹配串 {spaced}（紧凑 JSON 不命中）"
+
+
+class TestSysdFixturePython3:
+    """run_deb_rpm.sh 两分支的 systemd 夹具镜像必须预装 python3。
+
+    build_info_field 用容器内 python3 提取包内身份；SKIP_MIRROR 分支曾漏装
+    导致断言静默回退 'ERR'（CI 第七轮实测：deb=ERR vs rpm=linux-binary 双症状）。
+    """
+
+    def test_both_branches_debian_has_python3(self):
+        text = (_LIFECYCLE / "run_deb_rpm.sh").read_text(encoding="utf-8")
+        debian_blocks = text.split("build_one w3-debian-sysd <<'EOF'")[1:]
+        assert len(debian_blocks) == 2, "预期镜像/官方源两个 debian 夹具分支"
+        for i, block in enumerate(debian_blocks):
+            block = block.split("EOF")[0]
+            assert "python3" in block, f"debian 夹具分支 {i + 1} 未安装 python3"

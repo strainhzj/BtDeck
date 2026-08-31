@@ -53,11 +53,14 @@ up() { (cd "$WORKDIR" && BTDECK_BACKEND_IMAGE="$1" BTDECK_FRONTEND_IMAGE="$FRONT
     docker compose -f "$COMPOSE_FILE" -p w3life up -d); }
 backend_exec() { docker exec w3-life-backend sh -c "$1"; }
 backend_health() {  # backend_health <version-substr> <max-sec>
-    local i=0
+    # v1.0.5 冻结制品的健康契约无 version 字段（version/build 是 v1.0.6 W1 引入），
+    # 基线就绪只能断言 data.status=alive；v1.0.6 仍按 version 精确断言
+    local i=0 want="\"version\":\"$1\""
+    [ "$1" = "1.0.5" ] && want="\"status\":\"alive\""
     while [ $i -lt $(($2 / 5)) ]; do
         body="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null || true)"
         case "$body" in
-            *"\"version\":\"$1\""*) return 0 ;;
+            *"$want"*) return 0 ;;
         esac
         sleep 5; i=$((i + 1))
     done
@@ -128,7 +131,7 @@ if backend_health 1.0.6 240 \
     && backend_exec "curl -fsS http://localhost:5001/health/ready" >/dev/null 2>&1; then
     BUILD_BLOCK="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null)"
     HEAD_AFTER="$(backend_exec "python -c \"import sqlite3,glob; p=(glob.glob('/app/config/app.db')+glob.glob('/app/data/app.db')); c=sqlite3.connect(p[0]); r=c.execute('select count(*),min(version_num) from alembic_version').fetchone(); print(r[0],r[1]) if p else print('none')\"" 2>/dev/null || echo none)"
-    if echo "$BUILD_BLOCK" | grep -q '"status": "ok"' && [ -n "$GIT_SHA_106" ] && echo "$BUILD_BLOCK" | grep -q "$GIT_SHA_106"; then
+    if echo "$BUILD_BLOCK" | grep -q '"status":"ok"' && [ -n "$GIT_SHA_106" ] && echo "$BUILD_BLOCK" | grep -q "$GIT_SHA_106"; then
         phase "upgrade_to_v106" PASS "head: ${HEAD_BEFORE} → $(echo "$HEAD_AFTER" | awk '{print $2}')"
     else
         phase "upgrade_to_v106" FAIL "健康 1.0.6 但 build 身份不匹配（label=${GIT_SHA_106:0:12}; live=${BUILD_BLOCK:0:160}）"

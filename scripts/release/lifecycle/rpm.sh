@@ -34,7 +34,11 @@ done
 [ -f "$NEW_RPM" ] || die "新包不存在: $NEW_RPM"
 
 wait_healthy() {
-    wait_http "http://127.0.0.1:5001/health/live" "\"version\":\"$1\"" 180
+    # v1.0.5 冻结制品的健康契约无 version 字段（version/build 是 v1.0.6 W1 引入），
+    # 基线就绪只能断言 data.status=alive；v1.0.6 仍按 version 精确断言
+    local want="\"version\":\"$1\""
+    [ "$1" = "1.0.5" ] && want="\"status\":\"alive\""
+    wait_http "http://127.0.0.1:5001/health/live" "$want" 180
 }
 
 install_rpm() { dnf -y install "$1" >/tmp/dnf-install.log 2>&1; }

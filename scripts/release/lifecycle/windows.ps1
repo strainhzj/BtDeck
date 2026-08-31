@@ -63,8 +63,11 @@ $IsoDir = Join-Path $env:RUNNER_TEMP "w3-iso"
 New-Item -ItemType Directory -Force -Path $IsoDir | Out-Null
 Copy-Item $NewExe (Join-Path $IsoDir "btdeck.exe")
 $p = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden
+# 健康响应为紧凑 JSON（无空格分隔符），-match 匹配串一律不带空格（CI 实测拦截）。
+# v1.0.5 冻结制品的健康契约无 version/build 字段（v1.0.6 W1 引入），其就绪只能断言
+# data.status=alive；v1.0.6 仍按 version 精确断言。
 $body = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
-$okA = $null -ne $body -and $body -match '"version": "1.0.6"' -and $body -match '"build": \{"status": "ok"'
+$okA = $null -ne $body -and $body -match '"version":"1.0.6"' -and $body -match '"build":\{"status":"ok"'
 Add-Phase "portable_exe_start_identity" $okA ("last=" + ($body -replace '\s+', '')[0..120] -join '')
 if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
     $secret1 = (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash
@@ -88,7 +91,7 @@ if ($null -eq $SetupExe) {
     # B1 静默首装
     Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
     $svc = Get-Service -Name BtDeck -ErrorAction SilentlyContinue
-    $bodyB = Wait-Health "http://127.0.0.1:5001/health/live" '"version": "1.0.6"'
+    $bodyB = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"'
     $single = ($svc | Measure-Object).Count -eq 1 -and $svc.Status -eq "Running"
     $listeners = @(Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue).Count
     Add-Phase "setup_silent_install" ($single -and $null -ne $bodyB -and $listeners -eq 1) "listeners=$listeners"
@@ -112,7 +115,7 @@ if ($null -eq $SetupExe) {
         Stop-BtDeckProcesses
         Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
         $pf = Start-Process -FilePath (Join-Path $InstallDir "btdeck-v105-fixture.exe") -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden
-        $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"version": "1.0.5"' 180
+        $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
         Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 3
@@ -123,7 +126,7 @@ if ($null -eq $SetupExe) {
         Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
         Start-Sleep -Seconds 5
         & $IsccNssm start BtDeck 2>$null | Out-Null
-        $bodyUp = Wait-Health "http://127.0.0.1:5001/health/live" '"version": "1.0.6"' 240
+        $bodyUp = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 240
         $secretAfter = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
         Add-Phase "upgrade_keeps_secret_and_data" `
             ($null -ne $bodyUp -and (Test-Path $markerPath) -and $secretBefore -eq $secretAfter) `

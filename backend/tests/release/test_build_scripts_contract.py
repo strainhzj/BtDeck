@@ -22,7 +22,7 @@ class TestBuildLinuxScript:
     def test_release_mode_flag(self):
         text = _read(self.PATH)
         assert "--release) RELEASE_MODE=1" in text
-        assert "mode: $([ \"$RELEASE_MODE\" = \"1\" ] && echo RELEASE || echo dev)" in text
+        assert 'mode: $([ "$RELEASE_MODE" = "1" ] && echo RELEASE || echo dev)' in text
 
     def test_fpm_required_in_release(self):
         text = _read(self.PATH)
@@ -46,8 +46,68 @@ class TestBuildLinuxScript:
         """锁哈希校验 + 增量两段安装（W2：锁内 --hash 会激活 pip 哈希模式）。"""
         text = _read(self.PATH)
         assert "--require-hashes -r" in text
-        assert 'requirements-lock.txt' in text
-        assert "-r \"$PACKAGE_REQUIREMENTS\"" in text
+        assert "requirements-lock.txt" in text
+        assert '-r "$PACKAGE_REQUIREMENTS"' in text
+
+    def test_package_build_info_retagged_per_kind(self):
+        """包内 build-info 按包型 retag（计划 §158：kind 枚举不含 linux-binary）。
+
+        二进制内嵌身份保持 linux-binary 中间制品语义；DEB/RPM 包内 json 的
+        artifact_kind 分别改写为 linux-deb/linux-rpm（W3 生命周期断言包型身份）。
+        就地单字段改写而非重跑 generator（重跑会重算 build_id 造成身份漂移）。
+        """
+        text = _read(self.PATH)
+        assert "retag_build_info linux-deb" in text, "DEB 打包前未 retag 包内身份"
+        assert "retag_build_info linux-rpm" in text, "RPM 打包前未 retag 包内身份"
+        # deb retag 必须先于 deb fpm，rpm retag 先于 rpm fpm
+        assert text.index("retag_build_info linux-deb") < text.index("-t deb")
+        assert text.index("retag_build_info linux-rpm") < text.index("-t rpm")
+
+    def test_retag_snippet_chained_and_fail_closed(self, tmp_path):
+        """retag heredoc 片段行为级验证：链式 retag（binary→deb→rpm）幂等、
+        非 kind 字段逐字节保留、未知源 kind fail-closed。"""
+        import json
+        import re
+        import subprocess
+        import sys
+
+        text = _read(self.PATH)
+        m = re.search(r"<<'PYEOF'[^\n]*\n(.*?)\nPYEOF", text, re.S)
+        assert m, "retag heredoc 缺失"
+        snippet = m.group(1)
+
+        src = {
+            "schema_version": 1,
+            "product_version": "1.0.6",
+            "git_sha": "a" * 40,
+            "build_id": "ci-123",
+            "artifact_kind": "linux-binary",
+            "dirty": False,
+        }
+        target = tmp_path / "build-info.json"
+        target.write_text(json.dumps(src, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        for kind in ("linux-deb", "linux-rpm"):  # 模拟 build-linux.sh 真实调用序
+            r = subprocess.run(
+                [sys.executable, "-c", snippet, kind, str(target)],
+                capture_output=True,
+                text=True,
+            )
+            assert r.returncode == 0, r.stderr
+            after = json.loads(target.read_text(encoding="utf-8"))
+            assert after["artifact_kind"] == kind
+            assert {k: v for k, v in after.items() if k != "artifact_kind"} == {
+                k: v for k, v in src.items() if k != "artifact_kind"
+            }, "retag 漂移了非 kind 字段"
+
+        # fail-closed：未知源 kind 拒绝改写
+        target.write_text(json.dumps(dict(src, artifact_kind="windows-exe")), encoding="utf-8")
+        r = subprocess.run(
+            [sys.executable, "-c", snippet, "linux-deb", str(target)],
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode != 0 and "retag 源 kind 异常" in r.stderr
 
 
 class TestBuildWindowsScript:

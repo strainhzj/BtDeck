@@ -35,9 +35,9 @@ class TestRealRepository:
 
     def test_qbittorrent_api_unified_at_2025_2(self, checker):
         locked = checker.parse_locked_requirements(_REPO_ROOT / checker.LOCK_RELPATH)
-        assert locked["qbittorrent-api"].startswith("2025.2."), (
-            f"qB 仍分叉或未锁 2025.2.x：{locked.get('qbittorrent-api')}"
-        )
+        assert locked["qbittorrent-api"].startswith(
+            "2025.2."
+        ), f"qB 仍分叉或未锁 2025.2.x：{locked.get('qbittorrent-api')}"
 
     def test_forbidden_extras_removed_from_packaging(self, checker):
         for relpath in checker.PACKAGING_RELPATHS.values():
@@ -50,19 +50,38 @@ class TestRealRepository:
         declared = checker.declared_common_versions(_REPO_ROOT / checker.COMMON_REQUIREMENTS_RELPATH)
         assert declared["qbittorrent-api"] == "2025.2.0"
 
+    def test_windows_transitive_deps_explicitly_locked(self):
+        """Windows 传递依赖必须显式入锁（W3 CI 第五/七轮实测拦截）。
+
+        锁内嵌 --hash 行会让 pip 自动进哈希模式；Windows 上解析到不在锁内的
+        传递依赖（colorama←click、tzdata←tzlocal 的 win 标记依赖）时安装失败。
+        Linux 生成的锁天然不含它们——必须带平台标记 + 双哈希手动入锁，
+        且 requirements.txt 同步声明（保持"源→锁"可追溯）。
+        """
+        lock_text = (_REPO_ROOT / "backend" / "requirements-lock.txt").read_text(encoding="utf-8")
+        req_text = (_REPO_ROOT / "backend" / "requirements.txt").read_text(encoding="utf-8")
+        for pkg in ("colorama", "tzdata"):
+            for text, label in ((lock_text, "锁"), (req_text, "requirements.txt")):
+                assert pkg in text, f"{pkg} 未在 {label} 中声明（Windows 传递依赖显式入锁契约）"
+            # 锁条目必须带平台标记（无标记则 Linux freeze↔锁比对漂移）
+            for line in lock_text.splitlines():
+                if line.startswith(f"{pkg}=="):
+                    assert (
+                        "win32" in line or "Windows" in line
+                    ), f"{pkg} 锁条目缺平台标记：{line}（Linux 解析时会被误装入闭包比对）"
+                    break
+            else:
+                pytest.fail(f"{pkg} 锁条目缺失（无 == 起始行）")
+
 
 def _write_dep_tree(root: Path, *, lock_text: str, packaging_text: str) -> None:
     (root / "backend").mkdir(parents=True, exist_ok=True)
-    (root / "backend/requirements.txt").write_text(
-        "fastapi~=0.115.6\nqbittorrent-api~=2025.2.0\n", encoding="utf-8"
-    )
+    (root / "backend/requirements.txt").write_text("fastapi~=0.115.6\nqbittorrent-api~=2025.2.0\n", encoding="utf-8")
     (root / "backend/requirements-lock.txt").write_text(lock_text, encoding="utf-8")
     deploy = root / "deploy"
     deploy.mkdir(parents=True, exist_ok=True)
     (deploy / "requirements-windows-package.txt").write_text(packaging_text, encoding="utf-8")
-    (deploy / "requirements-linux-package.txt").write_text(
-        "pyinstaller~=6.20.0\n", encoding="utf-8"
-    )
+    (deploy / "requirements-linux-package.txt").write_text("pyinstaller~=6.20.0\n", encoding="utf-8")
 
 
 _GOOD_LOCK = (

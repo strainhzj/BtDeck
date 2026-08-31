@@ -66,7 +66,7 @@ EOF
     else
         build_one w3-debian-sysd <<'EOF'
 FROM debian:12
-RUN apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 \
+RUN apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 python3 \
     && ln -sf /lib/systemd/systemd /sbin/init \
     && rm -f /etc/machine-id
 CMD ["/sbin/init"]

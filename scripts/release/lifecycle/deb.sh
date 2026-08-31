@@ -35,7 +35,11 @@ done
 [ -f "$NEW_DEB" ] || die "新包不存在: $NEW_DEB"
 
 wait_healthy() {  # wait_healthy <version-substr>
-    wait_http "http://127.0.0.1:5001/health/live" "\"version\":\"$1\"" 180
+    # v1.0.5 冻结制品的健康契约无 version 字段（version/build 是 v1.0.6 W1 引入），
+    # 基线就绪只能断言 data.status=alive；v1.0.6 仍按 version 精确断言
+    local want="\"version\":\"$1\""
+    [ "$1" = "1.0.5" ] && want="\"status\":\"alive\""
+    wait_http "http://127.0.0.1:5001/health/live" "$want" 180
 }
 
 install_deb() { dpkg -i "$1" >/tmp/dpkg-install.log 2>&1; }

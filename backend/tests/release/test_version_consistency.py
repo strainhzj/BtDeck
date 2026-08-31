@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import importlib.util
 import re
-import sys
 from pathlib import Path
 
 import pytest
@@ -48,9 +47,7 @@ class TestRealRepositoryConsistency:
 def _write_minimal_tree(root: Path, *, product_version: str, overrides: dict) -> None:
     """构造六文件最小版本树；overrides 形如 {"backend/app/version.py": "1.0.7"}。"""
     defaults = {
-        "release/release-config.json": (
-            '{"candidate": {"product_version": "%s"}}' % product_version
-        ),
+        "release/release-config.json": ('{"candidate": {"product_version": "%s"}}' % product_version),
         "backend/app/version.py": 'CURRENT_VERSION = "%s"\n' % product_version,
         "frontend/package.json": '{"version": "%s"}\n' % product_version,
         "feature_list.json": '{"release_version": "%s"}\n' % product_version,

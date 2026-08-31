@@ -164,8 +164,33 @@ if [ "$BUILD_PACKAGE" = "1" ]; then
     cp "${DIST_DIR}/btdeck" "${PKG_STAGING}${INSTALL_DIR}/"
     chmod +x "${PKG_STAGING}${INSTALL_DIR}/btdeck"
 
-    # 发布身份随包分发（计划 §4.3：包内 /opt/btdeck/build-info.json 与二进制一致）
+    # 发布身份随包分发（计划 §4.3/§158：包内 /opt/btdeck/build-info.json 与二进制
+    # 身份一致，唯 artifact_kind 为包型（linux-deb/linux-rpm）；二进制内嵌身份保持
+    # linux-binary 中间制品语义。W3 生命周期断言包内 kind 必须是包型。
     cp "${STAGING_DIR}/build-info.json" "${STAGING_DIR}/source-manifest.json" "${STAGING_DIR}/frontend-asset-manifest.json" "${PKG_STAGING}${INSTALL_DIR}/"
+
+    # 包内身份按包型改写 artifact_kind（就地单字段改写，其余字段与二进制逐字节一致；
+    # 不重跑 generate_build_info.py——重跑会重算 build_id 等派生字段造成身份漂移）
+    retag_build_info() {
+        python3 - "$1" "${PKG_STAGING}${INSTALL_DIR}/build-info.json" <<'PYEOF' || fail "包内 build-info retag 失败（kind=$1）"
+import json, sys
+
+kind, path = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as f:
+    before = json.load(f)
+assert before["artifact_kind"] in ("linux-binary", "linux-deb", "linux-rpm"), f"retag 源 kind 异常：{before['artifact_kind']!r}"
+info = dict(before, artifact_kind=kind)
+with open(path, "w", encoding="utf-8", newline="\n") as f:
+    json.dump(info, f, indent=2, sort_keys=True)
+    f.write("\n")
+with open(path, encoding="utf-8") as f:
+    after = json.load(f)
+stripped = lambda d: {k: v for k, v in d.items() if k != "artifact_kind"}
+assert after["artifact_kind"] == kind and stripped(after) == stripped(before), "retag 后非 kind 字段发生漂移"
+print(f"[OK] 包内 build-info retag: linux-binary -> {kind}")
+PYEOF
+    }
+    retag_build_info linux-deb
 
     # 复制 systemd service 文件
     cp "${DEPLOY_DIR}/btdeck.service" "${PKG_STAGING}/etc/systemd/system/"
@@ -196,6 +221,7 @@ if [ "$BUILD_PACKAGE" = "1" ]; then
         opt
 
     # 构建 .rpm
+    retag_build_info linux-rpm
     fpm -s dir --force \
         -t rpm \
         -n btdeck \

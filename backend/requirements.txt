@@ -44,6 +44,11 @@ starlette~=0.41.3
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
+# tzlocal 在 Windows 的传递依赖（tzdata；platform_system=='Windows'），
+# 必须显式入锁：Linux 生成的锁不含它，Windows 安装锁时 pip 会因未锁定的
+# 传递依赖在哈希模式下失败（W3 CI 实测拦截，与 colorama 同型）。带平台标记，
+# Linux 运行时不安装。
+tzdata==2026.3; platform_system == "Windows"
 python-multipart~=0.0.20
 pydantic-settings~=2.12.0
 croniter~=3.0.4
