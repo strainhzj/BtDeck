@@ -130,15 +130,22 @@ class TestBuildWindowsScript:
 
         NSSM 启动的进程 SESSIONNAME 不一定是 "services"，desktop_main 的
         桌面分支判定会误入 GUI 启动器——无头环境卡死、端口永不监听。
+        服务输出必须落盘（AppStdout/AppStderr）：服务会话无控制台，不落盘
+        则启动失败无从诊断（W3 CI 第十一轮实测：服务 Running 端口不监听）。
         """
         iss = _read("deploy/btdeck.iss")
         assert (
             "AppEnvironmentExtra" in iss and "BTDECK_DESKTOP_WINDOW=0" in iss
         ), "btdeck.iss 的 NSSM 服务未注入 BTDECK_DESKTOP_WINDOW=0（服务禁止弹桌面窗口）"
+        for nssm_key in ("AppStdout", "AppStderr", "AppRotateFiles"):
+            assert nssm_key in iss, f"btdeck.iss 的 NSSM 未配置 {nssm_key}（服务日志落盘）"
         ps1 = _read("scripts/release/lifecycle/windows.ps1")
         assert (
             '$env:BTDECK_DESKTOP_WINDOW = "0"' in ps1
         ), "windows.ps1 未强制 EXE 服务端模式（CI 用户态会话会触发 GUI 启动器卡死）"
+        assert (
+            '$env:PYTHONIOENCODING = "utf-8"' in ps1
+        ), "windows.ps1 未设 PYTHONIOENCODING（v1.0.5 冻结夹具的中文 print 在 cp1252 崩）"
 
     def test_consumes_single_frontend_build(self):
         text = _read(self.PATH)

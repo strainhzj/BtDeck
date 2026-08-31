@@ -1,4 +1,4 @@
-# BtDeck Windows 生命周期驱动（release-artifact-equivalence-gate task .5 / G6）
+﻿# BtDeck Windows 生命周期驱动（release-artifact-equivalence-gate task .5 / G6）
 # 仅在 GitHub windows-2022 Runner 执行（本机无 ISCC，本地结果记 NOT_RUN，不得默认通过）。
 #
 # 前置（同 job 内先完成）：
@@ -92,8 +92,15 @@ if (-not $okA) {
 if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
     $secret1 = (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash
 } else { $secret1 = $null; Get-ChildItem $IsoDir -Recurse | Select-Object -First 5 | ForEach-Object { Write-Output $_.FullName } }
-Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
+# 按进程名杀全部实例（onefile bootloader 与 Python 子进程是两个 PID，只杀
+# 启动句柄的 PID 会留下占着 5001 的子进程——W3 CI 实测 stop_port_freed FAIL
+# 连锁二次启动失败），并轮询等待端口真正释放
+Stop-BtDeckProcesses
+$portFreeDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $portFreeDeadline) {
+    if (-not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Seconds 2
+}
 $portFreed = -not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)
 Add-Phase "portable_exe_stop_port_freed" $portFreed
 $p2 = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden
@@ -101,7 +108,6 @@ $body2 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
 $secret2 = if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
     (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash } else { $null }
 Add-Phase "portable_exe_restart_secret_stable" ($null -ne $body2 -and $secret1 -eq $secret2 -and $null -ne $secret1)
-Stop-Process -Id $p2.Id -Force -ErrorAction SilentlyContinue
 Stop-BtDeckProcesses
 
 # ---------------- 场景 B：Setup 生命周期 ----------------
@@ -114,7 +120,18 @@ if ($null -eq $SetupExe) {
     $bodyB = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"'
     $single = ($svc | Measure-Object).Count -eq 1 -and $svc.Status -eq "Running"
     $listeners = @(Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue).Count
-    Add-Phase "setup_silent_install" ($single -and $null -ne $bodyB -and $listeners -eq 1) "listeners=$listeners"
+    $b1ok = $single -and $null -ne $bodyB -and $listeners -eq 1
+    Add-Phase "setup_silent_install" $b1ok "listeners=$listeners"
+    if (-not $b1ok) {
+        # 服务侧诊断：Setup 的 NSSM 已把 stdout/stderr 落盘到 logs\service-*.log
+        foreach ($svcl in @("service-stderr.log", "service-stdout.log")) {
+            $lp = Join-Path $InstallDir "logs\$svcl"
+            if (Test-Path $lp) {
+                Write-Output "[DIAG] $lp : $((Get-Content $lp -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
+            }
+        }
+        & "$ProjectRoot\deploy\nssm.exe" status BtDeck 2>$null | ForEach-Object { Write-Output "[DIAG] nssm status: $_" }
+    }
 
     $envFile = Join-Path $InstallDir "config\btdeck.env"
     $secretB1 = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
@@ -133,12 +150,24 @@ if ($null -eq $SetupExe) {
     $markerPath = Join-Path $InstallDir "config\w3-marker.txt"
     if ($V105PortableExe -and (Test-Path $V105PortableExe)) {
         Stop-BtDeckProcesses
+        # 端口释放等待：v1.0.5 夹具与 v1.0.6 服务共用 5001，残留监听会让夹具起不来
+        $b3Deadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $b3Deadline) {
+            if (-not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Seconds 2
+        }
         Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
-        $pf = Start-Process -FilePath (Join-Path $InstallDir "btdeck-v105-fixture.exe") -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden
+        $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
+        $pf = Start-Process -FilePath (Join-Path $InstallDir "btdeck-v105-fixture.exe") -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
+            -RedirectStandardError $v105Out
         $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
         Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
+        if ($null -eq $bodyV105) {
+            $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
+            Write-Output "[DIAG] v105 fixture stderr: $((Get-Content $v105Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
+        }
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
+        Stop-BtDeckProcesses
         Set-Content -Path $markerPath -Value "w3-windows-upgrade"
         $secretBefore = (Get-FileHash $envFile -Algorithm SHA256).Hash
 

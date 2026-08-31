@@ -41,6 +41,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startmenuicon"; Description: "Create Start Menu shortcut"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "startup"; Description: "Run at Windows startup"; GroupDescription: "Auto Start"; Flags: unchecked
 
+[Dirs]
+; NSSM 服务日志（AppStdout/AppStderr）与应用日志的落盘目录
+Name: "{app}\logs"; Permissions: users-modify
+
 [Files]
 ; 主可执行文件（PyInstaller 输出到 dist/ 目录）
 Source: "..\dist\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -99,6 +103,11 @@ begin
         desktop_main 的桌面分支判定会误入 GUI 启动器（无头环境卡死、端口永不监听，
         W3 CI 实测拦截）。服务永远不该弹桌面窗口。 }
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppEnvironmentExtra "BTDECK_DESKTOP_WINDOW=0"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      { 服务输出落盘：服务会话无控制台，stdout/stderr 不落盘则启动失败无从诊断
+        （W3 CI 实测：服务 Running 但端口不监听，无任何日志可查） }
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppStdout "' + ExpandConstant('{app}\logs\service-stdout.log') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppStderr "' + ExpandConstant('{app}\logs\service-stderr.log') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppRotateFiles 1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Description "BtDeck - BitTorrent Management Platform"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Start SERVICE_AUTO_START', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'start BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
