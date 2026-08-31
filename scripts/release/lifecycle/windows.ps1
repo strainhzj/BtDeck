@@ -107,8 +107,20 @@ while ((Get-Date) -lt $portFreeDeadline) {
 }
 $portFreed = -not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)
 Add-Phase "portable_exe_stop_port_freed" $portFreed
-$p2 = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden
+# 二次启动同样重定向输出（v1.0.6 有入口 reconfigure，utf-8 落盘安全）——
+# 第十四轮二次启动失败无任何输出可诊断
+$Exe2OutLog = Join-Path $IsoDir "exe2-stdout.log"
+$Exe2ErrLog = Join-Path $IsoDir "exe2-stderr.log"
+$p2 = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden `
+    -RedirectStandardOutput $Exe2OutLog -RedirectStandardError $Exe2ErrLog
 $body2 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
+if ($null -eq $body2) {
+    foreach ($log in @($Exe2ErrLog, $Exe2OutLog)) {
+        if (Test-Path $log) {
+            Write-Output "[DIAG] ${log}: $((Get-Content $log -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
+        }
+    }
+}
 $secret2 = if (Test-Path $secretFile) {
     (Get-FileHash $secretFile -Algorithm SHA256).Hash } else { $null }
 Add-Phase "portable_exe_restart_secret_stable" ($null -ne $body2 -and $secret1 -eq $secret2 -and $null -ne $secret1)
@@ -168,22 +180,26 @@ if ($null -eq $SetupExe) {
             Start-Sleep -Seconds 2
         }
         Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
-        # v1.0.5 夹具（冻结，其 lifespan 的中文 print 在 cp1252 崩且不可修）三路防护：
-        #   1) 不提供重定向句柄——windowed EXE 无句柄时 sys.stdout/stderr 为 None，
-        #      CPython print 对 None 流静默返回不崩（第十二轮的重定向反而制造了
-        #      cp1252 TextIOWrapper 崩溃流）
-        #   2) cmd 包装 shell 层 set PYTHONUTF8=1 + PYTHONIOENCODING（若句柄意外
-        #      存在，强制 UTF-8；不依赖 PowerShell env 继承链）
-        #   3) 端口/进程清理由 Stop-BtDeckProcesses 按名兜底
+        # v1.0.5 夹具（冻结，lifespan 中文 print 在 cp1252 崩且不可修）：
+        # wrapper.bat 在同一 cmd 实例内 set（无任何跨进程环境传递环节，区别于
+        # Start-Process 参数式 /c "set ...&&"——后者在 CI 上实测未生效）+
+        # cmd 层 2> 重定向保留 stderr 证据；PYTHONUTF8=1 强制全 IO UTF-8。
         $fixturePath = Join-Path $InstallDir "btdeck-v105-fixture.exe"
-        $pf = Start-Process -FilePath "$env:ComSpec" -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
-            -ArgumentList '/c', "set PYTHONUTF8=1&& set PYTHONIOENCODING=utf-8&& `"$fixturePath`""
+        $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
+        $wrapperBat = Join-Path $InstallDir "run-v105-fixture.bat"
+        Set-Content -Path $wrapperBat -Value (
+            "@echo off`r`n" +
+            "set PYTHONUTF8=1`r`n" +
+            "set PYTHONIOENCODING=utf-8`r`n" +
+            "`"$fixturePath`" 2>`"$v105Out`""
+        ) -Encoding Ascii
+        $pf = Start-Process -FilePath $wrapperBat -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden
         $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
         Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
         if ($null -eq $bodyV105) {
             $cfg = Join-Path $InstallDir "config\config.yaml"
             Write-Output "[DIAG] v105 fixture config exists: $(Test-Path $cfg); processes: $((Get-Process btdeck* -ErrorAction SilentlyContinue | Measure-Object).Count)"
-            Write-Output "[DIAG] install dir: $((Get-ChildItem $InstallDir -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object { $_.Name }) -join ' ')"
+            Write-Output "[DIAG] v105 stderr: $((Get-Content $v105Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
         }
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
         Stop-BtDeckProcesses
