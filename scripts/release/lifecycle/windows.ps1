@@ -63,6 +63,10 @@ $InstallDir = "$env:ProgramFiles\BtDeck"
 # EXE 弹 GUI 启动器等待交互 → 无头环境卡死、端口永不监听（W3 CI 实测拦截）。
 # Start-Process 继承当前进程环境变量。
 $env:BTDECK_DESKTOP_WINDOW = "0"
+# v1.0.5 冻结夹具兜底：其 yamlConfig 仍用中文 print（不可改），cp1252 控制台
+# 会 UnicodeEncodeError 崩启动链；PYTHONIOENCODING 让标准流转 UTF-8。
+# v1.0.6 已由 desktop_main 入口 reconfigure 根治，此处对旧制品双保险。
+$env:PYTHONIOENCODING = "utf-8"
 $IsoDir = Join-Path $env:RUNNER_TEMP "w3-iso"
 New-Item -ItemType Directory -Force -Path $IsoDir | Out-Null
 Copy-Item $NewExe (Join-Path $IsoDir "btdeck.exe")

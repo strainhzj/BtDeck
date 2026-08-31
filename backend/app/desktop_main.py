@@ -1,8 +1,17 @@
 import logging
 import os
+import sys
 import threading
 import time
 import urllib.request
+
+# Windows 编码兜底（W3 CI 第十轮实测拦截）：西文/CI runner 的控制台默认
+# cp1252，任何含中文的 print（yamlConfig 首启"配置文件不存在"警告等）会
+# UnicodeEncodeError 直接崩溃启动链。必须在下方 app.* 导入（会触发
+# yamlConfig.load）之前重配置标准流。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 import uvicorn
 import webview
