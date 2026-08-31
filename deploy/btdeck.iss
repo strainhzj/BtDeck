@@ -95,6 +95,10 @@ begin
       { 使用 NSSM 注册服务（解决 PyInstaller 控制台程序无法满足 SCM 协议的问题） }
       Exec(ExpandConstant('{app}\nssm.exe'), 'install BtDeck "' + ExpandConstant('{app}\{#AppExeName}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppDirectory "' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      { 服务形态强制服务端模式：NSSM 启动的进程 SESSIONNAME 不一定是 "services"，
+        desktop_main 的桌面分支判定会误入 GUI 启动器（无头环境卡死、端口永不监听，
+        W3 CI 实测拦截）。服务永远不该弹桌面窗口。 }
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppEnvironmentExtra "BTDECK_DESKTOP_WINDOW=0"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Description "BtDeck - BitTorrent Management Platform"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Start SERVICE_AUTO_START', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'start BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

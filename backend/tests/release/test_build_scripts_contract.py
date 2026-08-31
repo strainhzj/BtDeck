@@ -125,6 +125,21 @@ class TestBuildWindowsScript:
         text = _read(self.PATH)
         assert "Inno Setup build failed in release mode - failing the build" in text
 
+    def test_nssm_service_forces_server_mode(self):
+        """服务形态必须强制服务端模式（W3 CI 第九轮实测拦截）。
+
+        NSSM 启动的进程 SESSIONNAME 不一定是 "services"，desktop_main 的
+        桌面分支判定会误入 GUI 启动器——无头环境卡死、端口永不监听。
+        """
+        iss = _read("deploy/btdeck.iss")
+        assert (
+            "AppEnvironmentExtra" in iss and "BTDECK_DESKTOP_WINDOW=0" in iss
+        ), "btdeck.iss 的 NSSM 服务未注入 BTDECK_DESKTOP_WINDOW=0（服务禁止弹桌面窗口）"
+        ps1 = _read("scripts/release/lifecycle/windows.ps1")
+        assert (
+            '$env:BTDECK_DESKTOP_WINDOW = "0"' in ps1
+        ), "windows.ps1 未强制 EXE 服务端模式（CI 用户态会话会触发 GUI 启动器卡死）"
+
     def test_consumes_single_frontend_build(self):
         text = _read(self.PATH)
         assert "check_prebuilt_frontend.py" in text

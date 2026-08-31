@@ -59,16 +59,32 @@ $IsccNssm = Join-Path $ProjectRoot "deploy\nssm.exe"
 $InstallDir = "$env:ProgramFiles\BtDeck"
 
 # ---------------- 场景 A：免安装 EXE ----------------
+# 强制服务端模式：CI runner 的用户态会话会让 desktop_main 的桌面分支判定为真，
+# EXE 弹 GUI 启动器等待交互 → 无头环境卡死、端口永不监听（W3 CI 实测拦截）。
+# Start-Process 继承当前进程环境变量。
+$env:BTDECK_DESKTOP_WINDOW = "0"
 $IsoDir = Join-Path $env:RUNNER_TEMP "w3-iso"
 New-Item -ItemType Directory -Force -Path $IsoDir | Out-Null
 Copy-Item $NewExe (Join-Path $IsoDir "btdeck.exe")
-$p = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden
+# 输出重定向：EXE 启动失败时保留错误证据（Hidden 窗口会吞掉全部输出）
+$ExeOutLog = Join-Path $IsoDir "exe-stdout.log"
+$ExeErrLog = Join-Path $IsoDir "exe-stderr.log"
+$p = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden `
+    -RedirectStandardOutput $ExeOutLog -RedirectStandardError $ExeErrLog
 # 健康响应为紧凑 JSON（无空格分隔符），-match 匹配串一律不带空格（CI 实测拦截）。
 # v1.0.5 冻结制品的健康契约无 version/build 字段（v1.0.6 W1 引入），其就绪只能断言
 # data.status=alive；v1.0.6 仍按 version 精确断言。
 $body = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
 $okA = $null -ne $body -and $body -match '"version":"1.0.6"' -and $body -match '"build":\{"status":"ok"'
 Add-Phase "portable_exe_start_identity" $okA ("last=" + ($body -replace '\s+', '')[0..120] -join '')
+if (-not $okA) {
+    foreach ($log in @($ExeErrLog, $ExeOutLog)) {
+        if (Test-Path $log) {
+            $tail = (Get-Content $log -Tail 15 -ErrorAction SilentlyContinue) -join ' | '
+            Write-Output "[DIAG] ${log}: $tail"
+        }
+    }
+}
 if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
     $secret1 = (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash
 } else { $secret1 = $null; Get-ChildItem $IsoDir -Recurse | Select-Object -First 5 | ForEach-Object { Write-Output $_.FullName } }
