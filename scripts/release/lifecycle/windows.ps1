@@ -89,8 +89,12 @@ if (-not $okA) {
         }
     }
 }
-if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
-    $secret1 = (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash
+# Windows EXE 形态的密钥落在 config.yaml（security 段：init_config_file 生成，
+# settings 读取；btdeck.env 是 deb/rpm postinst 概念，Windows 下不存在——
+# 第十三轮实测 null==null 假 stable 使 $null 断言挂）
+$secretFile = Join-Path $IsoDir "config\config.yaml"
+if (Test-Path $secretFile) {
+    $secret1 = (Get-FileHash $secretFile -Algorithm SHA256).Hash
 } else { $secret1 = $null; Get-ChildItem $IsoDir -Recurse | Select-Object -First 5 | ForEach-Object { Write-Output $_.FullName } }
 # 按进程名杀全部实例（onefile bootloader 与 Python 子进程是两个 PID，只杀
 # 启动句柄的 PID 会留下占着 5001 的子进程——W3 CI 实测 stop_port_freed FAIL
@@ -105,8 +109,8 @@ $portFreed = -not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorActi
 Add-Phase "portable_exe_stop_port_freed" $portFreed
 $p2 = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden
 $body2 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
-$secret2 = if (Test-Path (Join-Path $IsoDir "config\btdeck.env")) {
-    (Get-FileHash (Join-Path $IsoDir "config\btdeck.env") -Algorithm SHA256).Hash } else { $null }
+$secret2 = if (Test-Path $secretFile) {
+    (Get-FileHash $secretFile -Algorithm SHA256).Hash } else { $null }
 Add-Phase "portable_exe_restart_secret_stable" ($null -ne $body2 -and $secret1 -eq $secret2 -and $null -ne $secret1)
 Stop-BtDeckProcesses
 
@@ -133,7 +137,8 @@ if ($null -eq $SetupExe) {
         & "$ProjectRoot\deploy\nssm.exe" status BtDeck 2>$null | ForEach-Object { Write-Output "[DIAG] nssm status: $_" }
     }
 
-    $envFile = Join-Path $InstallDir "config\btdeck.env"
+    # Windows EXE 形态的密钥在 config.yaml（security 段），非 btdeck.env
+    $envFile = Join-Path $InstallDir "config\config.yaml"
     $secretB1 = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
 
     # B2 同版本静默覆盖
@@ -163,18 +168,22 @@ if ($null -eq $SetupExe) {
             Start-Sleep -Seconds 2
         }
         Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
-        $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
-        # 经 cmd 包装在 shell 层注入 env（解释器启动前必达）：CI 上 PowerShell 的
-        # $env: 继承对 v1.0.5 夹具未生效（第十二轮实测 stderr 仍 cp1252 崩在
-        # lifespan 的中文 print），shell 层 set 不依赖任何继承链
+        # v1.0.5 夹具（冻结，其 lifespan 的中文 print 在 cp1252 崩且不可修）三路防护：
+        #   1) 不提供重定向句柄——windowed EXE 无句柄时 sys.stdout/stderr 为 None，
+        #      CPython print 对 None 流静默返回不崩（第十二轮的重定向反而制造了
+        #      cp1252 TextIOWrapper 崩溃流）
+        #   2) cmd 包装 shell 层 set PYTHONUTF8=1 + PYTHONIOENCODING（若句柄意外
+        #      存在，强制 UTF-8；不依赖 PowerShell env 继承链）
+        #   3) 端口/进程清理由 Stop-BtDeckProcesses 按名兜底
         $fixturePath = Join-Path $InstallDir "btdeck-v105-fixture.exe"
         $pf = Start-Process -FilePath "$env:ComSpec" -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
-            -RedirectStandardError $v105Out `
-            -ArgumentList '/c', "set PYTHONIOENCODING=utf-8&& `"$fixturePath`""
+            -ArgumentList '/c', "set PYTHONUTF8=1&& set PYTHONIOENCODING=utf-8&& `"$fixturePath`""
         $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
         Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
         if ($null -eq $bodyV105) {
-            Write-Output "[DIAG] v105 fixture stderr: $((Get-Content $v105Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
+            $cfg = Join-Path $InstallDir "config\config.yaml"
+            Write-Output "[DIAG] v105 fixture config exists: $(Test-Path $cfg); processes: $((Get-Process btdeck* -ErrorAction SilentlyContinue | Measure-Object).Count)"
+            Write-Output "[DIAG] install dir: $((Get-ChildItem $InstallDir -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object { $_.Name }) -join ' ')"
         }
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
         Stop-BtDeckProcesses
