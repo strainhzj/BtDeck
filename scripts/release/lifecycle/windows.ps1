@@ -139,12 +139,18 @@ if ($null -eq $SetupExe) {
     # B2 同版本静默覆盖
     Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
     Start-Sleep -Seconds 5
+    # 重装后服务可能短暂重启中：先等健康（服务端就绪），再判服务态（时序鲁棒）
+    $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 60
+    if ($null -eq $bodyB2) {
+        & $IsccNssm start BtDeck 2>$null | Out-Null
+        $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 60
+    }
     $svc2 = Get-Service -Name BtDeck -ErrorAction SilentlyContinue
     $secretB2 = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
     $svcCount = @(Get-Service -Name BtDeck -ErrorAction SilentlyContinue).Count
-    Add-Phase "setup_same_version_reinstall" `
-        ($svcCount -eq 1 -and $svc2.Status -eq "Running" -and $secretB1 -eq $secretB2 -and $null -ne $secretB1) `
-        "services=$svcCount secretStable=$($secretB1 -eq $secretB2)"
+    $b2ok = $svcCount -eq 1 -and $svc2.Status -eq "Running" -and $secretB1 -eq $secretB2 -and $null -ne $secretB1 -and $null -ne $bodyB2
+    Add-Phase "setup_same_version_reinstall" $b2ok `
+        "services=$svcCount status=$($svc2.Status) secretStable=$($secretB1 -eq $secretB2) health=$($null -ne $bodyB2)"
 
     # B3 v1.0.5 夹具植入（portable 落位安装目录运行一次，产生 v1.0.5 期配置/数据库）
     $markerPath = Join-Path $InstallDir "config\w3-marker.txt"
@@ -158,16 +164,26 @@ if ($null -eq $SetupExe) {
         }
         Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
         $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
-        $pf = Start-Process -FilePath (Join-Path $InstallDir "btdeck-v105-fixture.exe") -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
-            -RedirectStandardError $v105Out
+        # 经 cmd 包装在 shell 层注入 env（解释器启动前必达）：CI 上 PowerShell 的
+        # $env: 继承对 v1.0.5 夹具未生效（第十二轮实测 stderr 仍 cp1252 崩在
+        # lifespan 的中文 print），shell 层 set 不依赖任何继承链
+        $fixturePath = Join-Path $InstallDir "btdeck-v105-fixture.exe"
+        $pf = Start-Process -FilePath "$env:ComSpec" -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
+            -RedirectStandardError $v105Out `
+            -ArgumentList '/c', "set PYTHONIOENCODING=utf-8&& `"$fixturePath`""
         $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
         Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
         if ($null -eq $bodyV105) {
-            $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
             Write-Output "[DIAG] v105 fixture stderr: $((Get-Content $v105Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
         }
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
         Stop-BtDeckProcesses
+        # 夹具释放 5001 后再走升级（v1.0.6 服务与夹具同端口）
+        $b3StopDeadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $b3StopDeadline) {
+            if (-not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Seconds 2
+        }
         Set-Content -Path $markerPath -Value "w3-windows-upgrade"
         $secretBefore = (Get-FileHash $envFile -Algorithm SHA256).Hash
 
