@@ -5438,7 +5438,8 @@
             "deploy/btdeck.iss",
             "deploy/build-windows.bat",
             ".github/workflows/release-gate.yml"
-          ]
+          ],
+          "evidence": "2026-08-31 W3 部分完成：windows.ps1 已落地（EXE 隔离双启+Setup 静默全周期+v1.0.5 夹具升级+卸载数据保留）；CI w3-lifecycle-windows job 就绪；本机无 ISCC 记 NOT_RUN。待 CI 全绿后置 done。锁 colorama/require-hashes 等六轮 CI 修复已提交（356c89d）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.6",
@@ -5452,7 +5453,8 @@
             "deploy/build-linux.sh",
             "deploy/btdeck.service",
             ".github/workflows/release-gate.yml"
-          ]
+          ],
+          "evidence": "2026-08-31 W3 核心链路实证绿（本地 Debian 12 容器）：R11 修复落地（package-scripts/ 三文件+fpm 布线）；deb-upgrade v105→v106 PASS+head 推进 PASS+secret 保留 PASS+remove 数据保留 PASS。PrivateTmp/coreutils 兜底/degraded 守卫三个生产缺陷修复。CI 六轮迭代修复了 node 版本值/bat 括号/safe.directory/colorama/curl 冲突。deb.sh/rpm.sh 驱动+make_v105_baseline+run_deb_rpm 编排器全部就绪。CI 全绿待下一轮干净 dispatch。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.7",
@@ -5467,7 +5469,8 @@
             "frontend/Dockerfile.prod",
             "build-images.sh",
             ".github/workflows/release-gate.yml"
-          ]
+          ],
+          "evidence": "2026-08-31 W3 部分完成：docker.sh 驱动+compose 测试模板就绪；v1.0.5 夹具镜像构建 PASS；幂等 up/force-recreate/升级/down-up 场景框架就绪。v105 后端容器在 compose 环境启动后挂住（btdeck_startup.sh 兼容性，非 v1.0.6 缺陷）需诊断。CI job 就绪。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.8",

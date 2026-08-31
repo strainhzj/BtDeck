@@ -6373,3 +6373,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **真实页面验证**：本地启动 FastAPI + Vue 后使用开发登录账号进入“下载器管理”，点击 qb 的“同步”。界面先显示“同步任务已启动: qb”；由于当前 192.168.5.51 下载器未进入 `app.state.store`，协调器返回 failed，页面随后展示“不在 store 缓存中（可能离线或未启用）”的真实原因，没有再误报同步成功。
 - **回归与门禁**：后端同步专项 78 passed / 5 skipped；前端相关 4 suites / 87 tests，全量 91 suites / 1302 tests；`npm run typecheck`、严格 `npm run lint`、`npm run build`、目标 mypy/flake8 全通过。Git Bash 根 `./init.sh --ci`、feature_list JSON 解析与 `git diff --check` 通过。新增测试经 Black formatter API 校验通过；其余已修改的后端存量文件在 HEAD 上已不符合当前 Black 版本，本批不做全文无关重排。生产构建仅有已有 Browserslist/Sass 弃用警告。未新增 API 端点、数据表或 Alembic 迁移。
 - **交付记录**：`feature_list.json` 新增 `downloader-control-room-ui-redesign.4` 并置 done；`docs/roadmap/` 已按路线图维护规则同步入口、方法行号和当前实测测试文件计数。本批未执行 Git 提交，已有 Android/发布制品与 `advancedSearch.generated.ts` 工作保持不动。
+
+## 2026-08-31：v1.0.6 制品等价门禁 W3 批次（task .5/.6/.7 部分完成，CI 收口待下轮）
+
+- **R11 修复**（deploy/package-scripts/）：maintainer scripts 从 build-linux.sh 抽为可测试文件；prerm 按 DEB 字面/RPM 数字参数智能分支（升级只 stop 不 disable），DEB postrm purge 清数据；fpm 布线 DEB 三 scriptlet / RPM 两 scriptlet。
+- **生产缺陷修复（E2E 实测拦截）**：①btdeck.service 补 PrivateTmp=true——ProtectSystem=strict 下 /tmp 只读致 PyInstaller onefile 无法解压（restart 循环）；②postinst SECRET_KEY 兜底链改 coreutils（最小系统无 openssl/python3 时 exit 127）；③postinst 守卫接受容器 degraded 态。
+- **生命周期驱动**：deb.sh/rpm.sh（fresh: 首装+重装+重启×2+remove 数据保留+purge；upgrade: v1.0.5→v1.0.6 R11 断言+secret 保留+head 推进）；docker.sh（v1.0.5 夹具上线→幂等 up→force-recreate→升级→同组合不 recreate→down-up）；windows.ps1（EXE 隔离双启+Setup 静默全周期）；make_v105_baseline.sh（CI 侧 tag 重建）；run_deb_rpm.sh（编排器）。
+- **CI**：release-gate.yml 增 w3-lifecycle-{linux,docker,windows} 三 job（全 checkout fetch-depth 0）。六轮 CI 迭代发现并修复：w1_pinned.node 值带注记→build_frontend 校验失败；bat if 块 echo ASCII 括号→cmd 解析崩溃 exit 255；make_v105 容器内缺 safe.directory；锁缺 colorama（click 的 Windows 传递依赖）；rocky curl-minimal 冲突；Windows --require-hashes 平台标记不兼容。
+- **本地 E2E**（Debian 12 容器）：**deb-fresh reinstall/restart/remove/purge 全 PASS；deb-upgrade v105_to_v106_upgrade PASS + alembic_head_advanced PASS + remove_after_upgrade PASS**——R11 核心链路实证绿。deb-fresh 首装 fail 因 v1.0.6 包在 CI 构建含旧 scriptlets（本地重建的包已修复）。
+- **测试**：tests/release/ 100/100（lifecycle_scripts 22 例：prerm 参数语义 mock systemctl/postrm purge/源码契约）。
+- **CI 现状**：第六轮修复已推送（356c89d），Docker v105 夹具容器启动后挂住（仅 banner 无后续——v1.0.5 Docker 镜像 btdeck_startup.sh 兼容性问题，非 v1.0.6 缺陷）；Linux/Windows CI 可能存在日志缓存未反映最新代码。
+- **遗留**：CI 三 job 全绿需下一轮干净 dispatch；Docker v105 夹具挂住需诊断 btdeck_startup.sh 在 compose 环境的行为；任务 .5/.6/.7 保持 pending 直到 CI 全绿。
