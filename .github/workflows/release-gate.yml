@@ -370,7 +370,7 @@ jobs:
           docker build -t w2-linux-builder - <<'EOF'
           FROM python:3.11-bullseye
           RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm-build cpio \
+                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
           EOF
@@ -625,7 +625,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: w3-lifecycle-docker
-          path: release/evidence/w3/lifecycle-docker.json
+          path: |
+            release/evidence/w3/lifecycle-docker.json
+            release/evidence/w3/*.log
           retention-days: 14
           if-no-files-found: error
 
