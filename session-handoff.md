@@ -1,5 +1,53 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-31：v1.0.6 制品等价门禁 W0/W1/W2 done + W3 阶段性收口（.5/.6/.7 pending CI 全绿）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1(W0 基线+CI 4探针) .2(W1 版本/build-info) .3(W1 依赖锁) .4(W2 唯一前端+严格构建+E2E)
+- **pending**: .5(W3 Windows 生命周期) .6(W3 DEB/RPM 生命周期) .7(W3 Docker 生命周期) .8(W4 黑盒契约) .9(W5/W6 安全+晋级)
+- 分支 dev@27e1135，全部已推送 origin
+- 测试：backend/tests/release/ 100/100 全绿
+
+### W3 已完成内容（本轮提交链 e0d7ebc→27e1135，共 12 个 commit）
+
+- **R11 修复**：deploy/package-scripts/{postinst,prerm,postrm}.sh 从 build-linux.sh 抽出，prerm 按 DEB 字面/RPM 数字参数智能分支（升级只 stop 不 disable）；DEB postrm purge 清数据
+- **三个生产缺陷修复**（E2E 实测拦截）：①btdeck.service 加 PrivateTmp=true（ProtectSystem=strict 下 /tmp 只读→PyInstaller 挂）；②postinst SECRET_KEY 兜底改 coreutils；③postinst 守卫接受 degraded
+- **生命周期驱动**：scripts/release/lifecycle/{deb,rpm,docker,windows}.sh(ps1) + lib.sh + run_deb_rpm.sh + make_v105_baseline.sh + docker-compose.test.yml
+- **本地 E2E 实证绿**：deb-upgrade（v1.0.5→v1.0.6 升级 PASS + Alembic head 推进 PASS + secret 保留 PASS + remove 数据保留 PASS）
+- **CI 六轮迭代修复**：w1_pinned.node 值带注记→校验失败；bat if 块 echo ASCII 括号→exit 255；make_v105 容器内缺 safe.directory；锁缺 colorama（click 的 Win 传递依赖）；rocky curl-minimal 冲突；Windows --require-hashes 平台标记不兼容
+- **锁**：backend/requirements-lock.txt 52 包（补 colorama==0.4.6; sys_platform=="win32" 手动双哈希）
+
+### 下一步（按优先级）
+
+1. **CI 干净 dispatch**：重新触发 w3-lifecycle-{linux,docker,windows} 三 job（workflow_dispatch ref=dev），确认用 27e1135 代码全绿。上轮日志疑似缓存旧版（时间戳未变）。
+   - 注意 master 上有一份 release-gate.yml 注册副本（仅作 dispatch 键），改 workflow 要 dev+master 双同步
+2. **Docker v105 挂住**：v1.0.5 夹具镜像在 compose 环境启动后仅输出 banner 不继续——btdeck_startup.sh 兼容性问题。诊断方向：v1.0.5 tag 的 btdeck_startup.sh 在容器内卡在哪个步骤（可能等 DB lock / 权限 / 环境变量缺失）。artifact 已归档 release/evidence/w3/ci-v6/
+3. **CI 全绿后**：.5/.6/.7 置 done → 进入 W4（task .8 外部黑盒契约）
+4. **W4 要点**：scripts/release/contract_runner.py（不 import app.*）+ compare_snapshots.py + 12 场景（C01~C12）+ release/equivalence-exceptions.json
+
+### 环境坑（勿重踩）
+
+- Windows python/docker CLI 不认 `/c/...` 路径→脚本内一律 cd+相对路径
+- 锁文件内嵌 --hash 行让 pip 自动激活哈希模式→runtime 离线安装用去哈希 pins（Dockerfile 内已处理）
+- Git Bash 下 docker 命令须 `export MSYS_NO_PATHCONV=1`（否则 /app 被改写）
+- python 写 shell 时 `''` 必须字节级核对（MSYS 会吞裸 CR 参数）
+- 严格构建禁止并发跑在同一目录/镜像 tag（竞态实证两次）
+- git worktree 的 .git 指回主仓 Windows 路径，容器内不可用→用本地 clone
+- CRLF 锁文件被 pip 当续行符（整文件拼一行）→.gitattributes 已强制 LF
+- Windows bat 的 if 块内 echo 不能有未转义 ASCII 括号→cmd 解析崩溃
+- apt 直连限速 ~40KB/s；aliyun 可用（tuna 403）；rocky 用 USTC 或 --allowerasing
+- Docker Desktop 引擎会间歇掉线（重启即好）
+- 健康接口 JSON 是紧凑格式（`"version":"x"` 无空格），匹配串别带空格
+- `docker build | tee` 会吞退出码；`grep -E` 才兼容 ugrep
+
+### 仓库状态
+
+- 工作区可能有并行 Android 会话改动（downloader/sync-task 等），勿动
+- 本批全部提交已推送；workflow 在 master 有注册副本需双同步
+- release/evidence/w3/ 含本地 E2E 报告与 CI 诊断日志
+
 ## 2026-08-30：下载器手动种子同步异步生命周期修复（downloader-control-room-ui-redesign.4 done）
 
 ### 已完成
@@ -33,9 +81,11 @@
 
 ### 坑位（重要，复用）
 
-- 锁文件 CRLF 会被 pip 当续行符（整文件拼一行）——.gitattributes 已强制 LF，Dockerfile pins 生成带 `tr -d ''`。
+- 锁文件 CRLF 会被 pip 当续行符（整文件拼一行）——.gitattributes 已强制 LF，Dockerfile pins 生成带 `tr -d '
+'`。
 - Windows 原生 python/docker CLI 不认 `/c/...` 路径：脚本内 python/docker 调用一律 cd+相对路径。
-- python 写 shell 补丁时 `''` 必须字节级核对（本批踩过字面 CR 字节坑，MSYS 还会吞裸 CR 参数）。
+- python 写 shell 补丁时 `'
+'` 必须字节级核对（本批踩过字面 CR 字节坑，MSYS 还会吞裸 CR 参数）。
 - Windows 检出的 CRLF 在 Linux 容器 git 视角是"修改"：容器内 `git config --global core.autocrlf true` 对齐，或干净 clone+LF 重检出。
 - 严格构建禁止并发跑在同一目录/同一镜像 tag（本批竞态实证）。
 - git worktree 的 .git 指回 Windows 主仓路径，容器内不可用——用本地 clone。
