@@ -88,7 +88,9 @@ docker image inspect "$BACKEND_V106" >/dev/null 2>&1 && docker image inspect "$F
     && phase "v106_images_present" PASS
 
 # ---------- 1) v1.0.5 上线 + marker ----------
-docker logs w3-life-backend > "${EVIDENCE_DIR}/lifecycle-docker.v105-backend.log" 2>&1 || true
+if up "$BACKEND_V105"; then
+    docker logs w3-life-backend > "${EVIDENCE_DIR}/lifecycle-docker.v105-backend.log" 2>&1 || true
+fi
 if up "$BACKEND_V105" && backend_health 1.0.5 420; then
     HEAD_BEFORE="$(backend_exec "python -c \"import sqlite3,glob; p=(glob.glob('/app/config/app.db')+glob.glob('/app/data/app.db')); print(sqlite3.connect(p[0]).execute('select version_num from alembic_version').fetchone()[0] if p else 'none')\"" 2>/dev/null || echo none)"
     backend_exec "echo w3-docker-marker > /app/data/w3-marker.txt"

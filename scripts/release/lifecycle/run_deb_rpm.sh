@@ -58,7 +58,7 @@ EOF
 FROM rockylinux:9
 RUN rm -f /etc/yum.repos.d/rocky*.repo \
     && printf '[baseos]\nname=Rocky BaseOS\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/BaseOS/$basearch/os/\ngpgcheck=0\n[appstream]\nname=Rocky AppStream\nbaseurl=https://mirrors.ustc.edu.cn/rocky/$releasever/AppStream/$basearch/os/\ngpgcheck=0\n' > /etc/yum.repos.d/btdeck.repo \
-    && dnf -y install systemd curl sqlite iproute python3 \
+    && dnf -y install systemd sqlite iproute python3 --allowerasing \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]
@@ -73,7 +73,7 @@ CMD ["/sbin/init"]
 EOF
         build_one w3-rocky-sysd <<'EOF'
 FROM rockylinux:9
-RUN dnf -y install systemd curl sqlite iproute python3 \
+RUN dnf -y install systemd sqlite iproute python3 --allowerasing \
     && rm -f /etc/machine-id \
     && systemctl set-default multi-user.target
 CMD ["/sbin/init"]

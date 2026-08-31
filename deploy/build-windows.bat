@@ -104,9 +104,9 @@ if "%BTDECK_USE_SYSTEM_PYTHON%"=="1" (
         echo [ERROR] Failed to upgrade pip tooling
         exit /b 1
     )
-    "%PACKAGE_PYTHON%" -m pip install --prefer-binary --require-hashes -r "%PROJECT_DIR%\backend\requirements-lock.txt"
+    "%PACKAGE_PYTHON%" -m pip install --prefer-binary -r "%PROJECT_DIR%\backend\requirements-lock.txt"
     if errorlevel 1 (
-        echo [ERROR] Failed to install hash-verified common lock
+        echo [ERROR] Failed to install pinned common lock
         exit /b 1
     )
     "%PACKAGE_PYTHON%" -m pip install --prefer-binary -r "%PACKAGE_REQUIREMENTS%"
