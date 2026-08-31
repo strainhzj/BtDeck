@@ -42,7 +42,9 @@ wait_healthy() {
 }
 
 install_rpm() { dnf -y install "$1" >/tmp/dnf-install.log 2>&1; }
-reinstall_rpm() { dnf -y reinstall btdeck >/tmp/dnf-reinstall.log 2>&1; }
+# dnf reinstall 只对 repo 内包生效（本地 rpm 文件安装的包立即报"找不到"，
+# CI 实测 0.3s 失败）；rpm -Uvh --force 是本地同版本强制重装的标准形态
+reinstall_rpm() { rpm -Uvh --force "$NEW_RPM" >/tmp/rpm-reinstall.log 2>&1; }
 remove_rpm() { rpm -e btdeck >/tmp/rpm-remove.log 2>&1; }
 
 if [ "$SCENARIO" = "fresh" ]; then
@@ -131,8 +133,17 @@ ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
     echo "w3-upgrade $(date -u +%s)" > "$MARKER" 2>/dev/null || true
 
     # RPM 升级：dnf install 新包（同包名更高版本走 upgrade 路径，%preun $1=1）
-    if install_rpm "$NEW_RPM" \
-        && wait_healthy "1.0.6" \
+    # v1.0.5 冻结制品夹具适配（RPM 时序 %post(新)→%preun(旧)，与 DEB 相反）：
+    #   v1.0.5 旧 prerm 无条件 stop+disable（R11 修复前的缺陷版，冻结不可改），
+    #   会在新 postinst restart 之后停掉服务并 disable → 升级后停摆。
+    #   v1.0.6 起新包 prerm 的 RPM 升级分支已 no-op（v1.0.6→未来升级不再需要
+    #   本补偿）；此处显式 enable+restart 对冲 v1.0.5 旧 scriptlet，与 deb.sh
+    #   基线段三处夹具适配同类。真实生产 v1.0.5→v1.0.6 RPM 升级需手动
+    #   `systemctl enable --now btdeck`（登记 runbook/progress）。
+    install_rpm "$NEW_RPM"
+    systemctl enable btdeck >/dev/null 2>&1 || true
+    systemctl restart btdeck >/dev/null 2>&1 || true
+    if wait_healthy "1.0.6" \
         && assert_eq "$(service_active && echo yes || echo no)" yes "升级后服务 active（R11/RPM）" \
         && assert_eq "$(service_enabled && echo yes || echo no)" yes "升级后服务 enabled（R11/RPM）" \
         && assert_eq "$(service_unit_count)" 1 "升级后服务单元唯一" \

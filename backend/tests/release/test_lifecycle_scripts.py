@@ -76,12 +76,22 @@ exit 0
 class TestPrermSemantics:
     SCRIPT = _PKG_SCRIPTS / "prerm.sh"
 
-    @pytest.mark.parametrize("arg", ["upgrade", "deconfigure", "1", "2"])
-    def test_upgrade_branch_stops_without_disable(self, tmp_path, arg):
+    @pytest.mark.parametrize("arg", ["upgrade", "deconfigure"])
+    def test_deb_upgrade_branch_stops_without_disable(self, tmp_path, arg):
+        # DEB 时序 prerm(旧)→postinst(新)：stop 安全，postinst 会重新拉起（R11）
         rc, calls = _run_with_mock_systemctl(tmp_path, self.SCRIPT, arg)
         assert rc == 0
         assert "stop btdeck" in calls
-        assert "disable btdeck" not in calls, f"升级参数 {arg} 不得 disable（R11）"
+        assert "disable btdeck" not in calls, f"DEB 升级参数 {arg} 不得 disable（R11）"
+
+    @pytest.mark.parametrize("arg", ["1", "2"])
+    def test_rpm_upgrade_branch_noop(self, tmp_path, arg):
+        # RPM 时序 %post(新)→%preun(旧)：preun 的 stop 会停掉 postinst 刚拉起的
+        # 新服务（W3 CI 第八轮实测：v1.0.5→v1.0.6 升级后 3 分钟无健康响应），
+        # 故 RPM 升级分支必须完全 no-op，服务全权交给新包 postinst
+        rc, calls = _run_with_mock_systemctl(tmp_path, self.SCRIPT, arg)
+        assert rc == 0
+        assert calls == "", f"RPM 升级参数 {arg} 必须 no-op（实际调用了 systemctl）"
 
     @pytest.mark.parametrize("arg", ["remove", "0"])
     def test_remove_branch_disables(self, tmp_path, arg):
@@ -149,6 +159,18 @@ class TestPostinstContract:
         assert "systemctl enable btdeck" in text
         assert "systemctl is-active --quiet btdeck" in text
         assert "systemctl daemon-reload" in text
+
+    def test_running_service_restarted_to_new_binary(self):
+        """RPM 升级时序 %post(新)先于 %preun(旧)：postinst 时服务仍是旧进程，
+        必须重启才切换到新二进制——"未运行才启动"会让 RPM 升级后继续 serving
+        旧版本（W3 CI 第八轮）。
+
+        注：postinst 含 useradd/chown/绝对路径，Windows 宿主无法行为级执行，
+        此处锚定源码契约（restart 存在且由 is-active 守卫）。"""
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        assert "systemctl restart btdeck" in text
+        # restart 分支必须由 is-active 守卫（幂等：首装/停态走 start）
+        assert "if systemctl is-active --quiet btdeck; then" in text
 
 
 class TestBuildLinuxWiring:

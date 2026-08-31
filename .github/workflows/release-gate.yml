@@ -585,6 +585,7 @@ jobs:
           path: |
             release/evidence/w3/*.json
             release/evidence/w3/*.container.log
+            release/evidence/w3/*.journal.log
           retention-days: 14
           if-no-files-found: error
 

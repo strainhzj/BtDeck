@@ -35,14 +35,19 @@ fi
 # 设置权限
 chown -R btdeck:btdeck /opt/btdeck
 
-# 启用并启动服务（幂等：升级后重新拉起，重装不产生重复实例）
+# 启用并启动服务（幂等：升级/重装后重启到新二进制，不产生重复实例）
 # degraded 是容器内 systemd 常见正常态，必须与 running 同等接受，
 # 否则容器/最小化环境下 postinst 会静默跳过 enable+start（W3 实测拦截）
+# RPM 升级时序 %post(新)先于 %preun(旧)：此时服务仍是旧进程（持旧 inode，
+# serving 旧版本健康契约），必须 restart 才切换到新二进制；"未运行才启动"
+# 会让 RPM 升级后继续跑旧版本（W3 CI 第八轮实测拦截）
 if command -v systemctl >/dev/null 2>&1 \
     && systemctl is-system-running 2>/dev/null | grep -qE '^(running|degraded)$'; then
     systemctl daemon-reload
     systemctl enable btdeck
-    if ! systemctl is-active --quiet btdeck; then
+    if systemctl is-active --quiet btdeck; then
+        systemctl restart btdeck
+    else
         systemctl start btdeck
     fi
     echo "BtDeck service started. Visit: http://localhost:5001"
