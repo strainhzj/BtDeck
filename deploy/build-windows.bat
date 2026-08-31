@@ -98,7 +98,7 @@ if "%BTDECK_USE_SYSTEM_PYTHON%"=="1" (
             exit /b 1
         )
     )
-    echo [SETUP] Installing packaging dependencies (two-step: hash-verified lock + windows extras)...
+    echo [SETUP] Installing packaging dependencies - two-step: hash-verified lock + windows extras...
     "%PACKAGE_PYTHON%" -m pip install --upgrade pip setuptools wheel
     if errorlevel 1 (
         echo [ERROR] Failed to upgrade pip tooling
@@ -135,7 +135,7 @@ if errorlevel 1 (
 
 REM Step 1: Frontend —— dev 自建；release 消费唯一构建（manifest 哈希一致）
 if "%RELEASE_MODE%"=="1" (
-    echo [1/4] Consuming prebuilt frontend ^(single build^)...
+    echo [1/4] Consuming prebuilt frontend - single build...
     if not exist "%FRONTEND_MANIFEST%" (
         echo [ERROR] release 模式要求先运行 python scripts\release\build_frontend.py 生成唯一前端构建
         exit /b 1

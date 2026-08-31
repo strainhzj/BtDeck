@@ -8,6 +8,8 @@
 set -euo pipefail
 
 SRC="/src"
+# 容器内 git 需声明挂载目录安全（Runner uid 与容器 root 不同）
+git config --global --add safe.directory "${SRC}" || true
 OUT="${SRC}/.release-build-v1.0.5/assets"
 V105_SHA="$(git -C "${SRC}" rev-parse v1.0.5^{commit})" || { echo "[FATAL] tag v1.0.5 不存在"; exit 2; }
 
