@@ -83,6 +83,32 @@ class TestPositive:
         assert result["git_sha"] == info["git_sha"]
 
 
+class TestWindowsBackslashCanonicalization:
+    """Windows 归档条目名反斜杠规范化（W3 Windows 首跑实测拦截）。
+
+    PyInstaller 在 Windows 用 os.path.join 组装 datas 目标路径，目录型条目
+    进入 CArchive 时是反斜杠形式（本地 PyInstaller 6.19 实证：
+    'app\\contracts\\contract.json'）；collect_archive_entries 必须规范化
+    为 POSIX 名，否则必需条目/前端哈希校验在 Windows 制品上全部误报缺失。
+    """
+
+    def test_canonical_entry_name(self, verifier):
+        assert verifier.canonical_entry_name("app\\contracts\\x.json") == "app/contracts/x.json"
+        assert verifier.canonical_entry_name("frontend_dist\\index.html") == "frontend_dist/index.html"
+        # POSIX 名与二进制条目不受影响
+        assert verifier.canonical_entry_name("build-info.json") == "build-info.json"
+
+    def test_backslash_archive_passes_after_canonicalization(self, verifier):
+        """反斜杠键名条目经规范化后应与 POSIX 形态等价通过全部校验。"""
+        entries, _, _ = _build_entries(verifier)
+        backslashed = {name.replace("/", "\\") if "/" in name else name: data for name, data in entries.items()}
+        # 前置：确认真构造出了反斜杠键（防御测试自身失效）
+        assert any("\\" in name for name in backslashed)
+        canonical = {verifier.canonical_entry_name(name): data for name, data in backslashed.items()}
+        result = verifier.verify_entries(canonical)
+        assert result["artifact_kind"] == "linux-deb"
+
+
 class TestFiveMutations:
     """计划 §7-G5：五类变异必须稳定报红。"""
 

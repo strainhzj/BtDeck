@@ -153,6 +153,17 @@ def verify_entries(entries: Dict[str, bytes]) -> Dict[str, object]:
     return info
 
 
+def canonical_entry_name(name: str) -> str:
+    """归档条目名规范化为 POSIX 分隔符。
+
+    PyInstaller 在 Windows 上用 os.path.join 组装 datas 目标路径，目录型条目
+    进入归档时是反斜杠形式（app\\contracts\\x.json）；必需条目与前端哈希校验
+    统一按 POSIX 名匹配（W3 Windows 首跑实测：dest='.' 的身份三件套可读、
+    dest 带子目录的四类条目全部"缺失"）。
+    """
+    return name.replace("\\", "/")
+
+
 def collect_archive_entries(exe_path: Path) -> Dict[str, bytes]:
     """读取 PyInstaller CArchive 为 {name: bytes}（仅数据条目；PYZ 等跳过内容）。"""
     try:
@@ -165,9 +176,10 @@ def collect_archive_entries(exe_path: Path) -> Dict[str, bytes]:
     entries: Dict[str, bytes] = {}
     for name in reader.toc:
         try:
-            entries[name] = reader.extract(name)
+            data = reader.extract(name)
         except Exception:  # noqa: BLE001 - PYZ/依赖条目提取失败不阻断（我们只消费数据条目）
             continue
+        entries[canonical_entry_name(name)] = data
     if not entries:
         raise VerificationFailure(f"归档为空或不可读：{exe_path}")
     return entries
@@ -191,6 +203,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Windows CI 控制台默认 cp1252，中文失败信息会 UnicodeEncodeError 掩盖真实原因
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     args = parse_args()
     project_root = args.project_root.resolve()
     exe_name = "btdeck.exe" if sys.platform == "win32" else "btdeck"
