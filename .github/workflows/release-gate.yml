@@ -625,7 +625,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: w3-lifecycle-docker
-          path: release/evidence/w3/lifecycle-docker.json
+          path: |
+            release/evidence/w3/lifecycle-docker.json
+            release/evidence/w3/*.log
           retention-days: 14
           if-no-files-found: error
 

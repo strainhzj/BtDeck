@@ -7,6 +7,10 @@
 # Pydantic: 2.9.2 → 2.12.4 (+4版本)
 # Starlette: 0.27.0 → 0.38.6 (+11版本)
 werkzeug~=3.1.3
+# click 在 Windows 的传递依赖（colorama；platform_system=='Windows'），
+# 必须显式入锁：Linux 生成的锁不含它，Windows --require-hashes 安装会因未锁定传递依赖失败
+# （W3 CI 实测拦截）。带 sys_platform 标记，Linux 运行时不安装。
+colorama==0.4.6; sys_platform == "win32"
 uvicorn~=0.35.0
 sqlalchemy~=2.0.15
 setuptools~=75.8.0

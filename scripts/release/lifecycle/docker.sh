@@ -42,6 +42,8 @@ phase() {
 WORKDIR="$(mktemp -d)"
 ID_V105=""
 ID_V106=""
+HEAD_BEFORE="none"
+HEAD_AFTER="none"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.test.yml"
 BACKEND_V105="btdeck-backend:v1.0.5-w3fixture"
 BACKEND_V106="btdeck-backend:v1.0.6"

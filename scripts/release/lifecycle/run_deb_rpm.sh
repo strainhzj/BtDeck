@@ -38,7 +38,7 @@ command -v docker >/dev/null 2>&1 || fail "docker 不可用"
 
 build_one() {  # build_one <tag>（heredoc 从 stdin）
     local tag="$1"
-    docker build -q -t "$tag" - || fail "systemd 测试镜像构建失败：$tag"
+    docker build -t "$tag" - || fail "systemd 测试镜像构建失败：$tag"
 }
 
 build_sysd_images() {
