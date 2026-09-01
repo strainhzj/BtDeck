@@ -117,12 +117,21 @@ def _build_mock_app(mutations: Dict[str, Any] | None = None):
         "must_change": True,
         "revoked": set(),
         "seq": 0,
+        "templates": [],
     }
     mut = mutations or {}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # 静默
             return
+
+        @staticmethod
+        def _ok(data):
+            return {"status": "success", "code": "200", "msg": "ok", "data": data}
+
+        @staticmethod
+        def _err(code, msg):
+            return {"status": "error", "code": code, "msg": msg, "data": []}
 
         def _send(self, payload: Dict[str, Any], status: int = 200) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -140,7 +149,7 @@ def _build_mock_app(mutations: Dict[str, Any] | None = None):
                 self._send(payload)
             elif self.path == "/health/ready":
                 self._send(MOCK_READY)
-            elif self.path == "/openapi.json":
+            elif self.path == "/api/v1/openapi.json" or self.path == "/openapi.json":
                 self._send(
                     {
                         "openapi": "3.1.0",
@@ -154,6 +163,66 @@ def _build_mock_app(mutations: Dict[str, Any] | None = None):
                         },
                     }
                 )
+            elif self.path == "/api/v1/advanced-search/search-templates":
+                self._send(self._ok(state["templates"]))
+            elif self.path == "/api/v1/cronTasks/list":
+                self._send(
+                    self._ok(
+                        [
+                            {
+                                "name": "种子信息同步任务",
+                                "cron": "*/5 * * * *",
+                                "enabled": True,
+                            },
+                            {
+                                "name": "Tracker 状态同步任务",
+                                "cron": "*/2 * * * *",
+                                "enabled": True,
+                            },
+                        ]
+                    )
+                )
+            elif self.path.startswith("/api/v1/notifications/unread-count"):
+                self._send(
+                    {
+                        "status": "success",
+                        "code": "200",
+                        "msg": "ok",
+                        "data": {"count": 0},
+                    }
+                )
+            elif self.path.startswith("/api/v1/notifications"):
+                self._send(
+                    {
+                        "status": "success",
+                        "code": "200",
+                        "msg": "ok",
+                        "data": {
+                            "list": [{"title": "n", "type": "system"}],
+                            "total": 1,
+                            "pageSize": 5,
+                        },
+                    }
+                )
+            elif self.path.startswith("/api/v1/audit-logs/operation-types"):
+                self._send(
+                    {
+                        "status": "success",
+                        "code": "200",
+                        "msg": "ok",
+                        "data": ["create", "delete", "update"],
+                    }
+                )
+            elif self.path == "/" or self.path.startswith("/w4-fake"):
+                body = (
+                    b'<!doctype html><html><head><script src="/assets/app.js"></script>'
+                )
+                body += b'<link rel="stylesheet" href="/assets/style.css"></head><body>x</body></html>'
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
             else:
                 self._send({"status": "error", "code": "404", "msg": "nf"}, 404)
 
@@ -163,11 +232,8 @@ def _build_mock_app(mutations: Dict[str, Any] | None = None):
             token = self.headers.get("X-Access-Token", "")
             path = self.path
 
-            def ok(data):
-                return {"status": "success", "code": "200", "msg": "ok", "data": [data]}
-
-            def err(code, msg):
-                return {"status": "error", "code": code, "msg": msg, "data": []}
+            ok = self._ok
+            err = self._err
 
             if path == "/api/v1/auth/login":
                 if req.get("password") != state["password"]:
@@ -209,10 +275,66 @@ def _build_mock_app(mutations: Dict[str, Any] | None = None):
                     self._send(ok({"logout": True}))
                 elif path == "/api/v1/auth/refresh":
                     self._send(err("401", "access token 不能刷新"))
+                elif path == "/api/v1/advanced-search/search-templates":
+                    new_tpl = {
+                        "id": f"tpl-{state['seq']}",
+                        "name": req.get("name"),
+                        "conditions": req.get("conditions"),
+                        "is_public": req.get("is_public", False),
+                    }
+                    state["templates"].append(new_tpl)
+                    # 契约实测：create 的 data 是对象（非 [obj] 信封）
+                    self._send(
+                        {
+                            "status": "success",
+                            "code": "200",
+                            "msg": "创建模板成功",
+                            "data": new_tpl,
+                        }
+                    )
                 else:
                     self._send(err("404", "nf"), 404)
             else:
                 self._send(err("401", "未认证"))
+
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            req = json.loads(self.rfile.read(length) or b"{}")
+            if self.path.startswith(
+                "/api/v1/advanced-search/search-templates/"
+            ) and self.headers.get("X-Access-Token", "").startswith("tok-"):
+                tpl_id = self.path.rsplit("/", 1)[-1]
+                for t in state["templates"]:
+                    if t["id"] == tpl_id:
+                        t["name"] = req.get("name", t["name"])
+                self._send(
+                    {"status": "success", "code": "200", "msg": "更新成功", "data": {}}
+                )
+            else:
+                self._send(
+                    {"status": "error", "code": "401", "msg": "未认证", "data": []}
+                )
+
+        def do_DELETE(self):
+            if self.path.startswith(
+                "/api/v1/advanced-search/search-templates/"
+            ) and self.headers.get("X-Access-Token", "").startswith("tok-"):
+                tpl_id = self.path.rsplit("/", 1)[-1]
+                state["templates"] = [
+                    t for t in state["templates"] if t["id"] != tpl_id
+                ]
+                self._send(
+                    {
+                        "status": "success",
+                        "code": "200",
+                        "msg": "删除模板成功",
+                        "data": {},
+                    }
+                )
+            else:
+                self._send(
+                    {"status": "error", "code": "401", "msg": "未认证", "data": []}
+                )
 
     return Handler
 
@@ -257,6 +379,38 @@ class TestEndToEndSnapshot:
         snap2 = json.loads(json.dumps(snap1))  # 同构第二制品
         ok, report = comparer.compare(snap1, {"replica": snap2}, [])
         assert ok and report["verdict"] == "PASS"
+
+    def test_batch_b1_scenarios(self, runner, comparer, mock_server):
+        """B1 四场景（C07/C08/C09/C11）端到端：模板全生命周期/定时任务名集合/
+        通知审计形状/SPA index+fallback。"""
+        snapshot = runner.run_snapshot(mock_server, ("C07", "C08", "C09", "C11"))
+        assert snapshot["scenario_failures"] == []
+
+        c07 = snapshot["scenarios"]["C07_query_templates"]
+        assert c07["create_template"]["code"] == "200"
+        assert c07["update_template"]["code"] == "200"
+        assert c07["delete_template"]["code"] == "200"
+        assert c07["list_templates"]["names"] == ["w4-contract-fixture"]
+        assert c07["list_after_delete"]["names"] == []
+
+        c08 = snapshot["scenarios"]["C08_cron_tasks"]
+        assert c08["task_count"] == 2
+        assert c08["task_names"] == ["Tracker 状态同步任务", "种子信息同步任务"]
+
+        c09 = snapshot["scenarios"]["C09_notifications_audit"]
+        assert c09["notifications"]["code"] == "200"
+        assert c09["audit_operation_types"]["data_shape"] == ["[]"]
+
+        c11 = snapshot["scenarios"]["C11_spa"]
+        assert c11["index"]["is_html"] is True
+        assert "/assets/app.js" in c11["index"]["assets"]
+        assert c11["fallback"]["is_html"] is True
+
+    def test_unreachable_instance_reports_scenario_error(self, runner):
+        """实例不可达必须显式报 __scenario_error__（不可达≠无 token，诊断语义）。"""
+        snapshot = runner.run_snapshot("http://127.0.0.1:1", ("C07",), timeout=1)
+        assert snapshot["scenario_failures"], "不可达必须记录 scenario failure"
+        assert "__scenario_error__" in snapshot["scenarios"]["C07_query_templates"]
 
     def test_mutation_detected(self, runner, comparer, mock_server):
         """变异：第二个制品 version 不同 → 快照比较必须报红（G8 退出门）。"""

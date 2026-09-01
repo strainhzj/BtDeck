@@ -82,6 +82,32 @@ def http_request(
     return HttpResult(status, body, raw)
 
 
+def http_request_raw(
+    base_url: str,
+    method: str,
+    path: str,
+    token: Optional[str] = None,
+    timeout: int = 10,
+) -> HttpResult:
+    """同 http_request，但 body 保留解码文本（SPA index 等非 JSON 响应）。"""
+    url = base_url.rstrip("/") + path
+    req = urllib.request.Request(url, method=method)
+    if token:
+        req.add_header("X-Access-Token", token)
+    status = 0
+    raw = b""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.status
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        raw = exc.read()
+    except urllib.error.URLError:
+        return HttpResult(-1, "", b"")
+    return HttpResult(status, raw.decode("utf-8", errors="replace"), raw)
+
+
 # ---------------- 规范化（快照只保留可比内容） ----------------
 
 # G1 等价对象（计划 §G8 C01：version/SHA/head/frontend manifest 跨制品必须一致）。
@@ -304,16 +330,211 @@ def scenario_c04_user_settings(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return steps
 
 
+def _auth_token(ctx: Dict[str, Any]) -> Optional[str]:
+    """获取认证 token：优先契约密码（C04 改密后），回退初始口令（场景独立执行）。
+
+    实例不可达与认证失败必须可区分（诊断语义）：不可达时抛 URLError 由
+    场景层记录 __scenario_error__，而非静默 __no_token__。
+    """
+    reachable = False
+    for password in (CONTRACT_PASSWORD, INITIAL_PASSWORD):
+        result = _login(ctx, INITIAL_USERNAME, password)
+        body = result.body if isinstance(result.body, dict) else {}
+        if body.get("__unreachable__"):
+            raise urllib.error.URLError(f"instance unreachable: {ctx['base_url']}")
+        reachable = True
+        if str(body.get("code")) == "200":
+            data = data_of(result)
+            if isinstance(data, dict):
+                return data.get("access_token")
+    if not reachable:
+        raise urllib.error.URLError(f"instance unreachable: {ctx['base_url']}")
+    return None
+
+
+def scenario_c07_query_templates(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """C07：查询模板全生命周期（新建/列表/更新/删除——高级条件语义走 simple 源）。"""
+    token = _auth_token(ctx)
+    steps: Dict[str, Any] = {}
+    if not token:
+        return {"__no_token__": True}
+
+    def _items(payload: Any) -> List[Dict[str, Any]]:
+        """模板列表适配：data 直接是数组（实测契约）或 dict 带 list/items 键。"""
+        if isinstance(payload, list):
+            return [i for i in payload if isinstance(i, dict)]
+        if isinstance(payload, dict):
+            for key in ("list", "items", "templates"):
+                if isinstance(payload.get(key), list):
+                    return [i for i in payload[key] if isinstance(i, dict)]
+        return []
+
+    fixture = {
+        "name": "w4-contract-fixture",
+        "description": "W4 blackbox contract fixture",
+        "conditions": {
+            "source": "simple",
+            "listQuery": {"status": "all", "page": 1, "pageSize": 20},
+        },
+        "is_public": False,
+    }
+    created = http_request(
+        ctx["base_url"],
+        "POST",
+        "/api/v1/advanced-search/search-templates",
+        fixture,
+        token=token,
+    )
+    created_data = data_of(created)
+    template_id = created_data.get("id") if isinstance(created_data, dict) else None
+    steps["create_template"] = {
+        **envelope(created),
+        "data_shape": shape(created_data),
+    }
+
+    listed = http_request(
+        ctx["base_url"], "GET", "/api/v1/advanced-search/search-templates", token=token
+    )
+    # 列表端点的 data 直接是数组：不能用 data_of（[obj] 信封取首元素语义会吞列表）
+    listed_payload = (
+        (listed.body or {}).get("data") if isinstance(listed.body, dict) else None
+    )
+    names = sorted(str(i.get("name")) for i in _items(listed_payload))
+    steps["list_templates"] = {**envelope(listed), "names": names}
+
+    if template_id is not None:
+        updated = http_request(
+            ctx["base_url"],
+            "PUT",
+            f"/api/v1/advanced-search/search-templates/{template_id}",
+            dict(fixture, name="w4-contract-fixture-renamed"),
+            token=token,
+        )
+        steps["update_template"] = envelope(updated)
+
+        deleted = http_request(
+            ctx["base_url"],
+            "DELETE",
+            f"/api/v1/advanced-search/search-templates/{template_id}",
+            token=token,
+        )
+        steps["delete_template"] = envelope(deleted)
+
+        after = http_request(
+            ctx["base_url"],
+            "GET",
+            "/api/v1/advanced-search/search-templates",
+            token=token,
+        )
+        after_payload = (
+            (after.body or {}).get("data") if isinstance(after.body, dict) else None
+        )
+        after_names = sorted(str(i.get("name")) for i in _items(after_payload))
+        steps["list_after_delete"] = {**envelope(after), "names": after_names}
+    return steps
+
+
+def scenario_c08_cron_tasks(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """C08：定时任务列表契约（13 个种子任务名集合跨制品必须一致）。"""
+    token = _auth_token(ctx)
+    if not token:
+        return {"__no_token__": True}
+    listed = http_request(ctx["base_url"], "GET", "/api/v1/cronTasks/list", token=token)
+    # data 可能直接是数组（实测契约）或 dict 带 list/items 键；不能用 data_of
+    # （[obj] 信封取首元素语义会吞列表）
+    data = listed.body.get("data") if isinstance(listed.body, dict) else None
+    task_names: List[str] = []
+    task_shape: List[str] = []
+    items: List[Any] = []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = data.get("list") or data.get("items") or data.get("tasks") or []
+    if items:
+        task_shape = shape(items[0])
+        task_names = sorted(
+            str(t.get("name") or t.get("taskName") or t.get("cronName") or "")
+            for t in items
+            if isinstance(t, dict)
+        )
+    return {
+        **envelope(listed),
+        "task_count": len(task_names),
+        "task_names": task_names,
+        "task_shape": task_shape,
+    }
+
+
+def scenario_c09_notifications_audit(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """C09：通知与审计的分页信封形状 + 稳定枚举（操作类型集合）。"""
+    token = _auth_token(ctx)
+    if not token:
+        return {"__no_token__": True}
+    notifications = http_request(
+        ctx["base_url"], "GET", "/api/v1/notifications?page=1&pageSize=5", token=token
+    )
+    unread = http_request(
+        ctx["base_url"], "GET", "/api/v1/notifications/unread-count", token=token
+    )
+    op_types = http_request(
+        ctx["base_url"], "GET", "/api/v1/audit-logs/operation-types", token=token
+    )
+    op_payload = op_types.body.get("data") if isinstance(op_types.body, dict) else None
+    return {
+        "notifications": {
+            **envelope(notifications),
+            "data_shape": shape(data_of(notifications)),
+        },
+        "unread_count": {**envelope(unread), "data_shape": shape(data_of(unread))},
+        # 操作类型是字符串数组：data_of 取首元素会退化，用原始 data 形状
+        "audit_operation_types": {
+            **envelope(op_types),
+            "data_shape": shape(op_payload),
+        },
+    }
+
+
+def scenario_c11_spa(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """C11：SPA 静态服务契约（index 可达 + 资源引用清单 + 路由 fallback 行为）。"""
+    import re as _re
+
+    index = http_request_raw(ctx["base_url"], "GET", "/")
+    assets: List[str] = []
+    content_type = ""
+    if isinstance(index.body, str):
+        for pattern in (r'src="([^"]+\.js[^"]*)"', r'href="([^"]+\.css[^"]*)"'):
+            assets.extend(sorted(set(_re.findall(pattern, index.body))))
+        assets = sorted(set(assets))
+    fallback = http_request_raw(
+        ctx["base_url"], "GET", "/w4-fake-route-should-fallback"
+    )
+
+    def _view(resp) -> Dict[str, Any]:
+        body = resp.body if isinstance(resp.body, str) else ""
+        return {
+            "http": resp.status,
+            "is_html": "<html" in body.lower() or "<!doctype html" in body.lower(),
+            "bytes": len(resp.raw),
+        }
+
+    return {"index": {**_view(index), "assets": assets}, "fallback": _view(fallback)}
+
+
 SCENARIOS = {
     "C01": ("health_identity", scenario_c01_health_identity),
     "C02": ("openapi_contract", scenario_c02_openapi_contract),
     "C03": ("auth_lifecycle", scenario_c03_auth_lifecycle),
     "C04": ("user_settings", scenario_c04_user_settings),
+    "C07": ("query_templates", scenario_c07_query_templates),
+    "C08": ("cron_tasks", scenario_c08_cron_tasks),
+    "C09": ("notifications_audit", scenario_c09_notifications_audit),
+    "C11": ("spa", scenario_c11_spa),
 }
 
 SCENARIO_SETS = {
     "A": ("C01", "C02", "C03", "C04"),
-    "B": (),  # C05~C12（qB/TR stub），批次 B
+    "B1": ("C07", "C08", "C09", "C11"),
+    "B": (),  # C05/C06/C10/C12（qB/TR stub+重启编排），批次 B2
 }
 
 
