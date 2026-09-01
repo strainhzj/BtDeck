@@ -47,7 +47,11 @@ function Wait-Health([string]$Url, [string]$Pattern, [int]$MaxSeconds = 240) {
 }
 
 function Stop-BtDeckProcesses {
-    Get-Process -Name btdeck -ErrorAction SilentlyContinue | Stop-Process -Force
+    # 通配匹配：v1.0.5 夹具经 wrapper.bat 启动时进程名为
+    # btdeck-v105-fixture.exe——精确名 "btdeck" 杀不掉它，残留进程占住
+    # 5001 使后续 B4 的 v1.0.6 服务 bind 失败（Errno 10048）并进入 NSSM
+    # 重启循环（W3 CI 第二十轮归档日志实证）
+    Get-Process -Name "btdeck*" -ErrorAction SilentlyContinue | Stop-Process -Force
     & "$ProjectRoot\deploy\nssm.exe" stop BtDeck 2>$null | Out-Null
     Start-Sleep -Seconds 2
 }
