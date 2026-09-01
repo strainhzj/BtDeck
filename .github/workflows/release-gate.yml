@@ -839,7 +839,7 @@ jobs:
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
             --base-url http://127.0.0.1:5001 --output /tmp/snapshot-docker.json
           docker cp w3-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
-          docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life down -v >/dev/null
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \n  docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life down -v >/dev/null
 
       - name: Compare cross-artifact snapshots (fail-closed)
         run: |
