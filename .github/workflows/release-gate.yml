@@ -808,22 +808,16 @@ jobs:
           RPMEOF
 
           # 安装命令在宿主侧拼好传入（容器内无宿主函数变量；包管理器分支
-          # 不能在容器内用 '$name' 判断——单引号不展开，deb 会误走 dnf）
+          # 不能在容器内用 '$name' 判断——单引号不展开，deb 会误走 dnf）。
+          # 等待逻辑用仓库内脚本文件（scripts/release/lifecycle/w4_install_wait.sh）：
+          # docker exec 嵌套引号转义链与 YAML 块内 heredoc 均不可靠
+          # （CI 首两轮实测），与 W3 windows.ps1 的 cmd 包装教训同型。
           snapshot_pkg() {  # snapshot_pkg <name> <image> <install-cmd> <pkg-file>
             local name="$1" image="$2" install_cmd="$3" pkg="$4"
             docker rm -f "w4-$name" >/dev/null 2>&1 || true
             docker run -d --name "w4-$name" --privileged --cgroupns=host -v "$PWD:/src:ro" "$image" >/dev/null
             sleep 8
-            docker exec "w4-$name" bash -c "
-              set -e
-              $install_cmd '$pkg' >/tmp/install.log 2>&1
-              for i in \$(seq 1 60); do
-                body=\$(curl -fsS --max-time 5 http://127.0.0.1:5001/health/live 2>/dev/null || true)
-                case \"\$body\" in *'\"version\":\"1.0.6\"'*) exit 0;; esac
-                sleep 3
-              done
-              echo 'service not healthy'; tail -5 /tmp/install.log 2>/dev/null; exit 1
-            "
+            docker exec "w4-$name" bash /src/scripts/release/lifecycle/w4_install_wait.sh "$install_cmd" "$pkg"
             docker exec "w4-$name" python3 /src/scripts/release/contract_runner.py \
               --base-url http://127.0.0.1:5001 --output "/tmp/snapshot-$name.json"
             docker cp "w4-$name:/tmp/snapshot-$name.json" "release/evidence/w4/snapshot-$name.json"
