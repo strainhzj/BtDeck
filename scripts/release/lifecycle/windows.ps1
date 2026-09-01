@@ -218,9 +218,20 @@ if ($null -eq $SetupExe) {
         & $IsccNssm start BtDeck 2>$null | Out-Null
         $bodyUp = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 240
         $secretAfter = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
-        Add-Phase "upgrade_keeps_secret_and_data" `
-            ($null -ne $bodyUp -and (Test-Path $markerPath) -and $secretBefore -eq $secretAfter) `
+        $b4ok = $null -ne $bodyUp -and (Test-Path $markerPath) -and $secretBefore -eq $secretAfter
+        Add-Phase "upgrade_keeps_secret_and_data" $b4ok `
             "health=$($null -ne $bodyUp) marker=$(Test-Path $markerPath) secretStable=$($secretBefore -eq $secretAfter)"
+        if (-not $b4ok) {
+            # v1.0.6 服务读 v1.0.5 期 config.yaml/app.db 的升级路径诊断：
+            # NSSM 服务日志（Setup 已配 AppStdout/AppStderr 落盘）
+            foreach ($svcl in @("service-stderr.log", "service-stdout.log")) {
+                $lp = Join-Path $InstallDir "logs\$svcl"
+                if (Test-Path $lp) {
+                    Write-Output "[DIAG] B4 $lp : $((Get-Content $lp -Tail 15 -ErrorAction SilentlyContinue) -join ' | ')"
+                }
+            }
+            & $IsccNssm status BtDeck 2>$null | ForEach-Object { Write-Output "[DIAG] B4 nssm status: $_" }
+        }
     } else {
         Add-Phase "v105_fixture_seeded" $false "未提供 v1.0.5 portable 夹具（--V105PortableExe）"
         Add-Phase "upgrade_keeps_secret_and_data" $false "前置夹具缺失"
