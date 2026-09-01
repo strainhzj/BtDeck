@@ -14,4 +14,6 @@ services:
       - TZ=Asia/Shanghai
       - DEV=false
       - SECRET_KEY=w4-contract-test-secret
+      # 生产模式 CORS 强制显式来源（deb/rpm postinst 写入 btdeck.env 的同款值）
+      - 'ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]'
       - LOG_LEVEL=INFO
