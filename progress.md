@@ -6411,3 +6411,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **关键方法论沉淀**：①CI 失败要逐层剥洋葱（本轮从"以为是缓存"剥到 16 个真根因，每轮诊断输出重定向都换回下一层真相）；②frozen app 的 PYTHON* env 被 PyInstaller bootloader 隔离（env 注入三路线全败实证，修复必须走代码垫片）；③DEB/RPM 升级 scriptlet 时序相反是包管理器的经典陷阱；④windowed 打包的 stdout=None print 静默是可观测性黑洞（logging 走 fd2 有输出、print 全丢——诊断时两者要分开看）。
 - **master 同步**：workflow 注册副本三轮双同步（5975aa1/b033727/b3885d5），master regression 全绿。
 - **下一步**：W4 黑盒契约（task .8）按批次纪律先出方案；.9（W5/W6）最后。
+
+### 2026-09-01（续）：W4 批次 A 落地——黑盒契约测试器 + 跨制品 CI 接入
+
+- **contract_runner.py**（scripts/release/）：纯 stdlib、禁 import app.*（铁律静态测试强制）；C01 健康 Identity 精确值（G1 等价对象，artifactKind 排除——包型身份天然不同）+C02 OpenAPI 指纹（DEV 形态 /api/v1/openapi.json，生产形态按 W11 安全设计关闭→unavailable 降级仍可比）+C03 认证全链路（错误码/登录/info/refresh/logout/token 失效）+C04 改密持久化（oldPassword/newPassword base64+userId 必填占位）；快照只留结构+身份字段（滤 token/secret/user_id 实例特定值）。
+- **compare_snapshots.py**：逐路径 diff（missing/mismatch/extra）+exceptions 白名单强制（禁 */吞段规则、expires 过期即红、stale 规则报告防腐化）；release/equivalence-exceptions.json schema（当前空集=完全等价）。
+- **测试 14 例**：铁律（禁 import app.*）、规范化纯函数、内嵌 mock server 端到端（含 token 唯一性状态机）、变异检出（version 改动→diff 报红）、compare 规则负向（宽泛/过期拒绝）；release 套件 125/125。
+- **本地实证**：隔离双实例（各自全新 CONFIG_DIR/DB/secret 的同源码服务）C01~C04 快照 compare **total_diffs=0**——规范化设计正确性实证；真实实例冒烟修正两契约细节（openapi 路径、userId 必填）。证据 release/evidence/w4/。
+- **CI 接入**：release-gate.yml 增 w4-contract job（run_w4_contract 输入）——同 SHA 构建 deb/rpm/docker→debian/rocky systemd 容器+compose 三独立实例各跑 runner→deb 基准 compare（fail-closed）+artifact 归档；bash -n+YAML 双校验；master 双同步 8ad4c7c。提交链 c1d022b（批次 A 代码）→8d2ea28（CI 接入）。
+- **批次 B 待做**：C05~C12（受控 qB/TR stub、查询模板、定时任务、通知审计、迁移重启、SPA、路径边界）+变异注入演练（G8 退出门）。

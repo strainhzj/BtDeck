@@ -5476,7 +5476,7 @@
           "id": "release-artifact-equivalence-gate-2026-08-28.8",
           "name": "W4 跨制品黑盒契约与允许差异治理",
           "description": "实现不 import app.* 的外部 contract runner、受控 qB/TR stub、稳定 v1.0.5 数据夹具和规范化快照；覆盖健康身份、OpenAPI、认证、设置、下载器、种子查询、查询模板、定时任务、通知审计、迁移重启、SPA 和路径边界 12 场景，未登记字段差异即失败。",
-          "status": "pending",
+          "status": "in-progress",
           "scope": "fullstack",
           "files": [
             "release/equivalence-exceptions.json",
@@ -5484,7 +5484,8 @@
             "scripts/release/compare_snapshots.py",
             "scripts/release/fixtures/",
             "backend/tests/release/"
-          ]
+          ],
+          "evidence": "2026-09-01 批次 A 完成（in-progress）：contract_runner.py（纯 stdlib 禁 import app.*，C01 健康 Identity 精确值/C02 OpenAPI 指纹含生产形态降级/C03 认证全链路/C04 改密持久化）+compare_snapshots.py（逐路径 diff+exceptions 白名单强制禁宽泛规则+stale 报告）+equivalence-exceptions.json（零规则）。CI w4-contract job 13 轮迭代全绿（run 33523156872）：同 SHA 三制品 deb/rpm/docker 快照 compare **total_diffs=0 零豁免**；本地双实例自证 total_diffs=0；测试 14 例（铁律/纯函数/mock 端到端/变异检出/规则负向）。批次 B 待做：C05~C12（qB/TR stub）+制品级变异注入演练。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.9",

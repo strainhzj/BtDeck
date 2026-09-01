@@ -1,5 +1,24 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-09-01（续）：W4 批次 A 全绿——跨制品黑盒契约等价门禁（task .8 in-progress）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28；**done .1~.7；.8 in-progress（批次 A 全绿）**；.9 pending
+- 分支 dev（全部已推送）；master workflow 副本同步至 21f5a80
+
+### W4 批次 A 战果
+
+- **w4-contract CI job 全绿（run 33523156872，13 轮迭代）**：同 SHA 构建 deb/rpm/docker→三独立实例跑 contract_runner C01~C04→compare **rpm/docker 双候选 total_diffs=0、零豁免规则**
+- 代码件：contract_runner.py（禁 import app.*）+ compare_snapshots.py（禁宽泛/过期规则+stale 报告）+ equivalence-exceptions.json + w4_install_wait.sh + docker-compose.w4-override.yml（docker 测试组合对齐生产形态：DEV=false+SECRET_KEY+ALLOWED_HOSTS）
+- 本地双实例自证 total_diffs=0；release 125/125（含 14 例契约测试）
+- 关键坑（勿重踩）：| tee 吞退出码（pipefail）；宿主变量不进容器；"dpkg -i" 单参数成单命令名；docker exec/heredoc 转义链→脚本仓库文件化；compose container_name 固定 w3-life-*；测试组合 DEV=true 与生产形态不一致的 C02 伪差异；生产形态 /openapi.json 静态 fallback 200 非 JSON=unavailable
+
+### 下一步
+
+1. **W4 批次 B**：C05~C12（受控 qB/TR stub 的下载器/种子场景、查询模板、定时任务、通知审计、迁移重启、SPA、路径边界）+制品级变异注入演练（G8 退出门）
+2. **.9（W5/W6）**：SBOM/漏洞扫描/签名/晋级 digest/RC 演练（最后执行）
+
 ## 2026-09-01：W3 收口达成——三平台生命周期门禁全部 CI 全绿（.5/.6/.7 done）
 
 ### 当前状态
