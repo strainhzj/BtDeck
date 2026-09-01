@@ -9,6 +9,13 @@ import urllib.request
 # cp1252，任何含中文的 print（yamlConfig 首启"配置文件不存在"警告等）会
 # UnicodeEncodeError 直接崩溃启动链。必须在下方 app.* 导入（会触发
 # yamlConfig.load）之前重配置标准流。
+#
+# 可观测性兜底（W3 CI 第十七轮实测拦截）：windowed（console=False）打包下
+# PyInstaller 不给应用传 stdout 句柄，sys.stdout 为 None——print 全部静默
+# 丢弃（lifespan 启动序列的一半日志在 NSSM 服务下不可见，启动卡点无从
+# 诊断）。stderr 句柄存在（NSSM AppStderr 重定向）时把 stdout 接过去。
+if sys.stdout is None and sys.stderr is not None:
+    sys.stdout = sys.stderr
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")

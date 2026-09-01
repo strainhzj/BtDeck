@@ -695,6 +695,8 @@ jobs:
 
           # W3 CI 夹具垫片（reconstructed）：启动编码热修，等价 v1.0.6 修复
           import sys as _sys
+          if _sys.stdout is None and _sys.stderr is not None:
+              _sys.stdout = _sys.stderr
           for _s in (_sys.stdout, _sys.stderr):
               if hasattr(_s, "reconfigure"):
                   _s.reconfigure(encoding="utf-8", errors="replace")
