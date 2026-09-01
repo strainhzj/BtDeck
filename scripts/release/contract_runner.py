@@ -513,7 +513,7 @@ def scenario_c11_spa(ctx: Dict[str, Any]) -> Dict[str, Any]:
             assets.extend(sorted(set(_re.findall(pattern, index.body))))
         assets = sorted(set(assets))
     fallback = http_request_raw(
-        ctx["base_url"], "GET", "/w4-fake-route-should-fallback"
+        spa_base, "GET", "/w4-fake-route-should-fallback"
     )
 
     def _view(resp) -> Dict[str, Any]:
