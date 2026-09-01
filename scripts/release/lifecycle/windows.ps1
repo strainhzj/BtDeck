@@ -223,12 +223,14 @@ if ($null -eq $SetupExe) {
             "health=$($null -ne $bodyUp) marker=$(Test-Path $markerPath) secretStable=$($secretBefore -eq $secretAfter)"
         if (-not $b4ok) {
             # v1.0.6 服务读 v1.0.5 期 config.yaml/app.db 的升级路径诊断：
-            # NSSM 服务日志（Setup 已配 AppStdout/AppStderr 落盘）
-            foreach ($svcl in @("service-stderr.log", "service-stdout.log")) {
-                $lp = Join-Path $InstallDir "logs\$svcl"
-                if (Test-Path $lp) {
-                    Write-Output "[DIAG] B4 $lp : $((Get-Content $lp -Tail 15 -ErrorAction SilentlyContinue) -join ' | ')"
-                }
+            # NSSM 服务日志（Setup 已配 AppStdout/AppStderr 落盘）。
+            # AppRotateFiles=1 下崩溃重启循环会反复轮转主日志文件——必须
+            # 列出目录并读取归档（第十八轮实测主文件空、真凶在轮转件里）
+            $logsDir = Join-Path $InstallDir "logs"
+            Write-Output "[DIAG] B4 logs dir: $((Get-ChildItem $logsDir -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 8 | ForEach-Object { \"$($_.Name)($($_.Length)b)\" }) -join ' ')"
+            $newestErr = Get-ChildItem $logsDir -Filter "*stderr*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2
+            foreach ($f in $newestErr) {
+                Write-Output "[DIAG] B4 $($f.Name): $((Get-Content $f.FullName -Tail 15 -ErrorAction SilentlyContinue) -join ' | ')"
             }
             & $IsccNssm status BtDeck 2>$null | ForEach-Object { Write-Output "[DIAG] B4 nssm status: $_" }
         }
