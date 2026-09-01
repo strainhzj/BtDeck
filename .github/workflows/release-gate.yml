@@ -61,6 +61,10 @@ on:
         description: "Run w3-lifecycle-windows (G6)"
         type: boolean
         default: false
+      run_w4_contract:
+        description: "Run w4-contract (G8 cross-artifact blackbox C01~C04)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -737,4 +741,125 @@ jobs:
             dist/btdeck.exe
             dist/BtDeck-v*-windows-x64-setup.exe
           retention-days: 7
+          if-no-files-found: error
+
+  w4-contract:
+    name: "W4 contract / Cross-artifact equivalence (G8)"
+    if: ${{ inputs.run_w4_contract }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout (full history for release identity)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once
+        run: python scripts/release/build_frontend.py
+
+      - name: Build strict Linux packages (DEB + RPM)
+        run: |
+          docker build -t w2-linux-builder - <<'BUILDEREOF'
+          FROM python:3.11-bullseye
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+              && rm -rf /var/lib/apt/lists/* \
+              && gem install fpm --no-document
+          BUILDEREOF
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            bash deploy/build-linux.sh --release
+          '
+
+      - name: Build v1.0.6 docker images
+        run: bash build-images.sh --release
+
+      - name: Snapshot DEB / RPM / Docker instances (C01~C04)
+        run: |
+          set -e
+          mkdir -p release/evidence/w4
+          # systemd 测试容器（同 run_deb_rpm.sh 官方源配方，预装 python3 供 runner 使用）
+          docker build -t w4-debian-sysd - <<'DEBEOF'
+          FROM debian:12
+          RUN apt-get update && apt-get install -y --no-install-recommends systemd curl sqlite3 iproute2 python3 \
+              && ln -sf /lib/systemd/systemd /sbin/init \
+              && rm -f /etc/machine-id
+          CMD ["/sbin/init"]
+          DEBEOF
+          docker build -t w4-rocky-sysd - <<'RPMEOF'
+          FROM rockylinux:9
+          RUN dnf -y install systemd sqlite iproute python3 --allowerasing \
+              && rm -f /etc/machine-id \
+              && systemctl set-default multi-user.target
+          CMD ["/sbin/init"]
+          RPMEOF
+
+          snapshot_pkg() {  # snapshot_pkg <name> <image> <pkg-file>
+            local name="$1" image="$2" pkg="$3"
+            docker rm -f "w4-$name" >/dev/null 2>&1 || true
+            docker run -d --name "w4-$name" --privileged --cgroupns=host -v "$PWD:/src:ro" "$image" >/dev/null
+            sleep 8
+            docker exec "w4-$name" bash -c "
+              set -e
+              if [ '$name' = deb ]; then dpkg -i '$pkg' >/tmp/install.log 2>&1;
+              else dnf -y install '$pkg' >/tmp/install.log 2>&1; fi
+              for i in \$(seq 1 60); do
+                body=\$(curl -fsS --max-time 5 http://127.0.0.1:5001/health/live 2>/dev/null || true)
+                case \"\$body\" in *'\"version\":\"1.0.6\"'*) exit 0;; esac
+                sleep 3
+              done
+              echo 'service not healthy'; exit 1
+            "
+            docker exec "w4-$name" python3 /src/scripts/release/contract_runner.py \
+              --base-url http://127.0.0.1:5001 --output "/tmp/snapshot-$name.json"
+            docker cp "w4-$name:/tmp/snapshot-$name.json" "release/evidence/w4/snapshot-$name.json"
+            docker rm -f "w4-$name" >/dev/null
+          }
+
+          snapshot_pkg deb w4-debian-sysd "/src$(pwd)/dist/BtDeck-v1.0.6-linux-amd64.deb"
+          # rpm 与 deb 用不同 systemd 容器（发行版覆盖）
+          snapshot_pkg rpm w4-rocky-sysd "/src$(pwd)/dist/BtDeck-v1.0.6-linux-amd64.rpm"
+
+          # Docker 组合快照（backend 容器内执行 runner；镜像 python3 基础镜像自带）
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+            docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life up -d
+          for i in $(seq 1 60); do
+            body=$(docker exec w4-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
+            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            sleep 3
+          done
+          docker cp scripts/release/contract_runner.py w4-life-backend:/tmp/contract_runner.py
+          docker exec w4-life-backend python3 /tmp/contract_runner.py \
+            --base-url http://127.0.0.1:5001 --output /tmp/snapshot-docker.json
+          docker cp w4-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
+          docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life down -v >/dev/null
+
+      - name: Compare cross-artifact snapshots (fail-closed)
+        run: |
+          python scripts/release/compare_snapshots.py \
+            --baseline release/evidence/w4/snapshot-deb.json \
+            --candidates release/evidence/w4/snapshot-rpm.json release/evidence/w4/snapshot-docker.json \
+            --exceptions release/equivalence-exceptions.json \
+            | tee release/evidence/w4/compare-report.json
+
+      - name: Upload contract snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w4-contract
+          path: release/evidence/w4/
+          retention-days: 14
           if-no-files-found: error
