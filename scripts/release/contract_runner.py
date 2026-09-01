@@ -84,13 +84,15 @@ def http_request(
 
 # ---------------- 规范化（快照只保留可比内容） ----------------
 
+# G1 等价对象（计划 §G8 C01：version/SHA/head/frontend manifest 跨制品必须一致）。
+# 不含 artifactKind：包型身份（linux-deb/linux-rpm/docker-backend）按制品类型
+# 天然不同，不属于跨制品等价对象（build-info 层面的包型差异由 W2 bundle 校验）。
 IDENTITY_FIELDS = (
     "status",
     "version",
     "productVersion",
     "gitSha",
     "gitTag",
-    "artifactKind",
     "alembicHead",
     "frontendManifestSha256",
     "sourceManifestSha256",
