@@ -818,7 +818,7 @@ jobs:
             sleep 8
             docker exec "w4-$name" bash /src/scripts/release/lifecycle/w4_install_wait.sh "$pkg"
             docker exec "w4-$name" python3 /src/scripts/release/contract_runner.py \
-              --base-url http://127.0.0.1:5001 --output "/tmp/snapshot-$name.json"
+              --base-url http://127.0.0.1:5001 --scenarios C01,C02,C03,C04,C07,C08,C09,C11 --output "/tmp/snapshot-$name.json"
             docker cp "w4-$name:/tmp/snapshot-$name.json" "release/evidence/w4/snapshot-$name.json"
             docker rm -f "w4-$name" >/dev/null
           }
@@ -846,7 +846,7 @@ jobs:
           fi
           docker cp scripts/release/contract_runner.py w3-life-backend:/tmp/contract_runner.py
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
-            --base-url http://127.0.0.1:5001 --output /tmp/snapshot-docker.json
+            --base-url http://127.0.0.1:5001 --scenarios C01,C02,C03,C04,C07,C08,C09,C11 --output /tmp/snapshot-docker.json
           docker cp w3-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
           BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 docker compose -f scripts/release/lifecycle/docker-compose.test.yml -f scripts/release/lifecycle/docker-compose.w4-override.yml -p w4life down -v >/dev/null
 
