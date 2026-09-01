@@ -183,8 +183,12 @@ def scenario_c02_openapi_contract(ctx: Dict[str, Any]) -> Dict[str, Any]:
     result = http_request(ctx["base_url"], "GET", "/api/v1/openapi.json")
     if result.status == 404:
         result = http_request(ctx["base_url"], "GET", "/openapi.json")
-    if result.status == 404:
-        return {"http": 404, "unavailable": "openapi disabled in production build"}
+    # 非 JSON 响应（生产形态下 openapi 路径落到前端静态 fallback 返回 200
+    # 的 index.html）与 404 同义：openapi 不可用，按 unavailable 记录保持
+    # 跨形态可比（w4 CI 第十一轮实测 4 条伪差异）
+    non_json = isinstance(result.body, dict) and "__non_json_bytes__" in result.body
+    if result.status == 404 or non_json:
+        return {"http": result.status, "unavailable": "openapi disabled in production build"}
     spec = result.body if isinstance(result.body, dict) else {}
     route_map: Dict[str, List[str]] = {}
     for path, methods in sorted(spec.get("paths", {}).items()):
