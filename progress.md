@@ -6420,3 +6420,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **本地实证**：隔离双实例（各自全新 CONFIG_DIR/DB/secret 的同源码服务）C01~C04 快照 compare **total_diffs=0**——规范化设计正确性实证；真实实例冒烟修正两契约细节（openapi 路径、userId 必填）。证据 release/evidence/w4/。
 - **CI 接入**：release-gate.yml 增 w4-contract job（run_w4_contract 输入）——同 SHA 构建 deb/rpm/docker→debian/rocky systemd 容器+compose 三独立实例各跑 runner→deb 基准 compare（fail-closed）+artifact 归档；bash -n+YAML 双校验；master 双同步 8ad4c7c。提交链 c1d022b（批次 A 代码）→8d2ea28（CI 接入）。
 - **批次 B 待做**：C05~C12（受控 qB/TR stub、查询模板、定时任务、通知审计、迁移重启、SPA、路径边界）+变异注入演练（G8 退出门）。
+
+### 2026-09-01（续三）：W4 批次 B1 全绿——八场景跨制品黑盒契约等价（task .8 in-progress）
+
+- **终局**：w4-contract job 三轮迭代全绿（最后一轮）——**八场景（C01~C04+C07/C08/C09/C11）**三制品快照 compare **rpm/docker 双候选 total_diffs=0、零豁免**。
+- **B1 新场景**：C07 查询模板全生命周期（create/update/delete/list，真实前缀 /api/v1/advanced-search + 列表 data 直接数组契约）、C08 定时任务 13 种子任务名集合、C09 通知审计分页形状+操作类型枚举、C11 SPA（index/资源 manifest/fallback）。真实契约探测修正三处 data_of 首元素语义与直接数组端点的冲突；_auth_token 区分不可达与认证失败。
+- **C11 部署形态语义**：deb/rpm 二进制内嵌前端（backend 直出 SPA），docker 部署由独立 frontend nginx 提供——runner 增 --spa-base-url（docker 指向 w3-life-frontend），比对同一唯一前端构建；期间发现 nginx 本有 try_files fallback、index 已匹配仅 fallback 请求残打 base_url（替换被 black 折行吞掉未 assert——**批量 replace 必须 assert 教训第三次**）。
+- **本地实证**：真实双实例 B1 total_diffs=0（清掉手动 probe 残留后）；mock 扩 B1 路由（模板状态机+PUT/DELETE+SPA+通知审计）16 测试全绿；release 127/127。
+- evidence：release/evidence/w4/（B1 三制品快照+报告+三轮 CI 日志+本地双实例快照）。**B2 待做**：C05/C06（qB/TR stub）、C10（重启编排）、C12（路径边界）+制品级变异注入演练。
