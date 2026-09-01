@@ -831,14 +831,14 @@ jobs:
           BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life up -d
           for i in $(seq 1 60); do
-            body=$(docker exec w4-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
+            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
             case "$body" in *'"version":"1.0.6"'*) break;; esac
             sleep 3
           done
-          docker cp scripts/release/contract_runner.py w4-life-backend:/tmp/contract_runner.py
-          docker exec w4-life-backend python3 /tmp/contract_runner.py \
+          docker cp scripts/release/contract_runner.py w3-life-backend:/tmp/contract_runner.py
+          docker exec w3-life-backend python3 /tmp/contract_runner.py \
             --base-url http://127.0.0.1:5001 --output /tmp/snapshot-docker.json
-          docker cp w4-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
+          docker cp w3-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
           docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life down -v >/dev/null
 
       - name: Compare cross-artifact snapshots (fail-closed)
