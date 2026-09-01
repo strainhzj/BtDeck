@@ -5431,7 +5431,7 @@
           "id": "release-artifact-equivalence-gate-2026-08-28.5",
           "name": "W3 Windows EXE/Setup 生命周期幂等",
           "description": "在 Windows Runner 覆盖免安装 EXE 隔离启动/重复启动/停止和 Setup 静默首装、同版本覆盖、v1.0.5 升级、服务重启、卸载；断言 NSSM 服务与端口单实例，secret/配置/数据库保留，卸载移除服务和程序且默认保留数据。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "scripts/release/lifecycle/windows.ps1",
@@ -5439,13 +5439,13 @@
             "deploy/build-windows.bat",
             ".github/workflows/release-gate.yml"
           ],
-          "evidence": "2026-08-31 W3 部分完成：windows.ps1 已落地（EXE 隔离双启+Setup 静默全周期+v1.0.5 夹具升级+卸载数据保留）；CI w3-lifecycle-windows job 就绪；本机无 ISCC 记 NOT_RUN。待 CI 全绿后置 done。锁 colorama/require-hashes 等六轮 CI 修复已提交（356c89d）。"
+          "evidence": "2026-09-01 done：CI run 33504251419（e8ec9ed）w3-lifecycle-windows 8/8 phase 全 PASS（EXE 隔离双启/Setup 静默首装/同版本重装/v1.0.5 夹具植入/升级 secret+数据保留/卸载数据保留）。二十一轮 CI 迭代修复十个真实缺陷：锁缺 tzdata；verify-package 归档条目名反斜杠规范化（PyInstaller Windows datas 行为）+cp1252 输出兜底；desktop_main 误入 GUI 启动器（iss NSSM 注入 BTDECK_DESKTOP_WINDOW=0+服务日志落盘 AppStdout/AppStderr）；yamlConfig 中文 print cp1252 崩启动链（print→logging+入口 reconfigure）；windowed 下 sys.stdout=None print 静默（stdout 接力 stderr）；v1.0.5 夹具编码垫片（bootloader 隔离 PYTHON* env，垫片=等价 v1.0.6 修复）；secret 指纹文件修正（config.yaml 非 btdeck.env）；夹具进程名通配杀（wrapper.bat 启动名 btdeck-v105-fixture 占 5001 致 bind 10048）；onefile 双 PID 残留（按名全杀+端口释放轮询）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.6",
           "name": "W3 DEB/RPM 生命周期幂等与跨发行版兼容",
           "description": "在 Debian 12、Rocky Linux 9 覆盖首装、同版本重装、v1.0.5 升级、服务重启、remove/purge 边界和数据保留；修正 maintainer script 对 upgrade/remove 参数的处理，验证最终 systemd enabled+active、SECRET_KEY 不重置及单 Alembic head。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "scripts/release/lifecycle/deb.sh",
@@ -5454,13 +5454,13 @@
             "deploy/btdeck.service",
             ".github/workflows/release-gate.yml"
           ],
-          "evidence": "2026-08-31 W3 核心链路实证绿（本地 Debian 12 容器）：R11 修复落地（package-scripts/ 三文件+fpm 布线）；deb-upgrade v105→v106 PASS+head 推进 PASS+secret 保留 PASS+remove 数据保留 PASS。PrivateTmp/coreutils 兜底/degraded 守卫三个生产缺陷修复。CI 六轮迭代修复了 node 版本值/bat 括号/safe.directory/colorama/curl 冲突。deb.sh/rpm.sh 驱动+make_v105_baseline+run_deb_rpm 编排器全部就绪。CI 全绿待下一轮干净 dispatch。"
+          "evidence": "2026-09-01 done：CI run 33400673991（97ac103）w3-lifecycle-linux 四场景全 PASS（deb-fresh：首装/重装/重启×2/remove/purge；deb-upgrade：v105 基线/升级 R11 enabled+active/secret 保留/head 推进/remove 保留；rpm-fresh 同构；rpm-upgrade 同构）。包内 build-info 按包型 retag（linux-deb/linux-rpm，计划 §158）；RPM scriptlet 时序三修复（%post(新)先于%preun(旧)与 DEB 相反：preun 升级分支 no-op+postinst 运行态 restart+reinstall 改 rpm -Uvh --force）；v1.0.5 旧 prerm 无条件 stop+disable 夹具补偿（真实生产 v1.0.5→v1.0.6 RPM 升级需手动 systemctl enable --now btdeck，runbook 已记）。SKIP_MIRROR debian 夹具补 python3；w2-strict-linux 首绿（builder 包名 rpm-build→rpm2cpio）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.7",
           "name": "W3 Docker 不可变组合与卷升级幂等",
           "description": "用 backend/frontend digest 固定组合替代发布链的 latest；覆盖重复 compose up、restart、force-recreate、同 digest reload 和 v1.0.5 卷升级，断言 secret、配置、数据库和迁移保持，禁止前后端混装不同 SHA。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "scripts/release/lifecycle/docker.sh",
@@ -5470,7 +5470,7 @@
             "build-images.sh",
             ".github/workflows/release-gate.yml"
           ],
-          "evidence": "2026-08-31 W3 部分完成：docker.sh 驱动+compose 测试模板就绪；v1.0.5 夹具镜像构建 PASS；幂等 up/force-recreate/升级/down-up 场景框架就绪。v105 后端容器在 compose 环境启动后挂住（btdeck_startup.sh 兼容性，非 v1.0.6 缺陷）需诊断。CI job 就绪。"
+          "evidence": "2026-09-01 done：CI run 33400673991（97ac103）w3-lifecycle-docker 全 9 phase PASS（v105 夹具镜像 tag 重建/v105 上线 alive/幂等 up 不 recreate/restart+force-recreate 卷保留/升级 v1.0.6 build.gitSha 匹配/单 alembic head/同组合 up 不 recreate/down-up 数据保留），且 194e5d0 轮起连续多轮绿。根因修复：v1.0.5 健康契约无 version 字段（v1.0.6 W1 引入）——就绪谓词改 data.status=alive（本地容器实证 alive HIT/version ABSENT）；本地实证 v105 容器 5 秒完整启动（'挂住'为日志抓取时机假象）；build 身份断言匹配串去空格（紧凑 JSON）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.8",

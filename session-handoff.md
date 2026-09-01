@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-09-01：W3 收口达成——三平台生命周期门禁全部 CI 全绿（.5/.6/.7 done）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1(W0) .2(W1 版本) .3(W1 锁) .4(W2 前端) **.5(W3 Windows) .6(W3 DEB/RPM) .7(W3 Docker)——本日全绿置 done**
+- **pending**: .8(W4 黑盒契约 C01~C12) .9(W5/W6 安全+晋级)
+- 分支 dev@e8ec9ed 已推送；master workflow 注册副本同步至 b3885d5；master regression 绿
+
+### W3 终局（第七~二十一轮，194e5d0→e8ec9ed）
+
+- **全绿 run**：linux+docker=33400673991@97ac103；**windows=33504251419@e8ec9ed（8/8）**；w2-strict-linux 同批首绿
+- 16 个根因、7 个真实生产缺陷全修复（详见 progress.md 2026-09-01 节与 feature_list evidence）
+- 测试 114/114；每根因均带契约/行为回归
+
+### 交接要点（W4 开工前）
+
+1. **W4（task .8）按批次纪律先出方案**：contract_runner.py（禁 import app.*）+ compare_snapshots.py + C01~C12 + release/equivalence-exceptions.json；计划 §G8/§524
+2. **runbook 事项**：真实生产 v1.0.5→v1.0.6 RPM 升级需手动 `systemctl enable --now btdeck`（旧包 prerm 无条件 stop+disable 冻结不可修）
+3. **勿重踩**：PyInstaller bootloader 隔离 frozen app 的 PYTHON* env（修复走代码垫片）；windowed 打包 stdout=None print 静默（logging 走 fd2 有输出）；DEB/RPM 升级 scriptlet 时序相反；Windows datas 进 CArchive 是反斜杠名；CI Windows runner 是 cp1252
+
+### 环境坑（W3 新增）
+
+- workflow 改动须 dev+master 双同步（本轮 plumbing tree 提交法：read-tree+update-index+commit-tree，不动工作区）
+- CI 失败的诊断输出重定向本身就是变量——重定向存在与否会改变被诊断进程的行为（stdout/stderr 句柄有无决定 print 崩/静默）
+- NSSM AppRotateFiles 崩溃重启循环会反复轮转主日志——诊断要列目录读归档
+- ps1 里字符串嵌套引号用 -f 格式化（转义引号会因 Git Bash→文件的字面量问题崩 ForEach）
+
 ## 2026-08-31：v1.0.6 制品等价门禁 W0/W1/W2 done + W3 阶段性收口（.5/.6/.7 pending CI 全绿）
 
 ### 当前状态
@@ -32,7 +60,8 @@
 - Windows python/docker CLI 不认 `/c/...` 路径→脚本内一律 cd+相对路径
 - 锁文件内嵌 --hash 行让 pip 自动激活哈希模式→runtime 离线安装用去哈希 pins（Dockerfile 内已处理）
 - Git Bash 下 docker 命令须 `export MSYS_NO_PATHCONV=1`（否则 /app 被改写）
-- python 写 shell 时 `''` 必须字节级核对（MSYS 会吞裸 CR 参数）
+- python 写 shell 时 `'
+'` 必须字节级核对（MSYS 会吞裸 CR 参数）
 - 严格构建禁止并发跑在同一目录/镜像 tag（竞态实证两次）
 - git worktree 的 .git 指回主仓 Windows 路径，容器内不可用→用本地 clone
 - CRLF 锁文件被 pip 当续行符（整文件拼一行）→.gitattributes 已强制 LF
