@@ -680,6 +680,28 @@ jobs:
         run: |
           $fixtureDir = Join-Path $env:RUNNER_TEMP "v105-fixture"
           git worktree add $fixtureDir v1.0.5
+          # 启动编码垫片（等价 v1.0.6 的 desktop_main 入口 reconfigure 修复）：
+          # PyInstaller bootloader 对 frozen app 隔离 PYTHONIOENCODING/PYTHONUTF8
+          # （W3 CI 十二~十五轮 env 注入全路线实证无效），v1.0.5 lifespan 的
+          # 中文 print 在 cp1252 stderr 句柄上崩启动链。与 Linux 夹具带 R9
+          # 热修同型（reconstructed 夹具允许编码热修，不改业务行为）。
+          $dm = Join-Path $fixtureDir "backend\app\desktop_main.py"
+          $src = Get-Content $dm -Raw -Encoding UTF8
+          $anchor = 'os.environ.setdefault("ALLOWED_HOSTS"'
+          $idx = $src.IndexOf($anchor)
+          if ($idx -lt 0) { throw "desktop_main anchor not found" }
+          $lineEnd = $src.IndexOf("`n", $idx)
+          $shim = @'
+
+          # W3 CI 夹具垫片（reconstructed）：启动编码热修，等价 v1.0.6 修复
+          import sys as _sys
+          for _s in (_sys.stdout, _sys.stderr):
+              if hasattr(_s, "reconfigure"):
+                  _s.reconfigure(encoding="utf-8", errors="replace")
+          '@
+          $patched = $src.Insert($lineEnd + 1, $shim + "`n")
+          Set-Content $dm -Value $patched -Encoding UTF8 -NoNewline
+          Write-Output "v1.0.5 fixture encoding shim applied"
           Push-Location "$fixtureDir/frontend"
           $npm = (Get-Command npm.cmd).Source
           & $npm ci --legacy-peer-deps
