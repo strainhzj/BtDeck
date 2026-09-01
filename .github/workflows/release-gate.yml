@@ -827,22 +827,33 @@ jobs:
           # rpm 与 deb 用不同 systemd 容器（发行版覆盖）
           snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.rpm"
 
-          # Docker 组合快照（backend 容器内执行 runner；镜像 python3 基础镜像自带）
+          # Docker 组合快照（backend 容器内执行 runner；镜像 python3 基础镜像自带）。
+          # w4-override 对齐生产形态（DEV=false+测试 SECRET_KEY）——compose 默认
+          # DEV=true 会开 openapi，与 deb/rpm 生产形态不一致造成 C02 伪差异
+          # （第九轮实测 route_count 0 vs 191 共 216 条）
           BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
-            docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life up -d
+            docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-override.yml -p w4life up -d
           for i in $(seq 1 60); do
             body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
             case "$body" in *'"version":"1.0.6"'*) break;; esac
             sleep 3
           done
+          if [ "$i" = "60" ]; then
+            echo 'docker backend not healthy; last logs:'
+            docker logs w3-life-backend 2>&1 | tail -15
+            exit 1
+          fi
           docker cp scripts/release/contract_runner.py w3-life-backend:/tmp/contract_runner.py
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
             --base-url http://127.0.0.1:5001 --output /tmp/snapshot-docker.json
           docker cp w3-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 docker compose -f scripts/release/lifecycle/docker-compose.test.yml -p w4life down -v >/dev/null
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 docker compose -f scripts/release/lifecycle/docker-compose.test.yml -f scripts/release/lifecycle/docker-compose.w4-override.yml -p w4life down -v >/dev/null
 
       - name: Compare cross-artifact snapshots (fail-closed)
         run: |
+          # pipefail 必需：| tee 会吞 compare 的非零退出码（第九轮 job 伪绿实测）
+          set -o pipefail
           python scripts/release/compare_snapshots.py \
             --baseline release/evidence/w4/snapshot-deb.json \
             --candidates release/evidence/w4/snapshot-rpm.json release/evidence/w4/snapshot-docker.json \

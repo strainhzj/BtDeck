@@ -1,0 +1,17 @@
+# W4 跨制品契约组合的环境覆盖（release-artifact-equivalence-gate task .8 / G8）。
+#
+# docker-compose.test.yml 的 backend 默认 DEV=true（w3 卷升级夹具沿用，无
+# SECRET_KEY 时 DEV=false 会触发 _validate_security_config 拒启）——但 DEV
+# 形态会开启 openapi.json（factory.py W11 安全设计），与 deb/rpm 生产形态
+# 不一致，造成 C02 契约的 216 条伪差异（w4 CI 第九轮实测 route_count 0 vs 191）。
+# w4 组合用本覆盖对齐生产形态：显式 DEV=false + 测试专用 SECRET_KEY
+# （等价 deb/rpm postinst 生成 SECRET_KEY 的生产语义；非真实密钥）。
+# 用法：docker compose -f docker-compose.test.yml -f docker-compose.w4-override.yml -p w4life up -d
+services:
+  btdeck-backend:
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+      - DEV=false
+      - SECRET_KEY=w4-contract-test-secret
+      - LOG_LEVEL=INFO
