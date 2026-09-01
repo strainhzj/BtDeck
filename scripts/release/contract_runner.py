@@ -188,7 +188,9 @@ def scenario_c02_openapi_contract(ctx: Dict[str, Any]) -> Dict[str, Any]:
     # 跨形态可比（w4 CI 第十一轮实测 4 条伪差异）
     non_json = isinstance(result.body, dict) and "__non_json_bytes__" in result.body
     if result.status == 404 or non_json:
-        return {"http": result.status, "unavailable": "openapi disabled in production build"}
+        # 不记录 http 状态码：deb（静态 fallback 200）与 docker（404）的
+        # 送达路径不同但语义同为"openapi 不可用"，状态码非契约对象
+        return {"unavailable": "openapi disabled in production build"}
     spec = result.body if isinstance(result.body, dict) else {}
     route_map: Dict[str, List[str]] = {}
     for path, methods in sorted(spec.get("paths", {}).items()):
