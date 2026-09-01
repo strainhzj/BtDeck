@@ -227,7 +227,9 @@ if ($null -eq $SetupExe) {
             # AppRotateFiles=1 下崩溃重启循环会反复轮转主日志文件——必须
             # 列出目录并读取归档（第十八轮实测主文件空、真凶在轮转件里）
             $logsDir = Join-Path $InstallDir "logs"
-            Write-Output "[DIAG] B4 logs dir: $((Get-ChildItem $logsDir -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 8 | ForEach-Object { \"$($_.Name)($($_.Length)b)\" }) -join ' ')"
+            $dirList = (Get-ChildItem $logsDir -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending |
+                Select-Object -First 8 | ForEach-Object { '{0}({1}b)' -f $_.Name, $_.Length }) -join ' '
+            Write-Output "[DIAG] B4 logs dir: $dirList"
             $newestErr = Get-ChildItem $logsDir -Filter "*stderr*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2
             foreach ($f in $newestErr) {
                 Write-Output "[DIAG] B4 $($f.Name): $((Get-Content $f.FullName -Tail 15 -ErrorAction SilentlyContinue) -join ' | ')"
