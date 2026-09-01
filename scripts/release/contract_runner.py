@@ -495,10 +495,17 @@ def scenario_c09_notifications_audit(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def scenario_c11_spa(ctx: Dict[str, Any]) -> Dict[str, Any]:
-    """C11：SPA 静态服务契约（index 可达 + 资源引用清单 + 路由 fallback 行为）。"""
+    """C11：SPA 静态服务契约（index 可达 + 资源引用清单 + 路由 fallback 行为）。
+
+    SPA 交付位置按部署形态不同：deb/rpm 二进制内嵌前端（backend 直出）；
+    docker 部署由独立 frontend nginx 容器提供（backend 404 属预期）——CI 对
+    docker 组合传 --spa-base-url 指向前端容器，比对同一唯一前端构建的
+    index/资源 manifest（计划 C11 语义）。
+    """
     import re as _re
 
-    index = http_request_raw(ctx["base_url"], "GET", "/")
+    spa_base = ctx.get("spa_base_url") or ctx["base_url"]
+    index = http_request_raw(spa_base, "GET", "/")
     assets: List[str] = []
     content_type = ""
     if isinstance(index.body, str):
@@ -539,9 +546,12 @@ SCENARIO_SETS = {
 
 
 def run_snapshot(
-    base_url: str, scenario_ids: Tuple[str, ...], timeout: int = 10
+    base_url: str,
+    scenario_ids: Tuple[str, ...],
+    timeout: int = 10,
+    spa_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
-    ctx = {"base_url": base_url, "timeout": timeout}
+    ctx = {"base_url": base_url, "timeout": timeout, "spa_base_url": spa_base_url}
     scenarios: Dict[str, Any] = {}
     failures: List[str] = []
     for sid in scenario_ids:
@@ -569,6 +579,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--scenarios", default=None, help="逗号分隔场景 ID（覆盖 scenario-set）"
     )
     parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument(
+        "--spa-base-url",
+        default=None,
+        help="C11 SPA 交付地址（docker 部署指向前端容器；默认 base_url）",
+    )
     args = parser.parse_args(argv)
 
     ids = (
@@ -580,7 +595,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if unknown:
         parser.error(f"未知场景: {unknown}（可用: {sorted(SCENARIOS)}）")
 
-    snapshot = run_snapshot(args.base_url, ids, timeout=args.timeout)
+    snapshot = run_snapshot(args.base_url, ids, timeout=args.timeout, spa_base_url=args.spa_base_url)
     with open(args.output, "w", encoding="utf-8", newline="\n") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")
