@@ -18,18 +18,18 @@
 - 副产品：修复遗留同步路径 3 个真缺陷（progress/qb_tr_stub 注释与证据 README 有全清单）
 - 证据：release/evidence/w4/b2/（本地双实例+CI 快照/报告/日志 + README）
 
-### 遗留观察（不阻断）
+### 遗留观察（同日已全部清理）
 
-1. test_openpyxl_kept_for_excel_export：dev 既有失败（W2 瘦身后 requirements-linux-package.txt
-   缺 openpyxl），与本批无关，建议单独修复
-2. 全新实例 tracker_judgment 报 no such table: tracker_keyword_config（fresh-install 迁移
-   缺口嫌疑），待排查
+1. test_openpyxl_kept_for_excel_export：系旧口径测试与 W1/W2 平台增量白名单架构矛盾，
+   已改测试对齐（主清单+锁须含 openpyxl、平台文件须不含）
+2. no such table: tracker_keyword_config：import 期预加载早于迁移的启动顺序竞态，
+   已改模块级单例 auto_load=False 懒加载；回归 3 例 + 全新实例实证 0 报错
 
 ### 下一步：.9（W5/W6）
 
 - SBOM（CycloneDX）/漏洞/秘密/许可证扫描、Windows/Docker 签名、release-gate DAG 与
   gate report 汇聚、digest 晋级、RC 演练（六类故障注入）+ runbook（计划 §W5/§W6/§G9/§G10）
-- 建议先清两个遗留观察项再开 .9
+- 两个遗留观察项已清理，可直接开工
 
 ### 环境坑（B2 新增，勿重踩）
 

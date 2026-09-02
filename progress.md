@@ -63,10 +63,28 @@
   日志，未影响场景断言）——疑似 fresh-install 迁移缺口，待排查。
 - 全套 pytest：4280 过 / 7 跳过 / 1 失败（即上述 openpyxl 既有项）。
 
+### 遗留观察项清理（同日，B2 收口后）
+
+1. **openpyxl 打包契约失败 → 修复**：`test_openpyxl_kept_for_excel_export` 是 8/27 前后两批
+   改造交叠期的旧口径（要求三个 requirements 文件都含 openpyxl），与 8/28 W1/W2 的
+   "deploy 平台增量白名单"架构直接矛盾（openpyxl 属公共依赖，由 requirements-lock 带
+   哈希供应，白名单仅 pyinstaller/pywebview，复制进平台文件反而违反
+   test_dependency_lock 强制）。修复＝陈旧测试对齐现行架构：主清单+锁必须含
+   openpyxl（制品实际安装源），平台文件必须不含。
+2. **fresh-install 缺 tracker_keyword_config 表 → 修复**：全新实例日志报
+   `no such table: tracker_keyword_config`。实锤为**启动顺序竞态**而非迁移缺口——
+   基线迁移 e2a02abcf912 无条件建全部 21 表；但 `tracker_judgment.py` 模块级单例
+   `judgment_engine = TrackerJudgmentEngine()` 以 auto_load=True 在 **import 期**
+   预加载关键词，早于 startup 的 Alembic 迁移；存量库（表已存在）掩盖多年。
+   修复＝单例改 `auto_load=False`，首次 judge_status 经 `_ensure_cache_loaded`
+   懒加载（双检锁）。回归测试 3 例（reload 时 SessionLocal 一触即爆的 import 期
+   禁 DB 契约/源级 auto_load=False 断言/懒加载按需触发）；全新 docker 实例实证
+   0 次 no such table + 懒加载成功载入 80 条种子失败关键词。顺手删除该测试文件
+   的既有死导入 threading。
+
 ### 下一步
 
-- .9（W5/W6）：SBOM/漏洞扫描/签名/digest 晋级/RC 演练（最后执行）；建议先清 openpyxl 与
-  tracker_keyword_config 两个遗留观察项。
+- .9（W5/W6）：SBOM/漏洞扫描/签名/digest 晋级/RC 演练（最后执行）——两个遗留观察项已清理，可直接开工。
 
 
 ## 2026-08-28：安全修复与质量门禁可信化人工闭环

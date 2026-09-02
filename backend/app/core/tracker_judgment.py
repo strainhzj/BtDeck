@@ -412,4 +412,8 @@ class TrackerJudgmentEngine:
 
 
 # 全局单例，供其他模块导入使用
-judgment_engine = TrackerJudgmentEngine()
+# 模块级单例禁止 import 期预加载（auto_load=False）：本模块被端点/服务在
+# 应用组装期导入，早于 startup 的 Alembic 迁移——全新安装时表尚不存在，
+# 预加载必然 OperationalError（W4 B2 全新实例实证）。首次 judge_status
+# 经 _ensure_cache_loaded 懒加载（双检锁），此时迁移已完成。
+judgment_engine = TrackerJudgmentEngine(auto_load=False)
