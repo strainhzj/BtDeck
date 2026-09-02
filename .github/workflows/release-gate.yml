@@ -810,14 +810,15 @@ jobs:
           # 受控下载器 stub（B2）：单容器三监听（qB:18080 / TR:18081 / qB:18082
           # C05 专用——下载器缓存按 host:port 去重且 delete 不清缓存，C05/C06
           # 共端口会让 C06 夹具进不了缓存，本地双实例实证）。先接 deb 网再接
-          # rpm 网，容器名 w4-stub 即各网 DNS 名。
+          # rpm 网，network-alias w4-stub 即各网 DNS 名。容器名须区别于 compose
+          # 组合的 w4-stub 服务（container_name 固定，重名冲突 CI 第一轮实测）。
           docker network create w4net-deb >/dev/null 2>&1 || true
           docker network create w4net-rpm >/dev/null 2>&1 || true
-          docker rm -f w4-stub >/dev/null 2>&1 || true
-          docker run -d --name w4-stub --network w4net-deb \
+          docker rm -f w4-stub-host >/dev/null 2>&1 || true
+          docker run -d --name w4-stub-host --network w4net-deb --network-alias w4-stub \
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
             python:3.11-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
-          docker network connect w4net-rpm w4-stub
+          docker network connect --alias w4-stub w4net-rpm w4-stub-host
 
           # 等待逻辑用仓库内脚本文件（scripts/release/lifecycle/w4_install_wait.sh）：
           # docker exec 嵌套引号转义链与 YAML 块内 heredoc 均不可靠（CI 首两轮
@@ -946,7 +947,7 @@ jobs:
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life down -v >/dev/null
-          docker rm -f w4-stub >/dev/null 2>&1 || true
+          docker rm -f w4-stub-host >/dev/null 2>&1 || true
           docker network rm w4net-deb w4net-rpm >/dev/null 2>&1 || true
 
       - name: Upload contract snapshots
