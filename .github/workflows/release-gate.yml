@@ -65,6 +65,10 @@ on:
         description: "Run w4-contract (G8 cross-artifact blackbox C01~C12 + mutation drill)"
         type: boolean
         default: false
+      run_w5_security:
+        description: "Run w5-security (G9 SBOM + vuln/secret/license scan)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -956,5 +960,66 @@ jobs:
         with:
           name: w4-contract
           path: release/evidence/w4/
+          retention-days: 14
+          if-no-files-found: error
+
+  w5-security:
+    name: "W5 security / SBOM + vuln/secret/license scan (G9)"
+    if: ${{ inputs.run_w5_security }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (full history for secret scan)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once
+        run: python scripts/release/build_frontend.py
+
+      - name: Build strict Linux packages (DEB + RPM)
+        run: |
+          docker build -t w2-linux-builder - <<'BUILDEREOF'
+          FROM python:3.11-bullseye
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+              && rm -rf /var/lib/apt/lists/* \
+              && gem install fpm --no-document
+          BUILDEREOF
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            bash deploy/build-linux.sh --release
+          '
+
+      - name: Build v1.0.6 docker images
+        run: bash build-images.sh --release
+
+      - name: Generate SBOMs (five targets, digest-pinned syft)
+        run: python scripts/release/generate_sbom.py
+
+      - name: Scan vulnerabilities + secrets + licenses (fail-closed)
+        run: python scripts/release/scan_security.py
+
+      - name: Upload security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w5-security
+          path: |
+            release/evidence/w5/
+            release/build/sbom/index.json
           retention-days: 14
           if-no-files-found: error
