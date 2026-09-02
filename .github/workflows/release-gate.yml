@@ -62,7 +62,7 @@ on:
         type: boolean
         default: false
       run_w4_contract:
-        description: "Run w4-contract (G8 cross-artifact blackbox C01~C04)"
+        description: "Run w4-contract (G8 cross-artifact blackbox C01~C12 + mutation drill)"
         type: boolean
         default: false
 
@@ -744,10 +744,10 @@ jobs:
           if-no-files-found: error
 
   w4-contract:
-    name: "W4 contract / Cross-artifact equivalence (G8)"
+    name: "W4 contract / Cross-artifact equivalence (G8, C01~C12 + mutation drill)"
     if: ${{ inputs.run_w4_contract }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 95
     steps:
       - name: Checkout (full history for release identity)
         uses: actions/checkout@v4
@@ -787,7 +787,7 @@ jobs:
       - name: Build v1.0.6 docker images
         run: bash build-images.sh --release
 
-      - name: Snapshot DEB / RPM / Docker instances (C01~C04)
+      - name: Snapshot DEB / RPM / Docker instances (C01~C12 + restart C10)
         run: |
           set -e
           mkdir -p release/evidence/w4
@@ -807,33 +807,55 @@ jobs:
           CMD ["/sbin/init"]
           RPMEOF
 
+          # 受控下载器 stub（B2）：单容器三监听（qB:18080 / TR:18081 / qB:18082
+          # C05 专用——下载器缓存按 host:port 去重且 delete 不清缓存，C05/C06
+          # 共端口会让 C06 夹具进不了缓存，本地双实例实证）。先接 deb 网再接
+          # rpm 网，容器名 w4-stub 即各网 DNS 名。
+          docker network create w4net-deb >/dev/null 2>&1 || true
+          docker network create w4net-rpm >/dev/null 2>&1 || true
+          docker rm -f w4-stub >/dev/null 2>&1 || true
+          docker run -d --name w4-stub --network w4net-deb \
+            -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
+            python:3.11-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
+          docker network connect w4net-rpm w4-stub
+
           # 等待逻辑用仓库内脚本文件（scripts/release/lifecycle/w4_install_wait.sh）：
           # docker exec 嵌套引号转义链与 YAML 块内 heredoc 均不可靠（CI 首两轮
           # 实测），安装命令不可作单参数传（"dpkg -i" 成单命令名→127，第三轮
           # 实测）——脚本按包文件后缀分支，函数只传包路径。
-          snapshot_pkg() {  # snapshot_pkg <name> <image> <pkg-file>
-            local name="$1" image="$2" pkg="$3"
+          # 每实例两阶段：FULL（C01~C09/C11/C12）→ systemctl restart → C10
+          # （重启后契约密码登录/数据可见/身份不变）--merge-into 并入主快照。
+          snapshot_pkg() {  # snapshot_pkg <name> <image> <pkg-file> <net>
+            local name="$1" image="$2" pkg="$3" net="$4"
             docker rm -f "w4-$name" >/dev/null 2>&1 || true
-            docker run -d --name "w4-$name" --privileged --cgroupns=host -v "$PWD:/src:ro" "$image" >/dev/null
+            docker run -d --name "w4-$name" --privileged --cgroupns=host --network "$net" -v "$PWD:/src:ro" "$image" >/dev/null
             sleep 8
             docker exec "w4-$name" bash /src/scripts/release/lifecycle/w4_install_wait.sh "$pkg"
             docker exec "w4-$name" python3 /src/scripts/release/contract_runner.py \
-              --base-url http://127.0.0.1:5001 --scenarios C01,C02,C03,C04,C07,C08,C09,C11 --output "/tmp/snapshot-$name.json"
+              --base-url http://127.0.0.1:5001 --scenario-set FULL --downloader-stub-host w4-stub \
+              --output "/tmp/snapshot-$name.json"
+            docker exec "w4-$name" systemctl restart btdeck
+            docker exec "w4-$name" bash /src/scripts/release/lifecycle/w4_install_wait.sh --wait-only
+            docker exec "w4-$name" python3 /src/scripts/release/contract_runner.py \
+              --base-url http://127.0.0.1:5001 --scenarios C10 --downloader-stub-host w4-stub \
+              --output "/tmp/c10-$name.json" --merge-into "/tmp/snapshot-$name.json"
             docker cp "w4-$name:/tmp/snapshot-$name.json" "release/evidence/w4/snapshot-$name.json"
             docker rm -f "w4-$name" >/dev/null
           }
 
-          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.deb"
+          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.deb" w4net-deb
           # rpm 与 deb 用不同 systemd 容器（发行版覆盖）
-          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.rpm"
+          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.rpm" w4net-rpm
 
-          # Docker 组合快照（backend 容器内执行 runner；镜像 python3 基础镜像自带）。
-          # w4-override 对齐生产形态（DEV=false+测试 SECRET_KEY）——compose 默认
-          # DEV=true 会开 openapi，与 deb/rpm 生产形态不一致造成 C02 伪差异
-          # （第九轮实测 route_count 0 vs 191 共 216 条）
+          # Docker 组合快照（backend 容器内执行 runner；stub 由 w4-stub override
+          # 提供同网服务）。w4-override 对齐生产形态（DEV=false+测试 SECRET_KEY）
+          # ——compose 默认 DEV=true 会开 openapi，与 deb/rpm 生产形态不一致造成
+          # C02 伪差异（第九轮实测 route_count 0 vs 191 共 216 条）。
+          # 组合保持运行：后续 Mutation drill 步骤复用该组合。
           BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
-              -f scripts/release/lifecycle/docker-compose.w4-override.yml -p w4life up -d
+              -f scripts/release/lifecycle/docker-compose.w4-override.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
           for i in $(seq 1 60); do
             body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
             case "$body" in *'"version":"1.0.6"'*) break;; esac
@@ -846,9 +868,21 @@ jobs:
           fi
           docker cp scripts/release/contract_runner.py w3-life-backend:/tmp/contract_runner.py
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
-            --base-url http://127.0.0.1:5001 --scenarios C01,C02,C03,C04,C07,C08,C09,C11             --spa-base-url http://w3-life-frontend --output /tmp/snapshot-docker.json
+            --base-url http://127.0.0.1:5001 --scenario-set FULL --downloader-stub-host w4-stub \
+            --spa-base-url http://w3-life-frontend --output /tmp/snapshot-docker.json
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+            docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-override.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life restart btdeck-backend
+          for i in $(seq 1 60); do
+            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
+            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            sleep 3
+          done
+          docker exec w3-life-backend python3 /tmp/contract_runner.py \
+            --base-url http://127.0.0.1:5001 --scenarios C10 --downloader-stub-host w4-stub \
+            --output /tmp/c10-docker.json --merge-into /tmp/snapshot-docker.json
           docker cp w3-life-backend:/tmp/snapshot-docker.json release/evidence/w4/snapshot-docker.json
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 docker compose -f scripts/release/lifecycle/docker-compose.test.yml -f scripts/release/lifecycle/docker-compose.w4-override.yml -p w4life down -v >/dev/null
 
       - name: Compare cross-artifact snapshots (fail-closed)
         run: |
@@ -859,6 +893,61 @@ jobs:
             --candidates release/evidence/w4/snapshot-rpm.json release/evidence/w4/snapshot-docker.json \
             --exceptions release/equivalence-exceptions.json \
             | tee release/evidence/w4/compare-report.json
+
+      - name: Mutation drill (G8 exit gate) - injected diffs must go red
+        run: |
+          set -e
+          # G8 退出门（计划 §W4）：对真实运行制品注入差异，聚合比对必须报红；
+          # 演练步骤断言"检出"——变异未被拦截时本步骤失败。复用仍在运行的
+          # w4life docker 组合（backend 完好；M1 只改 frontend 静态资源）。
+          # ---- M1 前端资源变异（真制品差异：index.html 前置标记字节） ----
+          docker exec w3-life-frontend sh -c "sed -i '1s/^/<!-- w4-mutation -->/' /usr/share/nginx/html/index.html"
+          docker exec w3-life-backend python3 /tmp/contract_runner.py \
+            --base-url http://127.0.0.1:5001 --scenarios C11 --spa-base-url http://w3-life-frontend \
+            --output /tmp/m1-mutated-c11.json
+          docker cp w3-life-backend:/tmp/m1-mutated-c11.json release/evidence/w4/m1-mutated-c11.json
+          python scripts/release/slice_snapshot.py --input release/evidence/w4/snapshot-docker.json \
+            --scenarios C11_spa --output /tmp/m1-baseline-c11.json
+          if python scripts/release/compare_snapshots.py --baseline /tmp/m1-baseline-c11.json \
+              --candidates release/evidence/w4/m1-mutated-c11.json \
+              --exceptions release/equivalence-exceptions.json > release/evidence/w4/m1-report.json; then
+            echo '[FAIL] M1: 前端资源变异未被检出（compare 未报红）'; exit 1
+          fi
+          grep -q 'C11_spa.index' release/evidence/w4/m1-report.json \
+            || { echo '[FAIL] M1: 报告缺 index 差异'; cat release/evidence/w4/m1-report.json; exit 1; }
+          echo 'M1 PASS: 前端资源差异已按预期拦截'
+
+          # ---- M2 响应字段变异（mutate-proxy 改写 /health/live 的 data.version） ----
+          docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
+          docker run -d --name w4-mut-proxy --network w4life_w3life_net \
+            -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
+            python:3.11-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
+            --upstream http://w3-life-backend:5001 --mutate-route /health/live \
+            --mutate-field data.version --mutate-value 1.0.6-mutated >/dev/null
+          sleep 2
+          docker run --rm --network w4life_w3life_net \
+            -v "$PWD/release/evidence/w4:/out" \
+            -v "$PWD/scripts/release/contract_runner.py:/runner/contract_runner.py:ro" \
+            python:3.11-slim python /runner/contract_runner.py \
+            --base-url http://w4-mut-proxy:5002 --scenarios C01 --output /out/m2-mutated-c01.json
+          python scripts/release/slice_snapshot.py --input release/evidence/w4/snapshot-docker.json \
+            --scenarios C01_health_identity --output /tmp/m2-baseline-c01.json
+          if python scripts/release/compare_snapshots.py --baseline /tmp/m2-baseline-c01.json \
+              --candidates release/evidence/w4/m2-mutated-c01.json \
+              --exceptions release/equivalence-exceptions.json > release/evidence/w4/m2-report.json; then
+            echo '[FAIL] M2: 响应字段变异未被检出（compare 未报红）'; exit 1
+          fi
+          grep -q 'live.identity.version' release/evidence/w4/m2-report.json \
+            || { echo '[FAIL] M2: 报告缺 version 差异'; cat release/evidence/w4/m2-report.json; exit 1; }
+          echo 'M2 PASS: 响应字段差异已按预期拦截'
+
+          docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+            docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-override.yml \
+              -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life down -v >/dev/null
+          docker rm -f w4-stub >/dev/null 2>&1 || true
+          docker network rm w4net-deb w4net-rpm >/dev/null 2>&1 || true
 
       - name: Upload contract snapshots
         if: always()
