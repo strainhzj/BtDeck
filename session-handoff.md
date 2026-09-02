@@ -19,6 +19,40 @@
 1. **W4 批次 B**：C05~C12（受控 qB/TR stub 的下载器/种子场景、查询模板、定时任务、通知审计、迁移重启、SPA、路径边界）+制品级变异注入演练（G8 退出门）
 2. **.9（W5/W6）**：SBOM/漏洞扫描/签名/晋级 digest/RC 演练（最后执行）
 
+## 2026-09-01（最新）：W4 批次 A+B1 全绿——八场景跨制品黑盒契约等价（task .8 in-progress）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.7；**.8 in-progress（批次 A+B1 全绿，B2 待做）**；.9 pending
+- 分支 dev@50b9347（全部已推送）；master workflow 副本已同步；release 测试 127/127
+
+### W4 已完成（批次 A+B1）
+
+- **w4-contract CI job 全绿**：八场景（C01 健康 Identity/C02 OpenAPI/C03 认证/C04 改密/C07 查询模板/C08 定时任务/C09 通知审计/C11 SPA）三制品（deb/rpm/docker）快照 compare **total_diffs=0 零豁免规则**
+- 代码件：scripts/release/contract_runner.py（纯 stdlib 禁 import app.*，--spa-base-url 支持）、compare_snapshots.py（禁宽泛/过期规则+stale 报告）、release/equivalence-exceptions.json（空）、lifecycle/w4_install_wait.sh、lifecycle/docker-compose.w4-override.yml（docker 测试组合对齐生产形态 DEV=false+SECRET_KEY+ALLOWED_HOSTS）
+- 测试 backend/tests/release/test_contract_runner.py 16 例（铁律/纯函数/mock 端到端含 B1 路由/变异检出/规则负向/不可达语义）
+- 证据 release/evidence/w4/（三制品快照+compare 报告+16 轮 CI 日志+本地双实例快照）
+
+### 下一步：W4 批次 B2（task .8 完成件）
+
+1. **C05/C06（最大件）**：受控 qB/Transmission stub（scripts/release/fixtures/ 独立 HTTP 进程，纯 stdlib）——C05 下载器管理（新增/测试/编辑/删除）、C06 种子核心查询（固定 stub 数据下列表/状态/Tracker/分页）
+2. **C10 迁移与重启**：重启编排（deb 容器 systemctl restart 前后 API 可见数据/secret/head 一致；W3 已覆盖服务层断言，C10 增量=API 视角）
+3. **C12 文件路径边界**：各平台映射授权/拒绝语义、路径文本规范化比较
+4. **制品级变异注入演练（G8 退出门）**：对某制品注入一个真实差异（如改一个响应字段/路由/前端资源）验证聚合报红——runner 级变异已单测覆盖，制品级待做
+5. B2 全绿后 .8 置 done → .9（W5/W6：SBOM/漏洞扫描/签名/digest 晋级/RC 演练，最后执行）
+
+### 环境坑（W4 新增，勿重踩）
+
+- `| tee` 吞非零退出码（compare 步骤须 pipefail）
+- 宿主函数变量不进容器；"dpkg -i" 作为单参数=单命令名（127）；安装命令按包后缀在脚本内分支
+- docker exec 嵌套引号与 YAML 块内 heredoc 均不可靠→脚本仓库文件化（w4_install_wait.sh）
+- compose 测试组合 DEV=true 与生产形态不一致→C02/C11 伪差异（w4-override 对齐）
+- C11 SPA 按部署形态取址：deb/rpm backend 直出；docker 用 --spa-base-url http://w3-life-frontend
+- data_of 首元素语义（[obj] 信封）与直接数组端点冲突——列表/枚举端点用原始 body.data
+- **批量 python replace 必须对每个替换 assert**（被 black 折行吞掉已发生三次）
+- 生产 v1.0.5→v1.0.6 RPM 升级需手动 `systemctl enable --now btdeck`（runbook）
+
 ## 2026-09-01：W3 收口达成——三平台生命周期门禁全部 CI 全绿（.5/.6/.7 done）
 
 ### 当前状态
