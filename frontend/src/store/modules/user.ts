@@ -1,6 +1,8 @@
 import { VuexModule, Module, Action, Mutation, getModule } from 'vuex-module-decorators'
 import { login, logout, getUserInfo } from '@/api/users'
 import { ApiError } from '@/types/api'
+import { isDemoMode, demoSession } from '@/demo/config'
+import { DEMO_USER } from '@/demo/fixtures'
 import {
   getToken,
   setToken,
@@ -32,14 +34,14 @@ interface ILoginPayload {
 
 @Module({ dynamic: true, store, name: 'user' })
 class User extends VuexModule implements IUserState {
-  public token = getToken() || ''
-  public userId = getUserId() || ''
-  public name = ''
-  public avatar = ''
-  public introduction = ''
-  public roles: string[] = []
-  public twoFactorFlag = '0'
-  public mustChangePassword = false
+  public token = isDemoMode() ? demoSession.token : getToken() || ''
+  public userId = isDemoMode() ? demoSession.userId : getUserId() || ''
+  public name = isDemoMode() ? DEMO_USER.name : ''
+  public avatar = isDemoMode() ? DEMO_USER.avatar : ''
+  public introduction = isDemoMode() ? DEMO_USER.introduction : ''
+  public roles: string[] = isDemoMode() ? [...DEMO_USER.roles] : []
+  public twoFactorFlag = isDemoMode() ? DEMO_USER.twoFactorFlag : '0'
+  public mustChangePassword = isDemoMode() ? DEMO_USER.mustChangePassword : false
 
   @Mutation
   private SET_TOKEN(token: string) {
@@ -67,7 +69,9 @@ class User extends VuexModule implements IUserState {
    */
   @Action({ rawError: true })
   public SetToken(token: string) {
-    setToken(token)
+    if (!isDemoMode()) {
+      setToken(token)
+    }
     this.SET_TOKEN(token)
   }
 
@@ -78,7 +82,9 @@ class User extends VuexModule implements IUserState {
   @Mutation
   private SET_USER_ID(userId: string) {
     this.userId = userId
-    setUserId(userId)
+    if (!isDemoMode()) {
+      setUserId(userId)
+    }
   }
 
   @Mutation
@@ -108,6 +114,18 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async Login(userInfo: ILoginPayload) {
+    if (isDemoMode()) {
+      this.SET_TOKEN(demoSession.token)
+      this.SET_USER_ID(demoSession.userId)
+      this.SET_NAME(DEMO_USER.name)
+      this.SET_AVATAR(DEMO_USER.avatar)
+      this.SET_INTRODUCTION(DEMO_USER.introduction)
+      this.SET_ROLES([...DEMO_USER.roles])
+      this.SET_TWO_FACTOR_FLAG(DEMO_USER.twoFactorFlag)
+      this.SET_MUST_CHANGE_PASSWORD(DEMO_USER.mustChangePassword)
+      return
+    }
+
     let { username } = userInfo
     const { password, twofa_code } = userInfo
     username = username.trim()
@@ -151,6 +169,19 @@ class User extends VuexModule implements IUserState {
     this.SET_ROLES([])
     // 登出/失效时清除强制改密标志，避免切换账号残留上一账号的强制状态
     this.SET_MUST_CHANGE_PASSWORD(false)
+  }
+
+  @Action({ rawError: true })
+  public InitializeDemoSession() {
+    if (!isDemoMode()) return
+    this.SET_TOKEN(demoSession.token)
+    this.SET_USER_ID(demoSession.userId)
+    this.SET_NAME(DEMO_USER.name)
+    this.SET_AVATAR(DEMO_USER.avatar)
+    this.SET_INTRODUCTION(DEMO_USER.introduction)
+    this.SET_ROLES([...DEMO_USER.roles])
+    this.SET_TWO_FACTOR_FLAG(DEMO_USER.twoFactorFlag)
+    this.SET_MUST_CHANGE_PASSWORD(DEMO_USER.mustChangePassword)
   }
 
   /**
@@ -197,6 +228,18 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async GetUserInfo() {
+    if (isDemoMode()) {
+      this.SET_TOKEN(demoSession.token)
+      this.SET_USER_ID(demoSession.userId)
+      this.SET_NAME(DEMO_USER.name)
+      this.SET_AVATAR(DEMO_USER.avatar)
+      this.SET_INTRODUCTION(DEMO_USER.introduction)
+      this.SET_ROLES([...DEMO_USER.roles])
+      this.SET_TWO_FACTOR_FLAG(DEMO_USER.twoFactorFlag)
+      this.SET_MUST_CHANGE_PASSWORD(DEMO_USER.mustChangePassword)
+      return
+    }
+
     // 🔧 防御性检查：更详细的 token 验证
     if (!this.token || this.token.trim() === '') {
       throw Error('Token为空，请重新登录')
@@ -279,6 +322,21 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async LogOut() {
+    if (isDemoMode()) {
+      removeToken()
+      removeRefreshToken()
+      removeUserId()
+      this.SET_TOKEN('')
+      this.SET_USER_ID('')
+      this.SET_NAME('')
+      this.SET_AVATAR('')
+      this.SET_INTRODUCTION('')
+      this.SET_ROLES([])
+      this.SET_TWO_FACTOR_FLAG('0')
+      this.SET_MUST_CHANGE_PASSWORD(false)
+      return
+    }
+
     // token 已被清空（如过期登出已执行 ResetToken）时仍要完成本地清理：
     // 直接跳过后端撤销调用，保证登出入口（Navbar）在任何状态下都可用，
     // 不因 throw 中断后续的页面跳转

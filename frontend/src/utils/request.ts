@@ -6,6 +6,8 @@ import { refreshAccessToken } from '@/api/users'
 import { refreshTokensOnce, type TokenPair, type RefreshOutcome } from '@/utils/token-refresh'
 import { buildLoginRedirectTarget } from '@/utils/session'
 import { ApiError } from '@/types/api'
+import { isDemoMode } from '@/demo/config'
+import { demoRequest } from '@/demo/demo-request'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -30,6 +32,12 @@ export interface ApiEnvelope<T = unknown> {
 
 export interface RequestClient {
   <T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T>
+  get<T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = ApiEnvelope<unknown>>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  put<T = ApiEnvelope<unknown>>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  delete<T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T>
+  /** 兼容需要注入 Axios adapter 的集成测试与调试工具。 */
+  defaults: typeof service.defaults
 }
 
 /**
@@ -260,4 +268,33 @@ service.interceptors.response.use(
   }
 )
 
-export default service as unknown as RequestClient
+const requestClient = (<T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T> => {
+  if (isDemoMode()) {
+    return demoRequest<T>(config)
+  }
+  return service.request(config) as unknown as Promise<T>
+}) as RequestClient
+
+// 保留旧默认导出作为 Axios 实例时可观察到的 defaults 引用；真实模式仍由
+// service.request 执行，Demo 模式只在上面的分流函数内返回本地 Promise。
+requestClient.defaults = service.defaults
+
+requestClient.get = <T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T> =>
+  requestClient<T>({ ...(config || {}), url, method: 'get' })
+
+requestClient.post = <T = ApiEnvelope<unknown>>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> => requestClient<T>({ ...(config || {}), url, method: 'post', data })
+
+requestClient.put = <T = ApiEnvelope<unknown>>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> => requestClient<T>({ ...(config || {}), url, method: 'put', data })
+
+requestClient.delete = <T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T> =>
+  requestClient<T>({ ...(config || {}), url, method: 'delete' })
+
+export default requestClient

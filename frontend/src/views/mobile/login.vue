@@ -4,6 +4,9 @@
       <AppLogo variant="full" class="m-login-logo" />
     </div>
     <div class="m-login-card">
+      <el-button v-if="demoMode" type="text" class="m-login-demo" @click="enterDemoMode">
+        进入演示模式
+      </el-button>
       <el-input v-model="username" placeholder="用户名" autocomplete="username" class="m-login-input" />
       <el-input
         v-model="password"
@@ -23,6 +26,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
+import { isDemoMode } from '@/demo/config'
 import { extractErrorMessage } from '@/utils/formatters'
 import { setStoredUiMode } from '@/utils/ui-mode'
 import AppLogo from '@/components/common/AppLogo.vue'
@@ -38,6 +42,20 @@ export default class MobileLogin extends Vue {
   private username = ''
   private password = ''
   private loading = false
+
+  get demoMode(): boolean {
+    return isDemoMode()
+  }
+
+  private enterDemoMode(): void {
+    UserModule.InitializeDemoSession()
+    this.$message.success('已进入演示模式')
+    const redirect = this.$route.query.redirect
+    const target = typeof redirect === 'string' && redirect.startsWith('/m/')
+      ? redirect
+      : '/m/dashboard'
+    this.$router.replace(target).catch(() => undefined)
+  }
 
   private async submit(): Promise<void> {
     if (!this.username || !this.password) {
@@ -107,6 +125,12 @@ export default class MobileLogin extends Vue {
 .m-login-button {
   width: 100%;
   margin-top: 4px;
+}
+
+.m-login-demo {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .m-login-desktop {

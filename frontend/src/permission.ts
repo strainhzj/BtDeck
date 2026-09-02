@@ -8,6 +8,7 @@ import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
 import { ApiError } from '@/types/api'
 import { currentUiMode, loginPathForMode, toMobilePath } from '@/utils/ui-mode'
+import { isDemoMode } from '@/demo/config'
 
 NProgress.configure({ showSpinner: false })
 
@@ -134,6 +135,21 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
   const modeRedirect = uiModeRedirectPath(to)
   if (modeRedirect) {
     next({ path: modeRedirect, replace: true })
+    NProgress.done()
+    return
+  }
+
+  if (isDemoMode()) {
+    if (loginPaths.indexOf(to.path) !== -1) {
+      const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : ''
+      const targetPath = redirect || (currentUiMode() === 'mobile' ? '/m/dashboard' : '/dashboard')
+      next({ path: targetPath, replace: true })
+    } else {
+      if (!UserModule.token) {
+        UserModule.InitializeDemoSession()
+      }
+      next()
+    }
     NProgress.done()
     return
   }

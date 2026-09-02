@@ -5112,28 +5112,31 @@
       "id": "frontend-static-showcase-demo-2026-08-23",
       "name": "前端静态展示 Demo（Demo Mode）",
       "description": "将现有 Vue 2 + TypeScript 前端整理为不依赖真实后端的可展示版本：通过构建开关进入 Demo 模式，在请求层集中返回脱敏静态数据并维护本地演示状态，保留核心页面、筛选、分页、弹窗和常用操作的交互反馈；真实生产模式继续使用现有认证与后端 API。交付 dist 压缩包和/或独立 Nginx 静态服务，明确下载器、文件系统、定时任务、认证和 Tracker 等不可由静态数据真实表达的能力边界。详细方案见 PLANS/frontend-static-showcase-demo.md。",
-      "status": "pending",
-      "branch": "dev",
+      "status": "in-progress",
+      "branch": "codex/frontend-static-showcase-demo",
       "plan_file": "PLANS/frontend-static-showcase-demo.md",
+      "evidence": "2026-09-02：阶段 1-6 已完成，阶段 7 自动化回归完成；Demo 静态 dist 已构建，核心与扩展流程测试、lint、typecheck 全部通过。浏览器刷新/窄屏人工复验受当前浏览器安全策略限制，Docker 镜像复验受 Docker Desktop Linux engine 不可用限制，保留为人工验收遗留。",
       "tasks": [
         {
           "id": "frontend-static-showcase-demo-2026-08-23.1",
           "name": "冻结 Demo 范围、数据契约和演示脚本",
           "description": "建立路由矩阵和核心演示脚本，区分核心展示、扩展展示、只读降级和明确禁用；整理仪表盘、下载器、种子、Tracker、通知、任务、日志、回收站、孤儿文件、查询模板的脱敏 fixture 字段；复核 12 个 API 模块的响应形状，统一 list/total/pageSize 分页、Demo 标识、重置规则和真实能力边界。",
-          "status": "pending",
+          "status": "done",
+          "branch": "codex/frontend-static-showcase-demo",
           "scope": "frontend",
           "files": [
             "PLANS/frontend-static-showcase-demo.md",
             "frontend/src/demo/types.ts",
             "frontend/src/demo/fixtures/",
             "frontend/README.md"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 1：冻结 core/extended/readonly/disabled 路由矩阵、12 个领域 API 的脱敏字段契约、5 分钟演示脚本、重置/速度规则与能力边界；新增 frontend/src/demo/types.ts、frontend/src/demo/fixtures/index.ts、frontend/src/demo/fixtures/README.md，并更新计划和前端 README。frontend typecheck 通过，feature_list.json JSON 解析通过，git diff --check 通过。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.2",
           "name": "Demo 构建入口与认证旁路",
           "description": "增加默认关闭的 VUE_APP_DEMO_MODE 和 Demo 环境配置；初始化固定演示用户、角色与非敏感占位 Token，绕过真实 login/info/refresh 请求；确保清空 Cookie/localStorage 后访问业务路由不发生登录死循环；增加 Demo Mode 视觉标识和重置/退出演示行为，关闭开关时真实认证守卫完全保持原语义。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/.env.demo",
@@ -5143,13 +5146,14 @@
             "frontend/src/store/modules/user.ts",
             "frontend/src/layout/",
             "frontend/tests/unit/"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 2：新增 frontend/.env.demo 与构建标题切换；Demo 模式初始化固定脱敏用户并跳过真实 login/info/refresh 与会话监听；桌面/移动登录页增加进入演示入口；App 全局显示 Demo Mode 提示。真实模式仍沿用原认证守卫与 API。frontend typecheck 通过，demo-config.spec.ts 2/2 通过，git diff --check 通过。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.3",
           "name": "集中式静态请求层与本地状态仓库",
           "description": "在 request.ts 请求层按 Demo 开关分流到 typed demoRequest；按 method + URL pattern 覆盖核心 API，返回统一响应信封，支持分页、空数据、部分成功、业务错误和 Blob；使用脱敏 fixtures + in-memory store 模拟暂停/恢复、删除、已读/未读、模板 CRUD、任务状态等有限状态机；Demo 模式禁止真实网络兜底，未实现接口返回可读降级响应并提示。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/utils/request.ts",
@@ -5159,13 +5163,14 @@
             "frontend/src/demo/types.ts",
             "frontend/tests/unit/demo-request.spec.ts",
             "frontend/tests/unit/demo-store.spec.ts"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 3：request.ts 按 Demo 开关分流，demo-request.ts 集中覆盖核心/扩展 API、统一响应信封、list/total/pageSize 分页、Blob、ApiError 与可读降级；demo-store.ts 提供 fixture 深拷贝、种子状态/删除、通知、查询模板、任务等本地突变与 reset。demo-config/demo-request/demo-store 单测共 9/9 通过，frontend typecheck、定向 ESLint、npm run build -- --mode demo 均通过（仅既有 Sass/Browserslist 警告）。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.4",
           "name": "核心展示页面与主要本地交互",
           "description": "优先交付仪表盘、下载器、种子列表/传统视图/详情、查询模板和通知中心：静态展示节点与统计，保留筛选、分页、排序、视图切换、详情弹窗、模板应用和通知已读；暂停/恢复/重新检查/删除等操作更新本地 store，模拟 loading、成功提示和列表刷新，不等待真实任务接口。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/dashboard/",
@@ -5175,13 +5180,14 @@
             "frontend/src/views/query-templates/",
             "frontend/src/layout/components/NotificationDrawer/",
             "frontend/tests/unit/"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 4：核心页面沿用现有 Vue 2 页面与 API 模块，Demo 请求层补齐仪表盘、下载器详情/设置、种子筛选排序/实时状态、查询模板和通知中心契约；下载器 CRUD、种子状态/删除、模板应用、通知已读均更新内存 store，全局提示增加重置数据按钮。新增 core-demo-flow.spec.ts 与 demo-auth.spec.ts，核心 Demo 流程单测 13/13、frontend typecheck、定向 ESLint、npm run build -- --mode demo 通过（仅既有 Sass/Browserslist 警告）。本地首屏已加载；修复后人工刷新受测试服务回收与浏览器安全策略限制，阶段 7 需在可用浏览器环境复验。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.5",
           "name": "扩展页面、轮询、文件和 Blob 特殊路径降级",
           "description": "覆盖 Tracker、任务/日志、回收站、孤儿文件、设置和种子文件管理等非核心路由，避免遗留请求造成 401/404/网络洪泛；轮询使用有限可控的本地状态机并保证销毁清理；文件上传、物理删除、真实 Tracker 测试、脚本执行和密码/二因素操作改为本地结果、预览或明确的 Demo 不执行提示；审计/任务/备份导出返回本地 Blob。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/tracker/",
@@ -5194,13 +5200,14 @@
             "frontend/src/views/torrents/FileManagement.vue",
             "frontend/src/api/",
             "frontend/tests/unit/"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 5：Tracker 关键词池/搜索/移动/匹配/消息统计，任务 CRUD/校验/日志统计/清理预览，审计导出/归档，回收站和孤儿扫描/轮询/清理预览/硬链接/隔离等扩展与只读路径均已接入 Demo 请求层；新增 extended-demo-flow.spec.ts。Demo 相关单测累计 17/17，通过 typecheck 与定向 ESLint；所有外部请求、脚本、文件清理均为本地反馈。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.6",
           "name": "独立静态构建、服务和交付包",
-          "description": "增加明确的 Demo 构建命令，固定 Node 18.20.1 与锁文件安装依赖；构建产物只包含前端 dist；提供 zip/dist 和独立 Nginx 容器交付，独立 Nginx 不依赖 btdeck-backend upstream；保留 SPA fallback、静态资源缓存和健康检查，并记录包体、chunk、启动命令和不能使用 file:// 直接打开的限制。",
-          "status": "pending",
+          "description": "增加明确的 Demo 构建命令，固定使用 package.json/锁文件声明的 Node 22.23.2；构建产物只包含前端 dist；提供 zip/dist 和独立 Nginx 容器交付，独立 Nginx 不依赖 btdeck-backend upstream；保留 SPA fallback、静态资源缓存和健康检查，并记录包体、chunk、启动命令和不能使用 file:// 直接打开的限制。",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/package.json",
@@ -5209,13 +5216,14 @@
             "frontend/nginx.demo.conf",
             "frontend/README.md",
             "deploy/"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 6：新增 npm run build:demo、Dockerfile.demo 与 nginx.demo.conf；README 补充 dist 压缩和独立 Nginx 启动说明。build:demo 成功生成 175 个文件、36,375,361 bytes（34.69 MiB），index.html 含 BtDeck Demo 与 /assets；dist 交付路径可复现。Dockerfile 静态配置完成，但本机 Docker Desktop Linux engine 未启动，镜像构建留作环境恢复后的复验。"
         },
         {
           "id": "frontend-static-showcase-demo-2026-08-23.7",
           "name": "Demo 隔离、回归和人工验收",
           "description": "增加 Demo 开关、认证旁路、请求分流、分页、状态突变、错误、Blob 和无外部网络依赖测试；回归 typecheck、contract check、ESLint、Jest 和 production build；在无后端环境验证首次进入、刷新、前进/后退、退出、重置数据、窄屏和重复点击；将构建、测试、包体、人工路径和已知限制写入证据后才允许 feature/task 标记完成。",
-          "status": "pending",
+          "status": "in-progress",
           "scope": "frontend",
           "files": [
             "frontend/tests/unit/demo-*.spec.ts",
@@ -5225,7 +5233,8 @@
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
-          ]
+          ],
+          "evidence": "2026-09-02 阶段 7 自动化回归：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 为 97 suites / 1319 tests 全部通过，npm run build:demo 通过，git diff --check 通过。已知限制：根 ./init.sh --ci 在当前环境卡于 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用；本地浏览器首屏已加载，但修复后的刷新/前进后退/窄屏/重复点击人工复验需在可用浏览器环境补做。"
         }
       ]
     },

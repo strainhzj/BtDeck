@@ -1,5 +1,104 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-02 - 前端静态展示 Demo 阶段 7：全量回归与交付证据
+
+### 已完成
+
+- 完成阶段 1-6 的证据回填：Demo 构建入口、认证旁路、集中式请求层、内存 store、核心/扩展页面契约、静态交付配置均在分支 `codex/frontend-static-showcase-demo`。
+- `frontend` 全量 `npm run lint`（contract check、ESLint、Vuex Action 检查）通过；`npm run typecheck` 通过；`npm run test:unit -- --silent` 为 **97 suites / 1319 tests 全部通过**；`npm run build:demo` 成功。
+- Demo 构建产物 `frontend/dist` 共 175 个文件、36,375,361 bytes（34.69 MiB）；`index.html` 含 `BtDeck Demo` 标题并引用 `/assets`，可按 README 通过 HTTP 服务访问。
+
+### 限制与遗留
+
+- 构建输出仅有既有 Sass/Browserslist 警告；`git diff --check` 通过。
+- 根目录 `./init.sh --ci` 在当前环境卡于 WSL 发行版访问 `E_ACCESSDENIED`；Docker 镜像构建卡于 Docker Desktop Linux engine 不可用，均非代码回归失败。
+- 本地浏览器已验证首屏仪表盘和 Demo 标识；测试服务回收后，修复后的刷新、前进/后退、窄屏和重复点击仍需在可用浏览器环境补做。
+
+### 下一阶段
+
+- 在 Docker Desktop Linux engine 可用且浏览器服务稳定的环境补完容器启动与人工验收；用户确认后再按需要分阶段创建 Git commit。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 6：独立构建与静态交付
+
+### 已完成
+
+- `frontend/package.json` 新增 `npm run build:demo`；新增 `frontend/Dockerfile.demo` 和 `frontend/nginx.demo.conf`，容器只服务前端 `dist`，不配置 `btdeck-backend` upstream。
+- `frontend/README.md` 补充 Demo 构建、dist 压缩、独立 Nginx、健康检查、SPA fallback、HTTP 访问限制和产物统计说明。
+- `build:demo` 复现成功，产物 175 文件 / 34.69 MiB；Node 版本按现有 package engine 与 lock 环境采用 22.23.2。
+
+### 验证
+
+- Dockerfile 配置已完成静态审查；本机 Docker Desktop Linux engine 未启动，镜像构建留待环境恢复后复验。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 5：扩展页与特殊路径降级
+
+### 已完成
+
+- Tracker 关键词池/搜索/移动/批量/匹配/消息统计，任务 CRUD/校验/日志统计/清理预览，审计导出/归档，回收站与孤儿文件扫描/轮询/清理预览/硬链接/隔离等路径已接入 Demo 请求层。
+- 文件、脚本、Cron、密码、二因素、真实 Tracker 网络操作均返回本地预览、模拟结果或明确的 Demo 不执行语义；导出路径返回本地 Blob。
+- 新增 `extended-demo-flow.spec.ts`，Demo 相关单测累计 17/17 通过；typecheck 与定向 ESLint 通过。
+
+### 下一阶段
+
+- 完成独立静态构建、交付说明、全量回归和人工验收证据收口。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 4：核心页面与主要本地交互
+
+### 已完成
+
+- 继续复用现有仪表盘、下载器、种子列表/传统视图/详情、查询模板和通知中心页面；请求层为这些页面补齐脱敏详情、设置摘要、路径映射空配置、实时状态和本地反馈。
+- 下载器新增/编辑/删除/启停写入 Demo 内存仓库；种子暂停、恢复、重检、删除、筛选、分页、排序和模板应用保持同一份本地状态；通知未读角标、详情、已读和删除仍走 Vuex + Demo 请求层。
+- 全局 Demo 提示新增“重置数据”按钮，重置 store 后刷新当前路由；修复 Vuex Demo 初始化调用普通私有方法导致的 `this.applyDemoSession is not a function` 运行时错误。
+
+### 验证
+
+- `frontend/tests/unit/demo-auth.spec.ts`、`core-demo-flow.spec.ts`、`demo-config.spec.ts`、`demo-request.spec.ts`、`demo-store.spec.ts`：13/13 通过。
+- `frontend`：`npm run typecheck` 通过；Demo 相关文件定向 ESLint 通过。
+- `npm run build -- --mode demo`：构建成功；仅有既有 Sass/Browserslist 警告。
+- 本地浏览器首屏已确认仪表盘和 Demo 标识可渲染；修复后的刷新复核受测试服务超时回收及浏览器安全策略限制，阶段 7 继续做人工复验。
+
+### 下一阶段
+
+- 覆盖 Tracker、任务/日志、回收站、孤儿文件、设置和文件管理等扩展/只读路由，确保轮询、文件与导出特殊路径均不触达真实后端。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 3：统一请求层与本地状态仓库
+
+### 已完成
+
+- `frontend/src/utils/request.ts` 增加动态 Demo 分流；关闭开关时仍使用现有 Axios、认证头、401 续期和错误归一化链路，开启开关时请求不触达外部网络。
+- 新增 `frontend/src/demo/demo-request.ts`，按 method + URL pattern 集中返回仪表盘、下载器、种子、查询模板、通知及扩展领域的脱敏响应；未覆盖接口返回可读 Demo 降级结果，Blob 导出返回本地 Blob。
+- 新增 `frontend/src/demo/demo-store.ts`，提供 fixture 深拷贝、分页、种子状态操作、删除/回收站、通知已读、模板 CRUD/应用、任务状态和扩展列表的内存状态管理，并支持完整重置。
+- 新增 Demo 请求和状态仓库单测，覆盖统一信封、`list/total/pageSize`、状态突变、重置、Blob、业务错误、降级和共享 request 客户端分流。
+
+### 验证
+
+- `frontend`：`npm run typecheck` 通过；定向 ESLint 通过。
+- `frontend/tests/unit/demo-config.spec.ts`、`demo-request.spec.ts`、`demo-store.spec.ts`：共 9/9 通过（配置 2 + 请求 4 + 仓库 3）。
+- `npm run build -- --mode demo`：构建成功；仅有既有 Sass/Browserslist 警告。
+
+### 下一阶段
+
+- 接入仪表盘、下载器、种子列表/传统视图/详情、查询模板和通知中心的页面交互，让首条演示脚本可完整走通。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 2：构建入口与认证旁路
+
+### 已完成
+
+- 新增 `frontend/.env.demo`，显式启用 `VUE_APP_DEMO_MODE=true`；`vue.config.js` 在 Demo 构建中使用 `BtDeck Demo` 标题，默认生产构建开关保持关闭。
+- `main.ts` 在 Demo 启动时注入固定演示会话并停用真实会话监听；`permission.ts` 对桌面/移动入口直接放行，跳过真实认证请求与 refresh 流程。
+- `user.ts` 增加 Demo 用户初始化、退出后的本地会话清理和真实模式保护；桌面/移动登录页提供“进入演示模式”入口。
+- `App.vue` 增加全局 Demo Mode 提示，明确数据为本地模拟且不产生后端副作用。
+
+### 验证
+
+- `frontend`：`npm run typecheck` 通过。
+- `frontend/tests/unit/demo-config.spec.ts`：2/2 通过。
+- `git diff --check` 通过；根 `bash ./init.sh --ci` 仍受 Windows/WSL `E_ACCESSDENIED` 环境问题影响。
+
+### 下一阶段
+
+- 实现 `request.ts` 的 Demo 分流、统一响应信封、分页/Blob/降级响应以及可复位的内存状态仓库。
+
 ## 2026-08-28：安全修复与质量门禁可信化人工闭环
 
 - 用户确认 `security-remediation-2026-08` 与 `quality-gate-hardening` 已完成人工闭环。
@@ -288,6 +387,26 @@
 - `feature_list.json` 已通过 PowerShell JSON 解析；计划文件与 feature 的 `plan_file` 路径一致。
 - 本次未增加或修改业务源码，未执行 Git stage/commit/push。
 - 根 `./init.sh --ci` 仍受当前 Windows/WSL `E_ACCESSDENIED` 环境问题影响；Demo 构建、前端源码实现和浏览器验收留待后续任务。
+
+## 2026-09-02 - 前端静态展示 Demo 阶段 1：范围与数据契约冻结
+
+### 已完成
+
+- 从 `dev` 创建并切换到 `codex/frontend-static-showcase-demo` 分支；保留原有未跟踪的 `.tmp-desktop-gui-test/` 与 `.tmp-mobile-run/`，未触碰其内容。
+- 冻结 Demo 路由矩阵：核心展示（仪表盘、下载器、种子、查询模板、通知）、扩展展示（Tracker/任务/日志）、只读降级（回收站/孤儿文件/设置/文件管理）和明确禁用（真实登录动作）。
+- 新增 `frontend/src/demo/types.ts`，定义 API 信封、`list/total/pageSize` 分页、用户、节点、种子、通知、模板、任务、日志、回收站、孤儿文件、Tracker 与备份等脱敏契约。
+- 新增 `frontend/src/demo/fixtures/index.ts` 与字段说明，统一使用 `.example.invalid` 主机和 `/demo/*` 路径占位；未写入真实凭据或可访问资源。
+- 更新 `PLANS/frontend-static-showcase-demo.md` 和 `frontend/README.md`，写入首条 5 分钟演示脚本、重置/速度规则和不可模拟能力边界。
+
+### 验证
+
+- `frontend`：`npm run typecheck` 通过（使用本机 Node `v22.23.2` / npm `10.9.8`）。
+- `feature_list.json`：PowerShell JSON 解析通过；`git diff --check` 通过。
+- 根 `bash ./init.sh --ci` 仍受 Windows WSL 发行版检查的 `E_ACCESSDENIED` 环境问题阻塞，未将其误记为代码失败。
+
+### 下一阶段
+
+- 实现默认关闭的 `VUE_APP_DEMO_MODE` 构建入口、桌面/移动认证旁路、Demo 标识，以及退出后重新进入演示的本地流程。
 
 ## 2026-08-23 - 双模式客户端计划评审修订与 v1.0.6 清单登记
 

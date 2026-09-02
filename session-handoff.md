@@ -1,5 +1,37 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-09-02：前端静态展示 Demo 分阶段交付（阶段 1-6 完成，阶段 7 自动化回归完成）
+
+### 当前状态
+
+- Feature：`frontend-static-showcase-demo-2026-08-23`，父任务 `in-progress`；子任务 `.1-.6 done`，`.7 in-progress`（自动化回归已完成，人工验收有环境遗留）。
+- 分支：从 `dev` 创建并已切换到 `codex/frontend-static-showcase-demo`；本次未执行 `git add`、未创建 commit，保持阶段成果可逐段审阅。
+- 工作区中原有的 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 未触碰，继续保留。
+
+### 分阶段成果
+
+- 阶段 1：冻结 core/extended/readonly/disabled 路由矩阵、12 个领域 fixture 契约、5 分钟演示脚本和能力边界。
+- 阶段 2：新增 `.env.demo`、Demo 认证旁路、固定脱敏用户、桌面/移动入口和全局 Demo 提示/重置按钮；真实模式仍走原认证链路。
+- 阶段 3：新增 typed `demo-request`、内存 `demo-store` 和统一 API 信封/分页/Blob/降级处理；Demo 模式无真实网络兜底。
+- 阶段 4：完成仪表盘、下载器、种子、查询模板、通知核心流程及状态突变；修复 Demo Vuex 初始化运行时错误。
+- 阶段 5：补齐 Tracker、任务/日志、回收站、孤儿文件、设置/文件管理的读取、轮询、预览、导出和不可执行能力边界。
+- 阶段 6：新增 `npm run build:demo`、`Dockerfile.demo`、`nginx.demo.conf`；dist 构建结果为 175 文件 / 36,375,361 bytes（34.69 MiB）。
+
+### 验证结果
+
+- `frontend`：`npm run lint` 通过（含 contract check 与 Vuex Action 检查）。
+- `frontend`：`npm run typecheck` 通过。
+- `frontend`：`npm run test:unit -- --silent` 通过，97 suites / 1319 tests 全部通过。
+- `frontend`：`npm run build:demo` 通过；仅有既有 Sass/Browserslist 警告；`git diff --check` 通过。
+- 本地浏览器曾成功加载 Demo 仪表盘和提示条；修复后的刷新/前进后退/窄屏/重复点击尚未完成人工复验。
+
+### 环境限制与下一步
+
+- 根目录 `./init.sh --ci` 卡于当前环境 WSL 发行版访问 `E_ACCESSDENIED`。
+- Dockerfile 已配置，但 Docker Desktop Linux engine 不可用，尚未完成镜像构建/启动复验。
+- 浏览器测试服务被回收后，浏览器安全策略阻止重新打开该本地地址；需在稳定 HTTP 服务和可用浏览器环境补验人工路径。
+- 下一位处理者先启动 Docker Desktop Linux engine，再用 `frontend/README.md` 的命令验证容器；随后补齐 `.7` 人工证据。用户确认后可按阶段拆分创建 Git commit。
+
 ## 2026-09-01（续）：W4 批次 A 全绿——跨制品黑盒契约等价门禁（task .8 in-progress）
 
 ### 当前状态

@@ -101,6 +101,15 @@
         </el-button>
       </el-form>
 
+      <el-button
+        v-if="demoMode"
+        type="text"
+        class="demo-entry-button"
+        @click="enterDemoMode"
+      >
+        进入演示模式
+      </el-button>
+
       <!-- 底部链接 -->
       <div class="login-footer">
         <p class="footer-text">
@@ -124,6 +133,7 @@ import { Dictionary } from 'vue-router/types/router'
 import { Form as ElForm, Input } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
 import { isValidUsername } from '@/utils/validate'
+import { isDemoMode } from '@/demo/config'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
 
@@ -151,6 +161,9 @@ export default class extends Vue {
   private loading = false
   private rememberMe = false
   private redirect?: string
+  get demoMode(): boolean {
+    return isDemoMode()
+  }
   private isLoggingIn = false  // 防止重复提交的标志
   private isDestroyed = false  // 组件销毁标志，防止状态更新错误
 
@@ -230,6 +243,12 @@ export default class extends Vue {
         }
       }
     })
+  }
+
+  private enterDemoMode(): void {
+    UserModule.InitializeDemoSession()
+    this.$message.success('已进入演示模式')
+    this.$router.replace(this.redirect || '/dashboard').catch(() => undefined)
   }
 
   @Watch('$route', { immediate: true })
@@ -459,6 +478,13 @@ export default class extends Vue {
 }
 
 // 底部
+.demo-entry-button {
+  display: block;
+  width: 100%;
+  margin-top: var(--spacing-sm);
+  color: var(--color-primary);
+}
+
 .login-footer {
   margin-top: var(--spacing-xl);
   text-align: center;
