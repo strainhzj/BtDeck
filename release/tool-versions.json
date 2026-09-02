@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "description": "W5 供应链工具链固定清单（release-artifact-equivalence-gate task .9 / G9）。引用一律带 digest（同 G10 原则：不引用可变 tag）；升级须连带更新 digest 并重跑 w5-security 基线。",
+  "tools": {
+    "syft": {
+      "version": "v1.28.0",
+      "image": "ghcr.io/anchore/syft@sha256:bc71d110d271c823b3e3c58702aa8ad6bf06e2abd3c1ff7c8966420a9a57dc00",
+      "purpose": "CycloneDX SBOM 生成（源码/PyInstaller 产物/DEB/RPM/Docker 镜像 tar）"
+    },
+    "grype": {
+      "version": "v0.96.0",
+      "image": "ghcr.io/anchore/grype@sha256:b565beceb9c741b248ecdc071a4b91716fa8fb3b744676855cf89aae754db8f2",
+      "purpose": "漏洞扫描（输入 SBOM，CVSS 分级驱动阻断策略）"
+    },
+    "gitleaks": {
+      "version": "v8.28.0",
+      "image": "ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854",
+      "purpose": "秘密扫描（工作区 + git 全历史）"
+    }
+  }
+}
