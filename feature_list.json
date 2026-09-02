@@ -5476,16 +5476,18 @@
           "id": "release-artifact-equivalence-gate-2026-08-28.8",
           "name": "W4 跨制品黑盒契约与允许差异治理",
           "description": "实现不 import app.* 的外部 contract runner、受控 qB/TR stub、稳定 v1.0.5 数据夹具和规范化快照；覆盖健康身份、OpenAPI、认证、设置、下载器、种子查询、查询模板、定时任务、通知审计、迁移重启、SPA 和路径边界 12 场景，未登记字段差异即失败。",
-          "status": "in-progress",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "release/equivalence-exceptions.json",
             "scripts/release/contract_runner.py",
             "scripts/release/compare_snapshots.py",
+            "scripts/release/slice_snapshot.py",
             "scripts/release/fixtures/",
+            "scripts/release/lifecycle/docker-compose.w4-stub.yml",
             "backend/tests/release/"
           ],
-          "evidence": "2026-09-01 批次 A 完成（in-progress）：contract_runner.py（纯 stdlib 禁 import app.*，C01 健康 Identity 精确值/C02 OpenAPI 指纹含生产形态降级/C03 认证全链路/C04 改密持久化）+compare_snapshots.py（逐路径 diff+exceptions 白名单强制禁宽泛规则+stale 报告）+equivalence-exceptions.json（零规则）。CI w4-contract job 13 轮迭代全绿（run 33523156872）：同 SHA 三制品 deb/rpm/docker 快照 compare **total_diffs=0 零豁免**；本地双实例自证 total_diffs=0；测试 14 例（铁律/纯函数/mock 端到端/变异检出/规则负向）。批次 B 待做：C05~C12（qB/TR stub）+制品级变异注入演练。"
+          "evidence": "2026-09-02 批次 B2 完成（done，G8 全绿）。C01~C12 十二场景三制品全绿：CI run 33634391712@dev a59a382 w4-contract job 全步骤 success——同 SHA 构建 deb/rpm/docker→三独立实例 FULL(C01~C09/C11/C12)+重启+C10 --merge-into→compare rpm/docker total_diffs=0 unexplained=0 零豁免；Mutation drill（G8 退出门）M1 前端资源字节变异（index.bytes/fallback.bytes 精确捕获）与 M2 mutate-proxy 响应字段变异（live.identity.version 精确捕获）均断言必须红、双双拦截。代码件：scripts/release/fixtures/qb_tr_stub.py（纯 stdlib 三角色：qB×2 端口/TR/mutate-proxy，固定数据集，协议保真由真实 qbittorrentapi+transmission_rpc 客户端库背书 14 例）、contract_runner 四新场景（C05 下载器 CRUD 含不可达主机名负向与独立端口 18082 避缓存 host:port 去重/C06 种子查询含 camelCase 键与单种子双 torrents 路径/C10 重启持久化 fail-closed 语义断言/C12 路径映射边界）、slice_snapshot.py、docker-compose.w4-stub.yml、w4_install_wait.sh --wait-only。测试 127→147（stub 协议保真 14+场景 mock e2e 6）。本地实证：同镜像双实例 FULL+重启+C10 compare total_diffs=0 且重跑幂等；M1/M2 本地复现双红；证据 release/evidence/w4/b2/（本地+CI 快照与报告+CI 日志）。副产品（W4 门禁价值实证）：修复遗留同步路径 3 个真缺陷（torrent_sync.py：①qB/TR 构造缺必填 progress ②tracker upsert 漏部分索引 index_where=dr=0 致同步成功但 0 行 ③update 写 NULL has_tracker_error IntegrityError——三者均为全新安装首同步必炸、被存量库 update 路径+异步批量路径掩盖）。CI 迭代 2 轮：首轮容器名冲突（deb/rpm stub 与 compose 服务重名）改名+alias 修复。遗留观察（不阻断）：test_openpyxl_kept_for_excel_export 为 dev 既有失败（requirements-linux-package.txt 缺 openpyxl，8/27 W2 瘦身后）；全新实例 tracker_judgment 报 no such table: tracker_keyword_config 待排查。前史：2026-09-01 批次 A/B1（八场景三制品全绿零豁免，CI run 33523156872）。"
         },
         {
           "id": "release-artifact-equivalence-gate-2026-08-28.9",

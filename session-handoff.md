@@ -1,23 +1,44 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-09-01（续）：W4 批次 A 全绿——跨制品黑盒契约等价门禁（task .8 in-progress）
+## 2026-09-02（最新）：W4 批次 B2 收口——C01~C12 十二场景三制品 CI 全绿 + 变异演练双拦截，task .8 done
 
 ### 当前状态
 
-- Feature: release-artifact-equivalence-gate-2026-08-28；**done .1~.7；.8 in-progress（批次 A 全绿）**；.9 pending
-- 分支 dev（全部已推送）；master workflow 副本同步至 21f5a80
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8（.8 W4 黑盒契约本日收口）；**pending**: .9（W5/W6 安全+晋级，最后执行）
+- 分支 dev@a59a382（全部已推送）；master workflow 副本同步至 8360970
+- 测试：release 147/147；全套 4280 过/1 既有失败（openpyxl，见下）
 
-### W4 批次 A 战果
+### W4 终局（批次 B2）
 
-- **w4-contract CI job 全绿（run 33523156872，13 轮迭代）**：同 SHA 构建 deb/rpm/docker→三独立实例跑 contract_runner C01~C04→compare **rpm/docker 双候选 total_diffs=0、零豁免规则**
-- 代码件：contract_runner.py（禁 import app.*）+ compare_snapshots.py（禁宽泛/过期规则+stale 报告）+ equivalence-exceptions.json + w4_install_wait.sh + docker-compose.w4-override.yml（docker 测试组合对齐生产形态：DEV=false+SECRET_KEY+ALLOWED_HOSTS）
-- 本地双实例自证 total_diffs=0；release 125/125（含 14 例契约测试）
-- 关键坑（勿重踩）：| tee 吞退出码（pipefail）；宿主变量不进容器；"dpkg -i" 单参数成单命令名；docker exec/heredoc 转义链→脚本仓库文件化；compose container_name 固定 w3-life-*；测试组合 DEV=true 与生产形态不一致的 C02 伪差异；生产形态 /openapi.json 静态 fallback 200 非 JSON=unavailable
+- **CI run 33634391712@dev a59a382 全绿**：三制品 FULL(C01~C09/C11/C12)+重启+C10 merge →
+  compare total_diffs=0 零豁免；Mutation drill M1（前端资源字节）/M2（响应字段）双拦截
+- 代码件：fixtures/qb_tr_stub.py（三角色 stub，协议保真由真实客户端库背真）、
+  runner 四场景、slice_snapshot.py、docker-compose.w4-stub.yml、CI job 扩展
+- 副产品：修复遗留同步路径 3 个真缺陷（progress/qb_tr_stub 注释与证据 README 有全清单）
+- 证据：release/evidence/w4/b2/（本地双实例+CI 快照/报告/日志 + README）
 
-### 下一步
+### 遗留观察（不阻断）
 
-1. **W4 批次 B**：C05~C12（受控 qB/TR stub 的下载器/种子场景、查询模板、定时任务、通知审计、迁移重启、SPA、路径边界）+制品级变异注入演练（G8 退出门）
-2. **.9（W5/W6）**：SBOM/漏洞扫描/签名/晋级 digest/RC 演练（最后执行）
+1. test_openpyxl_kept_for_excel_export：dev 既有失败（W2 瘦身后 requirements-linux-package.txt
+   缺 openpyxl），与本批无关，建议单独修复
+2. 全新实例 tracker_judgment 报 no such table: tracker_keyword_config（fresh-install 迁移
+   缺口嫌疑），待排查
+
+### 下一步：.9（W5/W6）
+
+- SBOM（CycloneDX）/漏洞/秘密/许可证扫描、Windows/Docker 签名、release-gate DAG 与
+  gate report 汇聚、digest 晋级、RC 演练（六类故障注入）+ runbook（计划 §W5/§W6/§G9/§G10）
+- 建议先清两个遗留观察项再开 .9
+
+### 环境坑（B2 新增，勿重踩）
+
+- deb/rpm stub 容器名必须区别于 compose 服务的 container_name（w4-stub-host+network-alias）
+- 下载器缓存 host:port 去重且 delete 不清缓存；/downloader/test 是 ICMP 探测（负向用
+  不可解析主机名）；getList 键 camelCase；TR trackerStats 需完整字段集
+- dev 构建被 G5 拦 dirty build-info（本地实证用 dev 镜像、CI 用 --release 干净构建）
+- gh CLI 不在本机：dispatch/日志/artifact 走 REST API + git credential token
+- MSYS_NO_PATHCONV=1 必须 export 在同一条命令里；/tmp 在 Git Bash 与 Python 间不同视
 
 ## 2026-09-01（最新）：W4 批次 A+B1 全绿——八场景跨制品黑盒契约等价（task .8 in-progress）
 

@@ -1,5 +1,74 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-02：W4 批次 B2 收口——C01~C12 十二场景三制品 CI 全绿，task .8 done（G8 达成）
+
+### 战果
+
+- **CI run 33634391712@dev a59a382 w4-contract 全步骤 success**：同 SHA 构建 deb/rpm/docker →
+  三独立实例 FULL(C01~C09/C11/C12) + systemctl/compose restart + C10 --merge-into →
+  compare **rpm/docker total_diffs=0 unexplained=0 零豁免**；Mutation drill（G8 退出门）
+  M1 前端资源字节变异与 M2 mutate-proxy 响应字段变异双双被精确拦截（演练步骤自身断言"必须红"）。
+- 本地实证（release/evidence/w4/b2/）：同镜像双实例 FULL+重启+C10 compare total_diffs=0 且
+  FULL 重跑幂等；M1（index.bytes 1984→2004）/M2（live.identity.version）本地复现双红。
+- 测试 127→147：test_qb_tr_stub.py 14 例（真实 qbittorrentapi/transmission_rpc 客户端库打
+  进程内 stub 验证协议保真）+ runner B2 场景 mock e2e 6 例。
+
+### 代码件
+
+- scripts/release/fixtures/qb_tr_stub.py：纯 stdlib 三角色 stub（qB 18080/18082、TR 18081、
+  mutate-proxy），固定数据集零随机、逐请求日志；数据端点 GET/POST 双收（qbittorrentapi
+  torrents_info 实测走 POST）。
+- contract_runner.py：C05 下载器 CRUD（不可达主机名负向；独立端口 18082 避缓存 host:port
+  去重）、C06 种子查询（camelCase 键/分页/筛选/tracker-domains/单种子双 torrents 路径；
+  夹具存在即复用保 uuid 稳定）、C10 重启持久化（fail-closed 语义断言防"三制品一致地坏"）、
+  C12 路径映射边界；--merge-into/--downloader-stub-host/--c05-qb-port。
+- slice_snapshot.py、docker-compose.w4-stub.yml（三监听 stub 服务）、w4_install_wait.sh
+  --wait-only、CI job 扩展（stub 双网接入 deb/rpm、重启 C10、变异演练步骤）。
+
+### 副产品：修复遗留同步路径 3 个真缺陷（torrent_sync.py，全新安装首同步必炸）
+
+生产存量库走 update 路径、异步任务走字典批量路径，三缺陷全被掩盖——W4 C06（全新实例
+首同步）正是为此设计：
+1. qB/TR 构造 torrentInfoModel 缺必填 progress（新种子 INSERT 即 TypeError）；
+2. tracker upsert on_conflict_do_update 漏部分索引 index_where=sa_text("dr = 0")（SQLite
+   拒绝 → 同事务种子行连带回滚 → 同步"成功"但 0 行）；
+3. update 分支 to_dict() 对未设置属性给 None 写 NOT NULL 列 has_tracker_error（二次同步
+   IntegrityError；现剔除 None 保留 DB 动态重算现值）。
+
+### 契约实测结论（已入 stub/runner 注释与证据 README，勿再踩）
+
+- 下载器缓存按 host:port 去重且 delete 不清缓存 → C05 用独立端口、C06 夹具复用不重建。
+- /downloader/test 是 ICMP/TCP 可达性探测：可达主机的关闭端口仍 success=True，负向必须用
+  不可解析主机名。
+- /torrents/list 同步全部启用下载器；缓存缺失的下载器返回错误 dict 也被计成 synced。
+- getList 行键 camelCase（infoId/savePath/errorReason）；qB add 认证 app_version 属性访问
+  恒通过（vacuous）；TR trackerStats 须带 lastAnnounceResult 等完整字段集（无守卫直取）；
+  path-mapping add 重复 internal 也 200；C12 内部探测打 app/defaultSavePath+sync/maindata。
+
+### CI 迭代（2 轮）与环境坑
+
+- 首轮 run 33633662656：deb/rpm 两制品 FULL+C10 已全绿，docker 组合 up 步骤被容器名冲突
+  挡下（deb/rpm 手起 stub --name w4-stub 撞 compose 服务 container_name）→ 改名
+  w4-stub-host + --network-alias w4-stub（DNS 名不变）修复。
+- dev 模式 docker build-images 会被 G5 验证器拦 dirty build-info（门禁本职，本地实证改用
+  dev 镜像；CI 干净检出用 --release）。
+- 本机 Docker Desktop：特权容器上 stub DNS/连通正常（早先"失败"是测试脚本用错容器名）；
+  MSYS_NO_PATHCONV=1 必须 export 在同一条命令里。
+
+### 遗留观察（不阻断，待后续处理）
+
+- test_openpyxl_kept_for_excel_export 在 dev 已提交态失败（stash 验证与本批无关）：
+  8/27 W2 瘦身后 deploy/requirements-linux-package.txt 丢了 openpyxl——建议单独修复。
+- 全新实例启动 tracker_judgment 报 no such table: tracker_keyword_config（后台 ERROR
+  日志，未影响场景断言）——疑似 fresh-install 迁移缺口，待排查。
+- 全套 pytest：4280 过 / 7 跳过 / 1 失败（即上述 openpyxl 既有项）。
+
+### 下一步
+
+- .9（W5/W6）：SBOM/漏洞扫描/签名/digest 晋级/RC 演练（最后执行）；建议先清 openpyxl 与
+  tracker_keyword_config 两个遗留观察项。
+
+
 ## 2026-08-28：安全修复与质量门禁可信化人工闭环
 
 - 用户确认 `security-remediation-2026-08` 与 `quality-gate-hardening` 已完成人工闭环。
