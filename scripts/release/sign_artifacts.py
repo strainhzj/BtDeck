@@ -51,6 +51,17 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PROJECT_ROOT = SCRIPT_DIR.parent.parent
 
+# CI Windows runner 控制台是 cp1252（run 33756203828 实证：记录已落盘、中文 print 崩
+# UnicodeEncodeError→exit 1）。本脚本输出含中文，统一 reconfigure 为 UTF-8；
+# pytest capsys 替换的流没有 reconfigure，getattr 守卫。
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None and (_stream.encoding or "").lower() not in ("utf-8", "utf8"):
+        try:
+            _reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # noqa: BLE001 - 编码降级不允许中断签名流程
+            pass
+
 EXIT_OK = 0
 EXIT_BLOCKED = 2
 EXIT_SIGN_FAILED = 3
@@ -74,7 +85,12 @@ def default_run_cmd(
 ) -> "subprocess.CompletedProcess[str]":
     env = dict(subprocess.os.environ)
     env.update(env_extra)
-    return subprocess.run(cmd, capture_output=True, text=True, env=env)
+    # 子进程输出统一按 UTF-8 解码（docker inspect JSON 含非 ASCII；GBK/cp1252 locale
+    # 下 text=True 默认 locale 解码会崩读线程→stdout=None，PYTHONIOENCODING=cp1252
+    # 模拟实测）。errors=replace 保证任何字节流都不中断签名流程。
+    return subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env
+    )
 
 
 def sha256_file(path: Path) -> str:
