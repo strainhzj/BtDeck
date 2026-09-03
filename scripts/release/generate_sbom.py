@@ -6,7 +6,7 @@
 
   source-backend    backend 源（requirements-lock 净化后供 syft 解析 python 依赖）
   source-frontend   frontend 源（package-lock.json；SBOM 后滤非生产依赖）
-  binary-linux      release/build/linux-binary 的 PyInstaller 产物目录
+  binary-linux      dist/btdeck（PyInstaller 单文件二进制）
   deb / rpm         dist/ 下的包文件（syft 原生解包目录清单）
   docker-backend / docker-frontend   docker save 导出的镜像 tar（docker-archive:）
 
@@ -237,11 +237,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         record("source-frontend", out)
 
     if "binary-linux" in wanted:
-        binary_dir = bundle_dir / "linux-binary" / "dist"
-        if not binary_dir.is_dir():
-            raise SystemExit(f"[FAIL] PyInstaller 产物目录缺失：{binary_dir}")
+        # PyInstaller 单文件二进制落在 dist/btdeck（build-linux.sh 的
+        # staging 目录只存身份件——CI 第二轮实测路径假设错误）
+        binary_file = dist_dir / "btdeck"
+        if not binary_file.is_file():
+            raise SystemExit(f"[FAIL] PyInstaller 产物缺失：{binary_file}")
         out = syft_scan(
-            "binary-linux", "/src", ["-v", f"{binary_dir.as_posix()}:/src:ro"]
+            "binary-linux", "/src/btdeck", ["-v", f"{dist_dir.as_posix()}:/src:ro"]
         )
         record("binary-linux", out)
 
