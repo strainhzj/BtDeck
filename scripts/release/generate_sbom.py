@@ -276,7 +276,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise SystemExit(f"[FAIL] docker save {tag} 失败（镜像未构建？）")
         out = syft_scan(
             target,
-            "docker-archive:/work/image.tar",
+            f"docker-archive:/work/{image}.tar",
             ["-v", f"{work_dir.as_posix()}:/work:ro"],
         )
         record(target, out)
