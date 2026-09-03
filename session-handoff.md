@@ -1,4 +1,64 @@
-## 2026-09-03（最新）：.9 批次 C 收口——G9 七目标 SBOM+安全扫描 CI 全绿 PASS；批次 D 待开工
+## 2026-09-03（最新）：.9 批次 C+D 收口——G9 扫描+签名全绿、G10 骨架落地；批次 E/F 待开工
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8；**.9 in-progress（批次 C+D done，E/F 待做）**
+- 分支 dev@074377a（全部已推送）；master workflow 副本同步至 e9b04b7
+- 测试：release 275/275；全套 4409 过 0 失败
+
+### 批次 D 战果（CI run 33759319494 四轮迭代终局全绿）
+
+- 代码件：sign_artifacts.py（Authenticode+cosign、SIGNING_BLOCKED fail-closed exit 2、
+  drill unsigned、digest 分片记录）、build_release_manifest.py（schema 真校验、七制品、
+  verdict 只出 REJECTED/INDETERMINATE、approver 留空）、deploy/docker-compose.release.yml
+  （digest-only 模板）、verify_release_bundle.py 扩 G9/G10（篡改检出+compose 一致性+
+  CERTIFIED 断言链）；CI w5-sign-windows/w5-sign-docker + allow_unsigned_drill 输入
+- cosign v3.1.3：ghcr.io/sigstore/cosign 仓库已不存在（实测）→ release 二进制 sha256 固定；
+  v3 CLI：sign-blob 走 --bundle、verify-blob 无 --signature、keyed 签名 verify 需
+  --insecure-ignore-tlog
+- **CI 四轮迭代三个真根因**：①staging 回退链缺 windows-exe；②Windows runner cp1252 双层
+  编码坑（中文 print + subprocess locale 解码）；③**G1 拦截真实等价违规**——两次独立前端
+  构建 ~20 chunk 哈希漂移（SW/时间戳类），w5-sign-docker 改消费唯一前端构建
+  （w5-frontend-unique-build artifact）
+- 证据 release/evidence/w5/sign/（本机三态+wiring 冒烟+四轮 CI 日志+CI artifacts+README）
+
+### 下一步：批次 E（gate-report 汇聚 + rc-gate DAG）
+
+1. aggregate_gate_report.py 汇聚 G0~G10（各 job 产出标准 gate 片段 JSON 到
+   release/build/gate-fragments/——build_release_manifest.py 的 evidence 发现已按此约定预留）
+2. w0 探针等既有 job 补标准 gate 片段 JSON 输出（workflow 小改 → dev+master 双同步）
+3. rc-gate DAG job：串 w2/w3/w4/w5 各 job → aggregate → CERTIFIED 判定（approver 人工）
+
+之后批次 F（RC 演练：v1.0.5→v1.0.6 一次全绿 + 六类故障注入各停预期门【旧前端→G5、qB 漂移→
+G2、缺契约 JSON→G5、RPM 升级停服→G6、Docker 混装→G8、digest 篡改→G10】+ docs/release/
+runbook + feature_list/progress/handoff/roadmap 全收口）。
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（同尺寸不同字节，疑似内嵌构建
+  时间戳）；当前靠唯一构建消费架构兜底，根治列 v1.0.7 候选
+- **真实签名启用**：用户提供 GH secret（BTDECK_SIGN_PFX_B64+BTDECK_SIGN_PFX_PASSWORD /
+  BTDECK_COSIGN_KEY_B64+BTDECK_COSIGN_PASSWORD）后 dispatch 不勾 drill 即真实签名
+
+### 环境坑（本会话新增，勿重踩）
+
+- ghcr.io/sigstore/cosign 仓库已不存在（token DENIED/NAME_UNKNOWN）；cosign 用 release
+  二进制 sha256 固定（官方 .sigstore.json 的 messageDigest 即二进制 sha256）
+- cosign v3 移除 --output-signature/--tlog-upload；verify-blob 只吃 --bundle
+- Windows runner cp1252：python 脚本中文输出须 reconfigure UTF-8；subprocess text=True
+  会用 locale 解码头子进程输出（docker inspect JSON 含非 ASCII 必崩）——统一
+  encoding="utf-8", errors="replace"
+- upload-artifact 多路径 LCA=仓库根时结构原样保留（跨 job 传 dist+release/build 靠这个）
+- CI job 日志下载：jobs/{id}/logs 的 302 重定向到 Azure blob，**不能带 Authorization 头**
+- docker inspect 本地镜像无 .Descriptor.Digest（经典 builder）——save-oci 口径兜底
+- 本机 ghcr 匿名 pull 时通时断；git credential 的 token 走 ghcr 认证 API 可靠
+- 前端双构建必然漂移（见上）——跨 job 比对 staging 的 job 必须消费上游唯一构建
+
+## 2026-09-03：.9 批次 C 收口——G9 七目标 SBOM+安全扫描 CI 全绿 PASS；批次 D 待开工
 
 ### 当前状态
 

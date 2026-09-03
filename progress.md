@@ -1,5 +1,68 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-03：W5 批次 C+D 收口——G9 扫描面+签名面全绿、G10 骨架落地（task .9 in-progress，剩 E/F）
+
+### 批次 C（G9 扫描面，本日另一会话完成）
+
+- CI run 33747568891@b281e85 七目标 SBOM + grype/gitleaks/许可证 verdict=PASS（Critical 19
+  全 tracked-no-fix、High 110 全限时例外、0 阻断）
+- 政策修订（用户批准）：Critical 无修复可用型（distro 最新+fix=[]+上游已修证据）可登记
+  tracked-no-fix 30 天例外；基镜像治理（trixie 线+nginx 1.27）
+- 独立欠账：129 条例外 2026-10-03 到期（v1.0.7 依赖升级治理批次消解）；秘密白名单 9 条
+  2026-11-02 到期。证据 release/evidence/w5/
+
+### 批次 D（G9 签名面 + G10 骨架，本会话完成）
+
+**代码件**：
+- scripts/release/sign_artifacts.py：Windows Authenticode（signtool /fd SHA256 + RFC3161）+
+  Docker cosign 双目标；状态机 SIGNED/SIGNING_BLOCKED/SIGN_FAILED/unsigned——正式缺钥
+  exit 2 fail-closed（不是跳过）、drill unsigned exit 0 但下游强制 INDETERMINATE、
+  SIGN_FAILED exit 3 无演练豁免；签名前后 digest 分片落 signing-digests-<target>.json
+  （分片防多 job 覆盖，汲取 index.json 事故教训）；docker digest 三级口径
+  RepoDigests>Descriptor.Digest>save-oci（docker save OCI layout index.json 的 manifest
+  digest，内容寻址、篡改必变）
+- cosign 工具链：ghcr.io/sigstore/cosign 镜像仓库已不存在（NAME_UNKNOWN 实测）→ 改 GitHub
+  release 二进制 sha256 固定进 tool-versions.json（digest 取自官方 .sigstore.json 的
+  messageDigest，Rekor 链内）；v3 CLI 契约实测：sign-blob 签名材料走 --bundle（无
+  --output-signature/--tlog-upload）、verify-blob 只吃 --bundle、keyed 签名 verify 需
+  --insecure-ignore-tlog
+- scripts/release/build_release_manifest.py：按 schema 生成发布清单——七制品引用签名后
+  digest、evidence G0~G10 全索引（批次 E 片段缺失=NOT_RUN 诚实登记）、verdict 生成器只出
+  REJECTED/INDETERMINATE（CERTIFIED 属人工审批 + verify 断言链把关）、approver 留空、
+  --emit-compose-env 渲染 digest-only compose 输入
+- deploy/docker-compose.release.yml：发布组合模板只引 digest（${VAR:?} 必填形式）、无 build
+  段（G10 只消费已晋级制品）
+- verify_release_bundle.py 扩展：G9 签名面（formal 未完成阻断/签名后篡改现场重算检出）、
+  G10 digest 闭环（manifest==现场重算、digest_ref 格式、compose 渲染一致性 digest-only
+  负向、CERTIFIED 断言链：approver 空/签名 unsigned/门 NOT_RUN 均拒绝）；gate-report 新增
+  G9_signing/G10 键
+
+**本机实证**（release/evidence/w5/sign/）：BLOCKED（exit 2）/drill unsigned（exit 0）/
+SIGNED（临时密钥全链+bundle 落盘+内嵌 verify）三态；cosign v3 wiring 冒烟（容器内 keygen→
+sign-blob→verify-blob=Verified OK→篡改拒绝）；cp1252 模拟（PYTHONIOENCODING=cp1252）。
+
+**CI 四轮迭代**（w5-sign-windows + w5-sign-docker + allow_unsigned_drill dispatch 输入）：
+1. 33755046911：build-info staging 回退链缺 windows-exe → resolve_build_info_path 纯函数+3 回归
+2. 33756203828：Windows runner cp1252 双层坑（中文 print 崩 + subprocess locale 解码 docker
+   输出崩读线程）→ stdout reconfigure + subprocess UTF-8 强制
+3. 33757547345：**G1 拦截真实等价违规**——两次独立前端构建 ~20 个 JS chunk 内容哈希漂移
+   （同尺寸不同字节，疑似内嵌构建时间戳；本机双构建复现 index.html/service-worker.js(.map)
+   漂移）→ w5-sign-docker 改为消费 w5-sign-windows 上传的唯一前端构建
+   （w5-frontend-unique-build artifact）——计划 §8.3 唯一前端 DAG 语义落地；前端构建确定性化
+   列为 v1.0.7 候选
+4. **33759319494@074377a 终局全绿**：7 制品 verify PASS、manifest INDETERMINATE+approver 空、
+   gate-report G1/G2种/G4/G5/G10 PASS+G9_signing INDETERMINATE（drill 正确阻断 CERTIFIED）、
+   drill 语义断言 OK；CI artifacts 归档 ci-artifacts/
+
+**测试**：release 180→275（sign 37 / manifest 24 / verify G9G10 34 = 新增 95）；全套
+4409 过 0 失败。提交链：fbcf336（批次 D 主体）→ a683366（staging 回退）→ 4e74118+c88dee1
+（cp1252）→ 074377a（唯一前端消费）；master workflow 副本同步至 e9b04b7。
+
+**下一步**：批次 E（aggregate_gate_report.py 汇聚 G0~G10 + rc-gate DAG job + w0 探针 job 补
+标准 gate 片段 JSON——workflow 小改需 master 双同步）、批次 F（RC 演练：v1.0.5→v1.0.6 一次
+全绿 + 六类故障注入各停预期门 + runbook + 全项目收口）。真实签名待用户提供 GH secret
+（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+PASSWORD）一键启用。
+
 ## 2026-09-02：W4 批次 B2 收口——C01~C12 十二场景三制品 CI 全绿，task .8 done（G8 达成）
 
 ### 战果
