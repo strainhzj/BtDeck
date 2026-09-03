@@ -294,6 +294,9 @@ def run_grype(
         if not sbom_path.is_file():
             raise SystemExit(f"[FAIL] SBOM 缺失：{sbom_path}")
         report = out_dir / f"grype-{target}.json"
+        # grype 的文件输出是 --file（"-o json=path" 是 syft 语法，CI 第四轮
+        # 实测 rc=1+空报告）；退出码 1 同时表示"有命中"与"失败"，两者只能靠
+        # 报告可解析且含 matches 键区分——解析失败一律致命并倾倒容器输出
         proc = subprocess.run(
             [
                 "docker",
@@ -306,16 +309,27 @@ def run_grype(
                 grype_image,
                 f"sbom:/sboms/sbom-{target}.json",
                 "-o",
-                "json=/out/grype-" + target + ".json",
+                "json",
+                "--file",
+                f"/out/grype-{target}.json",
             ],
             capture_output=True,
             text=True,
         )
-        # grype 有漏洞命中时退出码 1（正常语义），仅容器级故障才致命
-        if proc.returncode not in (0, 1) or not report.is_file():
+        if proc.returncode not in (0, 1):
             sys.stderr.write(proc.stdout + proc.stderr)
             raise SystemExit(f"[FAIL] grype 扫描 {target} 失败（rc={proc.returncode}）")
-        raw_by_target[target] = json.loads(report.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            sys.stderr.write(proc.stdout + proc.stderr)
+            raise SystemExit(
+                f"[FAIL] grype {target} 报告不可解析（{exc}；rc={proc.returncode}）"
+            ) from exc
+        if "matches" not in payload:
+            sys.stderr.write(proc.stdout + proc.stderr)
+            raise SystemExit(f"[FAIL] grype {target} 报告缺 matches 键（疑似失败运行）")
+        raw_by_target[target] = payload
         print(
             f"grype {target}: matches={len(raw_by_target[target].get('matches', []))}"
         )
