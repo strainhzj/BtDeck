@@ -386,6 +386,11 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src/frontend node:22-bookworm-slim bash -c "\
             npm ci --legacy-peer-deps && npm run build"
 
+      - name: Generate build-info (linux-binary staging; spec 强制要求)
+        # W1 起 btdeck.spec 强制读 release/build/linux-binary/build-info.json，
+        # 本探针自 W1 后首次真跑即断（run 33767644760 实证）——补齐 staging 生成
+        run: python3 scripts/release/generate_build_info.py --artifact-kind linux-binary --allow-dirty
+
       - name: PyInstaller build in python:3.11-bullseye
         run: |
           docker volume rm w0out >/dev/null 2>&1 || true
@@ -602,15 +607,17 @@ jobs:
       - name: Verify build-info embedded in images
         run: |
           set -euo pipefail
-          VERSION=$(python -c "import json;print(json.load(open('release/build/docker-backend/build-info.json'))['product_version'])")
+          # build-images.sh 打标用带 v 前缀的 tag（git_tag）；product_version 无 v 会
+          # pull 不存在的镜像（4816f2d 只修了脚本侧，run 33767644760 实证本步漏改）
+          TAG=$(python -c "import json;print(json.load(open('release/build/docker-backend/build-info.json'))['git_tag'])")
           SHA=$(python -c "import json;print(json.load(open('release/build/docker-backend/build-info.json'))['git_sha'])")
-          docker run --rm "btdeck-backend:${VERSION}" python -c "
+          docker run --rm "btdeck-backend:${TAG}" python -c "
           import json
           info = json.load(open('/app/build-info.json'))
           assert info['git_sha'] == '${SHA}', info
           print('backend image build-info OK:', info['git_sha'][:12])
           "
-          docker run --rm "btdeck-frontend:${VERSION}" sh -c "
+          docker run --rm "btdeck-frontend:${TAG}" sh -c "
           apk add --no-cache -q python3 >/dev/null 2>&1 || true
           python3 -c \"import json; info=json.load(open('/usr/share/nginx/html/build-info.json')); print('frontend image build-info OK:', info['git_sha'][:12])\" 2>/dev/null \
             || grep -q '${SHA}' /usr/share/nginx/html/build-info.json && echo 'frontend image build-info OK (grep)'
