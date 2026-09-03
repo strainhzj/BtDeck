@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/strainhzj/BtDeck/release/schemas/gate-fragment.schema.json",
+  "title": "BtDeck gate fragment",
+  "description": "标准门禁片段（release-artifact-equivalence-gate W5 批次 E / G10 汇聚）。各门禁 job 产出 G<n>.json 到 release/build/gate-fragments/，由 aggregate_gate_report.py 校验后汇聚为 gate-report-full.json；build_release_manifest.py 的 evidence 发现同用此约定。显式片段优先于推导（w0 探针写 G0、regression API 映射写 G2/G3）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gate", "status", "generated_at"],
+  "properties": {
+    "gate": {
+      "enum": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"]
+    },
+    "status": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE", "NOT_RUN"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "logs": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
