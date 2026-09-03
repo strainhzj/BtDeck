@@ -82,9 +82,30 @@
    0 次 no such table + 懒加载成功载入 80 条种子失败关键词。顺手删除该测试文件
    的既有死导入 threading。
 
+### 2026-09-03：.9 开工——批次 C（G9 供应链透明+安全扫描）CI 全绿收口
+
+- **CI run 33747568891@dev b281e85 全步骤 success**：七目标 SBOM（源锁净化 54/前端生产
+  过滤 343/PyInstaller onefile 0/deb 2/rpm 2/docker 镜像 3107+1045）+ grype v0.118.0
+  漏洞扫描 + gitleaks 全历史秘密扫描 + 许可证禁用清单 → **verdict=PASS 0 阻断**。
+- 分级基线：Critical 19 / High 110 / Medium 122；gitleaks 21 命中全为误报模式（白名单
+  9 条 rule+文件登记，2026-11-02 到期）。
+- **治理决策**（用户批准）：①tracked-no-fix Critical 政策修订——有修复可用硬阻断；
+  无修复可用（distro 最新+fix=[]+上游已修证据）可登记 30 天跟踪例外（机器校验三条件，
+  upstream_fix 必填）。②基镜像治理：python:3.11-slim 刷 trixie 新 digest、nginx 1.25
+  （EOL）→1.27-alpine、两 Dockerfile 运行时加 apk/apt upgrade 层。③129 条例外基线
+  （2026-10-03 到期，19 tracked + 110 High，v1.0.7 升级治理批次消解——**独立欠账**）。
+- 代码件：generate_sbom.py（五类七目标）/ scan_security.py（策略引擎）/ slice 用纯
+  函数单测 28 例（含双变异锚点）；release/tool-versions.json（syft/grype/gitleaks
+  digest 固定）；security-exceptions.json / secret-allowlist.json / license-denylist.json；
+  CI w5-security job。测试 175→180。
+- CI 迭代 7 轮根因：容器 root 写文件宿主无权改写（tmp+os.replace）/ binary 路径假设错
+  / docker 目标字面量未插值 / grype `-o json=path` 系 syft 语法（应 `--file`）+ rc=1
+  双义性 / grype v0.96.0 DB hydration 缺陷→v0.118.0 / 基镜像 EOL 真实 BLOCKED 命中。
+- 提交链 ac0bf68→0a7326e（8 个）全推 origin/dev；master 副本同步 51eaac1。
+
 ### 下一步
 
-- .9（W5/W6）：SBOM/漏洞扫描/签名/digest 晋级/RC 演练（最后执行）——两个遗留观察项已清理，可直接开工。
+- .9（W5/W6）进行中：批次 C done（G9 扫描门禁）；剩批次 D（签名/digest 晋级/发布清单）、E（gate-report 汇聚+DAG）、F（RC 演练+runbook+收口）；另有 v1.0.7 依赖升级治理欠账（129 条例外 2026-10-03 到期）。
 
 
 ## 2026-08-28：安全修复与质量门禁可信化人工闭环

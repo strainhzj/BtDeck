@@ -1,4 +1,59 @@
-# Session Handoff - BtDeck 全栈项目
+## 2026-09-03（最新）：.9 批次 C 收口——G9 七目标 SBOM+安全扫描 CI 全绿 PASS；批次 D 待开工
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8；**.9 in-progress（批次 C done，D/E/F 待做）**
+- 分支 dev@0a7326e（全部已推送）；master workflow 副本同步至 51eaac1
+- 测试：release 180/180；全套 4284 过 0 失败
+
+### 批次 C 战果（CI run 33747568891 全绿）
+
+- 七目标 SBOM + grype/gitleaks/许可证 → verdict=PASS（Critical 19 全 tracked-no-fix、
+  High 110 全限时例外、0 阻断）；gitleaks 21 误报白名单 9 条
+- 代码件：generate_sbom.py / scan_security.py / release/tool-versions.json（digest 固定
+  三件套）/ 三个治理 JSON / CI w5-security job；证据 release/evidence/w5/（README 有
+  治理决策记录）
+- **政策修订（用户批准）**：Critical 无修复可用型（distro 最新+fix=[]+上游已修证据）
+  可登记 tracked-no-fix 30 天跟踪例外；有修复可用仍硬阻断
+- **基镜像治理**：python:3.11-slim→trixie 新 digest；nginx 1.25（EOL）→1.27-alpine；
+  Dockerfile 运行时 apk/apt upgrade 层
+
+### 下一步：批次 D（签名+digest 晋级+发布清单）
+
+已批准方案（2026-09-03 确认的 .9 四批方案之 D）：
+1. sign_artifacts.py：Windows Authenticode（signtool，证书经 GH secret 注入；缺失→
+   SIGNING_BLOCKED 显式状态 fail-closed 不跳过）+ docker cosign 签名（同上）；
+   签名前后 digest 分别落 signing-digests.json
+2. build_release_manifest.py：按 release/schemas/release-manifest.schema.json 出清单
+   （引用签名后 digest+证据 digest，approver 留空待人工）
+3. deploy/docker-compose.release.yml：digest 引用模板（不 tag）+ 校验测试
+4. verify_release_bundle.py 扩展 G9/G10 校验（manifest digest==实际制品；compose 模板
+   digest 一致性）
+5. CI：签名 job 密钥缺失时输出 BLOCKED 并阻断 CERTIFIED；演练走 allow_unsigned_drill
+   dispatch 输入（决策点 2 已批准：证书属外部前置，用户提供 secret 后一键启用）
+之后：批次 E（aggregate_gate_report.py 汇聚 G0~G10+rc-gate DAG，w0 探针需补 gate 片段
+JSON 小改 workflow 双同步）、批次 F（RC 演练六类故障注入+runbook+全项目收口）
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+
+### 环境坑（本会话新增，勿重踩）
+
+- grype 文件输出是 `-o json --file`（`-o json=path` 是 syft 语法）；rc=1 双义性靠"报告
+  可解析+含 matches 键"区分；grype v0.96.0 有 DB hydration UNIQUE-constraint 缺陷（用
+  v0.118.0）
+- syft 容器 root 写出文件宿主无权改写→临时文件+os.replace；docker -v 对不存在的宿主
+  文件会建成目录→挂目录不挂文件
+- gh CLI 不在本机：dispatch/日志/artifact 全走 REST API + `git credential fill` 的 token
+- 本机 Docker Hub 时通时断（ghcr.io 备源可靠；Docker Desktop 偶发掉线重启即可）；
+  MSYS_NO_PATHCONV=1 必须 export 在同一条命令里；shell cwd 会跨命令漂移（先 pwd）
+- generate_sbom 的 index.json 每次调用整体重写——增量调用会覆盖全量索引（全量跑用
+  默认全目标）
+- 境外网络夜间差：grype 漏洞库（数百 MB）白天可下；CI runner 无此问题
 
 ## 2026-09-02（最新）：W4 批次 B2 收口——C01~C12 十二场景三制品 CI 全绿 + 变异演练双拦截，task .8 done
 
