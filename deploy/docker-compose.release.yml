@@ -1,0 +1,98 @@
+# BtDeck 发布组合模板（release-artifact-equivalence-gate W5 批次 D / G10）
+#
+# 语义：
+#   - 只引用 digest，不引用可变 tag（G10：digest 未变化才可晋级；latest/裸版本 tag 禁止）
+#   - 只消费已晋级镜像，不含 build: 段（G10：发布系统只复制/晋级已验证制品，不执行 rebuild）
+#   - 双镜像由同一 Git SHA 与同一 frontend-asset-manifest 配对（manifest compose 段记录）
+#
+# 渲染：digest 值经环境变量注入（compose 原生插值），由
+#   scripts/release/build_release_manifest.py --emit-compose-env
+# 从 release manifest 生成 deploy/compose-release.env，用法：
+#   docker compose -f deploy/docker-compose.release.yml --env-file deploy/compose-release.env up -d
+# 校验：verify_release_bundle.py 的 compare_compose_digests() 断言渲染后
+#   image 均为 <name>@sha256:<64hex> 且与 manifest.compose 一致（测试含 latest/裸 tag 负向）。
+
+services:
+  # ==================== 后端服务 ====================
+  backend:
+    image: ghcr.io/strainhzj/btdeck-backend@sha256:${BTDECK_BACKEND_DIGEST:?BTDECK_BACKEND_DIGEST required (render via compose-release.env)}
+    container_name: btdeck-backend
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Asia/Shanghai}
+      # SQLite 单 Worker 约束与安全加固三件套（DEV=false + SECRET_KEY + ALLOWED_HOSTS）
+      # 与生产 docker-compose.yml 同口径；发布形态必须 DEV=false
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEV=false
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY required}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:?ALLOWED_HOSTS required}
+      - DEBUG=false
+      - CRON_TASK_TIMEOUT_ENFORCE=${CRON_TASK_TIMEOUT_ENFORCE:-true}
+      - SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS=${SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS:-300}
+      - TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS=${TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS:-1800}
+    volumes:
+      - ./data/backend/data:/app/data
+      - ./data/backend/logs:/app/logs
+      - ./data/backend/config:/app/config
+      - ./data/backend/backup:/app/backup
+    networks:
+      - btdeck_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+
+  # ==================== 前端服务 ====================
+  frontend:
+    image: ghcr.io/strainhzj/btdeck-frontend@sha256:${BTDECK_FRONTEND_DIGEST:?BTDECK_FRONTEND_DIGEST required (render via compose-release.env)}
+    container_name: btdeck-frontend
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${BTDECK_PORT:-8080}:80"
+    volumes:
+      - frontend_cache:/var/cache/nginx
+      - frontend_logs:/var/log/nginx
+    networks:
+      - btdeck_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ==================== 网络配置 ====================
+networks:
+  btdeck_network:
+    driver: bridge
+
+# ==================== 数据卷配置 ====================
+volumes:
+  frontend_cache:
+    driver: local
+  frontend_logs:
+    driver: local

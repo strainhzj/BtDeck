@@ -69,6 +69,14 @@ on:
         description: "Run w5-security (G9 SBOM + vuln/secret/license scan)"
         type: boolean
         default: false
+      run_w5_sign:
+        description: "Run w5-sign-windows + w5-sign-docker (G9 signing + G10 release manifest)"
+        type: boolean
+        default: false
+      allow_unsigned_drill:
+        description: "Drill mode: signing secrets may be absent (records unsigned; verdict INDETERMINATE, never CERTIFIED)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -1021,5 +1029,196 @@ jobs:
           path: |
             release/evidence/w5/
             release/build/sbom/index.json
+          retention-days: 14
+          if-no-files-found: error
+
+  w5-sign-windows:
+    name: "W5 sign / Windows Authenticode (G9 signing face)"
+    if: ${{ inputs.run_w5_sign }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      BTDECK_TIMESTAMP_URL: http://timestamp.digicert.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build frontend once (single build + manifest)
+        shell: pwsh
+        run: |
+          python scripts/release/build_frontend.py
+          if ($LASTEXITCODE -ne 0) { throw "frontend single build failed" }
+
+      - name: Ensure Inno Setup available
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
+
+      - name: Run deploy/build-windows.bat --release (fail-closed)
+        shell: cmd
+        run: deploy\build-windows.bat --release
+
+      - name: Sign Windows artifacts (fail-closed; BLOCKED without cert)
+        shell: pwsh
+        env:
+          BTDECK_SIGN_PFX_B64: ${{ secrets.BTDECK_SIGN_PFX_B64 }}
+          BTDECK_SIGN_PFX_PASSWORD: ${{ secrets.BTDECK_SIGN_PFX_PASSWORD }}
+        run: |
+          $signArgs = @("scripts/release/sign_artifacts.py", "--target", "windows")
+          if ("${{ inputs.allow_unsigned_drill }}" -eq "true") { $signArgs += "--allow-unsigned-drill" }
+          python @signArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "windows signing rc=$LASTEXITCODE (2=SIGNING_BLOCKED cert missing; 3=SIGN_FAILED) - fail-closed, drill via allow_unsigned_drill"
+          }
+
+      - name: Upload signing record + artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w5-sign-windows
+          path: |
+            dist/btdeck.exe
+            dist/BtDeck-v*-windows-x64-setup.exe
+            release/build/windows-exe/build-info.json
+            release/build/windows-exe/frontend-asset-manifest.json
+            release/build/signing-digests-windows.json
+          retention-days: 14
+          if-no-files-found: error
+
+  w5-sign-docker:
+    name: "W5 sign / Docker cosign + release manifest (G9/G10)"
+    if: ${{ inputs.run_w5_sign }}
+    needs: w5-sign-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python (release tooling + jsonschema)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install manifest validation deps
+        run: pip install jsonschema
+
+      - name: Download Windows artifacts + signing record
+        uses: actions/download-artifact@v4
+        with:
+          name: w5-sign-windows
+          path: .
+
+      - name: Build frontend once (single build + manifest)
+        run: python scripts/release/build_frontend.py
+
+      - name: Build strict Linux packages (DEB + RPM)
+        run: |
+          docker build -t w2-linux-builder - <<'BUILDEREOF'
+          FROM python:3.11-bullseye
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+              && rm -rf /var/lib/apt/lists/* \
+              && gem install fpm --no-document
+          BUILDEREOF
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            bash deploy/build-linux.sh --release
+          '
+
+      - name: Build v1.0.6 docker images
+        run: bash build-images.sh --release
+
+      - name: Install pinned cosign (sha256 from tool-versions.json)
+        run: |
+          set -euo pipefail
+          read -r URL SHA < <(python -c "import json;t=json.load(open('release/tool-versions.json'))['tools']['cosign'];print(t['url'],t['sha256'])")
+          curl -sL "$URL" -o /usr/local/bin/cosign
+          echo "$SHA  /usr/local/bin/cosign" | sha256sum -c -
+          chmod +x /usr/local/bin/cosign
+          cosign version | head -2
+
+      - name: Sign docker images (fail-closed; BLOCKED without key)
+        env:
+          BTDECK_COSIGN_KEY_B64: ${{ secrets.BTDECK_COSIGN_KEY_B64 }}
+          BTDECK_COSIGN_PASSWORD: ${{ secrets.BTDECK_COSIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ARGS="--target docker --cosign-bin /usr/local/bin/cosign"
+          if [ "${{ inputs.allow_unsigned_drill }}" = "true" ]; then ARGS="$ARGS --allow-unsigned-drill"; fi
+          RC=0
+          python scripts/release/sign_artifacts.py $ARGS || RC=$?
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::docker signing rc=$RC (2=SIGNING_BLOCKED key missing; 3=SIGN_FAILED) - fail-closed"
+            exit "$RC"
+          fi
+
+      - name: Static verify (G1/G5 pre-manifest, writes gate-report)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            python3 scripts/release/verify_release_bundle.py
+          '
+
+      - name: Build release manifest (approver left empty for human approval)
+        run: python scripts/release/build_release_manifest.py --emit-compose-env
+
+      - name: Final verify with manifest (G9 signing + G10 digest closure)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            python3 scripts/release/verify_release_bundle.py --require-manifest
+          '
+
+      - name: Assert drill semantics (unsigned records => verdict INDETERMINATE)
+        if: ${{ inputs.allow_unsigned_drill }}
+        run: |
+          set -euo pipefail
+          VERDICT=$(python -c "import json;print(json.load(open('release/build/release-manifest.json'))['verdict'])")
+          if [ "$VERDICT" != "INDETERMINATE" ]; then
+            echo "::error::drill manifest verdict must be INDETERMINATE (got $VERDICT); CERTIFIED requires real signing + human approval"
+            exit 1
+          fi
+          echo "drill semantics OK: verdict=$VERDICT"
+
+      - name: Upload signing + manifest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w5-sign-docker
+          path: |
+            release/build/signing-digests-*.json
+            release/build/signatures/
+            release/build/release-manifest.json
+            release/build/gate-report.json
+            release/build/checksums.txt
+            deploy/compose-release.env
           retention-days: 14
           if-no-files-found: error

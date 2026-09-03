@@ -16,6 +16,14 @@
       "version": "v8.28.0",
       "image": "ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854",
       "purpose": "秘密扫描（工作区 + git 全历史）"
+    },
+    "cosign": {
+      "version": "v3.1.3",
+      "binary": "cosign-linux-amd64",
+      "sha256": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64",
+      "digest_source": "官方 release 资产 cosign-linux-amd64.sigstore.json 的 messageDigest（Rekor 链内 SHA2_256）",
+      "purpose": "Docker 镜像 cosign 签名（sign-blob/verify-blob 静态 key 离线路径）。ghcr.io/sigstore/cosign 镜像仓库已不存在（2026-09-03 实测 NAME_UNKNOWN），故用 sha256 固定的 release 二进制——与镜像 digest 固定同 G10 原则"
     }
   }
 }
