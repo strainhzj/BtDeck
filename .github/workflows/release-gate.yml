@@ -1080,6 +1080,7 @@ jobs:
         env:
           BTDECK_SIGN_PFX_B64: ${{ secrets.BTDECK_SIGN_PFX_B64 }}
           BTDECK_SIGN_PFX_PASSWORD: ${{ secrets.BTDECK_SIGN_PFX_PASSWORD }}
+          PYTHONIOENCODING: utf-8
         run: |
           $signArgs = @("scripts/release/sign_artifacts.py", "--target", "windows")
           if ("${{ inputs.allow_unsigned_drill }}" -eq "true") { $signArgs += "--allow-unsigned-drill" }
