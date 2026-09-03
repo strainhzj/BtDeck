@@ -8,9 +8,9 @@
       "purpose": "CycloneDX SBOM 生成（源码/PyInstaller 产物/DEB/RPM/Docker 镜像 tar）"
     },
     "grype": {
-      "version": "v0.96.0",
-      "image": "ghcr.io/anchore/grype@sha256:b565beceb9c741b248ecdc071a4b91716fa8fb3b744676855cf89aae754db8f2",
-      "purpose": "漏洞扫描（输入 SBOM，CVSS 分级驱动阻断策略）"
+      "version": "v0.118.0",
+      "image": "ghcr.io/anchore/grype@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7",
+      "purpose": "漏洞扫描（输入 SBOM，CVSS 分级驱动阻断策略）；v0.96.0 有 DB hydration UNIQUE-constraint 已知缺陷（CI 第五轮实证），升级"
     },
     "gitleaks": {
       "version": "v8.28.0",
