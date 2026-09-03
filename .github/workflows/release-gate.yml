@@ -1103,6 +1103,17 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      - name: Upload unique frontend build (single-build principle, consumed by w5-sign-docker)
+        uses: actions/upload-artifact@v4
+        with:
+          name: w5-frontend-unique-build
+          # 两路径 LCA=仓库根 → 结构原样保留（frontend/dist/** + release/build/frontend/**）
+          path: |
+            frontend/dist
+            release/build/frontend/frontend-asset-manifest.json
+          retention-days: 14
+          if-no-files-found: error
+
   w5-sign-docker:
     name: "W5 sign / Docker cosign + release manifest (G9/G10)"
     if: ${{ inputs.run_w5_sign }}
@@ -1112,13 +1123,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22.23.2"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Setup Python (release tooling + jsonschema)
         uses: actions/setup-python@v5
@@ -1134,8 +1138,19 @@ jobs:
           name: w5-sign-windows
           path: .
 
-      - name: Build frontend once (single build + manifest)
-        run: python scripts/release/build_frontend.py
+      - name: Consume unique frontend build (single-build principle; NO rebuild)
+        # run 33757547345 实证：两次独立前端构建的 index.html/service-worker.js 漂移
+        # （SW 构建非确定），G1 跨制品比对正确拦截——本 job 必须消费上游唯一构建
+        uses: actions/download-artifact@v4
+        with:
+          name: w5-frontend-unique-build
+          path: .
+
+      - name: Verify consumed frontend dist matches its manifest
+        run: |
+          set -euo pipefail
+          python scripts/release/check_prebuilt_frontend.py \
+            release/build/frontend/frontend-asset-manifest.json frontend/dist
 
       - name: Build strict Linux packages (DEB + RPM)
         run: |
