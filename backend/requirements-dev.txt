@@ -11,6 +11,9 @@ pytest-asyncio~=0.24.0
 pytest-cov~=5.0.0
 pytest-mock~=3.14.0
 freezegun~=1.5.0
+# 发布门禁工具 schema 校验（tests/release 的 manifest/fragment 真校验；
+# W5 批次 D/E 引入，CI 缺此依赖曾致 11 例测试红——run 33765218992 实证）
+jsonschema~=4.26.0
 
 # ---- 代码质量工具（CI 门禁；本地配合 .pre-commit-config.yaml / pyproject.toml / .flake8）----
 # 验证命令：python -m black --check app/ && python -m flake8 app/ && python -m mypy app/ && python scripts/lint_btdeck.py && python -m ruff check app/

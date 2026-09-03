@@ -97,8 +97,15 @@ def _completion_log(mock_info):
 
 
 async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
-    """10k hash + worker_count=2：拉取期间活跃 asyncio 任务数 ≤ 4。"""
-    monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+    """10k hash + worker_count=2：拉取期间活跃 asyncio 任务数为固定上界，不随 hash 总量增长。
+
+    任务拓扑：当前协程 + 生产者(1) + worker(2)。Python 3.11 的 asyncio.wait_for 会为
+    每个在飞的 put/get 额外包一层 wrapper task（3.12 起改用 timeout 上下文不再创建）——
+    CI 跑 3.11（工具链锁定版本）采样到 6 属预期，本地 3.12 恒为 4；上界放行 wrapper
+    余量但保持固定常数（CI run 33765218992 实证 growth=6）。
+    """
+    worker_count = 2
+    monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", worker_count)
     monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**7)
     monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
 
@@ -116,9 +123,12 @@ async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
     with patch.object(torrents_async, "call_downloader_api", new=counting_wrapper):
         await torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_1")
 
-    # 活跃任务数 = 当前协程 + 生产者(1) + worker(2)，恒 ≤ 4，不随 hash 总量增长
-    assert max_seen["value"] <= 4
-    assert max_seen["value"] - baseline <= 3
+    growth = max_seen["value"] - baseline
+    # 设计拓扑（生产者+workers）+ 3.11 wait_for wrapper 余量（producer put + 每 worker get）
+    allowed_growth = worker_count + 1 + worker_count + 1
+    assert growth <= allowed_growth
+    # 不变量：10k hash 下仍是小固定常数，绝无随 hash 总量的任务增长
+    assert growth < 10
     # 无预算限制：全量拉取并写回
     assert fake_client.torrents_trackers.call_count == 10000
     assert all(t.trackers == [] for t in infos)
@@ -755,10 +765,12 @@ class TestSentinelLossSelfHealing:
             enrich_task = asyncio.create_task(
                 torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_cancelled")
             )
-            await asyncio.wait_for(started.wait(), timeout=1.0)
+            # 断言对象是"无泄漏"而非取消时延：慢 runner 上清理（哨兵补齐重试+队列排空）
+            # 可能超过 1s（CI run 33765218992 实证），超时预算放宽到 5s
+            await asyncio.wait_for(started.wait(), timeout=5.0)
             enrich_task.cancel()
             with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(enrich_task, timeout=1.0)
+                await asyncio.wait_for(enrich_task, timeout=5.0)
 
         await asyncio.sleep(0)
         leaked_tasks = [task for task in asyncio.all_tasks() if task not in baseline_tasks and not task.done()]
