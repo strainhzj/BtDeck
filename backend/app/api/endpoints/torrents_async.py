@@ -2795,7 +2795,7 @@ async def _enrich_qb_torrents_with_trackers(
         return None
 
     async def _producer() -> None:
-        """把待拉取 hash 依次入队；预算到期即停止生产，结束时逐 worker 放入哨兵。"""
+        """把待拉取 hash 依次入队；预算到期即停止生产，结束时逐 worker 放哨兵。"""
         try:
             index = 0
             while index < len(torrent_hashes):
@@ -2803,8 +2803,13 @@ async def _enrich_qb_torrents_with_trackers(
                     break
                 try:
                     # 有界队列满时最多等 0.5 秒；等待期间若预算到期（workers 退出
-                    # 不再消费），重查后立即停止生产，避免生产者永久阻塞在 put
-                    await asyncio.wait_for(queue.put(torrent_hashes[index]), timeout=0.5)
+                    # 不再消费），重查后立即停止生产，避免生产者永久阻塞在 put。
+                    # 用 asyncio.timeout 而非 wait_for：3.11 的 wait_for 在外层
+                    # cancel 与内部 waiter 完成竞态下会丢失取消（任务永久停在
+                    # cancelling 态不唤醒，外层 gather 等它即挂死；批次 F 容器
+                    # 探针实证 Task-4 卡 put、3.12 重写后无此问题）
+                    async with asyncio.timeout(0.5):
+                        await queue.put(torrent_hashes[index])
                     index += 1
                 except asyncio.TimeoutError:
                     continue
@@ -2826,7 +2831,9 @@ async def _enrich_qb_torrents_with_trackers(
                 if state["budget_reason"] is not None:
                     return
                 try:
-                    await asyncio.wait_for(queue.put(None), timeout=0.5)
+                    # 同上：asyncio.timeout 替代 wait_for（3.11 取消丢失竞态）
+                    async with asyncio.timeout(0.5):
+                        await queue.put(None)
                     break
                 except asyncio.TimeoutError:
                     if time.monotonic() >= sentinel_deadline:
@@ -2834,12 +2841,14 @@ async def _enrich_qb_torrents_with_trackers(
                     continue
 
     async def _tracker_worker() -> None:
-        """消费队列并拉取单个种子 tracker；每次拉取前检查单轮预算。"""
+        """消费队列并拉取单个种子的 tracker；每次拉取前检查单轮预算。"""
         while True:
             if state["budget_reason"] is not None:
                 return
             try:
-                torrent_hash = await asyncio.wait_for(queue.get(), timeout=_WORKER_GET_POLL_SECONDS)
+                # 同上：asyncio.timeout 替代 wait_for（3.11 取消丢失竞态）
+                async with asyncio.timeout(_WORKER_GET_POLL_SECONDS):
+                    torrent_hash = await queue.get()
             except asyncio.TimeoutError:
                 # 哨兵丢失自愈（2026-08-25 案件兜底）：producer 已结束且队列空，
                 # 说明不会再有新任务或哨兵——直接退出，不再永久等待。
