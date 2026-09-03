@@ -576,6 +576,21 @@ def sign_docker(
 # ---------------------------------------------------------------- 主流程
 
 
+def resolve_build_info_path(bundle_dir: Path) -> Path:
+    """build-info staging 解析（纯函数，CI run 33755046911 首轮回归锚点）。
+
+    回退链覆盖三类 CI 场景：docker job（docker-backend）、linux job（linux-binary）、
+    windows job（windows-exe）——单平台 job 只产自己平台的 staging。
+    """
+    for candidate in ("docker-backend", "linux-binary", "windows-exe"):
+        path = bundle_dir / candidate / "build-info.json"
+        if path.is_file():
+            return path
+    raise SigningError(
+        f"build-info 全部缺失：{bundle_dir}/{{docker-backend,linux-binary,windows-exe}}/build-info.json（先跑构建链）"
+    )
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=DEFAULT_PROJECT_ROOT)
@@ -607,11 +622,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     dist_dir = args.dist_dir or (root / "dist")
 
     try:
-        staging = bundle_dir / "docker-backend" / "build-info.json"
-        if not staging.is_file():
-            staging = bundle_dir / "linux-binary" / "build-info.json"
-        if not staging.is_file():
-            raise SigningError(f"build-info 缺失：{staging}（先跑构建链）")
+        staging = resolve_build_info_path(bundle_dir)
         build_info = json.loads(staging.read_text(encoding="utf-8"))
         version = str(build_info["product_version"])
 

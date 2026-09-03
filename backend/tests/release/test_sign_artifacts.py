@@ -150,6 +150,32 @@ class TestAuthenticode:
         assert [kind for kind, _ in targets] == ["windows-exe", "windows-setup"]
 
 
+class TestBuildInfoStagingFallback:
+    """CI run 33755046911 首轮回归：windows job 只有 windows-exe staging，
+    回退链缺 windows-exe 时 main 直接 SIGN_FAILED。"""
+
+    def test_windows_only_staging_resolved(self, sign, tmp_path):
+        (tmp_path / "windows-exe").mkdir(parents=True)
+        path = tmp_path / "windows-exe" / "build-info.json"
+        path.write_text("{}", encoding="utf-8")
+        assert sign.resolve_build_info_path(tmp_path) == path
+
+    def test_docker_staging_preferred(self, sign, tmp_path):
+        (tmp_path / "docker-backend").mkdir(parents=True)
+        (tmp_path / "linux-binary").mkdir(parents=True)
+        (tmp_path / "windows-exe").mkdir(parents=True)
+        for name in ("docker-backend", "linux-binary", "windows-exe"):
+            (tmp_path / name / "build-info.json").write_text("{}", encoding="utf-8")
+        assert (
+            sign.resolve_build_info_path(tmp_path)
+            == tmp_path / "docker-backend" / "build-info.json"
+        )
+
+    def test_no_staging_raises(self, sign, tmp_path):
+        with pytest.raises(sign.SigningError, match="build-info"):
+            sign.resolve_build_info_path(tmp_path)
+
+
 # ---------------------------------------------------------------- docker digest 口径
 
 
