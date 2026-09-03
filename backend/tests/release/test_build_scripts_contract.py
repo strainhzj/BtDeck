@@ -210,7 +210,9 @@ class TestDockerfiles:
         text = _read("frontend/Dockerfile.release")
         assert "COPY dist/ /usr/share/nginx/html/" in text
         assert "COPY build-info.json /usr/share/nginx/html/build-info.json" in text
-        assert "nginx:1.25-alpine@sha256:" in text
+        # 2026-09-03 基镜像升维护线（1.25 已 EOL，其 Critical 无修复；
+        # G9 供应链扫描驱动），digest 固定原则不变
+        assert "nginx:1.27-alpine@sha256:" in text
 
     def test_backend_dockerfile_copies_build_info(self):
         text = _read("backend/Dockerfile")

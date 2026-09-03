@@ -186,13 +186,14 @@ class TestAggregateGrype:
 
 
 class TestEvaluatePolicy:
-    def test_critical_never_waived(self, scanner):
-        """变异锚点：Critical 即使命中有效例外也必须阻断（§12.2）。"""
+    def test_critical_never_waived_by_regular_exception(self, scanner):
+        """变异锚点（2026-09-03 政策修订后语义）：普通 High 例外不能豁免
+        Critical——无修复 Critical 仅 tracked-no-fix 路径可豁免（另测）。"""
         policy = scanner.evaluate_policy(
             [_finding(severity="Critical")], [_exception()]
         )
         assert len(policy["blocked"]) == 1
-        assert "不可豁免" in policy["blocked"][0]["reason"]
+        assert "tracked-no-fix" in policy["blocked"][0]["reason"]
 
     def test_high_waived_with_valid_exception(self, scanner):
         policy = scanner.evaluate_policy([_finding("High")], [_exception()])
@@ -323,3 +324,61 @@ class TestSecretAllowlist:
             _REPO_ROOT / "release" / "secret-allowlist.json"
         )
         assert problems == [] and len(allow) == 9
+
+
+class TestTrackedNoFixPolicy:
+    """2026-09-03 政策修订：无修复可用 Critical 的跟踪型例外（三条件）。"""
+
+    def _tracked(self, **kw) -> dict:
+        base = {
+            "id": "SEC-T01",
+            "scope": {"vuln_id": "CVE-2026-8926"},
+            "justification": "trixie 当前修订已最新，上游 8.21 已修待回植",
+            "owner": "huangzj",
+            "remediation_version": "v1.0.7",
+            "registered": date.today().isoformat(),
+            "expires": (date.today() + timedelta(days=30)).isoformat(),
+            "kind": "tracked-no-fix",
+            "upstream_fix": "curl 8.21.0（curl.se advisory）",
+        }
+        base.update(kw)
+        return base
+
+    def test_critical_no_fix_with_tracked_exception_waived(self, scanner):
+        f = _finding("Critical", vuln_id="CVE-2026-8926")
+        f["fix_versions"] = []
+        policy = scanner.evaluate_policy([f], [self._tracked()])
+        assert policy["blocked"] == []
+        assert policy["waived"][0]["waiver_kind"] == "tracked-no-fix"
+
+    def test_critical_with_fix_still_blocks_despite_tracked(self, scanner):
+        """变异锚点：有修复可用的 Critical 即使命中 tracked 例外也必须阻断。"""
+        f = _finding("Critical", vuln_id="CVE-2026-8926")
+        f["fix_versions"] = ["8.21.0"]
+        policy = scanner.evaluate_policy([f], [self._tracked()])
+        assert len(policy["blocked"]) == 1
+        assert "有修复可用" in policy["blocked"][0]["reason"]
+
+    def test_critical_no_fix_without_tracked_blocks(self, scanner):
+        f = _finding("Critical")
+        f["fix_versions"] = []
+        policy = scanner.evaluate_policy([f], [])
+        assert (
+            len(policy["blocked"]) == 1
+            and "tracked-no-fix" in policy["blocked"][0]["reason"]
+        )
+
+    def test_tracked_missing_upstream_fix_rejected_at_load(self, scanner, tmp_path):
+        bad = self._tracked()
+        bad.pop("upstream_fix")
+        p = tmp_path / "exc.json"
+        p.write_text(json.dumps({"exceptions": [bad]}), encoding="utf-8")
+        valid, problems = scanner.load_exceptions(p)
+        assert valid == [] and any("upstream_fix" in x for x in problems)
+
+    def test_high_kind_mismatch_not_applied_to_critical(self, scanner):
+        """普通 High 例外（无 kind）不得通过 Critical tracked 路径放行。"""
+        f = _finding("Critical", vuln_id="GHSA-xxxx")
+        f["fix_versions"] = []
+        policy = scanner.evaluate_policy([f], [_exception()])
+        assert len(policy["blocked"]) == 1

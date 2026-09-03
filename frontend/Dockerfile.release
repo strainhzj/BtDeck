@@ -6,7 +6,7 @@
 # 不复用 frontend/ 目录（其 .dockerignore 会排除 dist/）。
 #
 # digest 固定（W1/G2）：nginx:1.25-alpine @ sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
-FROM nginx:1.25-alpine@sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 前端生产环境 - Nginx 静态文件服务（唯一前端构建）"
@@ -23,8 +23,10 @@ LABEL org.opencontainers.image.title="BtDeck frontend" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.source="${OCI_SOURCE}"
 
-# 安装时区数据和 wget（用于健康检查）
-RUN apk add --no-cache tzdata wget && \
+# 安装时区数据和 wget（用于健康检查）；先 apk upgrade 拉取安全补丁
+# （发布镜像内嵌 apk 快照滞后于安全仓库，G9 Critical 不可豁免——构建后
+# digest 由 build-images.sh 记录保溯源）
+RUN apk upgrade --no-cache && apk add --no-cache tzdata wget && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     rm -rf /etc/nginx/conf.d/default.conf && \

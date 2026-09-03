@@ -7,7 +7,7 @@
 # ============================================
 # 基础镜像 digest 固定（release-artifact-equivalence-gate W1/G2）：
 # python:3.11-slim @ sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
-FROM python:3.11-slim@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6 AS builder
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 AS builder
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端构建阶段 - wheel 编译"
@@ -54,7 +54,7 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
 # 阶段2: runtime - 生产运行时
 # ============================================
 # digest 同 builder 阶段（python:3.11-slim）
-FROM python:3.11-slim@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端服务 - FastAPI + Python 3.11"
@@ -111,6 +111,9 @@ WORKDIR /app
 #   端到端一致性 = 本步 pip check + W2 从镜像真实环境 pip freeze 与锁逐包比对。
 COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY --from=builder /build/wheels /tmp/wheels
+# OS 包安全升级（G9：slim 基镜像快照滞后于安全仓库，Critical 不可豁免；
+# 构建后 digest 由 build-images.sh 记录保溯源）
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN tr -d '\r' < /tmp/requirements-lock.txt \
         | sed -e '/^[[:space:]]*--hash/d' -e 's/[[:space:]]*\\$//' \
         | grep -E '^[A-Za-z0-9]' > /tmp/pins.txt \

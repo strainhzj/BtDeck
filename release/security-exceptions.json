@@ -594,6 +594,869 @@
       "remediation_version": "v1.0.7",
       "registered": "2026-09-03",
       "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-055",
+      "scope": {
+        "vuln_id": "GHSA-f65p-4m7j-42xc"
+      },
+      "justification": "fast-uri==3.1.0 为发行版当前最新修订；暴露面评估：BtDeck 部署形态风险可控；修复 3.1.6，升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-056",
+      "scope": {
+        "vuln_id": "GHSA-jqff-g426-hqxp"
+      },
+      "justification": "fast-uri==3.1.0 为发行版当前最新修订；暴露面评估：BtDeck 部署形态风险可控；修复 3.1.6，升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-057",
+      "scope": {
+        "vuln_id": "CVE-2026-10536"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-058",
+      "scope": {
+        "vuln_id": "CVE-2026-11856"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-059",
+      "scope": {
+        "vuln_id": "CVE-2026-8924"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-060",
+      "scope": {
+        "vuln_id": "CVE-2026-8926"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-061",
+      "scope": {
+        "vuln_id": "CVE-2026-8927"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-062",
+      "scope": {
+        "vuln_id": "CVE-2026-9079"
+      },
+      "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-063",
+      "scope": {
+        "vuln_id": "CVE-2026-5450"
+      },
+      "justification": "libc-bin==2.41-12+deb13u3 为发行版当前最新修订；glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）"
+    },
+    {
+      "id": "SEC-064",
+      "scope": {
+        "vuln_id": "CVE-2026-5450"
+      },
+      "justification": "libc6==2.41-12+deb13u3 为发行版当前最新修订；glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）"
+    },
+    {
+      "id": "SEC-065",
+      "scope": {
+        "vuln_id": "CVE-2026-10536"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-066",
+      "scope": {
+        "vuln_id": "CVE-2026-11856"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-067",
+      "scope": {
+        "vuln_id": "CVE-2026-8924"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-068",
+      "scope": {
+        "vuln_id": "CVE-2026-8926"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-069",
+      "scope": {
+        "vuln_id": "CVE-2026-8927"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-070",
+      "scope": {
+        "vuln_id": "CVE-2026-9079"
+      },
+      "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
+    },
+    {
+      "id": "SEC-071",
+      "scope": {
+        "vuln_id": "CVE-2026-12087"
+      },
+      "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
+    },
+    {
+      "id": "SEC-072",
+      "scope": {
+        "vuln_id": "CVE-2026-13221"
+      },
+      "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
+    },
+    {
+      "id": "SEC-073",
+      "scope": {
+        "vuln_id": "CVE-2026-42496"
+      },
+      "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
+    },
+    {
+      "id": "SEC-074",
+      "scope": {
+        "vuln_id": "CVE-2026-57433"
+      },
+      "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
+    },
+    {
+      "id": "SEC-075",
+      "scope": {
+        "vuln_id": "CVE-2026-8376"
+      },
+      "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03",
+      "kind": "tracked-no-fix",
+      "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
+    },
+    {
+      "id": "SEC-076",
+      "scope": {
+        "vuln_id": "CVE-2026-12064"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-077",
+      "scope": {
+        "vuln_id": "CVE-2026-3805"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-078",
+      "scope": {
+        "vuln_id": "CVE-2026-5773"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-079",
+      "scope": {
+        "vuln_id": "CVE-2026-6276"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-080",
+      "scope": {
+        "vuln_id": "CVE-2026-8286"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-081",
+      "scope": {
+        "vuln_id": "CVE-2026-8932"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-082",
+      "scope": {
+        "vuln_id": "CVE-2026-9080"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-083",
+      "scope": {
+        "vuln_id": "CVE-2026-9545"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-084",
+      "scope": {
+        "vuln_id": "CVE-2026-9547"
+      },
+      "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-085",
+      "scope": {
+        "vuln_id": "CVE-2026-41992"
+      },
+      "justification": "gzip 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-086",
+      "scope": {
+        "vuln_id": "GHSA-58pv-8j8x-9vj2"
+      },
+      "justification": "jaraco-context 暴露面评估：BtDeck 部署形态风险可控；修复 6.1.0；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-087",
+      "scope": {
+        "vuln_id": "CVE-2026-54369"
+      },
+      "justification": "libacl1 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-088",
+      "scope": {
+        "vuln_id": "CVE-2026-54370"
+      },
+      "justification": "libacl1 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-089",
+      "scope": {
+        "vuln_id": "CVE-2026-5435"
+      },
+      "justification": "libc-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-090",
+      "scope": {
+        "vuln_id": "CVE-2026-5928"
+      },
+      "justification": "libc-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-091",
+      "scope": {
+        "vuln_id": "CVE-2026-5435"
+      },
+      "justification": "libc6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-092",
+      "scope": {
+        "vuln_id": "CVE-2026-5928"
+      },
+      "justification": "libc6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-093",
+      "scope": {
+        "vuln_id": "CVE-2026-12064"
+      },
+      "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-094",
+      "scope": {
+        "vuln_id": "CVE-2026-8286"
+      },
+      "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-095",
+      "scope": {
+        "vuln_id": "CVE-2026-8932"
+      },
+      "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-096",
+      "scope": {
+        "vuln_id": "CVE-2026-9080"
+      },
+      "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-097",
+      "scope": {
+        "vuln_id": "CVE-2026-9545"
+      },
+      "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-098",
+      "scope": {
+        "vuln_id": "CVE-2025-69720"
+      },
+      "justification": "libncursesw6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-099",
+      "scope": {
+        "vuln_id": "CVE-2026-11822"
+      },
+      "justification": "libsqlite3-0 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-100",
+      "scope": {
+        "vuln_id": "CVE-2026-11824"
+      },
+      "justification": "libsqlite3-0 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-101",
+      "scope": {
+        "vuln_id": "CVE-2026-58050"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-102",
+      "scope": {
+        "vuln_id": "CVE-2026-58051"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-103",
+      "scope": {
+        "vuln_id": "CVE-2026-66032"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-104",
+      "scope": {
+        "vuln_id": "CVE-2026-66033"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-105",
+      "scope": {
+        "vuln_id": "CVE-2026-66034"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-106",
+      "scope": {
+        "vuln_id": "CVE-2026-66035"
+      },
+      "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-107",
+      "scope": {
+        "vuln_id": "CVE-2025-69720"
+      },
+      "justification": "libtinfo6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-108",
+      "scope": {
+        "vuln_id": "CVE-2025-69720"
+      },
+      "justification": "ncurses-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-109",
+      "scope": {
+        "vuln_id": "CVE-2025-69720"
+      },
+      "justification": "ncurses-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-110",
+      "scope": {
+        "vuln_id": "CVE-2026-1642"
+      },
+      "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-111",
+      "scope": {
+        "vuln_id": "CVE-2026-27651"
+      },
+      "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-112",
+      "scope": {
+        "vuln_id": "CVE-2026-27654"
+      },
+      "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-113",
+      "scope": {
+        "vuln_id": "CVE-2026-32647"
+      },
+      "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-114",
+      "scope": {
+        "vuln_id": "CVE-2026-42497"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-115",
+      "scope": {
+        "vuln_id": "CVE-2026-48959"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-116",
+      "scope": {
+        "vuln_id": "CVE-2026-48961"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-117",
+      "scope": {
+        "vuln_id": "CVE-2026-48962"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-118",
+      "scope": {
+        "vuln_id": "CVE-2026-57432"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-119",
+      "scope": {
+        "vuln_id": "CVE-2026-7017"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-120",
+      "scope": {
+        "vuln_id": "CVE-2026-9538"
+      },
+      "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-121",
+      "scope": {
+        "vuln_id": "CVE-2026-3644"
+      },
+      "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.13, 3.14.4, 3.15.0a8；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-122",
+      "scope": {
+        "vuln_id": "CVE-2026-4224"
+      },
+      "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.13, 3.14.4, 3.15.0a8；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-123",
+      "scope": {
+        "vuln_id": "CVE-2026-7210"
+      },
+      "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.14, 3.14.6, 3.15.0b2；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-124",
+      "scope": {
+        "vuln_id": "CVE-2023-52356"
+      },
+      "justification": "tiff 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-125",
+      "scope": {
+        "vuln_id": "CVE-2026-4775"
+      },
+      "justification": "tiff 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-126",
+      "scope": {
+        "vuln_id": "CVE-2026-58469"
+      },
+      "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-127",
+      "scope": {
+        "vuln_id": "CVE-2026-58471"
+      },
+      "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-128",
+      "scope": {
+        "vuln_id": "CVE-2026-58472"
+      },
+      "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
+    },
+    {
+      "id": "SEC-129",
+      "scope": {
+        "vuln_id": "GHSA-8rrh-rw8j-w5fx"
+      },
+      "justification": "wheel 暴露面评估：BtDeck 部署形态风险可控；修复 0.46.2；升级治理批次（v1.0.7）消解",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.7",
+      "registered": "2026-09-03",
+      "expires": "2026-10-03"
     }
   ]
 }

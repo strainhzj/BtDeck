@@ -54,6 +54,12 @@ REQUIRED_EXCEPTION_FIELDS = (
     "registered",
 )
 MAX_EXCEPTION_DAYS = 30
+# tracked-no-fix 例外（2026-09-03 用户批准的政策修订）：仅适用于
+# 「发行版当前修订已最新 + 扫描器 fix=[] + 上游已发布修复但 distro 未回植」
+# 的 Critical；三条件中后两条机器校验（fix=[] 来自 finding；upstream_fix
+# 必填即上游已修的证据），到期未消解自动阻断。有修复可用的 Critical 仍硬阻断。
+TRACKED_NO_FIX_KIND = "tracked-no-fix"
+TRACKED_NO_FIX_EXTRA_FIELDS = ("kind", "upstream_fix")
 
 
 def _parse_date(value: str) -> date:
@@ -96,6 +102,11 @@ def load_exceptions(path: Path) -> Tuple[List[dict], List[str]]:
             continue
         if expires < date.today():
             problems.append(f"例外已过期: {exc['id']} ({exc['expires']})")
+            continue
+        if exc.get("kind") == TRACKED_NO_FIX_KIND and not exc.get("upstream_fix"):
+            problems.append(
+                f"tracked-no-fix 例外缺 upstream_fix（上游已修证据）: {exc['id']}"
+            )
             continue
         valid.append(exc)
     return valid, problems
@@ -174,7 +185,13 @@ def aggregate_grype(raw_by_target: Dict[str, dict]) -> List[dict]:
 def evaluate_policy(
     findings: List[dict], exceptions: List[dict], today: Optional[date] = None
 ) -> dict:
-    """阻断策略。Critical 例外命中也不放行（§12.2 不可豁免项）。"""
+    """阻断策略。
+
+    - Critical 有修复可用：不可豁免硬阻断（§12.2）。
+    - Critical 无修复可用（fix=[]）：仅当命中 tracked-no-fix 例外（2026-09-03
+      政策修订三条件）才放行为跟踪豁免，否则仍阻断。
+    - High：命中有效限时例外放行，否则阻断。
+    """
     today = today or date.today()
     blocked: List[dict] = []
     waived: List[dict] = []
@@ -184,21 +201,39 @@ def evaluate_policy(
             recorded.append(finding)
             continue
         hit = next((e for e in exceptions if exception_matches(finding, e)), None)
-        if hit and _parse_date(str(hit["expires"])) >= today:
-            if finding["severity"] == CRITICAL:
+        valid_hit = hit and _parse_date(str(hit["expires"])) >= today
+
+        if finding["severity"] == CRITICAL:
+            has_fix = bool(finding.get("fix_versions"))
+            if has_fix:
                 blocked.append(
-                    {**finding, "reason": f"Critical 不可豁免（例外 {hit['id']} 无效）"}
+                    {
+                        **finding,
+                        "reason": "Critical 有修复可用，不可豁免（§12.2）"
+                        + (f"；例外 {hit['id']} 不适用" if hit else ""),
+                    }
+                )
+            elif valid_hit and hit.get("kind") == TRACKED_NO_FIX_KIND:
+                waived.append(
+                    {
+                        **finding,
+                        "exception": hit["id"],
+                        "owner": hit["owner"],
+                        "waiver_kind": TRACKED_NO_FIX_KIND,
+                        "upstream_fix": hit.get("upstream_fix"),
+                    }
                 )
             else:
-                waived.append(
-                    {**finding, "exception": hit["id"], "owner": hit["owner"]}
+                blocked.append(
+                    {
+                        **finding,
+                        "reason": "Critical 无修复可用且无有效 tracked-no-fix 例外",
+                    }
                 )
+        elif valid_hit:
+            waived.append({**finding, "exception": hit["id"], "owner": hit["owner"]})
         else:
-            blocked.append(
-                finding
-                if finding["severity"] == CRITICAL
-                else {**finding, "reason": "High 无有效例外"}
-            )
+            blocked.append({**finding, "reason": "High 无有效例外"})
     return {"blocked": blocked, "waived": waived, "recorded": recorded}
 
 
