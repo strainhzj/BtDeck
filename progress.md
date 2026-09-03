@@ -1,5 +1,40 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-03（续）：W5 批次 E 收口——G0~G10 门禁汇聚 + rc-gate fail-closed DAG（task .9 剩 F）
+
+**代码件**（提交 0807507）：
+- release/schemas/gate-fragment.schema.json：标准门禁片段 schema（gate/status/generated_at
+  必填、evidence/logs 可选、additionalProperties=false）
+- scripts/release/aggregate_gate_report.py：G0~G10 汇聚——片段优先于推导；门映射
+  （G0/G2/G3 只认片段，G1/G4/G5 gate-report 值，G6 deb-rpm-windows 生命周期 verdict
+  空坏文件=INDETERMINATE，G7 docker，G8 compare 全候选 unexplained==0，G9 扫描+签名
+  双面单面缺失不得兜 PASS，G10 verify+manifest 联合且审批完成是检查项）；verdict 三态
+  （CERTIFIED 需全 PASS+manifest CERTIFIED+approver）；输出 gate-report-full.json +
+  release-summary.md（§14 模板）；坏证据/REJECTED exit 1、INDETERMINATE exit 0
+- CI：w0 四探针 job 补 G0 片段写出（windows 纯 pwsh 无 python 依赖、linux python3、
+  node-matrix 覆写 working-directory 回仓库根）；rc-gate job——needs 全部 14 门禁 job +
+  result 断言（skipped=NOT_RUN fail-closed）、download-artifact pattern w[0-9]-*
+  merge-multiple 汇证、regression API（runs?head_sha 查 Full-stack regression conclusion）
+  映射 G2/G3 片段、aggregate 汇聚上传
+
+**实证**：
+- 本机真实仓库跑 aggregate：提交的空壳 w3 证据（0 字节）被识破为坏证据 → G6
+  INDETERMINATE + problems → REJECTED exit 1（fail-closed 演示）
+- CI run 33764067820@0807507（dispatch run_windows+run_rc_gate）：w0-windows
+  "Write G0 gate fragment" 步骤 success，artifact 片段本机 schema 复验 VALID；
+  rc-gate 负向实证——13 个上游门 job skipped 逐个 ::error 阻断红
+- 测试 +36（release 275→311）：schema 校验/推导器坏证据语义/片段优先/G2 锁交叉/
+  verdict 三态/端到端四链（drill-certified-rejected-tampered）
+
+**修复真 bug 1 个**：derive_g9 首版 `if s` 过滤把缺失扫描面丢掉、仅签名面即可判 PASS
+（漏报）——单测暴露后改为显式 NOT_RUN 语义。
+
+**下一步**：批次 F（最后一批）——RC 演练：全门一次 dispatch（run_w2×3+run_w3×3+
+run_w4+run_w5_security+run_w5_sign+run_rc_gate+四探针+allow_unsigned_drill）跑完整
+DAG 全绿（预期 rc-gate INDETERMINATE：drill 无签名）；六类故障注入各停预期门【旧前端→
+G5、qB 漂移→G2、缺契约 JSON→G5、RPM 升级停服→G6、Docker 混装→G8、digest 篡改→G10】；
+docs/release/runbook；feature_list/progress/handoff/roadmap 全收口；.9 置 done。
+
 ## 2026-09-03：W5 批次 C+D 收口——G9 扫描面+签名面全绿、G10 骨架落地（task .9 in-progress，剩 E/F）
 
 ### 批次 C（G9 扫描面，本日另一会话完成）

@@ -1,11 +1,67 @@
-## 2026-09-03（最新）：.9 批次 C+D 收口——G9 扫描+签名全绿、G10 骨架落地；批次 E/F 待开工
+## 2026-09-03（最新）：.9 批次 C+D+E 收口——G9 双面+G10 骨架与汇聚全落地；批次 F（RC 演练）待开工
 
 ### 当前状态
 
 - Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
-- **done**: .1~.8；**.9 in-progress（批次 C+D done，E/F 待做）**
-- 分支 dev@074377a（全部已推送）；master workflow 副本同步至 e9b04b7
-- 测试：release 275/275；全套 4409 过 0 失败
+- **done**: .1~.8；**.9 in-progress（批次 C+D+E done，F 待做——最后一批）**
+- 分支 dev@0807507（全部已推送）；master workflow 副本同步至 5060940
+- 测试：release 311/311；全套 4409 过 0 失败
+
+### 批次 E 战果（G10 汇聚面，提交 0807507，CI run 33764067820）
+
+- gate-fragment.schema.json + aggregate_gate_report.py（G0~G10 汇聚、§14 发布摘要、
+  verdict 三态：CERTIFIED 需全 PASS+manifest CERTIFIED+approver）；w0 四探针补 G0 片段
+  （windows 纯 pwsh、linux python3、node-matrix 覆写 working-directory）；rc-gate
+  fail-closed DAG job（needs 14 门禁 job+result 断言 skipped=NOT_RUN、
+  download-artifact w[0-9]-* merge-multiple 汇证、regression API 映射 G2/G3）
+- CI 实证：w0-windows 片段步骤 success+artifact 片段 schema 复验 VALID；rc-gate 负向
+  13 上游 skipped 逐个 error 阻断红；本机真实仓库 aggregate 对空壳 w3 证据 REJECTED
+  exit 1（坏证据不放过）
+- 语义要点：片段优先于推导；G9 双面单面缺失不得兜 PASS（首版漏报 bug 已修）；
+  G10「审批完成」是检查项（manifest INDETERMINATE→G10 INDETERMINATE）
+- 测试 +36（release 275→311）；证据 release/evidence/w5/gate/
+
+### 下一步：批次 F（最后一批）——RC 演练 + runbook + 全项目收口
+
+1. **完整 DAG 全绿演练**：一次 dispatch 勾全部输入（四探针+w2×3+w3×3+w4+w5_security+
+   w5_sign+rc_gate，allow_unsigned_drill=true）→ 预期 rc-gate 汇聚 verdict=INDETERMINATE
+   （drill 无签名+审批空）；先确保同 SHA 有 Full-stack regression 绿 run（G2/G3 片段来源）
+2. **六类故障注入各停预期门**：旧前端→G5、qB 漂移→G2、缺契约 JSON→G5、RPM 升级停服→
+   G6、Docker 混装→G8、digest 篡改→G10（各注入一次验证聚合报红且未产生发布动作）
+3. docs/release/runbook（发布/回滚/豁免/证书轮换/故障排查；含 RPM 升级需手动
+   `systemctl enable --now btdeck`）
+4. feature_list/progress/handoff/roadmap 全收口；.9 置 done
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（同尺寸不同字节，疑似内嵌构建
+  时间戳）；当前靠唯一构建消费架构兜底，根治列 v1.0.7 候选
+- **真实签名启用**：用户提供 GH secret（BTDECK_SIGN_PFX_B64+BTDECK_SIGN_PFX_PASSWORD /
+  BTDECK_COSIGN_KEY_B64+BTDECK_COSIGN_PASSWORD）后 dispatch 不勾 drill 即真实签名
+
+### 环境坑（批次 D/E 新增，勿重踩）
+
+- ghcr.io/sigstore/cosign 仓库已不存在（token DENIED/NAME_UNKNOWN）；cosign 用 release
+  二进制 sha256 固定（官方 .sigstore.json 的 messageDigest 即二进制 sha256）
+- cosign v3 移除 --output-signature/--tlog-upload；verify-blob 只吃 --bundle
+- Windows runner cp1252：python 脚本中文输出须 reconfigure UTF-8；subprocess text=True
+  会用 locale 解码头子进程输出（docker inspect JSON 含非 ASCII 必崩）——统一
+  encoding="utf-8", errors="replace"
+- upload-artifact 多路径 LCA=仓库根时结构原样保留（跨 job 传 dist+release/build 靠这个）；
+  download-artifact pattern 支持字符类（w[0-9]-*）+merge-multiple 合并多 artifact
+- CI job 日志下载：jobs/{id}/logs 的 302 重定向到 Azure blob，**不能带 Authorization 头**
+- docker inspect 本地镜像无 .Descriptor.Digest（经典 builder）——save-oci 口径兜底
+- 本机 ghcr 匿名 pull 时通时断；git credential 的 token 走 ghcr 认证 API 可靠
+- 前端双构建必然漂移——跨 job 比对 staging 的 job 必须消费上游唯一构建
+  （w5-frontend-unique-build artifact）
+- w0-node-matrix 有 defaults working-directory: frontend——仓库根级步骤须覆写
+- 仓库提交的 release/evidence/w3/*.json 是空壳（真实报告在 CI artifact）——本地跑
+  aggregate 会判坏证据，属预期
+
+## 2026-09-03：.9 批次 C+D 收口——G9 扫描+签名全绿、G10 骨架落地；批次 E 待开工
 
 ### 批次 D 战果（CI run 33759319494 四轮迭代终局全绿）
 
