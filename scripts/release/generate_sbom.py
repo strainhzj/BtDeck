@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -223,11 +224,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for c in payload.get("components", [])
             if c.get("name") in prod or c.get("type") == "application"
         ]
-        out.write_text(
+        # 容器以 root 写出的文件 runner 用户无权改写（CI 首轮实测
+        # PermissionError）——写同目录临时文件后 os.replace 改名替换
+        # （改名只需目录写权限）
+        tmp_out = out.with_suffix(".filtered.json")
+        tmp_out.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
             newline="\n",
         )
+        os.replace(tmp_out, out)
         record("source-frontend", out)
 
     if "binary-linux" in wanted:
