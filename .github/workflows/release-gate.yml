@@ -77,6 +77,10 @@ on:
         description: "Drill mode: signing secrets may be absent (records unsigned; verdict INDETERMINATE, never CERTIFIED)"
         type: boolean
         default: false
+      run_rc_gate:
+        description: "Run rc-gate (aggregate G0~G10, fail-closed DAG; requires all gate jobs in same run)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -195,12 +199,29 @@ jobs:
           }
           $report | ConvertTo-Json | Set-Content w0-windows-runner.json
 
+      - name: Write G0 gate fragment
+        if: success()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release/build/gate-fragments | Out-Null
+          $fragment = @{
+            gate = "G0"
+            status = "PASS"
+            generated_at = (Get-Date -AsUTC -Format "yyyy-MM-ddTHH:mm:ssZ")
+            summary = "w0-windows-runner probe: Inno Setup + NSSM lifecycle verified"
+            evidence = @(@{ path = "w0-windows-runner.json" })
+          }
+          $fragment | ConvertTo-Json | Set-Content release/build/gate-fragments/G0.json
+          if (-not (Test-Path release/build/gate-fragments/G0.json)) { throw "gate fragment write failed" }
+
       - name: Upload W0 windows report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: w0-windows-runner
-          path: w0-windows-runner.json
+          path: |
+            w0-windows-runner.json
+            release/build/gate-fragments/G0.json
           retention-days: 30
           if-no-files-found: error
 
@@ -254,12 +275,33 @@ jobs:
             echo '{"probe":"w0-linux-systemd","runner":"${{ runner.name }}","checks":{"debian12_systemd":"PASS","rocky9_systemd":"PASS"},"executed_at":"'$(date -u +%FT%TZ)'"}'
           } > w0-linux-systemd.json
 
+      - name: Write G0 gate fragment
+        if: success()
+        run: |
+          mkdir -p release/build/gate-fragments
+          python3 - <<'PY'
+          import datetime, json
+          json.dump(
+              {
+                  "gate": "G0",
+                  "status": "PASS",
+                  "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  "summary": "w0-linux-systemd probe: Debian 12 + Rocky 9 systemd lifecycle verified",
+                  "evidence": [{"path": "w0-linux-systemd.json"}],
+              },
+              open("release/build/gate-fragments/G0.json", "w"),
+              indent=2,
+          )
+          PY
+
       - name: Upload W0 systemd report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: w0-linux-systemd
-          path: w0-linux-systemd.json
+          path: |
+            w0-linux-systemd.json
+            release/build/gate-fragments/G0.json
           retention-days: 30
           if-no-files-found: error
 
@@ -299,12 +341,34 @@ jobs:
           {"probe":"w0-node-matrix","node":"$(node -v)","runner":"${{ runner.name }}","executed_at":"$(date -u +%FT%TZ)"}
           EOF
 
+      - name: Write G0 gate fragment
+        if: success()
+        working-directory: .
+        run: |
+          mkdir -p release/build/gate-fragments
+          python3 - <<'PY'
+          import datetime, json
+          json.dump(
+              {
+                  "gate": "G0",
+                  "status": "PASS",
+                  "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  "summary": "w0-node-matrix probe: Node 22 full frontend matrix verified",
+                  "evidence": [{"path": "frontend/w0-node-matrix.json"}],
+              },
+              open("release/build/gate-fragments/G0.json", "w"),
+              indent=2,
+          )
+          PY
+
       - name: Upload W0 node report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: w0-node-matrix
-          path: frontend/w0-node-matrix.json
+          path: |
+            frontend/w0-node-matrix.json
+            release/build/gate-fragments/G0.json
           retention-days: 30
           if-no-files-found: error
 
@@ -347,12 +411,33 @@ jobs:
           {"probe":"w0-glibc-bullseye","build_image":"python:3.11-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
           EOF
 
+      - name: Write G0 gate fragment
+        if: success()
+        run: |
+          mkdir -p release/build/gate-fragments
+          python3 - <<'PY'
+          import datetime, json
+          json.dump(
+              {
+                  "gate": "G0",
+                  "status": "PASS",
+                  "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  "summary": "w0-glibc-bullseye probe: bullseye build + dual-distro run verified",
+                  "evidence": [{"path": "w0-glibc-bullseye.json"}],
+              },
+              open("release/build/gate-fragments/G0.json", "w"),
+              indent=2,
+          )
+          PY
+
       - name: Upload W0 glibc report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: w0-glibc-bullseye
-          path: w0-glibc-bullseye.json
+          path: |
+            w0-glibc-bullseye.json
+            release/build/gate-fragments/G0.json
           retention-days: 30
           if-no-files-found: error
 
@@ -1237,4 +1322,124 @@ jobs:
             release/build/checksums.txt
             deploy/compose-release.env
           retention-days: 14
+          if-no-files-found: error
+
+  rc-gate:
+    name: "RC gate / aggregate G0~G10 (fail-closed DAG)"
+    if: ${{ inputs.run_rc_gate && !cancelled() }}
+    needs:
+      - w0-windows-runner
+      - w0-linux-systemd
+      - w0-node-matrix
+      - w0-glibc-bullseye
+      - w2-strict-linux-build
+      - w2-strict-windows-build
+      - w2-strict-docker-build
+      - w3-lifecycle-linux
+      - w3-lifecycle-docker
+      - w3-lifecycle-windows
+      - w4-contract
+      - w5-security
+      - w5-sign-windows
+      - w5-sign-docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install aggregator deps
+        run: pip install jsonschema
+
+      - name: Assert upstream gate jobs all succeeded (skipped = NOT_RUN, fail-closed)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          results = {
+              "w0-windows-runner": "${{ needs.w0-windows-runner.result }}",
+              "w0-linux-systemd": "${{ needs.w0-linux-systemd.result }}",
+              "w0-node-matrix": "${{ needs.w0-node-matrix.result }}",
+              "w0-glibc-bullseye": "${{ needs.w0-glibc-bullseye.result }}",
+              "w2-strict-linux-build": "${{ needs.w2-strict-linux-build.result }}",
+              "w2-strict-windows-build": "${{ needs.w2-strict-windows-build.result }}",
+              "w2-strict-docker-build": "${{ needs.w2-strict-docker-build.result }}",
+              "w3-lifecycle-linux": "${{ needs.w3-lifecycle-linux.result }}",
+              "w3-lifecycle-docker": "${{ needs.w3-lifecycle-docker.result }}",
+              "w3-lifecycle-windows": "${{ needs.w3-lifecycle-windows.result }}",
+              "w4-contract": "${{ needs.w4-contract.result }}",
+              "w5-security": "${{ needs.w5-security.result }}",
+              "w5-sign-windows": "${{ needs.w5-sign-windows.result }}",
+              "w5-sign-docker": "${{ needs.w5-sign-docker.result }}",
+          }
+          bad = {k: v for k, v in results.items() if v != "success"}
+          if bad:
+              for name, result in sorted(bad.items()):
+                  print(f"::error::upstream gate job {name} -> {result} (skipped/failure = NOT_RUN, fail-closed; dispatch all gate inputs in the same run)")
+              raise SystemExit(1)
+          print(f"all {len(results)} upstream gate jobs succeeded")
+          PY
+
+      - name: Download gate evidence artifacts (merged into natural paths)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "w[0-9]-*"
+          merge-multiple: true
+          path: .
+
+      - name: Map regression conclusion to G2/G3 fragments (fail-closed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${{ github.sha }}"
+          curl -s -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&per_page=100" \
+            -o /tmp/reg-runs.json
+          CONCLUSION=$(python3 -c "
+          import json
+          runs = [r for r in json.load(open('/tmp/reg-runs.json')).get('workflow_runs', []) if r.get('name') == 'Full-stack regression']
+          print(runs[0].get('conclusion') or 'NOT_FOUND' if runs else 'NOT_FOUND')
+          ")
+          echo "regression conclusion for ${SHA:0:12}: ${CONCLUSION}"
+          STATUS=$([ "${CONCLUSION}" = "success" ] && echo PASS || echo NOT_RUN)
+          mkdir -p release/build/gate-fragments
+          python3 - <<PY
+          import datetime, json
+          note = "Full-stack regression conclusion: ${CONCLUSION} (head_sha=${SHA})"
+          for gate in ("G2", "G3"):
+              json.dump(
+                  {
+                      "gate": gate,
+                      "status": "${STATUS}",
+                      "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                      "summary": note,
+                      "evidence": [{"path": "regression workflow run (head_sha match)"}],
+                  },
+                  open(f"release/build/gate-fragments/{gate}.json", "w"),
+                  indent=2,
+              )
+          PY
+          cat release/build/gate-fragments/G2.json
+
+      - name: Aggregate gate report (G0~G10)
+        run: python3 scripts/release/aggregate_gate_report.py
+
+      - name: Upload aggregated gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-gate
+          path: |
+            release/build/gate-report-full.json
+            release/build/release-summary.md
+            release/build/gate-fragments/
+          retention-days: 30
           if-no-files-found: error
