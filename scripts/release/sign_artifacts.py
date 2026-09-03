@@ -56,7 +56,10 @@ DEFAULT_PROJECT_ROOT = SCRIPT_DIR.parent.parent
 # pytest capsys 替换的流没有 reconfigure，getattr 守卫。
 for _stream in (sys.stdout, sys.stderr):
     _reconfigure = getattr(_stream, "reconfigure", None)
-    if _reconfigure is not None and (_stream.encoding or "").lower() not in ("utf-8", "utf8"):
+    if _reconfigure is not None and (_stream.encoding or "").lower() not in (
+        "utf-8",
+        "utf8",
+    ):
         try:
             _reconfigure(encoding="utf-8", errors="replace")
         except (ValueError, OSError):  # noqa: BLE001 - 编码降级不允许中断签名流程
