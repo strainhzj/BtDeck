@@ -388,8 +388,12 @@ jobs:
 
       - name: Generate build-info (linux-binary staging; spec 强制要求)
         # W1 起 btdeck.spec 强制读 release/build/linux-binary/build-info.json，
-        # 本探针自 W1 后首次真跑即断（run 33767644760 实证）——补齐 staging 生成
-        run: python3 scripts/release/generate_build_info.py --artifact-kind linux-binary --allow-dirty
+        # 本探针自 W1 后首次真跑即断（run 33767644760 实证）——补齐 staging 生成。
+        # --output-dir 必须显式指 staging（默认 <root>/release 会写到错误层级，
+        # run 33861282249 第二轮实证）
+        run: >
+          python3 scripts/release/generate_build_info.py --artifact-kind linux-binary
+          --output-dir release/build/linux-binary --allow-dirty
 
       - name: PyInstaller build in python:3.11-bullseye
         run: |
