@@ -399,7 +399,8 @@ jobs:
         run: |
           docker volume rm w0out >/dev/null 2>&1 || true
           docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.11-bullseye bash -c "\
-            pip install --no-cache-dir --prefer-binary -r deploy/requirements-linux-package.txt \
+            pip install --no-cache-dir --prefer-binary --require-hashes -r backend/requirements-lock.txt \
+            && pip install --no-cache-dir --prefer-binary -r deploy/requirements-linux-package.txt \
             && pyinstaller --clean --noconfirm --distpath /out --workpath /tmp/pyi-build deploy/btdeck.spec"
 
       - name: Run binary on Debian 12 + Rocky 9 (fail-closed)
