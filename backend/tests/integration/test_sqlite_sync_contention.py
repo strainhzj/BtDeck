@@ -95,6 +95,7 @@ def _patch_call_downloader_api(monkeypatch):
 
     monkeypatch.setattr(_mod, "call_downloader_api", _thread_call)
 
+
 # 交互写单笔耗时上限（ms）：远小于 busy_timeout 15000ms。
 # 若同步写者长时间独占写锁（回归场景），交互写会被迫等满整个同步，必然超限。
 _INTERACTIVE_WRITE_MAX_MS = 5000.0
