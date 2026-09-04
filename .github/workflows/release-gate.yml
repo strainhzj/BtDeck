@@ -1406,6 +1406,28 @@ jobs:
           merge-multiple: true
           path: .
 
+      - name: Normalize merged artifact layout (upload-LCA re-rooting fix)
+        # run 33866401674 实证两个落位陷阱：
+        # ① upload-artifact 单目录上传（w3-*/w4）LCA=该目录 → merge 下载被剥前缀落
+        #    到仓库根——live 报告须归位（否则聚合器读到 checkout 里提交的空壳证据）
+        # ② 多 artifact 同名 release/build/gate-report.json：w2-strict-linux 的首轮
+        #    静态 verify（G10=NOT_RUN）在 merge 中覆盖 w5-sign-docker 终版——归位后
+        #    单独重下 w5-sign-docker 让权威件最后落盘
+        run: |
+          set -euo pipefail
+          mkdir -p release/evidence/w3 release/evidence/w4
+          shopt -s nullglob
+          for f in lifecycle-*.json; do mv "$f" "release/evidence/w3/$f"; done
+          if [ -f compare-report.json ]; then mv compare-report.json release/evidence/w4/compare-report.json; fi
+          shopt -u nullglob
+
+      - name: Restore authoritative gate-report + manifest (w5-sign-docker last)
+        uses: actions/download-artifact@v4
+        with:
+          name: w5-sign-docker
+          merge-multiple: true
+          path: .
+
       - name: Map regression conclusion to G2/G3 fragments (fail-closed)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
