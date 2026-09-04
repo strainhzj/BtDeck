@@ -75,6 +75,23 @@ def load_json_maybe(path: Path) -> Tuple[Optional[Dict[str, object]], Optional[s
     return payload, None
 
 
+def load_leading_json(path: Path) -> Tuple[Optional[Dict[str, object]], Optional[str]]:
+    """首 JSON 文档容错加载：compare-report.json 是工具 stdout 的 tee 产物
+    （JSON 报告之后还跟 verdict:/[WARN] 行，run 33868276532 实证 Extra data）——
+    只解析开头的 JSON 文档，尾部视为 stdout 附注。
+    """
+    if not path.is_file():
+        return None, None
+    try:
+        text = path.read_text(encoding="utf-8")
+        payload, _end = json.JSONDecoder().raw_decode(text.lstrip())
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return None, f"证据不可解析（{path.name}: {exc}）"
+    if not isinstance(payload, dict):
+        return None, f"证据非对象（{path.name}）"
+    return payload, None
+
+
 def validate_fragment(fragment: Dict[str, object], schema_path: Path) -> List[str]:
     import jsonschema
 
@@ -351,7 +368,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         manifest, problem = load_json_maybe(bundle_dir / "release-manifest.json")
         if problem:
             problems.append(f"release-manifest.json {problem}")
-        compare_report, problem = load_json_maybe(
+        compare_report, problem = load_leading_json(
             root / "release/evidence/w4/compare-report.json"
         )
         if problem:

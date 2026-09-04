@@ -105,6 +105,38 @@ class TestFragments:
         assert fragments == {} and problems == []
 
 
+class TestLoadLeadingJson:
+    """compare-report.json 是 compare_snapshots stdout 的 tee 产物：JSON 报告
+    之后跟 verdict:/[WARN] 行（run 33868276532 实证 Extra data）——首文档解析。"""
+
+    def test_tee_output_with_trailing_lines(self, agg, tmp_path):
+        path = tmp_path / "compare-report.json"
+        path.write_text(
+            '{"candidates": {"rpm": {"total_diffs": 0, "unexplained": []}}}\n'
+            "[WARN] 1 条规则未命中任何差异\nverdict: OK\n",
+            encoding="utf-8",
+        )
+        payload, problem = agg.load_leading_json(path)
+        assert problem is None
+        assert payload["candidates"]["rpm"]["unexplained"] == []
+
+    def test_clean_json_also_works(self, agg, tmp_path):
+        path = tmp_path / "x.json"
+        path.write_text('{"a": 1}', encoding="utf-8")
+        payload, problem = agg.load_leading_json(path)
+        assert problem is None and payload == {"a": 1}
+
+    def test_garbage_is_problem(self, agg, tmp_path):
+        path = tmp_path / "x.json"
+        path.write_text("not json at all", encoding="utf-8")
+        payload, problem = agg.load_leading_json(path)
+        assert payload is None and problem
+
+    def test_missing_file_silent(self, agg, tmp_path):
+        payload, problem = agg.load_leading_json(tmp_path / "nope.json")
+        assert payload is None and problem is None
+
+
 # ---------------------------------------------------------------- 推导器（纯）
 
 
