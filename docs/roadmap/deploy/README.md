@@ -18,6 +18,7 @@
 | 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
 | 打包依赖 requirements | `deploy/requirements-linux-package.txt` / `requirements-windows-package.txt` | Linux / Windows 打包专用依赖 |
 | 打包辅助 analyze-package | `deploy/analyze-package-size.py` / `verify-package.py` | 打包体积分析 / 产物校验 |
+| 发布门禁工具链 release-gate | `scripts/release/`（sign_artifacts / build_release_manifest / aggregate_gate_report / verify_release_bundle / fault_injection_drills 等）+ `release/schemas/` + `deploy/docker-compose.release.yml` + `docs/release/runbook.md` | v1.0.6 发布等价门禁（G0~G10）：签名（Authenticode+cosign fail-closed）、发布清单（CERTIFIED 只人工审批）、门禁汇聚（rc-gate DAG）、digest-only 发布组合模板、六类故障注入演练与发布 runbook（2026-09-03 批次 D/E/F） |
 | TLS 参考配置 nginx-tls | `deploy/nginx-tls.conf.example` | HTTPS 反代参考配置（安全修复 W14）：HTTP 301 → HTTPS、HSTS、证书挂载说明，保留 `/api/` 内网代理 |
 | 构建产物 artifact | 仓库根 `dist/`（`btdeck.exe`、`btdeck-linux`、`BtDeck-v1.0.9-*.deb/.rpm`、`config`） / `build/btdeck-windows/` | Windows/Linux 可执行与安装包 / PyInstaller 中间产物（均已 .gitignore，不入库） |
 
