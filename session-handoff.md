@@ -1,4 +1,51 @@
-## 2026-09-03（最新）：.9 批次 C+D+E 收口——G9 双面+G10 骨架与汇聚全落地；批次 F（RC 演练）待开工
+## 2026-09-04（最新）：.9 批次 F 收口——完整 DAG RC 演练 15/15 全绿、六类故障注入、runbook；feature release-artifact-equivalence-gate 全部完成（.1~.9 done）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）——**全部 done**
+- 分支 dev@2787462（全部已推送）；master workflow 副本同步至 5066b9a 之后按轮次跟进
+- 测试：release 315/315；全套本地 4448 过 0 失败；dev regression 回绿（8-30 起 5 天红终结）
+
+### 批次 F 战果
+
+- **完整 DAG RC 演练八轮迭代终局全绿**（run 33873168198@2787462，15/15 job 含
+  rc-gate）：G0~G8 PASS + G9/G10 INDETERMINATE（drill 无签名+审批空=正确语义，
+  CERTIFIED 不可能）——迭代暴露并修复：w0-glibc 三层潜伏断裂（build-info staging/
+  output-dir/两段式 pip）、w2-docker verify tag v 前缀、grype 日更 5 新 CVE（例外
+  基线 129→134）、rc-gate 证据落位（upload-LCA 剥前缀+同名覆盖）、compare-report
+  tee 尾行容错；详见 progress 2026-09-04 节与 evidence/w6/rc-drill/
+- **生产缺陷修复**：Python 3.11 asyncio.wait_for 取消丢失竞态（torrents_async 三处
+  → asyncio.timeout；3.11 容器 before/after 探针实证）
+- **六类故障注入全部红在预期门**（fault_injection_drills.py 可复现）
+- docs/release/runbook.md（发布/回滚/豁免/证书轮换/八类红灯排查）；roadmap 同步
+- dev regression 5 天红三层根因修复（jsonschema dev 依赖/tracker 3.11 wrapper 计数/
+  两例时序敏感断言健壮化）
+
+### 独立欠账（移交，勿丢）
+
+- **v1.0.7 依赖升级治理批次**：安全例外 **134** 条 2026-10-03 到期（19 tracked
+  Critical + 110 High + SEC-130~134 新增 5 CVE 37 实例）；锁是手工双哈希维护
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（唯一构建消费架构兜底）
+- **真实签名启用**：用户给 GH secret（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+
+  PASSWORD）后 dispatch 不勾 allow_unsigned_drill 即真实签名；CERTIFIED 需人工填
+  manifest approver/approved_at+verdict（runbook §1.3）
+- grype DB 日更会持续引入新 CVE——按 SEC-130~134 先例登记限时例外（到期自动阻断）
+
+### 环境坑（批次 F 新增，勿重踩）
+
+- Python 3.11 wait_for 取消丢失竞态（3.12 无）：外层 cancel 与 waiter 完成竞态下
+  任务永久停 cancelling——生产 await 链用 asyncio.timeout 上下文
+- upload-artifact：多路径 LCA=仓库根才保结构；单目录上传被剥前缀落根；多 artifact
+  同名文件 merge-multiple 按序覆盖——权威件单独最后重下
+- compare_snapshots stdout=JSON+verdict:/WARN 尾行（tee 产物）——解析用 raw_decode
+  首 JSON 文档
+- 本机调试 3.11：btdeck-backend:v1.0.6 容器 + PYTHONPATH=/src（镜像 /app 劫持导入）
+- CI 时序敏感断言三连坑：3.11 wait_for wrapper task 计数 / 饥饿 runner 首笔推迟过
+  全程 / 4s 级调度卡顿——主信号（p95/不随 N 增长/数据级证明）+环境条件化上限
+- regression G2/G3 片段要求同 SHA 绿 run——dispatch 全 DAG 前先确认该 SHA 回归绿
+
+## 2026-09-03：.9 批次 C+D+E 收口——G9 双面+G10 骨架与汇聚全落地；批次 F（RC 演练）待开工
 
 ### 当前状态
 

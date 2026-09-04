@@ -1,5 +1,60 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-04：W5 批次 F 收口——完整 DAG RC 演练全绿 + 六类故障注入 + runbook（task .9 → done，feature 全部完成）
+
+### 前置：dev 回归 5 天红灯终结（8-30 起连红）
+
+run 33765218992 诊断出三层根因，全部修复：
+1. tests/release 的 schema 真校验依赖 jsonschema 未进 requirements-dev（CI 缺包 11 例红）
+2. **生产缺陷**：Python 3.11 `asyncio.wait_for` 取消丢失竞态——外层 cancel 与内部
+   waiter 完成竞态下任务永久停 cancelling 态（torrents_async producer 卡 put 实证，
+   3.12 重写后无此问题）→ 三处 queue put/get 改 `async with asyncio.timeout()`；
+   3.11 容器（btdeck-backend 镜像）before/after 探针实证（evidence/w6/tracker-cancel-rca/）
+3. 两例 CI 时序敏感测试健壮化：tracker 任务计数绝对上限（3.11 wait_for wrapper task
+   差异）改固定上界+不随 N 增长不变量；120k 孤儿扫描响应绝对上限 CI 10s/本地 3s
+   （p95<1s 主信号不动）；sqlite 写竞争穿插断言改两证其一（调度观测 or 数据级证明）
+
+### 完整 DAG RC 演练（八轮迭代，终局 15/15 全绿）
+
+全输入 dispatch（四探针+w2×3+w3×3+w4+w5_security+w5_sign+rc_gate+drill）。迭代史
+（evidence/w6/rc-drill/）：
+- 33767644760：12/14——w0-glibc 缺 build-info staging（W1 后首次真跑）+ w2-docker
+  verify tag 缺 v 前缀（历史 run 全 skipped 从未真验）
+- 33861282249：13/14——w0-glibc generate 步 output-dir 写错层级
+- 33862202995：13/14——w0-glibc 只装平台增量段缺运行锁（W2 两段式重构后残留，
+  frozen 崩 ModuleNotFoundError: uvicorn）
+- 33863869869：13/14——grype DB 日更 4+1 新 CVE（util-linux 家族+zlib1g，37 包实例
+  trixie fix=[]）→ SEC-130~134 限时例外（基线 129→134）
+- 33866401674：14 门全绿、rc-gate 证据落位双陷阱——upload-artifact 单目录上传被
+  LCA 剥前缀落根（live 报告没归位）+ 多 artifact 同名 gate-report.json 互相覆盖
+  （w2 陈旧版压掉 w5 终版）→ 归一步骤+权威件最后重下
+- 33868276532：compare-report 是 stdout tee 产物（JSON+verdict 尾行）→ 首 JSON
+  文档容错解析（raw_decode）
+- **33870274239@fbdd09b：15/15 全绿**（rc-gate 首次整体走通；G0/G1/G4~G8 PASS、
+  G9/G10 INDETERMINATE=drill 正确语义、problems=[]；G2/G3 NOT_RUN 系该 SHA regression
+  恰中 sqlite 竞争 flake）
+- **33873168198@2787462：终局全绿**（regression 绿 → G2/G3 PASS）
+
+### 六类故障注入（evidence/w6/injections/，驱动 scripts/release/fault_injection_drills.py）
+
+旧前端→G5 / qB 漂移→G2 / 缺契约 JSON→G5 / RPM 升级停服→G6 / Docker 混装→G8 /
+digest 篡改→G10——全部红在预期门（summary.json all_blocked_as_expected=true），
+digest 篡改链含篡改前基线绿对照。
+
+### 其他交付
+
+- docs/release/runbook.md：发布（RC→CERTIFIED→晋级）/回滚（四平台）/豁免（不可豁免
+  项+登记文件+基线到期日）/签名证书轮换/八类红灯排查
+- roadmap 同步（deploy 分支 release-gate 工具链行、torrents_async 行号实测+修复注记）
+- 测试 release 311→315（load_leading_json 4 例）
+
+### 独立欠账（移交下批次）
+
+- v1.0.7 依赖升级治理批次：安全例外 134 条 2026-10-03 到期；前端构建确定性化
+  （~20 chunk 哈希漂移，唯一构建消费兜底）
+- 秘密白名单 9 条 2026-11-02 到期
+- 真实签名启用：用户提供 GH secret 后 dispatch 不勾 drill
+
 ## 2026-09-03（续）：W5 批次 E 收口——G0~G10 门禁汇聚 + rc-gate fail-closed DAG（task .9 剩 F）
 
 **代码件**（提交 0807507）：
