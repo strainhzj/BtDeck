@@ -10,7 +10,8 @@ from app.auth import utils
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 import app.auth.security as security
 from app.auth import models
-from typing import Annotated
+from typing import Annotated, Optional
+
 # qrcode/PIL 延迟导入：仅 2FA 二维码接口需要；顶层导入会把 PIL 拖进完整启动链
 # （Android 16KB 环境自建 pillow 兼容 wheel 攻破前会阻断服务端启动，桌面零差异）
 from io import BytesIO
@@ -149,6 +150,31 @@ def _is_self(user_id: str, user_info: AuthenticatedUserInfo) -> bool:
     return token_user_id is not None and str(token_user_id) == str(user_id)
 
 
+def _generate_totp_qr_png(totp_uri: str) -> Optional[bytes]:
+    """生成 TOTP 二维码 PNG 字节。
+
+    Pillow 在 Android 服务端形态被 ANDROID-DROP（自建 wheel 攻坚期不可用），
+    缺失时返回 None 由调用方降级为手动录入密钥，不阻断 2FA 绑定。
+    """
+    try:
+        import qrcode
+        from qrcode.image.pil import PilImage
+    except ImportError:
+        return None
+    qr = qrcode.make(
+        data=totp_uri,
+        version=3,  # 新版推荐显式设置版本号
+        error_correction=qrcode.ERROR_CORRECT_H,
+        box_size=4,
+        border=0,
+        image_factory=PilImage,
+    )
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.read()
+
+
 @router.get(
     "/2faVerifyQrCode/{user_id}",
     summary="生成用户的2fa关联二维码，已启用2fa验证的用户不用调用此接口，返回文件流，即生成二维码图片",
@@ -166,22 +192,15 @@ def twofa_verify_qrcode(
         return ""
     # 用户2fa启用标识为0则返回二维码，1则返回空
     if user.two_factor_flag == "0":
-        import qrcode
-        from qrcode.image.pil import PilImage
-
-        link = utils.get_totp_uri(str(user.two_factor_secret), str(user.username))
-        qr = qrcode.make(
-            data=link,
-            version=3,  # 新版推荐显式设置版本号
-            error_correction=qrcode.ERROR_CORRECT_H,
-            box_size=4,
-            border=0,
-            image_factory=PilImage,
-        )
-        buffer = BytesIO()
-        qr.save(buffer, format="PNG")
-        buffer.seek(0)
-        return StreamingResponse(buffer, media_type="image/png")
+        qr_png = _generate_totp_qr_png(utils.get_totp_uri(str(user.two_factor_secret), str(user.username)))
+        if qr_png is None:
+            # Pillow 缺失（Android 服务端形态）：明确信封替代裸 500，指引手动录入
+            return CommonResponse(
+                status="error",
+                msg="当前环境未安装二维码图像依赖（Pillow），请改用手动录入密钥方式绑定",
+                code="503",
+            )
+        return StreamingResponse(BytesIO(qr_png), media_type="image/png")
         # return utils.get_totp_uri(str(user.username), secret)
     else:
         return ""
@@ -332,27 +351,25 @@ def verify_password_for_2fa(
             db.commit()
             db.refresh(user)
 
-        # 6. 生成二维码
-        import qrcode
-        from qrcode.image.pil import PilImage
+        # 6. 生成二维码（Pillow 缺失时降级手动录入：secret 已生成并落库，绑定不中断）
+        qr_png = _generate_totp_qr_png(utils.get_totp_uri(str(user.two_factor_secret), str(user.username)))
+        if qr_png is not None:
+            qr_code_base64 = f"data:image/png;base64,{base64.b64encode(qr_png).decode('utf-8')}"
+            qr_available = True
+        else:
+            qr_code_base64 = ""
+            qr_available = False
 
-        link = utils.get_totp_uri(str(user.two_factor_secret), str(user.username))
-        qr = qrcode.make(
-            data=link, version=3, error_correction=qrcode.ERROR_CORRECT_H, box_size=4, border=0, image_factory=PilImage
-        )
-
-        # 7. 转换为base64
-        buffer = BytesIO()
-        qr.save(buffer, format="PNG")
-        buffer.seek(0)
-        qr_base64 = base64.b64encode(buffer.read()).decode("utf-8")
-
-        # 8. 返回响应
+        # 8. 返回响应（qr_available=False 时前端展示密钥手动录入块）
         return CommonResponse(
             status="success",
             msg="密码验证成功",
             code="200",
-            data={"qr_code_base64": f"data:image/png;base64,{qr_base64}", "secret": str(user.two_factor_secret)},
+            data={
+                "qr_code_base64": qr_code_base64,
+                "qr_available": qr_available,
+                "secret": str(user.two_factor_secret),
+            },
         )
 
     except Exception as e:

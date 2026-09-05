@@ -60,6 +60,27 @@ def parse_url(raw: str) -> Optional[ParsedUrl]:
     return ParsedUrl(scheme=split.scheme, host=host, port=port, base_url=base_url)
 
 
+def is_loopback_host(host: str) -> bool:
+    """是否回环主机（127/8、IPv6 ``::1``、``localhost``）。
+
+    与安卓端 Hosts.isLoopbackHost 对齐：回环明文不上网络线，本机服务端
+    （http://127.0.0.1:port）免明文风险确认。
+    """
+    h = host.lower()
+    if h.endswith("."):
+        h = h[:-1]
+    if h == "localhost" or h == "::1":
+        return True
+    if ":" in h:
+        return False
+    parts = h.split(".")
+    if len(parts) != 4:
+        return False
+    if not parts[0] == "127":
+        return False
+    return all(part.isdigit() and 0 <= int(part) <= 255 for part in parts)
+
+
 def is_private_lan_host(host: str) -> bool:
     """是否私有/本地主机（按字面量判定，不做 DNS）。"""
     h = host.lower()

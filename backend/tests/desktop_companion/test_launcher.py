@@ -187,9 +187,7 @@ class TestManagerApi:
         server_id = api.list_servers()[0]["id"]
         assert api.update_server(server_id, "NAS 2", "http://10.0.0.5:5001", True, "bob", "")["ok"] is True
         assert vault.get(server_id) == CredentialRecord("bob", "secret")
-        assert api.update_server(
-            server_id, "NAS 2", "http://10.0.0.5:5001", True, "bob", "", True
-        )["ok"] is True
+        assert api.update_server(server_id, "NAS 2", "http://10.0.0.5:5001", True, "bob", "", True)["ok"] is True
         assert vault.get(server_id) is None
 
     def test_update_url_does_not_reuse_old_password(self, tmp_path):

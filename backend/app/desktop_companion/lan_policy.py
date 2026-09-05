@@ -3,14 +3,15 @@
 
 与安卓端 com.btdeck.companion.net.LanHostPolicy 语义一致：
 http URL 必须同时满足「主机是私有 LAN 字面量」+「用户已显式确认明文风险」；
-https 一律放行；公网主机的任何 http 形态都拒绝（fail-closed）。
+回环主机（127/8、``::1``、``localhost``）豁免确认——本机服务端场景，
+明文不上网络线；https 一律放行；公网主机的任何 http 形态都拒绝（fail-closed）。
 """
 
 import enum
 from dataclasses import dataclass
 from typing import Optional
 
-from app.desktop_companion.hosts import ParsedUrl, is_private_lan_host, parse_url
+from app.desktop_companion.hosts import ParsedUrl, is_loopback_host, is_private_lan_host, parse_url
 
 
 class RejectReason(enum.Enum):
@@ -49,6 +50,9 @@ def check(raw_url: str, cleartext_consent: bool) -> PolicyVerdict:
 def check_parsed(parsed: ParsedUrl, cleartext_consent: bool) -> PolicyVerdict:
     if parsed.scheme == "https":
         return PolicyVerdict(ok=True, parsed=parsed)
+    if is_loopback_host(parsed.host):
+        # 回环豁免：本机服务端（http://127.0.0.1:port）免明文确认，与安卓端一致
+        return PolicyVerdict(ok=True, parsed=parsed)
     if not is_private_lan_host(parsed.host):
         return PolicyVerdict(ok=False, reason=RejectReason.HTTP_PUBLIC_HOST, host=parsed.host, parsed=parsed)
     if not cleartext_consent:
@@ -57,8 +61,8 @@ def check_parsed(parsed: ParsedUrl, cleartext_consent: bool) -> PolicyVerdict:
 
 
 def needs_cleartext_consent(raw_url: str) -> bool:
-    """该 URL 是否需要展示明文风险确认（http + 私有主机）。"""
+    """该 URL 是否需要展示明文风险确认（http + 私有主机且非回环）。"""
     parsed = parse_url(raw_url)
     if parsed is None:
         return False
-    return parsed.scheme == "http" and is_private_lan_host(parsed.host)
+    return parsed.scheme == "http" and is_private_lan_host(parsed.host) and not is_loopback_host(parsed.host)

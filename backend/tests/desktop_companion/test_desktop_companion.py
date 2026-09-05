@@ -119,6 +119,25 @@ class TestLanPolicy:
         assert not verdict.ok
         assert verdict.reason is lan_policy.RejectReason.HTTP_PUBLIC_HOST
 
+    def test_loopback_exempt_from_consent(self):
+        """回环豁免（与安卓 Hosts.isLoopbackHost 对齐）：本机服务端免明文确认。"""
+        for url in ["http://127.0.0.1:5001", "http://127.8.9.9", "http://localhost:8000", "http://[::1]:9000"]:
+            verdict = lan_policy.check(url, cleartext_consent=False)
+            assert verdict.ok, url
+
+    def test_needs_cleartext_consent_false_for_loopback(self):
+        assert not lan_policy.needs_cleartext_consent("http://127.0.0.1:5001")
+        assert not lan_policy.needs_cleartext_consent("http://localhost")
+        assert lan_policy.needs_cleartext_consent("http://192.168.1.5:5001")
+
+    def test_is_loopback_host_literals(self):
+        from app.desktop_companion.hosts import is_loopback_host
+
+        for host in ["127.0.0.1", "127.255.0.9", "localhost", "LOCALHOST.", "::1"]:
+            assert is_loopback_host(host), host
+        for host in ["192.168.1.5", "10.0.0.1", "127.0.0.1.example.com", "::", "fc00::1", "example.com"]:
+            assert not is_loopback_host(host), host
+
     def test_malformed_url(self):
         verdict = lan_policy.check("not-a-url", cleartext_consent=True)
         assert not verdict.ok
