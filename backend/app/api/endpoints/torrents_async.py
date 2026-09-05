@@ -1739,9 +1739,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
         logger.error(f"[TRACKER_FIX] Transmission Tracker数据提交失败: {str(tracker_commit_err)}")
         await db.rollback()
     else:
-        _TR_FULL_SYNC_DONE[downloader_id] = True
-        if force_full_sync:
-            _TR_LAST_FULL_SYNC[downloader_id] = now_ts
+        _mark_tr_full_sync(downloader_id, now_ts if force_full_sync else None)
 
 
 # ==============================================================================
@@ -1938,7 +1936,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             if len(batch) < QB_BATCH_SIZE:
                 break
             offset += QB_BATCH_SIZE
-        _QB_LAST_FULL_SYNC[downloader_id] = now_ts
+        _mark_qb_full_sync(downloader_id, now_ts)
         used_sync_maindata = False
     current_time = datetime.now()
 
@@ -2506,10 +2504,88 @@ def _confirm_qb_sync_rid(downloader_id: str, rid: int) -> None:
 # 初始化缓存
 _QB_SYNC_RID_CACHE = _load_qb_rid_cache()
 
-# Transmission 首次全量同步标记（进程内）
+# 同步全量快照节奏标记（文件持久化 + 进程内缓存，2026-09-05 移动端治理）：
+# 原为纯进程内 dict，重启即清零 → 重启后首次 info 同步恒走全量快照路径
+# （last_full_ts=0 恒 ≥ 12h 间隔）。服务端形态重启罕见无感；Android 进程重启
+# 是常态（FGS 被杀/用户重开/Doze），每次重启白付一次整库快照内存峰值。
+# 沿 rid 缓存同款模式落盘 CONFIG_PATH/full_sync_state.json。
+_FULL_SYNC_LOCK = threading.Lock()
+_FULL_SYNC_STATE_FILE: Optional[Path] = None
 _TR_FULL_SYNC_DONE: Dict[str, bool] = {}
 _QB_LAST_FULL_SYNC: Dict[str, float] = {}
 _TR_LAST_FULL_SYNC: Dict[str, float] = {}
+
+
+def _get_full_sync_state_file() -> Path:
+    """全量快照标记持久化文件路径（与 qb_rid_cache.json 同目录）。"""
+    global _FULL_SYNC_STATE_FILE
+    if _FULL_SYNC_STATE_FILE is None:
+        from app.core.config import settings
+
+        _FULL_SYNC_STATE_FILE = settings.CONFIG_PATH / "full_sync_state.json"
+    return _FULL_SYNC_STATE_FILE
+
+
+def _load_full_sync_state() -> None:
+    """启动时从文件恢复三标记（缺失/损坏回落空 = 下次走全量，安全侧不丢数据）。"""
+    state_file = _get_full_sync_state_file()
+    if not state_file.exists():
+        return
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return
+        qb_last = data.get("qb_last_full")
+        tr_last = data.get("tr_last_full")
+        tr_done = data.get("tr_full_done")
+        if isinstance(qb_last, dict):
+            _QB_LAST_FULL_SYNC.update({str(k): float(v) for k, v in qb_last.items()})
+        if isinstance(tr_last, dict):
+            _TR_LAST_FULL_SYNC.update({str(k): float(v) for k, v in tr_last.items()})
+        if isinstance(tr_done, dict):
+            _TR_FULL_SYNC_DONE.update({str(k): bool(v) for k, v in tr_done.items()})
+    except Exception:
+        return
+
+
+def _save_full_sync_state() -> None:
+    """落盘三标记；失败静默（重启多付一次全量快照，不影响数据正确性）。"""
+    state_file = _get_full_sync_state_file()
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(
+            json.dumps(
+                {
+                    "qb_last_full": _QB_LAST_FULL_SYNC,
+                    "tr_last_full": _TR_LAST_FULL_SYNC,
+                    "tr_full_done": _TR_FULL_SYNC_DONE,
+                }
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        # 持久化失败不影响主流程
+        pass
+
+
+def _mark_qb_full_sync(downloader_id: str, now_ts: float) -> None:
+    """qB 完成一次全量快照：更新内存标记并落盘。"""
+    with _FULL_SYNC_LOCK:
+        _QB_LAST_FULL_SYNC[downloader_id] = now_ts
+        _save_full_sync_state()
+
+
+def _mark_tr_full_sync(downloader_id: str, now_ts: Optional[float]) -> None:
+    """TR 完成一轮处理：done 标记恒置；force_full_sync 时同时推进时间戳。"""
+    with _FULL_SYNC_LOCK:
+        _TR_FULL_SYNC_DONE[downloader_id] = True
+        if now_ts is not None:
+            _TR_LAST_FULL_SYNC[downloader_id] = now_ts
+        _save_full_sync_state()
+
+
+# 初始化缓存（重启后恢复全量节奏，避免重启强制整库快照）
+_load_full_sync_state()
 
 # enrich worker queue.get() 轮询间隔（秒，2026-08-25 哨兵丢失自愈兜底）：
 # producer 哨兵在队列满时丢失（或 30s 总限放弃）后，worker 靠此间隔发现
@@ -3351,7 +3427,7 @@ async def qb_add_torrents_info_only_async(
             if len(batch) < QB_BATCH_SIZE:
                 break
             offset += QB_BATCH_SIZE
-        _QB_LAST_FULL_SYNC[downloader_id] = now_ts
+        _mark_qb_full_sync(downloader_id, now_ts)
 
     # 断点续跑需要稳定顺序；qB 增量与全量响应均按 hash 排序后再处理。
     torrent_info_list.sort(key=lambda torrent: str(_qb_get_attr(torrent, "hash") or ""))
@@ -3926,9 +4002,7 @@ async def tr_add_torrents_info_only_async(
     cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
     await _emit_info_progress(progress_callback, last_processed_hash)
     if cycle_complete:
-        _TR_FULL_SYNC_DONE[downloader_id] = True
-        if force_full_sync:
-            _TR_LAST_FULL_SYNC[downloader_id] = now_ts
+        _mark_tr_full_sync(downloader_id, now_ts if force_full_sync else None)
     if progress_callback is None:
         return None
     return {
