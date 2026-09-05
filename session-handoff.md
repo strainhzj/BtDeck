@@ -1,3 +1,45 @@
+## 2026-09-05（最新）：定时任务 OOM 峰值治理收口——R1-R3 核心 + R5/R6 加固 + RSS 观测（六批次全绿）
+
+### 当前状态
+
+- **oom-peak-governance-20260905：done**（feature_list 6 子任务全 done，evidence 齐全）
+- 分支 dev 工作区未提交（用户要求不主动 commit）
+- 上一批（移动端一致化）状态不变：门禁父项 done / dual-mode 7/8 / .7 四外部阻塞
+
+### 本批战果（详见 progress.md 2026-09-05 节与 PLANS 批准计划 v2）
+
+- **R1** reannounce 读段：JOIN+双列包含式 LIKE 超集预过滤+keyset 分页，50 万 tracker 行 1315MB→5.2MB；
+  修复审查发现的阻断级缺陷（锚定 LIKE 漏检含端口 tracker_host）
+- **R2** qB tracker-only fetch 分页化仅留 hash 轻对象：225MB→33.5MB（页重叠去重、不带 include_trackers/sort）
+- **R3** TR 双路径分批化：272MB→35.5MB（独立 TR_INFO_BASE_FIELDS 不动共享常量；批内 hashString 重排保游标全序；
+  tracker-only 两阶段此前零覆盖，新增 6 用例首网）
+- **R5/R6** 脚本输出带上限增量读取（防管道死锁）+内部类结果有界摘要
+- **RSS 观测**：get_process_rss_mb（Windows ctypes 伪句柄/argtypes 两坑实测修复；macOS 语义陷阱规避）
+  +process_memory 事件+采样循环+/sync process.rssMb+四处配置透传
+- 验证全绿：后端全量 **4536 passed/9 skipped**（基线 4466）、mypy/black/flake8、量化验收全部达标（≤150MB 增量口径）
+
+### 遗留与后续
+
+1. qB info 全量快照路径（首轮/12h，~270MB）暂缓——1G 内可承受，feature_list 已知风险
+2. RSS 线上基线校准：process_memory 事件跑一段后对齐 ≤150MB 增量口径
+3. MALLOC_ARENA_MAX（glibc 碎片棘轮）可选后续项
+4. 分批提交策略：六批次各自独立 commit 可单独 revert（R1 测试同 commit；R3b/c 靠独立常量保边界）——待用户指示
+
+### 环境坑（本批新增，勿重踩）
+
+- 新同步类测试文件必须带 `isolate_call_downloader_api` autouse 夹具（tracker_budget 同款）：全量套件中更早
+  TestClient lifespan 退出 shutdown runtime 单例后真实 call_downloader_api 必败——单跑全绿、全量红
+- torrent_info 复合主键 (info_id, downloader_id, downloader_name)，`idx_torrent_hash_unique(hash, downloader_id)`
+  会对同 hash 测试种子报 IntegrityError——种子 hash 必须单射生成（如 md5(info_id)）
+- Windows ctypes GetProcessMemoryInfo：GetCurrentProcess 默认 c_int restype 截断 64 位伪句柄（ret=0 err=6），
+  须 restype=c_void_p 且 GetProcessMemoryInfo 配 argtypes（否则 OverflowError）
+- qB 服务端 torrents_info 无 sort 也应用 offset 但跨请求顺序不保证稳定；空列表+sort 取 [0] 无空检查会 BadParams——
+  分页去重+不传 sort 是唯一安全组合
+- TR get_torrents(ids=...) 按 id 序返回（≠hashString 序）：批内必须重排，否则 budget break 后游标越过未处理
+  小 hash 造成周期级静默漏同步（现有测试 fake 顺序恰好有序，测不出）
+
+---
+
 ## 2026-09-05（最新）：移动端与交付制品一致化收口——CRLF 契约修复、门禁 Feature 终态 done、移动端 .3/.4/.5/.8 done（.7 唯一遗留）
 
 ### 当前状态

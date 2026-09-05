@@ -43,7 +43,7 @@
 | tracker 状态判断 torrent-tracker-judge | `torrent_tracker_status_judge.py` | 遍历种子检查 tracker 状态；`evaluate_tracker_error_state()` L70 复用共享策略联合下载器状态码与关键词，Working 且 announce/scrape 消息为空时明确正常，有消息仍按关键词分类；✨2026-08-20 `_load_keywords()` L265 委托共享 `tracker_keyword_map.load_active_keyword_map`（方法名与 to_thread 调用点是写库治理测试锚点，不可改名）；独立 Cron 为 `20,50 * * * *`，在 Tracker 同步后 10 分钟运行 |
 | 候选池填充 candidate-pool | `tracker_candidate_pool.py` | 从 tracker_message_log 读未处理消息填候选池 |
 | tracker 消息入库 tracker-logger | `tracker_message_logger.py` | 定期扫描所有 tracker 返回消息入库 |
-| reannounce 任务 reannounce | `tracker_reannounce_task.py` | 按站点间隔定时对种子执行 tracker 汇报 |
+| reannounce 任务 reannounce | `tracker_reannounce_task.py` | 按站点间隔定时对种子执行 tracker 汇报；✨2026-09-05 OOM 治理：读段改 JOIN+双列包含式 LIKE 超集预过滤 + tracker_id keyset 分页（页 5000）轻量列扫描，命中子集分块（≤500）回查 info_id/hash/torrent_id 轻量列——消除全量 TrackerInfo ORM 加载（10 万种子×5 tracker ≈ 1.3GB 峰值）与巨型 IN 超 SQLite 32766 绑定变量上限隐患；Python 精确匹配（首命中 config + eligible + break）原语义保留 |
 | 状态判断 status-judge | `tracker_status_judge.py` | 扫描未处理消息做状态判断 |
 
 ### scheduler/torrent_sync/ — 同步子模块（4 个文件）

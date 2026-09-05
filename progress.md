@@ -1,5 +1,73 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-05：定时任务 OOM 峰值治理收口——R1-R3 核心 + R5/R6 加固 + RSS 观测（全绿）
+
+### 背景
+
+对抗验证确认：调度框架本身无泄漏/无堆叠（max_instances=1+coalesce、heavy_sync 准入、
+注册表 finally 清理全部实证排除），风险在三个高频任务体的数据加载方式——10 万种子
+（项目明示设计目标）下单轮内存峰值逼近/击穿后端容器 1G 限额（docker-compose.yml:52）。
+修复计划 v2 经三路独立审查代理实证修订后批准（修正 1 项阻断级 LIKE 漏检缺陷：
+extract_tracker_host 实际返回含端口 netloc，锚定 LIKE 会静默漏报）。
+
+### 修复内容（六批次）
+
+1. **R1 reannounce 读段重构**（tracker_reannounce_task.py）：JOIN+双列包含式 LIKE
+   保守超集预过滤（host 带 :port、NULL/空串走 url 回退全部不漏检）+ tracker_id
+   keyset 分页（页 5000）轻量列扫描；命中子集分块（≤500，保留 downloader_id+dr 过滤）
+   回查 info_id/hash/torrent_id；Python 精确匹配（首命中 config+eligible+break）
+   原语义保留。顺带消除 10 万种子巨型 IN 超 SQLite 32766 变量上限隐患。
+   量化：50 万 tracker 行 1315MB→5.2MB（-99.6%）。
+2. **R2 qB tracker-only 分页化**（torrents_async.py）：单次全量 torrents_info 改
+   QB_BATCH_SIZE 分页，仅留 hash 可变轻对象（enrich 协议写 .trackers/
+   _btdeck_tracker_enriched 依赖可变对象，非 str 列表）；页重叠 hash 去重；不带
+   include_trackers（full-sync 范式不能照抄）与 sort（空库+sort 会 BadParams）。
+   量化：fetch 驻留 225MB→33.5MB（-85%）。
+3. **R3 TR 双路径**：info-only base 改独立 `TR_INFO_BASE_FIELDS`（共享
+   TR_BASE_FIELDS 被 full-sync 使用不可动）+detail 边拉边处理——批内 hashString
+   重排保游标全序（TR 服务端按 id 序返回，不重排会周期级静默漏同步）、flush 仍走
+   2000 行缓冲上限（绝不按批 flush，锚定单次 bulk_upsert 断言）；pending 计数改取
+   active-window 过滤后 base。tracker-only 两阶段：slim [id,hashString] 排序切批
+   →ids 批拉 trackerStats+200 行 flush（此前零覆盖，新增 6 用例首建测试网）。
+   量化：272MB→35.5MB（-87%）。
+4. **R5+R6 cron_executor 加固**：4 个脚本方法共用 `_run_script_process`，输出改
+   带上限增量读取（CRON_SCRIPT_OUTPUT_MAX_BYTES=64KB 新配置；超限 drain 丢弃至
+   EOF 防管道写满死锁；字节截断后再 decode 防切坏多字节）；normalize_internal_result
+   结果尾巴改 `_summarize_result_for_log` 有界摘要（10 万元素结果不放大；phase 行
+   与 [:2000] 原样，键契约不动）。
+5. **RSS 观测**：sync_observability 新增 get_process_rss_mb（Linux /proc + Windows
+   ctypes——修复伪句柄 c_void_p 截断与 argtypes OverflowError 两个实测坑；macOS
+   ru_maxrss 高水位/单位语义陷阱直接规避返回 None）+EVENT_PROCESS_MEMORY 专属
+   白名单（rss_mb 绝不进 COMMON_FIELDS——现有测试以其为反例）+lifecycle
+   run_process_memory_loop（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS=300 门控）
+   +/sync 端点顶层 process.rssMb（last-sample 模式，端点不触发采集）+配置四处透传
+   （config.py/根 docker-compose.yml/release 模板/.env.example，env 行不参与门禁
+   校验已实证）。
+6. **收口**：量化验收（上表）；roadmap 四处+test-coverage 重数（180→222）；
+   feature_list.json 新增 oom-peak-governance-20260905 条目（6 子任务全 done）。
+
+### 验证
+
+- 后端全量 pytest：**4536 passed / 9 skipped**（基线 4466，新增约 70 例）
+- mypy 0 error（全部改动文件）；black（锁 24.10.0）/flake8 通过
+- 测试坑位：新测试文件缺 tracker_budget 同款 `isolate_call_downloader_api`
+  autouse 夹具——全量套件中更早 TestClient lifespan 退出 shutdown runtime 单例
+  后真实调用必败（单跑全绿全量红 7 例，姊妹文件 docstring 已记录同坑）；另
+  torrent_info 复合主键 (info_id, downloader_id, downloader_name) 下
+  `idx_torrent_hash_unique` 会对同 hash 重复种子报 IntegrityError，测试种子
+  hash 生成需单射（md5）。
+
+### 遗留
+
+- qB info 全量快照路径（首轮/12h 触发，fetch 分页累计+existing cache ≈270MB）
+  暂缓，1G 内可承受，记入 feature_list 已知风险。
+- RSS 增量口径（≤150MB）为 tracemalloc 模拟口径；线上真实 RSS 基线待
+  process_memory 事件运行一段时间后校准。
+- glibc malloc 碎片棘轮（MALLOC_ARENA_MAX）记录为后续可选项，本批未做。
+
+---
+
+
 ## 2026-09-04：W5 批次 F 收口——完整 DAG RC 演练全绿 + 六类故障注入 + runbook（task .9 → done，feature 全部完成）
 
 ### 前置：dev 回归 5 天红灯终结（8-30 起连红）

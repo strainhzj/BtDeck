@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-30",
+  "last_updated": "2026-09-05",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,96 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "oom-peak-governance-20260905",
+      "name": "定时任务 OOM 峰值治理（R1-R3 核心 + R5/R6 加固 + RSS 观测）",
+      "description": "对抗验证确认三个高频 cron 任务在 10 万种子规模下单轮内存峰值逼近/超过后端容器 1G 限额。修复：R1 reannounce 读段 JOIN+双列包含式 LIKE 保守超集预过滤+tracker_id keyset 分页轻量列扫描+命中子集分块回查（原全量 TrackerInfo ORM 加载 50 万行≈1.3GB，顺带消除巨型 IN 超 SQLite 32766 绑定变量上限隐患，Python 精确匹配语义原样保留）；R2 qB tracker-only fetch 分页化仅留 hash 可变轻对象（页重叠 hash 去重，不带 include_trackers/sort——空库 sort 触发 qB BadParams）；R3 TR info-only base 改独立精简字段 TR_INFO_BASE_FIELDS（不动共享 TR_BASE_FIELDS）+detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走 2000 行缓冲上限，锚定单次 bulk_upsert 断言）；TR tracker-only 两阶段（slim [id,hashString] 排序切批→ids 批量拉 trackerStats，此前零覆盖新增 6 用例首网）；R5 脚本任务输出改带上限增量读取（CRON_SCRIPT_OUTPUT_MAX_BYTES 默认 64KB，超限 drain 防管道写满死锁，字节截断后再 decode）；R6 内部类结果渲染改有界摘要 _summarize_result_for_log（execution_log/phase 行与 [:2000] 原样）；批次 5 进程 RSS 观测——sync_observability.get_process_rss_mb（Linux /proc + Windows ctypes 伪句柄 c_void_p 修复 + macOS ru_maxrss 语义陷阱规避返回 None）+EVENT_PROCESS_MEMORY 专属白名单（rss_mb 绝不进 COMMON_FIELDS）+lifecycle run_process_memory_loop（6.8 节门控）+/sync 端点顶层 process.rssMb（last-sample 模式）+四处配置透传（config/根 compose/release 模板/env.example）。已知暂缓（下轮）：qB info 全量快照路径首轮/12h 触发的 ~270MB 峰值（1G 内可承受）。设计经三路独立审查代理实证修订（修正 1 项阻断级 LIKE 漏检、2 项条件性阻断的游标/flush 回归）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/oom-peak-governance-20260905.md",
+      "planning_evidence": "2026-09-05 对抗验证：静态审查 cron_executor/resource_guard/16 任务/9 profile+定量 tracemalloc 实验（qB 全量对象 225MB、TR 272MB、TrackerInfo ORM 2.63KB/行、JSON 往返瞬时 450-650MB）；调度框架侧假设（任务堆叠/注册表泄漏/缓冲失控）全部证伪排除，风险收敛到任务体数据加载方式；计划 v2 经语义正确性/测试契约/工程运维三个独立审查代理核验后批准。",
+      "security_defaults": {},
+      "capabilities": [],
+      "implementation_gates": [],
+      "tasks": [
+        {
+          "id": "oom.r1_reannounce_prefilter",
+          "name": "R1 reannounce 读段 JOIN+LIKE 超集预过滤重构",
+          "description": "tracker_reannounce_task._read_downloader_data 两段轻量查询替代三段全量 ORM 加载",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/tracker_reannounce_task.py",
+            "backend/tests/tasks/test_tracker_reannounce_task.py"
+          ]
+        },
+        {
+          "id": "oom.r2_qb_tracker_pagination",
+          "name": "R2 qB tracker-only fetch 分页化+hash 轻对象",
+          "description": "qb_sync_trackers_only_async 单次全量拉取改 limit/offset 分页，仅保留 hash 轻对象（enrich 协议兼容）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/api/test_torrents_async_tracker_budget.py"
+          ]
+        },
+        {
+          "id": "oom.r3_tr_batching",
+          "name": "R3 TR info-only/tracker-only 分批化",
+          "description": "TR_INFO_BASE_FIELDS 精简 base+detail 边拉边处理（批内重排）；tracker-only 两阶段 slim+ids 批（新增首个功能测试网）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/api/test_torrents_async_info_budget.py",
+            "backend/tests/api/test_torrents_async_tr_tracker_batches.py"
+          ]
+        },
+        {
+          "id": "oom.r5r6_executor_hardening",
+          "name": "R5+R6 cron_executor 输出上限与渲染摘要",
+          "description": "脚本子进程输出带上限增量读取（防管道死锁）+内部类结果有界摘要渲染",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/core/config.py",
+            "backend/tests/tasks/test_cron_executor_output_cap.py"
+          ]
+        },
+        {
+          "id": "oom.rss_observability",
+          "name": "进程 RSS 周期采样观测",
+          "description": "get_process_rss_mb 平台分支+EVENT_PROCESS_MEMORY+run_process_memory_loop+/sync process.rssMb+配置四处透传",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_observability.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/api/endpoints/health.py",
+            "backend/app/core/config.py",
+            "docker-compose.yml",
+            "deploy/docker-compose.release.yml",
+            "backend/.env.example"
+          ]
+        },
+        {
+          "id": "oom.closeout",
+          "name": "收口：量化验收+全量回归+roadmap",
+          "description": "tracemalloc 10 万种子口径复测达标；后端全量 4536 passed；roadmap 四处+test-coverage 重数",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/tasks/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/perspectives/test-coverage.md"
+          ]
+        }
+      ]
+    },
     {
       "id": "mcp-service-capabilities-2026-08-28",
       "name": "MCP 服务与可选能力开放（默认关闭 + 强制脱敏）",
