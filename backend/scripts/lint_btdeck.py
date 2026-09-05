@@ -73,6 +73,9 @@ ALLOWLIST: dict[str, set[str]] = {
         "app/tasks/cron_executor.py",
     },
     "BTD103": {
+        # principal.py: REASON_* 为拒绝原因稳定码（"TOKEN_MISSING" 等枚举
+        # 字符串，MCP 错误码映射用），非密钥；名称含 token/password 触发启发式
+        "app/auth/principal.py",
         "app/auth/utils.py",
     },
 }
