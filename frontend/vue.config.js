@@ -1,7 +1,8 @@
 const path = require('path')
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin')
 
-const name = 'BtDeck'
+const isDemoBuild = process.env.VUE_APP_DEMO_MODE === 'true'
+const name = isDemoBuild ? 'BtDeck Demo' : 'BtDeck'
 
 module.exports = {
   // Docker部署使用根路径，如需子路径部署请修改此处
@@ -82,7 +83,7 @@ module.exports = {
     // it can be accessed in index.html to inject the correct title.
     if (config.plugins.has('html')) {
       config.plugin('html').tap(args => {
-        args[0].title = name
+        args[0].title = process.env.VUE_APP_TITLE || name
         return args
       })
     }

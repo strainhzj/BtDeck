@@ -12,6 +12,7 @@
 | 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） |
 | Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 5 个 module，双轨注册） |
 | 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 22 个 .vue + layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
+| 静态展示 Demo demo | [demo/](./demo/README.md) | typed fixture、内存状态仓库、集中式 request 分流、Demo 构建配置与安全边界 |
 | 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 13 + types 8 + constants 1 + directive 1 |
 
 ---
@@ -53,7 +54,7 @@
 ## 调用链骨架
 
 ```
-main.ts (L67 new Vue)
+main.ts (L85 new Vue)
   ├─ import '@/permission'     # 注册路由守卫（副作用）
   ├─ router (src/router.ts)     # 路由表
   ├─ store (src/store/index.ts) # Vuex 空壳 + 动态注册
@@ -63,7 +64,7 @@ main.ts (L67 new Vue)
         ↓
   views/*/*.vue                 # 业务页面
         ↓
-  api/*.ts → utils/request.ts → axios → 后端 /api/v1/*
+        api/*.ts → utils/request.ts → Demo request（Demo）/ axios（真实模式）→ 后端 /api/v1/*
 ```
 
 ## 关键约定（仅索引，详见约束文档）
