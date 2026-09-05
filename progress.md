@@ -1,5 +1,39 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-05（第二批）：移动端内存 Tier-1——重启全量持久化 + 分配器归还 + android profile（移动端实测 2.237GiB 驱动）
+
+### 背景
+
+移动端（Android 本机服务端，同进程 ServerService+Chaquopy）实测占用 2.237GiB（≈设备 RAM 1/4-1/3）；
+重启后 15 分钟 819MiB——证实两个放大器：(1) 分配器高水位棘轮（同步分批峰值不归还 OS，数小时爬回 2.2G）；
+(2) 重启强制全量快照（_QB_LAST_FULL_SYNC 等三标记为进程内 dict，重启清零 → 首次 info 同步恒走整库快照；
+Android 进程重启是常态）。用户决策：不用 compose 限额，纯代码层治理。
+
+### 三项修复
+
+1. **全量快照标记持久化**（torrents_async.py）：三标记沿 rid 缓存同款模式落盘
+   CONFIG_PATH/full_sync_state.json（load 容错/写失败静默；gitignore 同 rid 先例）；
+   四个写点路由 _mark_qb_full_sync/_mark_tr_full_sync；读点仍走内存 dict。
+2. **分配器归还钩子**（sync_observability.release_free_heap_memory）：glibc malloc_trim(0)
+   优先、bionic 无 trim 时 mallopt(M_PURGE=101,0)（API<31 no-op）、非 Linux False；
+   接入 RSS 采样循环（SYNC_PROCESS_MEMORY_TRIM_ENABLED 默认开，事件附 heap_trimmed）。
+3. **android-server profile**（platform_capabilities.is_android_server，BTDECK_PLATFORM 注入）：
+   移动端跳过 GitHub 版本检查注册与 WAL 快照循环（产品边界：临时/轻量服务）；
+   DashboardStatsJob 实测只读缓存聚合计数（无 DB 写、极廉价）——按诚实工程原则不门控。
+
+### 验证
+
+- 后端全量 **4555 passed / 9 skipped**（上批 4536，+19：标记持久化 4/分配器 6+循环联动 2/profile 门控 7）
+- mypy 0 error；black/flake8 通过；conftest 已重定向 CONFIG_DIR → 测试标记文件无污染
+
+### 部署待办（用户侧）
+
+用当前 dev 重打移动端包（含本批 Tier-1 + 上午四笔 OOM commit），观察 logcat process_memory
+轨迹（现含 heap_trimmed 字段）与 15 分钟/2 小时两时点 RSS；预期稳态 400-700MB 且重启不反弹。
+
+---
+
+
 ## 2026-09-05：定时任务 OOM 峰值治理收口——R1-R3 核心 + R5/R6 加固 + RSS 观测（全绿）
 
 ### 背景
@@ -6960,3 +6994,18 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **roadmap 同步**：backend services（49 文件计数+5 行更新）/core/domain(auth 8 文件+principal 行)/tasks(cron-trigger 行)/api endpoints torrent_crud.md（/add 薄壳化索引+详情重写）/根 README 元信息追加。
 - feature_list：mcp feature .3/.6/.8 三子任务 evidence 追加"前置 service 解耦已落地"备注（status 不变，均 pending）。未执行 Git 提交。
 - **验证矩阵（终局）**：全量 pytest **4488 passed / 9 skipped / 0 failed**（新增 20 例：principal 8 + add-service 5 + cron-trigger 7；首轮曾 1 失败——desktop_companion test_credentials_migration_upgrade 在全量上下文 WinError5 于产品 os.replace，单跑/目录级/HEAD stash 对照均绿，复跑全量 0 失败，定性为代码注释中已登记的 Windows 瞬态噪声类）；mypy 262 文件零错误；flake8 干净；black 本批 15 文件零漂移；`./init.sh --ci` 通过（09-02 记录的 WSL E_ACCESSDENIED 本次未复现）。
+
+## 2026-09-05（续四）：移动端验收修复批次（下拉刷新误触发根修 + 四级删除补齐 + 刷新体验加固）
+
+- **背景**：用户在 8080 Demo 移动验收两项报障——①种子页"不断进行刷新"；②只有暂停/恢复/删除按钮，缺四级删除。首轮只读排查定位根因并提出 A（误刷新根修）→ C（四级删除）→ B（体验加固）三批次方案，用户确认按序开工。
+- **根因一（不断刷新）**：`pull-to-refresh.ts` 的 `isScrolledToTop()` 用 `closest('.mobile-content')` 判定滚动容器，但实际布局（`.mobile-layout` min-height:100vh）下长列表把布局撑高、真正滚动的是 window，`.mobile-content` 自身 scrollTop 恒 0——任意滚动位置都被判"已到顶"，列表中部下滑约 120px（阻尼 0.5 后过 60px 阈值）即触发整页 reload（列表塌陷回 20 条+滚动跳顶）。种子页 2026-08-28 的返回顶部浮标注释早已实测"滚动容器实为 window"，但下拉刷新未同步该事实。
+- **根因二（四级删除缺失）**：移动端 M1 实现时即只接了回收站单删（delete_data:0/id_recycle:1），桌面四级下拉从未移植；API（deleteTorrentsWithLevel）与 demo 桩（/torrents/delete-with-level、/delete-batch-async）均已就绪，属纯前端功能缺口。
+- **批次 A（mixin 单点修复）**：`findScrollContainer` 仅在 `.mobile-content` 自身确实可滚（scrollHeight>clientHeight+1 亚像素容差）时采用，否则回落文档滚动（`window.scrollY || documentElement.scrollTop`，与返回顶部浮标同款读法）。一处修复覆盖全部 12 个混入页面。spec 补 jsdom scrollHeight/clientHeight mock + 新增 window 滚动布局 3 例（中部下滑/先上滑再下滑翻列表/文档在顶真下拉不误伤）。
+- **批次 C（四级删除）**：新增共用组件 `views/mobile/components/DeleteLevelDialog.vue`（四等级选项 + 桌面 handleDeleteCommand 同款文案二次确认、等级1 error 级，确认后 emit confirm(level)）与 `views/mobile/delete-level.ts`（成功文案单源；.vue 具名导出会被 shims-vue.d.ts 默认导出 shim 挡掉 TS2614，故落纯 ts）。列表页 remove() 开对话框、confirmDelete(level) 调 deleteTorrentsWithLevel 后整页刷新；详情页同款、成功返回列表。新套件 mobile-delete-level-dialog 6 例 + 两页级删用例与"旧 id_recycle 单删禁回流"源码契约。
+- **批次 B（体验加固）**：①`reload()` 改 `fetchPage(replace=true)` 原子替换——在途保留旧列表消除塌陷闪烁与滚动跳顶，失败旧数据保留；②downloading 筛选终态整页刷新按 hash 去重（`terminalReloadedHashes`，runFilters/resetFilters 清空）——库内状态滞后时同一种子每轮 10s 轮询都带回 downloadComplete，修复前构成 reload 循环。
+- **测试陷阱记录**：终态去重用例首版失败——mockResolvedValue 返回共享对象引用，applySpeedUpdates 原地改行后 reload 拿回的是已突变行（progress=100 不再是 reconcile 候选），复现不到滞后循环；改 mockImplementation 每次新鲜对象后真实复现并通过。
+- **验证矩阵**：前端全量 **100 suites / 1357 tests** ✓（pull-to-refresh 12 / mobile-delete-level-dialog 6 新 / mobile-torrents 35 / mobile-torrent-detail 10）；`npm run lint`（contract+ESLint max-warnings 0+Vuex Action）✓；`npm run typecheck`（tsc --noEmit）✓。lint 自动修复 DeleteLevelDialog.vue 一处格式。
+- **roadmap 同步**：frontend/views README（mobile/torrents.vue 行更新 + torrent-detail.vue/DeleteLevelDialog.vue 两新行）；根 README 元信息生成日期前置本批 + 增量日志新行"2026-09-05 增量（移动端验收修复）"。
+- **feature_list**：新增 `mobile-acceptance-fixes-2026-09-05`（3 子任务 mobile-fix.1/.2/.3 全 done，evidence 已记）。
+- 未执行 Git 提交。工作区另有上一会话遗留的 backend 未提交改动（MCP 前置批次），本批未触碰。
+- **遗留提示**：Demo 验收环境（.tmp-serve-demo.py @8080）跑的是 09-05 上午构建的旧 dist，本批修复未包含在内——复验前需 `npm run build:demo` 重打包并重挂 zip/serve。

@@ -22,7 +22,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L262)：迁移未完成时在 seed/对账/调度器前 fail-fast；成功后对账孤儿隔离状态、终结残留 running 并恢复 queued 扫描/清理任务；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出 |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L262)：迁移未完成时在 seed/对账/调度器前 fail-fast；成功后对账孤儿隔离状态、终结残留 running 并恢复 queued 扫描/清理任务；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控） |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程

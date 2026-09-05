@@ -1,3 +1,61 @@
+## 2026-09-05（最新+2）：移动端验收修复——下拉刷新误触发根修 + 四级删除补齐 + 刷新体验加固（前端 1357 全绿）
+
+### 当前状态
+
+- mobile-acceptance-fixes-2026-09-05 全 3 子任务 done（feature_list 已记 evidence）
+- 用户报障两项均收口：①种子页"不断刷新"（手势误触发根修）；②四级删除补齐（列表+详情）
+- 分支 dev 未提交（用户未要求 commit）；工作区另有上一会话遗留 backend 改动（MCP 前置批次），本批未触碰
+
+### 本批改动（全部 frontend，8 文件 + 3 新文件）
+
+- **A** `views/mobile/mixins/pull-to-refresh.ts`：滚动容器判定根修——`.mobile-content` 自身确实可滚
+  （scrollHeight>clientHeight+1）才采用，否则回落 window.scrollY（12 个移动页面共用单点）
+- **C** 新增 `views/mobile/components/DeleteLevelDialog.vue`（四等级+桌面同款确认文案、等级1 error）
+  + `views/mobile/delete-level.ts`（成功文案单源）；`torrents.vue`/`torrent-detail.vue` 删除改走
+  `deleteTorrentsWithLevel`（demo 桩路由既有，8080 可直接验收）
+- **B** `torrents.vue`：reload 原子替换（在途保留旧列表防塌陷）；downloading 筛选终态 reload 按
+  hash 去重（terminalReloadedHashes，防库内状态滞后 10s 循环）
+- roadmap：frontend/views README 三行 + 根 README 元信息/增量日志；progress.md 续四节
+
+### 验证
+
+- 前端全量 100 suites / 1357 tests ✓；npm run lint ✓；npm run typecheck ✓
+- pull-to-refresh 12 / mobile-delete-level-dialog 6（新）/ mobile-torrents 35 / mobile-torrent-detail 10
+
+### 坑（勿重踩）
+
+- `.vue` 具名导出会被 shims-vue.d.ts（仅 default）挡 TS2614——共享常量放纯 ts 模块
+- jest mockResolvedValue 返回共享对象引用 + applySpeedUpdates 原地改行 = reload 拿回已突变行，
+  滞后类场景要用 mockImplementation 每次新鲜对象
+- jsdom scrollHeight/clientHeight 恒 0，测"容器可滚"语义需 Object.defineProperty mock
+
+### 待办（用户侧）
+
+- **Demo 验收环境需重打包才含本批修复**：`npm run build:demo` → 重挂 zip / .tmp-serve-demo.py（8080）
+  现跑的是 09-05 上午旧 dist
+- 复验点：列表中部下滑不再触发刷新；删除按钮出四级选项（等级1 红色 error 确认）
+
+---
+
+## 2026-09-05（最新+1）：移动端内存 Tier-1——重启全量持久化+分配器归还+android profile（4555 全绿）
+
+### 当前状态
+
+- oom-peak-governance-20260905 追加 Tier-1 三子任务全 done；后端全量 4555 passed/9 skipped
+- 移动端实测 2.237GiB（旧代码）/重启 15 分钟 819MiB——双放大器已治（棘轮+重启强制全量）
+- 分支 dev 未推送；用户侧待办：重打移动端包验证 process_memory 轨迹（含 heap_trimmed）
+
+### 环境坑（本批新增，勿重踩）
+
+- bionic mallopt 常量：M_DECAY_TIME=100 / M_PURGE=101（scudo 主分配器释放；未知命令返 0 等价 no-op）
+- ctypes 调用 MagicMock 断言时参数是 c_int 包装（args[0].value 取值，不能直接 ==）
+- AsyncIOScheduler 未 start 时 shutdown(wait=False) 会触碰事件循环（NoneType call_soon_threadsafe）——
+  测试里只 remove_job 不 shutdown
+- 移动端判定用 BTDECK_PLATFORM=android-server（btdeck_server.py 深导入前 setdefault 注入），
+  resolve_platform 未设/非法值回落 desktop（fail-safe 方向：能力只多不少）
+
+---
+
 ## 2026-09-05（最新）：定时任务 OOM 峰值治理收口——R1-R3 核心 + R5/R6 加固 + RSS 观测（六批次全绿）
 
 ### 当前状态

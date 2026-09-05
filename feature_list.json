@@ -53,7 +53,7 @@
     {
       "id": "oom-peak-governance-20260905",
       "name": "定时任务 OOM 峰值治理（R1-R3 核心 + R5/R6 加固 + RSS 观测）",
-      "description": "对抗验证确认三个高频 cron 任务在 10 万种子规模下单轮内存峰值逼近/超过后端容器 1G 限额。修复：R1 reannounce 读段 JOIN+双列包含式 LIKE 保守超集预过滤+tracker_id keyset 分页轻量列扫描+命中子集分块回查（原全量 TrackerInfo ORM 加载 50 万行≈1.3GB，顺带消除巨型 IN 超 SQLite 32766 绑定变量上限隐患，Python 精确匹配语义原样保留）；R2 qB tracker-only fetch 分页化仅留 hash 可变轻对象（页重叠 hash 去重，不带 include_trackers/sort——空库 sort 触发 qB BadParams）；R3 TR info-only base 改独立精简字段 TR_INFO_BASE_FIELDS（不动共享 TR_BASE_FIELDS）+detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走 2000 行缓冲上限，锚定单次 bulk_upsert 断言）；TR tracker-only 两阶段（slim [id,hashString] 排序切批→ids 批量拉 trackerStats，此前零覆盖新增 6 用例首网）；R5 脚本任务输出改带上限增量读取（CRON_SCRIPT_OUTPUT_MAX_BYTES 默认 64KB，超限 drain 防管道写满死锁，字节截断后再 decode）；R6 内部类结果渲染改有界摘要 _summarize_result_for_log（execution_log/phase 行与 [:2000] 原样）；批次 5 进程 RSS 观测——sync_observability.get_process_rss_mb（Linux /proc + Windows ctypes 伪句柄 c_void_p 修复 + macOS ru_maxrss 语义陷阱规避返回 None）+EVENT_PROCESS_MEMORY 专属白名单（rss_mb 绝不进 COMMON_FIELDS）+lifecycle run_process_memory_loop（6.8 节门控）+/sync 端点顶层 process.rssMb（last-sample 模式）+四处配置透传（config/根 compose/release 模板/env.example）。已知暂缓（下轮）：qB info 全量快照路径首轮/12h 触发的 ~270MB 峰值（1G 内可承受）。设计经三路独立审查代理实证修订（修正 1 项阻断级 LIKE 漏检、2 项条件性阻断的游标/flush 回归）。",
+      "description": "对抗验证确认三个高频 cron 任务在 10 万种子规模下单轮内存峰值逼近/超过后端容器 1G 限额。修复：R1 reannounce 读段 JOIN+双列包含式 LIKE 保守超集预过滤+tracker_id keyset 分页轻量列扫描+命中子集分块回查（原全量 TrackerInfo ORM 加载 50 万行≈1.3GB，顺带消除巨型 IN 超 SQLite 32766 绑定变量上限隐患，Python 精确匹配语义原样保留）；R2 qB tracker-only fetch 分页化仅留 hash 可变轻对象（页重叠 hash 去重，不带 include_trackers/sort——空库 sort 触发 qB BadParams）；R3 TR info-only base 改独立精简字段 TR_INFO_BASE_FIELDS（不动共享 TR_BASE_FIELDS）+detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走 2000 行缓冲上限，锚定单次 bulk_upsert 断言）；TR tracker-only 两阶段（slim [id,hashString] 排序切批→ids 批量拉 trackerStats，此前零覆盖新增 6 用例首网）；R5 脚本任务输出改带上限增量读取（CRON_SCRIPT_OUTPUT_MAX_BYTES 默认 64KB，超限 drain 防管道写满死锁，字节截断后再 decode）；R6 内部类结果渲染改有界摘要 _summarize_result_for_log（execution_log/phase 行与 [:2000] 原样）；批次 5 进程 RSS 观测——sync_observability.get_process_rss_mb（Linux /proc + Windows ctypes 伪句柄 c_void_p 修复 + macOS ru_maxrss 语义陷阱规避返回 None）+EVENT_PROCESS_MEMORY 专属白名单（rss_mb 绝不进 COMMON_FIELDS）+lifecycle run_process_memory_loop（6.8 节门控）+/sync 端点顶层 process.rssMb（last-sample 模式）+四处配置透传（config/根 compose/release 模板/env.example）。已知暂缓（下轮）：qB info 全量快照路径首轮/12h 触发的 ~270MB 峰值（1G 内可承受）。设计经三路独立审查代理实证修订（修正 1 项阻断级 LIKE 漏检、2 项条件性阻断的游标/flush 回归）。 Tier-1（2026-09-05 同日，移动端 2.237GiB 实测驱动）：重启后 15 分钟 819MiB 证实分配器高水位棘轮+重启强制全量快照双放大器——三标记持久化消除重启全量、采样循环空闲归还（malloc_trim/M_PURGE）压棘轮、android-server profile 门控无意义后台件。",
       "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/oom-peak-governance-20260905.md",
@@ -136,6 +136,42 @@
             "docs/roadmap/backend/tasks/README.md",
             "docs/roadmap/backend/infra/README.md",
             "docs/roadmap/perspectives/test-coverage.md"
+          ]
+        },
+        {
+          "id": "oom.tier1_full_sync_marker_persistence",
+          "name": "全量快照节奏标记持久化（移动端重启放大器）",
+          "description": "三标记沿 rid 缓存模式落盘 full_sync_state.json，重启恢复全量节奏，Android 进程重启不再强制整库快照",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/api/test_torrents_async_info_budget.py",
+            "backend/.gitignore"
+          ]
+        },
+        {
+          "id": "oom.tier1_heap_trim_hook",
+          "name": "分配器空闲归还钩子",
+          "description": "RSS 采样循环后触发 malloc_trim/bionic M_PURGE（SYNC_PROCESS_MEMORY_TRIM_ENABLED 回滚开关），RSS 高水位棘轮变锯齿",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_observability.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/core/config.py"
+          ]
+        },
+        {
+          "id": "oom.tier1_android_profile_gating",
+          "name": "android-server 运行 profile 门控",
+          "description": "is_android_server 判定（BTDECK_PLATFORM）；移动端跳过 GitHub 版本检查注册与 WAL 快照循环（产品边界：临时/轻量服务）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/platform_capabilities.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/startup/lifecycle.py"
           ]
         }
       ]
@@ -5608,6 +5644,56 @@
             "session-handoff.md"
           ],
           "evidence": "2026-09-03 批次 C done（G9 扫描面）：CI run 33747568891@b281e85 七目标 SBOM+grype/gitleaks/许可证 verdict=PASS（Critical 19 全 tracked-no-fix、High 110 全限时例外、0 阻断）；政策修订（用户批准）：Critical 无修复可用型可登记 tracked-no-fix 30 天例外；基镜像治理（python:3.11-slim→trixie、nginx 1.25 EOL→1.27-alpine）；129 条例外 2026-10-03 到期由 v1.0.7 治理批次消解；秘密白名单 9 条 2026-11-02 到期。证据原 release/evidence/w5/（2026-09-05 移出仓库；权威留档=本条所引 CI run 的 artifact）。||2026-09-03 批次 D done（G9 签名面+G10 骨架）：sign_artifacts.py（Authenticode+cosign 双目标；SIGNING_BLOCKED fail-closed exit 2 非跳过、drill unsigned exit 0 下游强制 INDETERMINATE、SIGN_FAILED exit 3 无豁免；签名前后 digest 分片落 signing-digests-<target>.json；docker digest 三级口径 RepoDigests>Descriptor>save-oci）；cosign v3.1.3 sha256 固定（ghcr.io/sigstore/cosign 仓库已不存在实测，改 GitHub release 二进制；v3 CLI 契约实测 sign-blob --bundle/verify-blob 无 --signature）；build_release_manifest.py（schema 真校验、七制品引用签名后 digest、evidence G0~G10 全索引缺门 NOT_RUN、生成器只出 REJECTED/INDETERMINATE——CERTIFIED 属人工审批+verify 断言链）；deploy/docker-compose.release.yml digest-only 模板；verify_release_bundle.py 扩 G9/G10（签名后篡改重算检出、manifest==现场重算、compose 渲染一致性、CERTIFIED 断言链）。本机实证：BLOCKED/drill/SIGNED 三态+cosign v3 wiring 冒烟+篡改负向（原 evidence/w5/sign/，2026-09-05 移出仓库）。CI 四轮迭代全绿：33755046911（staging 回退链）→33756203828（cp1252 双层编码坑）→33757547345（G1 拦截真实等价违规：两次独立前端构建 ~20 chunk 哈希漂移，w5-sign-docker 改消费唯一前端构建）→33759319494@074377a 终局全绿（7 制品 verify PASS、manifest INDETERMINATE+approver 空、G10 PASS、G9_signing INDETERMINATE 阻断 CERTIFIED、drill 语义断言 OK）。测试 180→275；全套 4409 过 0 失败。遗留：批次 E（gate-report 汇聚+rc-gate DAG+w0 探针补 gate 片段）、批次 F（RC 演练六类故障注入+runbook+收口）；真实签名待用户提供 GH secret（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64）一键启用。||2026-09-03 批次 E done（G10 汇聚面）：gate-fragment.schema.json（标准门禁片段）+ aggregate_gate_report.py（G0~G10 汇聚：片段优先于推导、G6 空/坏证据=INDETERMINATE、G9 双面单面缺失不得兜 PASS、G10 审批完成是检查项、verdict 全 PASS+manifest CERTIFIED+approver 才 CERTIFIED、输出 gate-report-full.json+release-summary.md §14 模板）；w0 四探针 job 补 G0 片段写出；rc-gate fail-closed DAG job（needs 全部 14 门禁 job+result 断言 skipped=NOT_RUN、download-artifact w[0-9]-* merge-multiple 汇证、regression API 映射 G2/G3 片段）。CI run 33764067820@0807507：w0-windows 片段步骤 success+artifact 片段本机 schema 复验 VALID；rc-gate 负向实证 13 上游 skipped 逐个 error 阻断红。测试 +36（release 275→311）；本机真实仓库 REJECTED fail-closed 演示（空壳 w3 证据被识破）。证据原 release/evidence/w5/gate/（2026-09-05 移出仓库；权威留档=CI run 33764067820 artifact）。遗留：批次 F（RC 演练：全门一次 dispatch 全绿 + 六类故障注入各停预期门 + runbook + 全项目收口）；完整 DAG 全绿验证属 F。||2026-09-04 批次 F done（W6 RC 演练+全收口，feature 完成）：①六类故障注入（fault_injection_drills.py 可复现驱动）旧前端→G5/qB 漂移→G2/缺契约 JSON→G5/RPM 升级停服→G6/Docker 混装→G8/digest 篡改→G10 全部红在预期门（digest 链含篡改前基线绿对照；原 evidence/w6/injections/，2026-09-05 移出仓库）；②完整 DAG RC 演练八轮迭代终局 15/15 全绿（run 33873168198@2787462：G0~G8 PASS+G9/G10 INDETERMINATE=drill 正确语义；迭代史与 rc-gate 产物以 run 33873168198 artifact 留档，原 evidence/w6/rc-drill/ 2026-09-05 移出仓库）——暴露并修复 w0-glibc 三层潜伏断裂（build-info staging/output-dir/两段式 pip 缺运行锁）、w2-docker verify tag v 前缀、rc-gate 证据落位双陷阱（upload-LCA 剥前缀+同名 gate-report 覆盖）、compare-report tee 尾行容错；③grype DB 日更 4+1 新 CVE 按政策登记 SEC-130~134（例外基线 129→134，2026-10-03 到期）；④生产缺陷修复：Python 3.11 asyncio.wait_for 取消丢失竞态致 tracker enrich 取消后永久挂死（三处→asyncio.timeout，3.11 容器 before/after 探针实证）；⑤dev regression 8-30 起 5 天红终结（jsonschema dev 依赖/tracker 3.11 wrapper 计数/120k 与 sqlite 竞争两例时序断言健壮化）；⑥docs/release/runbook.md（发布/回滚/豁免/证书轮换/八类红灯排查）+ roadmap 同步；⑦测试 release 311→315，本地全套 4448 过 0 失败。移交欠账：v1.0.7 依赖升级治理（134 条例外消解+前端确定性化）、秘密白名单 9 条 2026-11-02 到期、真实签名待 GH secret。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-acceptance-fixes-2026-09-05",
+      "name": "移动端验收修复（下拉刷新误触发根修 + 四级删除补齐 + 刷新体验加固）",
+      "description": "8080 Demo 移动验收两项报障的根修与补齐：①列表页不断刷新——pull-to-refresh 把 .mobile-content 的 scrollTop 恒 0 误判为已到顶（实际布局 min-height:100vh 下长列表滚动发生在 window），列表中部任意下滑约 120px 即触发整页 reload，12 个移动页面共用 mixin 单点修复；②缺失四级删除——移动列表/详情页仅有回收站单删，补齐与桌面删除下拉同语义的四级对话框。附带刷新体验加固：reload 原子替换消除塌陷闪烁、downloading 筛选终态 reload 按 hash 去重防 10s 循环。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "mobile-fix.1",
+          "name": "pull-to-refresh 滚动容器误判根修",
+          "description": "findScrollContainer 仅在 .mobile-content 自身确实可滚（scrollHeight>clientHeight+1 容差）时采用，否则回落文档滚动（window.scrollY || documentElement.scrollTop，与返回顶部浮标同款读法）；一处修复覆盖全部 12 个移动页面。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/mixins/pull-to-refresh.ts",
+            "frontend/tests/unit/pull-to-refresh.spec.ts"
+          ],
+          "evidence": "pull-to-refresh.spec.ts 12 tests passed（jsdom 补 scrollHeight/clientHeight mock；新增 window 滚动布局 3 例：中部下滑不触发/先上滑再下滑翻列表不触发/文档在顶真下拉仍触发）。"
+        },
+        {
+          "id": "mobile-fix.2",
+          "name": "移动四级删除补齐（列表页 + 详情页）",
+          "description": "新增共用组件 DeleteLevelDialog.vue（四等级选项 4 标记待删除/3 回收站/2 删任务保数据/1 完全删除 + 桌面 handleDeleteCommand 同款文案二次确认，等级1 error 级，确认后 emit confirm(level)）与 delete-level.ts（成功文案单源）；两页删除均改走 deleteTorrentsWithLevel（api/torrents.ts 既有封装，demo 桩 /torrents/delete-with-level 路由既有），列表页成功后整页刷新、详情页返回列表。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/components/DeleteLevelDialog.vue",
+            "frontend/src/views/mobile/delete-level.ts",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/views/mobile/torrent-detail.vue",
+            "frontend/tests/unit/mobile-delete-level-dialog.spec.ts",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "frontend/tests/unit/mobile-torrent-detail.spec.ts"
+          ],
+          "evidence": "mobile-delete-level-dialog.spec.ts 6 tests（新套件：四选项语义/等级4普通句式/等级1 error 句式/等级3 警告句式/取消不 emit/文案单源）+ mobile-torrents 4 级删用例 + mobile-torrent-detail 3 级删用例 passed；源码契约禁旧 id_recycle 单删回流。"
+        },
+        {
+          "id": "mobile-fix.3",
+          "name": "刷新体验加固：reload 原子替换 + 终态 reload 去重",
+          "description": "reload() 改 fetchPage(replace=true) 拉到首页数据后整体替换（在途保留旧列表，消除塌陷闪烁与滚动跳顶，失败时旧数据保留）；downloading 筛选终态整页刷新改按 hash 去重（terminalReloadedHashes，runFilters/resetFilters 清空）——库内状态滞后（同步任务未收敛）时同一种子每轮 10s 轮询都带回 downloadComplete，修复前形成 reload 循环。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "mobile-torrents.spec.ts 35 tests passed（新增终态去重用例：滞后场景 4 轮轮询仅 1 次 reload、筛选变化后允许再刷一次；原子替换用例：在途期间旧列表保留）。测试暴露 mock 共享引用陷阱：applySpeedUpdates 原地改行 + mockResolvedValue 同对象会让 reload 拿回已突变行，复现不到滞后循环，改 mockImplementation 每次新鲜对象。"
         }
       ]
     }

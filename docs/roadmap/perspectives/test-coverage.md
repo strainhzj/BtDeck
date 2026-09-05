@@ -2,13 +2,13 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 222 个 test_*.py）
+## 后端测试分布（共 223 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
 | `tests/api/` | 67 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
 | `tests/services/` | 53 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 22 | `app/tasks/` | 🟡 部分覆盖（22 对 34）；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
+| `tests/tasks/` | 23 | `app/tasks/` | 🟡 部分覆盖（22 对 34）；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
 | `tests/core/` | 26 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
 | `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
@@ -22,7 +22,7 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **222** 个 test_*.py（2026-09-05 OOM 治理批次后重数）。
+> 合计：当前实测 **223** 个 test_*.py（2026-09-05 OOM 治理+Tier-1 后重数）。
 
 > 注：`tests/api/`（67 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
