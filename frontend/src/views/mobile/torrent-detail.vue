@@ -100,6 +100,14 @@
         <el-button size="small" type="danger" plain :disabled="busy" @click="remove">删除</el-button>
       </div>
     </template>
+
+    <!-- 四级删除（与桌面种子页删除下拉同语义）：点选等级→同款文案二次确认→confirm(level) -->
+    <m-delete-level-dialog
+      :visible.sync="deleteDialogVisible"
+      :name="torrent ? torrent.name : ''"
+      :busy="busy"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -110,7 +118,7 @@ import {
   getActiveTorrents,
   pauseTorrents,
   resumeTorrents,
-  deleteTorrents,
+  deleteTorrentsWithLevel,
   Torrent,
   TrackerInfo,
   ActiveTorrentSpeed
@@ -123,6 +131,8 @@ import {
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog.vue'
+import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
 import { takeCachedTorrent } from '@/views/mobile/torrent-detail-cache'
 import {
   torrentStatusLabel,
@@ -147,11 +157,12 @@ const BASE_REFETCH_LIMIT = 100
  * - 实时速度/进度/做种数：轮询 getActiveTorrents()（桌面 1s 轮询同款轻量接口），
  *   移动端 5s 节奏（2026-08-28 迁移 SpeedPollingMixin，新增 visibilitychange 后台
  *   暂停省电）；非活跃种子由 live=null 自然回落到列表行字段；
- * - 操作：暂停/恢复/删除（入回收站）复用现有 API，删除成功回列表。
+ * - 操作：暂停/恢复复用现有 API；删除走四级（2026-09-05 与桌面下拉同语义：
+ *   4 标记待删除/3 回收站/2 删任务保数据/1 完全删除），成功后回列表。
  */
 @Component({
   name: 'MobileTorrentDetail',
-  components: { 'm-pull-indicator': MobilePullIndicator }
+  components: { 'm-pull-indicator': MobilePullIndicator, 'm-delete-level-dialog': MobileDeleteLevelDialog }
 })
 export default class MobileTorrentDetail extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private torrent: Torrent | null = null
@@ -159,6 +170,7 @@ export default class MobileTorrentDetail extends Mixins(PullToRefresh, SpeedPoll
   private busy = false
   private trackerExpanded = false
   private live: ActiveTorrentSpeed | null = null
+  private deleteDialogVisible = false
 
   /** 详情页实时节奏（mixin 默认 1s 的省电版，保持原 5s） */
   protected speedPollIntervalMs = 5000
@@ -333,21 +345,32 @@ export default class MobileTorrentDetail extends Mixins(PullToRefresh, SpeedPoll
 
   private remove(): void {
     if (!this.torrent) return
-    const infoId = String(this.torrent.infoId ?? this.torrent.info_id ?? '')
-    this.$confirm(`删除种子「${this.torrent.name}」？文件移入回收站，可从回收站恢复。`, '删除确认', { type: 'warning' })
-      .then(async() => {
-        await this.withBusy(() =>
-          deleteTorrents({
-            info_id: infoId,
-            downloader_id: this.downloaderId,
-            delete_data: 0,
-            id_recycle: 1
-          })
-        )
-        this.$message.success('已删除，返回列表')
-        this.backToList()
+    this.deleteDialogVisible = true
+  }
+
+  /** DeleteLevelDialog 确认后的执行体：按等级调 delete-with-level，成功后回列表 */
+  private async confirmDelete(level: number): Promise<void> {
+    const torrent = this.torrent
+    if (!torrent) return
+    const infoId = String(torrent.infoId ?? torrent.info_id ?? '')
+    if (!infoId) {
+      this.$message.error('缺少种子标识，无法删除')
+      return
+    }
+    this.busy = true
+    try {
+      const res = await deleteTorrentsWithLevel({
+        torrent_info_ids: [infoId],
+        delete_level: level
       })
-      .catch(() => undefined)
+      if (res && res.code && res.code !== '200') return
+      this.$message.success(DELETE_LEVEL_SUCCESS_TEXT[level] || '已删除，返回列表')
+      this.backToList()
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.busy = false
+    }
   }
 
   private async withBusy(action: () => Promise<{ code?: string }>): Promise<void> {

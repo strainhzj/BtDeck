@@ -36,12 +36,22 @@ export class PullToRefresh extends Vue {
     // 默认空实现，由页面覆写
   }
 
-  /** 滚动容器：布局壳 .mobile-content；取不到时退回文档滚动（独立挂载/测试） */
+  /**
+   * 滚动容器：布局壳 .mobile-content（仅当其自身确实可滚时采用）。
+   * 实际布局（.mobile-layout 为 min-height:100vh）下长列表会把布局整体撑高，
+   * 真正滚动的是 window，.mobile-content 自身 scrollTop 恒为 0——若只判断
+   * “存在该元素”，任意滚动位置都会被误判为已到顶，列表中部下滑即触发整页
+   * 刷新（2026-09-05 移动验收报障）。故必须验证 scrollHeight>clientHeight。
+   */
   private findScrollContainer(): HTMLElement | null {
     const el = this.$el as HTMLElement
     if (el && typeof el.closest === 'function') {
       const found = el.closest('.mobile-content')
-      if (found) return found as HTMLElement
+      if (found) {
+        const container = found as HTMLElement
+        // clientHeight 取整存在亚像素误差，>1 容差判定“确实可滚”
+        if (container.scrollHeight - container.clientHeight > 1) return container
+      }
     }
     return null
   }
@@ -49,8 +59,9 @@ export class PullToRefresh extends Vue {
   private isScrolledToTop(): boolean {
     const container = this.findScrollContainer()
     if (container) return container.scrollTop <= 0
-    const doc = document.scrollingElement || document.documentElement
-    return doc ? doc.scrollTop <= 0 : true
+    // 实际滚动发生在 window（与种子页返回顶部浮标同款读法）
+    const top = window.scrollY || document.documentElement.scrollTop
+    return top <= 0
   }
 
   private onTouchStart(e: TouchEvent): void {

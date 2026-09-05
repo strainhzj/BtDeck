@@ -1,9 +1,12 @@
 /**
  * 移动下拉刷新 mixin 契约（dual-mode-client Phase 4 M1 余项）：
- * - 仅当滚动容器（.mobile-content）已到顶且手指下拉时进入拉动（阻尼 0.5、封顶 100px）；
+ * - 仅当真实滚动容器已到顶且手指下拉时进入拉动（阻尼 0.5、封顶 100px）；
  * - 松手超过阈值（60px）触发 onPullRefresh，完成后状态复位；
  * - 未达阈值松手回弹不触发；未到顶/上滑不拦截原生滚动。
- * jsdom 无真实触摸布局，直调 handler 模拟 touch 事件对象驱动状态机。
+ * - 滚动容器判定：.mobile-content 仅在其自身确实可滚时采用，否则回落
+ *   文档滚动（实际布局 min-height:100vh 下长列表滚动发生在 window）。
+ * jsdom 无真实触摸布局，直调 handler 模拟 touch 事件对象驱动状态机；
+ * scrollHeight/clientHeight 需显式 mock（jsdom 中均为 0）。
  */
 
 import Vue from 'vue'
@@ -23,6 +26,12 @@ const touchAt = (y: number, x = 300): TouchEvent =>
 
 const flushPromises = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
 
+/** jsdom 中 scrollHeight/clientHeight 恒为 0，按需 mock 出“容器确实可滚” */
+const mockScrollMetrics = (el: HTMLElement, scrollHeight: number, clientHeight: number): void => {
+  Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true })
+  Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true })
+}
+
 describe('views/mobile/mixins/pull-to-refresh', () => {
   let wrapper: Wrapper<Vue>
   let scroller: HTMLDivElement
@@ -31,6 +40,8 @@ describe('views/mobile/mixins/pull-to-refresh', () => {
   beforeEach(() => {
     scroller = document.createElement('div')
     scroller.className = 'mobile-content'
+    // 默认模拟“布局壳自身可滚”的传统布局；window 滚动布局用例按需改写为 0/0
+    mockScrollMetrics(scroller, 500, 400)
     document.body.appendChild(scroller)
     wrapper = shallowMount(Host)
     scroller.appendChild(wrapper.element)
@@ -135,5 +146,52 @@ describe('views/mobile/mixins/pull-to-refresh', () => {
     // 阈值判定也从重置点起算：+130px → 65px 达到就绪
     vm().onTouchMove(touchAt(690))
     expect(vm().pullReady).toBe(true)
+  })
+
+  // ============ 滚动容器判定修复（2026-09-05：列表中部下滑误触发整页刷新） ============
+  // 实际布局（.mobile-layout min-height:100vh）下长列表撑高布局，滚动发生在
+  // window，.mobile-content 自身 scrollTop 恒为 0；修复前任意位置都被判为
+  // “已到顶”，往上翻列表的下滑手势每 120px 就触发一次整页 reload。
+
+  it('.mobile-content 不自身可滚且文档已滚：中部下滑不进入拉动、不触发刷新', () => {
+    mockScrollMetrics(scroller, 0, 0)
+    document.documentElement.scrollTop = 800
+    const move = touchAt(700)
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(move)
+    expect(vm().pullDistance).toBe(0)
+    expect(move.preventDefault).not.toHaveBeenCalled()
+    vm().onTouchEnd()
+    expect(onPullRefresh).not.toHaveBeenCalled()
+    document.documentElement.scrollTop = 0
+  })
+
+  it('.mobile-content 不自身可滚且文档已滚：先上滑再下滑的翻列表手势不触发刷新', () => {
+    mockScrollMetrics(scroller, 0, 0)
+    document.documentElement.scrollTop = 800
+    vm().onTouchStart(touchAt(500))
+    // 先上滑（滚列表）：标记手势内滚动
+    vm().onTouchMove(touchAt(400))
+    expect(vm().pullDistance).toBe(0)
+    // 再下滑 300px（翻回上方内容）：不得进入拉动
+    const move = touchAt(700)
+    vm().onTouchMove(move)
+    expect(vm().pullDistance).toBe(0)
+    expect(move.preventDefault).not.toHaveBeenCalled()
+    vm().onTouchEnd()
+    expect(onPullRefresh).not.toHaveBeenCalled()
+    document.documentElement.scrollTop = 0
+  })
+
+  it('.mobile-content 不自身可滚但文档在顶部：真下拉仍正常触发（修复不误伤）', async() => {
+    mockScrollMetrics(scroller, 0, 0)
+    document.documentElement.scrollTop = 0
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(touchAt(700))
+    expect(vm().pullReady).toBe(true)
+    vm().onTouchEnd()
+    expect(onPullRefresh).toHaveBeenCalledTimes(1)
+    await flushPromises()
+    expect(vm().pullRefreshing).toBe(false)
   })
 })

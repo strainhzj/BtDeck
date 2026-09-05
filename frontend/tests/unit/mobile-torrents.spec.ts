@@ -24,7 +24,7 @@ jest.mock('@/api/torrents', () => ({
   reconcileRuntimeTorrentStates: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
-  deleteTorrents: jest.fn()
+  deleteTorrentsWithLevel: jest.fn()
 }))
 
 jest.mock('@/api/downloader', () => ({
@@ -414,6 +414,65 @@ describe('views/mobile/MobileTorrents', () => {
     wrapper.destroy()
   })
 
+  it('终态整页刷新去重：库内状态滞后时同一完成种子只触发一次 reload（防 10s 循环）', async() => {
+    // DB 恒返回 downloading 行（同步滞后场景）：终态证据只来自 reconcile 响应。
+    // 每次调用返回新鲜对象——applySpeedUpdates 会原地改行数据，真实后端每响应
+    // 均为新 JSON，共享引用会让 reload 拿回已突变的行、失真复现不到滞后循环
+    jest.mocked(getTorrentList).mockImplementation(() =>
+      Promise.resolve({
+        code: '200',
+        data: { list: [{ ...listTorrent, status: 'downloading', progress: 99 }], total: 1 }
+      }) as never
+    )
+    jest.mocked(reconcileRuntimeTorrentStates).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok', data: {
+        list: [{ hash: 'abc', downloader_id: 'd1', progress: 100, status: 'seeding', downloadComplete: true }],
+        missing: []
+      }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.filters.statuses = ['downloading']
+    jest.mocked(getTorrentList).mockClear()
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    // 第 2 轮 reconcile 带回终态：首次触发整页 reload
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    // reload 后行回到列表（DB 仍标 downloading）：后续轮询再次 reconcile，但同一
+    // hash 已去重——不得再触发 reload（修复前此处每 10s 循环一次）
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    // 筛选条件变化清空去重集合：重新建立终态处理上下文（滞后场景允许再刷新一次）
+    await vm.runFilters()
+    jest.mocked(getTorrentList).mockClear()
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    wrapper.destroy()
+  })
+
+  it('刷新原子替换：reload 在途期间旧列表保留（不塌陷清空）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(vm.list).toHaveLength(1)
+    let resolveFetch: (value: unknown) => void = () => undefined
+    jest.mocked(getTorrentList).mockImplementation(() => new Promise<any>(resolve => {
+      resolveFetch = resolve
+    }))
+    const reloading = vm.reload()
+    await Vue.nextTick()
+    // 请求返回前旧数据必须保留（修复前 list=[] 整列塌陷、滚动跳顶）
+    expect(vm.list).toHaveLength(1)
+    resolveFetch({ code: '200', data: { list: [], total: 0 } })
+    await reloading
+    expect(vm.list).toEqual([])
+    wrapper.destroy()
+  })
+
   it('卡片速度行：速度>0 渲染 ↓/↑ 文本，零速度不渲染', async() => {
     jest.mocked(getActiveTorrents).mockResolvedValue({
       code: '200',
@@ -543,5 +602,80 @@ describe('views/mobile/MobileTorrents', () => {
     expect(fallback).toContain('.m-backtop')
     expect(fallback).toContain('background: var(--color-bg-primary, #FFFFFF)')
     expect(fallback).toContain('border: 1px solid var(--color-border-primary, #E5E7EB)')
+  })
+
+  // ============ 2026-09-05 四级删除（与桌面删除下拉同语义） ============
+
+  it('卡片删除：打开四级删除对话框并记住目标行（不再直发回收站删除）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.remove(vm.list[0])
+    expect(vm.deleteDialogVisible).toBe(true)
+    expect(vm.deleteTarget).toEqual(expect.objectContaining({ infoId: 'i1' }))
+    const { deleteTorrentsWithLevel } = jest.requireMock('@/api/torrents') as { deleteTorrentsWithLevel: jest.Mock }
+    expect(deleteTorrentsWithLevel).not.toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  it('四级删除确认：按等级调 delete-with-level，成功后提示并整页刷新', async() => {
+    const { deleteTorrentsWithLevel } = jest.requireMock('@/api/torrents') as { deleteTorrentsWithLevel: jest.Mock }
+    deleteTorrentsWithLevel.mockResolvedValue({ code: '200', data: { success_count: 1 } })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.remove(vm.list[0])
+    jest.mocked(getTorrentList).mockClear()
+    await vm.confirmDelete(4)
+    expect(deleteTorrentsWithLevel).toHaveBeenCalledWith({
+      torrent_info_ids: ['i1'],
+      delete_level: 4
+    })
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('已标记为待删除')
+    // 删除后整页重载（移除已删行）
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    expect(vm.deleteTarget).toBe(null)
+    wrapper.destroy()
+  })
+
+  it('四级删除等级1：走完全删除语义（infoId 透传、busy 复位）', async() => {
+    const { deleteTorrentsWithLevel } = jest.requireMock('@/api/torrents') as { deleteTorrentsWithLevel: jest.Mock }
+    deleteTorrentsWithLevel.mockResolvedValue({ code: '200', data: { success_count: 1 } })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.remove(vm.list[0])
+    await vm.confirmDelete(1)
+    expect(deleteTorrentsWithLevel).toHaveBeenCalledWith({
+      torrent_info_ids: ['i1'],
+      delete_level: 1
+    })
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('已完全删除')
+    expect(vm.busyKey).toBe('')
+    wrapper.destroy()
+  })
+
+  it('四级删除失败：错误提示且 busy 复位、不整页刷新', async() => {
+    const { deleteTorrentsWithLevel } = jest.requireMock('@/api/torrents') as { deleteTorrentsWithLevel: jest.Mock }
+    deleteTorrentsWithLevel.mockRejectedValue(new Error('下载器连接失败') as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.remove(vm.list[0])
+    jest.mocked(getTorrentList).mockClear()
+    await vm.confirmDelete(3)
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('下载器连接失败')
+    expect(vm.busyKey).toBe('')
+    expect(getTorrentList).not.toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  it('源码契约：删除走 DeleteLevelDialog + deleteTorrentsWithLevel（旧回收站单删禁回流）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    expect(source).toContain('m-delete-level-dialog')
+    expect(source).toContain('deleteTorrentsWithLevel')
+    expect(source).not.toContain('deleteTorrents({')
+    expect(source).not.toContain('id_recycle')
   })
 })

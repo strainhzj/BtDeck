@@ -134,6 +134,14 @@
     <button v-show="showBackTop" type="button" class="m-backtop" aria-label="返回顶部" @click="scrollToTop">
       <i class="el-icon-top" />
     </button>
+
+    <!-- 四级删除（与桌面种子页删除下拉同语义）：点选等级→同款文案二次确认→confirm(level) -->
+    <m-delete-level-dialog
+      :visible.sync="deleteDialogVisible"
+      :name="deleteTargetName"
+      :busy="anyBusy"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -146,7 +154,7 @@ import {
   reconcileRuntimeTorrentStates,
   pauseTorrents,
   resumeTorrents,
-  deleteTorrents,
+  deleteTorrentsWithLevel,
   Torrent
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
@@ -165,6 +173,8 @@ import {
 } from '@/views/torrents/utils/traditionalTorrentIdentity'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog.vue'
+import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
 import {
   TORRENT_STATUS_OPTIONS,
@@ -183,7 +193,7 @@ interface SelectOption {
 }
 
 /**
- * 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/删除入回收站）；
+ * 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/四级删除）；
  * 卡片点击进入详情页（快照缓存传递整行数据）；顶部下拉刷新。
  * 简单搜索自移动高级搜索页迁入（与桌面 torrents 快捷筛选同字段集）；移动端查询模板页
  * 已裁撤（仅保留高级搜索），本页不再承接模板应用回填（跨页缓存链路随之移除）。
@@ -192,10 +202,13 @@ interface SelectOption {
  * visibilitychange 后台暂停，复用桌面 buildSpeedSnapshot 合并状态与完成证据，未命中行清零防冻结）；
  * v-infinite-scroll 无限滚动替代"加载更多"按钮 + 返回顶部浮标；暂停/恢复乐观状态
  * 更新（active 轮询包含 status/完成证据）；空状态 CTA（无下载器→去添加，零种子→桌面版引导）。
+ *
+ * 2026-09-05：删除改走四级（DeleteLevelDialog 与桌面删除下拉同语义：4 标记待删除/
+ * 3 回收站/2 删任务保数据/1 完全删除，等级1 error 级二次确认），复用 deleteTorrentsWithLevel。
  */
 @Component({
   name: 'MobileTorrents',
-  components: { 'm-pull-indicator': MobilePullIndicator }
+  components: { 'm-pull-indicator': MobilePullIndicator, 'm-delete-level-dialog': MobileDeleteLevelDialog }
 })
 export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private list: Torrent[] = []
@@ -205,6 +218,9 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private filtersExpanded = false
   private optionsLoaded = false
   private showBackTop = false
+  /** 四级删除对话框：目标行与可见性（confirm 由 DeleteLevelDialog 二次确认后回调） */
+  private deleteDialogVisible = false
+  private deleteTarget: Torrent | null = null
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -216,6 +232,9 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
   private runtimeListMembership = new RuntimeListMembershipTracker()
+  /** 已触发过终态整页刷新的种子 hash：库内状态滞后时同一种子每轮轮询都会带回
+   * downloadComplete 证据，不去重会在 downloading 筛选下形成 10s reload 循环 */
+  private terminalReloadedHashes = new Set<string>()
 
   private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
 
@@ -277,8 +296,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
         code: '200',
         data: data.list
       })
-      const terminalObserved = this.applySpeedUpdates(snapshot.updates)
-      if (terminalObserved && this.filters.statuses.includes('downloading')) {
+      this.applySpeedUpdates(snapshot.updates)
+      if (this.shouldReloadForTerminal(snapshot.updates)) {
         await this.reload()
       }
       return true
@@ -287,6 +306,23 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     } finally {
       this.runtimeStateReconcileInFlight = false
     }
+  }
+
+  /**
+   * downloading 筛选下的终态整页刷新判定：仅“新出现”的完成种子触发一次。
+   * 库内状态未收敛时（同步任务滞后），reload 会把 DB 仍标下载中的完成行拉回
+   * 列表，下一轮轮询又带回 downloadComplete——按 hash 去重斩断该循环；筛选
+   * 条件变化时清空（runFilters/resetFilters），重新建立终态处理上下文。
+   */
+  private shouldReloadForTerminal(updates: SpeedUpdate[]): boolean {
+    if (!this.filters.statuses.includes('downloading')) return false
+    const newHashes = updates
+      .filter(update => update.downloadComplete)
+      .map(update => update.hash)
+      .filter(hash => Boolean(hash) && !this.terminalReloadedHashes.has(hash))
+    if (!newHashes.length) return false
+    newHashes.forEach(hash => this.terminalReloadedHashes.add(hash))
+    return true
   }
 
   /** SpeedPollingMixin 轮询体：拉活跃速度并就地合并进列表行（桌面同款纯函数工具） */
@@ -300,16 +336,16 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
         snapshot.updates,
         snapshot.ready
       )
-      let terminalObserved = this.applySpeedUpdates(snapshot.updates)
+      this.applySpeedUpdates(snapshot.updates)
       if (newlyUnlistedKeys.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const component = this
-        terminalObserved = (await component.runtimeListMembership.refresh(
+        await component.runtimeListMembership.refresh(
           () => component.list,
           snapshot.updates,
           () => component.reload(),
           updates => component.applySpeedUpdates(updates)
-        )) || terminalObserved
+        )
       }
       const activeKeys = new Set<string>()
       const currentIndex = buildTorrentSpeedTargetIndex(this.list)
@@ -334,7 +370,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
           await this.reconcileRuntimeStates(reconcile.candidates)
         }
       }
-      if (terminalObserved && this.filters.statuses.includes('downloading')) {
+      if (this.shouldReloadForTerminal(snapshot.updates)) {
         await this.reload()
       }
       return snapshot.ready
@@ -404,6 +440,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   // ============ 简单搜索（迁入） ============
 
   private async runFilters(): Promise<void> {
+    // 筛选上下文变化：重置终态刷新去重（重新建立 downloading 终态处理）
+    this.terminalReloadedHashes.clear()
     await this.reload()
   }
 
@@ -414,25 +452,25 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
       statuses: [],
       trackerDomains: []
     }
+    this.terminalReloadedHashes.clear()
     await this.reload()
   }
 
   private async reload(): Promise<void> {
-    this.list = []
-    this.total = 0
     this.runtimeStateMisses = {}
-    await this.fetchPage()
+    // 原子替换（replace）：刷新期间保留旧列表渲染，消除整列塌陷闪烁与滚动跳顶
+    await this.fetchPage(true)
   }
 
   private async loadMore(): Promise<void> {
     await this.fetchPage()
   }
 
-  private async fetchPage(): Promise<void> {
+  private async fetchPage(replace = false): Promise<void> {
     this.loading = true
     try {
       const res = await getTorrentList({
-        skip: this.list.length,
+        skip: replace ? 0 : this.list.length,
         limit: PAGE_SIZE,
         sort_by: 'added_date',
         sort_order: 'desc',
@@ -442,7 +480,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
         ...(this.filters.trackerDomains.length ? { tracker_domain: this.filters.trackerDomains } : {})
       })
       if (res.code === '200' && res.data) {
-        this.list = this.list.concat(res.data.list ?? [])
+        const pageList = res.data.list ?? []
+        this.list = replace ? pageList : this.list.concat(pageList)
         this.total = res.data.total ?? 0
       }
     } catch (e) {
@@ -477,19 +516,37 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
 
   private remove(t: Torrent): void {
-    this.$confirm(`删除种子「${t.name}」？文件移入回收站，可从回收站恢复。`, '删除确认', { type: 'warning' })
-      .then(async() => {
-        await this.withBusy(t, () =>
-          deleteTorrents({
-            info_id: t.infoId,
-            downloader_id: t.downloaderId,
-            delete_data: 0,
-            id_recycle: 1
-          })
-        )
-        await this.reload()
+    this.deleteTarget = t
+    this.deleteDialogVisible = true
+  }
+
+  private get deleteTargetName(): string {
+    return this.deleteTarget ? this.deleteTarget.name : ''
+  }
+
+  private get anyBusy(): boolean {
+    return this.busyKey !== ''
+  }
+
+  /** DeleteLevelDialog 确认后的执行体：按等级调 delete-with-level，成功后整页刷新 */
+  private async confirmDelete(level: number): Promise<void> {
+    const target = this.deleteTarget
+    if (!target) return
+    this.busyKey = this.keyOf(target)
+    try {
+      const res = await deleteTorrentsWithLevel({
+        torrent_info_ids: [target.infoId],
+        delete_level: level
       })
-      .catch(() => undefined)
+      if (res && res.code && res.code !== '200') return
+      this.$message.success(DELETE_LEVEL_SUCCESS_TEXT[level] || '删除完成')
+      this.deleteTarget = null
+      await this.reload()
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.busyKey = ''
+    }
   }
 
   private async withBusy(

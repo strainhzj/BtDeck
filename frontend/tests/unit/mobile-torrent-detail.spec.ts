@@ -3,7 +3,8 @@
  * - 数据源：列表快照缓存立即渲染（含 Tracker 数/速度），getList 回查刷新基础字段；
  * - 无缓存/回查未命中：走 getList 兜底，仍无则「未找到」空态 + 返回列表；
  * - 活动速度轮询（getActiveTorrents）按 hash 覆盖进度/速度/做种连接数；
- * - 操作：暂停/恢复/删除（入回收站）复用现有 API，删除成功回列表。
+ * - 操作：暂停/恢复复用现有 API；删除走四级（2026-09-05 DeleteLevelDialog +
+ *   deleteTorrentsWithLevel，与桌面删除下拉同语义），成功后回列表。
  * 注：shallowMount 下 el-button 为 kebab stub 不转发 click，按钮交互直调组件方法。
  */
 
@@ -16,7 +17,7 @@ import {
   getActiveTorrents,
   pauseTorrents,
   resumeTorrents,
-  deleteTorrents
+  deleteTorrentsWithLevel
 } from '@/api/torrents'
 
 jest.mock('@/api/torrents', () => ({
@@ -24,7 +25,7 @@ jest.mock('@/api/torrents', () => ({
   getActiveTorrents: jest.fn().mockResolvedValue({ code: '200', data: [] }),
   pauseTorrents: jest.fn().mockResolvedValue({ code: '200' }),
   resumeTorrents: jest.fn().mockResolvedValue({ code: '200' }),
-  deleteTorrents: jest.fn().mockResolvedValue({ code: '200' })
+  deleteTorrentsWithLevel: jest.fn().mockResolvedValue({ code: '200' })
 }))
 
 jest.mock('@/views/mobile/torrent-detail-cache', () => ({
@@ -160,19 +161,41 @@ describe('views/mobile/torrent-detail', () => {
     expect(jest.mocked(resumeTorrents)).toHaveBeenCalledWith({ downloader_id: 'd1', hashes: ['abc123'] })
   })
 
-  it('删除：确认后入回收站并返回列表', async() => {
+  it('删除：打开四级删除对话框（不再直发回收站删除）', async() => {
     jest.mocked(takeCachedTorrent).mockReturnValue(baseTorrent)
     wrapper = mountDetail()
     await flushPromises()
     await vm().remove()
+    expect(vm().deleteDialogVisible).toBe(true)
+    expect(jest.mocked(deleteTorrentsWithLevel)).not.toHaveBeenCalled()
+  })
+
+  it('四级删除确认：按等级调 delete-with-level，成功提示并返回列表', async() => {
+    jest.mocked(takeCachedTorrent).mockReturnValue(baseTorrent)
+    wrapper = mountDetail()
     await flushPromises()
-    expect(jest.mocked(deleteTorrents)).toHaveBeenCalledWith({
-      info_id: 'i1',
-      downloader_id: 'd1',
-      delete_data: 0,
-      id_recycle: 1
+    await vm().remove()
+    await vm().confirmDelete(4)
+    expect(jest.mocked(deleteTorrentsWithLevel)).toHaveBeenCalledWith({
+      torrent_info_ids: ['i1'],
+      delete_level: 4
     })
+    expect(vm().$message.success).toHaveBeenCalledWith('已标记为待删除')
     expect(vm().$router.replace).toHaveBeenCalledWith('/m/torrents')
+  })
+
+  it('四级删除等级1：完全删除语义且 busy 复位', async() => {
+    jest.mocked(takeCachedTorrent).mockReturnValue(baseTorrent)
+    wrapper = mountDetail()
+    await flushPromises()
+    await vm().remove()
+    await vm().confirmDelete(1)
+    expect(jest.mocked(deleteTorrentsWithLevel)).toHaveBeenCalledWith({
+      torrent_info_ids: ['i1'],
+      delete_level: 1
+    })
+    expect(vm().$message.success).toHaveBeenCalledWith('已完全删除')
+    expect(vm().busy).toBe(false)
   })
 
   it('轮询迁移 SpeedPollingMixin：立即首拉一次 + 5s 间隔 + 底部冗余返回排已移除', async() => {
