@@ -61,25 +61,31 @@ async def run_process_memory_loop(app: FastAPI) -> None:
       不触发采集）。
     - 平台不可用（如 macOS）时 rss_mb 为 None，仍发射事件留采样心跳，便于
       区分"未启动循环"与"平台不支持"。
-    - 纯只读观测：异常吞掉继续下一轮，关闭观测不影响任何业务；间隔配置 <=0
-      时由调用方决定不启动本循环（照 6.6 WAL 门控模式）。
+    - 采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED（默认开）触发分配器空闲归还
+      （glibc malloc_trim / bionic M_PURGE），把同步分批循环造成的 RSS 高水位
+      棘轮变锯齿——移动端实测重启后 819MB 数小时爬到 2.2GB 的主要成分。
+    - 纯只读观测 + 空闲时机归还：异常吞掉继续下一轮，关闭观测不影响任何业务；
+      间隔配置 <=0 时由调用方决定不启动本循环（照 6.6 WAL 门控模式）。
     """
     from app.services.sync_observability import (
         EVENT_PROCESS_MEMORY,
         get_process_rss_mb,
         log_event,
+        release_free_heap_memory,
     )
 
     interval = float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS)
     while True:
         try:
             rss_mb = get_process_rss_mb()
+            heap_trimmed = release_free_heap_memory() if settings.SYNC_PROCESS_MEMORY_TRIM_ENABLED else False
             level = logging.INFO if rss_mb is not None else logging.DEBUG
             log_event(
                 EVENT_PROCESS_MEMORY,
                 level=level,
                 rss_mb=rss_mb,
                 sample_interval_seconds=interval,
+                heap_trimmed=heap_trimmed,
             )
         except asyncio.CancelledError:
             raise
@@ -478,12 +484,19 @@ async def lifespan(app: FastAPI):
         print(f"[WARN] 事件循环 lag 采样器启动失败（不阻断启动）: {e}")
 
     # 6.6 WAL 只读周期快照（W4-1 第二部分）：仅当间隔配置 >0 时启动；
-    # 观测任务失败不阻断应用启动/关闭。
+    # 观测任务失败不阻断应用启动/关闭。移动端 profile（2026-09-05）：
+    # android-server 形态跳过——每分钟一次 SQLite PRAGMA 探测 + 文件 stat
+    # 在手机上诊断价值低，徒增后台 I/O 与分配（服务端形态不受影响）。
     wal_snapshot_task = None
     if float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS) > 0:
-        wal_snapshot_task = asyncio.create_task(run_wal_snapshot_loop(app))
-        app.state.wal_snapshot_task = wal_snapshot_task
-        print("[OK] WAL 只读周期快照任务已启动")
+        from app.core.platform_capabilities import is_android_server
+
+        if is_android_server():
+            print("[OK] android-server 运行形态：跳过 WAL 只读周期快照（移动端诊断价值低）")
+        else:
+            wal_snapshot_task = asyncio.create_task(run_wal_snapshot_loop(app))
+            app.state.wal_snapshot_task = wal_snapshot_task
+            print("[OK] WAL 只读周期快照任务已启动")
 
     # 6.7 存量 added_date 回填（W3-3）：仅当开关开启时启动（默认关闭）；
     # 失败不阻断应用启动。

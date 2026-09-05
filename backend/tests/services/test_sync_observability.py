@@ -653,3 +653,50 @@ class TestProcessMemoryObservability:
                 pass
         messages = [c.args[1] for c in mock_log.call_args_list]
         assert any(m.startswith("event=process_memory") for m in messages), "process_memory 事件应周期性发射"
+
+    async def test_process_memory_loop_calls_trim_and_emits_flag(self, monkeypatch):
+        """分配器归还联动：采样后调用 release_free_heap_memory，事件携带 heap_trimmed。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        trim_spy = MagicMock(return_value=True)
+        app = MagicMock()
+        with (
+            patch.object(obs, "release_free_heap_memory", trim_spy),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        assert trim_spy.called, "采样循环应调用分配器归还钩子"
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any("heap_trimmed=True" in m for m in messages), "事件应携带 heap_trimmed 结果"
+
+    async def test_process_memory_loop_trim_disabled_by_config(self, monkeypatch):
+        """回滚开关：SYNC_PROCESS_MEMORY_TRIM_ENABLED=False 时不调用归还。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_TRIM_ENABLED", False)
+        trim_spy = MagicMock(return_value=True)
+        app = MagicMock()
+        with (
+            patch.object(obs, "release_free_heap_memory", trim_spy),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        assert not trim_spy.called
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any("heap_trimmed=False" in m for m in messages)

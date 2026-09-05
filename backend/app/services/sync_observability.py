@@ -166,8 +166,9 @@ EVENT_FIELDS: Dict[str, frozenset] = {
     EVENT_SYNC_ERROR: frozenset({"stage", "operation", "suppressed", "continue_after_error"}),
     # OOM 治理（2026-09-05）：进程 RSS 采样。rss_mb 只登记在本事件专属白名单，
     # 绝不进 COMMON_FIELDS / EVENT_LOOP_LAG（test_non_whitelist_fields_dropped
-    # 以 rss_mb 作"非白名单字段应被丢弃"的反例样例）。
-    EVENT_PROCESS_MEMORY: frozenset({"rss_mb", "sample_interval_seconds"}),
+    # 以 rss_mb 作"非白名单字段应被丢弃"的反例样例）。heap_trimmed 为采样后
+    # 分配器归还动作的结果（SYNC_PROCESS_MEMORY_TRIM_ENABLED 门控）。
+    EVENT_PROCESS_MEMORY: frozenset({"rss_mb", "sample_interval_seconds", "heap_trimmed"}),
 }
 
 
@@ -678,3 +679,47 @@ def get_process_rss_mb() -> Optional[float]:
 def get_last_rss_mb() -> Optional[float]:
     """读取最近一次采样值（不触发采集）；未采样/不可用返回 None。"""
     return _LAST_RSS_MB
+
+
+def release_free_heap_memory() -> bool:
+    """把分配器空闲内存归还 OS（移动端内存治理 2026-09-05；返回是否生效）。
+
+    背景：同步任务的分批循环会产生大量短命大对象，原生分配器（glibc/scudo）
+    释放后仍可能持有高水位不归还 OS——容器/移动端看到的 RSS 呈楼梯上升
+    （生产实测：重启后 819MB，数小时爬到 2.2GB）。本函数在空闲时机主动触发
+    归还，把楼梯变锯齿。
+
+    平台分支（不支持/失败一律返回 False，绝不抛异常）：
+    - glibc（Linux 服务器/桌面）：malloc_trim(0)——归还堆顶与空闲 chunk；
+    - Android bionic/scudo：mallopt(M_PURGE)（API 31+；低版本 mallopt 对未知
+      命令返回 0，等价 no-op）；
+    - macOS/其它：无等价安全接口，直接 False。
+
+    纯同步毫秒级调用（madvise 扫描空闲页），由 RSS 采样循环在采样后调用
+    （默认 5 分钟一次的空闲时刻），不触碰同步热路径。
+    """
+    try:
+        if not sys.platform.startswith("linux"):
+            return False
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=False)
+        # glibc：malloc_trim 优先（语义最直接）
+        try:
+            trim = libc.malloc_trim
+        except AttributeError:
+            trim = None
+        if trim is not None:
+            trim.restype = ctypes.c_int
+            return bool(trim(ctypes.c_size_t(0)))
+        # bionic：M_PURGE=101（scudo 主分配器释放；未知命令返回 0 不报错）
+        try:
+            mallopt = libc.mallopt
+        except AttributeError:
+            return False
+        mallopt.restype = ctypes.c_int
+        _M_PURGE = 101  # bionic malloc.h: M_DECAY_TIME=100, M_PURGE=101
+        return bool(mallopt(ctypes.c_int(_M_PURGE), ctypes.c_int(0)))
+    except Exception:  # noqa: BLE001 - 归还失败静默降级，不影响任何主流程
+        logger.debug("release_free_heap_memory failed", exc_info=True)
+        return False

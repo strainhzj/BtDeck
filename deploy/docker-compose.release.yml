@@ -33,6 +33,7 @@ services:
       # OOM 治理透传（2026-09-05，与根 docker-compose.yml 同口径）
       - CRON_SCRIPT_OUTPUT_MAX_BYTES=${CRON_SCRIPT_OUTPUT_MAX_BYTES:-65536}
       - SYNC_PROCESS_MEMORY_SAMPLE_SECONDS=${SYNC_PROCESS_MEMORY_SAMPLE_SECONDS:-300}
+      - SYNC_PROCESS_MEMORY_TRIM_ENABLED=${SYNC_PROCESS_MEMORY_TRIM_ENABLED:-true}
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs

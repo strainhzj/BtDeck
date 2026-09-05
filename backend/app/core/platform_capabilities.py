@@ -122,6 +122,15 @@ def resolve_platform() -> str:
     return raw if raw in VALID_PLATFORMS else PLATFORM_DESKTOP
 
 
+def is_android_server() -> bool:
+    """当前进程是否运行在 Android 本机服务端形态（BTDECK_PLATFORM=android-server）。
+
+    移动端 profile 门控用（2026-09-05）：Android 壳的 btdeck_server 在深导入
+    app 前注入该环境变量；服务端/桌面形态不设置，恒 False。
+    """
+    return resolve_platform() == PLATFORM_ANDROID_SERVER
+
+
 def get_capability_matrix(platform: str) -> Dict[str, Dict[str, str]]:
     """指定形态的完整能力矩阵：key → {label, level, note?}。"""
     if platform not in VALID_PLATFORMS:

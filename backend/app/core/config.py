@@ -330,6 +330,10 @@ class Settings(BaseSettings):
     # 发射 process_memory 结构化事件并刷新 last-sample（/sync 健康端点透出）；
     # 0 关闭。macOS 不采当前 RSS（ru_maxrss 语义陷阱，见 get_process_rss_mb）。
     SYNC_PROCESS_MEMORY_SAMPLE_SECONDS: float = 300.0
+    # 采样后是否触发分配器空闲归还（glibc malloc_trim / Android bionic M_PURGE）：
+    # 把同步分批循环的 RSS 高水位棘轮变锯齿（移动端 2.2GB 漂移的主成分）。
+    # 毫秒级空闲时机调用，不触碰同步热路径；线上异常时置 false 回滚。
+    SYNC_PROCESS_MEMORY_TRIM_ENABLED: bool = True
 
     # 健康检查配置（W4-2）：readiness 只执行有界只读探针，不执行写探针。
     # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查

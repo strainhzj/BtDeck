@@ -1339,6 +1339,14 @@ class CronTaskExecutor:
 
     def _ensure_version_check_job(self):
         """注册 GitHub 版本检查任务（每天凌晨2点执行）"""
+        from app.core.platform_capabilities import is_android_server
+
+        if is_android_server():
+            # 移动端 profile（2026-09-05）：Android 服务端定位为临时/轻量服务
+            # （平台能力矩阵语义），每日 GitHub 外呼与版本通知落库无意义且
+            # 徒增网络/分配，跳过注册（服务端形态不受影响）。
+            logger.debug("android-server 运行形态：跳过 GitHub 版本检查任务注册")
+            return
         job_id = "github_version_check"
         if self.scheduler.get_job(job_id):
             logger.debug(f"版本检查任务已存在: {job_id}")

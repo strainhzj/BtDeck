@@ -43,6 +43,8 @@ services:
       - CRON_SCRIPT_OUTPUT_MAX_BYTES=${CRON_SCRIPT_OUTPUT_MAX_BYTES:-65536}
       # 进程 RSS 周期采样间隔秒（0 关闭；process_memory 事件 + /sync 端点透出）
       - SYNC_PROCESS_MEMORY_SAMPLE_SECONDS=${SYNC_PROCESS_MEMORY_SAMPLE_SECONDS:-300}
+      # 采样后分配器空闲归还（malloc_trim/M_PURGE）；线上异常时置 false 回滚
+      - SYNC_PROCESS_MEMORY_TRIM_ENABLED=${SYNC_PROCESS_MEMORY_TRIM_ENABLED:-true}
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs
