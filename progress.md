@@ -6735,3 +6735,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **夹具迁移**：`m1-baseline/mutated-c11.json`（约 1KB）自 `release/evidence/w4/b2/` 迁至 `scripts/release/fixtures/`（与 qb_tr_stub.py 同级），drill 脚本路径同步更新，本地六类故障注入演练保持可复现。
 - **feature_list.json 锚点调整**：10 处 evidence 引用（w0×3/w2/w4 b2/w5×3/w6×2）由本地目录改锚定为「原 release/evidence/…（2026-09-05 移出仓库）+ 权威留档=所引 CI run artifact」；JSON 校验通过，run ID（33236313405/33237024759/33634391712/33747568891/33764067820/33873168198 等）作为持久锚点全部保留。progress.md/session-handoff.md 中的历史提及按会话日志性质保留不改。
 - **防再犯**：`.gitignore` 新增 `release/evidence/`；`git rm -r` 已暂存 177 个删除。未执行 Git 提交。
+
+### 2026-09-05 追加：release/evidence/ 历史清除（filter-repo 重写 + 四分支强推）
+
+- **提交**：`chore(release): release/evidence 证据目录移出仓库…`（181 文件，重写前 3f351cc → 重写后 e1b0086）。
+- **历史重写**：`git filter-repo --invert-paths --path release/evidence`（726 commits 解析、239 哈希变更；2026-08-19 重写残留的 already_ran 标记清除后执行）。本地与远端全 ref 终检 `git log --all -- release/evidence` = 0、对象库 0 命中。
+- **波及面与推送**：dev（21 旧提交含证据）与 codex/frontend-static-showcase-demo（10）为语义重写；master/codex/release-v1.0.5-repo-url 树 diff 为空、纯祖先哈希级变化（commit-map 实证 df72115→74ab794、45be92c→ef7f0dd）。四分支已 `--force` 推送且逐一 MATCH；6 个 tag 未受波及。
+- **影响提示**：全部提交哈希再次改变（同 2026-08-19），旧 clone 须重新拉取；feature_list/progress 中引用的旧 SHA（@2787462、b357e07、29c6f6f 等）自此仅为历史文字记录；GitHub 服务端旧对象待其 GC 回收（本地已 reflog expire + gc prune 清零）。强推已触发 CI，需关注 dev 回归（release 测试本地 315 全绿，CI 不依赖已提交证据，预期通过）。
