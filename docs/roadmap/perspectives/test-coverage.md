@@ -214,6 +214,8 @@
 | `ui-mode.spec.ts` ✨2026-08-23 | `utils/ui-mode.ts`：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流 |
 | `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转 |
 | `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧） |
+| `settings-twofa-manual-entry.spec.ts` ✨2026-09-04 | `views/settings/index.vue` 2FA 二维码缺失降级手动录入（secret+复制+重置+源码契约） |
+| `advanced-search-contract.spec.ts` ✨2026-09-04 | `scripts/generate-advanced-search-contract.js` 行尾规范化（LF/CRLF 检出双形态 current、内容变异双形态 stale、纯 LF 写出、幂等） |
 | `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |
 | `collapsible-panel.spec.ts` | 通用折叠面板（W8） |
 | `keyword-list-modal.spec.ts` ✨2026-08-16 | Tracker 关键词列表弹窗与快捷操作入口 |

@@ -6689,3 +6689,32 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **C11 部署形态语义**：deb/rpm 二进制内嵌前端（backend 直出 SPA），docker 部署由独立 frontend nginx 提供——runner 增 --spa-base-url（docker 指向 w3-life-frontend），比对同一唯一前端构建；期间发现 nginx 本有 try_files fallback、index 已匹配仅 fallback 请求残打 base_url（替换被 black 折行吞掉未 assert——**批量 replace 必须 assert 教训第三次**）。
 - **本地实证**：真实双实例 B1 total_diffs=0（清掉手动 probe 残留后）；mock 扩 B1 路由（模板状态机+PUT/DELETE+SPA+通知审计）16 测试全绿；release 127/127。
 - evidence：release/evidence/w4/（B1 三制品快照+报告+三轮 CI 日志+本地双实例快照）。**B2 待做**：C05/C06（qB/TR stub）、C10（重启编排）、C12（路径边界）+制品级变异注入演练。
+
+## 2026-09-05：移动端与交付制品一致化收口（批次 G~K：CRLF 契约修复/门禁状态收口/移动端 .3/.4/.5/.8 设备级自动化 done/.7 阻塞清单）
+
+### 目标三：本地门禁可复现性（批次 G）
+
+- **根因实证**：autocrlf=true 检出下生成器脚本与产物均 CRLF，模板字符串随脚本行尾、JSON.stringify 段恒 LF——`generated` 是混合行尾，与磁盘文件永不相等，`npm run contract:check` 必误判 stale（本机复现）。
+- **修复**：`generate-advanced-search-contract.js` 重构——`toLf` 规范化后比较与恒 LF 写出；CLI 增可选 `--contract/--out`（测试专用，默认路径不变）；可 require（`require.main` 守卫 + module.exports）。
+- **回归**：`advanced-search-contract.spec.ts` 14 例（LF/CRLF 双形态 current、内容变异双形态必红、缺文件红、纯 LF 写出、幂等、默认路径真实接线、源码契约）；变异验证：退回原始字节比较→3 例精确红→还原复绿。`npm run lint` 全链在 CRLF 工作区首次直接通过。
+
+### 目标二：制品门禁状态收口（批次 H）
+
+- task .4（W2）唯一缺口"w2-strict CI 待首跑"已由 GitHub API 实证补齐：终局 RC 演练 run 33873168198@2787462 **15/15 job 全 success 含 w2-strict×3** → pending→done。
+- 父项 pending→done，收口语义写死（planning_evidence）：**门禁系统实现完成 ≠ 任何 RC 已 CERTIFIED**——CERTIFIED 需生产签名凭据（GH secrets）+ manifest 人工 approver + G0~G10 全 PASS，取得前发布链保持 INDETERMINATE 阻断。PLANS 状态行"已规划"→"已实施并收口"。
+
+### 目标一：移动端收口（批次 I/J）
+
+- **.5（Phase 4）done**：DoD 复核（M1+M2+capability 矩阵闭环）+ Node 22.23.2/npm 10.9.8 五件套复验（typecheck/lint/Jest 1316/build）——纯状态漏更新。
+- **J-1 2FA Pillow 优雅降级**（.4 遗留产品处理）：后端 `_generate_totp_qr_png` ImportError→成功信封 secret+qr_available=False（旧图片端点 503 信封）；前端步骤 2 手动录入块（secret 等宽+复制+TOTP 参数+使用步骤双分支）；测试 6+6，双端变异验证；桌面零变化。
+- **J-2 Android 设备级自动化**（.3 遗留人工项→Espresso/ActivityScenario 可重复）：3 测试类 5 用例+TinyLoopbackServer 自持回环 HTTP(S)（双 PKCS12 换签演练）；挖出并修复 **3 个真实产品缺陷**：
+  1. **targetSdk 35 强制 e2e 布局缺陷**：AppCompat ActionBar 不下推内容、列表首行画进工具栏（生产路径 monkey 冷启动同症，content top=0 实证）→ values-v35 `windowOptOutEdgeToEdgeEnforcement`（API 36 迁移义务已注释登记）；
+  2. **TrustScope 指纹语义**：整证书 DER 哈希 vs OkHttp RFC 7469 SPKI 校验永不匹配 → 改公钥哈希；
+  3. **OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容**（链清洗空、peerCount=0 实证）→ CapturingTrustManager 捕获链+握手后手动比对。
+  变异验证（退回整证书哈希→自签用例精确红）；appcompat 1.7.0→1.7.1；JVM 单测/lintDebug/assembleRelease/bundleRelease/完整 connected 12/12 全绿。
+- **J-3 桌面 .8 收口**：GUI E2E（opt-in BTDECK_GUI_E2E=1，真实 WebView2 窗口 7 步：表单保存凭据/自动登录/关闭回管理页/改密重登/失败登录静默/切换无越界，本机 12.4s 全绿）+ 迁移夹具 5 例（v1.0.5 形态真实 DPAPI）+ 修复桌面对齐缺陷：desktop lan_policy 缺回环豁免（Android 08-29 已加未同步）→ hosts.is_loopback_host + check/needsCleartextConsent 豁免 + 5 例测试。
+- **状态**：.3/.4/.5/.8 done；.7 保持 in-progress（四项硬阻塞：Play Console 人工/arm64 真机/跨版本升级演练 v1.0.7/Doze 真机——play-release.md §11 SOP 已落；会话中一台 SDY-AN00 真机短暂接入 adb 后掉线，稳定接入后按 SOP-1 十分钟可完成）。
+
+### 验证矩阵
+
+- `./init.sh --ci` exit 0；后端全量 4466 passed/9 skipped（EXEPATH=E:\Git\bin；首轮一次 Windows 文件可见性偶发已加重试加固，复跑零失败）；前端 typecheck/lint/全量 Jest 1322/build 全绿；Android testDebugUnitTest/lintDebug/connected 12/12/assembleRelease/bundleRelease 全绿；契约+2FA+钉扎+门禁 .4 证据变异验证全拦截。roadmap 三层同步（android-companion/desktop-companion/api/contracts/views/test-coverage/根 README 元信息）。未执行 Git 提交。

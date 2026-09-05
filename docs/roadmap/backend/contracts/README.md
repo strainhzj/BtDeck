@@ -40,7 +40,7 @@
 | `app/api/models/advanced_search.py` | Pydantic 校验器引用 `SUPPORTED_SEARCH_OPERATORS` / `allowed_operators_for_field`，请求期拒绝非法操作符；`SearchCondition.mode` 独立保存 include/exclude，旧标签标量操作符归一为 token 操作符 |
 | `backend/tests/services/test_advanced_search_regression.py` / `test_advanced_search_models_strict.py` | 契约与真实 SQLite 守卫：字段白名单、模板模式、空值、标签、Tracker、下载器改名与三态查询 |
 
-> 前端通过 `frontend/scripts/generate-advanced-search-contract.js` 从本 JSON 生成 `advancedSearch.generated.ts`，`operator-contract.spec.ts` 再逐项校验生成结果与源 JSON 完全一致；`npm run contract:check` 阻止漂移。
+> 前端通过 `frontend/scripts/generate-advanced-search-contract.js` 从本 JSON 生成 `advancedSearch.generated.ts`，`operator-contract.spec.ts` 再逐项校验生成结果与源 JSON 完全一致；`npm run contract:check` 阻止漂移。生成/比较均按 LF 规范化（autocrlf=true 的 CRLF 检出不再误判 stale，语义漂移仍拦截；`advanced-search-contract.spec.ts` 回归，2026-09-04）。
 
 ---
 

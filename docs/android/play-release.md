@@ -113,3 +113,37 @@ release 保持 `isMinifyEnabled=false`：Chaquopy 的 Python 互操作依赖运�
 | 进程杀死恢复 / FGS 停止 / 通知权限 | ✅（Phase 3 批次） |
 | 旋转 / Doze / LAN 开关绑定变化 | 本批批次 B |
 | HTTP/HTTPS/坏证书 | 逻辑层单测 + E2E；自签弹窗人工项登记 task .3 |
+
+## 11. 外部边界 SOP（task .7 硬阻塞项的可执行步骤）
+
+> 本节四项均不可在开发机自动完成；条件齐备后按步骤执行，证据回填本文件与 feature_list。
+
+### SOP-1 arm64 真机矩阵（需 arm64-v8a 实体设备 + USB 调试）
+
+1. `adb devices` 确认设备授权；`adb shell getprop ro.product.cpu.abi` 确认 `arm64-v8a`，记录 Android 版本（`ro.build.version.release`/`sdk_int`）。
+2. 安装 release APK：`adb install -r app/build/outputs/apk/release/app-release.apk`（或 universal APK）。
+3. 冒烟链路：首启向导 → 伴侣模式添加服务器（或本机服务端启动链）→ WebView 加载 → 测试连接。
+4. 仪表化回归：`gradle :app:connectedDebugAndroidTest`（5 个 UI 用例 + LocalServer + CredentialVault 共 12 例）。
+5. 16KB page-size：设备若为 16KB 内核（`adb shell getconf PAGE_SIZE`）即天然覆盖；否则引用 ps16k AVD 既有证据。
+6. 证据：各步截图/logcat 摘要 + connected 报告 XML 回填。
+
+### SOP-2 Play Console 上传与人工审查（需开发者账号）
+
+1. 加入 Play App Signing（§2 步骤）；上传密钥单独生成，不复用 GitHub Release keystore。
+2. 内部测试轨道上传 `app-release.aab`，核对 target API/ABI（双 64 位）与 §8 包体数据。
+3. Console 声明：FGS specialUse 用途（§3 文案）、Data Safety（§4 表）、隐私政策（§5）、内容分级问卷。
+4. 提审前自查 cleartext：仅上传默认严格变体（LAN 变体不申报，§7）。
+5. 留存 Console 回执（track/版本/审核状态）作为 task .7 证据。
+
+### SOP-3 跨版本升级迁移演练（需 v1.0.7 发布版本对）
+
+1. v1.0.7 发布后：设备安装 v1.0.6 release（服务端形态启动一次，建库+写入种子数据）。
+2. `adb install -r` v1.0.7 release → 启动 → 断言：配置/secret/数据库保留、Alembic 单 head 推进、健康 200、WebView 可用。
+3. 对照 W3 桌面/服务器生命周期语义（G6/G7）记录差异；失败项回修并在本文件登记。
+
+### SOP-4 Doze deep idle 真机实测（模拟器 deviceidle 不可强制）
+
+1. 设备解锁、接电源、亮屏放置 30 分钟以上触发 deep idle（或 `adb shell dumpsys deviceidle force-idle` 在部分 OEM 生效时优先使用）。
+2. 验证 FGS 通知存活、服务状态可查询；用户主动停止/重启入口在 idle 下可用。
+3. 断言口径按计划：不承诺用 FGS 消除 Doze 漂移，登记观测到的调度延迟即可。
+4. OEM 电池管理（华为/小米等自启动管控）按设备厂商设置页手动配置后复测。

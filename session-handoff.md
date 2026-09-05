@@ -1,3 +1,36 @@
+## 2026-09-05（最新）：移动端与交付制品一致化收口——CRLF 契约修复、门禁 Feature 终态 done、移动端 .3/.4/.5/.8 done（.7 唯一遗留）
+
+### 当前状态
+
+- **release-artifact-equivalence-gate-2026-08-28：父项 done（门禁系统语义）**——九子任务全 done（.4 经 run 33873168198 CI 实证修正）。**发布认证未发生**：CERTIFIED 需 GH secrets 签名+人工 approver+G0~G10 全 PASS（feature_list 收口注记+runbook §1.3）。
+- **v1.0.6-dual-mode-client：7/8 done**，仅 .7 in-progress（四项外部硬阻塞，play-release.md §11 SOP）。
+- 分支 dev 工作区未提交（用户要求不主动 commit）。
+
+### 本批战果（详见 progress.md 2026-09-05 节）
+
+- CRLF 契约误判根治（toLf 规范化比较+恒 LF 写出+14 例回归+变异）——`npm run lint` 在 CRLF 工作区首次直接通过
+- 2FA Pillow 优雅降级（手动录入，后端 6+前端 6 测试）
+- Android 3 产品缺陷修复（API35 e2e 布局/SPKI 指纹/OkHttp 手动钉扎）+ appcompat 1.7.1
+- 桌面 GUI E2E（opt-in）+ 迁移夹具 + lan_policy 回环对齐
+- 验证全绿：init.sh --ci / 后端 4466 / 前端 1322 / Android connected 12+release 双产物 / 变异验证
+
+### 遗留与外部前置
+
+1. **.7 四项硬阻塞**（不得伪造）：Play Console 人工审查（开发者账号）、arm64 真机矩阵（SOP-1；会话中 SDY-AN00 短暂接入后掉线）、跨版本升级演练（v1.0.7 版本对，SOP-3）、Doze 真机（SOP-4）
+2. **CERTIFIED 通道**：用户给 GH secrets（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+PASSWORD）+ manifest 人工审批
+3. v1.0.7 依赖治理批次（134 条安全例外 2026-10-03 到期等，见 W5 批次 F 交接）
+4. 桌面 GUI E2E 为 opt-in（BTDECK_GUI_E2E=1，需交互桌面会话；CI 自动 skip）
+
+### 环境坑（本批新增，勿重踩）
+
+- autocrlf=true 下模板字符串+JSON.stringify 混合行尾必误判 stale——契约类检查一律 LF 规范化后语义比较
+- API 35 强制 e2e：AppCompat ActionBar 不下推内容（content top=0）；windowOptOutEdgeToEdgeEnforcement 仅到 API 35，36 起必须迁移 insets 自处理
+- OkHttp CertificatePinner 与自定义 SSLSocketFactory 组合下 peer chain 为空——钉扎须 TrustManager 捕获链手动比对；指纹口径必须是 SPKI（RFC 7469）
+- WebView cookie 不分端口（RFC 6265）：同 host 不同端口的同域 cookie 互相可见/覆盖，隔离断言只看"会话残留清除"而非整个 getCookie 判空
+- Espresso 点 ListView 行用 onData().inAdapterView()；ActivityScenario 的 onActivity 只作用于自己的 activity，跨 activity 断言用 Application lifecycle 回调跟踪栈顶
+- am instrument 的 println 走 logcat System.out 不进 stdout 流；WebView 端口 9 会命中 ERR_UNSAFE_PORT（选关闭端口测离线时注意）
+- nvm-windows use 后 nodejs symlink 偶发缺失，重试 nvm use 即可；模拟器被 shell 取消连带杀死后冷启动约 45s
+
 ## 2026-09-04（最新）：.9 批次 F 收口——完整 DAG RC 演练 15/15 全绿、六类故障注入、runbook；feature release-artifact-equivalence-gate 全部完成（.1~.9 done）
 
 ### 当前状态
