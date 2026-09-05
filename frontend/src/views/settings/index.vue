@@ -154,9 +154,25 @@
                 请使用认证器应用（如 Google Authenticator、Authy）扫描下方二维码，然后输入应用中显示的6位验证码以完成绑定。
               </p>
 
-              <div v-loading="qrLoading" class="qr-code">
+              <div
+                v-loading="qrLoading"
+                class="qr-code"
+                :class="{'qr-code-manual': !qrCodeData && !qrLoading}"
+              >
                 <img v-if="qrCodeData" :src="qrCodeData" alt="2FA QR Code" />
-                <span v-else>生成二维码中...</span>
+                <span v-else-if="qrLoading">生成二维码中...</span>
+                <div v-else class="manual-secret-entry">
+                  <p class="manual-entry-hint">
+                    当前环境不支持生成二维码（缺少图像依赖），请在认证器应用中选择「手动输入密钥」并录入：
+                  </p>
+                  <div class="manual-secret-row">
+                    <el-input :value="manualEntrySecret" readonly class="manual-secret-input" />
+                    <el-button size="small" type="primary" plain @click="copyManualSecret">复制密钥</el-button>
+                  </div>
+                  <p class="manual-entry-meta">
+                    账户名：{{ manualEntryAccount }} · 密钥类型：基于时间（TOTP）· 位数：6 位 · 更新周期：30 秒
+                  </p>
+                </div>
               </div>
 
               <el-form :model="totpForm" class="verify-form" label-position="top">
@@ -200,7 +216,8 @@
                 <p><strong>使用步骤：</strong></p>
                 <ol>
                   <li>下载认证器应用（如 Google Authenticator、Authy）</li>
-                  <li>扫描上方二维码</li>
+                  <li v-if="qrCodeData">扫描上方二维码</li>
+                  <li v-else>手动输入上方密钥完成添加</li>
                   <li>输入应用中显示的6位验证码</li>
                   <li>点击"确认绑定"完成设置</li>
                 </ol>
@@ -296,6 +313,7 @@ import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import request from '@/utils/request'
 
 @Component({
@@ -335,6 +353,9 @@ export default class extends Vue {
   // 数据
   private qrCodeData = ''
   private backupSecret = ''
+  // Pillow 缺失（Android 服务端形态）降级：手动录入密钥
+  private manualEntrySecret = ''
+  private manualEntryAccount = ''
 
   // 错误提示
   private errorMessage = ''
@@ -464,8 +485,10 @@ export default class extends Vue {
       if (response.code === '200') {
         // 验证成功
         this.clearFailedAttempts()
-        this.qrCodeData = response.data.qr_code_base64
+        this.qrCodeData = response.data.qr_code_base64 || ''
         this.backupSecret = response.data.secret
+        this.manualEntrySecret = response.data.secret || ''
+        this.manualEntryAccount = UserModule.name || ''
         this.currentStep = 2
         this.$message({
           type: 'success',
@@ -554,8 +577,20 @@ export default class extends Vue {
     this.totpForm.twoFactorCode = ''
     this.qrCodeData = ''
     this.backupSecret = ''
+    this.manualEntrySecret = ''
+    this.manualEntryAccount = ''
     this.errorMessage = ''
     this.bindingError = ''
+  }
+
+  // 手动录入模式：复制密钥到剪贴板（Pillow 缺失降级）
+  private async copyManualSecret() {
+    try {
+      await copyTextToClipboard(this.manualEntrySecret)
+      this.$message({ type: 'success', message: '密钥已复制' })
+    } catch (error) {
+      this.$message({ type: 'error', message: '复制失败，请长按/选中密钥手动复制' })
+    }
   }
 
   // 确认停用2FA（显示确认对话框）
@@ -729,6 +764,8 @@ export default class extends Vue {
       this.passwordForm.password = ''
       this.totpForm.twoFactorCode = ''
       this.qrCodeData = ''
+      this.manualEntrySecret = ''
+      this.manualEntryAccount = ''
       this.errorMessage = ''
       this.bindingError = ''
       this.$message({
@@ -900,6 +937,48 @@ export default class extends Vue {
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+}
+
+// Pillow 缺失降级：手动录入密钥块（自适应高度替代固定 200×200 二维码位）
+.qr-code.qr-code-manual {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  min-height: 200px;
+  padding: var(--spacing-lg);
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+
+  .manual-entry-hint {
+    margin: 0 0 var(--spacing-md);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+  }
+
+  .manual-secret-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+
+    .manual-secret-input {
+      flex: 1;
+
+      ::v-deep .el-input__inner {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        letter-spacing: 0.5px;
+      }
+    }
+  }
+
+  .manual-entry-meta {
+    margin: var(--spacing-md) 0 0;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-text-tertiary);
   }
 }
 
