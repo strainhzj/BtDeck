@@ -50,11 +50,12 @@
 |--------|------|-----------|
 | Tracker 响应 VO tracker-info-vo | `responseVO.py` | `TrackerInfoVO`(L5) Tracker 信息响应 VO |
 
-### auth/ — 认证领域（7 个文件）
+### auth/ — 认证领域（8 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 认证依赖 auth-dependency | `dependencies.py` | 🔵 FastAPI 认证依赖：`AuthenticatedUserInfo`(L23) + `require_authenticated_user`(L83) + `get_current_user`(L102) |
+| 认证内核 auth-principal ✨2026-09-05 | `principal.py` | 协议无关认证内核：`AuthenticatedPrincipal`(L29) + `authenticate_access_token(token, db)`(L49)，统一 token→principal 并补 is_active/must_change_password 校验（稳定拒绝原因码），HTTP 依赖语义不变 |
 | JWT/TOTP auth-utils | `utils.py` | JWT + TOTP：`create_access_token`(L54)、`verify_access_token`(L66)、`generate_totp_secret`(L134)、`verify_totp`(L139) |
 | 密码/SM4 auth-security | `security.py` | 密码 + SM4：`generate_sm4_key`、`sm4_encrypt/decrypt`、`verify_password`、`get_password_hash` |
 | 用户 ORM auth-model | `models.py` | ORM：`User`(L11)、`LoginLog`(L45)、`Config`(L57) |

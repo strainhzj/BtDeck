@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
+from app.core.runtime_context import RuntimeContext
 from app.services.dashboard_service import DashboardService
 from app.tasks.cron_models import CronTask
 from app.tasks.resource_guard import admission_controller
@@ -91,7 +92,7 @@ class TestRequestSideNotBlockedByGovernance:
 
         try:
             # 协程 B：同事件循环跑 DashboardService（不 release heavy_sync）
-            service = DashboardService(dashboard_db, app)
+            service = DashboardService(dashboard_db, RuntimeContext.from_app(app))
             started = time.monotonic()
             data = await asyncio.wait_for(service.get_dashboard_data(), timeout=5.0)
             elapsed = time.monotonic() - started
@@ -128,7 +129,7 @@ class TestRequestSideNotBlockedByGovernance:
         # 协程 A：占住 db_write_scope（用真实 admission_controller）
         async with admission_controller.db_write_scope():
             # 协程 B：同事件循环跑 DashboardService
-            service = DashboardService(dashboard_db, app)
+            service = DashboardService(dashboard_db, RuntimeContext.from_app(app))
             started = time.monotonic()
             data = await asyncio.wait_for(service.get_dashboard_data(), timeout=5.0)
             elapsed = time.monotonic() - started
@@ -158,7 +159,7 @@ class TestRequestSideNotBlockedByGovernance:
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(real_sem, "acquire", spy_acquire)
 
-            service = DashboardService(dashboard_db, app)
+            service = DashboardService(dashboard_db, RuntimeContext.from_app(app))
             await service.get_dashboard_data()
 
         # 关键断言：heavy_sync.acquire 在整个 DashboardService 调用期间未被触发

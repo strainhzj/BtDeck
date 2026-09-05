@@ -6860,3 +6860,35 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **历史重写**：`git filter-repo --invert-paths --path release/evidence`（726 commits 解析、239 哈希变更；2026-08-19 重写残留的 already_ran 标记清除后执行）。本地与远端全 ref 终检 `git log --all -- release/evidence` = 0、对象库 0 命中。
 - **波及面与推送**：dev（21 旧提交含证据）与 codex/frontend-static-showcase-demo（10）为语义重写；master/codex/release-v1.0.5-repo-url 树 diff 为空、纯祖先哈希级变化（commit-map 实证 df72115→74ab794、45be92c→ef7f0dd）。四分支已 `--force` 推送且逐一 MATCH；6 个 tag 未受波及。
 - **影响提示**：全部提交哈希再次改变（同 2026-08-19），旧 clone 须重新拉取；feature_list/progress 中引用的旧 SHA（@2787462、b357e07、29c6f6f 等）自此仅为历史文字记录；GitHub 服务端旧对象待其 GC 回收（本地已 reflog expire + gc prune 清零）。强推已触发 CI，需关注 dev 回归（release 测试本地 315 全绿，CI 不依赖已提交证据，预期通过）。
+
+## 2026-09-05（续二）：Demo .7 回归复跑与验收制品 + MCP 计划基线复核
+
+- **Demo（frontend-static-showcase-demo .7，保持 in-progress）**：
+  - 自动化回归复跑全绿：`npm run lint`（contract check + ESLint + Vuex Action）✓、`npm run typecheck` ✓、`npm run test:unit -- --silent` **99 suites / 1339 tests** ✓（较 09-02 证据 97/1319 增加 2 套件 20 用例）。
+  - 制品：`npm run build:demo` → dist **175 文件 / 34.71 MiB**（标题 BtDeck Demo、绝对 /assets）；打包 `frontend/BtDeck-demo-dist-20260905.zip`（5.68 MiB，交付物不入 git）。
+  - 人工验收环境：`.tmp-serve-demo.py`（stdlib SPA fallback，等效 nginx.demo.conf）于 **127.0.0.1:8080** 常驻后台；冒烟 index / SPA fallback（/torrents、/query-templates）/ app.js 均 200。待用户完成七项人工复验（首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击）后回填 evidence 收口。
+  - 环境限制沿承：WSL E_ACCESSDENIED、Docker Linux engine 不可用（Nginx 容器路径未本地复现）。
+- **MCP（mcp-service-capabilities，保持 pending，仅计划修订）**：
+  - Explore 只读勘察 dev@9ccd12f 核验 08-28 计划基线：核心架构判断全部成立；10 项漂移（advanced_search.py 文件名、同步/异步双会话、认证现状无 is_active/must_change_password 服务端校验、configs 无版本化 JSON 先例、cron 模型/注册表定位与 task_type 4/5/6、TrackerMessageLog.msg/sample_urls 新泄漏面、Python 矩阵 3.11 Docker+3.12 Win 打包、tests 同名遮蔽）。
+  - `PLANS/mcp-service-capabilities.md` 修订：§2 基线表更新为实测签名（file:line），新增 §10（漂移修正 + W0 批次实施清单 6 交付物 + W1~W4 既定修正）；状态改"经 2026-09-05 基线复核修订，W0 待启动"。**未动任何业务代码，W0 批次待用户确认后实施。**
+- 未执行 Git 提交。工作区新增未跟踪：`frontend/BtDeck-demo-dist-20260905.zip`、`.tmp-serve-demo.py`、`.tmp-demo-regression.log`（后两者为会话工具，验收后可删）。
+
+## 2026-09-05（续三）：MCP 前置 controller/service 层解耦批次落地（未建任何 MCP 接口）
+
+- **范围**：用户指示"先实施 controller service 层的修改，暂时不添加 mcp 接口"。按 PLANS/mcp-service-capabilities.md §10.3 实施，硬约束 HTTP 行为零变化。
+- **五个新模块（全部协议无关）**：
+  1. `app/core/runtime_context.py` — `RuntimeContext`（store/torrent_stats/start_time，`from_app` 提取；torrent_stats 用 `TORRENT_STATS_ABSENT` 哨兵保留三态语义，见下）
+  2. `app/services/audit_context.py` — `AuditContext` 审计四元组（ip/ua/request_id/session_id，`from_request` 容错提取 + `as_dict` 展开）
+  3. `app/auth/principal.py` — 认证内核 `authenticate_access_token(token, db)` → `AuthenticatedPrincipal`，补 is_active/must_change_password 校验（现状两依赖均不校验，威胁模型已记录）；净新增，HTTP 依赖语义不变
+  4. `app/services/torrent_add_service.py` — `TorrentAddService.add_torrent(params, content, audit_context, operator)`，/torrent/add 主体原样抽取；status/code/msg 契约逐字保留（含历史遗留的 status 未覆盖路径）；audit operator 参数化（HTTP 仍默认 "admin"）
+  5. `app/tasks/cron_trigger.py` — `trigger_task_by_code(task_code)`：内置注册表白名单（default_scheduled_tasks.get_task_by_code）+ task_type 0-3 永拒（即使 BTDECK_ALLOW_CUSTOM_SCRIPTS=True）+ 禁用/运行中前检透传；返回 accepted/task_id/reason，run_id 由执行期 CronTask.last_run_id 承载
+- **三处服务去协议化**：DashboardService 构造 (db, app)→(db, RuntimeContext)；TorrentDeletionByLevelService (db, request)→(db, store, audit_context)（6 处 app.state.store 访问 + 审计提取全改注入）；AsyncDeletionExecutor 同步去 Request 并删除 execute_deletion_task 死参数 request。端点侧 dashboard/torrent_deletion/duplicate_quick_delete/torrent_crud 四文件改为显式注入构造。
+- **本轮暴露并修复的三个回归**（全部由既有测试网捕获）：
+  1. 测试 patch 锚点迁移 ×2：`test_torrent_crud_add_fallback.py`（41 例）与 `test_torrent_crud_status_migration.py`（24 例）锚 `torrent_crud.call_downloader_api` → 改锚 `torrent_add_service.call_downloader_api`
+  2. BytesIO 作用域缺陷（自引入即修）：QB 分支内残留 `from io import BytesIO` 使其成为函数级局部名，TR 分支先行引用即 UnboundLocalError——抽取时统一模块级导入
+  3. **torrent_stats 三态语义**（真实行为差异，test_dashboard_api 钉住的 known behavior）：原 `hasattr` 实现中「属性存在但为 None」返回 null、「属性缺失」返回零值字典；RuntimeContext 初版把两者合并成 None→零值，全量回归抓住后用 `TORRENT_STATS_ABSENT` 哨兵恢复三态
+- **架构守卫随迁**：`tests/architecture/test_async_downloader_calls.py` 为 `app/services/torrent_add_service.py` 补同款规则（构造/裸 RPC 禁令 + calculate_info_hash/get_transmission_torrent_info 强制 await），保证抽取后静态约束不失效。
+- **验证矩阵**：mypy 262 文件零错误；flake8 干净；black 本批 15 文件零漂移（注意：`app/tasks/scheduler/torrent_sync/tracker_sync_task.py` 与 `app/api/endpoints/torrent_sync.py` 在 HEAD 上即存在 black 漂移，非本批引入，未动）；新增测试 20 例（principal 8 / add-service 5 / cron-trigger 7）；全量 pytest 最终计数见下方验证行。
+- **roadmap 同步**：backend services（49 文件计数+5 行更新）/core/domain(auth 8 文件+principal 行)/tasks(cron-trigger 行)/api endpoints torrent_crud.md（/add 薄壳化索引+详情重写）/根 README 元信息追加。
+- feature_list：mcp feature .3/.6/.8 三子任务 evidence 追加"前置 service 解耦已落地"备注（status 不变，均 pending）。未执行 Git 提交。
+- **验证矩阵（终局）**：全量 pytest **4488 passed / 9 skipped / 0 failed**（新增 20 例：principal 8 + add-service 5 + cron-trigger 7；首轮曾 1 失败——desktop_companion test_credentials_migration_upgrade 在全量上下文 WinError5 于产品 os.replace，单跑/目录级/HEAD stash 对照均绿，复跑全量 0 失败，定性为代码注释中已登记的 Windows 瞬态噪声类）；mypy 262 文件零错误；flake8 干净；black 本批 15 文件零漂移；`./init.sh --ci` 通过（09-02 记录的 WSL E_ACCESSDENIED 本次未复现）。

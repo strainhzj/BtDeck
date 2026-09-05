@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db
+from app.services.audit_context import AuditContext
 from app.services.duplicate_quick_delete_service import (
     classify_duplicates,
     summarize,
@@ -172,14 +173,17 @@ async def quick_delete(
             )
 
         task_id = submission.task_id
-        executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
+        executor = AsyncDeletionExecutor(
+            db_session_factory=SessionLocal,
+            store=getattr(request.app.state, "store", None),
+            audit_context=AuditContext.from_request(request),
+        )
         asyncio.create_task(
             executor.execute_deletion_task(
                 task_id=task_id,
                 torrent_info_ids=submission.accepted_info_ids,
                 delete_level=payload.delete_level,
                 operator=current_user.username,
-                request=request,
                 notify_on_complete=payload.notify_on_complete,
             )
         )

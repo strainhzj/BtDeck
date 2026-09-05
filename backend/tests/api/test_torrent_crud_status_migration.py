@@ -199,11 +199,12 @@ def _patch_runtime(calls: List[Dict[str, Any]], fake_call):
     """同时 patch 三个模块的 call_downloader_api 引用。
 
     get_transmission_torrent_info 在 torrent_helpers 模块内调用自身导入的
-    call_downloader_api（import 绑定），端点调用则引用端点模块内导入的符号，
-    因此两处都必须 patch；torrent_status 一并 patch 供状态控制测试使用。
+    call_downloader_api（import 绑定）；/add 端点主体 2026-09-05 起抽取至
+    torrent_add_service（符号随之迁移），状态控制端点在 torrent_status——
+    三处都必须 patch。
     """
     with (
-        patch("app.api.endpoints.torrent_crud.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call),
         patch("app.api.endpoints.torrent_helpers.call_downloader_api", side_effect=fake_call),
         patch("app.api.endpoints.torrent_status.call_downloader_api", side_effect=fake_call),
     ):

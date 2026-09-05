@@ -5,15 +5,17 @@
 
 ## 关键词速查
 
-### services/ 根（47 个文件，不计 `__init__.py`）
+### services/ 根（49 个文件，不计 `__init__.py`）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1471 行，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
-| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
+| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数；✨2026-09-05 起注入 store+AuditContext，不再接收 FastAPI Request） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
-| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
+| 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
+| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
+| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用 |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
@@ -47,7 +49,7 @@
 | 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取 |
 | 存量 added_date 回填 added-date-backfill | `torrent_added_date_backfill.py` | 对 torrent_info.added_date 为 NULL 的存量行按下载器分批拉取 added_on/addedDate 回填的后台任务（启动后 create_task、INFO_SYNC_STARTUP_BACKFILL_ENABLED 开关默认关闭；经 SYNC lane 分批执行不阻塞事件循环，下载器不可用跳过由 12h 全量快照兜底） |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
-| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签） |
+| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request） |
 | 辅种数量 auxiliary-seed-count | `auxiliary_seed_count_service.py` | 全局按 `name + size` 计算辅种数量；同步任务全量校正，删除/转移/还原按分组增量维护 |
 | 种子删除策略 torrent-delete | `torrent_deletion_service.py` | 种子删除服务（抽象基类 + 各下载器策略） |
 | 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理（协调 Repository 与文件操作）；`reconcile_missing_backups` L151 增量补齐缺失备份（限量批次、墓碑感知、幂等） |

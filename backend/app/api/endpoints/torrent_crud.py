@@ -1,7 +1,5 @@
 import asyncio
 import logging
-import os
-import tempfile
 import uuid
 from typing import List, Optional
 
@@ -13,20 +11,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.database import get_db, AsyncSessionLocal
+from app.database import get_db
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo
-from qbittorrentapi.exceptions import APIError
-from transmission_rpc import TransmissionError
-from app.services.audit_service import extract_audit_info_from_request, get_audit_service
+from app.torrents.models import TrackerInfo
+from app.services.audit_context import AuditContext
+from app.services.audit_service import extract_audit_info_from_request
+from app.services.torrent_add_service import TorrentAddParams, TorrentAddService
 
 # Import from new split modules
 from app.api.endpoints.torrent_helpers import (
-    calculate_info_hash,
-    get_transmission_torrent_info,
-    create_qbittorrent_torrent_record,
-    create_transmission_torrent_record,
     get_torrent_infos,
     convert_to_vo,
 )
@@ -34,7 +28,6 @@ from app.core.reannounce_config_operations import extract_domains_from_trackers
 from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info
-from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.torrent_batch_add_service import (
     TorrentBatchAddOptions,
     cleanup_staged_files,
@@ -42,7 +35,6 @@ from app.services.torrent_batch_add_service import (
     register_torrent_batch_task,
     stage_torrent_file,
 )
-from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -154,332 +146,27 @@ async def create_torrent(
     torrent_file: Optional[UploadFile] = File(description="种子文件"),
     db: Session = Depends(get_db),
 ):
-    # """创建新的种子信息"""
-    result: CommonResponse[None] = CommonResponse(status="success", msg="种子添加成功", data=None, code="200")
+    """创建新的种子信息（协议无关 TorrentAddService 的 HTTP 薄壳）。"""
+    file_content = await torrent_file.read() if torrent_file else None
 
-    # ========== 从 app.state.store 获取缓存的下载器（强制规范） ==========
-    # 步骤1：获取 app 对象并检查缓存初始化
-    app = request.app
-
-    if not hasattr(app.state, "store"):
-        result.code = "500"
-        result.msg = "下载器缓存未初始化"
-        result.status = "failed"
-        return result
-
-    # 步骤2：从缓存获取下载器
-    # 🔧 修复：使用异步版本 get_snapshot() 避免线程问题
-    cached_downloaders = await app.state.store.get_snapshot()
-    downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
-
-    # 步骤3：验证下载器有效性
-    if not downloader_vo:
-        result.code = "404"
-        result.msg = f"下载器不在缓存中 [downloader_id={downloader_id}]"
-        result.status = "failed"
-        return result
-
-    if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
-        result.code = "503"
-        result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
-        result.status = "failed"
-        return result
-
-    # 步骤4：获取并验证客户端连接
-    client = downloader_vo.client
-
-    if not client:
-        result.code = "500"
-        result.msg = f"下载器客户端连接不存在 [downloader_id={downloader_id}]"
-        result.status = "failed"
-        return result
-
-    # mypy 收窄：能通过下载器缓存匹配即证明 downloader_id 非空（Form 参数类型为 Optional[str]），
-    # 后续 call_downloader_api / get_transmission_torrent_info 均要求 str。
-    assert downloader_id is not None
-
-    # 使用缓存的下载器对象（替换原来的数据库查询）
-    downloader = downloader_vo
-    if torrent_file:
-        # 保存文件到临时位置
-        file_content = await torrent_file.read()
-
-        # 将文件写入操作放到线程池中执行
-        def write_temp_file(content):
-            """安全地写入临时文件"""
-            try:
-                tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".torrent")
-                tmp_file.write(content)
-                tmp_file.flush()  # 确保数据写入磁盘
-                os.fsync(tmp_file.fileno())  # 强制同步
-                tmp_file.close()
-                return tmp_file.name
-            except Exception as e:
-                logging.error(f"写入临时文件失败: {str(e)}")
-                if "tmp_file" in locals():
-                    try:
-                        tmp_file.close()
-                    except OSError as close_err:
-                        logging.debug(f"关闭临时文件失败: {close_err}")
-                raise
-
-        tmp_file_path = await asyncio.to_thread(write_temp_file, file_content)
-
-        try:
-            # 计算文件哈希
-            info_hash = await calculate_info_hash(tmp_file_path)
-
-        except Exception as e:
-            # 如果出错，删除临时文件
-            if os.path.exists(tmp_file_path):
-                os.unlink(tmp_file_path)
-            result.code = "500"
-            result.msg = str(e)
-            return result
-
-    # 🔧 修复：使用 downloader_type 字段判断下载器类型
-    # downloader_type: 0=qBittorrent, 1=Transmission
-    if downloader.downloader_type == 1:  # Transmission
-        try:
-            # 使用缓存的客户端连接（强制规范）
-            tr_client = client
-            # 准备添加参数
-            add_args = {"paused": paused, "download_dir": save_path if save_path else None}
-
-            # 如果有种子文件，添加文件
-            if tmp_file_path:
-                # 将文件读取操作放到线程池中执行
-                def read_file_data(file_path):
-                    with open(file_path, "rb") as f:
-                        return f.read()
-
-                file_data = await asyncio.to_thread(read_file_data, tmp_file_path)
-                # 将文件数据包装成类似文件对象
-                from io import BytesIO
-
-                # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-                await call_downloader_api(
-                    downloader_id,
-                    DownloadLane.INTERACTIVE,
-                    tr_client.add_torrent,
-                    args=(BytesIO(file_data),),
-                    kwargs=add_args,
-                    timeout=_TR_CALL_TIMEOUT,
-                    operation="add_torrent",
-                )
-            else:
-                result.code = "400"
-                result.msg = "Transmission需要种子文件"
-                return result
-
-            # 等待Transmission处理种子（最多30秒）
-            tr_torrent = None
-            max_retries = 30
-            retry_count = 0
-            while tr_torrent is None and retry_count < max_retries:
-                await asyncio.sleep(1)
-                tr_torrent = await get_transmission_torrent_info(downloader_id, tr_client, info_hash)
-                retry_count += 1
-
-            if not tr_torrent:
-                result.code = "408"
-                result.msg = "获取种子信息超时，请检查Transmission连接"
-                return result
-
-            # 检查数据库中是否已存在该种子
-            # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
-            # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
-            # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
-            existing_torrent = (
-                db.query(TorrentInfo)
-                .filter(TorrentInfo.hash == info_hash)
-                .filter(TorrentInfo.dr == 0)
-                .filter(TorrentInfo.downloader_id == downloader_id)
-                .first()
-            )
-
-            if existing_torrent is None:
-                # 不存在：创建新记录
-                db_torrent = create_transmission_torrent_record(downloader, downloader_id, tr_torrent)
-                db.add(db_torrent)
-                db.commit()
-                db.refresh(db_torrent)
-            else:
-                # 已存在：使用现有记录
-                db_torrent = existing_torrent
-
-        except TransmissionError as e:
-            result.code = "500"
-            result.msg = str(e)
-            return result
-        except Exception as e:
-            # 兜底：捕获非领域异常（ValueError/TypeError/requests 内部异常等）。
-            # 修复 prod-hotfix-2026-07-19：transmission_rpc→requests.post(json=query)
-            # 在 RPC 请求体序列化阶段会抛 TypeError("Object of type ValueError is not
-            # JSON serializable")，原 except 只认 TransmissionError，会冒泡到全局 500
-            # handler 暴露内部堆栈信息。与 batch add 端点（本文件 line 645）对齐。
-            logging.exception(
-                "添加种子失败 [Transmission downloader_id=%s info_hash=%s]",
-                downloader_id,
-                info_hash if "info_hash" in locals() else "<unknown>",
-            )
-            result.status = "failed"
-            result.code = "500"
-            result.msg = f"添加种子失败: {type(e).__name__}: {e}"
-            return result
-    # 🔧 修复：使用 downloader_type 字段判断下载器类型
-    # downloader_type: 0=qBittorrent, 1=Transmission
-    if downloader.downloader_type == 0:  # qBittorrent
-        try:
-            # 使用缓存的客户端连接（强制规范）
-            qb_client = client
-
-            # 将文件读取操作放到线程池中执行
-            def read_file_data_qb(file_path):
-                with open(file_path, "rb") as f:
-                    return f.read()
-
-            file_data = await asyncio.to_thread(read_file_data_qb, tmp_file_path)
-            from io import BytesIO
-
-            # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-            await call_downloader_api(
-                downloader_id,
-                DownloadLane.INTERACTIVE,
-                qb_client.torrents_add,
-                kwargs={
-                    "torrent_files": BytesIO(file_data),
-                    "save_path": save_path,
-                    "is_stopped": paused,
-                    "tags": tags,
-                    "category": category,
-                    "is_skip_checking": skip_hash_check,
-                    "is_sequential_download": is_sequential_download,
-                    "is_first_last_piece_priority": is_first_last_piece_priority,
-                    "upload_limit": upload_limit,
-                    "download_limit": download_limit,
-                },
-                timeout=_QB_CALL_TIMEOUT,
-                operation="add_torrent",
-            )
-
-            # 从qBittorrent获取种子信息（最多30秒）
-            torrents = None
-            max_retries = 30
-            retry_count = 0
-            while (torrents is None or len(torrents) == 0) and retry_count < max_retries:
-                await asyncio.sleep(1)
-                # P0-04 修复：轮询内的 torrents_info 同样经 INTERACTIVE lane 执行
-                torrents = await call_downloader_api(
-                    downloader_id,
-                    DownloadLane.INTERACTIVE,
-                    qb_client.torrents_info,
-                    kwargs={"torrent_hashes": info_hash},
-                    timeout=_QB_CALL_TIMEOUT,
-                    operation="get_qb_torrent_info",
-                )
-                retry_count += 1
-
-            # 双重检查：确保torrents列表不为空
-            if not torrents or len(torrents) == 0:
-                result.code = "500"
-                result.msg = "种子添加到qBittorrent后无法获取信息"
-                return result
-
-            qb_torrent = torrents[0]
-
-            # 检查数据库中是否已存在该种子
-            # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
-            # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
-            # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
-            existing_torrent = (
-                db.query(TorrentInfo)
-                .filter(TorrentInfo.hash == info_hash)
-                .filter(TorrentInfo.dr == 0)
-                .filter(TorrentInfo.downloader_id == downloader_id)
-                .first()
-            )
-
-            if existing_torrent is None:
-                # 不存在：创建新记录
-                db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
-                db.add(db_torrent)
-                db.commit()
-                db.refresh(db_torrent)
-            else:
-                # 已存在：使用现有记录
-                db_torrent = existing_torrent
-        except APIError as e:
-            result.code = "500"
-            result.msg = str(e)
-            return result
-        except Exception as e:
-            # 兜底：捕获非 APIError 异常（ValueError/TypeError/SQLAlchemy StatementError/
-            # 网络层异常等），避免冒泡到全局 500 handler 暴露内部堆栈。
-            #
-            # ⚠️ prod-hotfix-2026-07-19 真实根因（已复现）：
-            # 早期版本 try 块只覆盖 torrents_add/torrents_info 轮询，把
-            # create_qbittorrent_torrent_record + db.commit() 留在 try 之外。
-            # 当 qBittorrent 返回的种子字段是异常对象（如 added_on/total_size 为
-            # ValueError 实例）时，create_qbittorrent_torrent_record 内部的
-            # `qb_torrent.added_on > 0` 或 SQLAlchemy Column 类型转换会抛 TypeError，
-            # 直接冒泡到 unhandled_exception_handler，前端看到
-            # "Object of type ValueError is not JSON serializable"。
-            # 本修复把整个分支（含 ORM 写入）纳入 try，与 Transmission 分支（line 221）
-            # 及 batch add 端点（本文件 line 505）结构对齐。
-            logging.exception(
-                "添加种子失败 [qBittorrent downloader_id=%s info_hash=%s]",
-                downloader_id,
-                info_hash if "info_hash" in locals() else "<unknown>",
-            )
-            result.status = "failed"
-            result.code = "500"
-            result.msg = f"添加种子失败: {type(e).__name__}: {e}"
-            return result
-
-    # ========== 记录审计日志（异步） ==========
-    async def write_audit_log_async():
-        """异步写入审计日志的内部函数"""
-        try:
-            async with AsyncSessionLocal() as async_db:
-                audit_service = await get_audit_service(async_db)
-                await audit_service.log_operation(
-                    operation_type=AuditOperationType.ADD,
-                    operator="admin",  # 当前API没有认证，使用默认操作人
-                    torrent_info_id=db_torrent.info_id,
-                    operation_detail={
-                        "torrent_name": db_torrent.name,
-                        "torrent_hash": db_torrent.hash,
-                        "downloader_id": downloader_id,
-                        "downloader_name": downloader.nickname,
-                        "save_path": save_path,
-                        "tags": tags,
-                        "category": category,
-                        "paused": paused,
-                        "file_size": db_torrent.size,
-                    },
-                    new_value={"status": "added"},
-                    operation_result=AuditOperationResult.SUCCESS,
-                    downloader_id=downloader_id,
-                    **extract_audit_info_from_request(request),
-                )
-        except Exception as audit_error:
-            # 审计日志失败不影响主业务
-            logging.error(f"记录审计日志失败: {str(audit_error)}")
-
-    # 在后台执行审计日志写入（不阻塞主业务）
-    # ⚠️ 异步任务异常需要注意：如果任务失败，异常会被静默忽略
-    asyncio.create_task(write_audit_log_async())
-    # ========== 审计日志记录结束 ==========
-
-    # 清理临时文件
-    if tmp_file_path and os.path.exists(tmp_file_path):
-        try:
-            os.unlink(tmp_file_path)
-        except OSError:
-            pass
-
-    return result
+    service = TorrentAddService(db, store=getattr(request.app.state, "store", None))
+    result = await service.add_torrent(
+        TorrentAddParams(
+            downloader_id=downloader_id,
+            save_path=save_path,
+            tags=tags,
+            category=category,
+            paused=paused,
+            skip_hash_check=skip_hash_check,
+            is_sequential_download=is_sequential_download,
+            is_first_last_piece_priority=is_first_last_piece_priority,
+            upload_limit=upload_limit,
+            download_limit=download_limit,
+        ),
+        torrent_content=file_content,
+        audit_context=AuditContext.from_request(request),
+    )
+    return CommonResponse(status=result.status, msg=result.msg, code=result.code, data=None)
 
 
 @router.post("/add-batch", response_model=CommonResponse)

@@ -13,6 +13,7 @@ from app.auth.dependencies import require_authenticated_user, AuthenticatedUserI
 from app.database import get_db, AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.audit_context import AuditContext
 from app.services.audit_service import get_audit_service
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -677,8 +678,12 @@ async def delete_torrent_with_level(
         # 导入删除服务
         from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
 
-        # 创建删除服务（传递 request 对象用于访问 app.state.store）
-        deletion_service = TorrentDeletionByLevelService(db, request)
+        # 创建删除服务（注入 store 与审计上下文，服务层不接收 Request）
+        deletion_service = TorrentDeletionByLevelService(
+            db,
+            store=getattr(request.app.state, "store", None),
+            audit_context=AuditContext.from_request(request),
+        )
 
         # 获取审计日志服务
         audit_service = None
@@ -862,8 +867,12 @@ async def delete_batch_async(
 
         task_id = submission.task_id
 
-        # 创建执行器并启动异步任务
-        executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
+        # 创建执行器并启动异步任务（注入 store 与审计上下文，执行器不接收 Request）
+        executor = AsyncDeletionExecutor(
+            db_session_factory=SessionLocal,
+            store=getattr(request.app.state, "store", None),
+            audit_context=AuditContext.from_request(request),
+        )
 
         # 在后台执行删除任务（不等待完成）
         asyncio.create_task(
@@ -872,7 +881,6 @@ async def delete_batch_async(
                 torrent_info_ids=submission.accepted_info_ids,
                 delete_level=delete_request.delete_level,
                 operator=effective_operator,
-                request=request,
             )
         )
 

@@ -11,8 +11,8 @@ import asyncio
 import logging
 from typing import List, Dict, Any, Callable, Optional
 from sqlalchemy.orm import Session
-from fastapi import Request
 
+from app.services.audit_context import AuditContext
 from app.services.deletion_task_manager import get_deletion_task_manager, TaskStatus
 from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
 
@@ -28,16 +28,23 @@ class AsyncDeletionExecutor:
     # 单个种子删除超时时间（秒）
     SINGLE_TORRENT_TIMEOUT = 30
 
-    def __init__(self, db_session_factory: Callable[[], Session], request: Request):
+    def __init__(
+        self,
+        db_session_factory: Callable[[], Session],
+        store: Any = None,
+        audit_context: Optional[AuditContext] = None,
+    ):
         """
         初始化执行器
 
         Args:
             db_session_factory: 数据库会话工厂函数
-            request: FastAPI Request 对象
+            store: 下载器缓存（app.state.store；由端点或 MCP 运行时显式注入）
+            audit_context: 协议无关审计上下文（透传给删除服务）
         """
         self.db_session_factory = db_session_factory
-        self.request = request
+        self.store = store
+        self.audit_context = audit_context
 
     async def execute_deletion_task(
         self,
@@ -45,7 +52,6 @@ class AsyncDeletionExecutor:
         torrent_info_ids: List[str],
         delete_level: int,
         operator: str,
-        request,
         notify_on_complete: bool = False,
     ):
         """
@@ -56,7 +62,6 @@ class AsyncDeletionExecutor:
             torrent_info_ids: 种子信息ID列表
             delete_level: 删除等级（1-4）
             operator: 操作者
-            request: FastAPI Request对象
             notify_on_complete: 完成后是否发送系统通知（默认 False，不影响既有流程）
         """
         task_manager = get_deletion_task_manager()
@@ -89,7 +94,6 @@ class AsyncDeletionExecutor:
                                 info_id=info_id,
                                 delete_level=delete_level,
                                 operator=operator,
-                                request=self.request,
                                 audit_service=audit_service,
                             ),
                             timeout=self.SINGLE_TORRENT_TIMEOUT,
@@ -195,7 +199,6 @@ class AsyncDeletionExecutor:
         info_id: str,
         delete_level: int,
         operator: str,
-        request: Request,
         audit_service: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
@@ -205,7 +208,6 @@ class AsyncDeletionExecutor:
             info_id: 种子信息ID
             delete_level: 删除等级
             operator: 操作者
-            request: FastAPI Request对象
             audit_service: 审计日志服务（传入后按种子记录审计日志）
 
         Returns:
@@ -214,7 +216,7 @@ class AsyncDeletionExecutor:
         db = self.db_session_factory()
         try:
             # 创建删除服务实例
-            deletion_service = TorrentDeletionByLevelService(db, request)
+            deletion_service = TorrentDeletionByLevelService(db, store=self.store, audit_context=self.audit_context)
 
             # 调用删除方法
             result = await deletion_service.delete_by_level(

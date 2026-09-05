@@ -22,11 +22,11 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from fastapi import Request
 
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
+from app.services.audit_context import AuditContext
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.auxiliary_seed_count_service import (
@@ -43,35 +43,35 @@ class TorrentDeletionByLevelService:
     # 等级4标签名称
     LEVEL4_TAG = "pending_delete"
 
-    def __init__(self, db: Session, request: Optional[Request] = None):
+    def __init__(
+        self,
+        db: Session,
+        store: Any = None,
+        audit_context: Optional[AuditContext] = None,
+    ):
         """
         初始化删除服务
 
         Args:
             db: 数据库会话
-            request: FastAPI Request 对象（用于访问 app.state.store）
+            store: 下载器缓存（app.state.store；由端点或 MCP 运行时显式注入）
+            audit_context: 协议无关审计上下文（HTTP 端点经 AuditContext.from_request 构造）
         """
         self.db = db
-        self.request = request
+        self.store = store
+        self.audit_context = audit_context
         self._adapters: Dict[str, Any] = {}  # 适配器缓存
-        self._audit_info: Optional[Dict[str, Any]] = None  # 惰性提取：extract_audit_info_from_request(request)
 
     def _audit_request_info(self) -> Dict[str, Any]:
-        """惰性提取请求审计信息（ip_address/user_agent/request_id/session_id）。
+        """审计上下文展开（ip_address/user_agent/request_id/session_id）。
 
-        端点持有 Request 但服务层不接收：此处直接从 request 提取，
+        端点持有 Request 但服务层不接收：由调用方构造 AuditContext 注入，
         修复删除审计日志缺 IP（verified-bugfix-remediation W7）。
+        未注入时返回空字典，审计信息缺失不影响删除主流程。
         """
-        if self._audit_info is None:
-            self._audit_info = {}
-            if self.request is not None:
-                try:
-                    from app.services.audit_service import extract_audit_info_from_request
-
-                    self._audit_info = extract_audit_info_from_request(self.request)
-                except Exception as e:  # noqa: BLE001 - 审计信息缺失不影响删除主流程
-                    logger.warning(f"提取请求审计信息失败: {e}")
-        return self._audit_info
+        if self.audit_context is None:
+            return {}
+        return self.audit_context.as_dict()
 
     def _get_adapter(self, downloader: BtDownloaders):
         """
@@ -90,16 +90,12 @@ class TorrentDeletionByLevelService:
         if downloader.downloader_id in self._adapters:
             return self._adapters[downloader.downloader_id]
 
-        # 检查 request 和 app.state.store
-        if not self.request:
-            raise ValueError("Request 对象未初始化")
-
-        app = self.request.app
-        if not hasattr(app.state, "store"):
-            raise ValueError("app.state.store 未初始化")
+        # 检查缓存中是否已注入下载器 store
+        if self.store is None:
+            raise ValueError("下载器缓存未初始化")
 
         # 获取缓存的下载器列表
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
 
         # 从缓存中查找对应的下载器
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
@@ -1068,20 +1064,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1130,20 +1118,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1227,20 +1207,12 @@ class TorrentDeletionByLevelService:
         self, downloader: BtDownloaders, torrent_hash: str, delete_data: bool
     ) -> Tuple[bool, Optional[str]]:
         """从qBittorrent删除种子（使用 app.state.store 缓存的客户端连接）"""
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1277,20 +1249,12 @@ class TorrentDeletionByLevelService:
             torrent_hash: 种子哈希值（SHA1），Transmission API必需参数
             delete_data: 是否删除数据文件
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1332,20 +1296,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 相对路径列表, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, None, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, None, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, None, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中

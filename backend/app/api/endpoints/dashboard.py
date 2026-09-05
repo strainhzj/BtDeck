@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import get_current_user
+from app.core.runtime_context import RuntimeContext
 from app.database import get_async_db
 from app.services.dashboard_service import DashboardService
 
@@ -21,7 +22,7 @@ async def get_dashboard(
 ):
     """获取仪表盘完整数据."""
     try:
-        service = DashboardService(db, request.app)
+        service = DashboardService(db, RuntimeContext.from_app(request.app))
         data = await service.get_dashboard_data()
 
         return CommonResponse(

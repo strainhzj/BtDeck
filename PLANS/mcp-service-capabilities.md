@@ -1,8 +1,8 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: 已规划，待实施
-> **规划日期**: 2026-08-28
+> **状态**: 已规划，经 2026-09-05 基线复核修订（§10），W0 待启动
+> **规划日期**: 2026-08-28（2026-09-05 复核）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
 
@@ -27,14 +27,14 @@ MCP 工具发现结果中消失，并在服务端执行入口再次拒绝缓存�
 
 ## 2. 已核验基线
 
-| 能力 | 当前复用度 | 实施判断 |
+| 能力 | 当前复用度（2026-09-05 复核实测） | 实施判断 |
 |------|------------|----------|
-| 高级查询 | `AdvancedSearchService(db).search_torrents()` + 严格 Pydantic 契约 | 可直接复用业务核心；MCP 需限制返回规模并转换为脱敏 DTO |
-| 创建查询模板 | `AdvancedSearchService.create_search_template()` + 所有权/条件校验 | 可直接复用业务核心；用户 ID 必须来自认证主体 |
-| 仪表盘 | `DashboardService(db, app)` | 小改：改为注入运行时上下文/store，不让工具自行导入全局 app |
-| 等级 4 | `TorrentDeletionByLevelService(db, Request)` | 中改：以 store + AuditContext 替换 FastAPI Request；保留部分成功语义 |
-| Cron 触发 | `cron_executor.start_task_immediately(task_id)` | 中改：增加稳定 task_code、策略前检、审计和 run_id/accepted 结果 |
-| 添加种子 | 单种主体仍在 `torrent_crud.py`；批量 service 仍依赖 UploadFile/app | 必须先抽协议无关 service，再由 HTTP/MCP 共用 |
+| 高级查询 | `app/services/advanced_search.py:971` `AdvancedSearchService(db: Session)` 同步会话；`search_torrents(request, user_id) -> Dict`（:989） | 可直接复用业务核心；MCP 需限制返回规模并转换为脱敏 DTO |
+| 创建查询模板 | 同文件 `create_search_template(request, user_id) -> Dict`（:1120） | 可直接复用业务核心；用户 ID 必须来自认证主体 |
+| 仪表盘 | `app/services/dashboard_service.py:18` `DashboardService(db: AsyncSession, app)` 直接探测 `app.state.store`（:38-40） | 小改：改为注入运行时上下文/store，不让工具自行导入全局 app；注意与高级查询的同步会话差异 |
+| 等级 4 | `app/services/torrent_deletion_by_level.py:46` `(db, request: Optional[Request] = None)` 已部分解耦但多路径仍 `raise ValueError`（:95 等 6 处）；`async_deletion_executor.py:31` 仍必传 Request | 中改：以 store + AuditContext 替换 FastAPI Request；保留部分成功语义 |
+| Cron 触发 | `app/tasks/cron_executor.py:1054` `start_task_immediately(task_id) -> bool`（enabled/运行中前检 :1063-1075）；`CronTask.task_code` unique（`app/tasks/cron_models.py:17`，模型不在 app/models/）；内置注册表 `app/data/default_scheduled_tasks.py` + 资源准入 `app/tasks/task_profiles.py` | 中改：task_code 已存在；补策略前检、审计和 run_id/accepted 结果 |
+| 添加种子 | 单种主体仍内联 `app/api/endpoints/torrent_crud.py:138`（嵌套函数 :208/:252/:441）；批量 `torrent_batch_add_service.py` 依赖 `UploadFile`（:16/:58）与 `app.state`（:99/:335） | 必须先抽协议无关 service，再由 HTTP/MCP 共用 |
 
 核验环境：根 `./init.sh --ci` 通过；高级搜索/模板/仪表盘 46 项、等级删除/添加 57 项、
 Cron 安全与执行器 36 项，共 139 项定向回归通过。当前仓库没有 MCP 实现或依赖声明，
@@ -348,3 +348,73 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
 4. 若发现敏感数据泄漏，按安全事件处理：立即全局关闭、轮换疑似暴露 token/passkey、保留脱敏后的
    审计 ID，不在工单/日志复制原始泄漏值。
 5. 已提交的下载器/Cron 副作用不以关闭服务作为自动回滚手段，按各领域既有审计和补偿流程处理。
+
+---
+
+## 10. 2026-09-05 基线复核与 W0 代码调整计划
+
+> 复核环境：dev @ 9ccd12f。核心架构判断（六能力复用面、SPA fallback 挂载顺序、
+> 默认关闭、仓库零 MCP 依赖、两 spec 显式排除 fastmcp）全部成立；以下为漂移修正与
+> W0 启动批次。**按批次纪律：本节经确认后才动代码。**
+
+### 10.1 漂移修正（原计划与新实测的差异）
+
+1. **文件名**：高级查询服务是 `app/services/advanced_search.py`（`advanced_search_service.py`
+   不存在）。G4 的 AST/import 守卫须按实际文件名定位。
+2. **同步/异步双会话**：`AdvancedSearchService(db: Session)` 同步、
+   `DashboardService(db: AsyncSession, app)` 异步——MCP runtime 的会话工厂必须同时供给
+   两套（原计划未覆盖，W2 runtime 设计新增约束）。
+3. **认证现状是净新增而非"收敛"**：`app/auth/dependencies.py` 中
+   `require_authenticated_user`（:83，纯 token 不查 DB）与 `get_current_user`（:102，查 DB）
+   **均不校验 `is_active`/`must_change_password`**（is_active 仅 login.py:169 登录时拦截）；
+   `AuthenticatedUserInfo`（:22-33）也不含这两个字段。W2 `authenticate_access_token(token, db)`
+   需补齐用户状态校验，威胁模型须记录"现状无服务端强制改密拦截"。
+4. **configs 无版本化 JSON 先例**：表模型 `app/auth/models.py:57`（key/value/description）
+   成立，但现有唯一使用是标量 `cookie_expire_minutes`（database.py:202）；
+   `mcp.runtime.v1` 是首个版本化 JSON 键，W1 seed/CAS 设计自建模式。
+5. **Cron 资料定位**：模型在 `app/tasks/cron_models.py`（非 app/models/）；task_code 注册表
+   在 `app/data/default_scheduled_tasks.py` + `app/tasks/task_profiles.py`。
+   task_type 已扩展至 6（5=清理回收站、6=审计日志导出，cron_models.py 注释滞后），
+   G8 allowlist 表述需明确 4/5/6 归类：仅按显式 task_code 白名单放行，类型不作为放行依据。
+6. **脱敏字典补新泄漏面**：`TrackerMessageLog.msg`（torrents/models.py:415，2048 长原始消息）
+   与 `sample_urls`（:421，原始 tracker URL 列表）是原计划未点名的泄漏源，纳入 W0 数据字典。
+7. **Python 版本矩阵修正**：Docker/Linux 3.11、Windows 桌面打包 3.12.4、Android Chaquopy
+   3.12（非"3.11 桌面 + 3.12 Android"）。SDK 需同时兼容 3.11/3.12 +
+   fastapi 0.115.6 + starlette 0.41.3，并在两个 spec（btdeck.spec:212、
+   btdeck-windows.spec:279 的 `excludes=['fastmcp', …]`）上评估解除路径。
+8. **测试落点**：`backend/tests/` 已 238 个文件、根级已有 `test_architecture_constraints.py`；
+   新增 `tests/mcp/test_architecture_constraints.py` 时需处理 pytest 同名模块收集
+   （加 `__init__.py` 或改名 `test_mcp_architecture_constraints.py`，W0 实测定夺）。
+
+### 10.2 W0 批次实施清单（代码调整计划，待确认）
+
+**目标**：不动业务代码，交付"契约 + 探针 + 门禁骨架"，使 W1~W4 可以按 G0~G11 逐门推进。
+
+| # | 交付物 | 内容要点 |
+|---|--------|----------|
+| 1 | `backend/app/mcp/contracts.py` | 6 工具 schema（输入/输出 allowlist DTO）、capability 目录（§4.3 表）、错误码枚举、脱敏数据字典（含 10.1-6 新泄漏面） |
+| 2 | `backend/app/mcp/errors.py` | 稳定错误码：`RUNTIME_NOT_READY`/`CAPABILITY_DISABLED`/`SERVICE_DISABLED`/`RESULT_TOO_LARGE`/`AUTH_REQUIRED`/`AUTH_USER_INACTIVE`/`PASSWORD_CHANGE_REQUIRED` 等，与 HTTP 业务语义对齐表 |
+| 3 | SDK 兼容探针 `backend/tests/mcp/test_sdk_compatibility.py`（或独立探针脚本） | 在 fastapi 0.115.6 + starlette 0.41.3 下验证所选 MCP SDK 的 ASGI 挂载、lifespan 共存、PyInstaller onefile import；3.11/3.12 双版本；产出选型结论写入本节 |
+| 4 | `backend/tests/mcp/test_mcp_architecture_constraints.py` | G0 骨架：静态扫描禁 `from app.main/factory import app`、禁 MCP→HTTP endpoint 调用、禁新建下载器客户端；处理 10.1-8 同名问题 |
+| 5 | `docs/security/mcp-threat-model.md` | 威胁模型：STRIDE + 现状缺口（10.1-3 认证无状态校验）+ prompt 注入面 + 回滚预案引用 §9 |
+| 6 | G0~G11 门禁骨架 | `backend/tests/release/` 增 mcp gate 占位（fail-closed：NOT_RUN 即红），对齐 release-gate DAG 语义 |
+
+**W0 明确不做**：不引入生产 requirements 变更（SDK 只进 dev/探针环境，W4 才锁定进
+requirements 与 spec）；不改 `app/auth/`、`app/factory.py`、任何业务 service；
+不做设置 UI。
+
+**W0 完成判据**：契约/错误码/目录/数据字典评审通过；探针给出 SDK 选型结论
+（含 PyInstaller 可行性）；G0 静态门禁在当前无实现代码基线上绿；
+threat-model 评审通过。此后按 W1（配置控制面）→ W2（挂载/认证/脱敏）→
+W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应门禁并回填 evidence。
+
+### 10.3 对 W1~W4 的既定修正（沿用原计划，按 10.1 修订）
+
+- W1：`mcp.runtime.v1` seed 按"首个版本化 JSON 键"自建迁移模式（复用 Alembic 纪律）。
+- W2：runtime 同时暴露 `session_factory`（同步）与 `async_session_factory`；认证内核
+  `authenticate_access_token(token, db)` 净新增并补 `is_active`/`must_change_password` 校验，
+  `AuthenticatedUserInfo` 扩展字段（HTTP 侧不改变现有语义，避免牵动 4466 项测试）。
+- W3：cron.trigger allowlist 数据源改 `default_scheduled_tasks.py` + `task_profiles.py`；
+  task_type 4/5/6 一律不作为放行依据，仅显式 task_code 白名单。
+- W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。
+

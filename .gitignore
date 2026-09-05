@@ -29,6 +29,7 @@ build/
 *.log
 *.tmp
 *.temp
+.tmp-*
 *.bak
 *.backup
 # 发布门禁证据链例外：release/evidence/ 下的探针日志必须可提交

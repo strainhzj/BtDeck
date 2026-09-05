@@ -258,7 +258,8 @@
             "backend/app/auth/dependencies.py",
             "backend/tests/mcp/test_auth.py",
             "backend/tests/mcp/test_capability_gates.py"
-          ]
+          ],
+          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.4",
@@ -301,7 +302,8 @@
             "backend/app/services/async_deletion_executor.py",
             "backend/app/api/endpoints/torrent_deletion.py",
             "backend/tests/mcp/test_pending_delete_tool.py"
-          ]
+          ],
+          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（等级4 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.7",
@@ -329,7 +331,8 @@
             "backend/app/services/torrent_batch_add_service.py",
             "backend/tests/mcp/test_torrent_add_tool.py",
             "backend/tests/services/test_torrent_add_service.py"
-          ]
+          ],
+          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（TorrentAddService 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.9",
@@ -5234,7 +5237,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "2026-09-02 阶段 7 自动化回归：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 为 97 suites / 1319 tests 全部通过，npm run build:demo 通过，git diff --check 通过。已知限制：根 ./init.sh --ci 在当前环境卡于 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用；本地浏览器首屏已加载，但修复后的刷新/前进后退/窄屏/重复点击人工复验需在可用浏览器环境补做。"
+          "evidence": "2026-09-05 自动化回归复跑：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 99 suites / 1339 tests 全部通过。制品：npm run build:demo 生成 dist 175 文件 / 34.71 MiB（index.html 标题 BtDeck Demo、绝对 /assets 路径），打包 frontend/BtDeck-demo-dist-20260905.zip（5.68 MiB，未跟踪交付物）。人工验收环境：本机静态服务（stdlib SPA fallback，等效 nginx.demo.conf try_files）127.0.0.1:8080 已起，冒烟 index/SPA fallback(/torrents、/query-templates)/asset 均 200；待用户按清单完成首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击人工复验后回填结果并收口。已知限制（沿承 2026-09-02）：根 ./init.sh --ci 卡 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用（Nginx 容器交付路径未本地复现，Dockerfile.demo 已静态审查）。"
         }
       ]
     },

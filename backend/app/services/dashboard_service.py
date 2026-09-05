@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.runtime_context import TORRENT_STATS_ABSENT, RuntimeContext
 from app.torrents.audit_enums import AuditOperationType
 
 logger = logging.getLogger(__name__)
@@ -15,9 +16,9 @@ logger = logging.getLogger(__name__)
 class DashboardService:
     """Dashboard data aggregation service."""
 
-    def __init__(self, db: AsyncSession, app: Any):
+    def __init__(self, db: AsyncSession, runtime: RuntimeContext):
         self.db = db
-        self.app = app
+        self.runtime = runtime
 
     async def get_dashboard_data(self) -> Dict[str, Any]:
         downloaders_stats = await self._get_downloaders_stats()
@@ -37,18 +38,20 @@ class DashboardService:
         }
 
     async def _get_downloaders_stats(self) -> Dict[str, int]:
-        if not hasattr(self.app.state, "store") or self.app.state.store is None:
+        if self.runtime.store is None:
             return {"total": 0, "online": 0, "offline": 0}
 
-        cached_downloaders = await self.app.state.store.get_snapshot()
+        cached_downloaders = await self.runtime.store.get_snapshot()
         total = len(cached_downloaders)
         online = sum(1 for d in cached_downloaders if getattr(d, "fail_time", 0) == 0)
         offline = total - online
         return {"total": total, "online": online, "offline": offline}
 
     async def _get_torrents_stats(self) -> Dict[str, int]:
-        if hasattr(self.app.state, "torrent_stats"):
-            return self.app.state.torrent_stats
+        # 三态语义（与原 hasattr 实现一致）：属性缺失（ABSENT 哨兵）→ 零值字典；
+        # 属性存在但为 None → 原样返回 None（known behavior，测试已钉）。
+        if self.runtime.torrent_stats is not TORRENT_STATS_ABSENT:
+            return self.runtime.torrent_stats
         return {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
 
     async def _get_tasks_stats(self) -> Dict[str, int]:
@@ -67,7 +70,7 @@ class DashboardService:
         return {"total": total, "running": running, "stopped": stopped}
 
     async def _get_system_stats(self) -> Dict[str, Any]:
-        start_time = getattr(self.app.state, "start_time", None)
+        start_time = self.runtime.start_time
         if start_time is None:
             start_time = time.time()
 
@@ -86,8 +89,8 @@ class DashboardService:
         # 所有在线下载器速度之和（缓存单位为 KB/s，转 bytes/s 输出，与前端 formatSpeed 一致）
         total_download_speed = 0
         total_upload_speed = 0
-        if hasattr(self.app.state, "store") and self.app.state.store is not None:
-            cached_downloaders = await self.app.state.store.get_snapshot()
+        if self.runtime.store is not None:
+            cached_downloaders = await self.runtime.store.get_snapshot()
             for downloader in cached_downloaders:
                 if getattr(downloader, "fail_time", 0) != 0:
                     continue
@@ -103,10 +106,10 @@ class DashboardService:
         }
 
     async def _get_downloader_list(self) -> List[Dict[str, Any]]:
-        if not hasattr(self.app.state, "store") or self.app.state.store is None:
+        if self.runtime.store is None:
             return []
 
-        cached_downloaders = await self.app.state.store.get_snapshot()
+        cached_downloaders = await self.runtime.store.get_snapshot()
         downloader_list = []
 
         for downloader in cached_downloaders:

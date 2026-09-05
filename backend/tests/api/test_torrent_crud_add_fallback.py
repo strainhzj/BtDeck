@@ -59,7 +59,7 @@ def _patch_runtime_call():
         # 保持异常透传语义：func 抛什么异常就原样抛什么（与 runtime 行为一致）
         return func(*args, **(kwargs or {}))
 
-    with patch("app.api.endpoints.torrent_crud.call_downloader_api", side_effect=fake_call):
+    with patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call):
         yield
 
 

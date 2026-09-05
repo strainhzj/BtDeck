@@ -282,17 +282,15 @@ def _make_downloader(db, *, downloader_id="dl-1", downloader_type=0, nickname="q
     return dl
 
 
-def _make_mock_request(store_downloaders):
-    """构造 mock request，其 app.state.store.get_snapshot_sync 返回给定下载器 VO 列表。
+def _make_mock_store(store_downloaders):
+    """构造 mock 下载器缓存 store，get_snapshot_sync 返回给定下载器 VO 列表。
 
     get_snapshot_sync 是同步方法 → 用普通 MagicMock（非 AsyncMock）。
     VO 需含 downloader_id/fail_time/client（_get_adapter 读取）。
     """
-    mock_request = MagicMock()
     mock_store = MagicMock()
     mock_store.get_snapshot_sync.return_value = list(store_downloaders)
-    mock_request.app.state.store = mock_store
-    return mock_request
+    return mock_store
 
 
 def _make_fake_vo(*, downloader_id="dl-1", fail_time=0, client=None):
@@ -317,10 +315,10 @@ class TestDeleteLevel4Service:
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="movie")
         _make_downloader(db_session)
         fake_client = MagicMock()
-        mock_request = _make_mock_request([_make_fake_vo(client=fake_client)])
+        mock_store = _make_mock_store([_make_fake_vo(client=fake_client)])
         audit = AsyncMock()
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("t1", 4, operator="alice", audit_service=audit)
 
         assert result["success"] is True
@@ -346,9 +344,9 @@ class TestDeleteLevel4Service:
         db_session.query(TorrentInfo).filter_by(info_id="t1").first().tags = f"movie,{LEVEL4_TAG}"
         db_session.commit()
         _make_downloader(db_session)
-        mock_request = _make_mock_request([_make_fake_vo()])
+        mock_store = _make_mock_store([_make_fake_vo()])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("t1", 4, audit_service=AsyncMock())
 
         assert result["success"] is True
@@ -365,9 +363,9 @@ class TestDeleteLevel4Service:
         fake_client = MagicMock()
         # 注意：create_tags 异常会被吞，必须让 torrents_add_tags 抛
         fake_client.torrents_add_tags.side_effect = Exception("boom")
-        mock_request = _make_mock_request([_make_fake_vo(client=fake_client)])
+        mock_store = _make_mock_store([_make_fake_vo(client=fake_client)])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("t1", 4, audit_service=AsyncMock())
 
         assert result["success"] is False
@@ -380,9 +378,9 @@ class TestDeleteLevel4Service:
         """下载器不在缓存快照 → _get_adapter 抛 ValueError → success=False。"""
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
         _make_downloader(db_session)
-        mock_request = _make_mock_request([])  # 空缓存
+        mock_store = _make_mock_store([])  # 空缓存
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("t1", 4, audit_service=AsyncMock())
 
         assert result["success"] is False
@@ -396,9 +394,9 @@ class TestDeleteLevel4Service:
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
         _make_downloader(db_session)
         vo = _make_fake_vo(fail_time=999)
-        mock_request = _make_mock_request([vo])
+        mock_store = _make_mock_store([vo])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("t1", 4, audit_service=AsyncMock())
 
         assert result["success"] is False
@@ -407,9 +405,9 @@ class TestDeleteLevel4Service:
     async def test_l4_torrent_not_found_fails(self, db_session):
         """info_id 查不到（dr=1 或不存在）→ success=False（"种子不存在"）。"""
         _make_downloader(db_session)
-        mock_request = _make_mock_request([_make_fake_vo()])
+        mock_store = _make_mock_store([_make_fake_vo()])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_by_level("nonexistent", 4, audit_service=AsyncMock())
 
         assert result["success"] is False
@@ -424,9 +422,9 @@ class TestDeleteLevel4Service:
         """
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
         _make_downloader(db_session)
-        mock_request = _make_mock_request([_make_fake_vo()])
+        mock_store = _make_mock_store([_make_fake_vo()])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         # 让 commit 抛异常（rollback 也 mock，不抛）
         original_commit = db_session.commit
         original_rollback = db_session.rollback
@@ -475,7 +473,7 @@ class TestAuxiliaryCountOnDeleteLevels:
         _make_downloader(db_session)
         adapter = MagicMock()
         adapter.delete_torrents = AsyncMock(return_value={"failed_hashes": {}})
-        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
         service._get_adapter = MagicMock(return_value=adapter)
         return service, adapter
 
@@ -521,7 +519,7 @@ class TestAuxiliaryCountOnDeleteLevels:
         file_service.delete_marker_file = AsyncMock(return_value={"success": True})
         adapter = MagicMock()
         adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
-        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
         service._get_adapter = MagicMock(return_value=adapter)
         service._delete_from_downloader = AsyncMock(return_value=(True, None))
         service._move_torrent_files_for_recycle = AsyncMock(return_value={"success": True})
@@ -566,7 +564,7 @@ class TestAuxiliaryCountOnDeleteLevels:
         file_service.delete_marker_file = AsyncMock(return_value={"success": True})
         adapter = MagicMock()
         adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
-        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
         service._get_adapter = MagicMock(return_value=adapter)
         service._delete_from_downloader = AsyncMock(return_value=(True, None))
         service._move_torrent_files_for_recycle = AsyncMock(return_value={"success": False, "error": "move failed"})
@@ -606,7 +604,7 @@ class TestMoveTorrentFilesForRecycleFileMissing:
     @staticmethod
     def _make_service(db_session):
         _make_downloader(db_session)
-        return TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        return TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
 
     @pytest.mark.asyncio
     async def test_single_file_missing_returns_file_missing_skip(self, db_session, tmp_path):
@@ -792,7 +790,7 @@ class TestLevel3FileMissingSkip:
         adapter = MagicMock()
         adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
         audit = AsyncMock()
-        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
         service._get_adapter = MagicMock(return_value=adapter)
         service._delete_from_downloader = AsyncMock(return_value=(True, None))
         service._move_torrent_files_for_recycle = AsyncMock(
@@ -856,7 +854,7 @@ class TestLevel3FileMissingSkip:
         file_service.create_marker_file = AsyncMock(return_value={"success": True})
         adapter = MagicMock()
         adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
-        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
         service._get_adapter = MagicMock(return_value=adapter)
         service._delete_from_downloader = AsyncMock(return_value=(True, None))
         service._move_torrent_files_for_recycle = AsyncMock(
@@ -883,7 +881,7 @@ class TestLevel3FileMissingSkip:
         """delete_batch_by_level：L3 成功但 file_missing → level3_file_missing 透出名单位置。"""
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="ghost-movie")
         _make_downloader(db_session)
-        svc = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        svc = TorrentDeletionByLevelService(db_session, _make_mock_store([_make_fake_vo()]))
 
         async def fake_level3(torrent, operator, audit_service=None):
             return {
@@ -982,9 +980,9 @@ class TestDeleteBatchByLevel:
         """L3 降级到 L4 成功：level4_downgraded + level4_success 都记录该种子。"""
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
         _make_downloader(db_session)
-        mock_request = _make_mock_request([_make_fake_vo()])
+        mock_store = _make_mock_store([_make_fake_vo()])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
 
         # mock _delete_level3 返回降级标记（模拟备份失败）
         async def fake_level3(torrent, operator, audit_service=None):
@@ -1021,9 +1019,9 @@ class TestDeleteBatchByLevel:
         make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
         _make_downloader(db_session)
         # store 返回空缓存 → _get_adapter 失败 → L4 也失败
-        mock_request = _make_mock_request([])
+        mock_store = _make_mock_store([])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
 
         async def fake_level3(torrent, operator, audit_service=None):
             return {
@@ -1051,9 +1049,9 @@ class TestDeleteBatchByLevel:
         for i in range(3):
             make_torrent(db_session, info_id=f"t{i}", downloader_id="dl-1", hash_=f"h{i}", name=f"m{i}")
         _make_downloader(db_session)
-        mock_request = _make_mock_request([_make_fake_vo()])
+        mock_store = _make_mock_store([_make_fake_vo()])
 
-        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
         result = await svc.delete_batch_by_level(
             torrent_info_ids=["t0", "t1", "t2"], delete_level=4, audit_service=AsyncMock()
         )
