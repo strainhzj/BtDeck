@@ -276,10 +276,11 @@ def drill_rpm_upgrade_down(root: Path) -> Tuple[str, str]:
 def drill_docker_mix(root: Path) -> Tuple[str, str]:
     """异构前端快照（混装另一构建的前端镜像形态）→ compare unexplained>0 报红。
 
-    复用 W4 B2 的真实变异夹具（m1-baseline/mutated-c11 为同工具链产物）。
+    复用 W4 B2 的真实变异夹具（m1-baseline/mutated-c11 为同工具链产物；
+    2026-09-05 证据目录 release/evidence/ 移出仓库时自 w4/b2/ 迁入 fixtures）。
     """
-    base = root / "release/evidence/w4/b2/m1-baseline-c11.json"
-    mutated = root / "release/evidence/w4/b2/m1-mutated-c11.json"
+    base = root / "scripts/release/fixtures/m1-baseline-c11.json"
+    mutated = root / "scripts/release/fixtures/m1-mutated-c11.json"
     if not (base.is_file() and mutated.is_file()):
         raise DrillFailure(f"W4 夹具缺失：{base} / {mutated}")
 

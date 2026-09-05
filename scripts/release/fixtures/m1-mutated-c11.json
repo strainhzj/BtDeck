@@ -1,0 +1,25 @@
+{
+  "base_url_shape": "http://127.0.0.1:{port}",
+  "runner": "contract_runner.py",
+  "scenario_failures": [],
+  "scenarios": {
+    "C11_spa": {
+      "fallback": {
+        "bytes": 2004,
+        "http": 200,
+        "is_html": true
+      },
+      "index": {
+        "assets": [
+          "/assets/css/app.2a4cb3ab.css",
+          "/assets/js/app.05c2082d.js",
+          "/assets/js/chunk-vendors.c7a17933.js"
+        ],
+        "bytes": 2004,
+        "http": 200,
+        "is_html": true
+      }
+    }
+  },
+  "schema_version": 1
+}

@@ -97,3 +97,6 @@ import io;*/
 backend/build-info.json
 frontend/build-info.json
 release/build/
+
+# 门禁证据目录（脚本/CI 运行时输出，2026-09-05 起不入库；权威留档=CI run artifact）
+release/evidence/

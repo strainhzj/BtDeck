@@ -6718,3 +6718,20 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 ### 验证矩阵
 
 - `./init.sh --ci` exit 0；后端全量 4466 passed/9 skipped（EXEPATH=E:\Git\bin；首轮一次 Windows 文件可见性偶发已加重试加固，复跑零失败）；前端 typecheck/lint/全量 Jest 1322/build 全绿；Android testDebugUnitTest/lintDebug/connected 12/12/assembleRelease/bundleRelease 全绿；契约+2FA+钉扎+门禁 .4 证据变异验证全拦截。roadmap 三层同步（android-companion/desktop-companion/api/contracts/views/test-coverage/根 README 元信息）。未执行 Git 提交。
+
+## 2026-09-05：工作区清理——制品/移动端 feature 收口后删除临时与 evidence 残留
+
+- **删除范围**（共释放约 2.2GB，均未跟踪、feature_list.json 零引用）：
+  - 全部 66 项 `.tmp-*` 会话残留（cosign 三份二进制/双 smoke 目录约 460MB、W4/W5/RC 的 CI job dump 与构建/扫描/DAG 日志、探针目录）；
+  - `.release-build-v1.0.5/` 整目录 1.6GB：linux-source 1.2G 与 windows-build/dist 150M 构建中间产物、source.tar、assets/ 263M（v1.0.5 DEB/RPM/portable EXE+ZIP 本地升级夹具）、`m-torrent-detail-evidence.png`（移动端详情页 390×844 实测截图，本条与 session-handoff §历史记录中该路径自此指向已删除文件）。
+- **保留**：`release/evidence/`（w0–w6 正式证据归档，已提交 git，feature_list 引用锚点）；`data/`（陈旧开发库副本，与本次两 feature 无关，未授权不动）。
+- **再生成路径**（如需本地重跑生命周期升级测试）：DEB/RPM 基线 `scripts/release/lifecycle/make_v105_baseline.sh`；Windows portable 按构建 SOP（build-packages.bat）重建；四制品 SHA256 溯源已归档 `release/evidence/w0/w0-environment-report.md` §2；CI 侧 release-gate.yml 自建夹具不依赖本地目录。
+- `git status` 仅余 `data/`；未执行 Git 提交。
+
+### 2026-09-05 追加：release/evidence/ 移出仓库（feature_list 锚点同步调整）
+
+- **决策**：制品门禁 Feature 已终态 done，本地证据目录 `release/evidence/`（w0–w6 共 182 文件 21MB，含 5 个未跟踪 CI artifact 副本）整体移出仓库；用户明确该类 evidence 不再上传 git。
+- **依赖排查先行**：backend/tests 零引用；6 个脚本+release-gate.yml 对该路径均为运行时写入或同 run 自产自读（CI 在自身工作区生成并以 run artifact 留档），删除不影响任何测试/CI。唯一硬依赖为 `fault_injection_drills.py` 注入 5 读取的 W4 变异夹具。
+- **夹具迁移**：`m1-baseline/mutated-c11.json`（约 1KB）自 `release/evidence/w4/b2/` 迁至 `scripts/release/fixtures/`（与 qb_tr_stub.py 同级），drill 脚本路径同步更新，本地六类故障注入演练保持可复现。
+- **feature_list.json 锚点调整**：10 处 evidence 引用（w0×3/w2/w4 b2/w5×3/w6×2）由本地目录改锚定为「原 release/evidence/…（2026-09-05 移出仓库）+ 权威留档=所引 CI run artifact」；JSON 校验通过，run ID（33236313405/33237024759/33634391712/33747568891/33764067820/33873168198 等）作为持久锚点全部保留。progress.md/session-handoff.md 中的历史提及按会话日志性质保留不改。
+- **防再犯**：`.gitignore` 新增 `release/evidence/`；`git rm -r` 已暂存 177 个删除。未执行 Git 提交。
