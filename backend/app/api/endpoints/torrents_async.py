@@ -2426,6 +2426,18 @@ TR_BASE_FIELDS = [
     "error",
     "errorString",
 ]
+# OOM 治理（2026-09-05）：info-only 的 base 拉取专用精简字段——base 对象只被
+# 活跃窗口过滤（activityDate）与 id 组批消费，写库字段全部来自 detail 对象；
+# 去掉 trackerStats（体积大头）与 name/status。保留 error/errorString 以满足
+# 每次请求携带 errorString 的既有测试契约（test_tr_error_reason_is_requested_and_written）。
+# ⚠ 勿直接修改 TR_BASE_FIELDS 瘦身：它还被 full-sync 基座拉取与 tracker-only 共享。
+TR_INFO_BASE_FIELDS = [
+    "id",
+    "hashString",
+    "activityDate",
+    "error",
+    "errorString",
+]
 TR_DETAIL_FIELDS = [
     "id",
     "hashString",
@@ -3652,14 +3664,16 @@ async def tr_add_torrents_info_only_async(
     phase_start = run_start
 
     # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
+    # OOM 治理（2026-09-05）：base 拉取改用 TR_INFO_BASE_FIELDS 精简字段；
+    # detail 改为"按批拉取-处理-释放"（旧实现 base（含 trackerStats）与 detail
+    # 两份全量列表同时驻留，10 万种子量级数百 MB 峰值）。
     base_torrents = await call_downloader_api(
         str(bt_downloader.downloader_id),
         DownloadLane.SYNC,
         tr_client.get_torrents,
-        kwargs={"arguments": TR_BASE_FIELDS},
+        kwargs={"arguments": TR_INFO_BASE_FIELDS},
         operation="tr_get_torrents_base",
     )
-    torrent_info_list = []
     now_ts = datetime.now().timestamp()
     last_full_ts = _TR_LAST_FULL_SYNC.get(downloader_id, 0)
     force_full_sync = (now_ts - last_full_ts) >= TR_FULL_SYNC_INTERVAL_SECONDS or resume_from_cursor
@@ -3681,23 +3695,10 @@ async def tr_add_torrents_info_only_async(
                 active_torrents.append(t)
         base_torrents = active_torrents
 
-    for i in range(0, len(base_torrents), TR_BATCH_SIZE):
-        batch = base_torrents[i : i + TR_BATCH_SIZE]
-        batch_ids = [t.id for t in batch if hasattr(t, "id")]
-        if batch_ids:
-            # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
-            torrent_info_list.extend(
-                await call_downloader_api(
-                    downloader_id,
-                    DownloadLane.SYNC,
-                    tr_client.get_torrents,
-                    kwargs={"ids": batch_ids, "arguments": TR_DETAIL_FIELDS},
-                    operation="tr_get_torrents_detail",
-                )
-            )
-
-    # 等本轮预算完整处理后再标记 full sync，避免部分结果导致后续轮次误走 active-only 快照。
-    torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+    # 全序锚点（游标语义依赖 hash 字典序）：slim base 排序后切批（批间有序），
+    # 每批 detail 结果再按 hashString 重排（TR 服务端按 id 序返回，id 序≠hash
+    # 序），批内有序——两者叠加与旧实现"全量收齐后整体排序"严格等价。
+    base_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
 
     phase_times["fetch"] = (time.monotonic() - phase_start) * 1000.0
     phase_start = time.monotonic()
@@ -3705,7 +3706,10 @@ async def tr_add_torrents_info_only_async(
     current_time = datetime.now()
     # ✅ W3-3 第一部分：现有记录分页读取（避免一次加载完整 ORM 对象图）。
     # 仍构建 existing_torrents_cache（dict，按 hash 索引——diff 需要内存缓存，
-    # 分页只解决"一次加载"的峰值，不改变缓存结构）
+    # 分页只解决"一次加载"的峰值，不改变缓存结构）。
+    # 注意：cache 提前到 detail 拉取前加载（旧顺序是 detail 全量收齐后才加载），
+    # "cache 加载 → 首批写入"间隔变宽；并发同 hash 插入由部分唯一索引
+    # idx_torrent_hash_unique 兜底为整批写失败（非静默重复），下轮自愈。
     existing_torrents_cache, cache_pages = await _load_existing_torrent_info_cache_paginated(
         db,
         bt_downloader.downloader_id,
@@ -3729,9 +3733,11 @@ async def tr_add_torrents_info_only_async(
     phase_times["normalize"] = (time.monotonic() - phase_start) * 1000.0
     yield_count += cache_pages
 
+    # pending 计数取自活跃窗口过滤后的 slim base（比旧口径更准：旧实现按 detail
+    # 返回集计数，detail 缺 id 的种子会被漏计）
     pending_torrent_count = sum(
         1
-        for torrent in torrent_info_list
+        for torrent in base_torrents
         if (torrent_hash := str(getattr(torrent, "hashString", "") or ""))
         and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
     )
@@ -3742,97 +3748,137 @@ async def tr_add_torrents_info_only_async(
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
     ratio_stats = RatioNormalizationStats()
 
-    phase_start = time.monotonic()
-    for torrent_info in torrent_info_list:
-        torrent_hash = str(getattr(torrent_info, "hashString", "") or "")
-        if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
-            continue
-        # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
-        # 达到即停止处理剩余种子；已缓冲的待写行仍会在收尾时写入（部分成果
-        # durable，本轮结果标记 partial + budget_reason）
-        if budget_reason is None:
-            budget_reason = _info_budget_exceeded(processed_count, max_torrents_per_run, run_start, run_budget_seconds)
+    # detail 批处理主循环：拉一批（TR_DETAIL_FIELDS）→ 批内按 hashString 重排 →
+    # 过现有 diff 循环体 → 批引用随下轮覆盖释放。flush 架构不变：只在
+    # INFO_SYNC_MAX_BUFFERED_ROWS 达限或收尾统一 flush，绝不按 detail 批 flush。
+    budget_stop = False
+    detail_batch_count = 0
+    for i in range(0, len(base_torrents), TR_BATCH_SIZE):
+        # 预算到期即停止拉取后续 detail 批（已缓冲行照常在收尾写入）
         if budget_reason is not None:
             break
-        processed_count += 1
-
-        # W3-3 缓冲上限：待写行达到 INFO_SYNC_MAX_BUFFERED_ROWS 先 flush 一批
-        # 再继续（控制内存峰值；flush 后清空缓冲并让出事件循环）
-        buffered = len(to_insert) + len(to_update)
-        if buffered > buffered_peak:
-            buffered_peak = buffered
-        if buffered >= max_buffered_rows:
-            phase_times["write"] += (
-                await _flush_info_write_buffer(
-                    db,
-                    to_insert,
-                    to_update,
-                    f"[TR_INFO_SYNC] {bt_downloader.nickname} (batch)",
-                )
-                * 1000.0
-            )
-            yield_count += 1
-            await _emit_info_progress(progress_callback, last_processed_hash)
-
-        cached_row = existing_torrents_cache.get(torrent_hash)
-        raw_percent = getattr(torrent_info, "percent_done", None)
-        new_progress = _normalize_progress_value(float(raw_percent) * 100.0 if raw_percent else 0.0)
-
-        if cached_row is None:
-            stats["insert"] += 1
-            torrent_info_id = str(uuid.uuid4())
-            create_time = current_time
-            progress_value = new_progress
-        else:
-            torrent_info_id = cached_row["info_id"]
-            create_time = cached_row["create_time"] or current_time
-            old_progress = _normalize_progress_value(cached_row["progress"])
-            progress_value = old_progress if abs(new_progress - old_progress) < 0.5 else new_progress
-
-        torrent_data = {
-            "info_id": torrent_info_id,
-            "downloader_id": bt_downloader.downloader_id,
-            "downloader_name": bt_downloader.nickname,
-            "torrent_id": torrent_info.id,
-            "hash": torrent_hash,
-            "name": torrent_info.name,
-            "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
-            "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
-            "save_path": torrent_info.download_dir,
-            "size": torrent_info.total_size,
-            "progress": progress_value,
-            "torrent_file": torrent_info.torrent_file,
-            "added_date": torrent_info.added_date,
-            "completed_date": torrent_info.done_date if torrent_info.done_date else None,
-            "tags": ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
-            "enabled": 1,
-            "create_time": create_time,
-            "create_by": "admin",
-            "update_time": current_time,
-            "update_by": "admin",
-            "dr": 0,
-        }
-        ratio_stats.observe(
-            apply_normalized_ratio_fields(
-                torrent_data,
-                raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
-                raw_ratio_limit=getattr(torrent_info, "seed_ratio_limit", MISSING_RATIO_VALUE),
-                is_insert=cached_row is None,
-            )
+        batch = base_torrents[i : i + TR_BATCH_SIZE]
+        batch_ids = [t.id for t in batch if hasattr(t, "id")]
+        if not batch_ids:
+            continue
+        detail_batch_count += 1
+        detail_fetch_start = time.monotonic()
+        # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
+        detail_batch = await call_downloader_api(
+            downloader_id,
+            DownloadLane.SYNC,
+            tr_client.get_torrents,
+            kwargs={"ids": batch_ids, "arguments": TR_DETAIL_FIELDS},
+            operation="tr_get_torrents_detail",
         )
+        phase_times["fetch"] += (time.monotonic() - detail_fetch_start) * 1000.0
 
-        if cached_row is None:
-            to_insert.append(torrent_data)
-        else:
-            # ✅ 阶段 2.5：整行变更检测，无变化真正跳过（修正 skip 语义 bug）
-            if has_torrent_info_changes(cached_row, torrent_data):
-                stats["update"] += 1
-                to_update.append(torrent_data)
+        # 批内重排：TR 服务端按 id 序返回，须恢复 hash 字典序（游标前缀依赖）
+        detail_batch.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+
+        diff_start = time.monotonic()
+        for torrent_info in detail_batch:
+            torrent_hash = str(getattr(torrent_info, "hashString", "") or "")
+            if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
+                continue
+            # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
+            # 达到即停止处理剩余种子；已缓冲的待写行仍会在收尾时写入（部分成果
+            # durable，本轮结果标记 partial + budget_reason）
+            if budget_reason is None:
+                budget_reason = _info_budget_exceeded(
+                    processed_count, max_torrents_per_run, run_start, run_budget_seconds
+                )
+            if budget_reason is not None:
+                budget_stop = True
+                break
+            processed_count += 1
+
+            # W3-3 缓冲上限：待写行达到 INFO_SYNC_MAX_BUFFERED_ROWS 先 flush 一批
+            # 再继续（控制内存峰值；flush 后清空缓冲并让出事件循环）
+            buffered = len(to_insert) + len(to_update)
+            if buffered > buffered_peak:
+                buffered_peak = buffered
+            if buffered >= max_buffered_rows:
+                phase_times["write"] += (
+                    await _flush_info_write_buffer(
+                        db,
+                        to_insert,
+                        to_update,
+                        f"[TR_INFO_SYNC] {bt_downloader.nickname} (batch)",
+                    )
+                    * 1000.0
+                )
+                yield_count += 1
+                await _emit_info_progress(progress_callback, last_processed_hash)
+
+            cached_row = existing_torrents_cache.get(torrent_hash)
+            raw_percent = getattr(torrent_info, "percent_done", None)
+            new_progress = _normalize_progress_value(float(raw_percent) * 100.0 if raw_percent else 0.0)
+
+            if cached_row is None:
+                stats["insert"] += 1
+                torrent_info_id = str(uuid.uuid4())
+                create_time = current_time
+                progress_value = new_progress
             else:
-                stats["skip"] += 1
-        last_processed_hash = torrent_hash
+                torrent_info_id = cached_row["info_id"]
+                create_time = cached_row["create_time"] or current_time
+                old_progress = _normalize_progress_value(cached_row["progress"])
+                progress_value = old_progress if abs(new_progress - old_progress) < 0.5 else new_progress
 
-    phase_times["diff"] = (time.monotonic() - phase_start) * 1000.0
+            torrent_data = {
+                "info_id": torrent_info_id,
+                "downloader_id": bt_downloader.downloader_id,
+                "downloader_name": bt_downloader.nickname,
+                "torrent_id": torrent_info.id,
+                "hash": torrent_hash,
+                "name": torrent_info.name,
+                "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
+                "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
+                "save_path": torrent_info.download_dir,
+                "size": torrent_info.total_size,
+                "progress": progress_value,
+                "torrent_file": torrent_info.torrent_file,
+                "added_date": torrent_info.added_date,
+                "completed_date": torrent_info.done_date if torrent_info.done_date else None,
+                "tags": (
+                    ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else ""
+                ),
+                "enabled": 1,
+                "create_time": create_time,
+                "create_by": "admin",
+                "update_time": current_time,
+                "update_by": "admin",
+                "dr": 0,
+            }
+            ratio_stats.observe(
+                apply_normalized_ratio_fields(
+                    torrent_data,
+                    raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                    raw_ratio_limit=getattr(torrent_info, "seed_ratio_limit", MISSING_RATIO_VALUE),
+                    is_insert=cached_row is None,
+                )
+            )
+
+            if cached_row is None:
+                to_insert.append(torrent_data)
+            else:
+                # ✅ 阶段 2.5：整行变更检测，无变化真正跳过（修正 skip 语义 bug）
+                if has_torrent_info_changes(cached_row, torrent_data):
+                    stats["update"] += 1
+                    to_update.append(torrent_data)
+                else:
+                    stats["skip"] += 1
+            last_processed_hash = torrent_hash
+        phase_times["diff"] += (time.monotonic() - diff_start) * 1000.0
+        if budget_stop:
+            break
+
+    if detail_batch_count:
+        logger.debug(
+            f"[TR_INFO_SYNC] {bt_downloader.nickname} detail 分批拉取-处理-释放："
+            f"{detail_batch_count} 批 × ≤{TR_BATCH_SIZE}，pending={pending_torrent_count}"
+        )
 
     ratio_stats.log_summary(
         logger,
@@ -3870,7 +3916,7 @@ async def tr_add_torrents_info_only_async(
             logger.warning(
                 f"[TR_INFO_SYNC] {bt_downloader.nickname} 单轮预算到期 "
                 f"(budget_reason={budget_reason})，已处理 {processed_count}/"
-                f"{len(torrent_info_list)} 个种子，本轮结果为 partial"
+                f"{pending_torrent_count} 个种子，本轮结果为 partial"
             )
     except Exception as e:
         await db.rollback()
@@ -4099,16 +4145,53 @@ async def qb_sync_trackers_only_async(
             "nickname": nickname,
         }
 
-    # === 第2步：全量获取种子列表（不分批，避免分批 offset 导致 tracker 数据不完整） ===
+    # === 第2步：分页获取在线种子 hash 清单（OOM 治理 2026-09-05） ===
+    # 全量响应中仅 hash 字段被下游消费（existing 过滤/排序/游标/写段）；tracker
+    # 数据由 enrich 阶段逐 hash 另拉，与本列表内容无关——旧注释"分批导致
+    # tracker 数据不完整"的担忧对象并不存在。分页且只保留 hash，把 10 万种子
+    # 量级的 fetch 瞬时峰值（HTTP body + 解析 dict + 对象三重共存，数百 MB）
+    # 压到 ~15MB 轻对象列表 + hash_to_info_id 映射。
+    # 已知权衡：offset 分页在种子集增删期间可能页重叠/漂移（与 full-sync 分批
+    # 路径 L1917-1941 同等接受度）——重叠由下方 hash 去重吸收，漂移漏掉的
+    # hash 自愈于下一轮 30 分钟周期。不传 sort（qB 空库 + sort 会 BadParams），
+    # 也不带 include_trackers（本步不需要 tracker 负载，勿照抄 full-sync 参数）。
     fetch_start = datetime.now()
-    torrent_info_list = await call_downloader_api(
-        str(downloader.downloader_id),
-        DownloadLane.TRACKER,
-        client.torrents_info,
-        operation="qb_torrents_info_for_tracker_sync",
-    )
+    torrent_objects_by_hash: Dict[str, Any] = {}
+    duplicate_hash_count = 0
+    fetch_pages = 0
+    offset = 0
+    while True:
+        batch = await call_downloader_api(
+            str(downloader.downloader_id),
+            DownloadLane.TRACKER,
+            client.torrents_info,
+            kwargs={"limit": QB_BATCH_SIZE, "offset": offset},
+            operation="qb_torrents_info_for_tracker_sync",
+        )
+        fetch_pages += 1
+        if not batch:
+            break
+        for torrent in batch:
+            t_hash = str(_qb_get_attr(torrent, "hash") or "")
+            if not t_hash:
+                continue
+            if t_hash in torrent_objects_by_hash:
+                duplicate_hash_count += 1
+                continue
+            # 一 hash 一个可变轻对象：enrich 协议在其上写回 .trackers 与
+            # ._btdeck_tracker_enriched 标记，durable cursor 前缀语义依赖该结构
+            torrent_objects_by_hash[t_hash] = SimpleNamespace(hash=t_hash)
+        if len(batch) < QB_BATCH_SIZE:
+            break
+        offset += QB_BATCH_SIZE
+    torrent_info_list: List[Any] = list(torrent_objects_by_hash.values())
+    torrent_objects_by_hash.clear()
+    if duplicate_hash_count:
+        logger.debug(f"[{LOG_PREFIX}] 分页翻页发现 {duplicate_hash_count} 个重复 hash（页重叠，增删期间正常），已去重")
     fetch_duration = (datetime.now() - fetch_start).total_seconds()
-    logger.info(f"[{LOG_PREFIX}] 全量获取到 {len(torrent_info_list)} 个种子，耗时 {fetch_duration:.3f}s")
+    logger.info(
+        f"[{LOG_PREFIX}] 分页获取到 {len(torrent_info_list)} 个种子（{fetch_pages} 页），耗时 {fetch_duration:.3f}s"
+    )
 
     if not torrent_info_list:
         return {
@@ -4405,19 +4488,27 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             "nickname": nickname,
         }
 
-    # === 第2步：从下载器获取种子列表（含 trackerStats） ===
+    # === 第2步：两阶段分批获取（OOM 治理 2026-09-05） ===
+    # 旧实现单次全量 get_torrents（含 trackerStats）整体驻留（10 万种子量级
+    # ~270MB+）。现改为：先 slim 拉取 [id, hashString]（轻量），按 hashString
+    # 排序切批（稳定序便于日志/对照 qB 字典序约定），再逐批拉取含 trackerStats
+    # 的完整对象、行抽取 + 200 行 flush、批引用随下轮覆盖释放。
+    # 代价：每轮多一次 2 字段轻量 RPC；不引入 active-window 过滤（本路径历史
+    # 上就是全量，保持行为不变）。
     fetch_start = datetime.now()
-    torrent_info_list = await call_downloader_api(
+    slim_torrents = await call_downloader_api(
         str(downloader.downloader_id),
         DownloadLane.TRACKER,
         client.get_torrents,
-        kwargs={"arguments": TR_BASE_FIELDS},
-        operation="tr_get_torrents_for_tracker_sync",
+        kwargs={"arguments": ["id", "hashString"]},
+        operation="tr_get_torrents_slim_for_tracker_sync",
     )
-    fetch_duration = (datetime.now() - fetch_start).total_seconds()
-    logger.info(f"[{LOG_PREFIX}] 获取到 {len(torrent_info_list)} 个种子（含 trackerStats），耗时 {fetch_duration:.3f}s")
+    slim_fetch_duration = (datetime.now() - fetch_start).total_seconds()
+    logger.info(
+        f"[{LOG_PREFIX}] slim 获取到 {len(slim_torrents)} 个种子（id+hashString），耗时 {slim_fetch_duration:.3f}s"
+    )
 
-    if not torrent_info_list:
+    if not slim_torrents:
         return {
             "status": "success",
             "message": f"下载器 {nickname} 无在线种子",
@@ -4425,6 +4516,9 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             "torrent_count": 0,
             "nickname": nickname,
         }
+
+    # 全序锚点：slim 按 hashString 排序后切批，批间 hash 字典序稳定
+    slim_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
 
     # === 第3步：过滤已存在种子并同步 tracker ===
     tracker_count = 0
@@ -4460,43 +4554,63 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
         accumulated_rows = []
         accumulated_info_ids = set()
 
-    for torrent_info in torrent_info_list:
-        torrent_hash = getattr(torrent_info, "hashString", None)
-        if not torrent_hash:
+    detail_fetch_duration = 0.0
+    for i in range(0, len(slim_torrents), TR_BATCH_SIZE):
+        slim_batch = slim_torrents[i : i + TR_BATCH_SIZE]
+        batch_ids = [t.id for t in slim_batch if hasattr(t, "id")]
+        if not batch_ids:
             continue
-        info_id = hash_to_info_id.get(torrent_hash)
-        if not info_id:
-            skipped_new += 1
-            continue
+        detail_fetch_start = datetime.now()
+        torrent_info_list = await call_downloader_api(
+            str(downloader.downloader_id),
+            DownloadLane.TRACKER,
+            client.get_torrents,
+            kwargs={"ids": batch_ids, "arguments": TR_BASE_FIELDS},
+            operation="tr_get_torrents_for_tracker_sync",
+        )
+        detail_fetch_duration += (datetime.now() - detail_fetch_start).total_seconds()
 
-        # 预检：确保 tracker_stats 存在且非空，跳过无 tracker 的种子
-        tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
-        if not tracker_stats:
-            continue
+        # 批内按 hashString 重排（TR 服务端按 id 序返回），与 slim 全序对齐
+        torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
 
-        try:
-            rows, _urls = extract_tracker_rows_from_torrent(torrent_info, info_id, "transmission", current_time)
-            accumulated_rows.extend(rows)
-            accumulated_info_ids.add(info_id)
-            tracker_count += 1
-            tracker_total_rows += len(rows)
-        except Exception as e:
-            error_count += 1
-            _log_tracker_sync_exception(
-                e,
-                log_prefix=LOG_PREFIX,
-                stage="tracker_row_extract",
-                operation="extract_tracker_rows_from_torrent",
-                downloader_id=downloader_id,
-                context=f"hash_prefix={str(torrent_hash)[:16]}",
-                suppressed=True,
-                continue_after_error=True,
-            )
-            await _ensure_session_active(db)
-            continue
+        for torrent_info in torrent_info_list:
+            torrent_hash = getattr(torrent_info, "hashString", None)
+            if not torrent_hash:
+                continue
+            info_id = hash_to_info_id.get(torrent_hash)
+            if not info_id:
+                skipped_new += 1
+                continue
 
-        if len(accumulated_rows) >= batch_size:
-            await _flush_batch_tr()
+            # 预检：确保 tracker_stats 存在且非空，跳过无 tracker 的种子
+            tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
+            if not tracker_stats:
+                continue
+
+            try:
+                rows, _urls = extract_tracker_rows_from_torrent(torrent_info, info_id, "transmission", current_time)
+                accumulated_rows.extend(rows)
+                accumulated_info_ids.add(info_id)
+                tracker_count += 1
+                tracker_total_rows += len(rows)
+            except Exception as e:
+                error_count += 1
+                _log_tracker_sync_exception(
+                    e,
+                    log_prefix=LOG_PREFIX,
+                    stage="tracker_row_extract",
+                    operation="extract_tracker_rows_from_torrent",
+                    downloader_id=downloader_id,
+                    context=f"hash_prefix={str(torrent_hash)[:16]}",
+                    suppressed=True,
+                    continue_after_error=True,
+                )
+                await _ensure_session_active(db)
+                continue
+
+            if len(accumulated_rows) >= batch_size:
+                await _flush_batch_tr()
+        # detail 批引用随下轮覆盖释放（OOM 治理核心）
 
     await _flush_batch_tr()
 

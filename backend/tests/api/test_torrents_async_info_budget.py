@@ -763,3 +763,142 @@ class TestFirstRunHydrationLenient:
         assert len(inserted) == 1
         assert inserted[0]["name"] == "完整名称"
         assert inserted[0]["added_date"] is not None, "首轮水合后 added_date 必须非空"
+
+
+# ==================== 8. OOM 治理（2026-09-05）：TR base 瘦身 + detail 边拉边处理 ====================
+
+
+class TestTrInfoBaseFieldsMinimalSet:
+    """TR_INFO_BASE_FIELDS 防退化：满足活跃窗口过滤最小集，且不含体积大头 trackerStats。"""
+
+    def test_info_base_fields_contents(self):
+        assert set(torrents_async.TR_INFO_BASE_FIELDS) == {"id", "hashString", "activityDate", "error", "errorString"}
+
+    def test_base_fields_not_shrunk(self):
+        """共享常量 TR_BASE_FIELDS 不得被瘦身（full-sync 基座与 tracker-only 依赖 trackerStats）。"""
+        assert "trackerStats" in torrents_async.TR_BASE_FIELDS
+
+
+class TestTrDetailBatchOrdering:
+    """detail 批结果按 hashString 重排：TR 服务端按 id 序返回，处理序必须是 hash 字典序。"""
+
+    async def test_detail_batches_resorted_to_hash_order(self, monkeypatch):
+        """id 与 hash 反序分配 + 伪客户端按 id 降序返回 → 写入顺序仍为 hash 升序。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_DB_READ_PAGE_SIZE", 500)
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10**7)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 2)
+
+        count = 5
+        seeds = []
+        for i in range(count):
+            # id 与 hash 反序：id 越小 hash 越大，服务端 id 序返回 = hash 降序
+            seeds.append(_tr_seed(100 - i, f"trh{i:06d}", f"name-{i}"))
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                # slim base 阶段：真实客户端会按请求字段裁剪，这里返回全量对象即可
+                return list(by_id.values())
+            # 对抗形态：按 id 降序返回（比请求序更恶劣）
+            return [by_id[i] for i in sorted(ids, reverse=True)]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            await torrents_async.tr_add_torrents_info_only_async(db, [_tr_downloader()], client=client)
+
+        inserted_hashes = [row["hash"] for row in bulk_mock.await_args.args[1]]
+        assert inserted_hashes == sorted(
+            inserted_hashes
+        ), f"处理序必须是 hash 字典序（游标前缀依赖），实际: {inserted_hashes}"
+        assert inserted_hashes == [f"trh{i:06d}" for i in range(count)]
+
+    async def test_budget_stops_fetching_further_detail_batches(self, monkeypatch):
+        """预算到期后不再拉取后续 detail 批（最多多拉当前一批）。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 2)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 2)
+
+        seeds = [_tr_seed(100 - i, f"trh{i:06d}", f"name-{i}") for i in range(6)]
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                return list(by_id.values())
+            return [by_id[i] for i in sorted(ids, reverse=True)]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            result = await torrents_async.tr_add_torrents_info_only_async(
+                db, [_tr_downloader()], client=client, progress_callback=AsyncMock()
+            )
+
+        detail_calls = [c for c in client.get_torrents.call_args_list if c.kwargs.get("ids") is not None]
+        slim_calls = [c for c in client.get_torrents.call_args_list if c.kwargs.get("ids") is None]
+        assert len(slim_calls) == 1
+        # 6 种子 / 批 2 = 3 批：预算在批 2 处理中到期 → 批 3 不再拉取
+        assert len(detail_calls) == 2, f"预算到期后不应拉取第 3 批，实际 detail 调用 {len(detail_calls)} 次"
+        inserted = bulk_mock.await_args.args[1]
+        assert len(inserted) == 2
+        assert result["partial"] is True
+        assert result["processed"] == 2
+
+    async def test_pending_count_from_active_filtered_base(self, monkeypatch):
+        """pending 计数取活跃窗口过滤后的 slim base（旧种子不进分母）。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10**7)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 10)
+
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        recent = _dt.now() - _td(hours=1)
+        stale = _dt.now() - _td(days=3)
+        seeds = [
+            _tr_seed(1, "trh000001", "recent-1"),
+            _tr_seed(2, "trh000002", "recent-2"),
+        ]
+        seeds.append(_tr_seed(3, "trh000003", "stale"))
+        for seed in seeds:
+            seed.activity_date = stale if seed.name == "stale" else recent
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                return list(by_id.values())
+            return [by_id[i] for i in ids]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {"dl-tr": True}),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {"dl-tr": _dt.now().timestamp()}),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            result = await torrents_async.tr_add_torrents_info_only_async(
+                db, [_tr_downloader()], client=client, progress_callback=AsyncMock()
+            )
+
+        inserted = bulk_mock.await_args.args[1]
+        assert [row["hash"] for row in inserted] == ["trh000001", "trh000002"]
+        assert result["total"] == 2
+        assert result["cycle_complete"] is True

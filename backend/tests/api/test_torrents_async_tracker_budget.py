@@ -775,3 +775,141 @@ class TestSentinelLossSelfHealing:
         await asyncio.sleep(0)
         leaked_tasks = [task for task in asyncio.all_tasks() if task not in baseline_tasks and not task.done()]
         assert not leaked_tasks, f"取消后不应遗留后台任务: {leaked_tasks}"
+
+
+# ==================== OOM 治理（2026-09-05）：fetch 分页化 + hash 轻对象 ====================
+
+
+def _paginated_qb_tracker_client(torrents, page_size, overlap=0):
+    """构造 limit/offset 分页感知的伪 qB 客户端（tracker-only fetch 分页化测试用）。
+
+    page_size 控制每页返回量（模拟远端对 limit 的尊重）；overlap 模拟翻页期间
+    种子集变动导致的页重叠——第 2 页起重复返回前一页末尾 overlap 个元素。
+    """
+    client = MagicMock()
+
+    def _torrents_info(*, limit=None, offset=0, **_kwargs):
+        start = max(0, offset - overlap)
+        end = start + limit if limit else None
+        return torrents[start:end]
+
+    client.torrents_info = MagicMock(side_effect=_torrents_info)
+    client.torrents_trackers = MagicMock(side_effect=_tracker_payload)
+    return client
+
+
+class TestQbTrackerFetchPagination:
+    """第 2 步 fetch 分页化（R2 OOM 治理）的调用形态与去重语义。
+
+    覆盖：
+    - torrents_info 以 limit/offset 分页调用，kwargs 不含 include_trackers/sort；
+    - 页重叠（增删期间 offset 漂移）由 hash 去重吸收，enrich 不重复拉取；
+    - 轻对象协议：进入 enrich 的对象仅含 hash（可变，enrich 在其上写标记）。
+    """
+
+    async def test_fetch_is_paginated_without_include_trackers(self, monkeypatch):
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        torrents = _make_torrent_infos(7)  # 7 个种子 → 3 页（3+3+1）
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=3)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_page", nickname="qb-page")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(
+                torrents_async,
+                "sync_trackers_batch_async",
+                new=AsyncMock(return_value={"insert": 0, "update": 1, "skip": 0, "removed": 0}),
+            ),
+        ):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        info_calls = fake_client.torrents_info.call_args_list
+        assert len(info_calls) == 3, f"7 种子 / 页 3 应翻 3 页，实际 {len(info_calls)}"
+        assert [c.kwargs.get("offset") for c in info_calls] == [0, 3, 6]
+        assert all(c.kwargs.get("limit") == 3 for c in info_calls)
+        for call in info_calls:
+            assert "include_trackers" not in call.kwargs, "tracker-only fetch 不需要 tracker 负载"
+            assert "sort" not in call.kwargs, "空库 + sort 会触发 qB BadParams"
+        fetched = {c.args[0] for c in fake_client.torrents_trackers.call_args_list}
+        assert fetched == {t.hash for t in torrents}
+        assert result["cycle_complete"] is True
+
+    async def test_page_overlap_deduped_by_hash(self, monkeypatch):
+        """翻页期间种子集变动导致页重叠 → hash 去重吸收，enrich 每 hash 恰一次。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        torrents = _make_torrent_infos(6)
+        # overlap=2：第 2 页从 offset-2 开始返回 → 与第 1 页重叠 2 个 hash
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=3, overlap=2)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_dup", nickname="qb-dup")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(
+                torrents_async,
+                "sync_trackers_batch_async",
+                new=AsyncMock(return_value={"insert": 0, "update": 1, "skip": 0, "removed": 0}),
+            ),
+        ):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        tracker_calls = [c.args[0] for c in fake_client.torrents_trackers.call_args_list]
+        assert len(tracker_calls) == len(set(tracker_calls)), "enrich 不得对重复 hash 重复拉取"
+        assert set(tracker_calls) == {t.hash for t in torrents}
+        assert result["cycle_complete"] is True
+
+    async def test_empty_library_breaks_after_first_page(self, monkeypatch):
+        """空库：首轮空页即 break（不传 sort 的空库 BadParams 规避依赖此路径）。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        fake_client = _paginated_qb_tracker_client([], page_size=3)
+        downloader = BtDownloaders(downloader_id="dl_empty", nickname="qb-empty")
+        db = MagicMock()
+
+        with patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value={"h": 1})):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        assert fake_client.torrents_info.call_count == 1
+        assert result["status"] == "success"
+        assert result["torrent_count"] == 0
+
+    async def test_enrich_receives_hash_only_mutable_objects(self, monkeypatch):
+        """轻对象协议：fetch 产出的对象仅含 hash 且可变（enrich 标记写回依赖）。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 500)
+
+        captured: dict = {}
+
+        async def spy_enrich(client, infos, downloader_id, **kwargs):
+            captured["infos"] = list(infos)
+            return None, None
+
+        torrents = _make_torrent_infos(4)
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=500)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_spy", nickname="qb-spy")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(torrents_async, "_enrich_qb_torrents_with_trackers", new=spy_enrich),
+        ):
+            await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        infos = captured["infos"]
+        assert len(infos) == 4
+        for obj in infos:
+            assert set(vars(obj).keys()) == {
+                "hash"
+            }, f"fetch 阶段产出的轻对象应仅含 hash，实际携带: {set(vars(obj).keys())}"
