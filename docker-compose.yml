@@ -38,6 +38,11 @@ services:
       - SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS=${SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS:-300}
       # tracker 同步单下载器硬熔断秒（0 关闭；超时主动中断该下载器，放行其余）
       - TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS=${TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS:-1800}
+      # ===== OOM 治理透传（2026-09-05）：容器内无 .env，须在此透传才可调 =====
+      # cron 脚本任务（需 BTDECK_ALLOW_CUSTOM_SCRIPTS）stdout/stderr 单流字节上限
+      - CRON_SCRIPT_OUTPUT_MAX_BYTES=${CRON_SCRIPT_OUTPUT_MAX_BYTES:-65536}
+      # 进程 RSS 周期采样间隔秒（0 关闭；process_memory 事件 + /sync 端点透出）
+      - SYNC_PROCESS_MEMORY_SAMPLE_SECONDS=${SYNC_PROCESS_MEMORY_SAMPLE_SECONDS:-300}
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs

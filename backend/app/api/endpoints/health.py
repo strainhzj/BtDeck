@@ -396,9 +396,15 @@ async def _build_sync_health(app: Any) -> Dict[str, Any]:
         )
         for sync_type in ordered_types
     ]
+    # OOM 治理（2026-09-05）：进程级 RSS last-sample（周期采样循环写入，本端点
+    # 只读不触发采集；None=未采样或平台不支持）。desktop 模式下量到的是整个
+    # GUI 进程（含 webview），系统性偏高，只作趋势参考。
+    from app.services.sync_observability import get_last_rss_mb
+
     return {
         "tasks": entries,
         "downloaders": await _downloader_business_health(app),
+        "process": {"rssMb": get_last_rss_mb()},
     }
 
 

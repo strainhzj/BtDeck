@@ -25,6 +25,7 @@ sync_observability 单测（W4-1：结构化观测工具模块 + run_id 贯穿 +
 import asyncio
 import logging
 import sqlite3
+import sys
 import time
 from unittest.mock import MagicMock, patch
 
@@ -587,3 +588,68 @@ class TestLifecycleMount:
                 pass
         messages = [c.args[1] for c in mock_log.call_args_list]
         assert any(m.startswith("event=wal_snapshot") for m in messages), "WAL 快照事件应周期性发射"
+
+
+class TestProcessMemoryObservability:
+    """OOM 治理（2026-09-05 批次 5）：进程 RSS 采样与事件白名单。"""
+
+    def test_event_process_memory_whitelisted(self):
+        """rss_mb 仅在 process_memory 专属白名单中输出（不进 COMMON_FIELDS）。"""
+        with patch.object(obs.logger, "log") as mock_log:
+            obs.log_event(obs.EVENT_PROCESS_MEMORY, rss_mb=123.4, sample_interval_seconds=300.0)
+        message = mock_log.call_args.args[1]
+        assert "event=process_memory" in message
+        assert "rss_mb=123.4" in message
+        assert "sample_interval_seconds=300.0" in message
+
+    def test_rss_mb_still_dropped_on_other_events(self):
+        """护栏回归：rss_mb 在其它事件（如 loop_lag）仍被白名单丢弃——
+        test_non_whitelist_fields_dropped 以 rss_mb 作反例，本用例固化该行为
+        不因新事件登记而漂移。"""
+        with patch.object(obs.logger, "log") as mock_log:
+            obs.log_event(obs.EVENT_LOOP_LAG, lag_ms=5.0, rss_mb=123.4)
+        message = mock_log.call_args.args[1]
+        assert "rss_mb" not in message
+        assert "lag_ms=5.0" in message
+
+    def test_get_process_rss_mb_platform_positive_or_none(self):
+        """当前平台采集：Linux/Windows 返回正 float 且刷新 last-sample；macOS None。"""
+        rss = obs.get_process_rss_mb()
+        if sys.platform.startswith("darwin"):
+            assert rss is None
+            return
+        assert rss is not None and rss > 0.0
+        assert obs.get_last_rss_mb() == rss
+
+    def test_get_process_rss_mb_failure_returns_none(self, monkeypatch):
+        """采集异常静默降级为 None（观测不破坏主流程）。"""
+
+        def _boom():
+            raise OSError("no proc")
+
+        monkeypatch.setattr(obs, "_LAST_RSS_MB", 7.7)
+        monkeypatch.setattr("builtins.open", _boom)
+        # Windows 分支不走 open；用平台无关方式强制异常
+        with patch.object(obs.sys, "platform", "linux"):
+            with patch("builtins.open", _boom):
+                assert obs.get_process_rss_mb() is None
+        # 采样失败不覆盖已有 last-sample
+        assert obs.get_last_rss_mb() == 7.7
+
+    async def test_process_memory_loop_emits_and_cancels(self, monkeypatch):
+        """周期采样循环：周期性发射 process_memory；cancel 后干净退出（照 WAL 模式）。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        app = MagicMock()
+        with patch.object(obs.logger, "log") as mock_log:
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any(m.startswith("event=process_memory") for m in messages), "process_memory 事件应周期性发射"

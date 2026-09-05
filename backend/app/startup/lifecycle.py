@@ -52,6 +52,42 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
         await asyncio.sleep(interval)
 
 
+async def run_process_memory_loop(app: FastAPI) -> None:
+    """周期性进程 RSS 采样（OOM 治理 2026-09-05 批次 5）。
+
+    - 每 SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 秒经 get_process_rss_mb 采集一次
+      RSS，发射 EVENT_PROCESS_MEMORY（rss_mb / sample_interval_seconds），并
+      刷新模块级 _LAST_RSS_MB 供 /sync 健康端点读取（last-sample 模式，端点
+      不触发采集）。
+    - 平台不可用（如 macOS）时 rss_mb 为 None，仍发射事件留采样心跳，便于
+      区分"未启动循环"与"平台不支持"。
+    - 纯只读观测：异常吞掉继续下一轮，关闭观测不影响任何业务；间隔配置 <=0
+      时由调用方决定不启动本循环（照 6.6 WAL 门控模式）。
+    """
+    from app.services.sync_observability import (
+        EVENT_PROCESS_MEMORY,
+        get_process_rss_mb,
+        log_event,
+    )
+
+    interval = float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS)
+    while True:
+        try:
+            rss_mb = get_process_rss_mb()
+            level = logging.INFO if rss_mb is not None else logging.DEBUG
+            log_event(
+                EVENT_PROCESS_MEMORY,
+                level=level,
+                rss_mb=rss_mb,
+                sample_interval_seconds=interval,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] 进程内存采样任务失败: {exc}")
+        await asyncio.sleep(interval)
+
+
 async def run_dashboard_stats_loop(app: FastAPI) -> None:
     """Periodic dashboard stats refresh loop."""
     job = DashboardStatsJob(app=app)
@@ -459,6 +495,14 @@ async def lifespan(app: FastAPI):
         app.state.added_date_backfill_task = added_date_backfill_task
         print("[OK] 存量 added_date 回填任务已启动")
 
+    # 6.8 进程 RSS 周期采样（OOM 治理 2026-09-05）：仅当间隔配置 >0 时启动；
+    # 观测任务失败不阻断应用启动/关闭（照 6.6 WAL 门控模式）。
+    process_memory_task = None
+    if float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS) > 0:
+        process_memory_task = asyncio.create_task(run_process_memory_loop(app))
+        app.state.process_memory_task = process_memory_task
+        print("[OK] 进程 RSS 周期采样任务已启动")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -578,6 +622,17 @@ async def lifespan(app: FastAPI):
                 print("✅ added_date 回填任务已取消")
             except Exception as e:
                 print(f"⚠️  取消 added_date 回填任务时出错: {e}")
+
+        # 取消进程 RSS 周期采样任务（OOM 治理 2026-09-05）：异常不阻断关闭。
+        if process_memory_task and not process_memory_task.done():
+            print("取消进程 RSS 采样任务...")
+            process_memory_task.cancel()
+            try:
+                await process_memory_task
+            except asyncio.CancelledError:
+                print("✅ 进程 RSS 采样任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消进程 RSS 采样任务时出错: {e}")
 
         # 关闭事件循环 lag 采样器（W4-1 第二部分）：空句柄 stop() no-op，
         # 异常不阻断关闭。

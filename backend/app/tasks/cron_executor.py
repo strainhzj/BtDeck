@@ -101,6 +101,90 @@ class _TaskBodyTimeoutError(Exception):
     """
 
 
+async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[str, str]":
+    """并发读取子进程 stdout/stderr 并施加单流字节上限（OOM 加固 2026-09-05）。
+
+    旧实现 communicate() 整缓冲输出——脚本疯狂输出时内存被打爆，而 TaskLogs
+    .log_detail 是 2000 字符字段，全量输出最终也被截断，毫无价值。现累计到
+    max_bytes 后继续 drain 丢弃直至 EOF（防管道写满导致子进程阻塞死锁），
+    再 wait() 收尸。返回 (stdout_text, stderr_text)：解码 errors=ignore
+    （字节级截断可能切断多字节序列），超限时附截断标记与原始总字节数。
+
+    max_bytes <= 0 视为不限（回落旧语义，读全量）。
+    """
+    effective_cap = max_bytes if max_bytes and max_bytes > 0 else None
+
+    async def _read_capped(stream: Any) -> "tuple[bytes, int]":
+        collected = bytearray()
+        total = 0
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if effective_cap is None or len(collected) < effective_cap:
+                if effective_cap is None:
+                    collected.extend(chunk)
+                else:
+                    collected.extend(chunk[: effective_cap - len(collected)])
+        return bytes(collected), total
+
+    stdout_task = asyncio.create_task(_read_capped(process.stdout))
+    stderr_task = asyncio.create_task(_read_capped(process.stderr))
+    stdout_bytes, stdout_total = await stdout_task
+    stderr_bytes, stderr_total = await stderr_task
+    await process.wait()
+
+    def _render(capped: bytes, total: int) -> str:
+        text = capped.decode("utf-8", errors="ignore")
+        if effective_cap is not None and total > len(capped):
+            text += (
+                f"\n[TRUNCATED] 输出超过 {effective_cap} 字节上限" f"（总 {total} 字节），仅保留前 {len(capped)} 字节"
+            )
+        return text
+
+    return _render(stdout_bytes, stdout_total), _render(stderr_bytes, stderr_total)
+
+
+def _summarize_result_for_log(result: Any, *, max_value_repr: int = 200, max_head_items: int = 3) -> str:
+    """把内部类任务结果渲染为有界摘要（OOM 加固 2026-09-05）。
+
+    旧实现 f"...{str(result)}" 全量渲染——一旦某任务把大明细列表塞进结果
+    dict，这里会先构建巨型字符串再截断到 2000，瞬时放大内存。现：标量取
+    repr 前 max_value_repr 字符；list/dict 只记长度 + 前 max_head_items 项
+    概览。execution_log/phase 行由调用方另行拼接，不受本函数影响。
+    """
+
+    def _one(value: Any) -> str:
+        text = repr(value)
+        if len(text) <= max_value_repr:
+            return text
+        return text[:max_value_repr] + "...(截断)"
+
+    def _container(value: Any) -> str:
+        summary = f"<{type(value).__name__} len={len(value)}"
+        if value:
+            head: Any
+            if isinstance(value, dict):
+                head = {key: value[key] for key in list(value)[:max_head_items]}
+            else:
+                head = list(value)[:max_head_items]
+            summary += " head=" + _one(head)
+        return summary + ">"
+
+    if isinstance(result, dict):
+        parts = []
+        for key, value in result.items():
+            if isinstance(value, (list, tuple, set, dict)):
+                parts.append(f"{key}={_container(value)}")
+            else:
+                parts.append(f"{key}={_one(value)}")
+        return "{" + ", ".join(parts) + "}"
+    if isinstance(result, (list, tuple, set)):
+        return _container(result)
+    return _one(result)
+
+
 class CronTaskExecutor:
     """定时任务执行器"""
 
@@ -574,97 +658,49 @@ class CronTaskExecutor:
         except Exception as e:
             return {"success": False, "log_detail": f"脚本执行失败: {str(e)}"}
 
-    async def _run_shell_script(self, script: str) -> Dict[str, Any]:
-        """运行Shell脚本"""
+    async def _run_script_process(self, command: str, label: str) -> Dict[str, Any]:
+        """四类脚本任务（shell/cmd/powershell/python）的共享执行实现。
+
+        输出经 _communicate_with_output_cap 施加单流字节上限（OOM 加固
+        2026-09-05，CRON_SCRIPT_OUTPUT_MAX_BYTES，默认 64KB）。
+        """
         try:
             process = await asyncio.create_subprocess_shell(
-                script, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-
-            stdout, stderr = await process.communicate()
+            stdout_text, stderr_text = await _communicate_with_output_cap(
+                process, settings.CRON_SCRIPT_OUTPUT_MAX_BYTES
+            )
 
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"Shell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
+                    "log_detail": f"{label}脚本执行成功\n输出: {stdout_text}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"Shell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
+                    "log_detail": f"{label}脚本执行失败，返回码: {process.returncode}\n错误: {stderr_text}",
                 }
 
         except Exception as e:
-            return {"success": False, "log_detail": f"Shell脚本执行异常: {str(e)}"}
+            return {"success": False, "log_detail": f"{label}脚本执行异常: {str(e)}"}
+
+    async def _run_shell_script(self, script: str) -> Dict[str, Any]:
+        """运行Shell脚本"""
+        return await self._run_script_process(script, "Shell")
 
     async def _run_cmd_script(self, script: str) -> Dict[str, Any]:
         """运行CMD脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'cmd /c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"CMD脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "log_detail": f"CMD脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"CMD脚本执行异常: {str(e)}"}
+        return await self._run_script_process(f'cmd /c "{script}"', "CMD")
 
     async def _run_powershell_script(self, script: str) -> Dict[str, Any]:
         """运行PowerShell脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'powershell -Command "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"PowerShell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "log_detail": f"PowerShell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"PowerShell脚本执行异常: {str(e)}"}
+        return await self._run_script_process(f'powershell -Command "{script}"', "PowerShell")
 
     async def _run_python_script(self, script: str) -> Dict[str, Any]:
         """运行Python脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'python -c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"Python脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "log_detail": f"Python脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"Python脚本执行异常: {str(e)}"}
+        return await self._run_script_process(f'python -c "{script}"', "Python")
 
     async def _execute_internal_method_observed(
         self,
@@ -907,9 +943,10 @@ class CronTaskExecutor:
             if not detail and phase_lines:
                 detail = "\n".join(str(line) for line in phase_lines)
             prefix = "Python内部类执行成功" if success else "Python内部类执行失败"
-            rendered_detail = f"{prefix}\n{detail or ''}\n结果: {str(result)}"
-            # TaskLogs.log_detail 是 2000 字段；保留阶段摘要和结果前缀，避免
-            # hardlink_notes/异常上下文过大时把最终 Cron 日志写入失败。
+            # OOM 加固（2026-09-05）：结果尾巴走有界摘要（旧实现 str(result)
+            # 全量渲染，大结果 dict 会先建巨型字符串再被截断）；phase 行与
+            # [:2000] 截断保持原样（TaskLogs.log_detail 是 2000 字段）。
+            rendered_detail = f"{prefix}\n{detail or ''}\n结果: {_summarize_result_for_log(result)}"
             normalized["log_detail"] = rendered_detail[:2000]
             return normalized
 

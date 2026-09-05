@@ -315,12 +315,21 @@ class Settings(BaseSettings):
     # WARNING 并附 progress_stalled=True（首次触发时输出全线程栈辅助定位挂死现场）。
     # 0 关闭。
     SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS: float = 300.0
+    # cron 脚本任务（task_type 0-3，需 BTDECK_ALLOW_CUSTOM_SCRIPTS 开启）子进程
+    # stdout/stderr 的单流字节上限（OOM 加固 2026-09-05）：旧实现 communicate()
+    # 整缓冲，疯狂输出的脚本会打爆内存；超限后继续 drain 丢弃并附截断标记。
+    # 默认 64KB；<=0 视为不限（回落旧语义）。
+    CRON_SCRIPT_OUTPUT_MAX_BYTES: int = 65536
     # 下载器级硬熔断（2026-08-25 用户决策）：tracker 同步对单个下载器的强制超时。
     # enrich 内部预算（QB_TRACKER_RUN_BUDGET_SECONDS 等）是协作式检查点，worker
     # 挂死在某个 await 上时全部失效（生产 8.75h 案例形态）；此边界用 wait_for
     # 强制取消该下载器的同步并放行其余下载器，不依赖内层自律也不等 cron 兜底。
     # 0 关闭。默认 1800s（半小时）。
     TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS: float = 1800.0
+    # 进程 RSS 周期采样间隔（秒，OOM 治理 2026-09-05）：>0 时启动采样循环，周期
+    # 发射 process_memory 结构化事件并刷新 last-sample（/sync 健康端点透出）；
+    # 0 关闭。macOS 不采当前 RSS（ru_maxrss 语义陷阱，见 get_process_rss_mb）。
+    SYNC_PROCESS_MEMORY_SAMPLE_SECONDS: float = 300.0
 
     # 健康检查配置（W4-2）：readiness 只执行有界只读探针，不执行写探针。
     # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查

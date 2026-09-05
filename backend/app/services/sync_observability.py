@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -79,6 +80,8 @@ EVENT_RESOURCE_LIFECYCLE = "resource_lifecycle"
 EVENT_SYNC_PHASE = "sync_phase"
 # 同步异常边界（记录异常类型、阶段以及是否被转换为结果后继续执行）
 EVENT_SYNC_ERROR = "sync_error"
+# 进程内存采样（OOM 治理 2026-09-05：周期采样 RSS，为内存峰值提供证据链）
+EVENT_PROCESS_MEMORY = "process_memory"
 
 # ==================== 字段白名单 ====================
 
@@ -161,6 +164,10 @@ EVENT_FIELDS: Dict[str, frozenset] = {
     ),
     EVENT_SYNC_PHASE: frozenset({"previous_phase", "previous_phase_ms"}),
     EVENT_SYNC_ERROR: frozenset({"stage", "operation", "suppressed", "continue_after_error"}),
+    # OOM 治理（2026-09-05）：进程 RSS 采样。rss_mb 只登记在本事件专属白名单，
+    # 绝不进 COMMON_FIELDS / EVENT_LOOP_LAG（test_non_whitelist_fields_dropped
+    # 以 rss_mb 作"非白名单字段应被丢弃"的反例样例）。
+    EVENT_PROCESS_MEMORY: frozenset({"rss_mb", "sample_interval_seconds"}),
 }
 
 
@@ -580,3 +587,94 @@ def snapshot_wal_stats(db_path: str) -> Dict[str, Any]:
         "busy_count": busy_count,
         "checkpoint_busy": checkpoint_busy,
     }
+
+
+# ==================== 进程 RSS 采样（OOM 治理 2026-09-05） ====================
+
+# 最近一次采样的 RSS（MB）；周期采样循环写，/sync 健康端点读。
+# None 表示尚未采样或当前平台不可用。
+_LAST_RSS_MB: Optional[float] = None
+
+
+def get_process_rss_mb() -> Optional[float]:
+    """采集当前进程 RSS（MB）；平台不支持/采集失败返回 None（观测不破坏主流程）。
+
+    实现口径（刻意不引入 psutil 依赖）：
+    - Linux：读 /proc/self/status 的 VmRSS 行（kB）——部署主目标（docker）路径；
+    - Windows：ctypes GetProcessMemoryInfo 的 WorkingSetSize（字节）——桌面/
+      PyInstaller 场景；cb 必须先赋 sizeof(结构体) 再调用（仓库 ctypes 先例
+      见 desktop_companion/credentials.py）；
+    - macOS：返回 None——resource.getrusage 的 ru_maxrss 是高水位（peak）而非
+      当前值，且单位与 Linux 不同（字节 vs kB），语义陷阱直接规避。
+    纯同步毫秒级调用，事件循环内直接调用安全。
+
+    注意（口径声明）：desktop 模式下后端跑在 GUI 进程内线程中，本函数量到的
+    是整个桌面进程（含 webview）的 RSS，数值系统性偏高——该场景数据只作
+    趋势参考，不用于内存预算验收。
+    """
+    global _LAST_RSS_MB
+    rss_bytes: Optional[int] = None
+    try:
+        if sys.platform.startswith("linux"):
+            with open("/proc/self/status", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    if line.startswith("VmRSS:"):
+                        # "VmRSS:\t 123456 kB"
+                        rss_kb = int(line.split()[1])
+                        rss_bytes = rss_kb * 1024
+                        break
+        elif sys.platform.startswith("win32"):
+            import ctypes
+
+            class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("cb", ctypes.c_uint32),
+                    ("PageFaultCount", ctypes.c_uint32),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = _PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS)
+            # getattr 取 windll：非 Windows 平台无此属性（静态检查与运行时都安全）
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                return None
+            kernel32 = windll.kernel32
+            psapi = windll.psapi
+            # GetCurrentProcess 返回 64 位伪句柄（-1）：默认 c_int restype 会截断，
+            # 必须显式 c_void_p；GetProcessMemoryInfo 首参同为 HANDLE，需配 argtypes
+            # 否则巨大的无符号句柄 int 触发 OverflowError。
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(_PROCESS_MEMORY_COUNTERS),
+                ctypes.c_uint32,
+            ]
+            psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+            if psapi.GetProcessMemoryInfo(
+                kernel32.GetCurrentProcess(),
+                ctypes.byref(counters),
+                counters.cb,
+            ):
+                rss_bytes = int(counters.WorkingSetSize)
+    except Exception:  # noqa: BLE001 - 观测失败静默降级，不破坏调用方
+        logger.debug("get_process_rss_mb sampling failed", exc_info=True)
+        return None
+
+    if rss_bytes is None:
+        return None
+    rss_mb = round(rss_bytes / (1024 * 1024), 1)
+    _LAST_RSS_MB = rss_mb
+    return rss_mb
+
+
+def get_last_rss_mb() -> Optional[float]:
+    """读取最近一次采样值（不触发采集）；未采样/不可用返回 None。"""
+    return _LAST_RSS_MB
