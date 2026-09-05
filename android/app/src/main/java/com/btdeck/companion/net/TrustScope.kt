@@ -16,13 +16,20 @@ object TrustScope {
 
     private const val BUNDLE_X509_KEY = "x509-certificate"
 
-    /** 计算 SslCertificate 的 SHA-256 指纹（十六进制冒号分隔）；无 X509 载荷返回 null。 */
+    /**
+     * 计算 SslCertificate 公钥的 SHA-256 指纹（十六进制冒号分隔）；无 X509 载荷返回 null。
+     *
+     * 哈希对象是 SPKI（公钥 DER，RFC 7469 pin 语义）而非整证书 DER——OkHttp
+     * CertificatePinner 校验 SPKI 哈希，按整证书哈希生成 pin 与握手永不匹配
+     * （自签服务器信任后健康检查无法转『就绪』，设备级测试实证）。证书更换
+     * （换公钥）会改变指纹，需用户重新确认的语义不变。
+     */
     fun sha256Fingerprint(certificate: SslCertificate): String? {
         val bundle = SslCertificate.saveState(certificate) ?: return null
         val encoded = bundle.getByteArray(BUNDLE_X509_KEY) ?: return null
         val factory = CertificateFactory.getInstance("X.509")
         val x509 = factory.generateCertificate(encoded.inputStream()) as? X509Certificate ?: return null
-        val digest = MessageDigest.getInstance("SHA-256").digest(x509.encoded)
+        val digest = MessageDigest.getInstance("SHA-256").digest(x509.publicKey.encoded)
         return digest.joinToString(":") { byte -> "%02X".format(byte) }
     }
 }

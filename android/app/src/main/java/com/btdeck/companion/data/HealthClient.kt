@@ -2,7 +2,6 @@ package com.btdeck.companion.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -22,7 +21,7 @@ import javax.net.ssl.X509TrustManager
  *
  * - live 探测连通性与进程存活；ready 探测业务就绪并读取 `data.version`；
  * - 传入 [trustedFingerprints]（WebView 指纹确认流程记录的 SHA-256）时，
- *   OkHttp 以"全信 SSLSocketFactory + CertificatePinner 精确指纹钉扎"组合
+ *   OkHttp 以"全信 SSLSocketFactory + 握手后手动 SPKI 钉扎"组合
  *   只信任这些指纹（trust-any + pin = trust-only-these），主机名校验由钉扎
  *   承担；指纹不匹配按 TLS_ERROR 归类并提示重新确认；
  * - 未传指纹时走系统信任链，自签证书必然 TLS_ERROR——提示用户走 WebView 的
@@ -43,20 +42,37 @@ class HealthClient {
         .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
         .build()
 
+    /** 握手中捕获对端证书链的 TrustManager（钉扎校验的数据源）。 */
+    private class CapturingTrustManager : X509TrustManager {
+        @Volatile
+        var lastServerChain: Array<X509Certificate>? = null
+
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            lastServerChain = chain
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+    }
+
+    private class PinnedClient(val okHttp: OkHttpClient, val trustManager: CapturingTrustManager)
+
     /** 指纹钉扎客户端缓存：同一指纹集合复用（OkHttpClient 实例应共享连接池）。 */
-    private val pinnedClients = HashMap<Int, OkHttpClient>()
+    private val pinnedClients = HashMap<Int, PinnedClient>()
 
     suspend fun check(
         baseUrl: String,
         trustedFingerprints: Set<String> = emptySet(),
     ): Report = withContext(Dispatchers.IO) {
         val pins = trustedFingerprints.mapNotNull { fingerprintToPin(it) }
-        val target = if (pins.isNotEmpty() && baseUrl.startsWith("https://", ignoreCase = true)) {
-            pinnedClient(pins, hostOf(baseUrl))
+        val pinned = if (pins.isNotEmpty() && baseUrl.startsWith("https://", ignoreCase = true)) {
+            pinnedClient(pins)
         } else {
-            client
+            null
         }
-        when (val live = probe("$baseUrl/health/live", target, pins.isNotEmpty())) {
+        val target = pinned?.okHttp ?: client
+        when (val live = probe("$baseUrl/health/live", target, pins) { pinned?.trustManager?.lastServerChain }) {
             is ProbeResult.NetworkError -> live.toReport(pins.isNotEmpty())
             is ProbeResult.HttpError ->
                 Report(ServerProfile.HealthState.UNREACHABLE, live.version, "服务存活检查失败：HTTP ${live.code}")
@@ -64,7 +80,7 @@ class HealthClient {
                 if (live.body?.optString("status") != "alive") {
                     return@withContext Report(ServerProfile.HealthState.UNREACHABLE, null, "服务存活检查失败")
                 }
-                when (val ready = probe("$baseUrl/health/ready", target, pins.isNotEmpty())) {
+                when (val ready = probe("$baseUrl/health/ready", target, pins) { pinned?.trustManager?.lastServerChain }) {
                     is ProbeResult.NetworkError -> ready.toReport(pins.isNotEmpty())
                     is ProbeResult.HttpError ->
                         Report(ServerProfile.HealthState.NOT_READY, ready.version, "服务未就绪：${ready.reason}")
@@ -100,10 +116,28 @@ class HealthClient {
             Report(ServerProfile.HealthState.UNREACHABLE, null, "无法连接服务器")
     }
 
-    private fun probe(url: String, target: OkHttpClient, pinned: Boolean): ProbeResult {
+    private fun probe(
+        url: String,
+        target: OkHttpClient,
+        pins: List<String>,
+        peerChainProvider: () -> Array<X509Certificate>?,
+    ): ProbeResult {
         val request = Request.Builder().url(url).get().build()
         return try {
             target.newCall(request).execute().use { response ->
+                // 手动钉扎（OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容：
+                // 信任链经空 TrustManager 清洗后 peer chain 为空，pin 校验必然失败——
+                // 设备级实测 Certificate pinning failure）。在握手成功的响应上比对
+                // 对端证书 SPKI 哈希，不匹配按 TLS_ERROR 归类提示重新确认。
+                if (pins.isNotEmpty()) {
+                    // 自定义 SSLSocketFactory 下 OkHttp Handshake/conscrypt 会话取不到对端
+                    // 证书（peerCount=0 实测），改从 TrustManager 捕获的链取叶证书比对
+                    val peerCert = peerChainProvider()?.firstOrNull()
+                    val actualPin = peerCert?.let { spkiPinOf(it) }
+                    if (actualPin == null || actualPin !in pins) {
+                        throw SSLPeerUnverifiedException("btdeck pin mismatch")
+                    }
+                }
                 val data = runCatching {
                     response.body?.string()?.let { JSONObject(it).optJSONObject("data") }
                 }.getOrNull()
@@ -123,32 +157,33 @@ class HealthClient {
         }
     }
 
-    /** 全信 TrustManager + 精确指纹钉扎：握手是否放行完全由 pin 集合决定。 */
-    private fun pinnedClient(pins: List<String>, host: String): OkHttpClient {
+    /** 全信 TrustManager + 握手中捕获证书链手动 SPKI 钉扎：放行完全由 pin 集合决定。 */
+    private fun pinnedClient(pins: List<String>): PinnedClient {
         val key = pins.hashCode()
         return synchronized(pinnedClients) {
             pinnedClients.getOrPut(key) {
-                val trustAll = object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-                }
+                val trustManager = CapturingTrustManager()
                 val sslContext = SSLContext.getInstance("TLS").apply {
-                    init(null, arrayOf<TrustManager>(trustAll), SecureRandom())
+                    init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
                 }
-                val pinner = CertificatePinner.Builder().apply {
-                    pins.forEach { add(host, it) }
-                }.build()
-                OkHttpClient.Builder()
-                    .sslSocketFactory(sslContext.socketFactory, trustAll)
-                    .hostnameVerifier { _, _ -> true } // 身份由指纹钉扎承担
-                    .certificatePinner(pinner)
-                    .connectTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
-                    .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
-                    .build()
+                PinnedClient(
+                    OkHttpClient.Builder()
+                        .sslSocketFactory(sslContext.socketFactory, trustManager)
+                        .hostnameVerifier { _, _ -> true } // 身份由指纹钉扎承担
+                        .connectTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
+                        .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
+                        .build(),
+                    trustManager,
+                )
             }
         }
     }
+
+    /** 与 fingerprintToPin 同口径：对端证书 SPKI 的 sha256/<base64> pin。 */
+    private fun spkiPinOf(cert: X509Certificate): String =
+        "sha256/" + base64NoWrap(
+            java.security.MessageDigest.getInstance("SHA-256").digest(cert.publicKey.encoded)
+        )
 
     companion object {
         private const val CONNECT_TIMEOUT_S = 5L

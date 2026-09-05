@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- targetSdk 35 强制 edge-to-edge 会破坏 AppCompat ActionBar 的内容下推
+         （列表首行画进状态栏/工具栏区域，实测 screenY=0）。选择退出强制 e2e
+         恢复 35 之前布局；API 36 起该出口移除，届时需迁移到 insets 自处理。 -->
+    <style name="Theme.BtDeckCompanion" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">@android:color/holo_blue_dark</item>
+        <item name="colorSecondary">@android:color/holo_blue_light</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
