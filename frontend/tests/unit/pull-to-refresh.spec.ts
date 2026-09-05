@@ -194,4 +194,68 @@ describe('views/mobile/mixins/pull-to-refresh', () => {
     await flushPromises()
     expect(vm().pullRefreshing).toBe(false)
   })
+
+  // ============ 容器可滚判定的亚像素边界（2026-09-05 回归加固） ============
+
+  it('边界：scrollHeight-clientHeight=1px 视为不可滚（忽略容器自身 scrollTop，回落文档）', () => {
+    // 差 1px 未过 >1 容差 → 容器被忽略；容器自身 scrollTop=50 不参与判定，
+    // 文档在顶部 → 下拉应正常进入拉动（证明该容器确实被跳过）
+    mockScrollMetrics(scroller, 401, 400)
+    scroller.scrollTop = 50
+    document.documentElement.scrollTop = 0
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(touchAt(700))
+    expect(vm().pullDistance).toBe(100)
+    expect(vm().pullReady).toBe(true)
+    document.documentElement.scrollTop = 0
+  })
+
+  it('边界：scrollHeight-clientHeight=2px 视为可滚（采用容器自身滚动语义）', () => {
+    // 差 2px 过容差 → 容器路径；容器未到顶（scrollTop=50）→ 不进入拉动
+    // （同时文档在顶部，若误走文档路径则会拉动——两用例共同钉死容差线）
+    mockScrollMetrics(scroller, 402, 400)
+    scroller.scrollTop = 50
+    document.documentElement.scrollTop = 0
+    const move = touchAt(700)
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(move)
+    expect(vm().pullDistance).toBe(0)
+    expect(move.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('.mobile-content 完全不存在：回落文档滚动（独立挂载/测试环境场景）', async() => {
+    // 组件 $el 移出布局壳 → closest 找不到 .mobile-content
+    document.body.appendChild(wrapper.element)
+    document.documentElement.scrollTop = 0
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(touchAt(700))
+    expect(vm().pullReady).toBe(true)
+    vm().onTouchEnd()
+    await flushPromises()
+    expect(vm().pullRefreshing).toBe(false)
+    document.documentElement.scrollTop = 800
+    vm().onTouchStart(touchAt(500))
+    vm().onTouchMove(touchAt(700))
+    expect(vm().pullDistance).toBe(0)
+    document.documentElement.scrollTop = 0
+  })
+
+  it('文档滚动布局：同手势滚回顶部后继续下拉进入拉动（橡胶带语义保留）', () => {
+    mockScrollMetrics(scroller, 0, 0)
+    document.documentElement.scrollTop = 800
+    vm().onTouchStart(touchAt(500))
+    // 未到顶时下滑 30px：交给原生滚动（文档向上滚），不进入拉动
+    vm().onTouchMove(touchAt(530))
+    expect(vm().pullDistance).toBe(0)
+    // 原生滚动把文档滚回顶部；同手势继续下滑
+    document.documentElement.scrollTop = 0
+    // 回顶后第一帧：重置起点，距离归零
+    vm().onTouchMove(touchAt(560))
+    expect(vm().pullDistance).toBe(0)
+    // 后续从重置点跟手：+130px → 65px 达到就绪
+    vm().onTouchMove(touchAt(690))
+    expect(vm().pullDistance).toBe(65)
+    expect(vm().pullReady).toBe(true)
+    document.documentElement.scrollTop = 0
+  })
 })

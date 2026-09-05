@@ -76,6 +76,13 @@ async function flushLifecycle(): Promise<void> {
 
 describe('views/mobile/MobileTorrents', () => {
   beforeEach(() => {
+    // jsdom 无布局：mock 出"内容远高于一屏、停在顶部"，避免 fetchPage 完成后的
+    // 补页检查（maybeLoadMore）在既有用例里自动链式加载改变 getList 计数；
+    // scrollTop 必须一并重置——documentElement 跨用例共享，滚动触发类用例的
+    // defineProperty 残留会把后续用例伪造成"已在底部"
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 20000, configurable: true })
+    Object.defineProperty(document.documentElement, 'clientHeight', { value: 844, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollTop', { value: 0, configurable: true })
     jest.mocked(getTorrentList).mockReset()
     jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [listTorrent], total: 1 } } as never)
     jest.mocked(getTrackerDomains).mockReset()
@@ -532,14 +539,96 @@ describe('views/mobile/MobileTorrents', () => {
     wrapper.destroy()
   })
 
-  it('源码契约：无限滚动指令绑定与旧"加载更多"按钮移除', () => {
+  it('源码契约：无限滚动由 WindowInfiniteScroll（window 驱动）承担，Element 指令禁回流', () => {
     const fs = require('fs') as typeof import('fs')
     const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
-    expect(source).toContain('v-infinite-scroll="loadMore"')
-    expect(source).toContain(':infinite-scroll-disabled="infiniteDisabled"')
-    expect(source).toContain(':infinite-scroll-distance="60"')
+    // 2026-09-05 根修：v-infinite-scroll 会把从不内滚的 .mobile-content 判为恒在
+    // 底部（overflow-y:auto + min-height:100vh 布局），immediate 观察器把每次 DOM
+    // 变化都变成 loadMore——页面打开自动连发请求拉满 total（真栈实测 65s/74 次）
+    expect(source).not.toContain('v-infinite-scroll')
+    expect(source).toContain('WindowInfiniteScroll')
+    expect(source).toContain('maybeLoadMore()')
     expect(source).not.toContain('加载更多（')
     expect(source).toContain('m-backtop')
+  })
+
+  it('无限滚动补页：fetchPage 完成后内容不足一屏时自动链式加载直到拉满', async() => {
+    jest.mocked(getTorrentList).mockImplementation(() =>
+      Promise.resolve({
+        code: '200',
+        data: { list: [{ ...listTorrent }], total: 3 }
+      }) as never
+    )
+    // 短内容页：scrollHeight ≤ clientHeight（jsdom mock），每页完成后应继续补页
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 600, configurable: true })
+    Object.defineProperty(document.documentElement, 'clientHeight', { value: 844, configurable: true })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    // 初始 1 页 + 补页 2 次 = 3 次请求拉满 total（list.length >= total 停止）
+    expect(jest.mocked(getTorrentList).mock.calls.length).toBe(3)
+    expect(vm.list).toHaveLength(3)
+    expect(vm.total).toBe(3)
+    wrapper.destroy()
+  })
+
+  it('无限滚动触发：window 滚动到底部阈值内追加下一页', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200', data: { list: [listTorrent], total: 2 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    jest.mocked(getTorrentList).mockClear()
+    // 滚到距底 60px 内（内容 20000/视口 844）
+    Object.defineProperty(document.documentElement, 'scrollTop', { value: 20000 - 844 - 60, configurable: true })
+    await vm.maybeLoadMore()
+    await flushLifecycle()
+    expect(getTorrentList).toHaveBeenCalledWith(expect.objectContaining({ skip: 1 }))
+    expect(vm.list).toHaveLength(2)
+    wrapper.destroy()
+  })
+
+  it('失控根修核心性质：内容高于一屏时初始仅 1 页，多轮速度轮询零 getList（2026-09-05 真栈 65s/74 次的回归锚）', async() => {
+    // beforeEach 几何 mock：内容 20000px >> 视口 844px（远不在底部）
+    jest.mocked(getTorrentList).mockImplementation(() =>
+      Promise.resolve({ code: '200', data: { list: [{ ...listTorrent }], total: 22437 } }) as never
+    )
+    // 活跃快照命中列表行：每轮轮询都会就地改行（DOM 变化）——旧 v-infinite-scroll
+    // 的 immediate MutationObserver 正是把这些 DOM 变化变成连环 loadMore 的放大器
+    jest.mocked(getActiveTorrents).mockResolvedValue({
+      code: '200',
+      data: [{ hash: 'abc', downloaderId: 'd1', downloadSpeed: 2048, uploadSpeed: 0, progress: 42 }]
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect(jest.mocked(getTorrentList).mock.calls.length).toBe(1)
+    const vm = wrapper.vm as any
+    for (let i = 0; i < 4; i += 1) {
+      await vm.loadActiveSpeed()
+      await flushLifecycle()
+    }
+    // 轮询只应打 active-torrents；任何 getList 增量即失控复发
+    expect(jest.mocked(getTorrentList).mock.calls.length).toBe(1)
+    expect(jest.mocked(getActiveTorrents).mock.calls.length).toBe(4)
+    expect(vm.list).toHaveLength(1)
+    wrapper.destroy()
+  })
+
+  it('失控根修核心性质：reload 原子替换完成后不链式补页（内容高于一屏）', async() => {
+    jest.mocked(getTorrentList).mockImplementation(() =>
+      Promise.resolve({ code: '200', data: { list: [{ ...listTorrent }], total: 22437 } }) as never
+    )
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    jest.mocked(getTorrentList).mockClear()
+    await vm.reload()
+    await flushLifecycle()
+    // 原子替换后停在顶部且内容远高于一屏：仅 1 次首页请求，不触发补页链
+    expect(jest.mocked(getTorrentList).mock.calls.length).toBe(1)
+    expect(vm.list).toHaveLength(1)
+    wrapper.destroy()
   })
 
   it('返回顶部浮标：按 window scrollY 阈值显隐（实际滚动容器是 window）', async() => {

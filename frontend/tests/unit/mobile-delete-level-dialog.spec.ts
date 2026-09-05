@@ -21,6 +21,26 @@ const mountDialog = (confirmResult: Promise<string>): Wrapper<Vue> =>
     }
   })
 
+/** 挂载级：el-dialog 以渲染插槽的 stub 替身，验证选项按钮真实渲染与点击链 */
+const mountDialogUi = (
+  props: { busy?: boolean } = {},
+  confirmResult: Promise<string> = Promise.resolve('confirm')
+): Wrapper<Vue> =>
+  shallowMount(MobileDeleteLevelDialog, {
+    propsData: { visible: true, name: '测试种子', ...props },
+    stubs: {
+      'el-dialog': {
+        name: 'ElDialogStub',
+        props: ['visible'],
+        template: '<div class="el-dialog-stub"><slot /></div>'
+      }
+    },
+    mocks: {
+      $confirm: jest.fn().mockImplementation(() => confirmResult),
+      $message: { success: jest.fn(), error: jest.fn() }
+    }
+  })
+
 const levelOption = (level: number): { level: number, label: string, icon: string } => {
   const option = (mountDialog(Promise.resolve('confirm')).vm as any).levelOptions.find(
     (item: { level: number }) => item.level === level
@@ -82,5 +102,50 @@ describe('views/mobile/components/DeleteLevelDialog', () => {
     expect(DELETE_LEVEL_SUCCESS_TEXT[3]).toContain('回收站')
     expect(DELETE_LEVEL_SUCCESS_TEXT[2]).toContain('保留')
     expect(DELETE_LEVEL_SUCCESS_TEXT[1]).toBe('已完全删除')
+  })
+
+  // ============ 挂载级 UI（2026-09-05 回归加固：选项渲染/点击链/busy 禁用） ============
+
+  it('UI 渲染：四个等级选项按钮按 4→1 顺序渲染，等级1 带 is-danger 样式', async() => {
+    const wrapper = mountDialogUi()
+    await Vue.nextTick()
+    const buttons = wrapper.findAll('.m-delete-level-option')
+    expect(buttons).toHaveLength(4)
+    expect(buttons.at(0).text()).toContain('等级4：标记为待删除')
+    expect(buttons.at(3).text()).toContain('等级1：完全删除')
+    expect(buttons.at(3).classes()).toContain('is-danger')
+    // 目标种子名在对话框内展示（移动端对话框可能遮挡卡片，需自带上下文）
+    expect(wrapper.find('.m-delete-target').text()).toContain('测试种子')
+  })
+
+  it('UI 点击链：点等级4 走 $confirm 后 emit confirm(4) 并关闭对话框', async() => {
+    const wrapper = mountDialogUi()
+    await Vue.nextTick()
+    await wrapper.findAll('.m-delete-level-option').at(0).trigger('click')
+    await Vue.nextTick()
+    expect(wrapper.vm.$confirm).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('confirm')?.[0]).toEqual([4])
+    expect(wrapper.emitted('update:visible')?.[0]).toEqual([false])
+  })
+
+  it('UI 点击链：取消确认不 emit（等级1 红色误触保护链完整）', async() => {
+    const wrapper = mountDialogUi({}, Promise.reject('cancel'))
+    await Vue.nextTick()
+    await wrapper.findAll('.m-delete-level-option').at(3).trigger('click')
+    await Vue.nextTick()
+    expect(wrapper.vm.$confirm).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+    expect(wrapper.emitted('update:visible')).toBeUndefined()
+  })
+
+  it('busy 禁用：删除请求在途时选项禁用且点击不触发确认', async() => {
+    const wrapper = mountDialogUi({ busy: true })
+    await Vue.nextTick()
+    const button = wrapper.findAll('.m-delete-level-option').at(0)
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    await Vue.nextTick()
+    expect(wrapper.vm.$confirm).not.toHaveBeenCalled()
+    expect(wrapper.emitted('confirm')).toBeUndefined()
   })
 })

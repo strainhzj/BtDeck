@@ -2,12 +2,9 @@
   <div class="m-notifications">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div v-if="!loading && list.length === 0" class="m-hint">暂无通知</div>
-    <!-- 无限滚动分页追加（滚动容器为布局壳 .mobile-content） -->
-    <div
-      v-infinite-scroll="loadMore"
-      :infinite-scroll-disabled="infiniteDisabled"
-      :infinite-scroll-distance="60"
-    >
+    <!-- 无限滚动：window 滚动驱动（mixins/window-infinite-scroll；Element 指令会被
+         从不内滚的 .mobile-content 误判恒在底部导致自动连发请求拉满 total） -->
+    <div>
       <div
         v-for="n in list"
         :key="n.id"
@@ -81,6 +78,7 @@ import { notificationFailureTarget, plainNotificationContent, renderNotification
 import { NotificationModule } from '@/store/modules/notification'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import { WindowInfiniteScroll } from '@/views/mobile/mixins/window-infinite-scroll'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
 const NOTIFICATION_PAGE_SIZE = 50
@@ -88,15 +86,17 @@ const NOTIFICATION_PAGE_SIZE = 50
 /**
  * 移动通知中心（Phase 4 M1）：复用 /notifications API；点击打开详情并按桌面同源规则渲染内容，同时标记已读。
  *
- * 2026-08-28 UX 增强：v-infinite-scroll 分页追加（按 id 去重防跨页重复，解除
+ * 2026-08-28 UX 增强：无限滚动分页追加（按 id 去重防跨页重复，解除
  * 50 条封顶）；30s 静默自动刷新（未翻页整表替换、已翻页跳过本轮只同步未读角标，
  * 避免把翻页用户重置回第 1 页）；移除底部刷新按钮（下拉+自动刷新覆盖）。
+ * 2026-09-05：无限滚动改 WindowInfiniteScroll mixin（window 驱动）——Element
+ * 指令被从不内滚的 .mobile-content 误判恒在底部，页面打开自动连发请求拉满 total。
  */
 @Component({
   name: 'MobileNotifications',
   components: { 'm-pull-indicator': MobilePullIndicator }
 })
-export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPollingMixin) {
+export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPollingMixin, WindowInfiniteScroll) {
   private list: NotificationItem[] = []
   private total = 0
   private page = 1
@@ -130,7 +130,7 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
     return true
   }
 
-  private get infiniteDisabled(): boolean {
+  protected get infiniteDisabled(): boolean {
     return this.loading || this.list.length >= this.total
   }
 
@@ -148,11 +148,13 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
       this.$message.error(extractErrorMessage(e))
     } finally {
       this.loading = false
+      // 内容不足一屏时主动补页（window 滚动驱动，无指令观察器）
+      this.maybeLoadMore()
     }
   }
 
-  /** 无限滚动追加下一页：按 id 去重（新通知插入头部会使后页 offset 前移产生重复） */
-  private async loadMore(): Promise<void> {
+  /** WindowInfiniteScroll 子类实现：无限滚动追加下一页，按 id 去重（新通知插入头部会使后页 offset 前移产生重复） */
+  protected async loadMore(): Promise<void> {
     if (this.infiniteDisabled) return
     this.loading = true
     try {
@@ -169,6 +171,7 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
       this.$message.error(extractErrorMessage(e))
     } finally {
       this.loading = false
+      this.maybeLoadMore()
     }
   }
 

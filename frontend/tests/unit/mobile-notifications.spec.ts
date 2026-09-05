@@ -91,6 +91,12 @@ const readSource = (): string =>
 
 describe('views/mobile/MobileNotifications', () => {
   beforeEach(() => {
+    // jsdom 无布局：mock 出“内容远高于一屏、停在顶部”，避免 load()/loadMore()
+    // 完成后的补页检查（maybeLoadMore）在既有用例里自动链式加载改变计数；
+    // scrollTop 一并重置防跨用例残留伪造“已在底部”
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 20000, configurable: true })
+    Object.defineProperty(document.documentElement, 'clientHeight', { value: 844, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollTop', { value: 0, configurable: true })
     jest.mocked(getNotificationList).mockReset()
     jest.mocked(getNotificationList).mockResolvedValue({
       code: '200',
@@ -387,5 +393,71 @@ describe('views/mobile/MobileNotifications', () => {
     const templateBlock = source.slice(source.indexOf('<template>'), source.lastIndexOf('</template>'))
     expect(templateBlock).not.toContain('?.')
     expect(templateBlock).not.toContain('??')
+  })
+
+  it('源码契约：无限滚动由 WindowInfiniteScroll（window 驱动）承担，Element 指令禁回流', () => {
+    const source = readSource()
+    // 2026-09-05 根修：v-infinite-scroll 会把从不内滚的 .mobile-content 判为恒在
+    // 底部，页面打开自动连发请求拉满 total（与种子页同源缺陷）
+    expect(source).not.toContain('v-infinite-scroll')
+    expect(source).toContain('WindowInfiniteScroll')
+    expect(source).toContain('maybeLoadMore()')
+  })
+
+  it('无限滚动补页：load 完成后内容不足一屏时自动链式加载（短内容页无滚动事件可依赖）', async() => {
+    jest.mocked(getNotificationList)
+      .mockResolvedValueOnce({
+        code: '200', status: 'success', msg: 'ok',
+        data: { total: 5, page: 1, pageSize: 50, list: makeList() }
+      } as never)
+      .mockResolvedValue({
+        code: '200', status: 'success', msg: 'ok',
+        data: { total: 5, page: 2, pageSize: 50, list: [makeItem({ id: 21 }), makeItem({ id: 22 })] }
+      } as never)
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 600, configurable: true })
+    Object.defineProperty(document.documentElement, 'clientHeight', { value: 844, configurable: true })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    // 首屏 3 条 + 补页 1 次（5 条后 list.length >= total 停止，不失控连发）
+    expect(jest.mocked(getNotificationList).mock.calls.length).toBe(2)
+    expect(vm.list.map((n: NotificationItem) => n.id)).toEqual([11, 12, 13, 21, 22])
+    wrapper.destroy()
+  })
+
+  it('失控根修核心性质：内容高于一屏时首屏仅 1 次请求，静默刷新与已翻页轮询零追加', async() => {
+    // beforeEach 几何 mock：内容 20000px >> 视口 844px
+    const pageOne = {
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 999, page: 1, pageSize: 50, list: makeList() }
+    } as never
+    jest.mocked(getNotificationList)
+      .mockResolvedValueOnce(pageOne)   // 首屏
+      .mockResolvedValueOnce(pageOne)   // 静默刷新整表重载
+      .mockResolvedValue({              // 翻页及其后
+        code: '200', status: 'success', msg: 'ok',
+        data: { total: 999, page: 2, pageSize: 50, list: [makeItem({ id: 21 })] }
+      } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(jest.mocked(getNotificationList).mock.calls.length).toBe(1)
+    // 静默刷新（page=1 整表重载）：恰好 1 次请求，无补页链
+    await vm.loadActiveSpeed()
+    await flushLifecycle()
+    expect(jest.mocked(getNotificationList).mock.calls.length).toBe(2)
+    // 翻到第 2 页（高内容不触发补页链，恰 +1 次）
+    await vm.loadMore()
+    await flushLifecycle()
+    expect(jest.mocked(getNotificationList).mock.calls.length).toBe(3)
+    expect(vm.page).toBe(2)
+    // 已翻页的静默刷新只同步角标：零列表请求
+    jest.mocked(getNotificationList).mockClear()
+    jest.mocked(NotificationModule.FetchUnreadCount).mockClear()
+    await vm.loadActiveSpeed()
+    await flushLifecycle()
+    expect(getNotificationList).not.toHaveBeenCalled()
+    expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
+    wrapper.destroy()
   })
 })

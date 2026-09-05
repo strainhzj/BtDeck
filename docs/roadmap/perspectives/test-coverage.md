@@ -141,7 +141,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（78 个 spec）
+### `frontend/tests/unit/`（89 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -159,19 +159,20 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
+| `mobile-delete-level-dialog.spec.ts` ✨2026-09-05 | 移动四级删除对话框：四选项语义与顺序、桌面同款确认文案（等级1 error）、取消不 emit、成功文案单源；挂载级 UI（选项渲染/is-danger/点击链/busy 禁用） |
 | `mobile-dashboard.spec.ts` ✨2026-08-26 | 移动仪表盘：字段映射契约（torrents/downloaders/system，旧键负例锁死）、bytes/s 速度换算、下载器卡片与穿透 /m/downloader、已暂停统计展示 |
 | `mobile-downloader.spec.ts` ✨2026-08-24 | 移动下载器监控页：卡片/在线徽标/测试连接 data.success 契约 |
 | `mobile-downloader-settings.spec.ts` ✨2026-08-24 | 移动下载器设置页：整页复用桌面 DownloaderSettingsDialog 的挂载与返回 |
 | `mobile-logs.spec.ts` ✨2026-08-24 | 移动审计日志：结果筛选值契约（success/failed/partial）与三态展示 |
-| `mobile-notifications.spec.ts` ✨2026-08-27 | 移动通知中心：摘要剥离 Markdown 记号纯文本三行截断（共享 plainNotificationContent）、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
+| `mobile-notifications.spec.ts` ✨2026-08-27 | 移动通知中心：摘要剥离 Markdown 记号纯文本三行截断（共享 plainNotificationContent）、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲；✨2026-09-05 WindowInfiniteScroll 接入与失控根修性质（首屏 1 次/静默刷新零追加/已翻页轮询只同步角标） |
 | `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
 | `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用按来源分流（简单→/m/torrents，高级→/m/search）、系统模板只可应用不可删除 |
 | `mobile-recycle-bin.spec.ts` ✨2026-08-27 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除、载荷必须传 info_id（≠torrent_id 契约锁）、守卫按 info_id、失败提示展示 reason 与兜底、按钮禁用态契约、源码契约锁定 |
 | `mobile-search.spec.ts` ✨2026-08-26 | 移动高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索同源）、简单搜索迁出负例锁死、高级模板回填执行/简单模板转种子页、下拉刷新重放 |
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
 | `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
-| `mobile-torrent-detail.spec.ts` ✨2026-08-24 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新 |
-| `mobile-torrents.spec.ts` ✨2026-08-30 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行；新活动复合键未展示时重载列表并立即应用同轮进度与速度 |
+| `mobile-torrent-detail.spec.ts` ✨2026-08-24 ✨2026-09-05 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新；四级删除（等级 4/1 语义与 busy 复位） |
+| `mobile-torrents.spec.ts` ✨2026-08-30 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行；新活动复合键未展示时重载列表并立即应用同轮进度与速度；✨2026-09-05 四级删除（DeleteLevelDialog+deleteTorrentsWithLevel）、reload 原子替换、终态 reload hash 去重、WindowInfiniteScroll 接入与失控根修核心性质（高内容仅 1 页/多轮速度轮询零 getList/reload 不链式补页） |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
 | `notification-drawer-detail.spec.ts` ✨2026-08-27 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
@@ -182,7 +183,7 @@
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定） |
 | `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支 |
-| `pull-to-refresh.spec.ts` ✨2026-08-24 | 下拉刷新 mixin：阻尼/阈值/滚动容器判定与横向主导中止（与 Tab 滑动互斥） |
+| `pull-to-refresh.spec.ts` ✨2026-08-24 ✨2026-09-05 | 下拉刷新 mixin：阻尼/阈值/滚动容器判定与横向主导中止（与 Tab 滑动互斥）；容器可滚亚像素边界（1px 忽略/2px 采用）、`.mobile-content` 缺失回落文档滚动、文档滚动布局中部下滑不误触发（12→16 例） |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `refresh-prompt.spec.ts` ✨2026-08-25 | `RefreshPrompt.vue` PWA 更新提示：SW updated 事件、确认刷新 postMessage SKIP_WAITING |
 | `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路 |
@@ -194,6 +195,7 @@
 | `store-modules.spec.ts` | Vuex modules |
 | `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储 |
 | `speed-polling.spec.ts` | 种子速度轮询契约 |
+| `window-infinite-scroll.spec.ts` ✨2026-09-05 | window 驱动无限滚动 mixin：滚动到底触发/阈值外不触发/门禁禁用/短内容补页/scrollY 优先/销毁移除/滚动风暴重入门禁（替代 Element v-infinite-scroll，失控根修） |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |

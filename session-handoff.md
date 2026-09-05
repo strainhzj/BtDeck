@@ -1,3 +1,58 @@
+## 2026-09-05（最新+4）：移动验收修复回归加固——单测+12/e2e+1/变异五类全拦截（1380 全绿）
+
+### 当前状态
+
+- 用户真栈验证通过后补回归保护：三层加固完成，前端全量 101 suites/1380 tests、
+  lint/typecheck、e2e 双浏览器全绿；五类回退变异逐一实证被测试拦截后复原
+- 修复批次（二轮 WindowInfiniteScroll + 一轮下拉/四级删除）仍未提交，与加固一并待用户指示
+
+### 加固清单
+
+- pull-to-refresh 16（+4：1px/2px 容差边界两向钉死、容器缺失回落、文档滚动橡胶带）
+- window-infinite-scroll 8（+1：滚动风暴重入门禁）
+- mobile-torrents 39（+2：失控根修核心性质——高内容仅 1 页/轮询零 getList/reload 不链式）
+- mobile-notifications 20（+1：静默刷新零追加/已翻页只角标）
+- mobile-delete-level-dialog 10（+4：挂载级 UI 渲染/点击链/busy）
+- e2e mobile-interactions +1（空闲零 getList/滚动有界追加；数据量≤40 自动跳过）
+
+### 测试工程坑（勿重踩）
+
+- jest documentElement 跨用例共享：scrollTop 残留伪造"已在底部"→ beforeEach 三几何一并重置
+- mockResolvedValue 固定 page 值会让 loadMore 页码回写归位，翻页断言用 Once 序列
+
+---
+
+## 2026-09-05（最新+3）：移动验收二轮——无限加载失控根修 WindowInfiniteScroll（真栈 65s/74请求→0）
+
+### 当前状态
+
+- 用户复验"还在不断触发刷新按钮"→ 真栈复现根因：Element v-infinite-scroll 在 window 滚动布局下
+  几何恒真 + immediate MutationObserver → 页面打开自动连发 loadMore 直到拉满 total
+  （dev 库 22437 条 ≈1122 请求；demo 9 条瞬时返回从未暴露，一轮 demo 探针空闲 0 是真阴性）
+- mobile-fix.4 done（feature_list 已记真栈前后对照 evidence）；全量 101 suites/1368 tests 绿
+- 未提交；8080 demo（已重建含全部修复）/8081 dev+5001 真栈（本轮起的，仍在运行）均可复验
+
+### 修复要点
+
+- 新增 `views/mobile/mixins/window-infinite-scroll.ts`：window scroll + isNearViewportBottom
+  /maybeLoadMore、短内容页加载后补页、原型方法防箭头字段 this 坑
+- `torrents.vue`/`notifications.vue` 移除 v-infinite-scroll 接入 mixin（infiniteDisabled/loadMore
+  改 protected；fetchPage/load/loadMore finally 调 maybeLoadMore）
+
+### 复验指引（用户）
+
+- 真栈：http://127.0.0.1:8081（admin / Btdeck@2026dev）→ 种子页应只加载 2 页 40 条，
+  底部"已加载 40 / 共 22437"，空闲无请求；滚动到底追加一页；中部翻列表不触发刷新；顶部下拉才刷新
+- demo：http://127.0.0.1:8080 已重建（注意 SPA 旧标签页需整页刷新）
+
+### 坑（勿重踩）
+
+- demo 桩瞬时返回 = loading 翻转不渲染：**"demo 上看不到刷新"不能证伪"刷新在发生"**，要看网络层
+- v-infinite-scroll 与 window 滚动布局不兼容是系统性坑：任何移动新页面禁用，统一 WindowInfiniteScroll
+- jsdom scrollHeight/clientHeight 恒 0：无限滚动类用例必须显式 mock 几何，否则假阳性
+
+---
+
 ## 2026-09-05（最新+2）：移动端验收修复——下拉刷新误触发根修 + 四级删除补齐 + 刷新体验加固（前端 1357 全绿）
 
 ### 当前状态

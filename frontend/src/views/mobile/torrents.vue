@@ -80,14 +80,10 @@
       <template v-else>暂无种子</template>
     </div>
 
-    <!-- 无限滚动：滚动容器为布局壳 .mobile-content（Element 指令自动上溯挂载）；
+    <!-- 无限滚动：window 滚动驱动（mixins/window-infinite-scroll；Element 指令会被
+         从不内滚的 .mobile-content 误判恒在底部，实测页面打开自动连发请求拉满 total）；
          尾部计数提示非交互（替代旧"加载更多"按钮） -->
-    <div
-      v-infinite-scroll="loadMore"
-      class="m-torrents-list"
-      :infinite-scroll-disabled="infiniteDisabled"
-      :infinite-scroll-distance="60"
-    >
+    <div class="m-torrents-list">
       <div
         v-for="t in list"
         :key="`${t.downloaderId}-${t.hash}`"
@@ -172,6 +168,7 @@ import {
   resolveTorrentSpeedTargets
 } from '@/views/torrents/utils/traditionalTorrentIdentity'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import { WindowInfiniteScroll } from '@/views/mobile/mixins/window-infinite-scroll'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog.vue'
 import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
@@ -200,7 +197,9 @@ interface SelectOption {
  *
  * 2026-08-28 UX 增强：卡片实时速度行（SpeedPollingMixin 10s 省电轮询 +
  * visibilitychange 后台暂停，复用桌面 buildSpeedSnapshot 合并状态与完成证据，未命中行清零防冻结）；
- * v-infinite-scroll 无限滚动替代"加载更多"按钮 + 返回顶部浮标；暂停/恢复乐观状态
+ * 无限滚动 + 返回顶部浮标（2026-09-05 无限滚动改 WindowInfiniteScroll mixin 以 window
+ * 驱动——Element 指令被从不内滚的 .mobile-content 误判恒在底部，页面打开自动连发
+ * 请求拉满 total）；暂停/恢复乐观状态
  * 更新（active 轮询包含 status/完成证据）；空状态 CTA（无下载器→去添加，零种子→桌面版引导）。
  *
  * 2026-09-05：删除改走四级（DeleteLevelDialog 与桌面删除下拉同语义：4 标记待删除/
@@ -210,7 +209,7 @@ interface SelectOption {
   name: 'MobileTorrents',
   components: { 'm-pull-indicator': MobilePullIndicator, 'm-delete-level-dialog': MobileDeleteLevelDialog }
 })
-export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin) {
+export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin, WindowInfiniteScroll) {
   private list: Torrent[] = []
   private total = 0
   private loading = false
@@ -379,7 +378,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     }
   }
 
-  private get infiniteDisabled(): boolean {
+  protected get infiniteDisabled(): boolean {
     return this.loading || this.list.length >= this.total
   }
 
@@ -462,7 +461,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     await this.fetchPage(true)
   }
 
-  private async loadMore(): Promise<void> {
+  /** WindowInfiniteScroll 子类实现：追加下一页（门禁由 maybeLoadMore 与 fetchPage 的 loading 承担） */
+  protected async loadMore(): Promise<void> {
     await this.fetchPage()
   }
 
@@ -488,6 +488,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
       this.$message.error(extractErrorMessage(e))
     } finally {
       this.loading = false
+      // 每页完成后检查：内容仍不足一屏时主动补页（window 滚动驱动，无指令观察器）
+      this.maybeLoadMore()
     }
   }
 

@@ -7009,3 +7009,23 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **feature_list**：新增 `mobile-acceptance-fixes-2026-09-05`（3 子任务 mobile-fix.1/.2/.3 全 done，evidence 已记）。
 - 未执行 Git 提交。工作区另有上一会话遗留的 backend 未提交改动（MCP 前置批次），本批未触碰。
 - **遗留提示**：Demo 验收环境（.tmp-serve-demo.py @8080）跑的是 09-05 上午构建的旧 dist，本批修复未包含在内——复验前需 `npm run build:demo` 重打包并重挂 zip/serve。
+
+## 2026-09-05（续五）：移动端验收修复二轮——"不断触发刷新按钮"真根因：v-infinite-scroll 自动加载失控
+
+- **用户复验反馈**：一轮修复（下拉刷新误判/四级删除/刷新加固）后仍"不断触发刷新按钮"。
+- **二轮 RCA（真栈复现）**：demo 桩瞬时返回且仅 9 条种子，刷新在视觉上不可观测（微任务链内 loading 翻转不渲染）——一轮的 demo 探针"空闲 0 reload"是真阴性遮蔽。拉起真实栈复现（5001 btpManager 后端 + 8081 dev server + Playwright CDP 触摸仿真）：**空闲 65 秒 74 次 getList、初始即失控连发**（dev 库 22437 种子，全量拉完 ≈1122 请求），工具栏刷新按钮持续转圈——与用户描述逐字吻合。
+- **根因**：Element v-infinite-scroll 把布局壳 `.mobile-content`（overflow-y:auto）选为滚动容器，但 `.mobile-layout` min-height:100vh 布局下长内容撑高布局、`.mobile-content` 从不内滚（高度恒等于内容）——指令"列表底部距容器底部"几何恒真（`heightBelowTop - offsetHeight ≈ 0 ≤ distance`），且 immediate 的 MutationObserver 把每次 DOM 变化（10s 轮询速度更新、追加卡片本身）都变成一次 loadMore。2026-08-28 上线即存在，demo 数据量小从未暴露；与 window 滚动容器事实（返回顶部浮标注释已实测）同源。
+- **修复**：新增 `views/mobile/mixins/window-infinite-scroll.ts`（window scroll 监听 + `isNearViewportBottom`/`maybeLoadMore`；短内容页加载完成后主动补页；原型方法规避 vue-class-component 箭头字段 this 坑）。`torrents.vue`/`notifications.vue` 移除 v-infinite-scroll 三绑定接入 mixin（`infiniteDisabled`/`loadMore` 改 protected 覆写；fetchPage/load/loadMore 完成后调 maybeLoadMore）。
+- **复测对照（真栈）**：初始 2 页 40 条（补页至内容溢出视口即停）；空闲 65s **0 次 getList**；中部翻列表手势×3 组 0 触发；真实滚到底 1 页追加；顶部下拉 1 次（基线保留）。
+- **测试**：window-infinite-scroll.spec 7 例（新：滚动触发/阈值外不触发/门禁/短内容补页/scrollY 优先/销毁移除/常量）；mobile-torrents 37（几何 mock 防 jsdom 假阳性 + 补页链式/滚动触发/契约禁 v-infinite-scroll 回流）；mobile-notifications 20（同款）。全量 **101 suites / 1368 tests** ✓；lint/typecheck ✓；demo 重建 + zip 重打（5.96MB）。
+- **环境备注**：本轮起过 5001（btpManager uvicorn）与 8081（vue-cli-service serve）供真栈复验，会话后仍在运行可复用；8080 demo server 不变。
+- **roadmap**：根 README 元信息前置二轮 + 增量新行；views README torrents 行更新 + notifications.vue/window-infinite-scroll.ts 两新行。feature_list：mobile-acceptance-fixes-2026-09-05 追加 mobile-fix.4（done，evidence 含真栈前后对照）。未执行 Git 提交。
+
+## 2026-09-05（续六）：移动端验收修复回归加固——单测 +12 / e2e +1 / 变异验证五类全拦截
+
+- **用户确认验证通过**后要求补充足回归保护。按三层加固：
+- **单测**（1368→1380）：pull-to-refresh 12→16（容器可滚亚像素边界 1px 忽略/2px 采用两向钉死容差线、`.mobile-content` 缺失回落文档滚动、文档滚动布局橡胶带语义保留）；window-infinite-scroll 7→8（滚动风暴重入门禁：门禁置位期间 10 连滚只 1 次）；mobile-torrents 37→39（**失控根修核心性质**：高内容初始仅 1 页 + 4 轮速度轮询零 getList（旧缺陷的 MutationObserver 放大器路径）+ reload 原子替换后不链式）；mobile-notifications 19→20（首屏 1 次 + 静默刷新零追加 + 已翻页轮询只同步角标）；mobile-delete-level-dialog 6→10（挂载级 UI：四选项渲染/is-danger/busy 禁用/点击链 emit、取消不 emit）。
+- **e2e**（mobile-interactions +1）：「种子页无限滚动受控：空闲零 getList、滚动到底有界追加」——jsdom 无布局、旧 v-infinite-scroll 缺陷在单测层不可复现，网络层是唯一功能性拦截层；数据量 ≤40 自动跳过（无判别力），真栈 22437 条 chromium+webkit **2 passed**。
+- **变异验证（五类回退突变逐一实证被拦截后复原）**：M1 pull-to-refresh 容器判定回退（删 scrollability 检查）→ 4 例红；M2 isNearViewportBottom 恒真 → **套件挂死**（maybeLoadMore 无限链把事件循环钉住，失控行为自证，比断言失败更强的拦截）；M3 终态 hash 去重回退 → 去重用例红；M4 reload 非原子回退 → 原子替换用例红；M5 模板回挂 v-infinite-scroll → 源码契约红。
+- **测试工程坑（记录勿重踩）**：① jest documentElement 跨用例共享——滚动触发用例 defineProperty 的 scrollTop 残留会把后续用例伪造成"已在底部"（本轮真实踩到：性质用例收到 41 次请求），beforeEach 必须三几何一并重置；② mockResolvedValue 固定 page:1 会让 loadMore 页码回写归 1，翻页断言需 Once 序列；③ 触摸手势断言的 delta 以 touchstart 原点计算，"回顶后继续下拉"类序列要先算清符号。
+- **验证矩阵（终局）**：前端全量 **101 suites / 1380 tests** ✓；lint ✓；typecheck ✓；e2e 新用例双浏览器 ✓。未执行 Git 提交（修复批次 + 加固一并待提交）。
