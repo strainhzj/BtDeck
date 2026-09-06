@@ -2,18 +2,17 @@
   <div class="m-search">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
 
-    <!-- 高级搜索：直接复用桌面 AdvancedSearchWorkspace（左侧已保存搜索与 Web 端同源数据，
-         选择/新建/保存更改/删除与桌面一致；构建器条件组/字段/操作符零缺省） -->
-    <div class="m-search-builder">
-      <advanced-search-workspace
-        ref="workspace"
-        :searching="searching"
-        @search="onBuilderSearch"
-        @reset="onBuilderReset"
-      />
-    </div>
+    <!-- 高级搜索：移动原生构建器（摘要卡+底部弹层编辑，逻辑与桌面同源），
+         已保存搜索横滑胶囊与 Web 端同源数据 -->
+    <mobile-advanced-search
+      ref="builder"
+      :searching="searching"
+      @search="onBuilderSearch"
+      @reset="onBuilderReset"
+    />
 
-    <!-- 结果区 -->
+    <!-- 结果区：搜索完成后自动滚动定位至此（锚点让开吸顶头部） -->
+    <div ref="resultsAnchor" class="m-search-results-anchor" />
     <div v-if="searched && !searching && results.length === 0" class="m-hint">没有匹配的种子</div>
     <div
       v-for="t in results"
@@ -51,7 +50,7 @@ import {
 } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
 import { buildAdvancedSearchRequest } from '@/views/torrents/utils/torrentBatch'
-import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
+import MobileAdvancedSearch from '@/views/mobile/components/MobileAdvancedSearch.vue'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
@@ -61,8 +60,8 @@ import {
   formatTorrentSize
 } from '@/views/mobile/torrent-status'
 
-/** 桌面工作区公开入口（AdvancedSearchWorkspace 同签名透传） */
-interface SearchWorkspaceRef extends Vue {
+/** 移动构建器公开入口（MobileAdvancedSearch 同签名透传） */
+interface SearchBuilderRef extends Vue {
   onSearch(): void
   refreshFieldOptions(): void
 }
@@ -70,19 +69,19 @@ interface SearchWorkspaceRef extends Vue {
 const RESULT_LIMIT = 20
 
 /**
- * 移动高级搜索（Phase 4 M2）：
- * - 直接复用桌面 AdvancedSearchWorkspace——已保存搜索列表与 Web 端同源
- *   （getSearchTemplates({is_public:true}) 过滤 source=advanced），选择/新建/
- *   保存更改/删除全量对齐桌面；简单搜索已迁至移动种子页（/m/torrents）；
- * - search 事件 → buildAdvancedSearchRequest → advancedSearch POST。
- * 移动端查询模板页已裁撤（仅保留高级搜索）：模板能力收敛进工作区左侧
- * 已保存搜索，跨页模板应用缓存链路随之移除。
+ * 移动高级搜索（方案三移动原生重构）：
+ * - MobileAdvancedSearch：条件摘要卡 + 底部弹层编辑 + 已保存搜索横滑胶囊
+ *   + 吸底执行按钮；字段/操作符/校验/请求构造与桌面共享同源实现；
+ * - search 事件 → buildAdvancedSearchRequest → advancedSearch POST；
+ * - 搜索完成后自动滚动定位到结果区（构建器很长，不让用户手滚）；
+ * - 简单搜索已迁至移动种子页（/m/torrents）；移动端查询模板页已裁撤，
+ *   模板能力收敛进已保存搜索胶囊。
  */
 @Component({
   name: 'MobileSearch',
   components: {
     'm-pull-indicator': MobilePullIndicator,
-    'advanced-search-workspace': AdvancedSearchWorkspace
+    'mobile-advanced-search': MobileAdvancedSearch
   }
 })
 export default class MobileSearch extends Mixins(PullToRefresh) {
@@ -91,20 +90,20 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
   private searching = false
   private searched = false
 
-  private get workspace(): SearchWorkspaceRef | undefined {
-    return this.$refs.workspace as SearchWorkspaceRef | undefined
+  private get builder(): SearchBuilderRef | undefined {
+    return this.$refs.builder as SearchBuilderRef | undefined
   }
 
   protected async onPullRefresh(): Promise<void> {
     if (this.searched) {
       this.rerunAdvanced()
     } else {
-      // 未搜索过：刷新工作区字段候选与已保存搜索列表
-      this.workspace?.refreshFieldOptions()
+      // 未搜索过：刷新构建器字段候选与已保存搜索列表
+      this.builder?.refreshFieldOptions()
     }
   }
 
-  // ============ 高级搜索（复用桌面工作区） ============
+  // ============ 高级搜索（移动构建器） ============
 
   private async onBuilderSearch(params: AdvancedSearchBuilderParams): Promise<void> {
     const { request, error } = buildAdvancedSearchRequest(params, 'added_date', RESULT_LIMIT)
@@ -115,9 +114,9 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
     await this.executeAdvanced(request)
   }
 
-  /** 高级模式重复执行（下拉刷新统一出口）：工作区校验并转发构建器 search 事件 */
+  /** 高级模式重复执行（下拉刷新统一出口）：构建器校验并转发 search 事件 */
   private rerunAdvanced(): void {
-    this.workspace?.onSearch()
+    this.builder?.onSearch()
   }
 
   private async executeAdvanced(request: AdvancedSearchRequest): Promise<void> {
@@ -129,6 +128,7 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
         this.total = res.data.total ?? 0
         this.searched = true
         this.$message.success(`搜索完成，共 ${this.total} 条结果`)
+        this.scrollToResults()
       } else {
         this.$message.error(res.msg || '搜索失败')
       }
@@ -137,6 +137,16 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
     } finally {
       this.searching = false
     }
+  }
+
+  /** 搜索完成后定位到结果区（jsdom 无 scrollIntoView，静默跳过） */
+  private scrollToResults() {
+    this.$nextTick(() => {
+      const anchor = this.$refs.resultsAnchor as Element | undefined
+      if (anchor && typeof anchor.scrollIntoView === 'function') {
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
   }
 
   private onBuilderReset(): void {
@@ -175,12 +185,10 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
 </script>
 
 <style scoped>
-/* 工作区为桌面组件（窄屏自动上下堆叠）：卡片容器承接移动页白底圆角风格 */
-.m-search-builder {
-  background: #fff;
-  border-radius: 8px;
-  padding: 8px;
-  margin-bottom: 10px;
+/* 结果锚点：让开 48px 吸顶头部（scroll-margin-top 平滑滚动同样生效） */
+.m-search-results-anchor {
+  height: 1px;
+  scroll-margin-top: 56px;
 }
 
 .m-search-card {

@@ -360,17 +360,7 @@
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import ConditionValueInput from './ConditionValueInput.vue'
-import { STATUS_OPTIONS } from '@/constants/status-config'
-import { getAllCategories, getAllTags } from '@/api/tag-management'
-import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
-import { ApiResponse } from '@/types/api'
-import {
-  ADVANCED_SEARCH_FIELDS,
-  ADVANCED_SEARCH_OPERATOR_GROUPS,
-  AdvancedSearchFieldKind,
-  AdvancedSearchOperatorConfig
-} from '@/contracts/advancedSearch.generated'
 import {
   AdvancedSearchConditionValue,
   AdvancedSearchConditionState,
@@ -378,27 +368,27 @@ import {
   AdvancedSearchGroupState,
   AdvancedSearchValidationError,
   buildAdvancedSearchParams,
-  normalizeLoadedConditionValue,
-  normalizeLoadedOperator,
-  operatorSupportsExclude,
-  transitionConditionValue
+  transitionConditionValue,
+  operatorSupportsExclude
 } from './advancedSearchState'
-
-// 字段定义接口
-interface SearchField {
-  key: string
-  label: string
-  type: AdvancedSearchFieldKind
-  options?: Array<{ label: string, value: string, icon?: string }>
-  supportsExclude?: boolean
-  /**
-   * multiSelect 字段的匹配模式，决定 UI 暴露哪些操作符：
-   * - 'exact'     单值精确列（status/category/downloader_name）→ in/not_in
-   * - 'substring' 逗号分隔字符串列（tags）→ contains_any/not_contains_any
-   * 仅对 multiSelect 类型生效；其它类型忽略。
-   */
-  matchMode?: 'exact' | 'substring'
-}
+import {
+  ADVANCED_SEARCH_ADVANCED_FIELDS,
+  ADVANCED_SEARCH_BASIC_FIELDS,
+  ADVANCED_SEARCH_STATUS_FIELDS,
+  ADVANCED_SEARCH_TIME_FIELDS,
+  ADVANCED_SEARCH_RATIO_FIELDS,
+  OperatorDisplayGroup,
+  SearchField,
+  buildGroupsQueryText,
+  describeConditionValue,
+  generateConditionId,
+  getOperatorGroupsForField,
+  getOperatorLabel as sharedGetOperatorLabel,
+  getSearchFieldInfo,
+  getSearchFieldOptions,
+  loadAdvancedSearchDynamicOptions,
+  normalizeLoadedGroups
+} from './advancedSearchFields'
 
 // 搜索条件接口
 type SearchCondition = AdvancedSearchConditionState
@@ -411,12 +401,6 @@ interface TemplateForm {
   name: string
   description: string
   isDefault: boolean
-}
-
-interface OperatorDisplayGroup {
-  type: string
-  label: string
-  operators: readonly AdvancedSearchOperatorConfig[]
 }
 
 @Component({
@@ -446,68 +430,32 @@ export default class AdvancedSearchBuilder extends Vue {
   private downloaderOptions: Array<{ label: string, value: string }> = []
   private fieldOptionsLoading = false
 
+  // 字段分组：模板需经实例属性访问，指向共享层常量（桌面/移动同源）
+  get advancedFields(): readonly SearchField[] {
+    return ADVANCED_SEARCH_ADVANCED_FIELDS
+  }
+
   // 基本信息字段
-  readonly basicFields: SearchField[] = [
-    { key: 'name', label: '种子名称', type: 'text', supportsExclude: true },
-    { key: 'size', label: '种子大小', type: 'number', supportsExclude: true },
-    { key: 'save_path', label: '保存路径', type: 'text', supportsExclude: true }
-  ]
+  get basicFields(): readonly SearchField[] {
+    return ADVANCED_SEARCH_BASIC_FIELDS
+  }
 
   // 状态信息字段
-  readonly statusFields: SearchField[] = [
-    {
-      key: 'status',
-      label: '状态',
-      type: 'multiSelect',
-      supportsExclude: true,
-      matchMode: 'exact',
-      options: STATUS_OPTIONS
-    },
-    {
-      key: 'downloader_name',
-      label: '下载器',
-      type: 'multiSelect',
-      supportsExclude: true,
-      matchMode: 'exact', // 单值精确列：用 in/not_in
-      options: [] // 将通过API动态获取
-    },
-    {
-      key: 'category',
-      label: '分类',
-      type: 'multiSelect',
-      supportsExclude: true,
-      matchMode: 'exact', // 单值精确列：用 in/not_in
-      options: [] // 将通过API动态获取
-    },
-    {
-      key: 'super_seeding',
-      label: '超级做种',
-      type: 'select',
-      supportsExclude: true
-    }
-  ]
+  get statusFields(): readonly SearchField[] {
+    return ADVANCED_SEARCH_STATUS_FIELDS
+  }
 
   // 时间信息字段
-  readonly timeFields: SearchField[] = [
-    { key: 'added_date', label: '添加时间', type: 'date', supportsExclude: true },
-    { key: 'completed_date', label: '完成时间', type: 'date', supportsExclude: true }
-  ]
-
-  // 高级信息字段
-  readonly advancedFields: SearchField[] = [
-    { key: 'tags', label: '标签', type: 'multiSelect', supportsExclude: true, matchMode: 'substring' }, // 逗号串列：用 contains_any/not_contains_any
-    { key: 'tracker_url', label: 'Tracker URL', type: 'text', supportsExclude: true },
-    { key: 'tracker_msg', label: 'Tracker 信息', type: 'text', supportsExclude: true }
-  ]
+  get timeFields(): readonly SearchField[] {
+    return ADVANCED_SEARCH_TIME_FIELDS
+  }
 
   // 比率信息字段
-  readonly ratioFields: SearchField[] = [
-    { key: 'ratio', label: '比率', type: 'number', supportsExclude: true },
-    { key: 'ratio_limit', label: '比率限制', type: 'number', supportsExclude: true }
-  ]
+  get ratioFields(): readonly SearchField[] {
+    return ADVANCED_SEARCH_RATIO_FIELDS
+  }
 
-  // 运行时配置由后端机器契约生成，禁止在组件内维护语义副本。
-  readonly operatorGroups = ADVANCED_SEARCH_OPERATOR_GROUPS
+  // 运行时配置由后端机器契约生成，禁止在组件内维护语义副本（过滤见共享层）。
 
   // Computed
   get formattedQuery(): string {
@@ -530,73 +478,28 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   /**
-   * 并发拉取分类/标签/下载器三个字段的候选选项。
-   * - 使用 Promise.allSettled：单个失败不影响其它两个填充（部分失败仅 console.error 静默降级）。
-   * - 仅当三个请求全部失败时才弹出 $message.error，避免一连三条红条打扰用户。
+   * 拉取逻辑在共享层 loadAdvancedSearchDynamicOptions（移动端同源复用）：
+   * - 每次刷新都从空开始：避免"上次成功 + 本次失败"时残留旧数据误导用户；
+   * - 仅当三个请求全部失败时才弹出 $message.error，避免一连三条红条打扰用户；
    * - 异步回调写 data 前判 _isDestroyed，规避组件销毁后的响应式警告。
    */
   private async loadFieldOptions() {
     if (this._isDestroyed) return
     this.fieldOptionsLoading = true
-    // 每次刷新都从空开始：避免"上次成功 + 本次失败"时残留旧数据误导用户
     this.categoryOptions = []
     this.tagOptions = []
     this.downloaderOptions = []
 
-    const results = await Promise.allSettled([
-      getAllCategories(),
-      getAllTags(),
-      getDownloaderList()
-    ])
+    const options = await loadAdvancedSearchDynamicOptions()
 
     if (this._isDestroyed) return
-
-    const [categoryRes, tagRes, downloaderRes] = results
-    let failedCount = 0
-
-    // 分类
-    if (categoryRes.status === 'fulfilled') {
-      const body = categoryRes.value as ApiResponse<string[]>
-      if (body.code === '200' && Array.isArray(body.data)) {
-        this.categoryOptions = body.data.map(name => ({ label: name, value: name }))
-      } else {
-        failedCount += 1
-      }
-    } else {
-      failedCount += 1
-      console.error('获取分类失败:', categoryRes.reason)
-    }
-
-    // 标签
-    if (tagRes.status === 'fulfilled') {
-      const body = tagRes.value as ApiResponse<string[]>
-      if (body.code === '200' && Array.isArray(body.data)) {
-        this.tagOptions = body.data.map(name => ({ label: name, value: name }))
-      } else {
-        failedCount += 1
-      }
-    } else {
-      failedCount += 1
-      console.error('获取标签失败:', tagRes.reason)
-    }
-
-    // 下载器显示 nickname，但请求值使用稳定 downloader_id，昵称变更不影响已选条件。
-    if (downloaderRes.status === 'fulfilled') {
-      const body = downloaderRes.value as ApiResponse<DownloaderSimple[]>
-      if (body.code === '200' && Array.isArray(body.data)) {
-        this.downloaderOptions = body.data.map(d => ({ label: d.nickname, value: d.downloader_id }))
-      } else {
-        failedCount += 1
-      }
-    } else {
-      failedCount += 1
-      console.error('获取下载器失败:', downloaderRes.reason)
-    }
+    this.categoryOptions = options.categoryOptions
+    this.tagOptions = options.tagOptions
+    this.downloaderOptions = options.downloaderOptions
 
     // 全部失败才告警；部分失败保持已成功项的填充，静默降级
-    if (failedCount === 3) {
-      const firstReason = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
-      this.$message.error(extractErrorMessage(firstReason?.reason) || '加载搜索字段选项失败')
+    if (options.failedCount === 3) {
+      this.$message.error(extractErrorMessage(options.firstError) || '加载搜索字段选项失败')
     }
 
     this.fieldOptionsLoading = false
@@ -609,7 +512,7 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   private generateId(): string {
-    return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    return generateConditionId()
   }
 
   // 添加条件组
@@ -768,82 +671,21 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 获取字段信息
   private getFieldInfo(fieldKey: string): SearchField | undefined {
-    const allFields = [
-      ...this.advancedFields,
-      ...this.basicFields,
-      ...this.statusFields,
-      ...this.timeFields,
-      ...this.ratioFields
-    ]
-    return allFields.find(field => field.key === fieldKey)
+    return getSearchFieldInfo(fieldKey)
   }
 
-  // 获取字段选项
+  // 获取字段选项（静态定义优先，分类/标签/下载器注入当次动态拉取结果）
   getFieldOptions(fieldKey: string): Array<{label: string, value: string}> {
-    const field = this.getFieldInfo(fieldKey)
-
-    // 如果字段本身有选项定义,直接返回
-    if (field?.options && field.options.length > 0) {
-      return field.options
-    }
-
-    // 根据字段类型返回默认选项
-    switch (fieldKey) {
-      case 'super_seeding':
-        return [
-          { label: '是', value: '1' },
-          { label: '否', value: '0' },
-          { label: '不支持', value: 'unsupported' }
-        ]
-
-      case 'category':
-        return this.categoryOptions
-
-      case 'tags':
-        return this.tagOptions
-
-      case 'downloader_name':
-        return this.downloaderOptions
-
-      default:
-        return []
-    }
+    return getSearchFieldOptions(fieldKey, {
+      categoryOptions: this.categoryOptions,
+      tagOptions: this.tagOptions,
+      downloaderOptions: this.downloaderOptions
+    })
   }
 
-  // 获取操作符组
+  // 获取操作符组（契约过滤与 matchMode 收敛在共享层）
   getOperatorGroups(fieldKey: string): OperatorDisplayGroup[] {
-    const field = this.getFieldInfo(fieldKey)
-    if (!field) return []
-
-    const groups: OperatorDisplayGroup[] = []
-    const fieldType = field.type
-
-    // 基本操作符
-    if (this.operatorGroups[fieldType]) {
-      const allowedOperators = ADVANCED_SEARCH_FIELDS[fieldKey]?.operators || []
-      let operators = this.operatorGroups[fieldType].filter(operator =>
-        allowedOperators.includes(operator.backendValue)
-      )
-      // multiSelect 字段按 matchMode 过滤：
-      // - exact（status/category/downloader_name 单值列）只暴露 in/not_in
-      // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
-      // 避免对单值列暴露 contains_*（语义错：LIKE 对精确列多余），
-      // 也避免对逗号串列暴露 in（语义错：整串相等而非子串）。
-      if (fieldType === 'multiSelect') {
-        const exactOps = ['in', 'not_in']
-        const nullOps = ['is_null', 'is_not_null']
-        operators = field.matchMode === 'exact'
-          ? operators.filter(op => exactOps.includes(op.value) || nullOps.includes(op.value))
-          : operators.filter(op => !exactOps.includes(op.value))
-      }
-      groups.push({
-        type: 'basic',
-        label: '基本操作',
-        operators
-      })
-    }
-
-    return groups
+    return getOperatorGroupsForField(fieldKey)
   }
 
   // 字段是否支持排除模式
@@ -892,87 +734,19 @@ export default class AdvancedSearchBuilder extends Vue {
     })
   }
 
-  // 构建查询文本
+  // 构建查询文本（渲染语义在共享层，与移动端摘要/预览同源）
   private buildQueryText(): string {
-    if (this.conditionGroups.length === 0) {
-      return '暂无搜索条件'
-    }
-
-    const groupQueries = this.conditionGroups.map((group, groupIndex) => {
-      const conditionQueries = group.conditions.map(condition => {
-        const field = this.getFieldInfo(condition.field)
-        if (!field) return ''
-
-        const fieldLabel = field.label
-        const operatorLabel = this.getOperatorLabel(condition.operator)
-        const valueLabel = this.getValueLabel(condition)
-        const modeLabel = condition.mode === 'exclude' ? '排除' : '包含'
-
-        return `${modeLabel}: ${fieldLabel} ${operatorLabel} ${valueLabel}`
-      }).filter(query => query)
-
-      if (conditionQueries.length === 0) return ''
-
-      const groupName = group.name || `条件组${groupIndex + 1}`
-      const groupLogic = group.logic.toUpperCase()
-      const conditionsStr = conditionQueries.join(` ${groupLogic} `)
-
-      return `【${groupName}】(${conditionsStr})`
-    }).filter(query => query)
-
-    // 添加组间逻辑连接
-    if (groupQueries.length === 0) return '暂无有效搜索条件'
-
-    if (groupQueries.length === 1) {
-      return groupQueries[0]
-    }
-
-    let result = groupQueries[0]
-    for (let i = 1; i < this.conditionGroups.length; i++) {
-      const group = this.conditionGroups[i - 1]
-      const betweenLogic = (group.betweenGroupLogic || 'and').toUpperCase()
-      result += ` ${betweenLogic} ${groupQueries[i]}`
-    }
-
-    return result
+    return buildGroupsQueryText(this.conditionGroups)
   }
 
   // 获取操作符标签
   private getOperatorLabel(operator: string): string {
-    const allOperators = Object.values(this.operatorGroups).flat()
-    const op = allOperators.find(o => o.value === operator)
-    return op ? op.label : operator
+    return sharedGetOperatorLabel(operator)
   }
 
   // 获取值标签
   private getValueLabel(condition: SearchCondition): string {
-    if (condition.value === null || condition.value === undefined) {
-      return '未设置'
-    }
-
-    // 特殊处理种子大小范围
-    if (condition.field === 'size' && condition.operator === 'between' && typeof condition.value === 'object') {
-      const value = condition.value
-      const min = value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : '无限制'
-      const max = value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : '无限制'
-      return `${min} ~ ${max}`
-    }
-
-    // 特殊处理种子大小单个值（带单位）
-    if (condition.field === 'size' && condition.operator !== 'between' && typeof condition.value === 'object' && condition.value.value !== undefined) {
-      const value = condition.value
-      return `${value.value} ${value.unit || 'GB'}`
-    }
-
-    if (Array.isArray(condition.value)) {
-      return condition.value.join(', ')
-    }
-
-    if (typeof condition.value === 'object') {
-      return JSON.stringify(condition.value)
-    }
-
-    return String(condition.value)
+    return describeConditionValue(condition)
   }
 
   // 搜索事件
@@ -1043,68 +817,9 @@ export default class AdvancedSearchBuilder extends Vue {
     }
     // 深拷贝避免污染模板源数据
     this.conditionGroups = JSON.parse(JSON.stringify(groups)) as ConditionGroup[]
-    // 归一化历史模板：旧 multiSelect 操作符在单值精确列上转为 in/not_in，
-    // value 统一为数组形态（兼容旧逗号串/单值存储）。
-    this.normalizeLoadedConditions()
-  }
-
-  /**
-   * 归一化从模板加载的 conditions，兼容历史数据：
-   * 1. value：multiSelect 字段若为逗号串/单值，拆成数组。
-   * 2. operator：旧 contains_any/all/not_contains_any/not_contains_all
-   *    若作用在单值精确列（category/downloader_name，matchMode='exact'），
-   *    需转为 in/not_in（后端 IN 才对单值列正确）；substring 列（tags）保留。
-   */
-  private normalizeLoadedConditions() {
-    for (let groupIndex = 0; groupIndex < this.conditionGroups.length; groupIndex++) {
-      const group = this.conditionGroups[groupIndex]
-      group.id = group.id || this.generateId()
-      group.logic = String(group.logic).toLowerCase() === 'or' ? 'or' : 'and'
-      group.betweenGroupLogic =
-        String(group.betweenGroupLogic).toLowerCase() === 'or' ? 'or' : 'and'
-      group.editing = false
-      if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
-        throw new AdvancedSearchValidationError(
-          `模板条件组${groupIndex + 1}没有有效条件`
-        )
-      }
-      for (const condition of group.conditions) {
-        const field = this.getFieldInfo(condition.field)
-        if (!field) {
-          throw new AdvancedSearchValidationError(
-            `模板包含未知字段：${condition.field}`
-          )
-        }
-        condition.id = condition.id || this.generateId()
-        condition.mode = condition.mode === 'exclude' ? 'exclude' : 'include'
-        if (!Object.prototype.hasOwnProperty.call(
-          ADVANCED_SEARCH_OPERATOR_GROUPS,
-          field.type
-        )) {
-          throw new AdvancedSearchValidationError(
-            `模板字段类型无效：${field.type}`
-          )
-        }
-        condition.operator = normalizeLoadedOperator(
-          condition.field,
-          condition.operator
-        )
-        condition.value = normalizeLoadedConditionValue(
-          condition.field,
-          field.type,
-          condition.operator,
-          condition.value
-        )
-        if (
-          condition.mode === 'exclude' &&
-          !operatorSupportsExclude(condition.operator)
-        ) {
-          throw new AdvancedSearchValidationError(
-            `模板操作符“${condition.operator}”不支持排除模式`
-          )
-        }
-      }
-    }
+    // 归一化历史模板（共享层，移动端同源）：旧 multiSelect 操作符在单值精确列上
+    // 转为 in/not_in，value 统一为数组形态（兼容旧逗号串/单值存储）。
+    normalizeLoadedGroups(this.conditionGroups)
   }
 
   // 保存搜索模板

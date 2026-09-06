@@ -3490,6 +3490,25 @@
             "session-handoff.md"
           ],
           "evidence": "2026-08-30 Phase 5 发布验收首批（A/B/C 批次全过；Play 上传/arm64 真机/跨版本升级演练三边界登记）。① 批次 A（release 构建+包体精算）：发布 keystore 生成（gitignored，凭据 local.properties 注入，缺失退化无签名不阻断 CI）；signingConfigs 内联接线；assembleRelease 87.7MB + bundleRelease AAB 67.7MB；apksigner 验签（CN=BtDeck，SHA-256 92abd2a7…d0e3）；bundletool 1.17 精算——universal 85.6MB、arm64/x86_64 native 拆分各 12.2MB、单设备下发 ≈73MB、每 ABI 8 个 native so 清单（全 Chaquopy 运行时）；minify 保持关闭（Chaquopy 反射链路，决策登记 play-release.md §9）。② 批次 B（设备矩阵）：API 24（google_apis x86_64 新建 AVD btdeck-a24，WHPX 5s 冷启动）——release APK 安装 6s、服务启动链 10s 打开 WebView（Python 3.12 在 minSdk 24 完整跑通：迁移+uvicorn+SPA）、FGS true+health 200 v1.0.6、WebView 登录页渲染、旋转后服务存活+health 200、LAN 绑定变化实测（restartWith 绑 0.0.0.0，ss 显示 *:54916 端口复用）、kill -9 崩溃恢复（pid 4462→5100、FGS 重建、端口复原）；**修复两个 API 24 真 bug**：ServerService.createChannel 无版本判断（NotificationChannel API 26+，API 24 实测 ClassNotFoundException 崩溃→补 Build.VERSION_CODES.O 守卫）与 HealthClient java.util.Base64（API 26+，lint NewApi 唯一违例→自包含 Base64 实现，设备与 JVM 测试行为一致）。API 34（新建 btdeck-a34）——release 链路 10s WebView+FGS+health 200+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（dumpsys deviceidle not enabled，环境限制登记真机补）。③ 批次 C：docs/android/play-release.md（FGS specialUse 申报口径/Data Safety 表（无第三方 SDK 不收集）/隐私政策要点/明文流量双层防线/按 ABI Release 说明/minify 决策/包体实测矩阵）；:app:lintDebug 全绿（两违例修复后）；testDebugUnitTest 32 绿含修复回归。④ 遗留边界（不可本机完成，均登记 play-release.md §10）：Play Console 实际上传与人工审查（需开发者账号）；arm64 真机矩阵（wheel 自建已全绿，导入/16KB 待真机）；跨版本升级迁移演练（需两个带服务端的发布版本对，建议 v1.0.7）；Doze 真机实测。 追加（2026-09-04）：本轮设备级自动化批次（task .3/.4/.8 收口）新增三项与发布相关的产品修复并复验——targetSdk 35 强制 e2e 布局缺陷（values-v35 主题退出，API 36 起出口移除需迁移 insets 自处理，已注释登记）、TrustScope SPKI 指纹语义、OkHttp 手动钉扎；appcompat 1.7.0→1.7.1；assembleRelease+bundleRelease 修复后复验成功。§11 SOP 已落（arm64 真机 adb 验证步骤/Play Console 逐步操作/v1.0.7 升级演练前置/Doze 真机命令）。arm64 机会记录：会话中一台 SDY-AN00 实体机短暂接入 adb（已授权调试）后掉线未复现——设备稳定接入后按 §11-SOP1 十分钟内可完成验证。task 保持 in-progress：四项外部边界为硬阻塞，取得条件前不得置 done。"
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.9",
+          "name": "移动高级搜索移动原生重构（方案三）：摘要卡+底部弹层+吸底执行",
+          "description": "/m/search 不再整页复用桌面 AdvancedSearchWorkspace：新建移动专用构建器（已保存搜索横滑胶囊+⚙ 管理抽屉、条件一行摘要卡、ConditionEditSheet 底部弹层编辑、组内/组间 AND/OR 分段钮、吸底执行搜索浮条、保存模板/预览对话框），字段/操作符/校验/请求构造与桌面共享同源（新增 advancedSearchFields.ts 共享层，AdvancedSearchBuilder 改为同签名代理行为不变），搜索完成后自动定位结果锚点，下拉刷新双分支保留。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/advancedSearchFields.ts",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/views/mobile/components/MobileAdvancedSearch.vue",
+            "frontend/src/views/mobile/components/ConditionEditSheet.vue",
+            "frontend/src/views/mobile/search.vue",
+            "frontend/tests/unit/mobile-search.spec.ts",
+            "frontend/tests/unit/mobile-advanced-search.spec.ts",
+            "frontend/tests/unit/condition-edit-sheet.spec.ts",
+            "frontend/tests/unit/field-types-consistency.spec.ts"
+          ],
+          "evidence": "2026-09-06 方案三落地（用户在四方案示意图中选定移动原生重构）：①共享层 advancedSearchFields.ts（444 行）——字段五分组/操作符契约过滤+matchMode 收敛/摘要文案 describeCondition/预览文本/normalizeLoadedGroups 模板归一化/loadAdvancedSearchDynamicOptions（allSettled 部分失败静默降级）；AdvancedSearchBuilder.vue 改为同签名代理（1481→1272 行），桌面侧 Builder/Workspace/ConditionValueInput/contract 四套 spec 69 例保绿；②移动端 MobileAdvancedSearch.vue（1232 行：胶囊同源 getSearchTemplates is_public 过滤 source=advanced、管理抽屉保存更改/删除权限语义同桌面、吸底浮条避让悬浮 Tab 栏）+ConditionEditSheet.vue（336 行，el-drawer btt、草稿克隆确认回写、值输入复用 ConditionValueInput）；search.vue 重写（248 行，scrollToResults 结果锚点自动定位+下拉刷新双分支保留）；③测试：mobile-search.spec 重写 11 例+mobile-advanced-search.spec 新增 17 例+condition-edit-sheet.spec 新增 11 例，field-types-consistency 守卫改锚共享层并新增禁本地字段副本回流断言（18 例）；门禁：npm run lint 绿、前端全量单测 105 套件 1476 例全绿、npm run build（类型检查）成功；roadmap 根/前端 views/components-layout 三层同步（行号实测）。"
         }
       ]
     },

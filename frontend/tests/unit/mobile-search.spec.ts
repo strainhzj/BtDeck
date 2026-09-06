@@ -1,12 +1,11 @@
 /**
- * 移动高级搜索契约（Phase 4 M2）：
- * - 纯高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索与 Web 端同源），
- *   search 事件 → buildAdvancedSearchRequest → POST advancedSearch；
- * - 简单搜索已迁至种子页（/m/torrents），本页不再有简单查询表单与 getList；
- * - 移动端查询模板页已裁撤（仅保留高级搜索）：m2-template-cache 应用链路移除，
- *   模板能力收敛进工作区左侧已保存搜索；
- * - 下拉刷新：已搜索过经 workspace.onSearch 重放，未搜索过刷新字段候选。
- * 工作区以轻量 stub 替身（真实组件契约由桌面侧 spec 覆盖）。
+ * 移动高级搜索契约（方案三移动原生重构）：
+ * - MobileAdvancedSearch 构建器（摘要卡+底部弹层编辑）search 事件 →
+ *   buildAdvancedSearchRequest → POST advancedSearch；
+ * - 搜索完成后自动滚动定位结果锚点（jsdom 无 scrollIntoView，静默跳过）；
+ * - 下拉刷新：已搜索过经 builder.onSearch 重放，未搜索过刷新字段候选；
+ * - 简单搜索在种子页（/m/torrents），本页无简单查询表单与 getList。
+ * 构建器以轻量 stub 替身（真实交互契约由 mobile-advanced-search.spec 覆盖）。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -19,8 +18,8 @@ jest.mock('@/api/torrents', () => ({
   advancedSearch: jest.fn()
 }))
 
-jest.mock('@/components/torrents/AdvancedSearchWorkspace.vue', () => ({
-  name: 'AdvancedSearchWorkspace',
+jest.mock('@/views/mobile/components/MobileAdvancedSearch.vue', () => ({
+  name: 'MobileAdvancedSearch',
   render: (h: (t: string) => unknown) => h('div')
 }))
 
@@ -31,15 +30,13 @@ jest.mock('@/views/mobile/torrent-detail-cache', () => ({
 
 const onSearchMock = jest.fn()
 const refreshFieldOptionsMock = jest.fn()
-const applyTemplateGroupsMock = jest.fn()
 
-const WorkspaceStub = Vue.extend({
-  name: 'AdvancedSearchWorkspaceStub',
-  template: '<div class="workspace-stub" />',
+const BuilderStub = Vue.extend({
+  name: 'MobileAdvancedSearchStub',
+  template: '<div class="builder-stub" />',
   methods: {
     onSearch: onSearchMock,
-    refreshFieldOptions: refreshFieldOptionsMock,
-    applyTemplateGroups: applyTemplateGroupsMock
+    refreshFieldOptions: refreshFieldOptionsMock
   }
 })
 
@@ -67,7 +64,7 @@ const resultTorrent = {
 
 const mountPage = (): Wrapper<Vue> =>
   shallowMount(MobileSearch, {
-    stubs: { 'advanced-search-workspace': WorkspaceStub },
+    stubs: { 'mobile-advanced-search': BuilderStub },
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
       $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) }
@@ -86,14 +83,13 @@ describe('views/mobile/MobileSearch', () => {
     jest.mocked(advancedSearch).mockReset()
     onSearchMock.mockReset()
     refreshFieldOptionsMock.mockReset()
-    applyTemplateGroupsMock.mockReset()
   })
 
   afterEach(() => {
     jest.clearAllMocks()
   })
 
-  it('工作区 search 事件：经 buildAdvancedSearchRequest 组装后 POST advancedSearch', async() => {
+  it('构建器 search 事件：经 buildAdvancedSearchRequest 组装后 POST advancedSearch', async() => {
     jest.mocked(advancedSearch).mockResolvedValue({
       code: '200',
       data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
@@ -101,7 +97,7 @@ describe('views/mobile/MobileSearch', () => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
-    // 桌面构建器载荷形态（groups 为 JSON 字符串）
+    // 构建器载荷形态（groups 为 JSON 字符串）
     const builderParams = {
       complex_search: true as const,
       groups_count: 1,
@@ -148,7 +144,7 @@ describe('views/mobile/MobileSearch', () => {
     expect(vm.$router.push).toHaveBeenCalledWith('/m/torrents/detail/d1/abc')
   })
 
-  it('下拉刷新：已搜索过经 workspace.onSearch 重放', async() => {
+  it('下拉刷新：已搜索过经 builder.onSearch 重放', async() => {
     jest.mocked(advancedSearch).mockResolvedValue({
       code: '200',
       data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
@@ -168,7 +164,7 @@ describe('views/mobile/MobileSearch', () => {
     expect(onSearchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('下拉刷新：未搜索过刷新工作区候选（不触发搜索）', async() => {
+  it('下拉刷新：未搜索过刷新构建器候选（不触发搜索）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
@@ -200,7 +196,7 @@ describe('views/mobile/MobileSearch', () => {
     expect(vm.searched).toBe(false)
   })
 
-  it('工作区 reset 事件：清空结果与搜索态', async() => {
+  it('构建器 reset 事件：清空结果与搜索态', async() => {
     jest.mocked(advancedSearch).mockResolvedValue({
       code: '200',
       data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
@@ -216,20 +212,36 @@ describe('views/mobile/MobileSearch', () => {
     expect(vm.searched).toBe(false)
   })
 
-  it('rerunAdvanced：工作区 ref 缺失时静默不抛错（optional 防御）', async() => {
+  it('rerunAdvanced：builder ref 缺失时静默不抛错（optional 防御）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
-    vm.$refs.workspace = undefined
+    vm.$refs.builder = undefined
     expect(() => vm.rerunAdvanced()).not.toThrow()
     expect(onSearchMock).not.toHaveBeenCalled()
   })
 
-  it('源码契约：纯高级搜索（无简单表单/模式切换），复用桌面工作区同源模板', () => {
+  it('scrollToResults：jsdom 无 scrollIntoView 时静默跳过不抛错', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(() => {
+      vm.scrollToResults()
+    }).not.toThrow()
+    await flushLifecycle()
+  })
+
+  it('源码契约：移动原生构建器（无简单表单/模式切换），已保存搜索同源', () => {
     const fs = require('fs') as typeof import('fs')
     const source = fs.readFileSync('src/views/mobile/search.vue', 'utf-8')
-    expect(source).toContain('AdvancedSearchWorkspace')
-    expect(source).toContain('advanced-search-workspace')
+    expect(source).toContain('MobileAdvancedSearch')
+    expect(source).toContain('mobile-advanced-search')
+    // 搜索完成后自动定位结果锚点
+    expect(source).toContain('scrollToResults')
     // 简单搜索已迁种子页：禁回流
     expect(source).not.toContain('简单查询')
     expect(source).not.toContain('switchMode')
