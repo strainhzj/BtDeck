@@ -1,5 +1,88 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-06（第二批）：OOM 治理外部审查四缺陷修复——独立复核全属实、对抗性审查修订后落地（后端 4581 全绿）
+
+### 背景与过程
+
+用户提供外部评估结论（审查范围 08ee64d..646e742 六个 OOM 提交，点名 4 项缺陷：P1 Android
+内存归还不生效、P2 摘要峰值随输入增长、P2 全量完成标记先于写库持久化、P2 取消遗留读取协程）。
+三轮推进：①三探查代理逐条取证（4 主指控+4 同族发现全部属实，行号核实）；②修复计划经独立
+子代理对抗性审查（APPROVE_WITH_AMENDMENTS，抓出 3 个 MAJOR：finally 示例缺 import 且 kill
+顺序会被二次取消打断、qB 全量路径缺锚点 2150-2151、存量测试盘点漏一处恒真空转断言），
+修订后经用户批准实施。
+
+### 四项修复
+
+1. **[P1] M_PURGE 符号**（sync_observability.py:721）：`_M_PURGE = 101 → -101`。AOSP bionic
+   malloc.h 实证：M_DECAY_TIME=-100、M_PURGE=-101（命令码均为负、value 被忽略、API 28+）；
+   正值 101 在真机 mallopt 返 0 **静默 no-op**——测试（断言同错值）通过不能证功能有效。
+   注释/docstring（API 31+→28+）/测试断言一并修正。附带：progress/session-handoff 旧条目
+   错值已在 handoff 环境坑中更正（本条目即历史更正记录）。
+2. **[P2] 摘要全程有界**（cron_executor.py）：`_summarize_result_for_log` 重写——islice 取
+   head（不再 list(value) 复制）、递归深度上限 3、str/bytes 先切片再 repr、已知有界类型
+   （标量/datetime/date/Decimal/UUID/Enum）保留 repr、未知自定义对象降级 `<类型名>`（其
+   __repr__ 可能无界）、顶层 dict 800 字符预算**边渲染边 break**。同族加固：normalize_
+   internal_result 非 dict 分支 str(result) 曾**完全无截断**（改 str 切片/摘要+[:2000]）、
+   phase 行加 100 行×200 字符双上限。格式契约（len=/head=/截断/set 支持）保持存量测试全绿。
+3. **[P2] 全量完成标记时序**（torrents_async.py）：早保存点删除（info :3430 / 全量 :1939），
+   移到 durable 写库成功且周期完整后（info：cycle_complete 判定旁与 _confirm_qb_sync_rid
+   相邻；全量：主 commit 之后 RID confirm 旁，tracker 阶段不 gate info 标记）。修复缺口：
+   写库失败后标记已落盘 → 重启（有效 RID+空增量）0 拉取报 cycle_complete 跳过全量重试
+   ——失败注入+两阶段重启回归测试钉死。full_sync_state.json 与 qb_rid_cache.json 改
+   tmp+os.replace 原子写（失败静默语义保留，endpoints 不跨层 import，第 4 处模式复制注明取舍）。
+4. **[P2] 读取协程取消清理**（cron_executor.py `_communicate_with_output_cap`）：try/finally
+   统一回收——**同步 kill 先于一切 await**（不可被二次取消打断）、再取消并 gather 两读取
+   任务、最后收尸；正常路径无误杀（returncode 已置不触发）。修复：取消时 stderr 任务孤儿化、
+   子进程不收尸、管道不关协程永挂（外层中断治理反复触发会积累）。
+
+### 验证
+
+- 新增/适配 13 项测试：两阶段重启重试全量（含"标记时刻≥最后写库"顺序断言）、写库失败
+  不落标记、partial 轮 mark_calls==[]（原 :874 断言因 fixture 预置新鲜时间戳恒真——改强
+  断言）、tracemalloc 分配上限（1M 元素 <256KiB 对照旧 ~8MB）、取消清理×2（kill 收尸+零
+  遗留协程）、原子性×2（旧文件完好/无 tmp 残留）、深嵌套自引用、未知 __repr__ 不被调用、
+  phase 行 100 行上限、非 dict str 原文保留
+- 后端全量 **4581 passed / 9 skipped**（tasks+api+integration 1600/6 + 其余目录 2981/3）；
+  black(24.10.0)/flake8/mypy 全过
+- 明确不做：qB info 全量/qB 全量/TR 手动 full 流式化（另开批次）；10 万种子压测与 Android
+  真机 RSS 实测留外部验收（SOP 见 session-handoff），"稳态 400-700MB"降级为待实测
+
+
+## 2026-09-06：Tracker 详情卡片——底部收起条 + 文件/Peers 页签全栈实现（两独立审查修订版，全绿）
+
+### 背景
+
+用户需求：①卡片保持高度，底部加一整行向下收起键（效果等同右上角关闭按钮，免去每次划到最右关闭）；②实现文件与 Peers 页签（此前是"开发中"占位）。计划经两个独立子代理审查（后端契约/客户端库源码级核实 + 前端集成/Vue2 约束核实），裁决"有条件通过"，全部必改项吸收后实施。刷新策略经用户确认：Peers 页签 5s 自动轮询，文件切入加载一次+手动刷新。
+
+### 后端（torrent_detail.py，endpoints 37→38）
+
+- `GET /torrents/detail/{hash}/files`（page/page_size 可选）与 `/peers`；store 缓存快照 + INTERACTIVE lane（qB 15s/TR 20s）。
+- 审查拦下的两个库陷阱：TR 禁用 `.peers` 属性（库注解 ->int 缺陷）与 `get_files()`（需 priorities/wanted 否则 KeyError），改 `torrent.get()` 原始字段（同 orphan_manifest.py 先例）；键名映射 address/clientName/flagStr/rateToClient/rateToPeer。
+- TR KeyError / qB NotFound404Error → 独立 404 信封（种子不存在，与下载器不在缓存区分）；列表响应守 total/page/pageSize/list 强制格式。
+
+### 前端（数据 mixin + 卡片 UI）
+
+- `mixins/detailTabsData.ts`：文件按 downloader_id:hash 键控懒加载；Peers 5s 链式轮询（不堆叠+visibilitychange 暂停恢复）；@Watch 页签/currentRow 三向（关卡片/换种子/卸载）；序号+键双守卫；信封 404 自动停轮询（兜住列表模式删除当前种子未清 currentRow 的既有缺口）。
+- 卡片：底部整行收起条（复用 close 事件，总高 240px/移动端 180px 不变）；文件页签（formatFileSize/el-progress clamp 0~100/1000 行截断提示）；Peers 页签（ip:port/客户端/进度/双速度，0 速兜底 -）；三态+stale 提示+刷新按钮。两视图接 mixin，重复 detailTabs 字面量统一引用 DEFAULT_TRACKER_DETAIL_TABS。
+
+### 生产缺陷（本批探针实证并修复）：类字段箭头 handler 幽灵 this
+
+visibility handler 写成类字段箭头时，vue-class-component 的字段默认值共享机制使箭头捕获**非组件实例**（ctor-name=TrackerDetailDataMixin 的幽灵对象，this.active 恒为默认值）——pause 写到幽灵上，**真实组件后台轮询停不下来**。五轮探针逐层二分（状态探针→手动调用→事件分发→getter 计数→假 this→函数源码）定位后改为方法内创建闭包+实例字段存引用。同文件所有方法路径（watcher/加载/停轮询）this 正确，仅字段箭头受影响；SpeedPollingMixin 行为对照正常未动。
+
+### 验证
+
+- 后端：test_torrent_detail_endpoint 13 passed；tests/api+架构 lint 1131 passed 5 skipped；mypy 0 error；black/flake8 绿。
+- 前端：lint（--max-warnings 0）绿；全量 102 套件 1415 passed（新增 detail-tabs-data 12 例+卡片 spec 扩 9 例）；typecheck 绿；build 成功。
+- roadmap 三层同步（根 README 元信息/backend api README 38 模块/frontend views 卡片+mixin 条目）；feature_list.json 追加 tracker-detail-card-tabs-2026-09-06（3 任务全 done）。
+
+### 明确未做
+
+- 卡片标题「Tracker详情」未改「种子详情」（审查建议，用户未提，可选后续）。
+- Git 提交待用户确认后执行。
+
+---
+
+
 ## 2026-09-05（第二批）：移动端内存 Tier-1——重启全量持久化 + 分配器归还 + android profile（移动端实测 2.237GiB 驱动）
 
 ### 背景

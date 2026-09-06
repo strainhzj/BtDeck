@@ -1,3 +1,65 @@
+## 2026-09-06：Tracker 详情卡片——底部收起条 + 文件/Peers 页签全栈实现（未提交，等用户确认）
+
+### 交付内容
+
+- 后端新文件 `backend/app/api/endpoints/torrent_detail.py`（endpoints 38 个）：GET /torrents/detail/{hash}/files（可选分页）与 /peers；store 缓存快照+INTERACTIVE lane；qB/TR 原始字段归一化统一 VO（progress 0~1）；TR 经 torrent.get() 原始访问（库 .peers 注解缺陷/get_files KeyError 两个坑由独立审查拦下）；种子不存在独立 404 信封。
+- 前端：api/torrents.ts 两接口+类型；`mixins/detailTabsData.ts`（文件键控懒加载+Peers 5s 链式轮询+页签/currentRow watch+序号守卫+404 停轮询+visibilitychange 门控）；index.vue/TraditionalView.vue 接入；TrackerDetailCard 实现文件/Peers 页签（三态/stale/截断/刷新）与底部整行收起条（同 close 事件、总高 240/180px 不变）。
+- 测试：backend test_torrent_detail_endpoint 13 例（新增）；frontend detail-tabs-data.spec 12 例（新增）+ tracker-detail-card.spec 扩 9 例；门禁全绿（backend tests/api+架构 1131、mypy/black/flake8；frontend lint/1415 单测/typecheck/build）。
+
+### 关键坑位（下批必读）
+
+1. **类字段箭头 handler 幽灵 this（本批生产缺陷）**：vue-class-component 下 mixin 的类字段箭头捕获的是「字段默认值对象」而非组件实例——事件 handler 写 `private foo = () => {...}` 会让暂停/清理写到幽灵对象上且无报错。修法：方法内建闭包+实例字段存引用（detailTabsData.ts visibility 段有注释）。五轮探针二分法（状态→手动调用→分发→getter 计数→假 this→函数源码）已沉淀于 progress.md。
+2. transmission-rpc 7.x 必须经 `torrent.get()` 读原始字段：`.peers` 属性注解 ->int、`get_files()` 需 priorities/wanted（同 orphan_manifest.py 先例）。
+3. qB `sync_torrent_peers(torrent_hash, rid=0)` 每次全量快照，无状态端点正确用法；不要用 client.sync.torrent_peers 的 delta 状态机。
+4. 仓库既有缺口仍open：index.vue 删除当前种子不清 currentRow（本批由 mixin 404 停轮询兜底，根治要补删除路径关闭详情）。
+
+### 后续待办
+
+- Git 提交（等用户确认；建议 feat+fix 分开：卡片功能一枚、幽灵 this 修复可并入）。
+- 可选：卡片标题「Tracker详情」→「种子详情」；文件/Peers 大列表服务端分页 UI 化。
+- roadmap/feature_list/progress/handoff 已同步；init.sh 见下批记录。
+
+---
+
+## 2026-09-06：OOM 治理外部审查四缺陷修复——独立复核全属实+对抗性审查修订后落地（后端 1600+ 全绿）
+
+### 当前状态
+
+- 外部评估 08ee64d..646e742 六提交的 4 项缺陷经三轮独立核实**全部属实**并修复：
+  P1 bionic M_PURGE 写成 101（真值 **-101**，AOSP malloc.h 钉死：M_DECAY_TIME=-100、
+  M_PURGE=-101、value 被忽略；正值命令码 mallopt 返 0 **静默 no-op**）——常量/注释/
+  docstring(API 28+)/测试断言一并修正；
+  P2 摘要先完整 repr/list() 复制再截断——`_summarize_result_for_log` 全程有界重写
+  （islice/深度上限 3/类型白名单/顶层 dict 800 字符预算边渲染边 break；1M 元素列表
+  摘要峰值分配 <256KiB，旧实现 ~8MB）+ 同族加固（非 dict 结果 str() 曾完全无截断、
+  phase 行无行数上限→100 行+每行 200 字符）；
+  P2 qB 全量完成标记早于写库持久化——移到 durable 写库成功且周期完整后（info 路径
+  `_confirm_qb_sync_rid` 旁 / 全量路径主 commit 后锚点；失败注入复现旧缺口：写库失败
+  →重启+有效 RID+空增量→0 拉取报 cycle_complete，修复后被回归测试钉死）+
+  full_sync_state/qb_rid_cache 改 tmp+os.replace 原子写（失败静默语义保留）；
+  P2 取消脚本任务遗留读取协程——`_communicate_with_output_cap` 加 finally 统一回收
+  两读取任务 + **同步 kill 优先于一切 await**（二次取消打不断；取消时子进程原本也不
+  收尸、管道不关协程永挂）。
+- 独立对抗性审查（APPROVE_WITH_AMENDMENTS）抓出计划 3 个 MAJOR 已采纳：示例代码缺
+  import 且 kill 顺序错、1939 路径锚点缺（2150-2151 RID confirm 旁，tracker 阶段不
+  gate info 标记）、存量测试盘点漏（test_sync_memory_bound:874 因 fixture 预置新鲜
+  时间戳而**恒真空转**，已改强断言 partial 轮 mark_calls==[]）
+- 回归：新增/适配 13 项测试（两阶段重启重试/tracemalloc 分配上限/取消清理×2/原子性
+  ×2/深嵌套自引用/未知 __repr__ 不调用等）；tasks+api+integration **1600 passed/
+  6 skipped** + 剩余目录全量；black(24.10.0)/flake8/mypy 全过
+- 修复批次未提交（等用户指示）；真机 RSS 验证与 10 万种子压测留外部验收，
+  "稳态 400-700MB"表述降级为待实测
+
+### Android 真机 RSS 验证 SOP（修复 1 的外部验收步骤）
+
+1. 重打移动端包（btdeck_server profile），启动后 `adb shell pidof btdeck_server` 取 pid
+2. 触发一次大批量同步后等待 RSS 爬升（`adb shell cat /proc/<pid>/status | grep VmRSS`）
+3. 等待采样循环（SYNC_PROCESS_MEMORY_SAMPLE_SECONDS，默认 300s）触发归还，
+   观察 process_memory 事件 `heap_trimmed=true` 且 VmRSS 回落（修复前该字段恒 false）
+4. 多轮同步观察 RSS 呈锯齿而非楼梯（对照旧代码数小时爬回 2.2GiB 的行为）
+
+---
+
 ## 2026-09-05（最新+4）：移动验收修复回归加固——单测+12/e2e+1/变异五类全拦截（1380 全绿）
 
 ### 当前状态
@@ -102,7 +164,9 @@
 
 ### 环境坑（本批新增，勿重踩）
 
-- bionic mallopt 常量：M_DECAY_TIME=100 / M_PURGE=101（scudo 主分配器释放；未知命令返 0 等价 no-op）
+- bionic mallopt 常量：M_DECAY_TIME=-100 / M_PURGE=-101（**命令码均为负值**，AOSP malloc.h
+  实证；2026-09-06 修正——曾误记为正值 100/101 且把代码带错，正值命令码 mallopt 返 0 静默
+  no-op；M_PURGE 的 value 参数被忽略，API 28+ 可用）
 - ctypes 调用 MagicMock 断言时参数是 c_int 包装（args[0].value 取值，不能直接 ==）
 - AsyncIOScheduler 未 start 时 shutdown(wait=False) 会触碰事件循环（NoneType call_soon_threadsafe）——
   测试里只 remove_job 不 shutdown

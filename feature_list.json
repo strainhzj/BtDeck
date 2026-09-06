@@ -173,6 +173,22 @@
             "backend/app/tasks/cron_executor.py",
             "backend/app/startup/lifecycle.py"
           ]
+        },
+        {
+          "id": "oom.review_fix_20260906",
+          "name": "外部审查四缺陷修复（M_PURGE 符号/摘要有界化/全量标记时序/读取协程取消清理）",
+          "description": "2026-09-06 外部评估 08ee64d..646e742 的 4 项缺陷经独立复核全属实并修复：P1 bionic M_PURGE 真值 -101（原 101 在真机 mallopt 静默 no-op，AOSP malloc.h 钉死，测试断言同改）；P2 _summarize_result_for_log 全程有界重写（islice/深度上限/类型白名单/输出预算，1M 元素摘要峰值分配 <256KiB 对照旧 ~8MB）+ 非 dict 结果与 phase 行同族加固；P2 qB 全量完成标记移到 durable 写库成功且周期完整后（修复写库失败重启跳过全量重试缺口，失败注入+两阶段重启测试钉死）+ 两状态文件原子写；P2 取消脚本任务 finally 统一回收读取协程并同步 kill 优先。新增/适配 13 项回归测试，后端全量 4581 passed/9 skipped，black/flake8/mypy 全过。真机 RSS 与 10 万种子压测留外部验收",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_observability.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/tasks/test_mobile_memory_profile.py",
+            "backend/tests/tasks/test_cron_executor_output_cap.py",
+            "backend/tests/api/test_torrents_async_info_budget.py",
+            "backend/tests/integration/test_sync_memory_bound.py"
+          ]
         }
       ]
     },
@@ -5736,6 +5752,15 @@
           "evidence": "四套件 229 passed（torrent-batch/list-view/traditional-view/mobile-torrents；新增 17 例：谓词参数化与 tracker 8 + list-view 6（转移判定最低层锚/滞后主快照/稳态零刷新/reconcile 路径/showActiveOnly 分支/筛选重置）+ traditional-view 3（滞后含转移锚/稳态/高级搜索门控不洗结果））。变异自检双检出：变异 A 回退转移判定→稳态用例 2 红；变异 B 移除 tracker 门控→滞后路径 5 红；还原后无残留。eslint 0 error（TraditionalView 2 个 warning 属并行进行的详情页签开发半成品 import，非本批代码）。mock 纪律：getList/getActiveTorrents 均 mockImplementation 每次新鲜对象（applySpeedUpdates 原地突变陷阱，同 mobile-torrents.spec 已记录坑）；list-view 用例须 mount 期空快照（桌面 created 即启动 immediate 首轮轮询，终态快照会把 created getList 的滞后行原地突变致后续转移不成立）。计划经独立子代理审查，4 项阻断级修订全部落实（谓词求值时机/测试③重写/变异自检拆分/mock 新鲜对象）。附带解除并行开发阻塞：detailTabsData.ts 从 .vue 导入命名类型在 ts-jest 下 TS2614，内联同款类型定义（类型源头统一留待详情批次）；traditional spec 组件导入断言放宽为路径匹配（并行开发把单行 import 改多行）。"
         }
       ]
+    },
+    {
+      "id": "tracker-detail-card-tabs-2026-09-06",
+      "name": "Tracker 详情卡片：底部收起条 + 文件/Peers 页签全栈实现",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [],
+      "evidence_summary": "后端：test_torrent_detail_endpoint 13 passed、tests/api+架构 lint 1131 passed、mypy/black/flake8 绿；前端：lint（--max-warnings 0）绿、全量单测 102 套件 1415 passed、npm run build 成功、typecheck 绿。roadmap 三层已同步（根 README 元信息、backend/api/README 38 模块、frontend/views 卡片+mixin 条目）。",
+      "notes": "计划经两独立子代理审查（后端契约/客户端库源码级 + 前端集成/Vue2 约束）有条件通过后实施，全部必改项落地：TR 原始字段访问/异常分类 404/链式轮询禁 setInterval/换种子 watcher/progress clamp/formatSpeed 兜底/mixin 单测归位 tests/unit。卡片标题维持「Tracker详情」未改（用户未提，列为可选后续）。Git 提交待用户确认。"
     }
   ],
   "tasks": [

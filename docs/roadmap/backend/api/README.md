@@ -1,6 +1,6 @@
 # backend/api — HTTP 路由层
 
-> FastAPI 路由聚合层，按业务域组织 37 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
+> FastAPI 路由聚合层，按业务域组织 38 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -12,7 +12,7 @@
 | 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（32 次 include_router；prefix→模块映射见下方“路由聚合”） |
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 
-### endpoints/（37 个文件）
+### endpoints/（38 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -44,9 +44,10 @@
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存）；`GET /active-torrents` 返回 status/downloadComplete 并区分 200/206 完整/部分快照，完成态进度强制 100；TTL 补查按下载器轮转退避，`POST /runtime-state/reconcile` 按 downloader_id+hash 低频核验消失任务并同步终态 |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |
+| 种子详情明细 torrent-detail | `torrent_detail.py` | TrackerDetailCard 文件/Peers 页签数据源：`GET /detail/{hash}/files`（L188，可选分页）与 `/peers`（L257）；走 `app.state.store` 缓存快照 + `call_downloader_api(INTERACTIVE)`，qB/TR 原始字段归一化统一 VO（progress 0~1，速度 bytes/s）；TR 原始字段经 `torrent.get()` 访问（禁 `.peers` 属性/`get_files()`，同 orphan_manifest 先例），TR KeyError 与 qB NotFound404Error 映射独立 404 信封 |
 | 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；`sync_single_downloader()` L1242 用 `create_task_if_idle` 原子拒绝同下载器 pending/running 重复提交，保存审计纯数据快照后立即返回 task_id，后台经 `SyncCoordinator(full/manual)` 与 `app.state.store` 缓存客户端执行；`get_sync_task_status()` L1414 查询真实 success/failed/cancelled 终态；Transmission 兼容同步仍写入/清理错误原因并归一 Tracker 状态 |
-| 种子聚合 torrents | `torrents.py` | 种子聚合路由器（include_router 合并 6 个子路由） |
-| 异步种子 DB torrents-async | `torrents_async.py` | 异步版种子 DB 操作（供定时任务用）；`extract_tracker_rows_from_torrent()` L732 与 `sync_add_tracker_async()` L982 分别归一 Transmission announce/scrape 状态；FULL 与 INFO-ONLY 写入错误原因（L1437/L3800）；✨2026-09-03 生产修复：producer/worker 队列三处 `wait_for`→`async with asyncio.timeout()`（3.11 取消丢失竞态致取消后永久挂死，批次 F 探针实证），info/tracker 仍受单轮预算与 durable cursor 约束；✨2026-09-05 OOM 峰值治理：qB tracker-only fetch 分页化仅留 hash 轻对象（页重叠去重，不带 include_trackers/sort）；TR info-only base 改 `TR_INFO_BASE_FIELDS` 精简字段 + detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走缓冲上限）；TR tracker-only 两阶段（slim [id,hashString] 排序切批 → ids 批量拉 trackerStats）；Tier-1（同日）：全量快照节奏三标记（_QB_LAST_FULL_SYNC/_TR_LAST_FULL_SYNC/_TR_FULL_SYNC_DONE）改文件持久化（CONFIG_PATH/full_sync_state.json，沿 rid 缓存模式）——重启不再强制整库快照（Android 进程重启常态，原内存 dict 清零即白付一次全量峰值） |
+| 种子聚合 torrents | `torrents.py` | 种子聚合路由器（include_router 合并 7 个子路由） |
+| 异步种子 DB torrents-async | `torrents_async.py` | 异步版种子 DB 操作（供定时任务用）；`extract_tracker_rows_from_torrent()` L732 与 `sync_add_tracker_async()` L982 分别归一 Transmission announce/scrape 状态；FULL 与 INFO-ONLY 写入错误原因（L1437/L3824）；✨2026-09-03 生产修复：producer/worker 队列三处 `wait_for`→`async with asyncio.timeout()`（3.11 取消丢失竞态致取消后永久挂死，批次 F 探针实证），info/tracker 仍受单轮预算与 durable cursor 约束；✨2026-09-05 OOM 峰值治理：qB tracker-only fetch 分页化仅留 hash 轻对象（页重叠去重，不带 include_trackers/sort）；TR info-only base 改 `TR_INFO_BASE_FIELDS` 精简字段 + detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走缓冲上限）；TR tracker-only 两阶段（slim [id,hashString] 排序切批 → ids 批量拉 trackerStats）；Tier-1（同日）：全量快照节奏三标记（_QB_LAST_FULL_SYNC/_TR_LAST_FULL_SYNC/_TR_FULL_SYNC_DONE）改文件持久化（CONFIG_PATH/full_sync_state.json，沿 rid 缓存模式）——重启不再强制整库快照（Android 进程重启常态，原内存 dict 清零即白付一次全量峰值）；✨2026-09-06 审查修复：qB 全量完成标记移到 durable 写库成功且周期完整后（info 路径 `_confirm_qb_sync_rid` 旁 / 全量路径主 commit 后；修复"写库失败→重启+有效 RID+空增量→0 拉取报 cycle_complete"缺口），full_sync_state.json/qb_rid_cache.json 改 tmp+os.replace 原子写（`_atomic_write_text`，失败静默语义保留） |
 | Tracker 查询 tracker | `tracker.py` | Tracker 信息查询/同步（异步会话）；Transmission 新增/变更 Tracker 时在 L655–661、L834–840 写入归一状态码 |
 | Tracker 关键词 tracker-keyword | `tracker_keywords.py` | Tracker 关键词 CRUD + 批量 |
 | 关键词池 keyword-pool | `tracker_keywords_pools.py` | Tracker 关键词池（candidate/ignored/success/failed 四池） |
