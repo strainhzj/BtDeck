@@ -101,3 +101,6 @@ release/build/
 
 # 门禁证据目录（脚本/CI 运行时输出，2026-09-05 起不入库；权威留档=CI run artifact）
 release/evidence/
+
+# Demo dist 本地恢复产物（演示环境回滚用 zip，勿入库；2026-09-06 曾被 git add frontend/ 误带入后剔除）
+frontend/BtDeck-demo-dist-*.zip
