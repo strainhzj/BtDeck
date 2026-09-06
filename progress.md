@@ -38,6 +38,7 @@
 
 - TrackerDetailCard：`.tracker-collapse-bar` 由卡片底部移至最顶部（Tracker详情标题之上），点击行为不变（复用 `close` 事件、总高 240px/移动端 180px 不变）；箭头方向随布局取收起方向——list 布局卡片随行下挂、收起向上折叠（chevron-up），traditional 布局底部锚定、收起向下折叠（chevron-down），新增 `collapseIconName` computed；分隔线 border-top→border-bottom。
 - 测试：卡片 spec describe 更名"顶部收起条"，新增"位于卡片 firstElementChild"位置断言 + 双布局箭头方向用例（24 例全绿）；两视图 + mixin spec 93 例复验全绿（视图侧经 `card.vm.$emit` 驱动、与位置无关）；lint 绿。
+- 回归测试同步审计（用户验收通过后）：仓库范围（单测/e2e/移动端）grep 确认除卡片 spec 外无任何钉住旧"底部收起条"位置/chevron-down 的断言——视图 spec 不查卡片内部 DOM、torrent-error-reason-ui 只钉 errorReason 字符串、api 契约 spec 无 DOM；最终前端全量单测 103 套件 1444 例全绿（含本批新增方向用例），无旧回归与本次上移冲突。
 - 文档：roadmap frontend/views 卡片条目收起条片段同步（底部→顶部、L215→L10 实测）；feature_list 对应 done 任务 notes 补记。改动未提交，与工作区并行批次一并待用户定夺。
 
 ---
