@@ -135,6 +135,7 @@ interface TraditionalViewVm extends Vue {
     tags_like: string
     showActiveOnly: boolean
     tracker_domain: string[]
+    status: string[]
   }
   currentRow: TorrentRow | null
   activeDetailTab: string
@@ -165,6 +166,7 @@ interface TraditionalViewVm extends Vue {
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   loadActiveSpeed(): Promise<boolean>
+  applySpeedUpdates(updates: Array<Record<string, unknown>>): boolean
   handleBatchAddCompleted(): Promise<void>
   runtimeStateMisses: Record<string, number>
   getTorrentSpeed(row: TorrentRow, type: 'download' | 'upload'): number | null
@@ -1595,7 +1597,9 @@ describe('TraditionalView layout contracts', () => {
   it('两种视图使用同一个 TrackerDetailCard 组件', () => {
     for (const viewSource of [source, listSource]) {
       expect(viewSource).toContain('<TrackerDetailCard')
-      expect(viewSource).toContain("import TrackerDetailCard from './components/TrackerDetailCard.vue'")
+      // 导入形式可为单行或带命名导出的多行（详情页签数据开发引入），意图是
+      // 两个视图都从同一相对路径消费同一组件实例
+      expect(viewSource).toContain("from './components/TrackerDetailCard.vue'")
       expect(viewSource).toContain('TrackerDetailCard,')
       expect(viewSource).toContain(':tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"')
       expect(viewSource).toContain('@reannounce="handleTrackerReannounce"')
@@ -1622,5 +1626,135 @@ describe('TraditionalView layout contracts', () => {
     expect(listThemeSource).not.toContain("@import './tracker-table';")
     expect(traditionalThemeSource).not.toContain("@import './tracker-table';")
     expect(source).not.toContain('@include tracker-table-styles;')
+  })
+})
+
+describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () => {
+  let wrapper: Wrapper<Vue>
+
+  /** 活跃快照：hash-1 在 dl-1 上带完成证据（qB active 过滤含做种中种子） */
+  const terminalActiveSnapshot = () => ({
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: [{
+      hash: 'hash-1',
+      downloader_id: 'dl-1',
+      downloadSpeed: 0,
+      uploadSpeed: 512,
+      progress: 100,
+      status: 'uploading',
+      downloadComplete: true,
+      num_seeds: 0,
+      num_leechs: 1
+    }]
+  })
+
+  // mock 必须每次返回新鲜行对象：applySpeedUpdates 会原地突变成终态，共享
+  // fixture 会让「后续轮次不再 getList」的断言空转通过（同 mobile-torrents.spec 坑）。
+  /** DB 滞后行：下载器已完成但同步任务未落地，getList 仍返回 downloading/99 */
+  const laggingListResponse = () => torrentListResponse([
+    torrentFixture(1, { status: 'downloading', progress: 99 })
+  ])
+
+  /** DB 已收敛的做种行：progress=100 + completed_date（稳态循环场景的列表形态） */
+  const seedingListResponse = () => torrentListResponse([
+    torrentFixture(1, { status: 'seeding', progress: 100, completedDate: '2026-09-01T00:00:00Z' })
+  ])
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    mockGetTorrentList.mockResolvedValue(successListResponse())
+    mockGetDownloaderList.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetTrackerDomains.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetActiveTorrents.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { list: [], missing: [] }
+    })
+    mockAdvancedSearch.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { list: [], total: 0, page: 1, pageSize: 20 }
+    })
+    mockGetAllCategories.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetAllTags.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+  })
+
+  afterEach(() => {
+    if (wrapper) {
+      wrapper.destroy()
+    }
+  })
+
+  it('滞后窗口循环：status 筛选下同一完成证据只触发一次 getList（含转移判定锚）', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    // 首轮 = 转移判定锚：求值时机错（分支内延迟求值）则恒 0 次
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    // 修复前：getList 拉回 DB 滞后行，下一轮证据又触发 → 每秒一次刷新循环
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('稳态循环：做种筛选下 DB 已收敛的做种行持续带完成证据，全程零 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(seedingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.listQuery.status = ['seeding']
+    mockGetTorrentList.mockClear()
+
+    // 修复前：稳态证据（行已终态）也置 terminalObserved → 每秒 getList 无限循环
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+  })
+
+  it('高级搜索期间终态证据不触发 getList，也不洗掉高级搜索模式', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    // 高级搜索结果里保留同一颗滞后种子：终态证据命中行但不得整表刷新
+    mockAdvancedSearch.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [torrentFixture(1, { status: 'downloading', progress: 99 })],
+        total: 1,
+        page: 1,
+        pageSize: 20
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.listQuery.status = ['downloading']
+    await vm.performAdvancedSearch({
+      complex_search: true,
+      groups_count: 1,
+      groups: JSON.stringify([{
+        logic: 'AND',
+        conditions: [{ field: 'name', operator: 'contains', value: 'needle' }]
+      }]),
+      between_group_logics: JSON.stringify([])
+    })
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    // 门控前：终态触发的 getList 第一行即置空 activeAdvancedSearchRequest，
+    // 静默退出高级模式并用整表结果洗掉高级搜索结果
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+    expect((vm as unknown as { activeAdvancedSearchRequest: unknown }).activeAdvancedSearchRequest)
+      .not.toBeNull()
   })
 })

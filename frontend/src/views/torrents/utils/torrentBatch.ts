@@ -430,6 +430,39 @@ export class RuntimeListMembershipTracker {
   }
 }
 
+/**
+ * 终态整表刷新去重器：同一复合键（downloader_id + hash）的完成证据只允许
+ * 触发一次 getList，斩断 DB 同步滞后窗口内「终态证据 → getList → 拉回滞后
+ * 行 → 下一轮又带证据」的每秒整表刷新循环（桌面 1s 轮询版移动端 10s 同款
+ * 缺陷；稳态证据循环则由 applySpeedUpdates 的转移判定另行根治）。
+ *
+ * 键形态与 RuntimeListMembershipTracker 一致（speed:{dl}:{hash}），缺
+ * downloaderId 时退化为 hash:{hash}——两种形态不互通，同一颗种子在混合
+ * 键来源下最多多触发一次，有界（buildSpeedSnapshot 已过滤缺 hash 条目，
+ * 键永不为空）。筛选/模板/排查模式等上下文变化时 clear() 重建终态处理。
+ */
+export class TerminalReloadTracker {
+  private reloadedKeys = new Set<string>()
+
+  /** 本轮 updates 是否含「带完成证据且尚未触发过整表刷新」的新复合键；有则消费并返回 true。 */
+  observeNewTerminal(updates: SpeedUpdate[]): boolean {
+    let hasNew = false
+    updates.forEach(update => {
+      if (!update.downloadComplete) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (!identity || this.reloadedKeys.has(identity)) return
+      this.reloadedKeys.add(identity)
+      hasNew = true
+    })
+    return hasNew
+  }
+
+  /** 筛选上下文变化：重置终态刷新去重，重新建立终态处理上下文。 */
+  clear(): void {
+    this.reloadedKeys.clear()
+  }
+}
+
 /** buildSpeedSnapshot 实际读取的种子字段（ActiveTorrentSpeed 的结构子集）。
  * 仅声明本函数依赖的字段，避免要求调用方/测试提供未使用的 num_seeds/num_leechs，
  * 同时保留字段级类型安全（downloadSpeed: number 而非 any）。
@@ -532,6 +565,44 @@ function isRuntimeReconcileCandidate(torrent: TorrentIdentityLike & {
   const status = String(torrent.status || torrent.state || '').trim().toLowerCase()
   // 兼容旧列表没有 status 的情况，但不把已暂停/错误/做种任务纳入低频补查。
   return !status || RECONCILE_RUNTIME_STATUSES.has(status)
+}
+
+/** isTorrentRowEffectivelyComplete 实际读取的列表行字段子集。 */
+export interface TorrentRowCompleteLike {
+  status?: unknown
+  state?: unknown
+  progress?: unknown
+  downloadComplete?: unknown
+  download_complete?: unknown
+  completedDate?: unknown
+  completed_date?: unknown
+}
+
+/**
+ * 列表行是否已处于（或 DB 已认定）下载完成的保守判定，供 applySpeedUpdates
+ * 做「非终态行 → 终态证据」的转移报告（稳态证据不再重复报告，根治做种筛选
+ * 下每秒 getList 的稳态循环）。
+ *
+ * 口径刻意不是 isRuntimeReconcileCandidate 的反向：后者对 error/paused 行
+ * 「不补查」，字面反向会把它们误判终态导致转移漏报漏刷。本谓词只认
+ * TERMINAL_RUNTIME_STATUSES 成员与显式完成证据，宁可多触发一次受去重
+ * 保护的整表刷新，也不误压制合法的终态转移。
+ *
+ * 折叠后行状态（normalizeTorrentStatus → TORRENT_STATUS_FOLD_MAP）实际仅
+ * completed/seeding 能命中集合；checking/paused/queuedDL 判非终态是正确
+ * 行为（checking 校验可能回退下载；paused 无流量进不了活跃快照，不可达）。
+ * status 优先、state 兜底（normalizeTorrent 的 spread 会保留原始 state）。
+ */
+export function isTorrentRowEffectivelyComplete(row: TorrentRowCompleteLike): boolean {
+  if (
+    normalizeSnapshotProgress(row.progress) >= 100 ||
+    row.downloadComplete === true ||
+    row.download_complete === true ||
+    row.completedDate ||
+    row.completed_date
+  ) return true
+  const status = String(row.status || row.state || '').trim().toLowerCase()
+  return TERMINAL_RUNTIME_STATUSES.has(status)
 }
 
 export interface RuntimeStateReconcileCandidate {

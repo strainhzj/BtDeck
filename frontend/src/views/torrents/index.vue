@@ -903,6 +903,8 @@ import {
   buildSpeedSnapshot,
   collectRuntimeStateReconcileCandidates,
   RuntimeListMembershipTracker,
+  TerminalReloadTracker,
+  isTorrentRowEffectivelyComplete,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -1009,6 +1011,10 @@ export default class extends mixins(
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
   private runtimeListMembership = new RuntimeListMembershipTracker()
+  /** 终态整表刷新去重：同一复合键完成证据只触发一次 getList（防滞后窗口每秒刷新循环）。
+   * 筛选/模板/排查模式等上下文变化处 clear()；排序/翻页/手动刷新不清——去重键是
+   * downloader+hash 行身份键与行序无关，翻页与手动刷新本身即 getList。 */
+  private terminalReloadTracker = new TerminalReloadTracker()
 
   // 分页相关
   private currentPage = 1
@@ -1323,6 +1329,8 @@ export default class extends mixins(
   private handleFilter() {
     this.listQuery.skip = 0
     this.currentPage = 1
+    // 筛选上下文变化：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     this.getList()
   }
 
@@ -1364,6 +1372,8 @@ export default class extends mixins(
       sort_by: 'added_date',
       sort_order: 'desc'
     }
+    // 筛选上下文变化：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     this.getList()
   }
 
@@ -1384,6 +1394,8 @@ export default class extends mixins(
    * 快捷操作下拉菜单命令分发
    */
   private async handleQuickActionCommand(command: string) {
+    // 排查模式切换等效换筛选：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     if (command === 'inspect-same-content') {
       this.showingDuplicates = false
       this.showingSingleErrors = false
@@ -1409,6 +1421,7 @@ export default class extends mixins(
     this.showingSameContent = false
     this.currentPage = 1
     this.listQuery.skip = 0
+    this.terminalReloadTracker.clear()
     await this.getList()
   }
 
@@ -1416,6 +1429,7 @@ export default class extends mixins(
     this.showingSingleErrors = false
     this.currentPage = 1
     this.listQuery.skip = 0
+    this.terminalReloadTracker.clear()
     await this.getList()
   }
 
@@ -2361,6 +2375,8 @@ export default class extends mixins(
         }
         // 重置分页到第 1 页
         this.currentPage = 1
+        // 模板重建筛选上下文：重置终态刷新去重
+        this.terminalReloadTracker.clear()
         await this.getList()
         this.$message.success('已应用查询模板')
         return true
@@ -2481,6 +2497,10 @@ export default class extends mixins(
     updates.forEach(update => {
       const targets = resolveTorrentSpeedTargets(targetIndex, update)
       targets.forEach(torrent => {
+        // 转移判定的前态必须在本循环对该行任何赋值（speed/progress/status）之前捕获：
+        // buildSpeedSnapshot 会把完成证据的 status 改写为 'completed'，分支内延迟求值
+        // 会让行永远呈现已终态、转移永不触发，合法的滞后首刷会被彻底杀死。
+        const wasComplete = isTorrentRowEffectivelyComplete(torrent)
         torrent.downloadSpeed = update.downloadSpeed
         torrent.uploadSpeed = update.uploadSpeed
         torrent.progress = update.downloadComplete ? 100 : update.progress
@@ -2489,7 +2509,10 @@ export default class extends mixins(
         }
         if (update.downloadComplete) {
           torrent.downloadComplete = true
-          terminalObserved = true
+          // 稳态证据（行已是终态，如做种行每轮带回 downloadComplete）不再报告，
+          // 根治筛选下每秒 getList 的稳态循环；滞后窗口的重复触发由
+          // terminalReloadTracker 按复合键去重兜底。
+          if (!wasComplete) terminalObserved = true
         }
       })
     })
@@ -2518,7 +2541,8 @@ export default class extends mixins(
       if (
         terminalObserved &&
         (this.listQuery.showActiveOnly ||
-          (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+          (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0)) &&
+        this.terminalReloadTracker.observeNewTerminal(reconcileSnapshot.updates)
       ) {
         await this.getList()
       }
@@ -2588,7 +2612,8 @@ export default class extends mixins(
         if (
           terminalObserved &&
           (this.listQuery.showActiveOnly ||
-            (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0))
+            (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0)) &&
+          this.terminalReloadTracker.observeNewTerminal(snapshot.updates)
         ) {
           await this.getList()
         }
@@ -2637,6 +2662,8 @@ export default class extends mixins(
     }
     this.currentPage = 1
     this.listQuery.skip = 0
+    // 数据源模式切换等效换筛选：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     if (!enabled) {
       await this.getList()
       return

@@ -30,7 +30,9 @@ import {
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
   collectRuntimeStateReconcileCandidates,
-  RuntimeListMembershipTracker
+  RuntimeListMembershipTracker,
+  TerminalReloadTracker,
+  isTorrentRowEffectivelyComplete
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
 import { readFileSync } from 'fs'
@@ -1494,3 +1496,80 @@ describe('active_only 206 前端握手', () => {
   })
 })
 
+
+describe('终态整表刷新去重与行级终态谓词', () => {
+  const terminalUpdate = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 0,
+    uploadSpeed: 512,
+    progress: 100,
+    downloadComplete: true
+  })
+  const activeUpdate = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 1024,
+    uploadSpeed: 0,
+    progress: 25
+  })
+
+  it('TerminalReloadTracker：同复合键完成证据只报一次，新键才再报', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1'), activeUpdate('h2')])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(false)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1'), terminalUpdate('h3')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：同 hash 跨下载器按复合键区分', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-a')])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-a')])).toBe(false)
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-b')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：clear 后同键允许重报（筛选上下文重建）', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+    tracker.clear()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：缺 downloaderId 退化 hash 键，与复合键不互通（有界双触发）', () => {
+    const tracker = new TerminalReloadTracker()
+    const bareUpdate = {
+      hash: 'h1', downloadSpeed: 0, uploadSpeed: 0, progress: 100, downloadComplete: true
+    }
+    expect(tracker.observeNewTerminal([bareUpdate])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+    expect(tracker.observeNewTerminal([bareUpdate])).toBe(false)
+  })
+
+  it('isTorrentRowEffectivelyComplete：显式完成证据优先判终态', () => {
+    expect(isTorrentRowEffectivelyComplete({ progress: 100 })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ downloadComplete: true })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ download_complete: true })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ completedDate: '2026-09-01' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ completed_date: 1756684800 })).toBe(true)
+  })
+
+  // 折叠后行状态实际仅 completed/seeding 能命中终态集；checking/paused/queuedDL/
+  // error/unknown 判非终态是刻意保守口径（宁可多一次受去重保护的整表刷新，也不
+  // 误压制合法转移）。与 isRuntimeReconcileCandidate 的「不补查」口径分歧是有意设计。
+  it('isTorrentRowEffectivelyComplete：折叠后行状态仅 completed/seeding 判终态', () => {
+    expect(isTorrentRowEffectivelyComplete({ status: 'completed' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ status: 'seeding' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ status: 'downloading', progress: 99 })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'paused' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'queuedDL' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'checking' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'error' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'unknown' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({})).toBe(false)
+  })
+
+  it('isTorrentRowEffectivelyComplete：status 优先 state 兜底，大小写不敏感', () => {
+    expect(isTorrentRowEffectivelyComplete({ status: 'downloading', state: 'seeding' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ state: 'UPloading' })).toBe(true)
+  })
+})

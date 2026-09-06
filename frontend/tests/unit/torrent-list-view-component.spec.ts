@@ -106,6 +106,7 @@ interface ListQueryState {
   sort_order: string
   showActiveOnly: boolean
   tracker_domain: string[]
+  status: string[]
 }
 
 interface TorrentListViewVm extends Vue {
@@ -132,6 +133,7 @@ interface TorrentListViewVm extends Vue {
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
   loadActiveSpeed(): Promise<boolean>
+  applySpeedUpdates(updates: Array<Record<string, unknown>>): boolean
   handleBatchAddCompleted(): Promise<void>
   runtimeStateMisses: Record<string, number>
 }
@@ -1108,5 +1110,210 @@ describe('详情死路由不启动轮询（W1-1）', () => {
     const wrapper = mountWithRoute('/torrents/index')
     await flushLifecycle()
     expect((wrapper.vm as any).speedPollingActive).toBe(true)
+  })
+})
+
+describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () => {
+  let wrapper: Wrapper<Vue>
+  let consoleDebugSpy: jest.SpyInstance
+
+  /** 活跃快照：hash-1 在 downloader-1 上带完成证据（qB active 过滤含做种中种子） */
+  const terminalActiveSnapshot = () => ({
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: [{
+      hash: 'hash-1',
+      downloader_id: 'downloader-1',
+      downloadSpeed: 0,
+      uploadSpeed: 512,
+      progress: 100,
+      status: 'uploading',
+      downloadComplete: true,
+      num_seeds: 0,
+      num_leechs: 1
+    }]
+  })
+
+  // mock 必须每次返回新鲜行对象：applySpeedUpdates 会原地突变成终态，共享
+  // fixture 会让「后续轮次不再 getList」的断言空转通过（同 mobile-torrents.spec 坑）。
+  /** DB 滞后行：下载器已完成但同步任务未落地，getList 仍返回 downloading/99 */
+  const laggingListResponse = () => ({
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: {
+      list: [{ ...torrentFixture(), status: 'downloading', progress: 99 }],
+      total: 1,
+      pageSize: 20
+    }
+  })
+
+  /** DB 已收敛的做种行：progress=100 + completed_date（稳态循环场景的列表形态） */
+  const seedingListResponse = () => ({
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: {
+      list: [{
+        ...torrentFixture(),
+        status: 'seeding',
+        progress: 100,
+        completedDate: '2026-09-01T00:00:00Z'
+      }],
+      total: 1,
+      pageSize: 20
+    }
+  })
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation()
+    mockGetTorrentList.mockResolvedValue(successListResponse())
+    mockGetDownloaderList.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetActiveTorrents.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { list: [], missing: [] }
+    })
+    mockGetTrackerDomains.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+  })
+
+  afterEach(() => {
+    wrapper?.destroy()
+    consoleDebugSpy.mockRestore()
+  })
+
+  it('转移判定最低层锚：downloading 行收到完成证据必须报告转移（求值时机错则恒不报）', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.list = [{ ...torrentFixture(), status: 'downloading', progress: 99 }]
+
+    const reported = vm.applySpeedUpdates([{
+      hash: 'hash-1',
+      downloaderId: 'downloader-1',
+      downloadSpeed: 0,
+      uploadSpeed: 512,
+      progress: 100,
+      status: 'completed',
+      downloadComplete: true
+    }])
+
+    expect(reported).toBe(true)
+    expect(vm.list[0].downloadComplete).toBe(true)
+  })
+
+  it('滞后窗口循环（主快照路径）：status 筛选下同一完成证据只触发一次 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    // mount 期间用空快照：桌面 created 即启动首轮轮询（immediate=true），
+    // 终态快照会把 created getList 的滞后行原地突变成终态，后续转移永远不成立
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    // 修复前：getList 拉回 DB 滞后行，下一轮证据又触发 → 每秒一次刷新循环
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('稳态循环：做种筛选下 DB 已收敛的做种行持续带完成证据，全程零 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(seedingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.listQuery.status = ['seeding']
+    mockGetTorrentList.mockClear()
+
+    // 修复前：稳态证据（行已终态）也置 terminalObserved → 每秒 getList 无限循环
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+  })
+
+  it('滞后窗口循环（reconcile 路径）：终态核验带回完成证据同样只触发一次 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    // 快照为空：hash-1 行连续 miss，两轮后触发低频核验；核验直连下载器带回完成证据
+    mockGetActiveTorrents.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{
+          hash: 'hash-1',
+          downloader_id: 'downloader-1',
+          downloadSpeed: 0,
+          uploadSpeed: 0,
+          progress: 100,
+          status: 'seeding',
+          downloadComplete: true,
+          num_seeds: 0,
+          num_leechs: 0
+        }],
+        missing: []
+      }
+    })
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.runtimeStateMisses = {}
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    // getList 拉回滞后行后 miss 重新累计，第二次核验的转移被同键去重挡住
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('筛选变化重置终态去重：handleFilter 后同一完成证据允许再触发一次', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(2)
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('showActiveOnly 触发分支：同一完成证据同样只触发一次 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    vm.listQuery.showActiveOnly = true
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
   })
 })
