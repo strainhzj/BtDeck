@@ -17,7 +17,10 @@
 import asyncio
 import sys
 import types
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.core.config import settings
 from app.tasks import cron_executor as ce
@@ -86,6 +89,92 @@ class TestCommunicateWithOutputCap:
         assert len(stdout_text) == 100000
         assert "[TRUNCATED]" not in stdout_text
 
+    async def test_outer_cancel_cleans_readers_and_kills_child(self):
+        """取消路径（2026-09-06 泄漏修复回归）：外层在 await 读取任务时被取消 →
+        两个读取任务被取消回收、子进程被 kill 且收尸，无遗留 _read_capped 协程。
+
+        旧实现依次 await 且无 finally：等待 stdout 时被取消会孤儿化 stderr 任务，
+        process.wait() 被跳过、子进程不终止——管道不关则协程永久挂在 read() 上。
+        """
+        hang_event = asyncio.Event()
+
+        class _HangingStream:
+            async def read(self, n: int = -1) -> bytes:
+                await hang_event.wait()  # 模拟管道一直不关闭
+                return b""
+
+        process = MagicMock()
+        process.stdout = _HangingStream()
+        process.stderr = _HangingStream()
+        process.returncode = None
+
+        async def _wait_sets_returncode():
+            process.returncode = -9  # 模拟真实语义：wait() 收尸后才设置退出码
+
+        process.kill = MagicMock()
+        process.wait = AsyncMock(side_effect=_wait_sets_returncode)
+
+        async def _run():
+            return await ce._communicate_with_output_cap(process, 1024)
+
+        outer = asyncio.create_task(_run())
+        await asyncio.sleep(0)  # 让两个读取任务先挂到 read() 上
+        outer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await outer
+
+        # 让被取消的读取任务完成收尾后再检查遗留
+        for _ in range(3):
+            await asyncio.sleep(0)
+        lingering = [
+            task
+            for task in asyncio.all_tasks()
+            if not task.done() and task.get_coro().cr_code.co_name == "_read_capped"
+        ]
+        assert lingering == [], f"取消后仍遗留读取协程: {lingering}"
+        process.kill.assert_called_once()
+        assert process.wait.await_count == 1, "kill 后应收尸（await wait）"
+
+    async def test_first_reader_error_cleans_second_reader_and_child(self):
+        """异常路径（2026-09-06 同族加固）：stdout 读取抛异常 → stderr 读取任务
+        同样被取消回收，子进程被终止——旧实现第二个任务同样会孤儿化。"""
+
+        class _BrokenStream:
+            async def read(self, n: int = -1) -> bytes:
+                raise RuntimeError("stream broken")
+
+        hang_event = asyncio.Event()
+
+        class _HangingStream:
+            async def read(self, n: int = -1) -> bytes:
+                await hang_event.wait()
+                return b""
+
+        process = MagicMock()
+        process.stdout = _BrokenStream()
+        process.stderr = _HangingStream()
+        process.returncode = None
+
+        async def _wait_sets_returncode():
+            process.returncode = -9
+
+        process.kill = MagicMock()
+        process.wait = AsyncMock(side_effect=_wait_sets_returncode)
+
+        with pytest.raises(RuntimeError, match="stream broken"):
+            await ce._communicate_with_output_cap(process, 1024)
+
+        for _ in range(3):
+            await asyncio.sleep(0)
+        lingering = [
+            task
+            for task in asyncio.all_tasks()
+            if not task.done() and task.get_coro().cr_code.co_name == "_read_capped"
+        ]
+        assert lingering == [], f"首个读取任务异常后仍遗留读取协程: {lingering}"
+        process.kill.assert_called_once()
+        assert process.wait.await_count == 1
+
 
 class TestRunScriptProcess:
     async def test_success_detail_contains_output(self):
@@ -153,6 +242,53 @@ class TestSummarizeResultForLog:
         assert len(ce._summarize_result_for_log("x" * 10000)) < 300
         assert "len=" in ce._summarize_result_for_log([1, 2, 3])
 
+    def test_allocations_bounded_for_million_element_list(self):
+        """分配上限回归（2026-09-06）：旧实现 list(value) 完整复制容器——百万元素
+        列表输出仅数十字符却额外分配 ~8MB；且顶层 dict 无项数上限。新实现全程
+        islice + 边渲染边 break，峰值分配 < 256KiB。"""
+        import tracemalloc
+
+        big = list(range(1000000))
+        wide = {f"k{i}": i for i in range(100000)}
+        tracemalloc.start()
+        try:
+            list_summary = ce._summarize_result_for_log({"items": big})
+            wide_summary = ce._summarize_result_for_log(wide)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert "len=1000000" in list_summary
+        assert "截断" in wide_summary and len(wide_summary) < 1200
+        assert peak < 256 * 1024, f"摘要期间峰值分配 {peak / 1024:.1f} KiB，超出 256KiB 预算"
+
+    def test_unknown_object_renders_type_name_known_types_keep_repr(self):
+        """未知自定义对象不调用 __repr__（可能无界，降级 <类型名>）；
+        datetime 等已知有界类型保留 repr 可读性。"""
+
+        class _HugeRepr:
+            def __repr__(self) -> str:
+                raise AssertionError("未知对象的 __repr__ 不应被调用（可能无界）")
+
+        summary = ce._summarize_result_for_log({"obj": _HugeRepr(), "ts": datetime(2026, 9, 6, 12, 0, 0)})
+        assert "<_HugeRepr>" in summary
+        assert "2026" in summary, "datetime 属已知有界类型，应保留 repr"
+
+    def test_deep_nesting_and_self_reference_depth_capped(self):
+        deep: dict = {}
+        node = deep
+        for _ in range(50):
+            node["child"] = {}
+            node = node["child"]
+        node["leaf"] = 1
+        self_ref: list = [1]
+        self_ref.append(self_ref)
+        summary = ce._summarize_result_for_log({"tree": deep, "loop": self_ref})
+        assert len(summary) < 400, f"深嵌套/自引用应被深度上限截断: {len(summary)}"
+
+    def test_bytes_sliced_before_repr(self):
+        summary = ce._summarize_result_for_log({"blob": b"B" * 100000})
+        assert len(summary) < 300 and "截断" in summary
+
 
 def _inject_fake_task_class(monkeypatch, module_name, class_name, execute_result):
     """把返回固定结果的假任务类注入 app.tasks.* 命名空间（复用 admission 测试模式）。"""
@@ -195,3 +331,43 @@ class TestNormalizeResultRenderIntegration:
         assert "阶段1: 提交" in result["log_detail"]
         # 消费契约键不受摘要化影响
         assert result["outcome"] == "success"
+
+
+class TestNormalizeResultBounding:
+    """normalize_internal_result 的非 dict 结果与 phase 行有界（2026-09-06）：
+    旧实现非 dict 走 str(result) 且不经过任何截断；phase 行 join 无行数上限，
+    10 万行会先 join 出巨型字符串才被 [:2000] 截断。"""
+
+    @staticmethod
+    def _task(executor_path: str) -> dict:
+        return {
+            "task_id": 1,
+            "task_name": "有界渲染任务",
+            "task_code": None,
+            "task_type": 4,
+            "executor": executor_path,
+        }
+
+    async def test_non_dict_huge_list_result_bounded(self, monkeypatch):
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_nd_list", "Task", list(range(100000)))
+        executor = ce.CronTaskExecutor()
+        result = await executor._run_python_internal_class(self._task("app.tasks.fake_module_nd_list.Task"))
+        assert result["success"] is True
+        assert len(result["log_detail"]) <= 2000
+        assert "len=100000" in result["log_detail"]
+
+    async def test_non_dict_str_result_keeps_plain_text(self, monkeypatch):
+        """str 结果直接切片保留原文风格，不被 repr 化（"done" 不变 "'done'"）。"""
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_nd_str", "Task", "done")
+        executor = ce.CronTaskExecutor()
+        result = await executor._run_python_internal_class(self._task("app.tasks.fake_module_nd_str.Task"))
+        assert "结果: done" in result["log_detail"]
+
+    async def test_phase_lines_capped_to_100_with_marker(self, monkeypatch):
+        payload = {"status": "success", "execution_log": [f"line-{i}" for i in range(5000)]}
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_nd_phases", "Task", payload)
+        executor = ce.CronTaskExecutor()
+        result = await executor._run_python_internal_class(self._task("app.tasks.fake_module_nd_phases.Task"))
+        assert len(result["log_detail"]) <= 2000
+        assert "line-0" in result["log_detail"], "前 100 行应保留"
+        assert "（共 5000 行，略）" in result["log_detail"], "超出 100 行应有省略标记"

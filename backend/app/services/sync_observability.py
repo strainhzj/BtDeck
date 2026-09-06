@@ -691,7 +691,7 @@ def release_free_heap_memory() -> bool:
 
     平台分支（不支持/失败一律返回 False，绝不抛异常）：
     - glibc（Linux 服务器/桌面）：malloc_trim(0)——归还堆顶与空闲 chunk；
-    - Android bionic/scudo：mallopt(M_PURGE)（API 31+；低版本 mallopt 对未知
+    - Android bionic/scudo：mallopt(M_PURGE)（API 28+；低版本 mallopt 对未知
       命令返回 0，等价 no-op）；
     - macOS/其它：无等价安全接口，直接 False。
 
@@ -712,13 +712,13 @@ def release_free_heap_memory() -> bool:
         if trim is not None:
             trim.restype = ctypes.c_int
             return bool(trim(ctypes.c_size_t(0)))
-        # bionic：M_PURGE=101（scudo 主分配器释放；未知命令返回 0 不报错）
+        # bionic：M_PURGE=-101（scudo 空闲内存归还；value 被忽略；未知命令返回 0 不报错）
         try:
             mallopt = libc.mallopt
         except AttributeError:
             return False
         mallopt.restype = ctypes.c_int
-        _M_PURGE = 101  # bionic malloc.h: M_DECAY_TIME=100, M_PURGE=101
+        _M_PURGE = -101  # bionic malloc.h: M_DECAY_TIME=-100, M_PURGE=-101（命令码均为负值）
         return bool(mallopt(ctypes.c_int(_M_PURGE), ctypes.c_int(0)))
     except Exception:  # noqa: BLE001 - 归还失败静默降级，不影响任何主流程
         logger.debug("release_free_heap_memory failed", exc_info=True)

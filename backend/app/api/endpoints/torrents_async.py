@@ -1913,7 +1913,8 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             logger.warning(f"[QB_SYNC] incremental failed, fallback to batch full sync: {e}")
 
     # 兜底：分批全量同步，避免单次超大响应
-    if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
+    full_snapshot_taken = force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed
+    if full_snapshot_taken:
         # 降级时丢弃任何未完整水合的 delta，只写入全量快照。
         torrent_info_list = []
         offset = 0
@@ -1936,7 +1937,8 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             if len(batch) < QB_BATCH_SIZE:
                 break
             offset += QB_BATCH_SIZE
-        _mark_qb_full_sync(downloader_id, now_ts)
+        # 全量完成标记不在拉取后保存：必须等数据 durable 写库成功（见 _confirm_qb_sync_rid 旁），
+        # 否则写库失败/进程退出后重启，有效 RID + 空增量会跳过必要的全量重试
         used_sync_maindata = False
     current_time = datetime.now()
 
@@ -2149,6 +2151,10 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
     await db.commit()
     if pending_rid is not None:
         _confirm_qb_sync_rid(downloader_id, pending_rid)
+    if full_snapshot_taken:
+        # 主写库已 durable commit（commit 失败即抛，不会到达此处）；
+        # tracker 阶段（后续独立事务）失败不应阻止 info 全量标记
+        _mark_qb_full_sync(downloader_id, now_ts)
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
     logger.debug("[PERF] 开始处理 tracker 同步和备份...")
@@ -2485,10 +2491,22 @@ def _load_qb_rid_cache() -> Dict[str, int]:
     return {}
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """同目录临时文件 + os.replace 原子替换（崩溃不留下半截 JSON）。
+
+    失败会抛出，由调用方按"持久化失败静默"语义吞掉；模式与
+    desktop_companion/profiles.py 一致（endpoints 不跨层 import 工具）。
+    """
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
 def _save_qb_rid_cache(cache: Dict[str, int]) -> None:
     cache_file = _get_qb_rid_cache_file()
     try:
-        cache_file.write_text(json.dumps(cache), encoding="utf-8")
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(cache_file, json.dumps(cache))
     except Exception:
         # 持久化失败不影响主流程
         pass
@@ -2549,11 +2567,12 @@ def _load_full_sync_state() -> None:
 
 
 def _save_full_sync_state() -> None:
-    """落盘三标记；失败静默（重启多付一次全量快照，不影响数据正确性）。"""
+    """落盘三标记（原子替换）；失败静默（重启多付一次全量快照，不影响数据正确性）。"""
     state_file = _get_full_sync_state_file()
     try:
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(
+        _atomic_write_text(
+            state_file,
             json.dumps(
                 {
                     "qb_last_full": _QB_LAST_FULL_SYNC,
@@ -2561,7 +2580,6 @@ def _save_full_sync_state() -> None:
                     "tr_full_done": _TR_FULL_SYNC_DONE,
                 }
             ),
-            encoding="utf-8",
         )
     except Exception:
         # 持久化失败不影响主流程
@@ -3408,7 +3426,8 @@ async def qb_add_torrents_info_only_async(
             incremental_failed = True
             logger.warning(f"[QB_INFO_SYNC] incremental failed, fallback to batch: {e}")
 
-    if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
+    full_snapshot_taken = force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed
+    if full_snapshot_taken:
         # 降级时丢弃任何未完整水合的 delta，只写入全量快照。
         torrent_info_list = []
         offset = 0
@@ -3427,7 +3446,8 @@ async def qb_add_torrents_info_only_async(
             if len(batch) < QB_BATCH_SIZE:
                 break
             offset += QB_BATCH_SIZE
-        _mark_qb_full_sync(downloader_id, now_ts)
+        # 全量完成标记不在拉取后保存：必须等数据 durable 写库且周期完整
+        # （见 cycle_complete 判定旁），否则写库失败后重启会跳过必要的全量重试
 
     # 断点续跑需要稳定顺序；qB 增量与全量响应均按 hash 排序后再处理。
     torrent_info_list.sort(key=lambda torrent: str(_qb_get_attr(torrent, "hash") or ""))
@@ -3637,6 +3657,10 @@ async def qb_add_torrents_info_only_async(
         cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
         if pending_rid is not None and cycle_complete:
             _confirm_qb_sync_rid(downloader_id, pending_rid)
+        if full_snapshot_taken and cycle_complete:
+            # 全量完成标记必须满足：数据 durable 写库成功（上方 bulk_upsert）
+            # 且本轮周期完整（partial 轮不落标记，续跑完成的那轮才落）
+            _mark_qb_full_sync(downloader_id, now_ts)
         await _emit_info_progress(progress_callback, last_processed_hash)
         total_elapsed = time.monotonic() - run_start
         records_per_second = processed_count / total_elapsed if total_elapsed > 0 else 0.0

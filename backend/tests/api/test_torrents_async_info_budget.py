@@ -948,6 +948,28 @@ class TestFullSyncMarkerPersistence:
         assert not torrents_async._TR_LAST_FULL_SYNC
         assert not torrents_async._TR_FULL_SYNC_DONE
 
+    def test_save_failure_swallowed_and_old_file_intact(self, isolated_state_file):
+        """原子写失败（tmp 落盘受阻）静默吞掉，旧文件内容原样保留（2026-09-06）。
+
+        语义约束：持久化失败不得把成功轮变失败轮（写库已成功、仅标记落盘失败），
+        也不得留下半截 JSON 让重启解析失败——半截文件最多导致重启多付一次全量。
+        """
+        torrents_async._mark_qb_full_sync("dl-old", 111.0)
+        # 让 tmp 写失败：同目录预置同名目录 → write_text 抛错（Windows 为 PermissionError）
+        (isolated_state_file.parent / "full_sync_state.json.tmp").mkdir()
+        torrents_async._mark_qb_full_sync("dl-new", 222.0)  # 不抛
+
+        # 内存标记仍推进（下次成功保存会带上），旧文件完好
+        assert torrents_async._QB_LAST_FULL_SYNC["dl-new"] == 222.0
+        data = json.loads(isolated_state_file.read_text(encoding="utf-8"))
+        assert data["qb_last_full"] == {"dl-old": 111.0}, "原子写失败不得破坏旧文件"
+
+    def test_successful_save_leaves_no_tmp_file(self, isolated_state_file):
+        """成功路径：tmp 被原子替换消费，目录里无残留临时文件。"""
+        torrents_async._mark_qb_full_sync("dl-a", 1000.5)
+        assert not (isolated_state_file.parent / "full_sync_state.json.tmp").exists()
+        assert json.loads(isolated_state_file.read_text(encoding="utf-8"))["qb_last_full"] == {"dl-a": 1000.5}
+
     def test_restart_no_longer_forces_full_snapshot(self, isolated_state_file, monkeypatch):
         """核心语义：TR 完成强制全量后重启 → 恢复的时间戳使 force_full_sync=False。"""
         recent_ts = datetime.now().timestamp()

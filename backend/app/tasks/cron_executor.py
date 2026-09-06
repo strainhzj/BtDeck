@@ -5,7 +5,10 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from itertools import islice
 from typing import Dict, Any, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -131,9 +134,30 @@ async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[s
 
     stdout_task = asyncio.create_task(_read_capped(process.stdout))
     stderr_task = asyncio.create_task(_read_capped(process.stderr))
-    stdout_bytes, stdout_total = await stdout_task
-    stderr_bytes, stderr_total = await stderr_task
-    await process.wait()
+    try:
+        stdout_bytes, stdout_total = await stdout_task
+        stderr_bytes, stderr_total = await stderr_task
+        await process.wait()
+    finally:
+        # OOM/资源泄漏加固（2026-09-06）：外层在 await 读取任务时被取消（用户中断/
+        # 调度器关闭），旧实现两个读取任务与子进程全部遗留——管道不关则协程永久
+        # 挂在 read() 上，反复中断会积累。清理顺序：先同步 kill（无 await 点，
+        # 不可能被二次取消打断）→ 再取消并回收两个读取任务 → 最后收尸。
+        if process.returncode is None:
+            try:
+                process.kill()
+            except (ProcessLookupError, OSError):
+                pass
+        for task in (stdout_task, stderr_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+        if process.returncode is None:
+            try:
+                await process.wait()
+            except asyncio.CancelledError:
+                # 二次取消：进程已 kill，收尾由 asyncio transport 兜底
+                pass
 
     def _render(capped: bytes, total: int) -> str:
         text = capped.decode("utf-8", errors="ignore")
@@ -146,43 +170,79 @@ async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[s
     return _render(stdout_bytes, stdout_total), _render(stderr_bytes, stderr_total)
 
 
-def _summarize_result_for_log(result: Any, *, max_value_repr: int = 200, max_head_items: int = 3) -> str:
-    """把内部类任务结果渲染为有界摘要（OOM 加固 2026-09-05）。
+def _summarize_result_for_log(
+    result: Any,
+    *,
+    max_value_repr: int = 200,
+    max_head_items: int = 3,
+    max_depth: int = 3,
+    max_output: int = 800,
+) -> str:
+    """把内部类任务结果渲染为有界摘要（OOM 加固 2026-09-05；2026-09-06 全程有界重写）。
 
-    旧实现 f"...{str(result)}" 全量渲染——一旦某任务把大明细列表塞进结果
-    dict，这里会先构建巨型字符串再截断到 2000，瞬时放大内存。现：标量取
-    repr 前 max_value_repr 字符；list/dict 只记长度 + 前 max_head_items 项
-    概览。execution_log/phase 行由调用方另行拼接，不受本函数影响。
+    第一版仍先对完整 value 执行 repr()、用 list(value) 复制整个容器再截断——
+    输出仅数十字符却随输入规模分配内存（实测百万元素列表额外分配 ~8MB，
+    嵌套大容器也被完整渲染）。现全程有界：
+    - head 用 itertools.islice 取前 max_head_items 项，绝不复制整个容器；
+    - 递归深度超 max_depth 的嵌套容器渲染 <类型 len=N> 不展开；
+    - str/bytes 先切片再 repr；已知有界类型（标量/datetime/date/Decimal/UUID/
+      Enum）保留 repr；未知自定义对象降级 <类型名>（其 __repr__ 可能无界）；
+    - 总输出预算 max_output：顶层 dict 边渲染边 break，超停追加 ...(截断)。
+    格式契约（tests/tasks/test_cron_executor_output_cap.py 锚点）：
+    len= / head= / 含"截断" / 'success' 引号风格 / set 支持。
     """
 
-    def _one(value: Any) -> str:
-        text = repr(value)
+    def _clip(text: str) -> str:
         if len(text) <= max_value_repr:
             return text
         return text[:max_value_repr] + "...(截断)"
 
-    def _container(value: Any) -> str:
+    def _atom(value: Any) -> str:
+        if isinstance(value, (str, bytes)):
+            return _clip(repr(value[:max_value_repr]))
+        if (
+            value is None
+            or isinstance(
+                value,
+                (bool, int, float, complex, datetime, date, Decimal, uuid.UUID),
+            )
+            or isinstance(value, Enum)
+        ):
+            return _clip(repr(value))
+        return f"<{type(value).__name__}>"
+
+    def _container(value: Any, depth: int) -> str:
         summary = f"<{type(value).__name__} len={len(value)}"
-        if value:
-            head: Any
+        if value and depth < max_depth:
+            head_parts: list = []
             if isinstance(value, dict):
-                head = {key: value[key] for key in list(value)[:max_head_items]}
+                for key, item in islice(value.items(), max_head_items):
+                    head_parts.append(f"{_atom(key)}: {_render(item, depth + 1)}")
+                summary += " head={" + ", ".join(head_parts) + "}"
             else:
-                head = list(value)[:max_head_items]
-            summary += " head=" + _one(head)
+                for item in islice(value, max_head_items):
+                    head_parts.append(_render(item, depth + 1))
+                summary += " head=[" + ", ".join(head_parts) + "]"
         return summary + ">"
 
+    def _render(value: Any, depth: int) -> str:
+        if isinstance(value, (dict, list, tuple, set, frozenset)):
+            return _container(value, depth)
+        return _atom(value)
+
     if isinstance(result, dict):
-        parts = []
+        parts: list = []
+        used = 2  # 两侧花括号
         for key, value in result.items():
-            if isinstance(value, (list, tuple, set, dict)):
-                parts.append(f"{key}={_container(value)}")
-            else:
-                parts.append(f"{key}={_one(value)}")
+            key_text = key if isinstance(key, str) else _atom(key)
+            part = f"{key_text}={_render(value, 1)}"
+            parts.append(part)
+            used += len(part) + 2
+            if used >= max_output:
+                parts.append("...(截断)")
+                break
         return "{" + ", ".join(parts) + "}"
-    if isinstance(result, (list, tuple, set)):
-        return _container(result)
-    return _one(result)
+    return _render(result, 0)
 
 
 class CronTaskExecutor:
@@ -916,9 +976,15 @@ class CronTaskExecutor:
         def normalize_internal_result(result: Any) -> Dict[str, Any]:
             """把内部类的业务终态透传给 Cron 日志/新鲜度字段。"""
             if not isinstance(result, dict):
+                # OOM 加固（2026-09-06）：非 dict 结果同样有界（旧实现 str(result)
+                # 全量渲染且不经过任何截断）；str 直接切片保留原文风格，其余走摘要。
+                if isinstance(result, str):
+                    rendered = result[:2000] + ("...(截断)" if len(result) > 2000 else "")
+                else:
+                    rendered = _summarize_result_for_log(result)
                 return {
                     "success": True,
-                    "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
+                    "log_detail": f"Python内部类执行成功\n结果: {rendered}",
                 }
 
             normalized: Dict[str, Any] = dict(result)
@@ -941,7 +1007,20 @@ class CronTaskExecutor:
             phase_lines = result.get("execution_log") or execution_events
             detail = result.get("log_detail")
             if not detail and phase_lines:
-                detail = "\n".join(str(line) for line in phase_lines)
+                # OOM 加固（2026-09-06）：行数（100）与单行长度双上限——10 万行
+                # phase 日志不再先 join 出巨型字符串才被 [:2000] 截断；非 str 行
+                # 走有界摘要（str(line) 对大对象同样无界）。
+                head_lines = list(islice(phase_lines, 100))
+                capped_lines = [
+                    line[:200] if isinstance(line, str) else _summarize_result_for_log(line) for line in head_lines
+                ]
+                try:
+                    total_lines = len(phase_lines)
+                except TypeError:  # 生成器等无 len 的输入：只保留前 100 行
+                    total_lines = len(head_lines)
+                if total_lines > 100:
+                    capped_lines.append(f"（共 {total_lines} 行，略）")
+                detail = "\n".join(capped_lines)
             prefix = "Python内部类执行成功" if success else "Python内部类执行失败"
             # OOM 加固（2026-09-05）：结果尾巴走有界摘要（旧实现 str(result)
             # 全量渲染，大结果 dict 会先建巨型字符串再被截断）；phase 行与

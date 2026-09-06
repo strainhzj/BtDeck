@@ -65,14 +65,18 @@ class TestReleaseFreeHeapMemory:
         lib.malloc_trim.assert_called_once()
 
     def test_bionic_falls_back_to_mallopt_purge(self, monkeypatch):
-        """bionic 路径（无 malloc_trim）：mallopt(M_PURGE=101, 0) 被调用。"""
+        """bionic 路径（无 malloc_trim）：mallopt(M_PURGE=-101, 0) 被调用。
+
+        命令码必须是负值（bionic malloc.h: #define M_PURGE (-101)，AOSP 实证）；
+        传正值 101 时 mallopt 视为未知命令返回 0，归还静默失效（2026-09-06 修复回归锚点）。
+        """
         monkeypatch.setattr(obs.sys, "platform", "linux")
         lib = _fake_libc(with_malloc_trim=False)
         with patch("ctypes.CDLL", return_value=lib):
             assert obs.release_free_heap_memory() is True
         lib.mallopt.assert_called_once()
         args = lib.mallopt.call_args.args
-        assert int(args[0].value) == 101, f"M_PURGE 常量应为 101，实际 {args[0]}"
+        assert int(args[0].value) == -101, f"M_PURGE 常量应为 -101，实际 {args[0]}"
         assert int(args[1].value) == 0
 
     def test_trim_failing_returns_false(self, monkeypatch):
