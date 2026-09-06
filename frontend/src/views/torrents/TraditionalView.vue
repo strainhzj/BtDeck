@@ -751,8 +751,11 @@
           :tabs="detailTabs"
           :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
           :error-reason="getTorrentErrorReason(currentRow)"
+          :files-state="detailFilesState"
+          :peers-state="detailPeersState"
           @close="closeDetailPanel"
           @reannounce="handleTrackerReannounce"
+          @refresh="handleDetailRefresh"
         />
       </div>
     </div>
@@ -901,7 +904,10 @@ import SetLocationDialog from './components/SetLocationDialog.vue'
 import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
-import TrackerDetailCard from './components/TrackerDetailCard.vue'
+import TrackerDetailCard, {
+  DEFAULT_TRACKER_DETAIL_TABS
+} from './components/TrackerDetailCard.vue'
+import type { TrackerDetailTab } from './components/TrackerDetailCard.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
@@ -912,6 +918,7 @@ import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
 import ColumnResizeMixin from './mixins/columnResize'
 import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'
+import TrackerDetailDataMixin from './mixins/detailTabsData'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
@@ -1020,7 +1027,8 @@ export default class extends mixins(
   TorrentBatchMixin,
   SpeedPollingMixin,
   ColumnResizeMixin,
-  TorrentErrorTooltipDismissMixin
+  TorrentErrorTooltipDismissMixin,
+  TrackerDetailDataMixin
 ) {
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
@@ -1127,14 +1135,10 @@ export default class extends mixins(
   // 快捷删除重复种子
   private showQuickDeleteDuplicatesDialog = false
 
-  // 详情面板
+  // 详情面板（detailFilesState/detailPeersState/handleDetailRefresh 由 TrackerDetailDataMixin 提供）
   private currentRow: any = null
   private activeDetailTab = 'tracker'
-  private detailTabs = [
-    { label: 'Tracker', value: 'tracker' },
-    { label: '文件', value: 'files' },
-    { label: 'Peers', value: 'peers' }
-  ]
+  private detailTabs: TrackerDetailTab[] = DEFAULT_TRACKER_DETAIL_TABS
 
   // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
   private showingDuplicates = false

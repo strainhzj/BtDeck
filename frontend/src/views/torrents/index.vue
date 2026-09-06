@@ -675,8 +675,11 @@
       :tabs="detailTabs"
       :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
       :error-reason="getTorrentErrorReason(currentRow)"
+      :files-state="detailFilesState"
+      :peers-state="detailPeersState"
       @close="handleCloseTrackerDetail"
       @reannounce="handleTrackerReannounce"
+      @refresh="handleDetailRefresh"
     />
 
     <!-- 分页 -->
@@ -855,12 +858,16 @@ import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
-import TrackerDetailCard from './components/TrackerDetailCard.vue'
+import TrackerDetailCard, {
+  DEFAULT_TRACKER_DETAIL_TABS
+} from './components/TrackerDetailCard.vue'
+import type { TrackerDetailTab } from './components/TrackerDetailCard.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
 import ColumnResizeMixin from './mixins/columnResize'
 import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'
+import TrackerDetailDataMixin from './mixins/detailTabsData'
 import {
   getTorrentList,
   deleteTorrentsWithLevel,
@@ -949,7 +956,8 @@ export default class extends mixins(
   TorrentBatchMixin,
   SpeedPollingMixin,
   ColumnResizeMixin,
-  TorrentErrorTooltipDismissMixin
+  TorrentErrorTooltipDismissMixin,
+  TrackerDetailDataMixin
 ) {
   // 视图模式管理
   private viewModeModule = ViewModeModule
@@ -1058,15 +1066,11 @@ export default class extends mixins(
   private selectedTorrentsForTracker: any[] = []
   private trackerOperationType: 'add' | 'replace' | 'modify' | '' = ''
 
-  // Tracker详情
+  // Tracker详情（detailFilesState/detailPeersState/handleDetailRefresh 由 TrackerDetailDataMixin 提供）
   private showTrackerDetail = false
   private currentRow: any = null
   private activeDetailTab = 'tracker'
-  private detailTabs = [
-    { label: 'Tracker', value: 'tracker' },
-    { label: '文件', value: 'files' },
-    { label: 'Peers', value: 'peers' }
-  ]
+  private detailTabs: TrackerDetailTab[] = DEFAULT_TRACKER_DETAIL_TABS
 
   // 搜索相关
   private listQuery = {

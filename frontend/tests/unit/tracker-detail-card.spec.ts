@@ -36,6 +36,8 @@ interface CardOptions {
   layout?: 'list' | 'traditional'
   activeTab?: 'tracker' | 'files' | 'peers'
   torrentName?: string
+  filesState?: { list: any[], loading: boolean, error: string }
+  peersState?: { list: any[], loading: boolean, error: string }
 }
 
 function mountCard(
@@ -52,7 +54,8 @@ function mountCard(
     },
     stubs: {
       'el-alert': AlertStub,
-      'el-button': ButtonStub
+      'el-button': ButtonStub,
+      'el-progress': true
     }
   })
 }
@@ -227,5 +230,223 @@ describe('TrackerDetailCard shared view contract', () => {
     expect(wrapper.findAll('tbody tr td').at(2).text()).toContain('more than 1 client')
     // scrape 列未命中失败语义，保持原文本
     expect(wrapper.findAll('tbody tr td').at(3).find('.tracker-status-working').exists()).toBe(true)
+  })
+})
+
+describe('TrackerDetailCard 底部收起条（与关闭按钮等效）', () => {
+  let wrapper: Wrapper<Vue>
+
+  afterEach(() => {
+    wrapper?.destroy()
+  })
+
+  it('收起条存在、占满一行且点击 emit close（与右上角关闭按钮同一事件）', async() => {
+    wrapper = mountCard([], '', { visible: true, torrentName: '收起条种子' })
+
+    const bar = wrapper.find('.tracker-collapse-bar')
+    expect(bar.exists()).toBe(true)
+    expect(bar.attributes('title')).toBe('收起详情')
+    expect(bar.attributes('aria-label')).toBe('收起详情')
+
+    await bar.trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+
+    // 与右上角关闭按钮发出同一 close 事件
+    await wrapper.find('.tracker-close').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(2)
+  })
+})
+
+describe('TrackerDetailCard 文件页签', () => {
+  let wrapper: Wrapper<Vue>
+
+  afterEach(() => {
+    wrapper?.destroy()
+  })
+
+  it('渲染三列文件表格：名称省略、大小格式化、进度百分比着色与计数', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: {
+        list: [
+          { name: 'dir/a.iso', size: 1024, progress: 0.5 },
+          { name: 'dir/b.mkv', size: 0, progress: 1 }
+        ],
+        loading: false,
+        error: ''
+      }
+    })
+
+    expect(wrapper.findAll('thead th').wrappers.map(header => header.text().trim())).toEqual([
+      '文件名',
+      '大小',
+      '进度'
+    ])
+    expect(wrapper.find('.tracker-detail-count').text()).toBe('共 2 个文件')
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows.at(0).text()).toContain('dir/a.iso')
+    expect(rows.at(0).text()).toContain('1.00 KB')
+    expect(rows.at(0).find('.tracker-progress-partial').text()).toBe('50%')
+    expect(rows.at(1).find('.tracker-progress-done').text()).toBe('100%')
+    // 大小为 0 显示 '-'（formatFileSize 契约）
+    expect(rows.at(1).text()).toContain('-')
+  })
+
+  it('无数据三态：加载中/错误/空占位', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: { list: [], loading: true, error: '' }
+    })
+    expect(wrapper.find('.tracker-placeholder').text()).toBe('文件列表加载中...')
+    wrapper.destroy()
+
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: { list: [], loading: false, error: '下载器超时' }
+    })
+    expect(wrapper.find('.alert-title').text()).toBe('文件列表加载失败')
+    expect(wrapper.find('.alert-description').text()).toBe('下载器超时')
+    wrapper.destroy()
+
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: { list: [], loading: false, error: '' }
+    })
+    expect(wrapper.find('.tracker-placeholder').text()).toBe('暂无文件数据')
+  })
+
+  it('有旧数据时更新失败显示非侵入提示，不覆盖上次数据', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: {
+        list: [{ name: 'keep.bin', size: 8, progress: 0.1 }],
+        loading: false,
+        error: '连接重置'
+      }
+    })
+    expect(wrapper.find('.tracker-stale-note').exists()).toBe(true)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.findAll('tbody tr').at(0).text()).toContain('keep.bin')
+  })
+
+  it('超阈值截断渲染前 1000 行并显示总数提示', () => {
+    const bigList = Array.from({ length: 1100 }, (_, i) => ({
+      name: `f${i}.bin`,
+      size: 1,
+      progress: 0
+    }))
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: { list: bigList, loading: false, error: '' }
+    })
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1000)
+    expect(wrapper.find('.tracker-truncate-note').text()).toBe('共 1100 个文件，仅显示前 1000 个')
+  })
+
+  it('刷新按钮 emit refresh 事件并携带当前页签', async() => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'files',
+      filesState: {
+        list: [{ name: 'a.bin', size: 1, progress: 0 }],
+        loading: false,
+        error: ''
+      }
+    })
+    await wrapper.find('.el-button-stub').trigger('click')
+    expect(wrapper.emitted('refresh')).toEqual([['files']])
+  })
+})
+
+describe('TrackerDetailCard Peers 页签', () => {
+  let wrapper: Wrapper<Vue>
+
+  afterEach(() => {
+    wrapper?.destroy()
+  })
+
+  it('渲染五列表格：地址/客户端/进度/双速度（0 速兜底 -）与轮询提示', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'peers',
+      peersState: {
+        list: [
+          { ip: '1.2.3.4', port: 6881, client: 'qBittorrent 4.6', progress: 0.75, down_speed: 1024, up_speed: 0, flags: 'D', country: 'CN' },
+          { ip: '5.6.7.8', port: 51413, client: '', progress: 0, down_speed: 0, up_speed: 2048, flags: '', country: '' }
+        ],
+        loading: false,
+        error: ''
+      }
+    })
+
+    expect(wrapper.findAll('thead th').wrappers.map(header => header.text().trim())).toEqual([
+      '地址',
+      '客户端',
+      '进度',
+      '↓速度',
+      '↑速度'
+    ])
+    expect(wrapper.find('.tracker-detail-count').text()).toContain('共 2 个 Peers')
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows.at(0).text()).toContain('1.2.3.4:6881')
+    expect(rows.at(0).text()).toContain('qBittorrent 4.6')
+    expect(rows.at(0).find('.tracker-progress-partial').text()).toBe('75%')
+    expect(rows.at(0).text()).toContain('1.00 KB/s')
+    expect(rows.at(1).find('.tracker-cell-ellipsis').text()).toBe('5.6.7.8:51413')
+    // 空 client 与 0 速兜底 '-'
+    expect(rows.at(1).text()).toContain('-')
+    expect(rows.at(1).find('.tracker-progress-zero').text()).toBe('0%')
+  })
+
+  it('无数据三态：加载中/错误/空占位', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'peers',
+      peersState: { list: [], loading: true, error: '' }
+    })
+    expect(wrapper.find('.tracker-placeholder').text()).toBe('Peers 列表加载中...')
+    wrapper.destroy()
+
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'peers',
+      peersState: { list: [], loading: false, error: '种子不存在或已被删除' }
+    })
+    expect(wrapper.find('.alert-title').text()).toBe('Peers 列表加载失败')
+    expect(wrapper.find('.alert-description').text()).toBe('种子不存在或已被删除')
+    wrapper.destroy()
+
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'peers',
+      peersState: { list: [], loading: false, error: '' }
+    })
+    expect(wrapper.find('.tracker-placeholder').text()).toBe('暂无 Peers 数据')
+  })
+
+  it('刷新按钮 emit refresh 事件并携带 peers 页签', async() => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      activeTab: 'peers',
+      peersState: {
+        list: [
+          { ip: '10.0.0.1', port: 80, client: 'x', progress: 0, down_speed: 0, up_speed: 0, flags: '', country: '' }
+        ],
+        loading: false,
+        error: ''
+      }
+    })
+    await wrapper.find('.el-button-stub').trigger('click')
+    expect(wrapper.emitted('refresh')).toEqual([['peers']])
   })
 })

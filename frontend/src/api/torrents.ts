@@ -1341,6 +1341,71 @@ export function reannounceAll(): Promise<ApiResponse<ReannounceResponse>> {
   }) as unknown as Promise<ApiResponse<ReannounceResponse>>
 }
 
+// ==================== 种子详情明细接口（TrackerDetailCard 文件/Peers 页签） ====================
+
+/**
+ * 种子文件信息（progress 契约：0~1）
+ */
+export interface TorrentFileInfo {
+  name: string
+  size: number // bytes
+  progress: number // 0~1
+}
+
+/**
+ * 种子 Peer 信息（progress 契约：0~1；速度单位 bytes/s）
+ */
+export interface TorrentPeerInfo {
+  ip: string
+  port: number
+  client: string
+  progress: number // 0~1
+  down_speed: number
+  downSpeed?: number // 驼形命名兼容
+  up_speed: number
+  upSpeed?: number // 驼形命名兼容
+  flags: string
+  country: string
+}
+
+/**
+ * 详情明细列表响应（后端列表强制信封 data 结构）
+ */
+export interface TorrentDetailListData<T> {
+  total: number
+  page: number
+  pageSize: number
+  list: T[]
+}
+
+/**
+ * 获取种子文件列表
+ */
+export function getTorrentFiles(
+  torrentHash: string,
+  downloaderId: string
+): Promise<ApiResponse<TorrentDetailListData<TorrentFileInfo>>> {
+  return request({
+    url: `/torrents/detail/${torrentHash}/files`,
+    method: 'get',
+    params: { downloader_id: downloaderId }
+  }) as unknown as Promise<ApiResponse<TorrentDetailListData<TorrentFileInfo>>>
+}
+
+/**
+ * 获取种子 Peer 列表
+ */
+export function getTorrentPeers(
+  torrentHash: string,
+  downloaderId: string
+): Promise<ApiResponse<TorrentDetailListData<TorrentPeerInfo>>> {
+  return request({
+    url: `/torrents/detail/${torrentHash}/peers`,
+    method: 'get',
+    params: { downloader_id: downloaderId }
+  }) as unknown as Promise<ApiResponse<TorrentDetailListData<TorrentPeerInfo>>>
+}
+
 // ==================== 实时速度监控接口 ====================
 
 /**
