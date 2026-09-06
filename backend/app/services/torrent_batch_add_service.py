@@ -11,9 +11,10 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from fastapi import UploadFile
+from sqlalchemy.exc import OperationalError
 
 from app.api.endpoints.torrent_helpers import (
     _write_audit_log_async,
@@ -122,6 +123,71 @@ def _failed_results(staged_files: Sequence[StagedTorrentFile], error: str) -> Li
     ]
 
 
+# SQLite 写锁冲突错误码：SQLITE_BUSY=5 / SQLITE_BUSY_RECOVERY=517 / SQLITE_BUSY_SNAPSHOT=518。
+# BUSY_SNAPSHOT 表示陈旧读快照升级写事务失败，busy_timeout 对其无效（重试也无意义，
+# 唯一出路是 rollback 后重开快照），这正是批量添加偶发 "database is locked" 的根因。
+_SQLITE_BUSY_ERROR_CODES = (5, 517, 518)
+# 写锁冲突有界重试：5 次 × 0.2s 起步线性退避，总等待约 3s，远小于 busy_timeout=15s 兜底。
+_LOCKED_RETRY_MAX = 5
+_LOCKED_RETRY_BASE_DELAY_SECONDS = 0.2
+
+
+def _sqlite_error_code(exc: BaseException) -> Optional[int]:
+    """提取 sqlite3 原生错误码（Python>=3.11 经 exc.orig.sqlite_errorcode 暴露）。
+
+    用于事后鉴别锁冲突类型（BUSY=5 与 BUSY_SNAPSHOT=518），旧运行时无该属性时返回 None。
+    """
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "sqlite_errorcode", None)
+    if code is None:
+        return None
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_sqlite_locked_error(exc: BaseException) -> bool:
+    """判定是否为 SQLite 写锁冲突（决定是否走有界重试）。"""
+    if not isinstance(exc, OperationalError):
+        return False
+    code = _sqlite_error_code(exc)
+    if code is not None:
+        return code in _SQLITE_BUSY_ERROR_CODES
+    return "database is locked" in str(exc).lower()
+
+
+async def _insert_torrent_record_with_retry(db: Any, record_factory: Callable[[], Any]) -> Any:
+    """以短事务插入单条新种子记录，对 SQLite 写锁冲突做有界重试。
+
+    WAL 模式下，若会话携带有已陈旧的读事务（期间其他连接提交过写入），commit 升级
+    写事务会立即返回 BUSY_SNAPSHOT（"database is locked"，busy_timeout 不生效）；
+    正确处置是 rollback 丢弃陈旧快照后重开事务重试。每次重试用 record_factory 重建
+    ORM 实例：rollback 会 expunge 尚未提交的 pending 对象，复用旧实例会因带主键被
+    视作 persistent 而静默不产生 INSERT。非锁冲突错误不重试，直接上抛。
+    """
+    db_torrent: Any = None
+    for attempt in range(1, _LOCKED_RETRY_MAX + 1):
+        db_torrent = record_factory()
+        db.add(db_torrent)
+        try:
+            db.commit()
+            break
+        except OperationalError as exc:
+            db.rollback()
+            if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:
+                raise
+            logger.warning(
+                "新种子记录落库遇到 SQLite 写锁冲突，回滚后重试（第 %s/%s 次，sqlite_errorcode=%s）",
+                attempt,
+                _LOCKED_RETRY_MAX,
+                _sqlite_error_code(exc),
+            )
+            await asyncio.sleep(_LOCKED_RETRY_BASE_DELAY_SECONDS * attempt)
+    db.refresh(db_torrent)
+    return db_torrent
+
+
 async def _wait_for_transmission_torrent(client: Any, info_hash: str, retries: int = 30) -> Any:
     """在线程中执行 Transmission RPC，避免同步 SDK 调用阻塞事件循环。"""
 
@@ -151,6 +217,11 @@ async def _add_one_torrent(
     }
 
     try:
+        # 根修：先结束上一颗种子遗留的读事务（由上一轮 db.refresh() 的 SELECT 开启，
+        # 会话跨整批复用）。否则本轮 add/轮询等秒级网络调用都在陈旧读快照内进行，
+        # commit 升级写事务时若窗口内有其他写者（如异步审计日志）提交过，
+        # WAL 下立即报 BUSY_SNAPSHOT（"database is locked"，busy_timeout 不生效）。
+        db.rollback()
         info_hash = await calculate_info_hash(staged_file.file_path)
         downloader_type = int(downloader.downloader_type)
 
@@ -174,10 +245,9 @@ async def _add_one_torrent(
                 .first()
             )
             if db_torrent is None:
-                db_torrent = create_transmission_torrent_record(downloader, options.downloader_id, torrent)
-                db.add(db_torrent)
-                db.commit()
-                db.refresh(db_torrent)
+                db_torrent = await _insert_torrent_record_with_retry(
+                    db, lambda: create_transmission_torrent_record(downloader, options.downloader_id, torrent)
+                )
 
         elif downloader_type == 0:
             file_data = await asyncio.to_thread(_read_file_data, staged_file.file_path)
@@ -213,12 +283,12 @@ async def _add_one_torrent(
                 .first()
             )
             if db_torrent is None:
-                db_torrent = create_qbittorrent_torrent_record(
-                    downloader, options.downloader_id, qb_torrent, staged_file.file_path
+                db_torrent = await _insert_torrent_record_with_retry(
+                    db,
+                    lambda: create_qbittorrent_torrent_record(
+                        downloader, options.downloader_id, qb_torrent, staged_file.file_path
+                    ),
                 )
-                db.add(db_torrent)
-                db.commit()
-                db.refresh(db_torrent)
         else:
             raise ValueError(f"不支持的下载器类型: {downloader.downloader_type}")
 
@@ -255,7 +325,19 @@ async def _add_one_torrent(
             db.rollback()
         except Exception:
             logger.debug("批量添加失败后的数据库回滚失败", exc_info=True)
-        result["error"] = str(exc)
+        error_text = str(exc)
+        error_code = _sqlite_error_code(exc)
+        if error_code is not None:
+            # 观测：把 sqlite 原生错误码透传到通知中心与日志（BUSY=5/BUSY_RECOVERY=517/
+            # BUSY_SNAPSHOT=518），复发时可直接鉴别锁冲突类型，无需翻查底层环境。
+            error_text = f"{error_text}（sqlite_errorcode={error_code}）"
+        logger.warning(
+            "批量添加种子失败：file=%s sqlite_errorcode=%s error=%s",
+            staged_file.file_name,
+            error_code,
+            exc,
+        )
+        result["error"] = error_text
 
     return result
 
