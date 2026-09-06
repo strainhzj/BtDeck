@@ -1,5 +1,80 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-06（第六批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（本轮问题关闭）
+
+### 背景与修复
+
+用户复核指出二轮审查的 2 个缺口，均属实并修复：
+
+1. **[P2] 摘要顶层仍有无界路径**：顶层 dict 的 str 键直接拼接、拼接后才检查预算（800 万字符键实测
+   额外分配 ~38MiB）；int/Decimal 白名单类型先完整 repr（百万位 Decimal 先建完整字符串）。
+   修复：键与值统一按剩余预算预截断；int 用 bit_length/Decimal 用 adjusted()（O(1) 代理——
+   **as_tuple().digits 会按位数建元组，本身就是无界分配**，第一版实现踩了这个坑被新测试抓出）
+   做位数预检，超预算降级 `<类型 digits≈N>`。新增 tracemalloc 分配上限测试（8M 键 + 10^1000000
+   int + 百万位 Decimal，峰值 <256KiB）。
+2. **[P2] 取消只杀 shell 包装层，孙进程存活**：create_subprocess_shell 下真正的脚本是孙进程，
+   process.kill() 杀不掉；孙进程持管道导致清理等待被拖到脚本自然结束（审查 Windows 实测等
+   3.95s）。修复：新增 `_kill_process_tree`（Windows taskkill /F /T 按父子树终止；POSIX spawn
+   侧 start_new_session 自成进程组 + killpg 整组 SIGKILL；失败回退单 kill）；清理链两处等待
+   （读取任务回收 + 收尸）加 5s 上限，树杀失败不再拖死中断；`_run_python_script` 非 frozen
+   环境改 create_subprocess_exec + sys.executable 直启（无 shell 层即无需树杀；frozen 桌面
+   sys.executable 是应用 EXE 自身，回落旧 shell+PATH 行为）。
+
+### 连带处置
+
+- 安全测试 `test_executor_module_has_no_exec_engine` 的粗粒度字符串匹配（`"exec(" not in source`）
+  误伤 `create_subprocess_exec(`：按防线意图精化为词边界正则（禁 builtin exec()，进程启动 API
+  不在防线内），非绕过。
+- 新增测试 8 项：分配上限（8M 键/大数字）、树杀三分支单测（taskkill 参数/killpg/回退）、
+  exec 直启 + frozen 回落、**真实 spawn 取消集成**（shell 包装 120s 睡眠孙进程，取消后整文件
+  套件 4.3s 内完成——旧实现会等到脚本自然结束）；存量两个假进程取消测试改用 _kill_process_tree
+  记录器断言。
+
+### 验证
+
+- tests/tasks 全目录 **475 passed**（含全部新测试）；后端全量回归另跑；black/flake8/mypy 过。
+
+## 2026-09-06（第五批）：收起条上移至卡片顶部（用户反馈，全绿未提交）
+
+- TrackerDetailCard：`.tracker-collapse-bar` 由卡片底部移至最顶部（Tracker详情标题之上），点击行为不变（复用 `close` 事件、总高 240px/移动端 180px 不变）；箭头方向随布局取收起方向——list 布局卡片随行下挂、收起向上折叠（chevron-up），traditional 布局底部锚定、收起向下折叠（chevron-down），新增 `collapseIconName` computed；分隔线 border-top→border-bottom。
+- 测试：卡片 spec describe 更名"顶部收起条"，新增"位于卡片 firstElementChild"位置断言 + 双布局箭头方向用例（24 例全绿）；两视图 + mixin spec 93 例复验全绿（视图侧经 `card.vm.$emit` 驱动、与位置无关）；lint 绿。
+- 文档：roadmap frontend/views 卡片条目收起条片段同步（底部→顶部、L215→L10 实测）；feature_list 对应 done 任务 notes 补记。改动未提交，与工作区并行批次一并待用户定夺。
+
+---
+
+## 2026-09-06（第四批）：详情卡片全链路回归加固（+17 前端 / +3 后端用例，全绿未提交）
+
+为本次会话全部详情卡片修改补齐此前无测试钉住的保护面：
+
+- **视图集成（最高价值，6 例）**：index.vue 与 TraditionalView.vue 各 3 例——行点击打开卡片断言 layout/visible/activeTab/tabs/空双页签 props 透传；切文件页签断言 getTorrentFiles(hash, downloaderId) 调用与 files-state 回传（同键缓存 + refresh 强制重取）；Peers 页签 fake timers 断言 5s 链式轮询、close 事件停轮询并复位（拔掉 mixin 挂载/props 透传/@refresh 任一根线即红）。两视图 mock 工厂补 getTorrentFiles/getTorrentPeers（此前缺失——切页签即 TypeError 的隐性炸弹，也保护后续在这些 spec 上开发的人）。
+- **API 契约（新 spec，2 例）**：api-torrent-detail-contract.spec.ts 以 mock request 锁定 /torrents/detail/{hash}/files|peers + params.downloader_id 的前端侧镜像契约（后端侧由 test_torrent_detail_endpoint 锁路由与信封）。
+- **边界分支（3 例）**：卡片进度 clamp（-0.5/1.5/NaN → 0/100/0，钉死 el-progress percentage 校验器；ElProgressStub 改声明式可读 props）；mixin refresh('tracker') 零请求、currentRow 空切入不发请求。
+- **后端（3 例）**：peers 不支持下载器类型 500、qB 空 peers 保持完整信封、TR files 字段缺失空列表（端点测试 13→16）。
+
+门禁：前端全量 1439 passed（+17）、typecheck 0 error、lint 绿（纯测试改动不涉 build）；后端 16 passed + black/flake8 绿。坑位：TR 视图 handleRowClick 形参是本地 TorrentRow 窄接口（Torrent.downloadComplete 可空不兼容），传最小行字面量；假定时器阶段禁用含 setTimeout(0) 的 flushLifecycle（TR spec），改纯微任务冲刷。
+
+---
+
+
+## 2026-09-06（第三批）：文件页签排序+模糊搜索；Peers 页签性能实证（结论：不会拉垮，全绿未提交）
+
+### 功能（①②）
+
+- TrackerDetailCard 文件页签：三列列头排序按钮（升→降→还原循环，指示符 ⇅/↑/↓+主色高亮；先筛选后排序，遵守"排序不因筛选禁用"）；文件名模糊搜索框（el-input mini/clearable；计数"命中 M / 共 N 个文件"、截断提示随命中数联动；no-match 态工具条常驻仅表格区让位——单测抓出的 UX 缺陷即修；父级清数据时 @Watch 复位视图态）。
+- 门禁：卡片 spec 22 例（+7）、全量 1422 passed、typecheck/lint/build 绿。改动仅卡片组件+其测试，未提交。
+
+### Peers 页签性能实证（③，分析交付，零代码变更）
+
+方法：后端 TestClient 端到端探针（100~5000 peers，30 次取均值/p95）+ 前端 jsdom 渲染/轮询探针（200/500/1000 行，10 连轮占空比）+ lane 容量配置核对。探针用后即删。
+
+- **后端进程：安全。** 单轮 CPU 上界 4.2ms(100p)/9.1ms(500p)/15ms(1000p)/64ms(5000p)（含 FastAPI 框架开销；纯 json.dumps ≤4.3ms）；响应 15KB(100p)/74KB(500p)/743KB(5000p)。频率 0.2 req/s/打开的页签，走 INTERACTIVE lane——per-downloader 总 2 槽（DOWNLOADER_IO_CONCURRENCY=2）、后台 lane（TRACKER/SYNC）最多占 1 槽、交互恒保留 ≥1 槽，与既有 1Hz active-torrents 轮询同通道且仅为其 1/5 流量；多用户各开一张卡亦为线性小增量。
+- **浏览器会话：安全。** jsdom 量级下界（无布局绘制）：初次渲染 109/122/184ms（200/500/1000 行），5s 轮询重渲染 22/24/39ms——1000 行（渲染帽）10 连轮均摊 36.6ms/轮 = 5s 周期 0.73% 占空比；DOM ~9k 节点恒定（渲染帽 1000 行钳制）；每轮整表换新数组 GC churn 微小；定时器/visibility 监听无泄漏（destroy/visibility 单测钉死）。真实浏览器叠加布局/绘制同数量级，仅在 1000 行极端帽上有一次 ~100ms 级 hiccup/5s，不可感知。
+- **边界与量级论证：** 实际 peer 数受客户端连接上限约束（qB 默认全局 ~500）——常态落在 ≤500p/9ms/74KB 档。唯一理论尾部：服务端未设 peer 数上限，病态大群 5000+ peers 时 ≈150KB/s/查看者（可察觉但非致命）。可选后续：peers 服务端 cap（files 已有 page/page_size 同款机制可仿），当前量级不必要。
+- 对照：文件页签才是较重的一次性渲染（el-progress ×1000 ≈189ms），但不轮询，不构成持续负载。
+
+---
+
+
 ## 2026-09-06（第二批）：OOM 治理外部审查四缺陷修复——独立复核全属实、对抗性审查修订后落地（后端 4581 全绿）
 
 ### 背景与过程
@@ -7122,3 +7197,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **并行开发干扰与处置**：会话期间用户并行推进种子详情页签功能（backend torrent_detail.py 新端点 + api/torrents.ts 明细类型 + index.vue 引入半成品 `mixins/detailTabsData.ts`），两次阻塞测试验证：① detailTabsData.ts（.ts 文件）从 .vue 导入命名类型在 ts-jest/tsc 下 TS2614（.vue→.vue 可过是因 vue-jest 不做类型检查）——内联同款类型定义解除，类型源头统一（迁 .ts 让 TrackerDetailCard 反向导入）留待详情批次；② TraditionalView 的 TrackerDetailCard import 被并行改成多行形式，spec 的精确单行字符串断言失配——断言放宽为路径匹配（意图不变）。TraditionalView 905/907 两个 eslint warning 属并行半成品未使用导入，未动。
 - **明确不在本批范围**：activeListRetryPending 1Hz 重试（显式 206 降级的设计内重试机制）；既存遗留登记待后续批次——index.vue getList 无 requestSequence 守卫（乱序后到者胜，TraditionalView 有）、index.vue:2317 高级行未过 normalizeTorrent（与 2395 不一致）、index.vue 无高级搜索模式标志（本批门控只修 TraditionalView 侧）。
 - **roadmap/feature_list**：根 README 元信息前置 2026-09-06 + 增量追加；views README torrents 三行（index.vue/TraditionalView.vue/utils/torrentBatch.ts）行号实测更新；feature_list 新增 desktop-terminal-reload-loop-fix-2026-09-06（done，evidence 完整）。未执行 Git 提交。
+
+## 2026-09-06（续）：桌面终态刷新循环回归加固——加固用例 +10 / 源码契约 +1 / 变异验证三轮检出
+
+- **用户验证通过后要求补足回归保护**（对齐移动端加固模式）。加固面：
+- **去重生命周期决策表**（list-view +4）：排序不清（handleSort 只变行序，身份键不受影响，同键仍去重零刷新）、翻页不清（handlePageChange 重拉新鲜滞后行后同键继续去重）、handleClearFilter 清（重新开筛选允许再触发恰一次）、**短路顺序契约**（无筛选期间 `terminalObserved && 筛选 && observeNewTerminal` 的 && 短路使 tracker 不消费额度——翻页重拉滞后行后开筛选，首次终态仍可触发；防未来把 observeNewTerminal 挪到筛选判断前导致"消费了却不刷新"的漏刷）。
+- **206 部分快照终态语义**（list-view +1）：部分下载器成功的增量快照（partial=true 路径）带完成证据同样只触发一次 getList——桌面 206 契约的终态侧此前零覆盖。
+- **新键+终态同轮交互有界性**（list-view +1）：mock created 首拉空列表、此后返回新鲜滞后行；终态快照轮 membership.refresh 拉表 1 次（新键入列）+ 终态触发点首刷 1 次（重放转移+新复合键），后续轮零刷新——证明复合去重对新键不误杀、对终态不漏杀。
+- **TraditionalView 补齐覆盖矩阵**（+3）：reconcile 路径/showActiveOnly 分支/handleFilter 重置（对齐 list-view，两视图防护完全同构）。
+- **两视图同步性源码契约**（traditional spec +1）：断言两源码同时具备 `const wasComplete = isTorrentRowEffectivelyComplete(torrent)`（前态捕获位置）/`if (!wasComplete) terminalObserved = true`/observeNewTerminal≥2/clear()≥6/new TerminalReloadTracker() 实例化，TraditionalView 另断言 advanced 门控≥2——防"改一处忘一处"（torrentBatch.ts 头注释记载的历史教训）。
+- **变异验证三轮全检出后还原**（python 精确替换 + CRLF 自适应，规避上批 sed 转义坑）：M-C `!this.activeAdvancedSearchRequest`→true（移除门控）→高级搜索用例红；M-D 删 handleFilter 的 clear→两视图筛选重置用例红；M-E handleSort 误注入 clear→排序不清用例红（证明"不清"用例非恒绿）。还原后 grep 确认 0 残留。
+- **终局**：四套件 **245 passed**（加固前 229 + 加固 11 + 并行详情页签开发自增若干）；两 spec eslint exit 0。工作区仍含用户详情页签半成品（backend/前端多条文件），本轮仅改两个 spec 文件与 feature_list/progress，未动源码，未执行 Git 提交。

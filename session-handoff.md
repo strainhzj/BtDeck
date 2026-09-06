@@ -1,3 +1,18 @@
+## 2026-09-06（第二批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（后端全绿）
+
+- **缺口1 摘要**：顶层 str 键/超大 int·Decimal 不再先建完整字符串（8M 键旧实现 ~38MiB）——键值按
+  剩余预算预截断；位数预检降级 `<类型 digits≈N>`（Decimal 用 adjusted() 代理，**as_tuple()
+  .digits 按位数建元组本身无界**，第一版实现踩坑被新 tracemalloc 测试抓出）
+- **缺口2 树杀**：`_kill_process_tree`（win taskkill /F /T；posix start_new_session+killpg；
+  回退单 kill）接管取消清理——旧实现只杀 shell，持管道孙进程存活拖住中断（审查实测等 3.95s）；
+  清理两处等待加 5s 上限；Python 脚本非 frozen 改 exec 直启 sys.executable（frozen 回落 shell）
+- 连带：安全测试 exec 防线粗字符串匹配误伤 create_subprocess_exec( → 精化词边界正则（意图不变）
+- 测试 +8：8M 键/大数字分配上限、树杀三分支、exec/frozen、**真实 spawn 取消集成**（120s 睡眠
+  孙进程秒级回收）；tasks 全目录 475 绿；black/flake8/mypy 绿
+- 坑位：Windows 测试机无 os.getpgid/signal.SIGKILL，monkeypatch 需 raising=False + 常量注入
+
+---
+
 ## 2026-09-06：Tracker 详情卡片——底部收起条 + 文件/Peers 页签全栈实现（未提交，等用户确认）
 
 ### 交付内容

@@ -177,7 +177,7 @@
         {
           "id": "oom.review_fix_20260906",
           "name": "外部审查四缺陷修复（M_PURGE 符号/摘要有界化/全量标记时序/读取协程取消清理）",
-          "description": "2026-09-06 外部评估 08ee64d..646e742 的 4 项缺陷经独立复核全属实并修复：P1 bionic M_PURGE 真值 -101（原 101 在真机 mallopt 静默 no-op，AOSP malloc.h 钉死，测试断言同改）；P2 _summarize_result_for_log 全程有界重写（islice/深度上限/类型白名单/输出预算，1M 元素摘要峰值分配 <256KiB 对照旧 ~8MB）+ 非 dict 结果与 phase 行同族加固；P2 qB 全量完成标记移到 durable 写库成功且周期完整后（修复写库失败重启跳过全量重试缺口，失败注入+两阶段重启测试钉死）+ 两状态文件原子写；P2 取消脚本任务 finally 统一回收读取协程并同步 kill 优先。新增/适配 13 项回归测试，后端全量 4581 passed/9 skipped，black/flake8/mypy 全过。真机 RSS 与 10 万种子压测留外部验收",
+          "description": "2026-09-06 外部评估 08ee64d..646e742 的 4 项缺陷经独立复核全属实并修复：P1 bionic M_PURGE 真值 -101（原 101 在真机 mallopt 静默 no-op，AOSP malloc.h 钉死，测试断言同改）；P2 _summarize_result_for_log 全程有界重写（islice/深度上限/类型白名单/输出预算，1M 元素摘要峰值分配 <256KiB 对照旧 ~8MB）+ 非 dict 结果与 phase 行同族加固；P2 qB 全量完成标记移到 durable 写库成功且周期完整后（修复写库失败重启跳过全量重试缺口，失败注入+两阶段重启测试钉死）+ 两状态文件原子写；P2 取消脚本任务 finally 统一回收读取协程并同步 kill 优先。同日二轮补齐 2 缺口：摘要顶层 str 键/超大 int·Decimal 按剩余预算预截断+位数预检降级（Decimal 用 adjusted() 代理，as_tuple().digits 本身无界；8M 键旧实现 ~38MiB）；取消清理改 _kill_process_tree 整树终止（win taskkill /F/T、posix start_new_session+killpg，回退单 kill）+ 清理等待 5s 上限 + Python 脚本非 frozen 改 create_subprocess_exec 直启（frozen 回落 shell）。累计新增/适配 21 项回归测试（含真实 spawn 取消集成），后端全量回归通过，black/flake8/mypy 全过。真机 RSS 与 10 万种子压测留外部验收",
           "status": "done",
           "scope": "backend",
           "files": [
@@ -5749,7 +5749,7 @@
             "frontend/tests/unit/torrent-list-view-component.spec.ts",
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
-          "evidence": "四套件 229 passed（torrent-batch/list-view/traditional-view/mobile-torrents；新增 17 例：谓词参数化与 tracker 8 + list-view 6（转移判定最低层锚/滞后主快照/稳态零刷新/reconcile 路径/showActiveOnly 分支/筛选重置）+ traditional-view 3（滞后含转移锚/稳态/高级搜索门控不洗结果））。变异自检双检出：变异 A 回退转移判定→稳态用例 2 红；变异 B 移除 tracker 门控→滞后路径 5 红；还原后无残留。eslint 0 error（TraditionalView 2 个 warning 属并行进行的详情页签开发半成品 import，非本批代码）。mock 纪律：getList/getActiveTorrents 均 mockImplementation 每次新鲜对象（applySpeedUpdates 原地突变陷阱，同 mobile-torrents.spec 已记录坑）；list-view 用例须 mount 期空快照（桌面 created 即启动 immediate 首轮轮询，终态快照会把 created getList 的滞后行原地突变致后续转移不成立）。计划经独立子代理审查，4 项阻断级修订全部落实（谓词求值时机/测试③重写/变异自检拆分/mock 新鲜对象）。附带解除并行开发阻塞：detailTabsData.ts 从 .vue 导入命名类型在 ts-jest 下 TS2614，内联同款类型定义（类型源头统一留待详情批次）；traditional spec 组件导入断言放宽为路径匹配（并行开发把单行 import 改多行）。"
+          "evidence": "四套件 229 passed（torrent-batch/list-view/traditional-view/mobile-torrents；新增 17 例：谓词参数化与 tracker 8 + list-view 6（转移判定最低层锚/滞后主快照/稳态零刷新/reconcile 路径/showActiveOnly 分支/筛选重置）+ traditional-view 3（滞后含转移锚/稳态/高级搜索门控不洗结果））。变异自检双检出：变异 A 回退转移判定→稳态用例 2 红；变异 B 移除 tracker 门控→滞后路径 5 红；还原后无残留。eslint 0 error（TraditionalView 2 个 warning 属并行进行的详情页签开发半成品 import，非本批代码）。mock 纪律：getList/getActiveTorrents 均 mockImplementation 每次新鲜对象（applySpeedUpdates 原地突变陷阱，同 mobile-torrents.spec 已记录坑）；list-view 用例须 mount 期空快照（桌面 created 即启动 immediate 首轮轮询，终态快照会把 created getList 的滞后行原地突变致后续转移不成立）。计划经独立子代理审查，4 项阻断级修订全部落实（谓词求值时机/测试③重写/变异自检拆分/mock 新鲜对象）。附带解除并行开发阻塞：detailTabsData.ts 从 .vue 导入命名类型在 ts-jest 下 TS2614，内联同款类型定义（类型源头统一留待详情批次）；traditional spec 组件导入断言放宽为路径匹配（并行开发把单行 import 改多行）。 【回归加固 2026-09-06 二轮】加固后四套件 245 passed（新增 10 例 + 源码契约 1 例）：①去重生命周期决策表——排序/翻页不清（handleSort/handlePageChange 后同键仍去重零刷新）、handleClearFilter 清（重新开筛选允许再触发一次）、短路顺序契约（无筛选期间 && 短路不消费去重额度，开筛选后首次终态仍可触发）；②206 部分快照终态证据同样一次 getList（增量合并路径）；③新未展示键与终态证据同轮到达有界性（membership.refresh 拉表 1 次+终态首刷 1 次，后续轮零刷新）；④TraditionalView 补齐 reconcile 路径/showActiveOnly/handleFilter 重置（对齐 list-view 覆盖矩阵）；⑤两视图同步性源码契约（转移判定前态捕获行/if (!wasComplete)/observeNewTerminal≥2/clear()≥6/advanced 门控≥2/复合键 tracker 实例化，防改一处忘一处）。变异验证三轮全部检出后还原无残留：M-C 移除 advanced 门控→高级搜索用例红；M-D 删 handleFilter 的 clear→两视图筛选重置用例红；M-E handleSort 误加 clear→排序不清用例红（证明该用例非恒绿）。变异还原经 grep 确认 0 残留。eslint exit 0。"
         }
       ]
     },
@@ -5760,7 +5760,45 @@
       "branch": "dev",
       "tasks": [],
       "evidence_summary": "后端：test_torrent_detail_endpoint 13 passed、tests/api+架构 lint 1131 passed、mypy/black/flake8 绿；前端：lint（--max-warnings 0）绿、全量单测 102 套件 1415 passed、npm run build 成功、typecheck 绿。roadmap 三层已同步（根 README 元信息、backend/api/README 38 模块、frontend/views 卡片+mixin 条目）。",
-      "notes": "计划经两独立子代理审查（后端契约/客户端库源码级 + 前端集成/Vue2 约束）有条件通过后实施，全部必改项落地：TR 原始字段访问/异常分类 404/链式轮询禁 setInterval/换种子 watcher/progress clamp/formatSpeed 兜底/mixin 单测归位 tests/unit。卡片标题维持「Tracker详情」未改（用户未提，列为可选后续）。Git 提交待用户确认。"
+      "notes": "计划经两独立子代理审查（后端契约/客户端库源码级 + 前端集成/Vue2 约束）有条件通过后实施，全部必改项落地：TR 原始字段访问/异常分类 404/链式轮询禁 setInterval/换种子 watcher/progress clamp/formatSpeed 兜底/mixin 单测归位 tests/unit。卡片标题维持「Tracker详情」未改（用户未提，列为可选后续）。Git 提交待用户确认。2026-09-06 用户反馈追加：收起条上移至卡片最顶部（Tracker详情标题之上），箭头随布局 list↑/traditional↓；卡片 spec 24 例 + 视图/mixin 93 例 + lint 复验全绿（未提交），roadmap 已同步（L10 实测）。"
+    },
+    {
+      "id": "tracker-files-sort-search-2026-09-06",
+      "name": "Tracker 详情卡片文件页签排序与模糊搜索 + Peers 页签性能实证",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "files-sort-search.1",
+          "name": "文件页签三列排序 + 文件名模糊搜索框",
+          "description": "TrackerDetailCard 文件页签增强（纯视图态，父组件与数据链路零改动）：①三列（文件名/大小/进度）列头排序按钮，点击循环 升序→降序→还原原始顺序，指示符 ⇅/↑/↓ 与激活主色高亮；计算链 list→searchedFiles（大小写不敏感子串）→sortedFiles（先筛选后排序，遵守排序不因筛选禁用约束）→visibleFiles（1000 行截断），截断提示与计数文本（命中 M / 共 N 个文件）随搜索命中数联动；②工具条右侧新增 el-input 搜索框（mini/clearable/搜索前缀图标），no-match 态工具条常驻（仅表格区让位占位，可继续修改关键词——单测抓出的 UX 缺陷修正）；③父级清空数据（换种子/关卡片）时经 @Watch filesState.list 复位搜索词与排序，不带陈旧视图态。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/components/TrackerDetailCard.vue",
+            "frontend/tests/unit/tracker-detail-card.spec.ts"
+          ],
+          "evidence": "卡片 spec 22 例全过（新增 7 例：三列排序循环与指示符/大小进度数值语义/搜索过滤与计数/清空恢复/no-match 回显/筛选+排序组合/截断随命中数/视图态复位）；typecheck 0 error；lint（--max-warnings 0）绿；全量 102 套件 1422 passed；build 成功。Peers 性能实证（分析件，无代码变更）：后端 TestClient 端到端上界 100/500/1000/3000/5000 peers = 4.2/9.1/15/40/64ms、响应 15/74/148/445/743KB（纯 json.dumps ≤4.3ms），轮询 0.2 req/s 走 INTERACTIVE lane（per-downloader 2 槽、后台 lane 隔离、交互恒留 ≥1 槽）；前端 jsdom 量级下界：200/500/1000 行初次渲染 109/122/184ms，5s 轮询重渲染 22/24/39ms（1000 行 10 连轮 36.6ms/轮=5s 周期 0.73% 占空比），DOM ~9k 节点恒定，生命周期无泄漏（destroy/visibility 单测钉死）。结论：不会拉垮后端进程或浏览器会话；唯一理论尾部是服务端 peer 数未设上限（5000+ peers ≈150KB/s/查看者），量级上不必要、可选后续加服务端 cap。"
+        },
+        {
+          "id": "files-sort-search.2",
+          "name": "回归加固：详情卡片批次全链路回归保护（视图集成/API 契约/边界分支）",
+          "description": "为本次会话全部详情卡片修改补齐回归保护，覆盖此前无测试钉住的接线与契约：①两视图（index.vue/TraditionalView.vue）集成用例各 3 例：行点击打开卡片透传 layout/visible/activeTab/tabs 与空双页签状态、切文件页签按 hash+downloaderId 懒加载并透传 files-state（同键缓存不重取+refresh 事件强制重取）、Peers 页签 5s 链式轮询 + close 事件（右上角与收起条同源）停止轮询并复位状态——拔掉 mixin 挂载/props 透传/@refresh 任一根线即红；两视图 mock 工厂补 getTorrentFiles/getTorrentPeers（此前缺失，切页签即 TypeError 的隐性炸弹）；②新 spec api-torrent-detail-contract.spec.ts 2 例：锁定前端请求侧 URL/method/params 与后端 torrent_detail.py 路由的镜像契约；③卡片进度 clamp 边界 1 例（负值/超 1/NaN → 0/100/0，钉死 el-progress percentage 0~100 校验器约束，ElProgressStub 改声明式以读 props）；④mixin 分支 2 例（refresh('tracker') 零请求、currentRow 为空切入 files 不发请求）；⑤后端补 3 例（peers 不支持类型 500、qB 空 peers 信封完整、TR files 字段缺失空列表）。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/api-torrent-detail-contract.spec.ts",
+            "frontend/tests/unit/tracker-detail-card.spec.ts",
+            "frontend/tests/unit/detail-tabs-data.spec.ts",
+            "backend/tests/api/test_torrent_detail_endpoint.py"
+          ],
+          "evidence": "前端全量 102 套件 1439 passed（本批 +17：视图集成 6/新 API 契约 spec 2/卡片 clamp 1/mixin 分支 2 及配套）；typecheck 0 error；lint 绿（纯测试改动，无需 build）。后端 test_torrent_detail_endpoint 13→16 passed；black/flake8 绿。未提交（等用户确认）。"
+        }
+      ],
+      "evidence_summary": "卡片 spec 23 例 + 视图集成 6 例 + API 契约 2 例 + mixin 14 例；后端端点 16 例；前端全量 1439 passed。未提交（等用户确认）。",
+      "notes": "Peers 性能为分析交付（实测数据+结论），未做任何性能相关代码变更；可选后续：peers 服务端 cap、卡片标题更名。"
     }
   ],
   "tasks": [
