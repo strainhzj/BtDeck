@@ -7208,3 +7208,20 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **两视图同步性源码契约**（traditional spec +1）：断言两源码同时具备 `const wasComplete = isTorrentRowEffectivelyComplete(torrent)`（前态捕获位置）/`if (!wasComplete) terminalObserved = true`/observeNewTerminal≥2/clear()≥6/new TerminalReloadTracker() 实例化，TraditionalView 另断言 advanced 门控≥2——防"改一处忘一处"（torrentBatch.ts 头注释记载的历史教训）。
 - **变异验证三轮全检出后还原**（python 精确替换 + CRLF 自适应，规避上批 sed 转义坑）：M-C `!this.activeAdvancedSearchRequest`→true（移除门控）→高级搜索用例红；M-D 删 handleFilter 的 clear→两视图筛选重置用例红；M-E handleSort 误注入 clear→排序不清用例红（证明"不清"用例非恒绿）。还原后 grep 确认 0 残留。
 - **终局**：四套件 **245 passed**（加固前 229 + 加固 11 + 并行详情页签开发自增若干）；两 spec eslint exit 0。工作区仍含用户详情页签半成品（backend/前端多条文件），本轮仅改两个 spec 文件与 feature_list/progress，未动源码，未执行 Git 提交。
+
+## 2026-09-06（续二）：批量添加种子偶发 database is locked 根修——WAL 陈旧读快照（BUSY_SNAPSHOT）治理
+
+- **用户报障**：批量添加 3 个种子报"成功 2 失败 1"，失败项为 `(sqlite3.OperationalError) database is locked`（INSERT INTO torrent_info，种子已成功入 TR status=checking，仅本地落库失败）。
+- **RCA（多假设排序实证）**：引擎已配 WAL + busy_timeout=15000ms + NullPool（database.py:21-50），15s 兜底不生效说明不是"等不到"而是"不能等"。主假设（成立）：`torrent_batch_add_service._add_one_torrent` 整批复用单一 SessionLocal 会话，上一颗 `db.refresh()` 的 SELECT 开启的读事务在下一颗 add/轮询（`_wait_for_transmission_torrent` 最长 30×1s）期间持续陈旧；commit 升级写事务时窗口内已有其他写者提交（每颗成功后 `asyncio.create_task(_write_audit_log_async)` 异步审计是必然并发写者，另有周期同步任务）→ **SQLITE_BUSY_SNAPSHOT：立即报 database is locked，busy_timeout 不参与**（SQLite 对陈旧快照不调 busy handler，唯一出路 rollback 重开快照）。与现象逐项吻合：偶发（时序依赖）、多为末尾种子（1.5GB checking 轮询久窗口大）、失败不级联（异常分支 rollback 已丢弃快照）。备择假设未丢弃：H2 某写者持锁 >15s（主链路写点均已 db_write_scope/分批化，无证据）；H3 外部进程共库（桌面副本/手工会话）；两者靠 sqlite_errorcode 观测口鉴别。
+- **修复（用户确认"根修+兜底+观测"全量方案）**：①根修——`_add_one_torrent` 顶部 `db.rollback()` 结束遗留读事务，陈旧快照窗口从秒级压到微秒级（query→add→commit 间无 await 点，事件循环内原子，异步审计无法插队）；②兜底——新增 `_insert_torrent_record_with_retry`：对 BUSY(5)/BUSY_RECOVERY(517)/BUSY_SNAPSHOT(518) 有界重试 5 次×0.2s 线性退避（总等待 ~3s），**每次重试 rollback 后经 record_factory 重建 ORM 实例**（rollback 会 expunge pending 对象，复用旧实例会被视作 persistent 而静默丢失 INSERT——测试断言钉死 call_count==2）；③观测——失败串透传 `sqlite_errorcode`（Python>=3.11 exc.orig.sqlite_errorcode）进通知中心与日志，复发即可鉴别 BUSY vs BUSY_SNAPSHOT / H2 / H3。TR/qB 双分支同享重试路径。
+- **测试（13 passed = 既有 2 + 新增 6 例 11 断言组）**：根修顺序断言（rollback 先于 add_torrent，成功路径恰 1 次）；锁冲突 518 首败重试成功（commit×2/实例重建×2/rollback×2）；重试耗尽（commit×5 且错误串含 sqlite_errorcode=518）；非锁 OperationalError 不重试（commit×1 无错误码后缀）；锁判定矩阵 6 参（码优先缺码回退消息）；非 OperationalError 忽略。邻近 test_torrent_crud_query 5 passed；mypy 0 issue；flake8 干净；black 24.10.0 过。
+- **测试工程坑（记录勿重踩）**：① mock `side_effect` 传**函数**时其返回的异常实例会被当普通返回值吞掉（须用异常实例列表逐次抛出）；② SimpleNamespace 作 exc.orig 时 str(exc) 无消息文本，用 setattr 挂码的 Exception 兼得错误码与消息。
+- **范围外（已核不需要动）**：单颗添加 `torrent_add_service.py` 首个 DB 语句在网络调用后、快照新鲜，无同构风险；未接 db_write_scope（短事务窗口下无必要）。roadmap 三处更新（根 README 生成日期前置 + services README 批添加行 + test-coverage 行数 116→271）；feature_list 新增 batch-add-sqlite-locked-fix-2026-09-06（done）。未执行 Git 提交。
+
+## 2026-09-06（续三）：批量添加锁治理回归加固——真实会话 expunge 语义 + 变异矩阵 3/4/6/2 全检出
+
+- **用户要求补回归保护**（对齐桌面/移动端加固模式）。首轮 6 例均在 MagicMock 层，只能证明调用次数；本轮补判别力分级：
+- **真实 SQLite 会话集成用例（核心增量）**：真引擎 + 真 torrent_info 单表 + 真工厂构造 TorrentInfo，首次 commit 注入 BUSY_SNAPSHOT（实例属性遮蔽 db.commit），断言工厂调用×2、commit×2，并用**全新会话**验证 durable 落库恰 1 行（防 identity map 假象）。专测 "rollback 会 expunge pending 对象、重试复用旧实例会静默丢失 INSERT"——这条性质 MagicMock 层永不可见。
+- **qB 分支接线**：锁冲突同样经共享重试路径（工厂重建×2/commit×2/torrents_add 恰 1 次），TR/qB 双分支同构有据。**退避契约**：线性递增 base×1/base×2（恢复真实基数后 patch asyncio.sleep 断言乘数序列）。**源码契约**：钉住四结构点（根修 rollback 先于 calculate_info_hash、双分支共享重试、循环内重建+失败即回滚、锁码集合与错误码透传）。
+- **变异验证（四类突变逐一实证被拦截后还原，备份字节级比对一致）**：M-A 根修回退（删迭代顶部 rollback）→3 例红；M-B 实例复用回退（工厂调用提出循环）→4 例红，**其中真实会话用例以 0 行落库击中**——expunge 陷阱被真实 ORM 状态机暴露，证明该用例判别力非恒绿；M-C 兜底回退（不重试直接 raise）→6 例红；M-D 观测回退（错误串不透传 sqlite_errorcode）→2 例红。四个结构点均有 ≥2 独立拦截者。
+- **终局**：套件 13→**17 passed**；邻近 test_torrent_crud_query 5 passed；black 24.10.0/flake8/mypy 全过；无 .bak 残留。feature_list 追加 locked-fix.2（done）；roadmap test-coverage 行数 271→439。未执行 Git 提交。

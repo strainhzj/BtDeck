@@ -5799,6 +5799,39 @@
       ],
       "evidence_summary": "卡片 spec 23 例 + 视图集成 6 例 + API 契约 2 例 + mixin 14 例；后端端点 16 例；前端全量 1439 passed。未提交（等用户确认）。",
       "notes": "Peers 性能为分析交付（实测数据+结论），未做任何性能相关代码变更；可选后续：peers 服务端 cap、卡片标题更名。"
+    },
+    {
+      "id": "batch-add-sqlite-locked-fix-2026-09-06",
+      "name": "批量添加种子偶发 database is locked 根修（WAL 陈旧读快照）",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "locked-fix.1",
+          "name": "BUSY_SNAPSHOT 根修 + 写锁有界重试 + sqlite_errorcode 观测",
+          "description": "RCA 确认批量添加后台任务复用单一 SessionLocal 会话横跨整批网络调用：上一颗 db.refresh() 的 SELECT 开启的读事务在下一颗的 add/轮询（最长 30×1s）期间持续陈旧，commit 升级写事务时窗口内已有其他写者（异步审计日志/周期同步任务）提交过即触发 SQLITE_BUSY_SNAPSHOT——立即报 database is locked，busy_timeout=15s 不生效（与偶发、且多为末尾种子、失败后不级联现象吻合；种子已入 TR 仅本地落库失败）。修复三层：①根修——_add_one_torrent 顶部 db.rollback() 结束遗留读事务，陈旧快照窗口从秒级压到微秒级（query→add→commit 间无 await 点，事件循环内原子）；②兜底——_insert_torrent_record_with_retry 对 BUSY(5)/BUSY_RECOVERY(517)/BUSY_SNAPSHOT(518) 有界重试 5 次×0.2s 线性退避，每次重试 rollback 后经 record_factory 重建 ORM 实例（rollback 会 expunge pending 对象，复用旧实例会被视作 persistent 而静默丢失 INSERT）；③观测——失败串透传 sqlite_errorcode（Python>=3.11 exc.orig.sqlite_errorcode）进通知中心与日志，复发可一锤定音鉴别锁冲突类型（H2 长写锁/H3 外部进程共库两备择假设留此鉴别口）。TR/qB 双分支同享重试路径。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/torrent_batch_add_service.py",
+            "backend/tests/api/test_torrent_batch_add_api.py"
+          ],
+          "evidence": "test_torrent_batch_add_api 13 passed（新增 6：根修顺序断言 rollback 先于 add_torrent 且成功路径恰 1 次/锁冲突 518 首次失败重试成功 commit×2 且重建实例×2 且 rollback×2/重试耗尽 commit×5 且错误串含 sqlite_errorcode=518/非锁 OperationalError 不重试 commit×1 且无错误码后缀/锁判定矩阵 6 参（码优先、缺码回退消息）/非 OperationalError 忽略）+ 邻近 test_torrent_crud_query 5 passed；mypy 0 issue；flake8 干净；black 24.10.0 通过。测试工程坑：mock side_effect 传函数时返回的异常实例会被当普通返回值吞掉（须用异常实例列表逐次抛出）；SimpleNamespace 作 exc.orig 时 str(exc) 无消息文本（用 setattr 挂码的 Exception 兼得两者）。"
+        },
+        {
+          "id": "locked-fix.2",
+          "name": "回归加固：真实会话 expunge 语义 + qB 接线 + 退避契约 + 源码契约 + 变异验证",
+          "description": "为锁治理修复补足判别力分级保护（此前 6 例均在 MagicMock 层，只能证明调用次数）：①真实 SQLite 会话集成用例——真引擎+真 torrent_info 表+真工厂构造 TorrentInfo，首次 commit 注入 BUSY_SNAPSHOT 后用全新会话验证 durable 落库恰 1 行，专测 \"rollback 会 expunge pending 对象、重试复用旧实例会静默丢失 INSERT\" 这条只有真实 ORM 状态机能暴露的性质；②qB 分支接线用例——证明 TR/qB 双分支共享同一条重试路径（工厂重建×2+commit×2+torrents_add 恰 1 次）；③退避契约——线性递增 base×1/base×2 断言；④源码契约——钉住四个结构点（根修 rollback 先于 calculate_info_hash、双分支共享重试、循环内重建实例+失败即回滚、锁码集合与错误码透传），防未来重构改一处忘一处。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/api/test_torrent_batch_add_api.py"
+          ],
+          "evidence": "套件 13→17 passed（新增 4 例）；变异验证四类突变逐一实证被拦截后还原（备份比对一致）：M-A 根修回退（删迭代顶部 rollback）→3 例红（顺序断言/TR 重试 rollback 计数/源码契约）；M-B 实例复用回退（工厂调用提出循环）→4 例红，其中真实会话用例以 0 行落库击中——expunge 陷阱被真实 ORM 状态机暴露，证明该用例判别力；M-C 兜底回退（不重试直接 raise）→6 例红（全部重试相关）；M-D 观测回退（错误串不透传 sqlite_errorcode）→2 例红（耗尽用例/源码契约）。四个结构点均有 ≥2 独立拦截者。邻近 test_torrent_crud_query 5 passed；black 24.10.0/flake8/mypy 全过；无 .bak 残留。"
+        }
+      ],
+      "evidence_summary": "locked-fix.1：13+5 pytest 全绿三件套门禁通过；locked-fix.2：17 passed + 变异矩阵 3/4/6/2 全检出。",
+      "notes": "单颗添加 torrent_add_service.py 首个 DB 语句在网络调用之后、快照新鲜，确认无同构风险未改动；未接 db_write_scope（用户选定范围为根修+兜底+观测，短事务窗口下无必要）；H2（>15s 长写锁）/H3（外部进程共库）备择假设凭 sqlite_errorcode 观测口鉴别。未执行 Git 提交。"
     }
   ],
   "tasks": [

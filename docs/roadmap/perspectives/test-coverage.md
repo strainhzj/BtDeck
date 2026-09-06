@@ -44,7 +44,7 @@
 | 新增测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/core/test_path_mapping_unicode.py` | 553 | `app/core/path_mapping.py`（路径映射 unicode：空格/中文边界） |
-| `tests/api/test_torrent_batch_add_api.py` | 116 | `app/api/endpoints/torrent_crud.py` + `app/services/torrent_batch_add_service.py`（异步批量添加） |
+| `tests/api/test_torrent_batch_add_api.py` | 439 | `app/api/endpoints/torrent_crud.py` + `app/services/torrent_batch_add_service.py`（异步批量添加；2026-09-06 增锁治理回归 6 例：根修顺序断言/重试成功/重试耗尽错误码透传/非锁不重试/锁判定矩阵/非 OperationalError 忽略；同日加固 +4：真实 SQLite 会话 expunge 语义（全新会话验证 durable 落库）/qB 分支共享重试接线/线性退避契约/四结构点源码契约，变异验证 3/4/6/2 全检出） |
 | `tests/api/test_downloader_path_mapping_update.py` | 141 | `app/api/endpoints/downloader.py` + `app/api/schemas/path_mapping.py`（设置稳定化后的路径映射更新） |
 
 ### 2026-08-09 异步操作占用回归

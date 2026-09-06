@@ -46,7 +46,7 @@
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |
 | 配置模板 template | `template_service.py` | 配置模板服务（CRUD/验证/应用/冲突检测） |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete_service.py` | 跨下载器重复种子分类；预览排除活动删除 ID，提交阶段交由任务管理器原子占用 |
-| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取 |
+| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取；2026-09-06 锁治理：`_add_one_torrent` 顶部 rollback 结束上一轮 refresh 遗留读事务（WAL 陈旧快照跨网络调用会在 commit 升级时报 BUSY_SNAPSHOT、busy_timeout 无效），新增 `_insert_torrent_record_with_retry`（BUSY 5/517/518 有界重试 5 次、每次 rollback 后经 record_factory 重建实例防 expunge 静默丢 INSERT），失败串透传 sqlite_errorcode 供锁类型鉴别 |
 | 存量 added_date 回填 added-date-backfill | `torrent_added_date_backfill.py` | 对 torrent_info.added_date 为 NULL 的存量行按下载器分批拉取 added_on/addedDate 回填的后台任务（启动后 create_task、INFO_SYNC_STARTUP_BACKFILL_ENABLED 开关默认关闭；经 SYNC lane 分批执行不阻塞事件循环，下载器不可用跳过由 12h 全量快照兜底） |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
 | 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request） |
