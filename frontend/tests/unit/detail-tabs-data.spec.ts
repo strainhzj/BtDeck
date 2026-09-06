@@ -310,3 +310,40 @@ describe('TrackerDetailDataMixin Peers 页签（5s 链式轮询 + 生命周期�
     expect(mockedGetPeers).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('TrackerDetailDataMixin 分支补充（refresh(tracker) 与空行保护）', () => {
+  let wrapper: Wrapper<DetailTabsHarness>
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+    mockedGetFiles.mockReset()
+    mockedGetPeers.mockReset()
+  })
+
+  afterEach(() => {
+    if (wrapper && wrapper.exists()) {
+      wrapper.destroy()
+    }
+    jest.useRealTimers()
+  })
+
+  it('tracker 页签的 refresh 事件不触发任何明细请求', async() => {
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+    vm.setRow({ hash: 'h1', downloader_id: 'dl1' })
+    vm.handleDetailRefresh('tracker')
+    await flush()
+    expect(mockedGetFiles).not.toHaveBeenCalled()
+    expect(mockedGetPeers).not.toHaveBeenCalled()
+  })
+
+  it('无选中行（currentRow 为空）时切入 files 页签不发请求', async() => {
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+    vm.setTab('files')
+    await wrapper.vm.$nextTick()
+    await flush()
+    expect(mockedGetFiles).not.toHaveBeenCalled()
+    expect(mockedGetPeers).not.toHaveBeenCalled()
+  })
+})

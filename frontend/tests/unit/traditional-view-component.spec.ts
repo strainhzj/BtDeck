@@ -12,6 +12,8 @@ import {
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
+  getTorrentFiles,
+  getTorrentPeers,
   reconcileRuntimeTorrentStates,
   getTrackerDomains,
   getTorrentList,
@@ -45,6 +47,8 @@ jest.mock('@/api/torrents', () => ({
   getDownloaderList: jest.fn(),
   getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
+  getTorrentFiles: jest.fn(),
+  getTorrentPeers: jest.fn(),
   reconcileRuntimeTorrentStates: jest.fn(),
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
@@ -89,6 +93,8 @@ const localVue = createLocalVue()
 installLoadingDirectiveProbe(localVue)
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
+const mockGetTorrentFiles = getTorrentFiles as jest.MockedFunction<typeof getTorrentFiles>
+const mockGetTorrentPeers = getTorrentPeers as jest.MockedFunction<typeof getTorrentPeers>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
@@ -1756,5 +1762,208 @@ describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () =
     expect(mockGetTorrentList).not.toHaveBeenCalled()
     expect((vm as unknown as { activeAdvancedSearchRequest: unknown }).activeAdvancedSearchRequest)
       .not.toBeNull()
+  })
+
+  it('滞后窗口循环（reconcile 路径）：终态核验带回完成证据同样只触发一次 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{
+          hash: 'hash-1',
+          downloader_id: 'dl-1',
+          downloadSpeed: 0,
+          uploadSpeed: 0,
+          progress: 100,
+          status: 'seeding',
+          downloadComplete: true,
+          num_seeds: 0,
+          num_leechs: 0
+        }],
+        missing: []
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.runtimeStateMisses = {}
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('showActiveOnly 触发分支：同一完成证据同样只触发一次 getList', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.listQuery.showActiveOnly = true
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('筛选变化重置终态去重：handleFilter 后同一完成证据允许再触发一次', async() => {
+    mockGetTorrentList.mockImplementation(() => Promise.resolve(laggingListResponse()))
+    mockGetActiveTorrents.mockResolvedValue(terminalActiveSnapshot())
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.listQuery.status = ['downloading']
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(2)
+    mockGetTorrentList.mockClear()
+
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    await vm.loadActiveSpeed()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('终态刷新循环防护源码契约（两视图同步性）', () => {
+  const source = readFileSync(resolve(__dirname, '../../src/views/torrents/TraditionalView.vue'), 'utf-8')
+  const listSource = readFileSync(resolve(__dirname, '../../src/views/torrents/index.vue'), 'utf-8')
+
+  it('转移判定与去重门控三件套在两视图同步存在（防改一处忘一处）', () => {
+    for (const viewSource of [source, listSource]) {
+      // 转移判定：前态捕获必须在赋值前（分支内延迟求值会令转移恒不触发）
+      expect(viewSource).toContain('const wasComplete = isTorrentRowEffectivelyComplete(torrent)')
+      expect(viewSource).toContain('if (!wasComplete) terminalObserved = true')
+      // 去重门控：主快照与 reconcile 两个触发点都必须受 tracker 门控
+      expect((viewSource.match(/terminalReloadTracker\.observeNewTerminal/g) || []).length)
+        .toBeGreaterThanOrEqual(2)
+      // 上下文重置：筛选/模板/排查模式等 clear 挂点不得被顺手删除
+      expect((viewSource.match(/terminalReloadTracker\.clear\(\)/g) || []).length)
+        .toBeGreaterThanOrEqual(6)
+    }
+    // TraditionalView 专属：高级搜索门控覆盖两个触发点
+    expect((source.match(/!this\.activeAdvancedSearchRequest/g) || []).length)
+      .toBeGreaterThanOrEqual(2)
+    // 桌面两视图不照抄移动端纯 hash 去重：复合键身份判定必须存在
+    for (const viewSource of [source, listSource]) {
+      expect(viewSource).toContain('new TerminalReloadTracker()')
+    }
+  })
+})
+
+describe('详情卡片文件/Peers 页签数据接线（TrackerDetailDataMixin 集成回归）', () => {
+  let wrapper: Wrapper<Vue>
+
+  const detailEnvelope = <T>(list: T[]) => ({
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: { list, total: list.length, page: 1, pageSize: 100000 }
+  })
+
+  // 假定时器阶段只用微任务冲刷（本文件 flushLifecycle 含 setTimeout(0)，会挂死假定时器）
+  const flushMicro = async() => {
+    for (let index = 0; index < 16; index += 1) {
+      await Promise.resolve()
+    }
+    await localVue.nextTick()
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([]))
+    mockGetDownloaderList.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetTrackerDomains.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockGetActiveTorrents.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
+    mockReconcileRuntimeTorrentStates.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { list: [], missing: [] }
+    })
+    mockGetTorrentFiles.mockResolvedValue(
+      detailEnvelope([{ name: 'b.mkv', size: 2048, progress: 1 }])
+    )
+    mockGetTorrentPeers.mockResolvedValue(
+      detailEnvelope([{ ip: '10.0.0.8', port: 51413, client: 'TR 3.0', progress: 0.2, down_speed: 3, up_speed: 4, flags: 'UX', country: '' }])
+    )
+  })
+
+  afterEach(() => {
+    wrapper?.destroy()
+    jest.useRealTimers()
+  })
+
+  async function openDetailCard(): Promise<ReturnType<Wrapper<Vue>['findComponent']>> {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    vm.handleRowClick({ hash: 'hash-1', name: '页签接线种子', downloaderId: 'dl-1' })
+    await localVue.nextTick()
+    return wrapper.findComponent(TrackerDetailCard)
+  }
+
+  it('行点击打开卡片：layout=traditional、visible 随 currentRow、透传三个页签', async() => {
+    const card = await openDetailCard()
+    expect(card.exists()).toBe(true)
+    expect(card.props('layout')).toBe('traditional')
+    expect(card.props('visible')).toBe(true)
+    expect(card.props('activeTab')).toBe('tracker')
+    expect(card.props('tabs').map((tab: { value: string }) => tab.value)).toEqual(['tracker', 'files', 'peers'])
+  })
+
+  it('切文件页签懒加载并透传 files-state；refresh 事件强制重取', async() => {
+    const card = await openDetailCard()
+
+    card.vm.$emit('update:activeTab', 'files')
+    await flushMicro()
+    expect(mockGetTorrentFiles).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentFiles).toHaveBeenCalledWith('hash-1', 'dl-1')
+    expect(card.props('filesState')).toEqual({
+      list: [{ name: 'b.mkv', size: 2048, progress: 1 }],
+      loading: false,
+      error: ''
+    })
+
+    card.vm.$emit('refresh', 'files')
+    await flushMicro()
+    expect(mockGetTorrentFiles).toHaveBeenCalledTimes(2)
+  })
+
+  it('Peers 页签 5s 轮询；close 事件停止轮询、currentRow 清空且状态复位', async() => {
+    const card = await openDetailCard()
+    jest.useFakeTimers()
+
+    card.vm.$emit('update:activeTab', 'peers')
+    await flushMicro()
+    expect(mockGetTorrentPeers).toHaveBeenCalledTimes(1)
+    expect(card.props('peersState').list).toHaveLength(1)
+
+    jest.advanceTimersByTime(5000)
+    await flushMicro()
+    expect(mockGetTorrentPeers).toHaveBeenCalledTimes(2)
+
+    card.vm.$emit('close')
+    await flushMicro()
+    expect(card.props('visible')).toBe(false)
+    expect(card.props('peersState')).toEqual({ list: [], loading: false, error: '' })
+
+    jest.advanceTimersByTime(15000)
+    await flushMicro()
+    expect(mockGetTorrentPeers).toHaveBeenCalledTimes(2)
   })
 })
