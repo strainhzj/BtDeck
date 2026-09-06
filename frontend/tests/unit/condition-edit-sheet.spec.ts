@@ -214,4 +214,62 @@ describe('views/mobile/components/ConditionEditSheet', () => {
     vm.onVisibleUpdate(false)
     expect(wrapper.emitted('update:visible')?.[0]).toEqual([false])
   })
+
+  // ============ 回归加固（2026-09-06 续五）：排除模式保持/回落与二次打开克隆 ============
+
+  it('加固：exclude 模式下切到支持排除的操作符——mode 保持 exclude', async() => {
+    const wrapper = mountSheet(false)
+    const vm = wrapper.vm as SheetVm
+    await wrapper.setProps({ visible: true })
+
+    vm.draft.field = 'name'
+    vm.draft.operator = 'contains'
+    vm.draft.mode = 'exclude'
+    vm.draft.operator = 'equals'
+    vm.onOperatorChange()
+    expect(vm.draft.mode).toBe('exclude')
+  })
+
+  it('加固：exclude 模式下切到不支持排除的操作符——回落 include', async() => {
+    const wrapper = mountSheet(false)
+    const vm = wrapper.vm as SheetVm
+    await wrapper.setProps({ visible: true })
+
+    vm.draft.field = 'name'
+    vm.draft.operator = 'contains'
+    vm.draft.mode = 'exclude'
+    vm.draft.operator = 'is_null'
+    vm.onOperatorChange()
+    expect(vm.draft.mode).toBe('include')
+  })
+
+  it('加固：二次打开以最新 condition 重新克隆（关-换-开链路）', async() => {
+    const wrapper = mountSheet(false)
+    const vm = wrapper.vm as SheetVm
+
+    await wrapper.setProps({ visible: true })
+    expect(vm.draft.value).toBe('4K')
+
+    await wrapper.setProps({ visible: false })
+    const second: AdvancedSearchConditionState = {
+      id: 'c-2',
+      field: 'tags',
+      operator: 'contains_any',
+      value: ['电影'],
+      mode: 'include'
+    }
+    await wrapper.setProps({ condition: second, visible: true })
+    expect(vm.draft).toMatchObject({ id: 'c-2', field: 'tags', operator: 'contains_any', value: ['电影'] })
+  })
+
+  it('加固：dynamicOptions 未注入（默认空）——值候选不抛错返回空数组', async() => {
+    const wrapper = shallowMount(ConditionEditSheet, {
+      localVue,
+      propsData: { visible: true, condition: sampleCondition }
+    })
+    const vm = wrapper.vm as SheetVm
+
+    vm.draft.field = 'category'
+    expect(vm.fieldOptionsForDraft).toEqual([])
+  })
 })

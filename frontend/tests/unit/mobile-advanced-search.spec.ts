@@ -50,10 +50,12 @@ interface BuilderVm extends Vue {
   conditionGroups: AdvancedSearchGroupState[]
   advancedTemplates: SearchTemplate[]
   selectedTemplateId: string
+  templatesLoading: boolean
   sheetVisible: boolean
   editingCondition: AdvancedSearchConditionState | null
   saveTemplateVisible: boolean
   manageVisible: boolean
+  previewVisible: boolean
   templateForm: { name: string, description: string, isDefault: boolean }
   canManageSelected: boolean
   applySavedSearch(template: SearchTemplate): void
@@ -70,6 +72,8 @@ interface BuilderVm extends Vue {
   updateSelectedTemplate(): Promise<void>
   deleteSelectedTemplate(): Promise<void>
   getTemplateGroupsSnapshot(): AdvancedSearchGroupState[]
+  previewSearchQuery(): void
+  loadSavedSearches(): Promise<void>
 }
 
 const nameCondition = (field: string, operator: string, value: AdvancedSearchConditionValue): AdvancedSearchConditionState => ({
@@ -510,5 +514,155 @@ describe('views/mobile/components/MobileAdvancedSearch', () => {
 
     const params = wrapper.emitted('search')?.[0][0] as { between_group_logics: string }
     expect(JSON.parse(params.between_group_logics)).toEqual(['or'])
+  })
+
+  // ============ 回归加固（2026-09-06 续五）：降级/竞态/校验路径与源码契约 ============
+
+  it('加固：动态候选部分失败（1/3）静默降级——无告警且成功项保留', async() => {
+    jest.mocked(getAllCategories).mockRejectedValue(new Error('分类接口炸了') as never)
+    jest.mocked(getAllTags).mockResolvedValue({ code: '200', data: ['tv'] } as never)
+    jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [] } as never)
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '200', data: [] } as never)
+
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm & { dynamicOptions: { tagOptions: unknown[] } }
+
+    expect(message.error).not.toHaveBeenCalled()
+    expect(vm.dynamicOptions.tagOptions).toEqual([{ label: 'tv', value: 'tv' }])
+  })
+
+  it('加固：动态候选全部失败（3/3）才告警——透传首个异常文本', async() => {
+    jest.mocked(getAllCategories).mockRejectedValue(new Error('后端不可用') as never)
+    jest.mocked(getAllTags).mockRejectedValue(new Error('tags down') as never)
+    jest.mocked(getDownloaderList).mockRejectedValue(new Error('dl down') as never)
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '200', data: [] } as never)
+
+    mountBuilder()
+    await flushLifecycle()
+
+    expect(message.error).toHaveBeenCalledTimes(1)
+    expect(message.error).toHaveBeenCalledWith('后端不可用')
+  })
+
+  it('加固：getSearchTemplates 信封非 200——error 提示且列表不落地', async() => {
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '500', msg: '模板服务不可用' } as never)
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm
+
+    expect(message.error).toHaveBeenCalledWith('模板服务不可用')
+    expect(vm.advancedTemplates).toEqual([])
+    expect(vm.templatesLoading).toBe(false)
+  })
+
+  it('加固：loadSavedSearches 竞态守卫——迟到的旧响应不覆盖新列表、不误动 loading', async() => {
+    let resolveStale: (value: unknown) => void = () => undefined
+    const stalePromise = new Promise(resolve => { resolveStale = resolve })
+    jest.mocked(getSearchTemplates)
+      .mockImplementationOnce(() => stalePromise as never)
+      .mockResolvedValue({ code: '200', data: [makeTemplate({ id: 'tpl-fresh' })] } as never)
+
+    const wrapper = mountBuilder()
+    await Vue.nextTick()
+    const vm = wrapper.vm as BuilderVm
+    // 挂起的首轮（stale）之后手动触发第二轮（如管理抽屉刷新）
+    const second = vm.loadSavedSearches()
+    await flushLifecycle()
+    expect(vm.advancedTemplates.map(t => t.id)).toEqual(['tpl-fresh'])
+    expect(vm.templatesLoading).toBe(false)
+
+    // 旧响应此刻迟到 resolve：序列号守卫应拒绝其落地
+    resolveStale({ code: '200', data: [makeTemplate({ id: 'tpl-stale' })] } as never)
+    await flushLifecycle()
+    expect(vm.advancedTemplates.map(t => t.id)).toEqual(['tpl-fresh'])
+    expect(vm.templatesLoading).toBe(false)
+    await second
+  })
+
+  it('加固：列表重载后 selectedTemplateId 指向已消失模板——自动清空', async() => {
+    jest.mocked(getSearchTemplates)
+      .mockResolvedValueOnce({ code: '200', data: [makeTemplate({ id: 'tpl-mine' })] } as never)
+      .mockResolvedValue({ code: '200', data: [makeTemplate({ id: 'tpl-other' })] } as never)
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm
+
+    vm.selectedTemplateId = 'tpl-mine'
+    await vm.loadSavedSearches()
+    await flushLifecycle()
+
+    expect(vm.selectedTemplateId).toBe('')
+  })
+
+  it('加固：应用含未知字段的模板——error 提示且后续搜索被校验拦截', async() => {
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '200', data: [] } as never)
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm
+
+    const badTemplate = makeTemplate({
+      conditions: makeConditions([
+        {
+          id: 'g-bad',
+          name: '',
+          logic: 'and',
+          betweenGroupLogic: 'and',
+          editing: false,
+          conditions: [nameCondition('no_such_field' as string, 'contains', 'x')]
+        }
+      ])
+    })
+    vm.applySavedSearch(badTemplate)
+    await Vue.nextTick()
+
+    expect(message.error).toHaveBeenCalled()
+    // 坏模板落地后吸底执行必须被校验拦下（不可静默发起搜索）
+    vm.onSearch()
+    expect(message.warning).toHaveBeenCalled()
+    expect(wrapper.emitted('search')).toBeFalsy()
+  })
+
+  it('加固：confirmSaveTemplate 条件无效——warning 且不调 createSearchTemplate、对话框保持打开', async() => {
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '200', data: [] } as never)
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm
+
+    vm.saveTemplateVisible = true
+    vm.templateForm.name = '名字有效但条件空'
+    vm.confirmSaveTemplate()
+    await flushLifecycle()
+
+    expect(message.warning).toHaveBeenCalled()
+    expect(createSearchTemplate).not.toHaveBeenCalled()
+    expect(vm.saveTemplateVisible).toBe(true)
+  })
+
+  it('加固：预览查询——条件无效 warning 不开对话框，条件有效打开', async() => {
+    jest.mocked(getSearchTemplates).mockResolvedValue({ code: '200', data: [] } as never)
+    const wrapper = mountBuilder()
+    await flushLifecycle()
+    const vm = wrapper.vm as BuilderVm
+
+    vm.previewSearchQuery()
+    expect(message.warning).toHaveBeenCalled()
+    expect(vm.previewVisible).toBe(false)
+
+    vm.conditionGroups[0].conditions.splice(0, 1, nameCondition('name', 'contains', '4K'))
+    vm.previewSearchQuery()
+    expect(vm.previewVisible).toBe(true)
+  })
+
+  it('加固·源码契约：禁回流桌面工作区、消费共享层、吸底浮条避让 Tab 栏', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/components/MobileAdvancedSearch.vue', 'utf-8')
+    // 移动构建器不得再挂桌面工作区（方案三的核心边界）
+    expect(source).not.toContain('AdvancedSearchWorkspace')
+    expect(source).not.toContain('advanced-search-workspace')
+    // 字段/操作符/归一化必须走共享层（防本地副本回流）
+    expect(source).toContain("from '@/components/torrents/advancedSearchFields'")
+    // 吸底浮条定位锚：避开悬浮 Tab 栏（同 .m-backtop 的避让几何）
+    expect(source).toContain('calc(80px + env(safe-area-inset-bottom))')
   })
 })
