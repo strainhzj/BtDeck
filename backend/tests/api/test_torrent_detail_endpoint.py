@@ -379,3 +379,45 @@ class TestErrorPaths:
         body = r.json()
         assert body["code"] == "500"
         assert "获取Peer列表失败" in body["msg"]
+
+
+class TestAdditionalBranches:
+    """边界分支补充：peers 不支持类型 / 空 peers / TR files 字段缺失。"""
+
+    def test_peers_unsupported_downloader_type_returns_500(self, client):
+        _set_store(
+            client.app,
+            [SimpleNamespace(downloader_id="dl_x", downloader_type=99, nickname="x", fail_time=0, client=object())],
+        )
+        r = client.get(PEERS_URL.format(hash=HASH), params={"downloader_id": "dl_x"})
+        body = r.json()
+        assert body["code"] == "500"
+        assert "不支持的下载器类型" in body["msg"]
+
+    def test_qb_peers_empty_map_returns_200_empty_envelope(self, client):
+        qb_client = MagicMock(spec=qbClient)
+        qb_client.sync_torrent_peers.return_value = {"rid": 0, "full_update": True, "peers": {}}
+        _set_store(client.app, [_make_qb_downloader_with(qb_client)])
+
+        with _real_call_downloader_api():
+            r = client.get(PEERS_URL.format(hash=HASH), params={"downloader_id": "dl_qb"})
+
+        body = r.json()
+        assert body["code"] == "200"
+        # 空 peers 也必须保持列表强制信封格式（total/page/pageSize/list）
+        assert set(body["data"].keys()) == {"total", "page", "pageSize", "list"}
+        assert body["data"]["total"] == 0
+        assert body["data"]["list"] == []
+
+    def test_tr_files_missing_field_returns_200_empty_list(self, client):
+        tr_client = MagicMock(spec=trClient)
+        tr_client.get_torrent.return_value = _TrTorrentStub({})
+        _set_store(client.app, [_make_tr_downloader_with(tr_client)])
+
+        with _real_call_downloader_api():
+            r = client.get(FILES_URL.format(hash=HASH), params={"downloader_id": "dl_tr"})
+
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["list"] == []
+        assert body["data"]["total"] == 0
