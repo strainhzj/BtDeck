@@ -128,9 +128,14 @@ class TestLoadPolicy:
 
 def test_executor_module_has_no_exec_engine():
     """exec 回落引擎已删除：模块不再暴露任意代码执行方法。"""
+    import re
+
     import app.tasks.cron_executor as mod
 
     assert not hasattr(mod.CronTaskExecutor, "_execute_sync_python_code")
     assert not hasattr(mod.CronTaskExecutor, "_execute_async_python_code")
     source = Path(mod.__file__).read_text(encoding="utf-8")
-    assert "exec(" not in source, "cron_executor 源码不应再包含 exec() 调用"
+    # 防线意图是禁止 builtin exec()：词边界正则精确匹配裸 exec( 调用，
+    # 不误伤 asyncio.create_subprocess_exec(（2026-09-06 脚本 exec 直启引入，
+    # 是进程启动 API，不在本防线内）
+    assert not re.search(r"(?<![A-Za-z0-9_.])exec\s*\(", source), "cron_executor 源码不应再包含 builtin exec() 调用"

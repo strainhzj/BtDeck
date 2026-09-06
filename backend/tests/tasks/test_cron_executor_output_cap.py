@@ -16,8 +16,10 @@
 
 import asyncio
 import sys
+import time
 import types
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -89,9 +91,9 @@ class TestCommunicateWithOutputCap:
         assert len(stdout_text) == 100000
         assert "[TRUNCATED]" not in stdout_text
 
-    async def test_outer_cancel_cleans_readers_and_kills_child(self):
+    async def test_outer_cancel_cleans_readers_and_kills_child(self, monkeypatch):
         """取消路径（2026-09-06 泄漏修复回归）：外层在 await 读取任务时被取消 →
-        两个读取任务被取消回收、子进程被 kill 且收尸，无遗留 _read_capped 协程。
+        两个读取任务被取消回收、进程树被终止且收尸，无遗留 _read_capped 协程。
 
         旧实现依次 await 且无 finally：等待 stdout 时被取消会孤儿化 stderr 任务，
         process.wait() 被跳过、子进程不终止——管道不关则协程永久挂在 read() 上。
@@ -114,6 +116,9 @@ class TestCommunicateWithOutputCap:
         process.kill = MagicMock()
         process.wait = AsyncMock(side_effect=_wait_sets_returncode)
 
+        tree_kill_calls: list = []
+        monkeypatch.setattr(ce, "_kill_process_tree", lambda proc: tree_kill_calls.append(proc))
+
         async def _run():
             return await ce._communicate_with_output_cap(process, 1024)
 
@@ -132,12 +137,12 @@ class TestCommunicateWithOutputCap:
             if not task.done() and task.get_coro().cr_code.co_name == "_read_capped"
         ]
         assert lingering == [], f"取消后仍遗留读取协程: {lingering}"
-        process.kill.assert_called_once()
-        assert process.wait.await_count == 1, "kill 后应收尸（await wait）"
+        assert tree_kill_calls == [process], "取消路径应整树终止进程"
+        assert process.wait.await_count == 1, "树杀后应收尸（await wait）"
 
-    async def test_first_reader_error_cleans_second_reader_and_child(self):
+    async def test_first_reader_error_cleans_second_reader_and_child(self, monkeypatch):
         """异常路径（2026-09-06 同族加固）：stdout 读取抛异常 → stderr 读取任务
-        同样被取消回收，子进程被终止——旧实现第二个任务同样会孤儿化。"""
+        同样被取消回收，进程树被终止——旧实现第二个任务同样会孤儿化。"""
 
         class _BrokenStream:
             async def read(self, n: int = -1) -> bytes:
@@ -161,6 +166,9 @@ class TestCommunicateWithOutputCap:
         process.kill = MagicMock()
         process.wait = AsyncMock(side_effect=_wait_sets_returncode)
 
+        tree_kill_calls: list = []
+        monkeypatch.setattr(ce, "_kill_process_tree", lambda proc: tree_kill_calls.append(proc))
+
         with pytest.raises(RuntimeError, match="stream broken"):
             await ce._communicate_with_output_cap(process, 1024)
 
@@ -172,7 +180,7 @@ class TestCommunicateWithOutputCap:
             if not task.done() and task.get_coro().cr_code.co_name == "_read_capped"
         ]
         assert lingering == [], f"首个读取任务异常后仍遗留读取协程: {lingering}"
-        process.kill.assert_called_once()
+        assert tree_kill_calls == [process], "异常路径应整树终止进程"
         assert process.wait.await_count == 1
 
 
@@ -371,3 +379,128 @@ class TestNormalizeResultBounding:
         assert len(result["log_detail"]) <= 2000
         assert "line-0" in result["log_detail"], "前 100 行应保留"
         assert "（共 5000 行，略）" in result["log_detail"], "超出 100 行应有省略标记"
+
+    def test_huge_key_and_huge_numbers_bounded_allocation(self):
+        """二轮分配上限回归（2026-09-06）：超长 str 键（800 万字符）与超大
+        int/Decimal 不再先建完整字符串再截断——旧实现 8M 键额外分配 ~38MiB，
+        百万位 Decimal 先做完整 repr。键与值统一按剩余预算预截断/降级。"""
+        import tracemalloc
+
+        payload = {
+            "K" * 8_000_000: 1,
+            "huge_int": 10**1_000_000,
+            "huge_decimal": Decimal("9" * 1_000_000),
+        }
+        tracemalloc.start()
+        try:
+            summary = ce._summarize_result_for_log(payload)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert len(summary) < 1200, f"输出应受预算约束: {len(summary)}"
+        assert "截断" in summary
+        assert peak < 256 * 1024, f"摘要期间峰值分配 {peak / 1024:.1f} KiB，超出 256KiB 预算"
+
+    def test_small_int_and_decimal_keep_repr(self):
+        """正常量级的 int/Decimal 保留 repr 可读性（位数预检只在超预算时降级）。"""
+        summary = ce._summarize_result_for_log({"count": 5, "ratio": Decimal("1.5")})
+        assert "5" in summary
+        assert "1.5" in summary
+
+
+class TestKillProcessTree:
+    """_kill_process_tree 平台分支与回退（2026-09-06 二轮：shell 包装的脚本
+    进程是孙进程，只杀 shell 会留下持管道的孤儿）。"""
+
+    def test_windows_uses_taskkill_tree(self, monkeypatch):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(list(args))
+            return types.SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(ce.subprocess, "run", fake_run)
+        monkeypatch.setattr(ce.sys, "platform", "win32")
+        process = MagicMock()
+        process.pid = 4321
+        ce._kill_process_tree(process)
+        assert calls, "应调用 taskkill"
+        assert calls[0] == ["taskkill", "/F", "/T", "/PID", "4321"], "应整树终止"
+        process.kill.assert_not_called()  # 树杀成功不回退单进程 kill
+
+    def test_posix_uses_process_group_kill(self, monkeypatch):
+        import signal
+
+        killed = []
+        monkeypatch.setattr(ce.sys, "platform", "linux")
+        # Windows 的 signal 模块无 SIGKILL 常量（生产代码该分支只在真 POSIX 触达）
+        monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
+        monkeypatch.setattr(ce.os, "getpgid", lambda pid: pid, raising=False)
+        monkeypatch.setattr(ce.os, "killpg", lambda pgid, sig: killed.append((pgid, sig)), raising=False)
+        process = MagicMock()
+        process.pid = 777
+        ce._kill_process_tree(process)
+        assert killed == [(777, 9)], "应按进程组整组 SIGKILL"
+
+    def test_fallback_to_single_kill_on_failure(self, monkeypatch):
+        monkeypatch.setattr(ce.sys, "platform", "linux")
+
+        def _gone(pid):
+            raise ProcessLookupError(pid)
+
+        monkeypatch.setattr(ce.os, "getpgid", _gone, raising=False)
+        process = MagicMock()
+        process.pid = 1
+        ce._kill_process_tree(process)
+        process.kill.assert_called_once()  # 进程组杀失败回退单进程 kill
+
+
+class TestPythonScriptSpawnPath:
+    """Python 脚本 exec 直启与 frozen 回落（2026-09-06 二轮）。"""
+
+    async def test_python_script_execs_interpreter_directly(self, monkeypatch):
+        captured = {}
+
+        async def fake_exec(*argv, **kwargs):
+            captured["argv"] = argv
+            return _make_fake_process([b"ok"], [b""])
+
+        monkeypatch.setattr(ce.asyncio, "create_subprocess_exec", fake_exec)
+        executor = ce.CronTaskExecutor()
+        result = await executor._run_python_script("print(1)")
+        assert result["success"] is True
+        assert captured["argv"][0] == sys.executable, "应直启当前解释器"
+        assert captured["argv"][1] == "-c"
+        assert "Shell" not in result["log_detail"]
+
+    async def test_frozen_env_falls_back_to_shell(self, monkeypatch):
+        captured = {}
+
+        async def fake_shell(command, **kwargs):
+            captured["command"] = command
+            return _make_fake_process([b"ok"], [b""])
+
+        monkeypatch.setattr(ce, "is_frozen", lambda: True)
+        monkeypatch.setattr(ce.asyncio, "create_subprocess_shell", fake_shell)
+        executor = ce.CronTaskExecutor()
+        result = await executor._run_python_script("print(1)")
+        assert result["success"] is True
+        assert "python -c" in captured["command"], "frozen 环境保持旧 shell 行为"
+
+
+class TestCancelKillsProcessTreeReal:
+    """真实 spawn 链回归（2026-09-06 二轮）：覆盖 create_subprocess_shell 启动
+    链——假进程测试证明不了孙进程存活/管道持有问题（外部审查 Windows 实测：
+    旧实现取消后 shell 已退、孙进程存活，中断等 3.95s 到脚本自行结束）。"""
+
+    async def test_cancel_terminates_sleeping_grandchild_promptly(self):
+        command = f'"{sys.executable}" -c "import time; time.sleep(120)"'
+        executor = ce.CronTaskExecutor()
+        start = time.monotonic()
+        task = asyncio.create_task(executor._run_shell_script(command))
+        await asyncio.sleep(1.5)  # 等 shell 与孙进程启动并占住管道
+        task.cancel()
+        outcome = await asyncio.gather(task, return_exceptions=True)
+        elapsed = time.monotonic() - start
+        assert isinstance(outcome[0], asyncio.CancelledError), "取消应传播（任务按中断收尾）"
+        assert elapsed < 30, f"取消清理应树杀立即返回，实际耗时 {elapsed:.1f}s（疑似孙进程未被终止）"

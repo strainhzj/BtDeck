@@ -2,20 +2,23 @@ import asyncio
 import faulthandler
 import inspect
 import logging
+import os
 import re
+import subprocess
+import sys
 import time
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from itertools import islice
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import text
 
-from app.core.config import settings
+from app.core.config import settings, is_frozen
 from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
@@ -104,6 +107,44 @@ class _TaskBodyTimeoutError(Exception):
     """
 
 
+def _kill_process_tree(process: Any) -> None:
+    """同步终止整个进程树（2026-09-06 二轮加固）。
+
+    shell 包装（create_subprocess_shell）时真正的脚本是 shell 的子进程：
+    只杀 shell 会留下持管道的孤儿脚本——取消清理会一直等它退出（Windows 实测
+    管道不关、Proactor 读取不可中止，中断操作被拖到脚本自然结束）。
+    - Windows：taskkill /F /T /PID 按父子关系整树终止；
+    - POSIX：spawn 侧 start_new_session 让子进程自成组长，此处整组 SIGKILL；
+    - 同步、无 await 点：清理序不被二次取消打断；任何失败回退单进程 kill。
+    """
+    pid = getattr(process, "pid", None)
+    try:
+        if pid is None:
+            raise OSError("process has no pid")
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                timeout=5,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            import signal
+
+            os.killpg(os.getpgid(int(pid)), signal.SIGKILL)
+    except Exception:
+        try:
+            process.kill()
+        except (ProcessLookupError, OSError):
+            pass
+
+
+# 取消/异常清理路径的单项等待上限（秒）：树杀失败的极端场景（管道不关、
+# Proactor 读取不可中止）不得拖死中断操作，超时放弃等待并告警
+_PROCESS_CLEANUP_TIMEOUT_SECONDS = 5.0
+
+
 async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[str, str]":
     """并发读取子进程 stdout/stderr 并施加单流字节上限（OOM 加固 2026-09-05）。
 
@@ -139,24 +180,33 @@ async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[s
         stderr_bytes, stderr_total = await stderr_task
         await process.wait()
     finally:
-        # OOM/资源泄漏加固（2026-09-06）：外层在 await 读取任务时被取消（用户中断/
-        # 调度器关闭），旧实现两个读取任务与子进程全部遗留——管道不关则协程永久
-        # 挂在 read() 上，反复中断会积累。清理顺序：先同步 kill（无 await 点，
-        # 不可能被二次取消打断）→ 再取消并回收两个读取任务 → 最后收尸。
+        # OOM/资源泄漏加固（2026-09-06；同日二轮：树杀+等待上限）：
+        # 外层取消/异常时的清理顺序——先同步树杀（无 await 点，不可被二次取消
+        # 打断；shell 包装时只杀 shell 会留下持管道的孙进程孤儿）→ 有界等待
+        # 回收读取任务 → 有界收尸。等待设上限：树杀失败的极端场景不得拖死中断。
         if process.returncode is None:
-            try:
-                process.kill()
-            except (ProcessLookupError, OSError):
-                pass
+            _kill_process_tree(process)
         for task in (stdout_task, stderr_task):
             if not task.done():
                 task.cancel()
-        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(stdout_task, stderr_task, return_exceptions=True),
+                timeout=_PROCESS_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            # 二次取消或管道不关（树杀失败）：不阻塞清理路径
+            pass
         if process.returncode is None:
             try:
-                await process.wait()
+                await asyncio.wait_for(process.wait(), timeout=_PROCESS_CLEANUP_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "子进程 %s 清理等待超时 %.0fs，放弃收尸（树杀可能未生效）",
+                    getattr(process, "pid", "?"),
+                    _PROCESS_CLEANUP_TIMEOUT_SECONDS,
+                )
             except asyncio.CancelledError:
-                # 二次取消：进程已 kill，收尾由 asyncio transport 兜底
                 pass
 
     def _render(capped: bytes, total: int) -> str:
@@ -202,12 +252,26 @@ def _summarize_result_for_log(
             return _clip(repr(value[:max_value_repr]))
         if (
             value is None
-            or isinstance(
-                value,
-                (bool, int, float, complex, datetime, date, Decimal, uuid.UUID),
-            )
+            or isinstance(value, (bool, float, complex, datetime, date, uuid.UUID))
             or isinstance(value, Enum)
         ):
+            return _clip(repr(value))  # 这些类型的 repr 天然有界
+        if isinstance(value, (int, Decimal)):
+            # int/Decimal 位数任意，repr 会先构建完整字符串再截断（10**1_000_000
+            # 这类病态值不得放大内存）：位数超预算时降级位数概览，不做完整 repr。
+            # 注意 Decimal 不可用 as_tuple().digits 取位数——它会按位数构建元组，
+            # 本身就是无界分配；adjusted()（首位数字指数）是 O(1) 代理。
+            if isinstance(value, int):
+                size = value.bit_length()  # 二进制位数，十进制位数的上界近似
+                unit = "bits"
+            else:
+                try:
+                    size = abs(value.adjusted()) + 1
+                except (ValueError, ArithmeticError):
+                    size = 0  # Infinity/NaN 等：repr 本身有界
+                unit = "digits"
+            if size > max_value_repr:
+                return f"<{type(value).__name__} {unit}≈{size}>"
             return _clip(repr(value))
         return f"<{type(value).__name__}>"
 
@@ -234,8 +298,24 @@ def _summarize_result_for_log(
         parts: list = []
         used = 2  # 两侧花括号
         for key, value in result.items():
-            key_text = key if isinstance(key, str) else _atom(key)
-            part = f"{key_text}={_render(value, 1)}"
+            remaining = max_output - used
+            if remaining <= 0:
+                parts.append("...(截断)")
+                break
+            # 键与值都按剩余预算先截断再拼接（2026-09-06 二轮：超长 str 键在旧
+            # 实现下先建完整字符串才检查预算，800 万字符键分配 ~38MiB）；
+            # 非 str 键经 _atom 已有界
+            if isinstance(key, str):
+                key_cap = min(remaining, max_value_repr)
+                key_text = key if len(key) <= key_cap else key[:key_cap] + "...(截断)"
+            else:
+                key_text = _atom(key)
+            value_text = _render(value, 1)
+            room = remaining - len(key_text) - 1  # "=" 占 1 字符
+            if len(value_text) > room:
+                keep = max(0, room - 8)  # 预留 "...(截断)" 标记
+                value_text = value_text[:keep] + "...(截断)"
+            part = f"{key_text}={value_text}"
             parts.append(part)
             used += len(part) + 2
             if used >= max_output:
@@ -718,16 +798,32 @@ class CronTaskExecutor:
         except Exception as e:
             return {"success": False, "log_detail": f"脚本执行失败: {str(e)}"}
 
-    async def _run_script_process(self, command: str, label: str) -> Dict[str, Any]:
+    async def _run_script_process(
+        self,
+        command: Optional[str],
+        label: str,
+        *,
+        argv: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """四类脚本任务（shell/cmd/powershell/python）的共享执行实现。
 
         输出经 _communicate_with_output_cap 施加单流字节上限（OOM 加固
         2026-09-05，CRON_SCRIPT_OUTPUT_MAX_BYTES，默认 64KB）。
+        argv 提供时直接 exec（不经 shell 包装，取消/超时可精确终止目标进程）；
+        POSIX 侧 start_new_session 让子进程自成进程组（取消时整组树杀，
+        2026-09-06 二轮）。
         """
         try:
-            process = await asyncio.create_subprocess_shell(
-                command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+            spawn_kwargs: Dict[str, Any] = {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+            }
+            if sys.platform != "win32":
+                spawn_kwargs["start_new_session"] = True
+            if argv is not None:
+                process = await asyncio.create_subprocess_exec(*argv, **spawn_kwargs)
+            else:
+                process = await asyncio.create_subprocess_shell(str(command), **spawn_kwargs)
             stdout_text, stderr_text = await _communicate_with_output_cap(
                 process, settings.CRON_SCRIPT_OUTPUT_MAX_BYTES
             )
@@ -759,8 +855,16 @@ class CronTaskExecutor:
         return await self._run_script_process(f'powershell -Command "{script}"', "PowerShell")
 
     async def _run_python_script(self, script: str) -> Dict[str, Any]:
-        """运行Python脚本"""
-        return await self._run_script_process(f'python -c "{script}"', "Python")
+        """运行Python脚本。
+
+        2026-09-06 二轮：非 frozen 环境直接 exec 解释器（create_subprocess_exec
+        + sys.executable），绕开 shell 包装——取消/超时时终止的就是脚本进程本身，
+        无需依赖树杀；也顺带消除 shell 引号转义脆弱性。frozen 桌面环境
+        sys.executable 是应用 EXE 自身，回落旧 shell+PATH python 行为。
+        """
+        if is_frozen():
+            return await self._run_script_process(f'python -c "{script}"', "Python")
+        return await self._run_script_process(None, "Python", argv=[sys.executable, "-c", script])
 
     async def _execute_internal_method_observed(
         self,
