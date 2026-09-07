@@ -1,3 +1,57 @@
+## 2026-09-07（续五）：Docker 时区统一 UTC（RCA④ 环境层根治）+ 远端 compose 配置详情（未提交）
+
+### 交付内容
+
+- **仓库侧 5 文件**：backend/Dockerfile（`ARG APP_TZ=UTC` 默认 + `ENV TZ=${APP_TZ}` + `/etc/localtime`、`/etc/timezone` 随 ARG）；frontend/Dockerfile.prod（同 ARG 化）；docker-compose.yml 与 deploy/docker-compose.release.yml 各两处 `TZ=${TZ:-Asia/Shanghai}` → `TZ=${TZ:-UTC}`；.env.example `TZ=UTC`。均附契约注释（naive datetime.now() 写库 + serialize_utc_datetime "naive=UTC" 标 Z 契约）。
+- **安全前提实证**：调度器 `AsyncIOScheduler(timezone="Asia/Shanghai")` 与全部 CronTrigger 显式 timezone（9 文件，无 tzlocal/get_localzone）⟹ cron 触发时刻不受 TZ 切换影响。
+- **验证**：`docker build --check` 两 Dockerfile 无告警；compose YAML 解析确认四服务 TZ=${TZ:-UTC}。
+
+### 远端 unraid compose 必改项（用户已实证存在 `TZ=Asia/Shanghai` 硬编码）
+
+**compose `environment` 优先级高于镜像 `ENV TZ`**——远端不改则镜像默认 UTC 不生效。`/mnt/cache/appdata/docker/btdeck/docker-compose.yml`：backend 与 frontend 两服务的 `- TZ=Asia/Shanghai` 均改 `- TZ=UTC`；同目录若有 `.env` 文件含 `TZ=` 也须改（compose 变量插值/环境同样覆盖）。顺手对齐 RCA③：backend 服务补 healthcheck（若缺失或打的是 /health/live）：
+`test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]`，interval 30s / timeout 10s / retries 3 / start_period 5m。
+
+### 过渡语义（自愈，无需数据迁移）与验收
+
+- 存量 Shanghai 戳：freshness 负值按"新鲜"处理，各任务下次运行重盖 UTC 戳收敛（最多一个调度周期）；业务表时间排序旧行(+8h)在新行之上的窗口最多 8 小时墙钟。
+- 验收：`docker exec btdeck-backend date` 与 `cat /etc/timezone` 均为 UTC；诊断导出 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt；desktop/Android 代码层双基准治理仍开放（150+ datetime.now() 写点，RCA4 方案 A/C 未实施）。
+
+---
+
+## 2026-09-07（续四）：Docker 诊断五项 RCA 收敛 + WAL 快照阻塞根修 + 镜像身份注入加固（未提交）
+
+### 交付内容
+
+1. **WAL/RSS 观测循环 to_thread 化（lag 尖峰根修）**：`run_wal_snapshot_loop` 在事件循环线程同步执行 `PRAGMA wal_checkpoint(PASSIVE)` 是 p99 134.6/max 324.6ms 尖峰的直接来源（60s 周期；本机实测 198MiB WAL 单轮 497.8ms）。修复：`snapshot_wal_stats`/`get_process_rss_mb`/`release_free_heap_memory` 三调用全部 `await asyncio.to_thread(...)`；修正两处过时注释（busy_count 恒 None → 已接 PASSIVE 读数；/sync → /api/v1/health/diagnosis）。
+2. **build-and-export-images.bat 身份注入 fail-closed 加固**：新增 `:generate_release_identity` 子程序——`--check-versions` → 严格生成 docker-backend/docker-frontend 身份（**脏树即败**，逃生舱 `BTDECK_ALLOW_DIRTY_IDENTITY=1` 显式放行 dirty 并警告 /health/ready 将 503）→ 拷贝进两 context → 哨兵校验（dirty/40 位 sha/artifact_kind）→ 身份注入 OCI label（对齐 build-images.sh）。身份读取用 env 文件方案（python 写无引号 set 行 + for /f 执行；for /f 反引内联 -c 的双引号会被 cmd /c 撕裂，已实测弃用）。
+
+### RCA 结论（详见 progress.md 续四 / feature_list `docker-diagnosis-rca-fixes-20260907`）
+
+- **lag**：138 样本 ⟹ 导出时进程仅 ~138s（当天重部署）；info checkpoint 159s 前更新早于窗口起点 ⟹ 窗口内无同步批写，用户原旁证反成排除证据；真凶=WAL 快照观测自身（观测器阻塞被观测系统）。
+- **build invalid**：backend/frontend 两份 build-info.json 均为 09-03 W5 批次 `--allow-dirty` 残留（dirty=true）被 bat 原样烧进镜像（bat 从不生成身份）；`BTDECK_BUILD_INFO` 本地复现一致。与 RCA③ 同根：本地部署链路绕过发布门身份校验。
+- **readinessFailureTotal={}**：invalid ⟹ ready 恒 503 ⟹ 若被调必计数；为空 ⟹ ready 0 次被调。仓库 Dockerfile/compose 配置正确；远端（unraid）compose 的 healthcheck 必非 ready 路径（疑 live 或禁用）——`.btdeck-remote-deploy.sh` 等 healthy 才起前端，若打 ready 则每次部署必超时失败。
+- **时间戳双基准**：系统性（datetime.now() 150+ 写点 vs sync_checkpoints UTC 少数派；serialize_utc_datetime docstring 与现实相反）；freshness 数值正确，坏的是 cron 源标 Z（+8h 误标）与 `_latest_datetime` 混基 max。方案 A（全局 UTC）/C（分期治诊断可见面）**待用户定夺**。
+- **full=degraded**：预期态；建议修复部署后低峰触发 manual_sync_full 作整体验收（顺带实测 WAL-lag 解耦）。
+
+### 验证
+
+- 回归 +2（顺序判别：探测协程须在阻塞探测仍等待期间完成）+ 变异验证闭环：修复 2 绿 → sed 还原同步实现 2 红 → 还原后全文件 49 passed；tests/services 全目录 1273 passed/1 skipped；black(24.10.0)/flake8/mypy 绿。
+- bat 链路组件实证：严格模式脏树 exit 1（真实 bat 冒烟：版本一致 PASS → 生成 FAIL → 指引 → 退出，未触达 docker build）；allow-dirty 生成成功；哨兵 hatch-off 拒 dirty/hatch-on 放行（exit 1/0）；env 文件 for /f 在真实 cmd 解析出 VERSION/SHA/CREATED 正确。
+
+### 用户重部署序列（关键）
+
+**先提交本批**（未提交 ⟹ 严格身份生成必败）→ 跑加固 bat → 部署 → unraid 上 `docker inspect --format '{{json .Config.Healthcheck}}' btdeck-backend` 实证远端 healthcheck 并对齐 /health/ready → 二次导出诊断验证 build=ok + lag 尖峰消失。注意：重新生成的身份锚定当前 frontend/dist（**demo 构建**）——若要常规 dist 需先处理（勿直接 npm run build，见 demo dist 坑）。
+
+### 关键坑位（下批必读）
+
+- **`git restore` 抹掉未提交修复**：变异验证必须用文件拷贝备份还原，不能用 git 还原。
+- **PASSIVE checkpoint 基准测试必须持"见证连接"**：最后连接关闭时 SQLite 自动 checkpoint，首测 0.7ms 假阴性（contention-runbook §4 早有记载）。
+- **测试协程在事件循环上，"阻塞期内墙钟测量"不可观测**：阻塞结束后测试才恢复——判别事件循环阻塞只能用事件顺序（探测协程先于阻塞返回）。
+- bat 嵌 python -c：内层字符串只能单引号；双引号嵌套在 for /f 反引形态下被 cmd /c 撕裂（env 文件是唯一稳法）；生成器中文提示在 GBK 控制台须去 `-X utf8`。
+- android `app/src/server` 本机无 staged 树（构建期生成），本批无需手动同步。
+
+---
+
 ## 2026-09-07（续二）：/health/sync → /health/diagnosis 故障转储导出 + 下载器更新 422 根修（未提交）
 
 ### 交付内容（对应用户报障两项）

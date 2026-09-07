@@ -51,6 +51,61 @@
   },
   "features": [
     {
+      "id": "docker-diagnosis-rca-fixes-20260907",
+      "name": "Docker 部署诊断导出五项 RCA 与修复——WAL 快照观测阻塞事件循环根修 + 本地镜像构建身份注入加固＋Docker 时区统一 UTC",
+      "description": "2026-09-07 晚用户从 Docker（unraid）部署导出首份诊断 JSON，五项假设驱动 RCA 全部收敛后实施两项修复：① eventLoopLag p99 134.6/max 324.6ms 超 100ms 阈值——根因不是同步批写（138 样本=采样器仅存活 138s，info checkpoint 159s 前更新早于窗口起点，窗口内无任何同步批写），而是 run_wal_snapshot_loop 在事件循环线程上同步执行 snapshot_wal_stats 的 PRAGMA wal_checkpoint(PASSIVE)（60s 周期、循环首轮 t≈0 即跑，拷贝 WAL 帧+fsync；本机实测 198MiB WAL 单轮 497.8ms——须持『见证连接』防最后连接关闭时 SQLite 自动 checkpoint 截断 WAL，首测 0.7ms 假阴性）；修复为 asyncio.to_thread 下工作线程执行（snapshot_wal_stats 自带独立 sqlite3 连接线程安全），同批将 run_process_memory_loop 的 RSS 采集与 malloc_trim/M_PURGE 归还同 pattern 下放，并修正 run_wal_snapshot_loop 过时 docstring（声称 busy_count 恒 None，实际 PASSIVE 读数已接入）与 /sync 端点旧名注释。② build.status=invalid——根因是 backend/build-info.json 与 frontend/build-info.json 为 2026-09-03 W5 批次 --allow-dirty 产物残留（dirty=true，sha 1a83488），build-and-export-images.bat 从不重新生成身份直接 COPY 烧进镜像，运行时 build_info._validate 拒 dirty=true → 恒 invalid 且 /health/ready fail-closed 503（BTDECK_BUILD_INFO 本地复现确认）；修复为 bat 构建前 fail-closed 身份注入链：--check-versions → 生成 docker-backend/docker-frontend 身份到 release/build/（gitignored）→ 拷贝进两 context → 运行时哨兵校验（dirty/40位sha/artifact_kind；逃生舱 BTDECK_ALLOW_DIRTY_IDENTITY=1 显式放行 dirty 并警告 503 后果）→ 读取身份注入 OCI label（--build-arg OCI_VERSION/REVISION/CREATED，与 build-images.sh 对齐，docker.sh 生命周期校验依赖 revision label）；身份读取用 python 写无引号 set 行 env 文件 + for /f 逐行执行（for /f 反引内联 -c 含双引号会被 cmd /c 撕裂引号，已实证弃用）。附带两项待办未实施（等用户定夺）：readinessFailureTotal={} 证明 /health/ready 进程启动后 0 次被调——远端 compose healthcheck 疑打 /health/live 或禁用，需 unraid 上 docker inspect .Config.Healthcheck/.State.Health.Log 实证后对齐仓库版；时间戳双基准备治理（cron_tasks 本地 naive vs sync_checkpoints UTC，serialize_utc_datetime 对 naive 一律标 Z 致 cron 源 +8h 误标；全库 datetime.now() 150+ 写点 vs utcnow() 少数派的系统性漂移，方案 A 全局统一/C 分期治诊断可见面）。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "RCA 链（只读调查）：①138 样本@SYNC_LAG_SAMPLER_INTERVAL_SECONDS=1.0（采样器 lifespan 6.5 步启动）⟹ 导出时进程仅 ~138s+startup 历史（当天重部署测试新诊断端点），info checkpoint 159s 前更新>窗口长 ⟹ 窗口内无同步批写，用户原『同步窗口重合』旁证反成排除证据；p99 nearest-rank 137/138=第 2 大值 ⟹ 恰好 ≥2 样本超阈、孤立尖峰形态；WAL 快照循环 while True 先探测后 sleep ⟹ 启动即跑+60s 周期与 2-3 尖峰精确吻合；对照 sync-stopgap-runbook §4 升级门槛（单次>500ms 未触发、P99≥100ms 记录、连续窗口持续才升级）判定本次为启动窗口瞬时超标+周期性复发设计缺陷（同步窗口 WAL 更大时更糟，与 runbook『lag 告警与同步窗口重合』既有观察互为因果）。②backend/build-info.json（mtime 09-03 18:26 = release/build/docker-backend 同款复制）含 dirty:true，BTDECK_BUILD_INFO 复现 BuildInfoError→invalid 与 Docker 导出一致；build-and-export-images.bat 全文无 generate_build_info 调用；两缺陷同根：本地快速部署链路绕过发布门身份生成/校验，且 invalid 身份使 .btdeck-remote-deploy.sh 等 healthy 必超时（readinessFailureTotal={} ⟹ ready 0 次被调 ⟹ 远端 healthcheck 必非 ready 路径，逻辑闭环）。",
+      "security_defaults": {
+        "identity_fail_closed": "严格模式下脏工作区拒绝生成身份（fail-closed）；逃生舱需显式 BTDECK_ALLOW_DIRTY_IDENTITY=1 且全程警告镜像将报 build_identity_invalid（503）；哨兵在文件进镜像层前拦截 dirty/畸形身份",
+        "observability_no_loop_blocking": "WAL/RSS 观测全部下放工作线程，观测器不再以同步 I/O 阻塞被观测系统（PASSIVE 探测仍 timeout=0/busy_timeout=0 不等待锁、绝不 TRUNCATE）"
+      },
+      "capabilities": [],
+      "implementation_gates": [],
+      "tasks": [
+        {
+          "id": "rca.wal_snapshot_offload",
+          "name": "WAL/RSS 观测循环 to_thread 化——事件循环 lag 尖峰根修",
+          "description": "lifecycle.py 两循环的同步阻塞调用（snapshot_wal_stats 的 PASSIVE checkpoint、get_process_rss_mb/release_free_heap_memory）改 asyncio.to_thread；docstring 修正；新增两条顺序判别回归测试（探测协程须在阻塞探测仍等待期间完成，同步实现下逻辑不可能）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/startup/lifecycle.py",
+            "backend/app/services/sync_observability.py",
+            "backend/tests/services/test_sync_observability.py"
+          ],
+          "evidence": "变异验证闭环：修复实现 2 新测试通过 → sed 还原同步调用后 2 测试必败（test_wal_snapshot_loop_offloads_blocking_probe/test_process_memory_loop_offloads_blocking_sampling，事件顺序判别：probe_ran 须先于 snapshot_returned/sampling_returned）→ 拷贝还原后全文件 49 passed；tests/services 全目录 1273 passed/1 skipped；black(24.10.0)/flake8/mypy 3 文件通过。首版测试曾空转（timeout 判别在同循环上的测试协程无法于阻塞期内观测），改为『阻塞期内探测协程完成 + 手动放行后 events 总序断言』才真判别——坑位：测试协程本身在事件循环上，阻塞结束后才恢复，任何『阻塞期内墙钟测量』均不可行。PASSIVE checkpoint 量化：198MiB WAL 单轮 497.8ms（暖缓存本机 SSD，持见证连接）；git restore 会抹掉未提交修复（变异验证须用文件拷贝备份还原）。"
+        },
+        {
+          "id": "rca.build_identity_injection",
+          "name": "build-and-export-images.bat 身份注入 fail-closed 加固",
+          "description": "bat 新增 :generate_release_identity 子程序：python 解析（优先 C:\\software\\python）→ --check-versions → 严格生成 docker-backend/docker-frontend 身份（脏树即败并给指引）→ 拷贝进两 context → 哨兵校验（dirty/40位sha/artifact_kind，逃生舱显式放行）→ env 文件读身份注入 OCI_ARGS 进两镜像构建行",
+          "status": "done",
+          "scope": "deploy",
+          "files": [
+            "build-and-export-images.bat"
+          ],
+          "evidence": "真实 bat 冒烟（--quick，脏树）：版本六处一致 PASS → 严格生成 FAIL（列出 4 个未提交文件）→ 指引输出 → pause 前退出，未触达 docker build；组件实证：allow-dirty 生成成功（dirty=true, sha b76f1b9）、哨兵 hatch-off 拒 dirty exit 1 / hatch-on 放行 exit 0、身份 env 文件（三行无引号 set）经 for /f 在真实 cmd 上下文解析出 VERSION=1.0.6 SHA=b76f1b9cdad7 CREATED=2026-09-07T14:47:04Z；for /f usebackq 反引内联 -c 双引号被 cmd /c 撕裂（实测报错）弃用改 env 文件方案；生成器调用去 -X utf8（GBK 双击控制台中文提示不乱码，写盘文件本就显式 utf-8）。生成器 fail-closed 实证：严格模式脏树 exit 1。部署前置：用户须先提交本批（否则严格生成必败）或显式逃生舱；重新生成的身份锚定当前 frontend/dist（demo 构建）——dist 取向待用户确认。"
+        },
+        {
+          "id": "rca.tz_utc_unification",
+          "name": "Docker 容器时区统一 UTC——时间戳双基准环境层根治（RCA④）",
+          "description": "容器本地时间=UTC 后 naive datetime.now() 写库即 UTC，serialize_utc_datetime 的 naive=UTC 标 Z 契约对全部表成立；cron 触发时刻因调度器硬编码 Asia/Shanghai 不受影响（cron_executor.py:337/596/1610 等 9 文件实证）。backend/frontend 两 Dockerfile ARG APP_TZ=UTC 化，两份 compose 四处 TZ 默认 UTC，.env.example 同步",
+          "status": "done",
+          "scope": "deploy",
+          "files": [
+            "backend/Dockerfile",
+            "frontend/Dockerfile.prod",
+            "docker-compose.yml",
+            "deploy/docker-compose.release.yml",
+            ".env.example"
+          ],
+          "evidence": "docker build --check 两 Dockerfile 无告警；compose YAML 经 PyYAML 解析确认四服务 TZ=${TZ:-UTC}；调度器时区硬编码 grep 实证（AsyncIOScheduler(timezone=Asia/Shanghai) + 全部 CronTrigger 显式 timezone 参数，无 tzlocal/get_localzone）。关键部署坑（用户远端实证）：compose environment 的 TZ=Asia/Shanghai 优先级高于镜像 ENV TZ，远端 compose 与同目录 .env 必须同步改 UTC 否则镜像默认不生效。过渡语义：存量 Shanghai 戳 freshness 负值按新鲜处理、各任务下次运行自愈（最多一个调度周期）；业务表排序旧行 8h 墙钟自愈；验收 docker exec date/cat /etc/timezone + 诊断导出时间戳不再 +8h 超前。desktop/Android 代码层双基准治理仍开放（150+ datetime.now() 写点）。"
+        }
+      ]
+    },
+    {
       "id": "diagnosis-export-and-downloader-partial-update-20260907",
       "name": "故障转储诊断导出端点改造 + 下载器更新接口部分更新契约修复",
       "description": "两项生产报障修复（2026-09-07）：① 原 GET /api/v1/health/sync 业务健康视图按需求改造为 GET /api/v1/health/diagnosis 故障转储/排查/状态分析导出——_build_diagnosis 一次性聚合版本/构建身份、readiness 三检查（复用 /health/ready 探针但只读、不累计失败计数）、readinessFailureTotal 计数快照、原同步业务健康（任务 outcome/freshness/活动 phase/checkpoint age/下载器离线告警/进程 RSS，整体并入 sync 字段），成功路径 JSONResponse 携带 Content-Disposition: attachment 以 btdeck-diagnosis-<UTC时间戳>.json 附件下发（文件即分析文档，不再包 envelope；错误路径保留 503/500（HTTP 层显式状态码）envelope 稳定 reason code diagnosis_query_timeout/diagnosis_unavailable（异常分支经加固轮改为 JSONResponse 显式 HTTP 500，防 blob 下载路径把错误信封当文件保存）），聚合构建沿用 HEALTH_SYNC_DB_TIMEOUT_SECONDS 有界超时；旧 /health/sync 路径移除并加 404 回归锁防静默复活。前端 settings 页新增「状态诊断」页签一键生成并导出诊断 JSON（blob 走统一 request 客户端携带认证头/续期链路；demo 模式生成前端本地快照文件，结构与后端响应对齐并标注 demo: true）。② POST /downloader/update/{id} 422 修复——根因：桌面列表启停开关整行展开 camelCase 行对象（isSearch 键名不匹配且列表接口不返回 isSsl），而 UpdateDownloader 将 is_search/is_ssl/enabled 声明为必填，键缺失在验证器运行前即 422 Field required；修复为三字段改 bool|None=None（缺省/显式 null = 不修改，与 update 端点 case when :x is not null 部分更新 SQL 的既有设计语义对齐；验证器 None 由吞成 False 改为透传，消除 null 静默关闭下载器搜索/启用的隐患），前端开关改 {id, enabled} 最小 payload，upDownloader 参数收紧为 DownloaderUpdatePayload 类型（禁止 any）。Android 服务端镜像 health.py/api.py/request.py 三文件同步。",

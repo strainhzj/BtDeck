@@ -7293,3 +7293,27 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：后端定向 37 passed（test_health 15+update_partial 4+request 契约 11+build_identity 6+path_mapping 3）+ black/flake8/mypy 绿；前端 52 passed（api-contracts 48+settings 新 4）+ lint --max-warnings 0 + tsc 零错误。Android 镜像 health.py 同步（md5 一致）。
 - **测试坑（记录勿重踩）**：① jsdom 无 URL.createObjectURL，须注入 jest.fn 桩并 spy HTMLAnchorElement.prototype.click 捕获 download 文件名；② vue 组件 $message mock 形态按调用方式选——settings 组件用 `$message.success(...)` 方法式，plain jest.fn() 会报 "error is not a function"；③ 闭包内赋值的 `let captured: Blob | null` 逃不过 TS 控制流收窄（仍判 null），改数组捕获；④ jest.mock 工厂外的具名 import 若仅用于 mock 路径会触发 no-unused-vars 警告（--max-warnings 0 直接红），mock 后不需要真 import。
 - 未执行 Git 提交。
+
+## 2026-09-07（续四）：Docker 诊断导出五项 RCA 收敛 + 两项根修（WAL 快照阻塞事件循环 / 构建身份注入加固）
+
+- **输入**：用户从 unraid Docker 部署（root@192.168.5.51，当天重部署含诊断端点的镜像）导出首份诊断 JSON。五项按假设驱动逐一收敛：①eventLoopLag p99 134.6/max 324.6ms（138 样本）；②build.status=invalid；③readinessFailureTotal={} 与 lag failed 并存；④时间戳双基准；⑤full=degraded（预期态，manual_sync_full 从未跑过）。
+- **RCA① lag（主根因锁定+量化）**：138 样本@1s ⟹ 采样器仅存活 138s ⟹ 导出时是刚重启的年轻进程；info checkpoint 159s 前更新**早于窗口起点** ⟹ 窗口内无同步批写（原"同步窗口重合"旁证反成排除证据）。真凶=`run_wal_snapshot_loop` 在事件循环线程同步执行 `snapshot_wal_stats` 的 `PRAGMA wal_checkpoint(PASSIVE)`（60s 周期、`while True` 先探测后 sleep ⟹ 启动即跑；migration+seed 后大 WAL）。量化：本机实测 198MiB WAL 单轮 **497.8ms**（暖缓存 SSD）——**须持"见证连接"防最后连接关闭时 SQLite 自动 checkpoint**，首测 0.7ms 假阴性。对照 stopgap-runbook §4：单次>500ms 未触发、P99≥100 记录、持续升级门槛未满足 ⟹ 启动窗口瞬时超标+周期性复发设计缺陷（同步窗口 WAL 更大时更糟，与 runbook"lag 与同步窗口重合"观察互为因果）。
+- **RCA② invalid（本地复现闭环）**：backend/frontend 两份 build-info.json 均为 09-03 W5 批次 `--allow-dirty` 残留（dirty=true, sha 1a83488）；`build-and-export-images.bat` 从不重新生成身份直接 COPY 烧进镜像；`_validate` 拒 dirty=true ⟹ 恒 invalid + /health/ready fail-closed 503。`BTDECK_BUILD_INFO` 复现与 Docker 导出一致。
+- **RCA③ 计数空（逻辑闭环，仓库侧无 bug）**：invalid ⟹ ready 恒 503 ⟹ 若被调 readinessFailureTotal 必非空；为空 ⟹ **ready 进程启动后 0 次被调**。仓库 Dockerfile HEALTHCHECK+两份 compose 均打根路径 /health/ready（routers_initializer.py:17 挂载✓）；`.btdeck-remote-deploy.sh` 等 healthy 才起前端 ⟹ 远端 compose 的 healthcheck 必非 ready 路径（疑 /health/live 或禁用）。**待用户在 unraid 实证**：`docker inspect --format '{{json .Config.Healthcheck}}' btdeck-backend` + `.State.Health.Log` + 远端 compose grep，之后对齐仓库版。
+- **RCA④ 双基准（盘点升级问题量级）**：serialize_utc_datetime docstring"DB 存 UTC"与现实相反——全库 datetime.now()（本地）150+ 写点/16+ 模块，sync_checkpoints 的 utcnow() 是少数派；cron_freshness 本地基准自洽（freshness 数值正确），坏的是 serialize 标 Z（cron 源 +8h 误标）与 health._latest_datetime 混基 max（cron 恒赢）。方案 A（全局 UTC 大改）/C（分期：先治诊断可见面）已呈报**待用户定夺**，未实施。
+- **修复①（本批落地）**：lifecycle.py 两循环 to_thread 化——`snapshot_wal_stats`/`get_process_rss_mb`/`release_free_heap_memory` 全部 `await asyncio.to_thread(...)`（自带独立 sqlite3 连接/纯函数，线程安全）；修正 run_wal_snapshot_loop 过时 docstring（busy_count 恒 None → PASSIVE 读数已接入）与 /sync 端点旧名注释（health.py 侧同名注释上批已改，sync_observability._LAST_RSS_MB 注释本批补）。回归 +2：**顺序判别**（探测协程须在阻塞探测仍等待期间完成；同步实现下逻辑不可能）——首版 timeout 判别空转（测试协程在事件循环上，阻塞结束后才恢复，任何"阻塞期内墙钟测量"均不可观测），变异验证：修复 2 绿→sed 还原同步 2 红→还原后全文件 49 绿。
+- **修复②（本批落地）**：bat 新增 `:generate_release_identity`——--check-versions → 严格生成 docker-backend/docker-frontend 身份（脏树即败+指引）→ 拷贝两 context → 哨兵（dirty/40位sha/artifact_kind；逃生舱 `BTDECK_ALLOW_DIRTY_IDENTITY=1` 放行 dirty 并警告 503 后果）→ 身份注入 OCI label（OCI_VERSION/REVISION/CREATED，对齐 build-images.sh；docker.sh 生命周期校验依赖 revision label）。身份读取用 **env 文件方案**（python 写三行无引号 `set X=Y` + `for /f` 逐行执行）——`for /f usebackq` 反引内联 `-c` 含双引号会被 cmd /c 撕裂（实测报错）。真实 bat 冒烟：脏树 → 版本一致 PASS → 严格生成 FAIL → 指引 → 退出，未触达 docker build。
+- **验证**：black(24.10.0)/flake8/mypy 3 文件绿；tests/services 全目录 **1273 passed/1 skipped**；feature_list 新增 `docker-diagnosis-rca-fixes-20260907`（2 tasks done）。
+- **坑位（记录勿重踩）**：① `git restore` 会抹掉未提交修复——变异验证须用**文件拷贝备份**还原；② SQLite PASSIVE checkpoint 基准测试必须持见证连接；③ bat 中嵌 python -c 只能用单引号包内层字符串，双引号嵌套在 for /f 反引/直接调用两种形态下都有撕裂风险（env 文件是唯一稳法）；④ 生成器中文提示在 GBK 双击控制台须去掉 `-X utf8`（写盘文件显式 utf-8 不受影响）。
+- **重部署前置（用户操作序列）**：本批改动须先提交（否则严格身份生成必败）→ 跑加固 bat（自动生成合法身份+OCI label）→ 部署后 `docker inspect .Config.Healthcheck` 对齐远端 compose → 二次导出诊断验证 build=ok 且 lag 尖峰消失；manual_sync_full 建议修复部署后低峰触发作为整体验收。身份将锚定当前 frontend/dist（demo 构建）——dist 取向由用户定。
+- 未执行 Git 提交。
+
+## 2026-09-07（续五）：Docker 时区统一 UTC——RCA④ 时间戳双基准的环境层根治
+
+- **方案**：用户定夺采纳「容器本地时间=UTC」环境层解法——naive `datetime.now()` 写库即 UTC，`serialize_utc_datetime` 的"naive=UTC"标 Z 契约对全部表成立，双基准问题在 Docker 形态整体消失（desktop/Android 代码层治理仍开放）。
+- **硬前提实证**：调度器与全部 CronTrigger 均显式 `timezone="Asia/Shanghai"`（cron_executor.py:337/596/1610、cron_freshness、scheduler/* 9 文件；无 tzlocal/get_localzone 依赖）⟹ 切 TZ 不影响定时任务触发时刻，仅影响 datetime.now() 写入与日志时间戳。
+- **改动 5 文件**：backend/Dockerfile（新 ARG APP_TZ=UTC 默认 + ENV TZ=${APP_TZ} + /etc/localtime、/etc/timezone 随 ARG，附契约注释）；frontend/Dockerfile.prod（同 ARG 化，nginx 日志与后端对齐防 8h 错位）；docker-compose.yml 与 deploy/docker-compose.release.yml 各两处 `TZ=${TZ:-Asia/Shanghai}`→`TZ=${TZ:-UTC}`（附注释）；.env.example TZ=UTC（附注释）。两 Dockerfile 通过 `docker build --check`。
+- **关键坑（用户实证确认）**：远端 unraid compose 硬编码 `TZ=Asia/Shanghai`，**compose environment 优先级高于镜像 ENV**——不改远端该行则镜像默认 UTC 不生效；远端同目录 .env 若有 TZ 同样覆盖。修复部署时远端必须同步改（详情见 session-handoff）。
+- **过渡语义（自愈，无需数据迁移）**：cron freshness——存量 Shanghai 戳在切换后显示负 freshness（被按"新鲜"处理），各任务下次运行重盖 UTC 戳即收敛（最多一个调度周期）；业务表按时间排序/展示——旧行(+8h)在新行之上最多 8 小时墙钟后自愈；日志时间戳转 UTC（与 generatedAt 对齐，改善）。
+- **验收**：部署后 `docker exec btdeck-backend date`/`cat /etc/timezone` 为 UTC；二次导出诊断 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt。
+- 未执行 Git 提交。
