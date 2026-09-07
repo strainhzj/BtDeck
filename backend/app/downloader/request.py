@@ -78,13 +78,22 @@ class UpdateDownloader(BaseModel):
     username: str | None = Field(default=None, description="下载器登录用户名", examples=["admin"])
     password: str | None = Field(default=None, description="新密码（不修改请留空）", examples=[""])
     old_password: str | None = Field(default=None, description="原密码（修改密码或用户名时必填）", examples=[""])
-    is_search: bool = Field(description="是否启用搜索的下载器标识，0表示停用，1表示启用", examples=[True])
-    enabled: bool = Field(description="下载器启用标识，0表示停用，1表示启用", examples=[True])
+    # 三个布尔字段缺省（键不存在或显式 null）均表示"不修改"，与 update 端点的
+    # case when :x is not null SQL 语义对齐；列表启停开关只传 enabled 即可，
+    # 不再因缺 is_search/is_ssl 整包 422（2026-09-07 回归修复）。
+    is_search: bool | None = Field(
+        default=None, description="是否启用搜索的下载器标识，0表示停用，1表示启用；缺省表示不修改", examples=[True]
+    )
+    enabled: bool | None = Field(
+        default=None, description="下载器启用标识，0表示停用，1表示启用；缺省表示不修改", examples=[True]
+    )
     downloader_type: int | None = Field(
         default=None, description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
     port: int | None = Field(default=None, description="端口", examples=[1])
-    is_ssl: bool = Field(description="是否https，0表示否，1表示是", examples=[True])
+    is_ssl: bool | None = Field(
+        default=None, description="是否https，0表示否，1表示是；缺省表示不修改", examples=[True]
+    )
 
     # 新增: 路径映射配置
     path_mapping: Optional[PathMappingConfig] = Field(default=None, description="路径映射配置(更新时可选)")
@@ -105,18 +114,18 @@ class UpdateDownloader(BaseModel):
         """将字符串 "0"/"1" 转换为布尔值
 
         Args:
-            v: 输入值，可能是字符串或布尔值
+            v: 输入值，可能是字符串、布尔值或 None
             info: 字段验证信息
 
         Returns:
-            bool: 转换后的布尔值
+            bool | None: 转换后的布尔值；None 原样透传（表示"不修改"）
 
         Raises:
             ValueError: 如果输入值不是 "0", "1" 或布尔值
         """
-        # ✅ 修复：如果是 None，返回默认值 False
+        # None 透传：字段可缺省，语义为"不修改"（与 case when :x is not null SQL 对齐）
         if v is None:
-            return False
+            return None
 
         # 如果已经是布尔值，直接返回
         if isinstance(v, bool):

@@ -81,7 +81,27 @@ export const addDownloader = (data: object) =>
     data
   })
 
-export const upDownloader = (data: {id:string}) =>
+/**
+ * 下载器更新 payload：id 必填，其余字段缺省表示"不修改"
+ * （后端按 case when :x is not null 部分更新，列表启停开关只传 enabled 即可）
+ */
+export interface DownloaderUpdatePayload {
+  id: string
+  nickname?: string
+  host?: string
+  username?: string
+  password?: string
+  old_password?: string
+  is_search?: boolean | '0' | '1'
+  enabled?: boolean | '0' | '1'
+  downloader_type?: number
+  port?: number | null
+  is_ssl?: boolean | '0' | '1'
+  path_mapping_rules?: string | null
+  torrent_save_path?: string | null
+}
+
+export const upDownloader = (data: DownloaderUpdatePayload) =>
   request({
     url: '/downloader/update/' + data.id,
     method: 'post',

@@ -821,7 +821,9 @@ export default class DownloaderManager extends Vue {
     downloader.enabled = newEnabled
 
     try {
-      await upDownloader({ ...downloader, enabled: newEnabled })
+      // 只传 id+enabled 的最小部分更新：列表行是 camelCase 且不含 SSL 字段，
+      // 整行展开会缺 is_search/is_ssl 触发 422（后端缺省字段保持原值）
+      await upDownloader({ id: downloader.id, enabled: newEnabled })
       Message.success(newEnabled === '1' ? '已启用' : '已停用')
     } catch (error) {
       console.error('更新状态失败:', error)

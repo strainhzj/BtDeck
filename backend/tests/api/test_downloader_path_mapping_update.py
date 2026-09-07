@@ -18,6 +18,43 @@ class JsonRequest:
 
 
 @pytest.mark.asyncio
+async def test_toggle_enabled_only_keeps_other_fields():
+    """列表启停开关只传 enabled 时其余字段必须保持原值（回归 2026-09-07）。
+
+    列表行是 camelCase 且不含 isSearch 之外的 SSL 字段，曾因 is_search/is_ssl
+    必填直接 422；修复后缺省字段走 case when :x is not null 保持原值。
+    """
+    db = MagicMock()
+    current_result = MagicMock()
+    current_result.fetchone.return_value = ("admin", "encrypted-password")
+    db.execute.side_effect = [current_result, MagicMock()]
+
+    raw_request = JsonRequest({"enabled": "0"})
+    request_data = UpdateDownloader(enabled=False)
+
+    response = await update(
+        downloader_request=request_data,
+        downloader_id="dl-1",
+        _user=None,
+        req=raw_request,
+        db=db,
+    )
+
+    assert response.code == "200"
+    update_sql = str(db.execute.call_args_list[1].args[0])
+    update_params = db.execute.call_args_list[1].args[1]
+    # 未提供的字段以 None 传入，SQL 侧保持原值
+    assert update_params["is_search"] is None
+    assert update_params["is_ssl"] is None
+    assert update_params["enabled"] is False
+    assert update_params["nickname"] is None
+    assert update_params["host"] is None
+    assert "path_mapping" not in update_sql
+    # enabled 仍按 case when 部分更新语义写库
+    assert "enabled= case when :enabled is not null then :enabled else enabled end" in update_sql
+
+
+@pytest.mark.asyncio
 async def test_missing_path_mapping_keeps_existing_mapping_while_updating_rules():
     """未传 path_mapping 时只更新规则，不能把既有结构化映射清空。"""
     db = MagicMock()
