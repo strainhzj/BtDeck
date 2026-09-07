@@ -20,11 +20,13 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
     - 每 SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS 秒经 snapshot_wal_stats 读取
       -wal 文件字节数，发射 EVENT_WAL_SNAPSHOT（wal_bytes / wal_growth_bytes /
       busy_count / checkpoint_busy）。
-    - busy_count 非零 → WARNING（计划第 5 节「SQLite busy 每 5 分钟大于 0：
-      warning」）；当前 snapshot_wal_stats 无连接句柄恒为 None，接入 PASSIVE
-      checkpoint 读数后该分支生效。
+    - busy_count 来自 wal_checkpoint(PASSIVE) 读数（2026-09-07 修正注释：
+      PASSIVE 探测已接入，非恒 None）；busy_count 非零 → WARNING。
     - 只读观测：绝不执行 TRUNCATE checkpoint；观测异常吞掉继续下一轮，
       关闭观测不影响同步治理。
+    - PASSIVE checkpoint 会把 WAL 帧拷回主库并 fsync（本机实测 198MiB WAL
+      单轮 ~500ms），必须在工作线程执行——曾经接在事件循环线程上，是周期性
+      loop lag 尖峰（60s 一轮、100-330ms）的直接来源（2026-09-07 诊断 RCA）。
     - 间隔配置 <=0 时由调用方决定不启动本循环。
     """
     from app.services.sync_observability import EVENT_WAL_SNAPSHOT, log_event, snapshot_wal_stats
@@ -33,7 +35,7 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
     last_wal_bytes = 0
     while True:
         try:
-            stats = snapshot_wal_stats(str(settings.DATABASE_PATH))
+            stats = await asyncio.to_thread(snapshot_wal_stats, str(settings.DATABASE_PATH))
             growth = max(0, stats["wal_bytes"] - last_wal_bytes) if last_wal_bytes > 0 else 0
             last_wal_bytes = stats["wal_bytes"]
             busy = stats.get("busy_count")
@@ -58,8 +60,8 @@ async def run_process_memory_loop(app: FastAPI) -> None:
 
     - 每 SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 秒经 get_process_rss_mb 采集一次
       RSS，发射 EVENT_PROCESS_MEMORY（rss_mb / sample_interval_seconds），并
-      刷新模块级 _LAST_RSS_MB 供 /sync 健康端点读取（last-sample 模式，端点
-      不触发采集）。
+      刷新模块级 _LAST_RSS_MB 供 /api/v1/health/diagnosis 读取（last-sample
+      模式，端点不触发采集）。
     - 平台不可用（如 macOS）时 rss_mb 为 None，仍发射事件留采样心跳，便于
       区分"未启动循环"与"平台不支持"。
     - 采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED（默认开）触发分配器空闲归还
@@ -78,8 +80,14 @@ async def run_process_memory_loop(app: FastAPI) -> None:
     interval = float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS)
     while True:
         try:
-            rss_mb = get_process_rss_mb()
-            heap_trimmed = release_free_heap_memory() if settings.SYNC_PROCESS_MEMORY_TRIM_ENABLED else False
+            # RSS 采集与 malloc_trim/M_PURGE（madvise 扫描空闲页，可达数十 ms）
+            # 都下工作线程：与 WAL 快照同批 to_thread 化，观测不阻塞事件循环。
+            rss_mb = await asyncio.to_thread(get_process_rss_mb)
+            heap_trimmed = (
+                (await asyncio.to_thread(release_free_heap_memory))
+                if settings.SYNC_PROCESS_MEMORY_TRIM_ENABLED
+                else False
+            )
             level = logging.INFO if rss_mb is not None else logging.DEBUG
             log_event(
                 EVENT_PROCESS_MEMORY,

@@ -592,7 +592,7 @@ def snapshot_wal_stats(db_path: str) -> Dict[str, Any]:
 
 # ==================== 进程 RSS 采样（OOM 治理 2026-09-05） ====================
 
-# 最近一次采样的 RSS（MB）；周期采样循环写，/sync 健康端点读。
+# 最近一次采样的 RSS（MB）；周期采样循环写，/api/v1/health/diagnosis 读取。
 # None 表示尚未采样或当前平台不可用。
 _LAST_RSS_MB: Optional[float] = None
 

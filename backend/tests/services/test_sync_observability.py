@@ -589,6 +589,57 @@ class TestLifecycleMount:
         messages = [c.args[1] for c in mock_log.call_args_list]
         assert any(m.startswith("event=wal_snapshot") for m in messages), "WAL 快照事件应周期性发射"
 
+    async def test_wal_snapshot_loop_offloads_blocking_probe(self, monkeypatch):
+        """回归（2026-09-07 诊断 RCA）：WAL 快照探测含 PASSIVE checkpoint
+        （大 WAL 单轮数百 ms，生产 Docker 实测 p99 lag 尖峰来源），必须在
+        工作线程执行。判别用事件总序而非墙钟：探测协程须在阻塞探测「仍
+        在等待期间」完成（同步实现下逻辑不可能——循环线程困在探测里）；
+        随后放行探测并以 events 顺序固化。变异验证：还原同步调用后必败。"""
+        import threading
+
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_wal_snapshot_loop
+
+        monkeypatch.setattr(_settings, "SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS", 5.0)
+        probe_entered = threading.Event()
+        probe_release = threading.Event()
+        returned = threading.Event()
+        events: list = []
+
+        def _blocking_snapshot(db_path):
+            probe_entered.set()
+            # 有界等待：同步阻塞实现下 2s 后自行放行避免测试死锁
+            probe_release.wait(timeout=2.0)
+            events.append("snapshot_returned")
+            returned.set()
+            return {"wal_bytes": 42, "busy_count": 0, "checkpoint_busy": False}
+
+        monkeypatch.setattr(obs, "snapshot_wal_stats", _blocking_snapshot)
+        app = MagicMock()
+        task = asyncio.create_task(run_wal_snapshot_loop(app))
+        try:
+            await asyncio.to_thread(probe_entered.wait, 5.0)
+
+            async def _probe_coroutine():
+                await asyncio.sleep(0.01)
+                events.append("probe_ran")
+
+            probe_task = asyncio.create_task(_probe_coroutine())
+            done, _pending = await asyncio.wait({probe_task}, timeout=0.5)
+            assert probe_task in done, "探测协程未在阻塞期内完成（事件循环疑似被阻塞）"
+            probe_release.set()
+            await asyncio.to_thread(returned.wait, 5.0)
+            assert events.index("probe_ran") < events.index(
+                "snapshot_returned"
+            ), "WAL 快照探测阻塞了事件循环（必须 to_thread 化）"
+        finally:
+            probe_release.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
 
 class TestProcessMemoryObservability:
     """OOM 治理（2026-09-05 批次 5）：进程 RSS 采样与事件白名单。"""
@@ -700,3 +751,53 @@ class TestProcessMemoryObservability:
         assert not trim_spy.called
         messages = [c.args[1] for c in mock_log.call_args_list]
         assert any("heap_trimmed=False" in m for m in messages)
+
+    async def test_process_memory_loop_offloads_blocking_sampling(self, monkeypatch):
+        """回归（2026-09-07 诊断 RCA 同批）：RSS 采集/malloc_trim（可达数十 ms）
+        与 WAL 快照同批 to_thread 化。判别同 WAL 用例：事件顺序（探测协程
+        完成先于阻塞采样返回）；变异验证：还原同步调用后本用例必须失败。"""
+        import threading
+
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 5.0)
+        probe_entered = threading.Event()
+        probe_release = threading.Event()
+        returned = threading.Event()
+        events: list = []
+
+        def _blocking_rss():
+            probe_entered.set()
+            # 有界等待：同步阻塞实现下 2s 后放行避免死锁
+            probe_release.wait(timeout=2.0)
+            events.append("sampling_returned")
+            returned.set()
+            return 123.4
+
+        monkeypatch.setattr(obs, "get_process_rss_mb", _blocking_rss)
+        monkeypatch.setattr(obs, "release_free_heap_memory", lambda: False)
+        app = MagicMock()
+        task = asyncio.create_task(run_process_memory_loop(app))
+        try:
+            await asyncio.to_thread(probe_entered.wait, 5.0)
+
+            async def _probe_coroutine():
+                await asyncio.sleep(0.01)
+                events.append("probe_ran")
+
+            probe_task = asyncio.create_task(_probe_coroutine())
+            done, _pending = await asyncio.wait({probe_task}, timeout=0.5)
+            assert probe_task in done, "探测协程未在阻塞期内完成（事件循环疑似被阻塞）"
+            probe_release.set()
+            await asyncio.to_thread(returned.wait, 5.0)
+            assert events.index("probe_ran") < events.index(
+                "sampling_returned"
+            ), "RSS 采样阻塞了事件循环（必须 to_thread 化）"
+        finally:
+            probe_release.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
