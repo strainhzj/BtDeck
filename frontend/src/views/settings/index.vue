@@ -303,6 +303,29 @@
           <platform-capability-panel />
         </div>
       </el-tab-pane>
+
+      <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
+      <el-tab-pane label="状态诊断" name="diagnosis">
+        <div class="settings-content">
+          <div class="settings-card">
+            <h3 class="settings-card-title">故障转储与状态分析</h3>
+            <p class="settings-description">
+              一键生成诊断快照并导出为 JSON 文件，用于故障排查或状态分析。
+              内容包含服务版本与构建身份、数据库/事件循环/同步任务健康检查、
+              下载器离线告警与进程内存采样；不包含任何凭据或令牌。
+            </p>
+            <div class="form-actions">
+              <el-button
+                type="primary"
+                :loading="diagnosisLoading"
+                @click="handleExportDiagnosis"
+              >
+                {{ diagnosisLoading ? '正在生成…' : '生成并导出诊断文件' }}
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -311,6 +334,8 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
+import { exportDiagnosisFile } from '@/api/health'
+import { isDemoMode } from '@/demo/config'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -377,6 +402,9 @@ export default class extends Vue {
     old_password: ''
   }
 
+  // 状态诊断导出
+  private diagnosisLoading = false
+
   get name() {
     return UserModule.name
   }
@@ -404,6 +432,52 @@ export default class extends Vue {
     if (this.lockTimer) {
       clearInterval(this.lockTimer)
     }
+  }
+
+  // 生成并导出故障诊断快照 JSON（demo 模式生成前端本地快照）
+  private async handleExportDiagnosis() {
+    if (this.diagnosisLoading) return
+    this.diagnosisLoading = true
+    try {
+      const blob = isDemoMode() ? this.buildDemoDiagnosisBlob() : await exportDiagnosisFile()
+      const fileName = `btdeck-diagnosis-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      this.$message.success('诊断文件已导出')
+    } catch (error) {
+      console.error('导出诊断文件失败:', error)
+      this.$message.error('导出诊断文件失败，请稍后重试')
+    } finally {
+      this.diagnosisLoading = false
+    }
+  }
+
+  // demo 模式诊断快照：结构与后端 /health/diagnosis 响应对齐，并标注 demo: true
+  private buildDemoDiagnosisBlob(): Blob {
+    const dump = {
+      generatedAt: new Date().toISOString(),
+      demo: true,
+      version: 'demo',
+      build: { status: 'demo' },
+      checks: {
+        database: { status: 'ok' },
+        worker: { status: 'ok' },
+        eventLoopLag: { status: 'ok', sampleCount: 0, p99Ms: null, maxMs: null }
+      },
+      readinessFailureTotal: {},
+      sync: {
+        tasks: [],
+        downloaders: { status: 'unknown', total: 0, offlineCount: 0, warnings: [] },
+        process: { rssMb: null }
+      }
+    }
+    return new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' })
   }
 
   // 从localStorage恢复失败次数

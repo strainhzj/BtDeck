@@ -98,8 +98,10 @@ import {
   getStatusAll,
   getSyncTaskStatus,
   syncDownloader,
-  testConnection
+  testConnection,
+  upDownloader
 } from '@/api/downloader'
+import { exportDiagnosisFile } from '@/api/health'
 
 jest.mock('@/utils/request', () => ({
   __esModule: true,
@@ -969,6 +971,31 @@ describe('API 请求契约', () => {
         () => getDownloaderCapabilities('dl-1'),
         { url: '/downloaders/dl-1/capabilities', method: 'get' }
       )
+    })
+
+    it('upDownloader 走 ID 路径且 payload 原样透传（部分更新契约）', () => {
+      // 2026-09-07 422 根修：列表启停开关只传 {id, enabled}，缺省字段后端保持原值
+      expectRequest(
+        () => upDownloader({ id: 'dl-1', enabled: '0' }),
+        { url: '/downloader/update/dl-1', method: 'post', data: { id: 'dl-1', enabled: '0' } }
+      )
+    })
+  })
+
+  describe('诊断导出接口（2026-09-07 /health/sync 改造）', () => {
+    it('exportDiagnosisFile 走 Axios blob 契约（认证头/续期链路），路径锁定 /health/diagnosis', () => {
+      // 旧路径 /health/sync 已移除（后端 404 回归锁），此处锁定前端不再回退旧路径
+      expectRequest(
+        () => exportDiagnosisFile(),
+        { url: '/health/diagnosis', method: 'get', responseType: 'blob' }
+      )
+    })
+
+    it('列表启停开关源码契约：只传最小 payload，禁止整行展开回归', () => {
+      // 回归锚点（2026-09-07 422 事故）：整行 camelCase 展开缺 is_search/is_ssl 必 422
+      const source = fs.readFileSync(path.resolve(__dirname, '../../src/views/downloader/index.vue'), 'utf-8')
+      expect(source).toContain('upDownloader({ id: downloader.id, enabled: newEnabled })')
+      expect(source).not.toContain('upDownloader({ ...downloader, enabled')
     })
   })
 })

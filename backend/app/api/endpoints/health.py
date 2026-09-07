@@ -4,8 +4,10 @@
 * ``/health/live`` 只证明 FastAPI/事件循环能够处理请求，不访问数据库或下载器。
 * ``/health/ready`` 只执行有超时的 ``SELECT 1``、SQLite 单 Worker 校验和 lag
   近期状态读取；绝不执行写探针，也不触发下载器远程调用。
-* ``/api/v1/health/sync`` 是受认证的业务视图，读取任务 outcome/freshness、活动
-  SyncCoordinator 快照、sync_checkpoints 年龄以及缓存中的下载器离线告警。
+* ``/api/v1/health/diagnosis`` 是受认证的故障转储/排查/状态分析导出：一次性聚合
+  版本/构建身份、readiness 检查、任务 outcome/freshness、活动 SyncCoordinator 快照、
+  sync_checkpoints 年龄、缓存中的下载器离线告警与进程 RSS，以 JSON 附件下发
+  （2026-09-07 由原 ``/api/v1/health/sync`` 业务健康视图改造而来）。
 """
 
 import asyncio
@@ -42,7 +44,7 @@ from app.utils.datetime_utils import serialize_utc_datetime
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
-sync_router = APIRouter(tags=["health"])
+diagnosis_router = APIRouter(tags=["health"])
 
 _READINESS_FAILURE_TOTAL: Counter[str] = Counter()
 _SYNC_TASK_CODES: Dict[str, str] = {
@@ -408,37 +410,68 @@ async def _build_sync_health(app: Any) -> Dict[str, Any]:
     }
 
 
-@sync_router.get("/sync", summary="同步业务健康")
-async def sync_health(
+async def _build_diagnosis(app: Any) -> Dict[str, Any]:
+    """聚合故障转储/状态分析快照：身份、readiness 检查、同步业务健康与失败计数。
+
+    整个构建只读（readiness 检查复用 /health/ready 的探针但不累计失败计数），
+    不触发下载器远程调用，也不执行写探针。
+    """
+    database_check, _ = await _database_readiness_check()
+    worker_check, _ = _worker_readiness_check()
+    lag_check, _ = _lag_readiness_check(app)
+    return {
+        "generatedAt": serialize_utc_datetime(datetime.now(timezone.utc)),
+        "version": CURRENT_VERSION,
+        "build": build_info.build_identity_block(),
+        "checks": {"database": database_check, "worker": worker_check, "eventLoopLag": lag_check},
+        "readinessFailureTotal": dict(_READINESS_FAILURE_TOTAL),
+        "sync": await _build_sync_health(app),
+    }
+
+
+@diagnosis_router.get("/diagnosis", summary="故障转储/排查/状态分析导出")
+async def export_diagnosis(
     request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
 ):
-    """返回同步 outcome/freshness/活动 phase/checkpoint 年龄及业务告警。"""
+    """生成故障排查/状态分析快照，并以 JSON 附件导出（原 /health/sync 数据并入 sync 字段）。"""
     # 仅记录访问者标识，不记录 Authorization/Cookie/JWT 内容。
-    logger.info("sync_health_access username=%s", user_info.username)
+    logger.info("diagnosis_export_access username=%s", user_info.username)
     timeout_seconds = max(float(settings.HEALTH_SYNC_DB_TIMEOUT_SECONDS), 0.001)
     try:
-        data = await asyncio.wait_for(_build_sync_health(request.app), timeout=timeout_seconds)
+        data = await asyncio.wait_for(_build_diagnosis(request.app), timeout=timeout_seconds)
     except asyncio.TimeoutError:
-        logger.warning("sync_health_query_timeout timeout_ms=%s", round(timeout_seconds * 1000.0, 1))
+        logger.warning("diagnosis_query_timeout timeout_ms=%s", round(timeout_seconds * 1000.0, 1))
         return JSONResponse(
             status_code=503,
             content=_common_response(
                 "error",
-                "同步健康信息暂不可用",
+                "诊断信息暂不可用",
                 "503",
                 {
-                    "reasonCode": "sync_health_query_timeout",
+                    "reasonCode": "diagnosis_query_timeout",
                     "timeoutMs": round(timeout_seconds * 1000.0, 1),
                 },
             ),
         )
     except Exception as exc:  # noqa: BLE001 - 对外只返回稳定 reason code
-        logger.warning("sync_health_query_failed error_type=%s", type(exc).__name__)
-        return CommonResponse(
-            status="error",
-            msg="同步健康信息暂不可用",
-            code="500",
-            data={"reasonCode": "sync_health_unavailable"},
+        logger.warning("diagnosis_query_failed error_type=%s", type(exc).__name__)
+        # 必须 HTTP 500：blob 下载路径不解析业务码，HTTP 200 + code=500 的
+        # 错误信封会被前端当作诊断文件保存。
+        return JSONResponse(
+            status_code=500,
+            content=_common_response(
+                "error",
+                "诊断信息暂不可用",
+                "500",
+                {"reasonCode": "diagnosis_unavailable"},
+            ),
         )
-    return CommonResponse(status="success", msg="获取同步健康信息成功", code="200", data=data)
+    # 成功路径直接以诊断文档为附件内容（文件即分析结果，不再包一层 envelope）。
+    filename = f"btdeck-diagnosis-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
+    return JSONResponse(
+        status_code=200,
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

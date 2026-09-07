@@ -1,4 +1,4 @@
-"""W4-2 liveness/readiness/同步健康接口回归测试。
+"""W4-2 liveness/readiness/故障转储诊断导出接口回归测试。
 
 测试只替换健康接口的数据库探针或只读 session，不触碰生产 app.db，也不调用下载器。
 """
@@ -23,7 +23,7 @@ from app.tasks.cron_models import CronTask
 def _client(*, authenticated: bool = False):
     app = create_app(configure_routes=False)
     app.include_router(health.router)
-    app.include_router(health.sync_router, prefix="/api/v1/health")
+    app.include_router(health.diagnosis_router, prefix="/api/v1/health")
     if authenticated:
         app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
     return app, TestClient(app, raise_server_exceptions=False)
@@ -181,10 +181,10 @@ class _FakeStore:
         return [SimpleNamespace(fail_time=0), SimpleNamespace(fail_time=2)]
 
 
-def test_sync_health_requires_authentication():
+def test_diagnosis_export_requires_authentication():
     _app, client = _client()
 
-    response = client.get("/api/v1/health/sync")
+    response = client.get("/api/v1/health/diagnosis")
 
     assert response.status_code == 401
     body = response.json()
@@ -193,8 +193,18 @@ def test_sync_health_requires_authentication():
     assert body["data"] is None
 
 
-def test_sync_health_returns_outcome_freshness_active_phase_checkpoint_age_and_offline_alert(monkeypatch):
+def test_diagnosis_export_old_sync_path_removed():
+    """原 /health/sync 已被 /health/diagnosis 取代，旧路径必须显式 404 防止静默复活。"""
+    _app, client = _client(authenticated=True)
+
+    response = client.get("/api/v1/health/sync")
+
+    assert response.status_code == 404
+
+
+def test_diagnosis_export_returns_attachment_with_checks_and_sync_business_health(monkeypatch):
     app, client = _client(authenticated=True)
+    _patch_ready_defaults(monkeypatch, app)
     now = datetime.now()
     task = CronTask(
         task_name="种子信息同步任务",
@@ -237,19 +247,27 @@ def test_sync_health_returns_outcome_freshness_active_phase_checkpoint_age_and_o
     )
     app.state.store = _FakeStore()
 
-    response = client.get("/api/v1/health/sync")
+    response = client.get("/api/v1/health/diagnosis")
     body = response.json()
 
     assert response.status_code == 200
-    assert body["code"] == "200"
-    info = next(item for item in body["data"]["tasks"] if item["syncType"] == "info")
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["content-disposition"].startswith('attachment; filename="btdeck-diagnosis-')
+    assert response.headers["content-disposition"].endswith('.json"')
+    assert body["version"] == health.CURRENT_VERSION
+    assert body["generatedAt"]
+    assert "build" in body
+    assert set(body["checks"]) == {"database", "worker", "eventLoopLag"}
+    assert body["checks"]["database"]["status"] == "ok"
+    assert "readinessFailureTotal" in body
+    info = next(item for item in body["sync"]["tasks"] if item["syncType"] == "info")
     assert info["latestOutcome"] == OUTCOME_PARTIAL
     assert info["activeRun"]["runId"] == "sync-active-123"
     assert info["phase"] == "sync"
     assert 0 <= info["checkpointAgeSeconds"] <= 2
     assert info["freshnessSeconds"] in (89, 90, 91)
     assert info["stale"] is False
-    assert body["data"]["downloaders"] == {
+    assert body["sync"]["downloaders"] == {
         "status": "degraded",
         "total": 2,
         "offlineCount": 1,
@@ -258,24 +276,100 @@ def test_sync_health_returns_outcome_freshness_active_phase_checkpoint_age_and_o
 
 
 @pytest.mark.asyncio
-async def test_sync_health_query_timeout_returns_503(monkeypatch):
-    """同步业务健康查询在数据库锁等待时必须有界返回。"""
+async def test_diagnosis_export_query_timeout_returns_503(monkeypatch):
+    """诊断导出聚合查询在数据库锁等待时必须有界返回。"""
     app, _client_instance = _client(authenticated=True)
     monkeypatch.setattr(health.settings, "HEALTH_SYNC_DB_TIMEOUT_SECONDS", 0.001)
 
-    async def slow_health(_app):
+    async def slow_diagnosis(_app):
         await asyncio.sleep(0.05)
         return {}
 
-    monkeypatch.setattr(health, "_build_sync_health", slow_health)
-    response = await health.sync_health(
+    monkeypatch.setattr(health, "_build_diagnosis", slow_diagnosis)
+    response = await health.export_diagnosis(
         SimpleNamespace(app=app),
         SimpleNamespace(username="tester"),
     )
 
     assert response.status_code == 503
     body = response.body.decode("utf-8")
-    assert "sync_health_query_timeout" in body
+    assert "diagnosis_query_timeout" in body
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_export_internal_error_returns_500_envelope_without_details(monkeypatch):
+    """聚合构建异常走 500 稳定 reason code，且不回显异常细节（可能含路径等）。"""
+    app, _client_instance = _client(authenticated=True)
+
+    async def broken_diagnosis(_app):
+        raise RuntimeError("boom with secret path C:/prod/app.db")
+
+    monkeypatch.setattr(health, "_build_diagnosis", broken_diagnosis)
+    response = await health.export_diagnosis(
+        SimpleNamespace(app=app),
+        SimpleNamespace(username="tester"),
+    )
+
+    assert response.status_code == 500
+    body = response.body.decode("utf-8")
+    assert "diagnosis_unavailable" in body
+    assert "boom with secret path" not in body
+
+
+def test_diagnosis_export_is_readonly_and_does_not_count_readiness_failures(monkeypatch):
+    """诊断导出只读：检查失败进入 payload 但不累计 readiness_failure_total；计数只由 /health/ready 触发。"""
+    app, client = _client(authenticated=True)
+    health._READINESS_FAILURE_TOTAL.clear()
+    monkeypatch.setattr(health, "_probe_database", AsyncMock(side_effect=OSError("database is locked")))
+    app.state.sync_lag_sampler = SimpleNamespace(sampler=_Sampler())
+
+    first = client.get("/api/v1/health/diagnosis")
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["checks"]["database"]["status"] == "failed"
+    # 诊断导出自身不累计失败计数
+    assert first_body["readinessFailureTotal"] == {}
+
+    ready = client.get("/health/ready")
+    assert ready.status_code == 503
+
+    second = client.get("/api/v1/health/diagnosis")
+    assert second.json()["readinessFailureTotal"].get("db_unavailable") == 1
+
+
+_SENSITIVE_KEY_MARKERS = ("password", "token", "authorization", "secret", "cookie", "username", "credential")
+
+
+def _walk_keys(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield str(key)
+            yield from _walk_keys(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _walk_keys(item)
+
+
+def test_diagnosis_export_payload_free_of_sensitive_keys(monkeypatch):
+    """导出的诊断文件不得含任何敏感键/敏感串（凭据/令牌/用户名/访问者身份），文件可直接外发。"""
+    app, client = _client(authenticated=True)
+    _patch_ready_defaults(monkeypatch, app)
+    fake_session = _FakeHealthSession([], [])
+    monkeypatch.setattr(health, "AsyncSessionLocal", lambda: fake_session)
+    app.state.store = _FakeStore()
+
+    response = client.get("/api/v1/health/diagnosis")
+
+    assert response.status_code == 200
+    for key in _walk_keys(response.json()):
+        lowered = key.lower()
+        for marker in _SENSITIVE_KEY_MARKERS:
+            assert marker not in lowered, f"敏感键 {key} 泄入诊断导出"
+    lowered_text = response.text.lower()
+    for marker in ("password", "authorization", "bearer ", "jwt", "secret"):
+        assert marker not in lowered_text, f"敏感串 {marker} 泄入诊断导出"
+    # 访问者身份只写服务端日志，不进导出文件
+    assert "tester" not in response.text
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,7 @@ from app.factory import create_app
 def _client():
     app = create_app(configure_routes=False)
     app.include_router(health.router)
-    app.include_router(health.sync_router, prefix="/api/v1/health")
+    app.include_router(health.diagnosis_router, prefix="/api/v1/health")
     return app, TestClient(app, raise_server_exceptions=False)
 
 

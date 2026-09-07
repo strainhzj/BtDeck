@@ -97,5 +97,5 @@ api_router.include_router(notifications.router, prefix="/notifications", tags=["
 api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])
 # API 前缀下保留 liveness/readiness 别名；Docker 使用的规范路径仍是根路径 /health/*。
 api_router.include_router(health.router, tags=["health"])
-# 受认证同步健康视图（基础 liveness/readiness 在根路径注册，供 Docker 使用）
-api_router.include_router(health.sync_router, prefix="/health", tags=["health"])
+# 受认证故障转储/状态分析导出（基础 liveness/readiness 在根路径注册，供 Docker 使用）
+api_router.include_router(health.diagnosis_router, prefix="/health", tags=["health"])
