@@ -14,7 +14,9 @@ services:
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=${TZ:-Asia/Shanghai}
+      # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime
+      # "naive=UTC" 标 Z 契约要求容器本地时间为 UTC；cron 触发时刻硬编码 Asia/Shanghai 不受影响
+      - TZ=${TZ:-UTC}
       # SQLite 单 Worker 约束（W2-4 / P0-06）：不要设置 WORKERS>1——
       # 未设置时 btdeck_startup.sh 默认 WORKERS=1。
       # 不能通过启动多个 SQLite Worker 缓解接口卡顿：resource_guard/信号量均为
@@ -78,7 +80,9 @@ services:
     image: btdeck-frontend:latest
     container_name: btdeck-frontend
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime
+      # "naive=UTC" 标 Z 契约要求容器本地时间为 UTC；cron 触发时刻硬编码 Asia/Shanghai 不受影响
+      - TZ=${TZ:-UTC}
     ports:
       - "${BTDECK_PORT:-8080}:80"
     volumes:

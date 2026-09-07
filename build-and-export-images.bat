@@ -273,6 +273,12 @@ if not "%DEPLOY_HOST%"=="" (
     )
 )
 
+call :generate_release_identity
+if errorlevel 1 (
+    if "%PAUSE_ON_EXIT%"=="1" pause
+    exit /b 1
+)
+
 call :build_image "%BACKEND_IMAGE%" "%BACKEND_DOCKERFILE%" "%BACKEND_DIR%" backend
 if errorlevel 1 exit /b 1
 
@@ -345,6 +351,82 @@ endlocal
 exit /b 0
 
 rem ============================================================
+rem Subroutine: generate release identity into both image contexts
+rem   (G1). Mirrors build-images.sh Step 1 but STRICT by default.
+rem   Why: this script used to bake whatever stale build-info.json
+rem   was sitting in backend\ / frontend\ into the image. A stale
+rem   dirty=true identity (e.g. the 2026-09-03 leftover) makes the
+rem   runtime validator reject it -> /health/ready fails closed
+rem   with 503 build_identity_invalid forever, and the remote
+rem   wait-for-healthy deploy can never turn green.
+rem   Strict mode: dirty worktree aborts with guidance.
+rem   Escape hatch: BTDECK_ALLOW_DIRTY_IDENTITY=1 knowingly deploys
+rem   a dirty (runtime-invalid) identity for WIP testing.
+rem   Also feeds OCI labels (version/revision/created) into both
+rem   builds so `docker inspect` matches /health/live build.gitSha.
+rem ============================================================
+:generate_release_identity
+set "PYTHON_EXE=C:\software\python\python.exe"
+if not exist "!PYTHON_EXE!" (
+    where python >nul 2>nul
+    if errorlevel 1 (
+        echo [ERROR] python not found. Identity generation requires C:\software\python\python.exe or python on PATH.
+        exit /b 1
+    )
+    set "PYTHON_EXE=python"
+)
+set "IDENTITY_ARGS="
+if "%BTDECK_ALLOW_DIRTY_IDENTITY%"=="1" (
+    echo [WARN] BTDECK_ALLOW_DIRTY_IDENTITY=1: identity will be dirty=true and
+    echo        /health/ready will report build_identity_invalid ^(503^) on this deploy.
+    set "IDENTITY_ARGS=--allow-dirty"
+)
+echo [INFO] Generating release identity ^(strict mode; %IDENTITY_ARGS%^)...
+rem 不加 -X utf8：双击控制台为 GBK 代码页，python 按本地编码输出中文提示才不乱码
+rem （生成器写盘文件本就显式 encoding=utf-8，不受此影响）。
+"!PYTHON_EXE!" "%SCRIPT_DIR%scripts\release\generate_build_info.py" --project-root "%SCRIPT_DIR%." --check-versions
+if errorlevel 1 (
+    echo [ERROR] Version declarations inconsistent across the six release files.
+    echo         Fix them before building ^(see scripts/release/generate_build_info.py^).
+    exit /b 1
+)
+"!PYTHON_EXE!" "%SCRIPT_DIR%scripts\release\generate_build_info.py" --project-root "%SCRIPT_DIR%." --artifact-kind docker-backend --output-dir "%SCRIPT_DIR%release\build\docker-backend" %IDENTITY_ARGS%
+if errorlevel 1 goto identity_dirty_or_failed
+"!PYTHON_EXE!" "%SCRIPT_DIR%scripts\release\generate_build_info.py" --project-root "%SCRIPT_DIR%." --artifact-kind docker-frontend --output-dir "%SCRIPT_DIR%release\build\docker-frontend" %IDENTITY_ARGS%
+if errorlevel 1 goto identity_dirty_or_failed
+copy /Y "%SCRIPT_DIR%release\build\docker-backend\build-info.json" "%BACKEND_DIR%\build-info.json" >nul
+copy /Y "%SCRIPT_DIR%release\build\docker-frontend\build-info.json" "%FRONTEND_DIR%\build-info.json" >nul
+rem Fail-closed tripwire: reject anything the runtime validator would reject
+rem (dirty=true) plus shape sanity, before it reaches the image layers.
+rem dirty=true only passes when the escape hatch is explicitly active.
+"!PYTHON_EXE!" -X utf8 -c "import json,os,sys; i=json.load(open(r'%BACKEND_DIR%\build-info.json',encoding='utf-8')); ok=(i.get('dirty') is False or (i.get('dirty') is True and os.environ.get('BTDECK_ALLOW_DIRTY_IDENTITY')=='1')) and len(i.get('git_sha',''))==40 and i.get('artifact_kind')=='docker-backend'; print('[INFO] backend identity', i['git_sha'][:12], 'dirty='+str(i['dirty'])); sys.exit(0 if ok else 1)"
+if errorlevel 1 goto identity_invalid_runtime
+"!PYTHON_EXE!" -X utf8 -c "import json,os,sys; i=json.load(open(r'%FRONTEND_DIR%\build-info.json',encoding='utf-8')); ok=(i.get('dirty') is False or (i.get('dirty') is True and os.environ.get('BTDECK_ALLOW_DIRTY_IDENTITY')=='1')) and len(i.get('git_sha',''))==40 and i.get('artifact_kind')=='docker-frontend'; print('[INFO] frontend identity', i['git_sha'][:12], 'dirty='+str(i['dirty'])); sys.exit(0 if ok else 1)"
+if errorlevel 1 goto identity_invalid_runtime
+rem 身份读取供 OCI label：写入无引号 set 行到临时 env 文件再逐行执行。
+rem （不用 for /f 反引内联执行——-c 代码含双引号会被 cmd /c 撕裂引号。）
+"!PYTHON_EXE!" -X utf8 -c "import json; from datetime import datetime, timezone; i=json.load(open(r'%SCRIPT_DIR%release\build\docker-backend\build-info.json',encoding='utf-8')); c=datetime.fromtimestamp(int(i['source_date_epoch']),tz=timezone.utc).isoformat().replace('+00:00','Z'); open(r'%TEMP%\btdeck-identity.env','w',encoding='utf-8',newline='\n').write('set IDENTITY_VERSION='+i['product_version'].lstrip('v')+'\nset IDENTITY_SHA='+i['git_sha']+'\nset IDENTITY_CREATED='+c+'\n')"
+if errorlevel 1 goto identity_invalid_runtime
+for /f "usebackq delims=" %%l in ("%TEMP%\btdeck-identity.env") do %%l
+del /Q "%TEMP%\btdeck-identity.env" >nul 2>nul
+set "OCI_ARGS=--build-arg "OCI_VERSION=!IDENTITY_VERSION!" --build-arg "OCI_REVISION=!IDENTITY_SHA!" --build-arg "OCI_CREATED=!IDENTITY_CREATED!""
+echo [OK] Release identity: v!IDENTITY_VERSION! @!IDENTITY_SHA:~0,12! created=!IDENTITY_CREATED!
+exit /b 0
+
+:identity_dirty_or_failed
+echo [ERROR] Identity generation failed ^(worktree dirty or inputs missing^).
+echo         Generation is fail-closed: commit or stash local changes first, then retry.
+echo         For a WIP deploy that will report an INVALID identity ^(503 on /health/ready^),
+echo         set BTDECK_ALLOW_DIRTY_IDENTITY=1 and rerun.
+exit /b 1
+
+:identity_invalid_runtime
+echo [ERROR] Generated identity would be rejected at runtime ^(dirty or malformed^).
+echo         dirty=true is only acceptable with BTDECK_ALLOW_DIRTY_IDENTITY=1;
+echo         other rejections mean the generator output is malformed - check output above.
+exit /b 1
+
+rem ============================================================
 rem Subroutine: parse a mirror profile into MIRROR_ARGS
 rem   %1 = profile index (1..PROFILE_COUNT)
 rem   Sets global MIRROR_ARGS = series of quoted --build-arg tokens (or empty)
@@ -396,7 +478,7 @@ call :apply_profile !B_IDX!
 set "B_ARGS=%BUILD_ARGS%"
 if !B_TRIES! GTR 1 set "B_ARGS=%BUILD_ARGS% --no-cache"
 echo [INFO] Building !B_NAME! image !B_TAG! ^(profile !B_IDX!, try !B_TRIES!^)
-docker build !B_ARGS! !MIRROR_ARGS! -f "!B_DF!" -t "!B_TAG!" "!B_CTX!" > "!B_LOG!" 2>&1
+docker build !B_ARGS! !MIRROR_ARGS! !OCI_ARGS! -f "!B_DF!" -t "!B_TAG!" "!B_CTX!" > "!B_LOG!" 2>&1
 if not errorlevel 1 goto build_image_ok
 findstr /C:"Could not resolve" /C:"dial tcp" /C:"Connection reset" /C:"Temporary failure" /C:"Connection timed out" /C:"timed out" /C:"Failed to connect" /C:"Unable to fetch" /C:"i/o timeout" /C:"context deadline exceeded" /C:"connection refused" /C:"no route to host" "!B_LOG!" >nul
 if errorlevel 1 (

@@ -77,13 +77,21 @@ LABEL org.opencontainers.image.title="BtDeck backend" \
 # 注意：ARG 不能跨 FROM 继承，必须在本阶段重新声明才能在 sed 中使用
 ARG APT_MIRROR=
 
+# 容器时区（2026-09-07 时间戳单基准治理）：默认 UTC。
+# 后端大量以 naive datetime.now() 写库（cron_tasks/审计/业务表），而 API 序列化
+# 契约 serialize_utc_datetime 一律按 "naive=UTC" 标 Z——容器本地时间必须是 UTC
+# 两端才自洽（曾默认 Asia/Shanghai，诊断导出中 cron 源时间戳 +8h 误标）。
+# 定时任务触发时刻不受影响：调度器/CronTrigger 在代码中硬编码 Asia/Shanghai
+# 墙钟（cron_executor.py），与容器 TZ 无关。
+ARG APP_TZ=UTC
+
 # 设置环境变量
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LOG_DIR=/app/logs \
     CONFIG_DIR=/app/config \
-    TZ=Asia/Shanghai
+    TZ=${APP_TZ}
 
 # 安装运行时系统依赖（最小集）
 # curl: 健康检查；tzdata: 时区数据
@@ -96,8 +104,8 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     curl \
     tzdata \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && echo "Asia/Shanghai" > /etc/timezone \
+    && ln -sf /usr/share/zoneinfo/${APP_TZ} /etc/localtime \
+    && echo "${APP_TZ}" > /etc/timezone \
     && groupadd -g 1001 appgroup \
     && useradd -u 1001 -g 1001 -m -d /home/appuser -s /bin/bash appuser
 

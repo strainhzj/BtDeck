@@ -19,7 +19,9 @@ services:
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=${TZ:-Asia/Shanghai}
+      # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime
+      # "naive=UTC" 标 Z 契约要求容器本地时间为 UTC；cron 触发时刻硬编码 Asia/Shanghai 不受影响
+      - TZ=${TZ:-UTC}
       # SQLite 单 Worker 约束与安全加固三件套（DEV=false + SECRET_KEY + ALLOWED_HOSTS）
       # 与生产 docker-compose.yml 同口径；发布形态必须 DEV=false
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -62,7 +64,9 @@ services:
     image: ghcr.io/strainhzj/btdeck-frontend@sha256:${BTDECK_FRONTEND_DIGEST:?BTDECK_FRONTEND_DIGEST required (render via compose-release.env)}
     container_name: btdeck-frontend
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime
+      # "naive=UTC" 标 Z 契约要求容器本地时间为 UTC；cron 触发时刻硬编码 Asia/Shanghai 不受影响
+      - TZ=${TZ:-UTC}
     ports:
       - "${BTDECK_PORT:-8080}:80"
     volumes:
