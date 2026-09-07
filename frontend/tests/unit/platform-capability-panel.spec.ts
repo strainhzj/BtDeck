@@ -131,7 +131,7 @@ describe('PlatformCapabilityPanel（异常兜底）', () => {
     const wrapper = mountPanel()
     await flushAsync(wrapper)
     expect(wrapper.html()).toContain('能力信息暂不可用')
-    expect(wrapper.html()).toContain('默认按全能力展示')
+    expect(wrapper.html()).toContain('需要下载器主机文件系统的入口将暂时关闭')
   })
 })
 

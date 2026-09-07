@@ -6145,14 +6145,19 @@
         "backend/app/tasks/task_capabilities.py",
         "backend/app/startup/lifecycle.py",
         "frontend/src/api/platform-capabilities.ts",
+        "frontend/tests/unit/platform-capabilities-api.spec.ts",
+        "frontend/tests/unit/platform-capability-panel.spec.ts",
         "frontend/src/permission.ts",
+        "backend/tests/api/test_platform_capabilities_api.py",
+        "backend/tests/core/test_startup_migration_guard.py",
+        "android/app/src/androidTest/java/com/btdeck/companion/LocalServerAndroidTest.kt",
         "docs/android/host-capability-matrix.md",
         "backend/tests/tasks/test_task_capabilities.py"
       ],
       "evidence": {
-        "tests": "compileall 通过；platform capability/cron/API/任务/备份/孤儿/三级删除相关回归 67 + 116 + 536 通过；新增任务能力测试覆盖 Android 与桌面任务映射、三级清理和统一异常；前端 npm run lint 与 npm run build 通过。",
+        "tests": "后端能力/API/任务/生命周期回归 39 passed；前端能力与任务相关 4 suites / 30 passed，npm run lint、typecheck、build 通过；Android AVD btdeck-a35 instrumentation LocalServerAndroidTest 1 passed。",
         "contract": "受限能力统一返回 HTTP 403，data.reasonCode=PLATFORM_CAPABILITY_UNSUPPORTED；能力矩阵 schemaVersion=2；Android 启动仅终结历史孤儿任务，不执行宿主文件系统扫描。",
-        "behavior": "Android 主服务端隐藏受限路由/菜单、剔除路径配置字段、禁用三级删除/种子转移/受限定时任务；桌面/NAS 行为不变，伴侣模式继续由远端能力矩阵控制。"
+        "behavior": "Android 主服务端隐藏受限路由/菜单、剔除路径配置字段、禁用三级删除/种子转移/受限定时任务；启动仅终结历史未完成孤儿任务且不创建 dispatcher；桌面/NAS 行为不变，伴侣模式继续由远端能力矩阵控制；AVD 实测矩阵为 schemaVersion=2、20 项、degraded=5、unsupported=9，五类受限接口均返回 403。"
       }
     }
   ]

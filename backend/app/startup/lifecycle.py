@@ -553,8 +553,6 @@ async def lifespan(app: FastAPI):
     # 在手机上诊断价值低，徒增后台 I/O 与分配（服务端形态不受影响）。
     wal_snapshot_task = None
     if float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS) > 0:
-        from app.core.platform_capabilities import is_android_server
-
         if is_android_server():
             print("[OK] android-server 运行形态：跳过 WAL 只读周期快照（移动端诊断价值低）")
         else:

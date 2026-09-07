@@ -262,3 +262,11 @@
 ## 相关文档
 
 - 测试组织总览 → [../tests/README.md](../tests/README.md)
+
+
+### 2026-09-07 Android 主服务端能力验收
+
+- `test_platform_capabilities_api.py`：schemaVersion=2、20 项、5 degraded/9 unsupported；六个真实路由的 403 信封。
+- `test_startup_migration_guard.py`：Android lifespan 无扫描/dispatcher；真实 SQLite 历史任务仅收敛未完成状态、幂等且目标文件保留。
+- `platform-capabilities-api.spec.ts` / `platform-capability-panel.spec.ts`：未知能力闭锁、远端 desktop 矩阵不受 Android UA 覆盖、刷新失败撤销旧授权及闭锁提示。
+- `LocalServerAndroidTest.kt`：AVD HTTP 登录、矩阵、五类 403、dispatcher 状态、健康/静态首页与停止重启。

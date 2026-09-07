@@ -7263,3 +7263,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **前端行为**：能力矩阵加载失败对受限能力 fail-closed；路由和侧栏隐藏孤儿/回收站/文件管理，下载器路径配置剔除路径字段，三级删除/转移/受限定时任务入口禁用并显示原因。
 - **文档与回归**：同步 `docs/android/`、`docs/roadmap/`、`feature_list.json` 与本记录；新增 `backend/tests/tasks/test_task_capabilities.py`，覆盖 Android/桌面任务门禁与统一异常。
 - **验证**：`compileall`、JSON 校验、`git diff --check` 通过；后端任务/能力/cron 定向 88 passed，备份/孤儿/三级删除 116 passed，新增任务能力 8 passed；前端 `npm run lint -- --no-fix` 与生产构建通过（仅既有 Sass/Browserslist 警告）。根 `bash ./init.sh --ci` 仍受 Windows/WSL 缺少可用 Linux 发行版阻断。未执行 Git 提交。
+
+### 2026-09-07 续：Android AVD 验收与回归补强
+
+- 修复 `lifespan()` 中重复局部导入遮蔽模块级 `is_android_server` 的启动缺陷；Android 生命周期现在明确跳过孤儿文件对账、扫描恢复和两个 dispatcher，仅把 queued/running 历史任务标记为 failed。
+- 前端 `loadPlatformCapabilities(true)` 请求失败时清空旧缓存，避免旧 desktop 矩阵在网络切换/远端失败后继续授权文件系统入口；相应 unknown/fail-closed 与伴侣远端矩阵测试已补齐。
+- API 测试更新为 schemaVersion=2、20 项、degraded=5、unsupported=9，并覆盖路径映射、孤儿、备份、转移、三级删除六个代表性入口的 403 信封；启动测试补齐真实临时 SQLite 的幂等收敛和目标文件保留断言。
+- AVD `btdeck-a35` 已重建并安装最新 server APK；`LocalServerAndroidTest` 通过（1/1）：健康/静态首页、登录、矩阵计数、五类 403、无 dispatcher、停止/重启均通过。`adb logcat` 记录 Android 跳过文件系统对账并完成历史任务收敛。
+- 验证：后端定向 39 passed，前端能力/任务 4 suites 30 passed，frontend lint/typecheck/build、flake8/mypy/ruff format、`git diff --check` 通过；`bash ./init.sh --ci` 通过（前端脚本仍有既有 null-byte 警告）。未执行 Git 提交，保留未跟踪 `data/`。

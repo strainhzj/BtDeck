@@ -41,6 +41,16 @@ JDK: C:\Program Files\Java\jdk-17（PATH 中 java 17.0.15）
 
 ## 四、L2：AVD 模拟器（伴侣 APK）
 
+### 4.0 Android 主服务端能力验收（2026-09-07）
+
+在 `btdeck-a35` AVD 上安装包含本地服务端的 debug APK，并运行
+`LocalServerAndroidTest`。实测 `/api/v1/platform/capabilities` 返回
+`schemaVersion=2`、20 项能力、`degradedCount=5`、`unsupportedCount=9`；
+路径映射、孤儿扫描、备份、种子转移和三级删除均返回 403，且错误信封的
+`data.reasonCode=PLATFORM_CAPABILITY_UNSUPPORTED`。启动日志显示 Android
+跳过孤儿文件对账，只收敛历史未完成任务；未创建孤儿扫描/清理 dispatcher。
+伴侣 WebView 仅加载远端服务地址，能力矩阵以远端响应为准。
+
 ### 4.1 启动模拟器
 
 ```bash

@@ -43,7 +43,10 @@ export function loadPlatformCapabilities(force = false): Promise<PlatformCapabil
       cache = res?.status === 'success' ? res.data : null
       return cache
     })
-    .catch(() => null)
+    .catch(() => {
+      cache = null
+      return null
+    })
     .finally(() => {
       inflight = null
     })

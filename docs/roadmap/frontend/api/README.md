@@ -19,7 +19,7 @@
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
-| 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`，前端入口 fail-closed |
+| 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
 
 > 所有文件均 `import request from '@/utils/request'`（行号见上表）。`torrents.ts` 是最大且最核心的 API 模块。
 

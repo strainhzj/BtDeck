@@ -4433,3 +4433,11 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 本轮最终回归需执行新增任务能力测试、`git diff --check`，并尝试根 `bash ./init.sh --ci`；后者在当前 Windows/WSL 环境可能继续因 `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
 - 未执行 Git 提交；工作区含本批后端、前端、测试、文档与路线图变更，另有历史未提交内容，提交时需按文件范围审阅。
+
+### 2026-09-07 续：验收完成
+
+- 已修复 `backend/app/startup/lifecycle.py` 的局部导入遮蔽；新增启动生命周期与真实 SQLite 收敛回归，Android 不扫描文件系统且不创建 orphan dispatcher。
+- 已修复 `frontend/src/api/platform-capabilities.ts`：强制刷新失败清空旧矩阵；未知能力保持 fail-closed；新增伴侣模式消费远端矩阵测试。
+- AVD `btdeck-a35` 真实 instrumentation：`LocalServerAndroidTest` 1 passed。服务报告 schemaVersion=2、20 项能力、degraded=5、unsupported=9；路径映射、孤儿、备份、转移、三级删除均返回 403 `PLATFORM_CAPABILITY_UNSUPPORTED`；健康、静态首页和停止/重启通过。
+- 本轮验证：后端定向 39 passed；前端能力/任务 4 suites 30 passed；frontend lint/typecheck/build、flake8/mypy/ruff format、git diff --check 通过；根 `bash ./init.sh --ci` 通过但保留既有 null-byte 警告。
+- 工作区未提交；本轮新增/修改文件需与既有历史修改一起审阅。未跟踪 `data/` 保持不动。

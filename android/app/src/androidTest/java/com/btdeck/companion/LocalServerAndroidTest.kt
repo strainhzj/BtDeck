@@ -6,10 +6,13 @@ import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -55,11 +58,14 @@ class LocalServerAndroidTest {
         throw AssertionError("等待 running 超时（${timeoutS}s），最后状态: $last")
     }
 
+    @After
+    fun stopServer() { call("stop") }
+
     @Test
     fun startHealthStopRestart() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         // 测试数据目录与 ServerService 生产目录分离（btdeck-test）
-        val dataRoot = File(ctx.filesDir, "btdeck-test").absolutePath
+        val dataRoot = File(ctx.filesDir, "btdeck-capability-test-${System.currentTimeMillis()}").absolutePath
 
         val start = call("start", dataRoot, "127.0.0.1", 0)
         assertTrue(start.getBoolean("ok"))
@@ -87,6 +93,50 @@ class LocalServerAndroidTest {
                 val html = resp.body!!.string()
                 assertTrue("首页不是 SPA index.html", html.contains("<div id=\"app\""))
             }
+
+        // 真正 HTTP 认证与能力门禁，使用独立新库默认测试账号。
+        val loginBody = JSONObject().put("username", "admin").put("password", "admin")
+            .toString().toRequestBody("application/json".toMediaType())
+        val token = client.newCall(Request.Builder().url("http://127.0.0.1:$port/api/v1/auth/login")
+            .post(loginBody).build()).execute().use { resp ->
+            assertEquals(200, resp.code)
+            val envelope = JSONObject(resp.body!!.string())
+            assertEquals("登录失败: ${envelope.optString("msg")}", "success", envelope.getString("status"))
+            envelope.getJSONArray("data").getJSONObject(0).getString("access_token")
+        }
+        client.newCall(Request.Builder().url("http://127.0.0.1:$port/api/v1/platform/capabilities")
+            .header("X-Access-Token", token).build()).execute().use { resp ->
+            assertEquals(200, resp.code)
+            val data = JSONObject(resp.body!!.string()).getJSONObject("data")
+            assertEquals(2, data.getInt("schemaVersion"))
+            assertEquals("android-server", data.getString("platform"))
+            assertEquals(20, data.getJSONObject("capabilities").length())
+            assertEquals(5, data.getInt("degradedCount"))
+            assertEquals(9, data.getInt("unsupportedCount"))
+        }
+        val denied = listOf(
+            Triple("GET", "/downloaders/test/paths", "path_mapping"),
+            Triple("POST", "/orphan-files/scan", "orphan_files"),
+            Triple("GET", "/torrents/backup", "torrent_backup"),
+            Triple("POST", "/torrents/transfer", "seed_transfer"),
+            Triple("DELETE", "/torrents/delete-with-level?torrent_info_ids=test&delete_level=3", "level3_recycle")
+        )
+        denied.forEach { (method, path, capability) ->
+            val body = if (method == "POST") "{}".toRequestBody("application/json".toMediaType()) else null
+            client.newCall(Request.Builder().url("http://127.0.0.1:$port/api/v1$path")
+                .header("X-Access-Token", token).method(method, body).build()).execute().use { resp ->
+                assertEquals("$path 未被能力门禁拦截", 403, resp.code)
+                val data = JSONObject(resp.body!!.string()).getJSONObject("data")
+                assertEquals("PLATFORM_CAPABILITY_UNSUPPORTED", data.getString("reasonCode"))
+                assertEquals(capability, data.getString("capability"))
+            }
+        }
+        val appState = Python.getInstance().getModule("app.factory")["app"]!!["state"]!!
+        listOf("orphan_scan_recovery_task", "orphan_purge_recovery_task",
+            "orphan_scan_dispatcher", "orphan_purge_dispatcher").forEach { key ->
+            val exists = Python.getInstance().getModule("builtins").callAttr("hasattr", appState, key).toBoolean()
+            assertTrue("Android 不得创建 $key", !exists)
+        }
 
         // 优雅停机 → 幂等重启
         val stop = call("stop")
