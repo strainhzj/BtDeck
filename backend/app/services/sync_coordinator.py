@@ -43,6 +43,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from sqlalchemy import case as sa_case, literal as sa_literal
+from app.core.platform_capabilities import LEVEL_UNSUPPORTED, capability_level
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1718,6 +1719,13 @@ async def _reconcile_torrent_file_backups(
 ) -> None:
     """在种子信息落库后限量补齐备份；失败不改变信息同步结果。"""
     downloader_id = str(getattr(downloader, "downloader_id", ""))
+    if capability_level("torrent_backup") == LEVEL_UNSUPPORTED:
+        result.details.setdefault("torrent_file_backup", {})[downloader_id] = {
+            "status": "disabled_by_capability",
+            "attempted": 0,
+            "skip_reason": "PLATFORM_CAPABILITY_UNSUPPORTED",
+        }
+        return
     try:
         from app.services.torrent_file_backup_manager import (  # noqa: PLC0415
             TorrentFileBackupManagerService,

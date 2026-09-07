@@ -15,7 +15,8 @@
 | 清理执行器 cleanup | `cleanup_executor.py` | 后台执行器 `CleanupTaskExecutor`：自动清理执行器（回收站(L3)+待删除标签(L4)） |
 | 定时任务同步 CRUD cron-crud | `cron_crud.py` | `CronTaskCRUD`/`TaskLogsCRUD`：定时任务同步 CRUD（`DatabaseResult`） |
 | 定时任务异步 CRUD cron-crud-async | `cron_crud_async.py` | 定时任务异步 CRUD |
-| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L376/513/1539）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L551；greenlet 交错治理；2026-08-25 起自登记协程句柄 + interrupt 真取消 + CancelledError 分支落库 cancelled）；Python 内部类执行生命周期观测 + 超时强制终止（`_execute_internal_method_observed` L869、wait_for 强制终止 L1021/L1033，开关 CRON_TASK_TIMEOUT_ENFORCE，`TaskExecutionTimeoutError` L86 穿透兜底 except，任务体 TimeoutError 经 `_TaskBodyTimeoutError` 包装区分；心跳停滞告警 + faulthandler 线程栈转储）；`interrupt_task` L1357（cancel 运行句柄并等收尾）；✨2026-09-06 审查修复：`_communicate_with_output_cap` L148 finally 统一回收双读取任务 + `_kill_process_tree` L110 整树终止（Windows taskkill /F/T、POSIX killpg+start_new_session；旧实现只杀 shell 包装层，持管道的孙进程存活并拖住中断）+ 清理等待 5s 上限（树杀失败不拖死中断）；`_run_script_process` L801 支持 argv 直启——Python 脚本 L857 非 frozen 环境 create_subprocess_exec+sys.executable 绕开 shell（frozen 回落旧 shell+PATH）；`_summarize_result_for_log` L223 全程有界（islice/深度上限/类型白名单/顶层 dict 预算；二轮补：键值按剩余预算预截断、int/Decimal 位数预检降级 digits≈N——as_tuple().digits 本身按位数建元组是无界分配，用 adjusted() 代理）；`normalize_internal_result` 非 dict 分支与 phase 行（100 行×200 字符双上限）同族加固 |
+| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心；`load_all_tasks` L431、`add_task_to_scheduler` L538、`_run_task_script` L809 和手动启动入口统一按 `task_capabilities.capability_block_for_task` 门控；Android 对路径/孤儿/等级3任务不入调度器或记录 `platform_capability_unsupported`，不改历史 enabled 配置 |
+| 任务能力门禁 task-capabilities | `task_capabilities.py` | 任务编码→平台能力映射（L14）；动态识别 type=5 的 `cleanup_level_3`，返回稳定 skip reason |
 | 任务结果新鲜度 cron-freshness | `cron_freshness.py` | 定时任务数据新鲜度轻量计算：`compute_freshness`（freshnessSeconds/stale，stale 阈值按 2 个调度周期近似、APScheduler CronTrigger 估算最短间隔，失败回退 `CRON_STALE_THRESHOLD_SECONDS` 默认 7200s） |
 | 按 code 触发 cron-trigger ✨2026-09-05 | `cron_trigger.py` | `trigger_task_by_code(task_code)`（L48）：内置白名单 + task_type 0-3 永拒 + 禁用/运行中前检透传，返回 accepted/task_id/reason；run_id 由执行期 `last_run_id` 承载 |
 | 定时任务表 cron-model | `cron_models.py` | ORM `CronTask`：定时任务表 |
@@ -32,8 +33,8 @@
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
 | 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
 | 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L16，fail_time 死代码的替代自愈机制） |
-| 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance |
-| 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
+| 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance；`execute` L77 先要求 `path_mapping`，Android 不触发目录/映射读写 |
+| 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知；Android 能力门禁直接跳过 |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
 | 副本预扫描 orphan-hardlink-copy-scan ✨2026-08-15 | `orphan_hardlink_copy_scan_task.py` | 每日 04:00 调 `OrphanHardlinkScanService.run_round`：keyset 游标限量 stat + 限时串行遍历，结果落库供前端只读（性能护栏见 services 分支） |
 | 令牌清理 refresh-token-cleanup ✨2026-08-18 | `refresh_token_cleanup_task.py` | 每日 04:30 调 `auth/token_cleanup.CLEANUP_SQL` 删除过期/已撤销超 30 天保留期的 refresh_tokens 记录（轻量任务不登记 task_profiles，种子经 init_db 增量块对存量库生效） |

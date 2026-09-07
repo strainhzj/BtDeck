@@ -17,6 +17,7 @@ from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
+from app.core.platform_capabilities import require_capability
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.auxiliary_seed_count_service import (
@@ -107,6 +108,7 @@ class RecycleBinService:
                 "list": List[Dict]
             }
         """
+        require_capability("level3_recycle", "level3_recycle.list")
         try:
             # 构建查询条件：deleted_at不为NULL且dr=0（仅显示可还原的种子）
             query = self.db.query(TorrentInfo).filter(
@@ -193,6 +195,7 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
+        require_capability("level3_recycle", "level3_recycle.restore")
         result: Dict[str, Any] = {
             "success_count": 0,
             "failed_count": 0,
@@ -575,6 +578,7 @@ class RecycleBinService:
                 "torrent_list": List[Dict]
             }
         """
+        require_capability("level3_recycle", "level3_recycle.cleanup_preview")
         try:
             # 计算截止时间
             cutoff_time = datetime.now() - timedelta(days=days)
@@ -633,6 +637,7 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
+        require_capability("level3_recycle", "level3_recycle.cleanup")
         result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "success_list": [], "failed_list": []}
 
         for torrent_id in torrent_ids:

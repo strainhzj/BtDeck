@@ -8,8 +8,8 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、Demo 会话旁路、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue(...)`） |
-| 路由表 router | `router.ts` | 路由表（default export）+ `router.push` 修补 + 部署后旧 chunk 一次恢复 |
-| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流（`isTokenExpired`+`trySilentRefresh`：renewed 放行 / rejected `ExpireSession` 登出 / transient 中止导航保留会话）、GetUserInfo 瞬时错误分流（`isTransientError`：网络 '0' 与业务 5xx 均中止保留会话；连续 3 次中止逃生回落登出防持久故障卡死，afterEach 清零）、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
+| 路由表 router | `router.ts` | 路由表（default export）+ `requiredCapability` 元数据（回收站/孤儿/种子备份）+ `router.push` 修补 + 部署后旧 chunk 一次恢复 |
+| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流；加载 `/platform/capabilities` 后对受限文件系统能力 fail-closed，Android 不支持入口重定向并提示；保留 GetUserInfo 瞬时错误分流、白名单、NProgress、页面标题 |
 | 根组件 app | `App.vue` | 根组件（class-component），在 `<router-view />` 外挂载 Demo 模式提示条 |
 | PWA 注册 service-worker | `registerServiceWorker.ts` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
 | TS 声明 shims-vue | `shims-vue.d.ts` | 为 .vue 文件提供 TS 模块声明（`declare module '*.vue'`） |
@@ -60,6 +60,7 @@
 - L56 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings', '/m/settings']`（放行白名单，含移动设置页）+ `isForceChangeBlocked()` 判定 + `forceChangeTargetPath()` 按当前 UI 模式选落点（移动 `/m/settings`、桌面 `/settings/index`）+ `forceChangeRedirect()`（L70）重定向 `?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
 - L89 `isTransientError`（ApiError 网络 '0' 与业务 5xx 瞬时失败判定）+ L97 `abortNavigation`：`next(false)` 中止导航 + 网络波动提示 + 手动 `NProgress.done()`（中止导航 afterEach 不触发，进度条须手动收尾），保留令牌与会话现场
 - L130 `router.beforeEach`：
+  - L136 `enforceRouteCapability()`：能力接口失败时对路径映射/孤儿/备份/转移/三级删除受限入口闭锁，伴侣模式只消费远端矩阵
   - L145-168 会话主动过期检查三态分流：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`——续期成功继续导航；transient 网络抖动不杀会话（roles 已有放行自愈 / roles 空中止导航，连续中止 3 次回落登出）；rejected `ExpireSession()` 跳登录（保留 refresh cookie，防跨标签轮换竞态）
   - L142 若 `UserModule.token` 存在：访问登录页重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L191），**成功后同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败分流——瞬时失败中止导航，其余 `ExpireSession()` 跳登录（全部经 `loginPathForMode` 按模式选登录页）
   - L210-221 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径又被弹回 = 死锁）

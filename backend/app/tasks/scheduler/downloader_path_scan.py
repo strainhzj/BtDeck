@@ -22,6 +22,7 @@ from app.core.path_mapping import PathMappingService
 from app.core.path_mapping import PathMappingConverter
 from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.core.config import settings
+from app.core.platform_capabilities import require_capability
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class DownloaderPathScanTask:
         Returns:
             任务执行结果字典
         """
+        require_capability("path_mapping", "path_mapping.scheduled_scan")
         start_time = datetime.now()
         self.last_execution_time = start_time
         self.execution_count += 1

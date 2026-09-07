@@ -19,14 +19,14 @@ test.describe('主机能力矩阵（android-server 形态）', () => {
   test('设置页含主机能力 tab 且面板按卡片渲染降级项', async({ page }) => {
     await page.getByRole('tab', { name: '主机能力' }).click()
     await expect(page.locator('.capability-cards')).toBeVisible()
-    await expect(page.locator('.capability-card')).toHaveCount(14)
+    await expect(page.locator('.capability-card')).toHaveCount(20)
   })
 
   test('形态标签与降级统计来自服务端矩阵', async({ page }) => {
     await page.getByRole('tab', { name: '主机能力' }).click()
     await expect(page.getByText('Android 服务端', { exact: true })).toBeVisible()
     await expect(page.getByText(/降级 5 项/)).toBeVisible()
-    await expect(page.getByText(/不支持 3 项/)).toBeVisible()
+    await expect(page.getByText(/不支持 9 项/)).toBeVisible()
   })
 
   test('unsupported 项带说明与 danger 徽标', async({ page }) => {

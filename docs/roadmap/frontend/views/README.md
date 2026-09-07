@@ -12,12 +12,12 @@
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
-| 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选），搜索区采用孤儿文件页同款 management-panel/filter 结构 |
+| 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控 |
 | 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04） |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；统计摘要可折叠并按页签独立 localStorage 持久化；文件夹展开时懒加载并独立分页，仅当前可见文件实时统计硬链接；超量批次显示可关闭提醒，不再要求样本复核 |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；桌面端保留稳定明细/硬链接/隔离流程，路由与移动页由 `orphan_files` 能力门控 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -38,11 +38,11 @@
 | `../mobile/components/ConditionEditSheet.vue` | 移动单条条件编辑底部弹层（`ConditionEditSheet` L139，336 行，2026-09-06 新增）：el-drawer btt（76% 高、内容行主题色强调、40px 触控目标）；打开时克隆条件为草稿、确认才回写；字段/操作符/值联动与桌面同源（`onFieldChange()` L194 重置语义一致），值输入复用 `ConditionValueInput` |
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
-| `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L704 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
+| `FileManagement.vue` | 种子文件备份管理（`FileManagement` L310）；路由由 `torrent_backup` 能力门控，Android 主服务端隐藏入口 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器 |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
 | `components/TrackerOperationDialog.vue` | Tracker 操作对话框；✨2026-08-20 修复 announce 状态判断（原 `=== 'True'` 字面量对中文状态文本恒显“异常”，改用共享 `isTrackerAnnounceSuccess`） |
-| `components/TransferDialog.vue` | 转移对话框 |
+| `components/TransferDialog.vue` | 转移对话框；桌面两种种子视图与详情页按 `seed_transfer` 能力隐藏入口 |
 | `components/TrackerDetailCard.vue` | 列表/传统视图共用的 Tracker 完整详情弹框：标题、关闭按钮、Tracker/文件/Peers 页签、内容区、错误原因提示、Tracker 名称与 URL、Announce/Scrape 状态、汇报按钮及统一状态语义；✨2026-08-27 命中可视化：`matched_domain`（snake/camel 双读）命中行加 `tracker-row-matched` 高亮与「命中筛选」标签（tooltip 显示命中域名）；通过 `layout` 仅控制两种定位方式；✨2026-09-06 文件/Peers 页签实现：数据经 `files-state`/`peers-state` props 聚合传入（卡片仍零 API 调用），文件表格（名称省略/`formatFileSize`/`el-progress` 细条 clamp 0~100）与 Peers 表格（地址/客户端/进度/双速度，0 速兜底 `-`），loading/错误/空三态 + 更新失败保留旧数据的 stale 提示，超 1000 行 computed 截断并提示总数，刷新按钮 `$emit('refresh', tab)`；✨2026-09-06（第二批）文件页签三列排序（列头按钮循环 升序→降序→还原，先筛选后排序互不禁用）+文件名模糊搜索框（大小写不敏感、no-match 态工具条常驻可改关键词、计数/截断提示随命中数更新，父级清数据时视图态复位）；顶部整行收起条 `.tracker-collapse-bar` L10（2026-09-06 用户反馈由底部上移至 Tracker详情标题之上；chevron 方向随布局取收起方向 list↑/traditional↓、与右上角关闭按钮同 `close` 事件，卡片总高 240px/移动端 180px 不变） |
 | `components/SetLocationDialog.vue` | 设置保存位置对话框 |
 | `components/GlobalReplaceTrackerDialog.vue` | 全局替换 Tracker 对话框 |

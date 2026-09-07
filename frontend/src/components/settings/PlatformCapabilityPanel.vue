@@ -12,7 +12,7 @@
 
       <div v-if="loading" class="capability-hint">加载中…</div>
       <div v-else-if="!data" class="capability-hint">
-        能力信息暂不可用（不影响其它功能；默认按全能力展示）
+        能力信息暂不可用；需要下载器主机文件系统的入口将暂时关闭，请检查连接后重试。
       </div>
       <template v-else>
         <!-- 桌面 ≥768px：表格 -->
@@ -84,7 +84,8 @@ export default class extends Vue {
   private isNarrow = typeof window !== 'undefined' && window.innerWidth < 768
 
   private get platformLabel(): string {
-    return this.data?.platform === 'android-server' ? 'Android 服务端' : '桌面 / 服务器'
+    if (!this.data) return '未知（待确认）'
+    return this.data.platform === 'android-server' ? 'Android 服务端' : '桌面 / 服务器'
   }
 
   private get rows(): CapabilityRow[] {

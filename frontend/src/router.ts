@@ -89,7 +89,7 @@ const router = new Router({
           // 回收站（Phase 4 M2）：单条恢复/彻底删除
           path: 'recycle-bin',
           component: () => import(/* webpackChunkName: "m-recycle-bin" */ '@/views/mobile/recycle-bin.vue'),
-          meta: { hidden: true, title: '回收站' }
+          meta: { hidden: true, title: '回收站', requiredCapability: 'level3_recycle' }
         },
         {
           // 审计日志（Phase 4 M2）：卡片流 + 筛选
@@ -125,7 +125,7 @@ const router = new Router({
           // 孤儿文件（Phase 4 M4）：双 Tab（孤儿文件/隔离区）+ 清理/忽视/恢复/清除
           path: 'orphan-files',
           component: () => import(/* webpackChunkName: "m-orphan-files" */ '@/views/mobile/orphan-files.vue'),
-          meta: { hidden: true, title: '孤儿文件' }
+          meta: { hidden: true, title: '孤儿文件', requiredCapability: 'orphan_files' }
         },
         {
           path: 'notifications',
@@ -201,7 +201,8 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "file-management" */ '@/views/torrents/FileManagement.vue'),
           meta: {
             title: '种子文件管理',
-            icon: 'folder'
+            icon: 'folder',
+            requiredCapability: 'torrent_backup'
           }
         },
         {
@@ -302,13 +303,15 @@ const router = new Router({
     {
       path: '/recycle-bin',
       component: Layout,
+      meta: { requiredCapability: 'level3_recycle' },
       children: [
         {
           path: 'index',
           component: () => import(/* webpackChunkName: "recycle-bin" */ '@/views/recycle-bin/index.vue'),
           meta: {
             title: '回收站',
-            icon: 'trash-2'
+            icon: 'trash-2',
+            requiredCapability: 'level3_recycle'
           }
         }
       ]
@@ -316,6 +319,7 @@ const router = new Router({
     {
       path: '/orphan-files',
       component: Layout,
+      meta: { requiredCapability: 'orphan_files' },
       children: [
         {
           path: 'index',
@@ -323,7 +327,8 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '孤儿文件',
-            icon: 'folder-search'
+            icon: 'folder-search',
+            requiredCapability: 'orphan_files'
           }
         }
       ]

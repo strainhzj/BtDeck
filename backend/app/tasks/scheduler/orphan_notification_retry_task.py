@@ -9,6 +9,7 @@ from app.database import AsyncSessionLocal
 from app.models.notification import Notification
 from app.models.orphan_file import OrphanScanResult
 from app.services.orphan_notification import notify_scan_completed
+from app.core.platform_capabilities import require_capability
 from app.services.orphan_purge_job_service import OrphanPurgeJobService
 
 
@@ -18,6 +19,7 @@ class OrphanNotificationRetryTask:
     version = "1.0.0"
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
+        require_capability("orphan_files", "orphan_files.scheduled_notification_retry")
         retried = 0
         failed = 0
         purge_retried = 0

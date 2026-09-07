@@ -32,6 +32,7 @@ from app.torrents.models import TorrentInfo
 from app.repositories.torrent_file_backup_repository import TorrentFileBackupRepository
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
+from app.core.platform_capabilities import LEVEL_UNSUPPORTED, capability_level, require_capability
 from app.tasks.resource_guard import admission_controller
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,14 @@ class TorrentFileBackupManagerService:
         自动任务重新创建用户明确删除的备份。每轮只处理有限批次；文件复制在写锁
         外执行，最终数据库记录与 ``TorrentInfo.backup_file_path`` 在同一短事务提交。
         """
+        if capability_level("torrent_backup") == LEVEL_UNSUPPORTED:
+            return {
+                "status": "disabled_by_capability",
+                "pending": 0,
+                "attempted": 0,
+                "created": 0,
+                "skip_reason": "PLATFORM_CAPABILITY_UNSUPPORTED",
+            }
         normalized_id = str(downloader_id)
         limit = max(1, int(batch_size))
         active_filters = (
@@ -306,6 +315,7 @@ class TorrentFileBackupManagerService:
         uploader_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
+        require_capability("torrent_backup", "torrent_backup.from_downloader")
         从下载器备份种子文件
 
         复用现有的TorrentFileBackupService.backup_torrent_file方法。
@@ -424,6 +434,7 @@ class TorrentFileBackupManagerService:
         Returns:
             操作结果字典
         """
+        require_capability("torrent_backup", "torrent_backup.from_path")
         result: Dict[str, Any] = {
             "success": False,
             "backup": None,
@@ -500,6 +511,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
+        require_capability("torrent_backup", "torrent_backup.get")
         result: Dict[str, Any] = {"success": False, "backup": None, "error_message": None}
 
         try:
@@ -538,6 +550,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
+        require_capability("torrent_backup", "torrent_backup.list")
         result: Dict[str, Any] = {
             "success": False,
             "total": 0,
@@ -587,6 +600,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
+        require_capability("torrent_backup", "torrent_backup.delete")
         result: Dict[str, Any] = {"success": False, "deleted_file": False, "error_message": None}
 
         try:
@@ -637,6 +651,7 @@ class TorrentFileBackupManagerService:
                 "failed_items": List[Dict]
             }
         """
+        require_capability("torrent_backup", "torrent_backup.batch")
         result: Dict[str, Any] = {
             "total": len(backup_requests),
             "success_count": 0,
@@ -706,6 +721,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
+        require_capability("torrent_backup", "torrent_backup.validate")
         result: Dict[str, Any] = {
             "success": False,
             "is_valid": False,
@@ -771,6 +787,7 @@ class TorrentFileBackupManagerService:
         Returns:
             是否成功
         """
+        require_capability("torrent_backup", "torrent_backup.increment_use_count")
         try:
             return await self.repository.increment_use_count(info_hash)
         except Exception as e:

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.api.responseVO import CommonResponse
 from app.api.schemas.path_mapping import PathMappingTestRequest
 from app.auth.dependencies import require_authenticated_user
+from app.core.platform_capabilities import PlatformCapabilityUnsupportedError, require_capability
 from app.database import get_db
 from app.downloader import models
 from app.downloader.models import BtDownloaders
@@ -28,6 +29,19 @@ from transmission_rpc import TransmissionAuthError
 logger = logging.getLogger(__name__)  # Fixed for proper response handling
 router = APIRouter()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _reject_android_path_payload(
+    path_mapping: Any, path_mapping_rules: Optional[str], torrent_save_path: Optional[str]
+) -> None:
+    """Android 主服务端兼容旧客户端空字段，但拒绝真正的路径配置。"""
+
+    mappings = getattr(path_mapping, "mappings", None) if path_mapping is not None else None
+    default_mapping = getattr(path_mapping, "default_mapping", None) if path_mapping is not None else None
+    has_mapping = bool(mappings) or bool(default_mapping)
+    if has_mapping or any(str(value or "").strip() for value in (path_mapping_rules, torrent_save_path)):
+        require_capability("path_mapping", "downloader.path_fields")
+
 
 # 降级路径单次下载器调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
 _DETAIL_CALL_TIMEOUT = 10.0
@@ -69,6 +83,11 @@ async def add(
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
+    _reject_android_path_payload(
+        downloader_request.path_mapping,
+        downloader_request.path_mapping_rules,
+        downloader_request.torrent_save_path,
+    )
     # 密码在 ORM 构造点加密落库（与 update 端点对齐）——历史缺陷：add 明文
     # 直写、update 才加密，decrypt 对非 sm4: 前缀静默透传掩盖了明文存储
     downloader = models.BtDownloaders(
@@ -137,6 +156,11 @@ async def update(
         # 读取原始请求数据以检测 path_mapping 是否被明确传递
         raw_data = await req.json()
         path_mapping_in_request = "path_mapping" in raw_data
+        _reject_android_path_payload(
+            downloader_request.path_mapping,
+            downloader_request.path_mapping_rules,
+            downloader_request.torrent_save_path,
+        )
 
         # ========== 原密码验证逻辑 ==========
         # 获取当前下载器的信息
@@ -264,6 +288,8 @@ async def update(
         db.commit()
 
         return CommonResponse(status="success", msg="修改成功", code="200", data=None)
+    except PlatformCapabilityUnsupportedError:
+        raise
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
@@ -1215,6 +1241,7 @@ def get_path_mappings(downloader_id: str, _user=Depends(require_authenticated_us
     Returns:
         CommonResponse: 包含路径映射配置的响应
     """
+    require_capability("path_mapping", "downloader.path_mapping.get")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1266,6 +1293,7 @@ def add_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.add")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1320,6 +1348,7 @@ def remove_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.remove")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1382,6 +1411,7 @@ async def test_path_mapping(
     Returns:
         CommonResponse: 测试结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.test")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:

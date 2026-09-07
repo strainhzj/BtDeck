@@ -26,8 +26,10 @@ TORRENTS_PATH  = TORRENTS_DIR 环境变量 → frozen(exe 同级 torrents/) → 
 ```
 
 **Android 注入值**（Phase 3）：三者均指向 app-private 可写目录
-（`context.getFilesDir()` 派生），隔离区 `.btdeck_quarantine` 创建在扫描根
-（种子 save_path）之下、与其同文件系统，不引入新的可写根。
+（`context.getFilesDir()` 派生）。这些目录只用于 BtDeck 自身配置、数据库、日志和
+用户主动选择的种子文件；Android 主服务端不把它们当作下载器主机目录，
+不创建/扫描 `.btdeck_quarantine`，也不执行路径映射、孤儿清理或下载器种子备份。
+历史路径配置仍保留在数据库中，切换到桌面/NAS 主服务端后再生效。
 
 **禁止**：新增任何"检测到 Android 就改路径"的静态分支；路径解析只认环境变量
 与上述回落序。
@@ -37,8 +39,8 @@ TORRENTS_PATH  = TORRENTS_DIR 环境变量 → frozen(exe 同级 torrents/) → 
 | 根 | 创建者 | 内容 | 进系统备份？ |
 |---|---|---|---|
 | `CONFIG_DIR` | 启动器 | config.yaml（含 jwt_secret_key）、app.db、temp、logs、cookies | Android 默认排除（Phase 3 backup rules） |
-| `TORRENTS_DIR` | 启动器 | .torrent 备份文件 | 排除（可重建） |
-| 各扫描根下 `.btdeck_quarantine/` | 孤儿清理任务 | 待删孤儿文件 | 排除 |
+| `TORRENTS_DIR` | 启动器/用户主动种子文件操作 | 本地上传/下载的 `.torrent` 文件 | 排除（可重建） |
+| 各扫描根下 `.btdeck_quarantine/` | 桌面/NAS 孤儿清理任务 | 待删孤儿文件；Android 主服务端不创建 | 排除 |
 | `frontend_dist` | 打包资源（只读） | SPA 静态文件 | 不适用 |
 
 ## 3. HOST（bind）与 ALLOWED_HOSTS（CORS）不是同一开关
@@ -65,3 +67,4 @@ TORRENTS_PATH  = TORRENTS_DIR 环境变量 → frozen(exe 同级 torrents/) → 
 
 - 2026-08-23：初版（Phase 1.2）。`CONFIG_DIR`/`DATABASE_PATH`/`TORRENTS_DIR`
   的优先级语义与回归测试同步落地（`tests/core/test_writable_roots.py`）。
+- 2026-09-07：明确 Android 主服务端与下载器远端文件系统隔离；本地私有目录不再被误解释为下载器路径，路径映射/孤儿/备份/转移/三级删除由主机能力矩阵硬禁用。

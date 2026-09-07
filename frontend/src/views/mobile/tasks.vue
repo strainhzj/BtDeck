@@ -35,6 +35,7 @@
           {{ outcomeMeta(task.lastOutcome).text }}
         </el-tag>
         <el-tag v-if="isStale(task)" size="mini" type="danger" effect="plain">数据陈旧</el-tag>
+        <el-tag v-if="task.platformAvailable === false" size="mini" type="warning" effect="plain">平台禁用</el-tag>
         <span class="m-task-enabled" :class="task.enabled ? 'is-on' : 'is-off'">
           {{ task.enabled ? '已启用' : '已禁用' }}
         </span>
@@ -54,7 +55,7 @@
           size="mini"
           type="primary"
           plain
-          :disabled="!task.enabled || busyId === task.taskId"
+          :disabled="!task.enabled || task.platformAvailable === false || busyId === task.taskId"
           @click="execute(task)"
         >
           立即执行
@@ -216,6 +217,10 @@ export default class MobileTasks extends Mixins(PullToRefresh) {
   }
 
   private async execute(task: ScheduledTask): Promise<void> {
+    if (task.platformAvailable === false) {
+      this.$message.warning('当前主机能力不支持该任务，未执行')
+      return
+    }
     if (!task.enabled) {
       this.$message.warning(`任务 "${task.taskName}" 已禁用，请先启用后再执行`)
       return

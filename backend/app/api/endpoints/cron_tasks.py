@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.core.config import settings
+from app.core.platform_capabilities import PlatformCapabilityUnsupportedError, require_capability
 from app.core.database_result import DatabaseError
 from app.database import get_db, AsyncSessionLocal
 from app.services.audit_service import AuditOperationType, extract_audit_info_from_request, get_audit_service
 from app.tasks.cron_crud import CronTaskCRUD, TaskLogsCRUD
 from app.tasks.cron_executor import cron_executor, is_internal_class_executor_allowed
 from app.tasks.cron_models import CronTask
+from app.tasks.task_capabilities import capability_block_for_task
 
 router = APIRouter()
 
@@ -83,6 +85,9 @@ class CronTaskResponse(BaseModel):
     timeoutSeconds: Optional[int]
     maxRetryCount: Optional[int]
     retryInterval: Optional[int]
+    platformAvailable: bool = True
+    blockedCapability: Optional[str] = None
+    blockedReasonCode: Optional[str] = None
 
 
 class CronTaskListResponse(BaseModel):
@@ -440,6 +445,9 @@ def convert_cron_task_to_camel_case(task_data: dict) -> CronTaskResponse:
         retryInterval=(
             safe_int(task_data.get("retry_interval")) if task_data.get("retry_interval") is not None else None
         ),
+        platformAvailable=capability_block_for_task(task_data) is None,
+        blockedCapability=(capability_block_for_task(task_data) or {}).get("capability"),
+        blockedReasonCode=(capability_block_for_task(task_data) or {}).get("reason_code"),
     )
 
 
@@ -519,6 +527,14 @@ async def create_cron_task(
     executor_error = _validate_type4_executor(task_data.task_type, task_data.executor)
     if executor_error:
         return executor_error
+    capability_error = capability_block_for_task(task_data.model_dump())
+    if capability_error:
+        return CommonResponse(
+            status="error",
+            msg=capability_error["message"],
+            code="403",
+            data={"capability": capability_error["capability"], "reasonCode": capability_error["reason_code"]},
+        )
 
     try:
         result = CronTaskCRUD.create_cron_task(db, {**task_data.model_dump(), "create_by": "admin"})
@@ -864,6 +880,8 @@ async def start_task_immediately(
         else:
             return CommonResponse(status="error", msg="任务启动失败", code="400", data=None)
 
+    except PlatformCapabilityUnsupportedError:
+        raise
     except ValueError as e:
         # 业务逻辑异常，返回具体错误信息
         return CommonResponse(status="error", msg=str(e), code="400", data=None)
@@ -1192,6 +1210,8 @@ async def preview_cleanup(
 ):
     """预览清理任务"""
     # 认证已迁移至 require_authenticated_user 依赖
+    if cleanup_data.cleanup_level_3:
+        require_capability("level3_recycle", "cron.cleanup.preview")
 
     try:
         from app.tasks.cleanup_executor import CleanupTaskExecutor
@@ -1221,6 +1241,8 @@ async def execute_cleanup(
 ):
     """手动执行清理任务"""
     # 认证已迁移至 require_authenticated_user 依赖
+    if cleanup_data.cleanup_level_3:
+        require_capability("level3_recycle", "cron.cleanup.execute")
 
     try:
         from app.tasks.cleanup_executor import CleanupTaskExecutor

@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="!item.meta || !item.meta.hidden"
+    v-if="isRouteAvailable(item) && (!item.meta || !item.meta.hidden)"
     :class="['menu-wrapper', isCollapse ? 'simple-mode' : 'full-mode', {'first-level': isFirstLevel}]"
   >
     <template v-if="theOnlyOneChild && !theOnlyOneChild.children">
@@ -72,6 +72,7 @@ import { Component, Prop, Vue } from 'vue-property-decorator'
 import { RouteConfig } from 'vue-router'
 import { isExternal } from '@/utils/validate'
 import SidebarItemLink from './SidebarItemLink.vue'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 
 @Component({
   // Set 'name' here to prevent uglifyjs from causing recursive component not work
@@ -90,7 +91,7 @@ export default class extends Vue {
   get showingChildNumber() {
     if (this.item.children) {
       const showingChildren = this.item.children.filter((item) => {
-        if (item.meta && item.meta.hidden) {
+        if (!this.isRouteAvailable(item) || (item.meta && item.meta.hidden)) {
           return false
         } else {
           return true
@@ -107,7 +108,7 @@ export default class extends Vue {
     }
     if (this.item.children) {
       for (const child of this.item.children) {
-        if (!child.meta || !child.meta.hidden) {
+        if (this.isRouteAvailable(child) && (!child.meta || !child.meta.hidden)) {
           return child
         }
       }
@@ -115,6 +116,11 @@ export default class extends Vue {
     // If there is no children, return itself with path removed,
     // because this.basePath already conatins item's path information
     return { ...this.item, path: '' }
+  }
+
+  private isRouteAvailable(route: RouteConfig): boolean {
+    const requiredCapability = route.meta && (route.meta as any).requiredCapability
+    return !requiredCapability || isCapabilityAvailable(String(requiredCapability))
   }
 
   private resolvePath(routePath: string) {

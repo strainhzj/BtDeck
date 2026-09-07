@@ -7246,3 +7246,20 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **变异验证（三突变逐一击红后 git checkout HEAD 还原，组件 status 干净）**：M1 告警守卫回退（failedCount===3→99）→"全部失败才告警"用例红；M2 序列号守卫回退（early-return 恒 false）→"竞态守卫"用例红；M3 归一化回退（normalizeLoadedGroups(实组)→空组）→既有"历史模板归一化 contains_any→in"用例红（证明初始批用例亦有判别力）。
 - **测试工程坑（记录勿重踩）**：变异脚本崩溃会留下未还原突变且第二次运行的"先备份"会把已突变文件覆盖为备份（本轮真实踩到：M1 突变滞留，.bak 被污染）——组件已提交后应以 `git checkout HEAD --` 为还原基准、恢复后以 `git status --short` 判空，不依赖 .bak；subprocess 调 npx 在 Windows 须用 which 解析（npx.cmd）。
 - **终局**：前端全量 **105 套件 / 1489 测试全绿**（1476+13）；npm run lint（--max-warnings 0）绿。feature_list dual-mode-client.9 evidence 追加加固记录。第二批单独提交（test(frontend)）。
+
+## 2026-09-07：Demo dist 重建（含 09-06 移动高级搜索重构 + 详情卡片批次）
+
+- **背景**：上次 demo 制品为 20260905（175 文件 / 34.71 MiB）；此后 dev 合入详情卡片排序/收起条上移批次与移动高级搜索移动原生重构两批前端变更，用户要求重建演示 dist。
+- **环境**：本机默认 Node 24.14.0 不满足 engines（>=22.23.2 <23）且 frontend/node_modules 缺失——nvm4w 安装并切换 **Node 22.23.2 / npm 10.9.8**（与 09-05 验证矩阵一致）后 `npm ci` 全新安装。
+- **制品**：`npm run build:demo` → dist **176 文件 / 36 MiB**（较 09-05 +1 文件，对应上述两批新 chunk；Hash b96bf950，23.99s）；校验四项通过——index.html 标题 `BtDeck Demo`、资源绝对 `/assets` 路径、`isDemoMode` 编译期固化为 `"true" === 'true'`（demo 机器 demoStore/demoRequest/demoSession 全在包）、zip 176 条目与 dist 一致。
+- **交付物**：`frontend/BtDeck-demo-dist-20260907.zip`（5.99 MB，zip 根即 dist 内容，与 Dockerfile.demo `COPY dist /usr/share/nginx/html` 布局对齐；已被 .gitignore 封禁不入 git，git status 干净）。
+- 未执行 Git 提交（无源码变更，制品不入库）。
+- **验收服务（09-07 续）**：重建 `.tmp-serve-demo.py`（上次脚本已随 09-05 清理删除）——纯 stdlib ThreadingHTTPServer，路由语义对齐 nginx.demo.conf（/health 200、/api/* 404 JSON、/assets/* 与 /service-worker.js 缺失即 404 不回退 SPA、点文件+反斜杠段 403、SPA fallback no-cache、assets immutable）。首轮两处缺陷自修：BaseHTTPRequestHandler 无 guess_type（改 mimetypes.guess_type）、缺失 assets 误回退 index.html（补 404 分支）。已后台常驻 **http://127.0.0.1:8080**，冒烟 12 路由全符合预期。
+
+## 2026-09-07：Android 主服务端路径映射能力硬禁用实施
+
+- **后端能力矩阵与统一门禁**：`platform_capabilities.py` 新增下载器文件系统、路径映射、孤儿文件、种子备份、种子转移、三级回收站六项受限能力；Android 主服务端统一返回 403 `PLATFORM_CAPABILITY_UNSUPPORTED`，桌面/NAS 保持支持，伴侣模式继续消费远端矩阵。
+- **覆盖范围**：路径维护/模板应用、孤儿扫描与清理、备份校验/同步旁路、种子转移、三级删除/回收站、下载器旧同步路径、定时任务与启动恢复均加门禁；Android 启动只将历史孤儿任务标记失败，不扫描宿主文件系统，不创建相关 dispatcher。
+- **前端行为**：能力矩阵加载失败对受限能力 fail-closed；路由和侧栏隐藏孤儿/回收站/文件管理，下载器路径配置剔除路径字段，三级删除/转移/受限定时任务入口禁用并显示原因。
+- **文档与回归**：同步 `docs/android/`、`docs/roadmap/`、`feature_list.json` 与本记录；新增 `backend/tests/tasks/test_task_capabilities.py`，覆盖 Android/桌面任务门禁与统一异常。
+- **验证**：`compileall`、JSON 校验、`git diff --check` 通过；后端任务/能力/cron 定向 88 passed，备份/孤儿/三级删除 116 passed，新增任务能力 8 passed；前端 `npm run lint -- --no-fix` 与生产构建通过（仅既有 Sass/Browserslist 警告）。根 `bash ./init.sh --ci` 仍受 Windows/WSL 缺少可用 Linux 发行版阻断。未执行 Git 提交。

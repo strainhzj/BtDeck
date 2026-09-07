@@ -143,6 +143,7 @@
             </el-table-column>
             <el-table-column prop="taskStatusName" label="状态" width="100" resizable>
               <template slot-scope="scope">
+                <el-tag v-if="scope.row.platformAvailable === false" type="warning" size="small">平台禁用</el-tag>
                 <el-tag :type="getStatusTag(scope.row.taskStatusName)" size="small">
                   {{ scope.row.taskStatusName }}
                 </el-tag>
@@ -192,11 +193,14 @@
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item
                 :command="{action: 'execute', row: scope.row}"
-                :disabled="!scope.row.enabled"
+                :disabled="!scope.row.enabled || scope.row.platformAvailable === false"
               >
                 <LucideIcon class="menu-icon" name="play" :size="14" />
                 立即执行
-                <el-tooltip v-if="!scope.row.enabled" content="任务已禁用，请先启用" placement="right">
+                <el-tooltip v-if="scope.row.platformAvailable === false" content="当前主机能力不支持，任务不会执行" placement="right">
+                  <LucideIcon class="menu-icon" name="info" :size="14" />
+                </el-tooltip>
+                <el-tooltip v-else-if="!scope.row.enabled" content="任务已禁用，请先启用" placement="right">
                   <LucideIcon class="menu-icon" name="info" :size="14" />
                 </el-tooltip>
               </el-dropdown-item>
@@ -650,11 +654,12 @@
               <el-form-item label="清理等级3" label-width="100px">
                 <el-switch
                   v-model="cleanupConfig.cleanup_level_3"
+                  :disabled="!level3Available"
                   active-text="启用"
                   inactive-text="禁用"
                 />
                 <div class="form-help">
-                  <small>清理等级为3的种子</small>
+                  <small>{{ level3Available ? '清理等级为3的种子' : '当前主机不支持等级3文件操作' }}</small>
                 </div>
               </el-form-item>
             </el-col>
@@ -973,7 +978,7 @@ import {
 } from '@/api/tasks'
 import request from '@/utils/request'
 import { copyTextToClipboard } from '@/utils/clipboard'
-import { customScriptsUnsupported, loadPlatformCapabilities } from '@/api/platform-capabilities'
+import { customScriptsUnsupported, isCapabilityAvailable, loadPlatformCapabilities } from '@/api/platform-capabilities'
 
 // 导入新创建的组件
 import MonacoEditor from '@/components/tasks/MonacoEditor.vue'
@@ -1005,6 +1010,9 @@ type ValidationResult = BTDeckTypes.ScriptValidationResult
   }
 })
 export default class TaskManage extends Vue {
+  get level3Available(): boolean {
+    return isCapabilityAvailable('level3_recycle')
+  }
   // 模板只能访问 Vue 实例成员；模块级导入必须通过实例方法暴露。
   private getTaskOutcomeMeta(outcome?: TaskOutcome | string | null) {
     return resolveTaskOutcomeMeta(outcome)
@@ -1378,6 +1386,10 @@ export default class TaskManage extends Vue {
   }
 
   private async handleExecute(row: ScheduledTask) {
+    if (row.platformAvailable === false) {
+      this.$message.warning('当前主机能力不支持该任务，未执行')
+      return
+    }
     // 检查任务是否启用
     if (!row.enabled) {
       this.$message.warning(`任务 "${row.taskName}" 已禁用，无法启动。请先启用该任务。`)
@@ -1521,6 +1533,10 @@ export default class TaskManage extends Vue {
 
       // 如果是清理任务类型，将 cleanupConfig 转为 JSON 赋值给 executor
       if (this.taskForm.task_type === 5) {
+        if (this.cleanupConfig.cleanup_level_3 && !this.level3Available && !this.taskForm.id) {
+          this.$message.error('当前主机不支持等级3文件操作，请关闭等级3后再创建任务')
+          return
+        }
         this.taskForm.executor = JSON.stringify(this.cleanupConfig)
       }
 

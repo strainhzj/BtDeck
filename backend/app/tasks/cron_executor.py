@@ -24,6 +24,10 @@ from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService
 from app.services.sync_observability import EVENT_TASK_LIFECYCLE, log_event
+from app.tasks.task_capabilities import (
+    PLATFORM_CAPABILITY_SKIP_REASON,
+    capability_block_for_task,
+)
 from app.models import (
     OUTCOME_SUCCESS,
     OUTCOME_PARTIAL,
@@ -77,6 +81,7 @@ SKIP_REASON_RESOURCE_BUSY = "resource_busy"
 SKIP_REASON_ALREADY_RUNNING = "already_running"
 SKIP_REASON_OUTSIDE_BUDGET = "outside_budget"
 SKIP_REASON_DOWNLOADER_OFFLINE = "downloader_offline"
+SKIP_REASON_PLATFORM_CAPABILITY = PLATFORM_CAPABILITY_SKIP_REASON
 
 # 结果 dict 未显式携带 outcome 时，按 success 布尔映射（success 保持原语义：
 # “执行是否成功”；outcome 是业务结果，skipped 时 success 仍为 True 不误判故障）
@@ -432,14 +437,22 @@ class CronTaskExecutor:
                 if result.success:
                     tasks = result.data
                     rejected: list = []
+                    capability_rejected: list = []
                     for task in tasks:
-                        if self._is_task_allowed_by_policy(task):
+                        block = capability_block_for_task(task)
+                        if block:
+                            capability_rejected.append((task, block))
+                        elif self._is_task_allowed_by_policy(task):
                             await self.add_task_to_scheduler(task)
                         else:
                             rejected.append(task)
-                    logger.info(f"成功加载 {len(tasks) - len(rejected)} 个定时任务")
+                    logger.info(
+                        f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务"
+                    )
                     if rejected:
                         await self._notify_policy_rejected_tasks(db, rejected)
+                    if capability_rejected:
+                        await self._notify_capability_rejected_tasks(db, capability_rejected)
                 else:
                     logger.error(f"加载定时任务失败: {result.message}")
 
@@ -494,10 +507,49 @@ class CronTaskExecutor:
         except Exception as e:
             logger.error(f"写入定时任务安全拦截通知失败: {str(e)}")
 
+    async def _notify_capability_rejected_tasks(self, db, rejected: list) -> None:
+        """记录能力门控任务，不改写历史 enabled 配置。"""
+        try:
+            from app.services.notification_service import NotificationService
+
+            service = NotificationService(db)
+            for task, block in rejected:
+                task_id = task.get("task_id")
+                name = task.get("task_name") or task_id
+                logger.warning(
+                    "定时任务 '%s'(ID:%s) 因主机能力 %s 不可用，未加入调度器",
+                    name,
+                    task_id,
+                    block["capability"],
+                )
+                await service.create_notification(
+                    type="system",
+                    title="定时任务因主机能力被停用",
+                    content=(
+                        f"任务「{name}」(ID: {task_id}) 需要能力「{block['capability']}」，"
+                        "当前主机形态无法访问对应文件系统，任务未加入调度器；切换到桌面/NAS 主服务端后可继续使用。"
+                    ),
+                    priority="warning",
+                    dedupe_key=f"cron_capability_blocked:{task_id}",
+                )
+        except Exception as e:
+            logger.error(f"写入定时任务能力拦截通知失败: {str(e)}")
+
     async def add_task_to_scheduler(self, task: Dict[str, Any]) -> bool:
         """添加任务到调度器"""
         try:
             job_id = f"cron_task_{task['task_id']}"
+
+            block = capability_block_for_task(task)
+            if block:
+                if self.scheduler.get_job(job_id):
+                    self.scheduler.remove_job(job_id)
+                logger.warning(
+                    "任务 %s 因主机能力 %s 不可用，跳过加入调度器",
+                    task.get("task_name") or task.get("task_id"),
+                    block["capability"],
+                )
+                return False
 
             # 如果任务已存在，先移除
             if self.scheduler.get_job(job_id):
@@ -758,6 +810,17 @@ class CronTaskExecutor:
         """运行任务脚本"""
         task_type = task["task_type"]
         executor = task["executor"]
+
+        block = capability_block_for_task(task)
+        if block:
+            return {
+                "success": True,
+                "skipped": True,
+                "outcome": OUTCOME_SKIPPED,
+                "skip_reason": SKIP_REASON_PLATFORM_CAPABILITY,
+                "capability": block["capability"],
+                "log_detail": (f"[PLATFORM_CAPABILITY_UNSUPPORTED] {block['message']}，" "未执行任何文件系统操作"),
+            }
 
         # 执行层统一安全闸门：无论任务来自调度器还是"立即启动"（start_task_immediately
         # 不经过 load_all_tasks 的加载期检查），都在此二次校验。
@@ -1286,6 +1349,12 @@ class CronTaskExecutor:
                             f"启动任务失败: {error_msg} (任务ID: {task_id}, 状态: enabled={task.get('enabled')})"
                         )
                         raise ValueError(error_msg)
+
+                    block = capability_block_for_task(task)
+                    if block:
+                        from app.core.platform_capabilities import PlatformCapabilityUnsupportedError
+
+                        raise PlatformCapabilityUnsupportedError(block["capability"], operation="cron.start_task")
 
                     # 检查任务是否已在运行中
                     if self.running_tasks.get(task_id, False):

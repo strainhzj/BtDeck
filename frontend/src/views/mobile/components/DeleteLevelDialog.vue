@@ -26,12 +26,13 @@
         <span class="m-delete-level-text">{{ opt.label }}</span>
       </button>
     </div>
-    <div class="m-delete-hint">等级1 删除任务与数据、不可恢复；等级3 备份失败时自动降级为标记待删除</div>
+    <div v-if="level3Available" class="m-delete-hint">等级1 删除任务与数据、不可恢复；等级3 备份失败时自动降级为标记待删除</div>
   </el-dialog>
 </template>
 
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 
 /**
  * 移动端按等级删除种子对话框（2026-09-05 移动验收补齐）：
@@ -69,7 +70,13 @@ export default class MobileDeleteLevelDialog extends Vue {
   /** 父页面删除请求在途时禁用选项，防重复提交 */
   @Prop({ type: Boolean, default: false }) private busy!: boolean
 
-  private levelOptions = DELETE_LEVEL_OPTIONS
+  get levelOptions(): DeleteLevelOption[] {
+    return DELETE_LEVEL_OPTIONS.filter(option => option.level !== 3 || isCapabilityAvailable('level3_recycle'))
+  }
+
+  get level3Available(): boolean {
+    return isCapabilityAvailable('level3_recycle')
+  }
 
   private onVisibleChange(value: boolean): void {
     this.$emit('update:visible', value)

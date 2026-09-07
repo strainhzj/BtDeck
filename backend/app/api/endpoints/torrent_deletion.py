@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
+from app.core.platform_capabilities import require_capability
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db, AsyncSessionLocal
 from app.downloader.models import BtDownloaders
@@ -668,6 +669,8 @@ async def delete_torrent_with_level(
     Returns:
         删除结果
     """
+    if delete_level == 3:
+        require_capability("level3_recycle", "torrent_deletion.level3")
     # 将逗号分隔的字符串转换为列表（认证已迁移至 require_authenticated_user 依赖）
     torrent_info_id_list = [id.strip() for id in torrent_info_ids.split(",") if id.strip()]
 
@@ -829,6 +832,8 @@ async def delete_batch_async(
     Returns:
         任务ID
     """
+    if delete_request.delete_level == 3:
+        require_capability("level3_recycle", "torrent_deletion.level3.async")
     try:
         from app.database import SessionLocal
         from app.services.deletion_task_manager import get_deletion_task_manager

@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-06",
+  "last_updated": "2026-09-07",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -6132,6 +6132,28 @@
         "frontend/tests/unit/traditional-view-component.spec.ts",
         "frontend/tests/unit/mobile-torrents.spec.ts"
       ]
+    },
+    {
+      "id": "android-path-capability-gate-2026-09-07",
+      "title": "Android 主服务端路径映射相关能力硬禁用",
+      "status": "done",
+      "scope": "fullstack",
+      "description": "当 BtDeck 作为 Android 主服务端时，禁止访问远端下载器宿主文件系统的路径映射、孤儿文件、种子备份、种子转移与三级回收站能力；同时封锁定时任务、启动恢复和旧同步旁路，避免路径不可达导致误删或错误备份。桌面/NAS 保持支持，伴侣模式由远端 BtDeck 能力矩阵决定。",
+      "files": [
+        "backend/app/core/platform_capabilities.py",
+        "backend/app/api/platform_guard.py",
+        "backend/app/tasks/task_capabilities.py",
+        "backend/app/startup/lifecycle.py",
+        "frontend/src/api/platform-capabilities.ts",
+        "frontend/src/permission.ts",
+        "docs/android/host-capability-matrix.md",
+        "backend/tests/tasks/test_task_capabilities.py"
+      ],
+      "evidence": {
+        "tests": "compileall 通过；platform capability/cron/API/任务/备份/孤儿/三级删除相关回归 67 + 116 + 536 通过；新增任务能力测试覆盖 Android 与桌面任务映射、三级清理和统一异常；前端 npm run lint 与 npm run build 通过。",
+        "contract": "受限能力统一返回 HTTP 403，data.reasonCode=PLATFORM_CAPABILITY_UNSUPPORTED；能力矩阵 schemaVersion=2；Android 启动仅终结历史孤儿任务，不执行宿主文件系统扫描。",
+        "behavior": "Android 主服务端隐藏受限路由/菜单、剔除路径配置字段、禁用三级删除/种子转移/受限定时任务；桌面/NAS 行为不变，伴侣模式继续由远端能力矩阵控制。"
+      }
     }
   ]
 }

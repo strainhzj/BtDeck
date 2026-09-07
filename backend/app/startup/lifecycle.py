@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.core.platform_capabilities import is_android_server
 from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scope
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
@@ -300,6 +301,45 @@ async def recover_interrupted_orphan_scans(session_factory: Any = None) -> int:
     return recovered
 
 
+async def finalize_android_orphan_jobs(session_factory: Any = None) -> dict[str, int]:
+    """将 Android 主服务端上的历史孤儿任务收敛为不可执行的终态。
+
+    Android 主服务端无法访问下载器所在主机文件系统。启动时只更新任务状态，
+    不读取、扫描或删除任何路径；历史配置和记录保留，便于切回桌面端继续处理。
+    """
+    from datetime import datetime
+
+    from sqlalchemy import update
+
+    from app.database import AsyncSessionLocal
+    from app.models.orphan_file import OrphanScanResult
+    from app.models.orphan_purge_job import OrphanPurgeJob
+    from app.tasks.resource_guard import admission_controller
+
+    factory = session_factory or AsyncSessionLocal
+    reason = "当前 Android 主服务端不支持孤儿文件能力，任务未执行"
+    now = datetime.utcnow()
+    async with factory() as db:
+        async with admission_controller.db_write_scope():
+            scan_result = await db.execute(
+                update(OrphanScanResult)
+                .where(OrphanScanResult.status.in_(("queued", "running")))
+                .values(status="failed", error_message=reason, updated_at=now)
+            )
+            purge_result = await db.execute(
+                update(OrphanPurgeJob)
+                .where(OrphanPurgeJob.status.in_(("pending", "running")))
+                .values(status="failed", error_message=reason, completed_at=now, updated_at=now)
+            )
+            scan_count = getattr(scan_result, "rowcount", None) or 0
+            purge_count = getattr(purge_result, "rowcount", None) or 0
+            if scan_count or purge_count:
+                await db.commit()
+            else:
+                await db.rollback()
+    return {"scan_count": scan_count, "purge_count": purge_count}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -316,6 +356,10 @@ async def lifespan(app: FastAPI):
     print("Starting up...")
     app.state.start_time = time.time()
     app.state.torrent_stats = {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
+    orphan_purge_dispatcher = None
+    orphan_purge_recovery_task = None
+    orphan_scan_dispatcher = None
+    orphan_scan_recovery_task = None
 
     # 0. 初始化配置文件（必须在所有其他初始化之前）
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用
@@ -382,38 +426,57 @@ async def lifespan(app: FastAPI):
     await init_database_connection()
 
     # 2.5 对账历史隔离候选，避免新读模型重新展示已移走文件。
-    print("=== 对账孤儿文件隔离状态 ===")
-    try:
-        reconciliation = await reconcile_orphan_file_state()
-        print(
-            "[OK] 孤儿文件隔离状态对账完成: "
-            f"更新 {reconciliation['updated_count']} 条，"
-            f"未匹配 {reconciliation['unmatched_count']} 条"
-        )
-    except Exception as e:
-        print(f"[ERROR] 孤儿文件隔离状态对账失败: {e}")
-        import traceback
+    if is_android_server():
+        print("[SKIP] Android 主服务端不执行孤儿文件隔离状态对账")
+    else:
+        print("=== 对账孤儿文件隔离状态 ===")
+        try:
+            reconciliation = await reconcile_orphan_file_state()
+            print(
+                "[OK] 孤儿文件隔离状态对账完成: "
+                f"更新 {reconciliation['updated_count']} 条，"
+                f"未匹配 {reconciliation['unmatched_count']} 条"
+            )
+        except Exception as e:
+            print(f"[ERROR] 孤儿文件隔离状态对账失败: {e}")
+            import traceback
 
-        traceback.print_exc()
-        if not settings.DEV:
-            raise
-        print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
+            print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
 
     # 2.6 恢复残留 running 的孤儿扫描记录（落库分批后崩溃残留的兜底恢复）。
-    print("=== 恢复中断的孤儿扫描记录 ===")
-    try:
-        _recovered_scans = await recover_interrupted_orphan_scans()
-        if _recovered_scans:
-            print(f"[OK] 已恢复 {_recovered_scans} 条残留 running 扫描记录为 failed")
-        else:
-            print("[OK] 无残留 running 扫描记录")
-    except Exception as e:
-        print(f"[ERROR] 孤儿扫描记录恢复失败: {e}")
-        import traceback
+    if is_android_server():
+        print("=== 收敛 Android 主服务端上的孤儿任务 ===")
+        try:
+            finalized = await finalize_android_orphan_jobs()
+            print(
+                "[OK] 已将历史孤儿任务标记为不执行: "
+                f"扫描 {finalized['scan_count']} 条，清理 {finalized['purge_count']} 条"
+            )
+        except Exception as e:
+            print(f"[ERROR] Android 孤儿任务收敛失败: {e}")
+            import traceback
 
-        traceback.print_exc()
-        if not settings.DEV:
-            raise
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
+    else:
+        print("=== 恢复中断的孤儿扫描记录 ===")
+        try:
+            _recovered_scans = await recover_interrupted_orphan_scans()
+            if _recovered_scans:
+                print(f"[OK] 已恢复 {_recovered_scans} 条残留 running 扫描记录为 failed")
+            else:
+                print("[OK] 无残留 running 扫描记录")
+        except Exception as e:
+            print(f"[ERROR] 孤儿扫描记录恢复失败: {e}")
+            import traceback
+
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
 
     # 3. 更新定时任务表数据：将dr=0的数据状态改为空闲
     await update_cron_task_status()
@@ -446,19 +509,20 @@ async def lifespan(app: FastAPI):
     downloader_task = asyncio.create_task(startup_event(app))  # ← 传递正确的 app 实例
     app.state.downloader_task = downloader_task
 
-    # 持久化隔离区彻底删除任务：立即恢复上次进程的 pending/running 任务。
-    from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
+    if not is_android_server():
+        # 持久化隔离区彻底删除任务：立即恢复上次进程的 pending/running 任务。
+        from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
 
-    orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
-    orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
-    app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
+        orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
+        orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
+        app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
 
-    # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
-    from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
+        # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
+        from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
 
-    orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
-    orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
-    app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
+        orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
+        orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
+        app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
 
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
@@ -537,10 +601,11 @@ async def lifespan(app: FastAPI):
                 print("✅ 隔离区彻底删除恢复任务已取消")
             except Exception as e:
                 print(f"⚠️  取消隔离区彻底删除恢复任务时出错: {e}")
-        try:
-            await orphan_purge_dispatcher.shutdown()
-        except Exception as e:
-            print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
+        if orphan_purge_dispatcher is not None:
+            try:
+                await orphan_purge_dispatcher.shutdown()
+            except Exception as e:
+                print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
 
         if orphan_scan_recovery_task and not orphan_scan_recovery_task.done():
             orphan_scan_recovery_task.cancel()
@@ -550,10 +615,11 @@ async def lifespan(app: FastAPI):
                 pass
             except Exception as e:
                 print(f"⚠️  取消孤儿扫描恢复任务时出错: {e}")
-        try:
-            await orphan_scan_dispatcher.shutdown()
-        except Exception as e:
-            print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
+        if orphan_scan_dispatcher is not None:
+            try:
+                await orphan_scan_dispatcher.shutdown()
+            except Exception as e:
+                print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
 
         if downloader_task and not downloader_task.done():
             print("取消未完成的下载器加载任务...")

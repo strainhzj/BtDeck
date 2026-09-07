@@ -334,8 +334,8 @@
               </div>
             </div>
 
-            <!-- 存储配置 -->
-            <div class="form-section">
+            <!-- 存储配置：Android 主服务端无法访问下载器主机目录 -->
+            <div v-if="pathMappingAvailable" class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="folder-open" :size="18" :stroke-width="1.8" class="section-icon" />
                 存储配置
@@ -359,8 +359,8 @@
               </div>
             </div>
 
-            <!-- 路径映射规则 -->
-            <div class="form-section">
+            <!-- 路径映射规则：仅在服务端明确支持时展示 -->
+            <div v-if="pathMappingAvailable" class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="route" :size="18" :stroke-width="1.8" class="section-icon" />
                 路径映射规则
@@ -449,7 +449,7 @@
       </el-tab-pane>
 
       <!-- 标签页5: 路径管理 (包含路径映射和下载器路径管理) -->
-      <el-tab-pane name="pathManagement" :disabled="!isEdit">
+      <el-tab-pane v-if="pathMappingAvailable" name="pathManagement" :disabled="!isEdit">
         <span slot="label" class="workspace-tab-label">
           <span class="workspace-tab-label__icon">
             <LucideIcon name="route" :size="17" :stroke-width="1.8" />
@@ -589,6 +589,7 @@ import TagManagementTab from './TagManagementTab.vue'
 import TemplateSelectionDialog from './TemplateSelectionDialog.vue'
 import { resolveEnableSchedule } from '../settings'
 import { hasCompleteConnectionInfo } from '../connection'
+import { isCapabilityAvailable, loadPlatformCapabilities } from '@/api/platform-capabilities'
 
 type SettingsApiData = DownloaderSettings & {
   dl_speed_limit?: number
@@ -672,6 +673,14 @@ export default class DownloaderSettingsDialog extends Vue {
 
   // 保存原始用户名，用于判断是否需要原密码
   private originalUsername = ''
+
+  get pathMappingAvailable(): boolean {
+    return isCapabilityAvailable('path_mapping')
+  }
+
+  created(): void {
+    loadPlatformCapabilities().then(() => this.$forceUpdate()).catch(() => this.$forceUpdate())
+  }
 
   // 当前设置
   private currentSettings: DownloaderSettings = {
@@ -943,14 +952,15 @@ export default class DownloaderSettingsDialog extends Vue {
         this.formData.override_local = this.currentSettings.override_local
       }
 
-      // 加载路径映射配置
-      const { getPathMappings } = await import('@/api/downloader')
+      // Android 主服务端不请求远端路径映射接口，避免把不可访问的主机路径当成本机路径。
+      if (this.pathMappingAvailable) {
+        const { getPathMappings } = await import('@/api/downloader')
+        const pathMappingResponse = await getPathMappings(this.downloader.id)
 
-      const pathMappingResponse = await getPathMappings(this.downloader.id)
-
-      if (pathMappingResponse.code === '200' && pathMappingResponse.data) {
-        // 使用 $set 确保 Vue 响应式更新
-        this.$set(this.currentSettings, 'path_mapping', pathMappingResponse.data)
+        if (pathMappingResponse.code === '200' && pathMappingResponse.data) {
+          // 使用 $set 确保 Vue 响应式更新
+          this.$set(this.currentSettings, 'path_mapping', pathMappingResponse.data)
+        }
       }
     } catch (error) {
       console.error('加载下载器设置失败:', error)
@@ -1100,7 +1110,9 @@ export default class DownloaderSettingsDialog extends Vue {
       // 收集所有标签页的数据（不包括基本信息页签，因为已经在 formData 中）
       const speedData = (this.$refs.speedSettingsTabRef as SpeedSettingsTab | undefined)?.getFormData() || {}
       const advancedData = (this.$refs.advancedSettingsTabRef as AdvancedSettingsTab | undefined)?.getFormData() || {}
-      const pathMappingData = (this.$refs.pathManagementTabRef as PathManagementTab | undefined)?.getPathMappingData() || null
+      const pathMappingData = this.pathMappingAvailable
+        ? (this.$refs.pathManagementTabRef as PathManagementTab | undefined)?.getPathMappingData() || null
+        : null
 
       // 从 formData 中提取需要提交到设置的数据
       const settingsData = {
@@ -1110,6 +1122,12 @@ export default class DownloaderSettingsDialog extends Vue {
       // 构建基本信息提交数据（只包含基本信息字段）
       const basicData: DownloaderSubmitData = {
         ...this.formData
+      }
+
+      if (!this.pathMappingAvailable) {
+        delete basicData.path_mapping
+        delete basicData.path_mapping_rules
+        delete basicData.torrent_save_path
       }
 
       // 添加路径映射数据（包括空数组，用于清空配置）

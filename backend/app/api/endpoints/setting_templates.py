@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
+from app.core.platform_capabilities import PlatformCapabilityUnsupportedError
 from app.database import get_db
 from app.services.template_service import TemplateService
 
@@ -151,6 +152,8 @@ async def create_setting_template(
 
             return CommonResponse(status="success", msg="创建成功", code="200", data=template)
 
+        except PlatformCapabilityUnsupportedError:
+            raise
         except ValueError as e:
             logger.warning(f"创建模板失败（参数错误）: {e}")
             return CommonResponse(status="error", msg=str(e), code="422", data=None)
@@ -304,7 +307,15 @@ async def apply_template_to_downloader(
 
             if result["success"]:
                 return CommonResponse(
-                    status="success", msg=result["message"], code="200", data={"downloader_id": downloader_id}
+                    status="success",
+                    msg=result["message"],
+                    code="200",
+                    data={
+                        "downloader_id": downloader_id,
+                        "path_mapping_skipped_by_capability": bool(
+                            result.get("path_mapping_skipped_by_capability", False)
+                        ),
+                    },
                 )
             elif result.get("needs_path_mapping_confirmation"):
                 # 需要用户确认路径映射
@@ -321,6 +332,8 @@ async def apply_template_to_downloader(
             else:
                 return CommonResponse(status="error", msg=result["message"], code="500", data=None)
 
+        except PlatformCapabilityUnsupportedError:
+            raise
         except ValueError as e:
             logger.warning(f"应用模板失败（参数错误）: {e}")
             # 根据错误消息返回不同的状态码
@@ -332,6 +345,8 @@ async def apply_template_to_downloader(
                 code = "422"
             return CommonResponse(status="error", msg=str(e), code=code, data=None)
 
+    except PlatformCapabilityUnsupportedError:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"应用模板失败: {e}")

@@ -2,7 +2,7 @@
 """主机能力矩阵单元测试（dual-mode-client Phase 4 批次 A）。
 
 锁定内容（docs/android/host-capability-matrix.md 冻结基线）：
-- 矩阵键集：14 项能力，新增能力必须先登记文档（键集变化即红）；
+- 矩阵键集：20 项能力，新增能力必须先登记文档（键集变化即红）；
 - 每项两形态级别均为合法枚举，非 supported 必须带 note（UI 降级说明来源）；
 - 两形态已知差异点（unsupported/degraded 项）；
 - resolve_platform 的 fail-safe 语义（未设置/非法值回落 desktop）；
@@ -36,6 +36,12 @@ EXPECTED_KEYS = {
     "host_filesystem",
     "saf_file_access",
     "torrent_file_transfer",
+    "downloader_filesystem_access",
+    "path_mapping",
+    "orphan_files",
+    "torrent_backup",
+    "seed_transfer",
+    "level3_recycle",
     "system_notifications",
     "scheduled_tasks",
     "local_server",
@@ -47,6 +53,12 @@ ANDROID_UNSUPPORTED = {
     "custom_scripts",
     "shell_capabilities",
     "always_on_service",
+    "downloader_filesystem_access",
+    "path_mapping",
+    "orphan_files",
+    "torrent_backup",
+    "seed_transfer",
+    "level3_recycle",
 }
 ANDROID_DEGRADED = {
     "host_filesystem",
@@ -58,14 +70,14 @@ ANDROID_DEGRADED = {
 
 
 class TestMatrixIntegrity:
-    def test_keyset_frozen_14_items(self):
-        """键集 = 冻结基线 14 项；新增能力未登记文档即红。"""
+    def test_keyset_frozen_20_items(self):
+        """键集 = 冻结基线 20 项；新增能力未登记文档即红。"""
         assert set(CAPABILITY_DEFINITIONS.keys()) == EXPECTED_KEYS
 
     @pytest.mark.parametrize("platform", sorted(VALID_PLATFORMS))
     def test_every_capability_has_valid_level_and_label(self, platform):
         matrix = get_capability_matrix(platform)
-        assert len(matrix) == 14
+        assert len(matrix) == 20
         for key, entry in matrix.items():
             assert entry["level"] in {LEVEL_SUPPORTED, LEVEL_DEGRADED, LEVEL_UNSUPPORTED}, key
             assert entry["label"], key
@@ -94,11 +106,15 @@ class TestResolvePlatform:
         monkeypatch.delenv("BTDECK_PLATFORM", raising=False)
         assert resolve_platform() == PLATFORM_DESKTOP
 
-    @pytest.mark.parametrize("raw", ["", "android", "ios", "123", "server"])
+    @pytest.mark.parametrize("raw", ["", "ios", "123", "server"])
     def test_illegal_values_fallback_desktop(self, monkeypatch, raw):
         """fail-safe：非法值回落 desktop（能力全集方向，只会在漏注入时少降级）。"""
         monkeypatch.setenv("BTDECK_PLATFORM", raw)
         assert resolve_platform() == PLATFORM_DESKTOP
+
+    def test_android_alias_is_fail_closed(self, monkeypatch):
+        monkeypatch.setenv("BTDECK_PLATFORM", "android")
+        assert resolve_platform() == PLATFORM_ANDROID_SERVER
 
     def test_case_insensitive_passthrough(self, monkeypatch):
         """大小写宽容：ANDROID-SERVER 仍按 android-server 降级（漏大小写不能装成 desktop）。"""
@@ -119,6 +135,7 @@ class TestPayloadAndLevel:
         monkeypatch.setenv("BTDECK_PLATFORM", "android-server")
         payload = capability_payload()
         assert payload["platform"] == PLATFORM_ANDROID_SERVER
+        assert payload["schemaVersion"] == 2
         assert payload["degradedCount"] == len(ANDROID_DEGRADED)
         assert payload["unsupportedCount"] == len(ANDROID_UNSUPPORTED)
         assert set(payload["capabilities"].keys()) == EXPECTED_KEYS

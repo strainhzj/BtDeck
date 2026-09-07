@@ -9,6 +9,11 @@ import { trySilentRefresh } from '@/utils/request'
 import { ApiError } from '@/types/api'
 import { currentUiMode, loginPathForMode, toMobilePath } from '@/utils/ui-mode'
 import { isDemoMode } from '@/demo/config'
+import {
+  isCapabilityAvailable,
+  isCapabilityUnknown,
+  loadPlatformCapabilities
+} from '@/api/platform-capabilities'
 
 NProgress.configure({ showSpinner: false })
 
@@ -127,6 +132,25 @@ const fallbackToLogout = (next: any, to: Route): void => {
   NProgress.done()
 }
 
+/** 受限页面统一由服务端能力矩阵门控；矩阵失败时对文件系统能力闭锁。 */
+const enforceRouteCapability = async(to: Route, next: any): Promise<boolean> => {
+  const requiredCapability = to.matched
+    .map(route => route.meta && route.meta.requiredCapability)
+    .find(Boolean) as string | undefined
+  if (!requiredCapability) return false
+
+  await loadPlatformCapabilities()
+  if (isCapabilityAvailable(requiredCapability)) return false
+
+  const message = isCapabilityUnknown(requiredCapability)
+    ? '无法确认当前服务端能力，已暂时禁用该功能，请检查连接后重试'
+    : '当前 Android 主服务端无法访问下载器主机文件系统，该功能不可用'
+  Message.warning({ message, duration: 4500 })
+  next({ path: currentUiMode() === 'mobile' ? '/m/dashboard' : '/dashboard', replace: true })
+  NProgress.done()
+  return true
+}
+
 router.beforeEach(async(to: Route, from: Route, next: any) => {
   // Start progress bar
   NProgress.start()
@@ -208,8 +232,11 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
           // 用户信息获取成功后按强制改密标志决定放行——此分支正是登录后
           // /F5 后的首次导航路径（Login 不填充 roles）：若不在此检查，
           // 强制改密用户的首次导航会先落到业务页一次才被拦
+          await loadPlatformCapabilities()
           if (isForceChangeBlocked(to)) {
             forceChangeRedirect(next)
+          } else if (await enforceRouteCapability(to, next)) {
+            return
           } else {
             next()
           }
@@ -233,11 +260,14 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         }
       } else {
         // 已有用户信息，直接放行
+        await loadPlatformCapabilities()
         // 强制改密拦截（安全修复 W9）：mustChangePassword 时只允许访问
         // 改密页（/settings/index），优先于 redirect 参数——仅靠登录页
         // 跳转可被直接改 URL 绕过，必须由守卫统一强制
         if (isForceChangeBlocked(to)) {
           forceChangeRedirect(next)
+        } else if (await enforceRouteCapability(to, next)) {
+          return
         } else {
           next()
         }

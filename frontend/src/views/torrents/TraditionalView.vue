@@ -46,7 +46,7 @@
             <el-dropdown-item command="4">
               <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
             </el-dropdown-item>
-            <el-dropdown-item command="3">
+            <el-dropdown-item v-if="level3Available" command="3">
               <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
             </el-dropdown-item>
             <el-dropdown-item command="2">
@@ -182,6 +182,7 @@
       >全局替换</el-button>
       <div class="tool-divider"></div>
       <el-button
+        v-if="seedTransferAvailable"
         type="text"
         size="small"
         icon="el-icon-sort"
@@ -669,7 +670,7 @@
                         <el-dropdown-item command="4">
                           <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
                         </el-dropdown-item>
-                        <el-dropdown-item command="3">
+                        <el-dropdown-item v-if="level3Available" command="3">
                           <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
                         </el-dropdown-item>
                         <el-dropdown-item command="2">
@@ -980,6 +981,7 @@ import {
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
 import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 import {
   calculateTraditionalVirtualWindow,
   TRADITIONAL_VIRTUAL_OVERSCAN,
@@ -1030,6 +1032,13 @@ export default class extends mixins(
   TorrentErrorTooltipDismissMixin,
   TrackerDetailDataMixin
 ) {
+  get level3Available(): boolean {
+    return isCapabilityAvailable('level3_recycle')
+  }
+
+  get seedTransferAvailable(): boolean {
+    return isCapabilityAvailable('seed_transfer')
+  }
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 

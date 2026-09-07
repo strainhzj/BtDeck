@@ -9,6 +9,7 @@
 |--------|------|-----------|
 | 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署）；`create_task_if_idle()` L109 原子占用下载器 pending/running 任务，`start_task_runner()` L140 保留 asyncio runner 强引用并消费异常，`execute_task()` L215 把结构化 failed/cancelled 结果映射为真实终态 |
 | 全局配置 config | `config.py` | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
+| 主机能力矩阵 platform-capability | `platform_capabilities.py` | Android 主服务端/桌面能力单一真相源（L36）；`require_capability` L217 对路径映射、孤儿、备份、转移、三级删除执行统一门禁，能力载荷 schemaVersion=2 |
 | DB 结果封装 database-result | `database_result.py` | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
 | 迁移备份 db-backup | `db_backup.py` | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用 |
 | 下载器桩 downloader-stub | `downloader.py` | ⚠️ **孤儿**：遗留下载器依赖桩（`from app.downloader import models` 已失效） |
@@ -18,7 +19,7 @@
 | JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
 | DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast |
 | 运行时上下文 runtime-context ✨2026-09-05 | `runtime_context.py` | 协议无关运行时依赖快照 `RuntimeContext`（L14，store/torrent_stats/start_time；`from_app` L26 从 app.state 提取），服务层去 app 化注入用 |
-| 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
+| 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离）；Android 主服务端由 `platform_capabilities.require_capability` 拒绝调用 |
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |

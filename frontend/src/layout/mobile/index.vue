@@ -118,12 +118,14 @@ import { Component, Vue } from 'vue-property-decorator'
 import { setStoredUiMode } from '@/utils/ui-mode'
 import { NotificationModule } from '@/store/modules/notification'
 import AppLogo from '@/components/common/AppLogo.vue'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 
 interface MobileTab {
   label: string
   path: string
   /** 底部 Tab 图标（LucideIcon 已注册名）；抽屉菜单项无图标 */
   icon?: string
+  requiredCapability?: string
 }
 
 const UNREAD_POLL_INTERVAL_MS = 60000
@@ -251,16 +253,18 @@ export default class MobileLayout extends Vue {
   }
 
   /** 移动版已有页面（抽屉内导航）：底部 Tab 四项 + 管理页。 */
-  private mobileMenuItems: MobileTab[] = [
-    ...this.tabs,
-    { label: '高级搜索', path: '/m/search' },
-    { label: '回收站', path: '/m/recycle-bin' },
-    { label: '日志', path: '/m/logs' },
-    { label: 'Tracker关键词', path: '/m/tracker/keywords-board' },
-    { label: '定时任务', path: '/m/tasks' },
-    { label: '孤儿文件', path: '/m/orphan-files' },
-    { label: '系统设置', path: '/m/settings' }
-  ]
+  private get mobileMenuItems(): MobileTab[] {
+    return [
+      ...this.tabs,
+      { label: '高级搜索', path: '/m/search' },
+      { label: '回收站', path: '/m/recycle-bin', requiredCapability: 'level3_recycle' },
+      { label: '日志', path: '/m/logs' },
+      { label: 'Tracker关键词', path: '/m/tracker/keywords-board' },
+      { label: '定时任务', path: '/m/tasks' },
+      { label: '孤儿文件', path: '/m/orphan-files', requiredCapability: 'orphan_files' },
+      { label: '系统设置', path: '/m/settings' }
+    ].filter(item => !item.requiredCapability || isCapabilityAvailable(item.requiredCapability))
+  }
 
   /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；系统设置已移动化（/m/settings）。 */
   private desktopMenuItems: MobileTab[] = [

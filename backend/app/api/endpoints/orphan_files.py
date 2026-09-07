@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_async_db
 from app.services.audit_service import AuditLogService, extract_audit_info_from_request, get_audit_service
@@ -30,7 +31,10 @@ from app.services.orphan_scan_job_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["孤儿文件管理"])
+router = APIRouter(
+    tags=["孤儿文件管理"],
+    dependencies=[Depends(capability_dependency("orphan_files", "orphan_files.api"))],
+)
 
 
 # ========== 请求/响应模型 ==========

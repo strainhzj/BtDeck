@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, Request
 from pydantic import BaseModel, Field
 
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.database import get_async_db
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
@@ -20,7 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["回收站管理"])
+router = APIRouter(
+    tags=["回收站管理"],
+    dependencies=[Depends(capability_dependency("level3_recycle", "level3_recycle.api"))],
+)
 
 
 # ========== 请求/响应模型 ==========

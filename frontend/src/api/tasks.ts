@@ -77,6 +77,9 @@ export interface ScheduledTask {
   lastRunId?: string | null              // 最近一次运行 ID
   freshnessSeconds?: number | null       // 数据新鲜度（秒）
   stale?: boolean                        // 数据是否陈旧（连续跳过/超阈值）
+  platformAvailable?: boolean             // 当前主机能力是否允许执行
+  blockedCapability?: string | null
+  blockedReasonCode?: string | null
 }
 
 export interface TaskListData {

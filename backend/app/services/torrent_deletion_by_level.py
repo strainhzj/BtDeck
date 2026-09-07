@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
+from app.core.platform_capabilities import require_capability
 from app.services.audit_context import AuditContext
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.models.setting_templates import DownloaderTypeEnum
@@ -175,6 +176,8 @@ class TorrentDeletionByLevelService:
         Returns:
             删除结果字典
         """
+        if delete_level == 3:
+            require_capability("level3_recycle", "torrent_deletion.level3")
         try:
             # 查询种子信息
             torrent = (
@@ -222,6 +225,8 @@ class TorrentDeletionByLevelService:
         Returns:
             批量删除结果字典
         """
+        if delete_level == 3:
+            require_capability("level3_recycle", "torrent_deletion.level3.batch")
         total = len(torrent_info_ids)
         level1_success = []  # 等级1删除成功
         level2_success = []  # 等级2删除成功

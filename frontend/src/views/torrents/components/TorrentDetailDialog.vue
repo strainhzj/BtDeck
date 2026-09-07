@@ -67,7 +67,7 @@
     </div>
 
     <span slot="footer" class="dialog-footer">
-      <el-button type="primary" @click="handleTransfer">
+      <el-button v-if="seedTransferAvailable" type="primary" @click="handleTransfer">
         <i class="el-icon-sort" />
         转移
       </el-button>
@@ -86,6 +86,7 @@
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import TransferDialog from './TransferDialog.vue'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 
 @Component({
   components: {
@@ -98,6 +99,10 @@ export default class TorrentDetailDialog extends Vue {
 
   // 转移对话框显示状态
   transferDialogVisible = false
+
+  get seedTransferAvailable(): boolean {
+    return isCapabilityAvailable('seed_transfer')
+  }
 
   get tags() {
     return this.torrent?.tags?.split(',').filter(Boolean) || []
@@ -149,6 +154,7 @@ export default class TorrentDetailDialog extends Vue {
   }
 
   handleTransfer() {
+    if (!this.seedTransferAvailable) return
     this.transferDialogVisible = true
   }
 

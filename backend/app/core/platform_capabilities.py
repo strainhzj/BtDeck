@@ -15,6 +15,7 @@ GET /api/v1/platform/capabilities 下发，前端设置页/任务列表/创建�
 """
 
 import os
+import sys
 from typing import Any, Dict
 
 PLATFORM_DESKTOP = "desktop"
@@ -24,6 +25,8 @@ VALID_PLATFORMS = frozenset({PLATFORM_DESKTOP, PLATFORM_ANDROID_SERVER})
 LEVEL_SUPPORTED = "supported"
 LEVEL_DEGRADED = "degraded"
 LEVEL_UNSUPPORTED = "unsupported"
+
+CAPABILITY_SCHEMA_VERSION = 2
 
 _ENV_KEY = "BTDECK_PLATFORM"
 
@@ -37,7 +40,7 @@ CAPABILITY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         PLATFORM_ANDROID_SERVER: LEVEL_SUPPORTED,
     },
     "torrent_crud": {
-        "label": "种子管理/同步/删除/回收站",
+        "label": "种子基础管理/同步/删除（不含三级删除与回收站）",
         PLATFORM_DESKTOP: LEVEL_SUPPORTED,
         PLATFORM_ANDROID_SERVER: LEVEL_SUPPORTED,
     },
@@ -69,10 +72,10 @@ CAPABILITY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "note_android-server": "Android 无宿主 shell 契约；后端已无 shell 调用（ping 子进程已移除）",
     },
     "host_filesystem": {
-        "label": "宿主文件系统任意路径（路径维护/孤儿清理根）",
+        "label": "BtDeck 本机应用文件系统（应用私有目录/SAF）",
         PLATFORM_DESKTOP: LEVEL_SUPPORTED,
         PLATFORM_ANDROID_SERVER: LEVEL_DEGRADED,
-        "note_android-server": "仅应用私有目录与 SAF 授权目录；扫描根来自种子 save_path",
+        "note_android-server": "仅应用私有目录与 SAF 授权目录，不代表可访问下载器所在主机文件系统",
     },
     "saf_file_access": {
         "label": "文件选择（下载/上传 .torrent）",
@@ -81,10 +84,46 @@ CAPABILITY_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "note_android-server": "仅 SAF 授权 URI 可访问（桌面为原生文件对话框）",
     },
     "torrent_file_transfer": {
-        "label": "种子文件下载/上传",
+        "label": "用户主动上传/下载种子文件（不含下载器种子备份管理）",
         PLATFORM_DESKTOP: LEVEL_SUPPORTED,
         PLATFORM_ANDROID_SERVER: LEVEL_DEGRADED,
-        "note_android-server": "仅授权目录内可用",
+        "note_android-server": "仅授权目录内可用；下载器种子备份由 torrent_backup 能力单独控制",
+    },
+    "downloader_filesystem_access": {
+        "label": "下载器所在主机文件系统访问",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "Android 主服务端无法访问远端下载器主机上的数据目录或种子目录",
+    },
+    "path_mapping": {
+        "label": "下载器路径映射与路径维护",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "当前服务端不能证明下载器路径与本地路径属于同一文件系统",
+    },
+    "orphan_files": {
+        "label": "孤儿文件扫描与清理",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "扫描、清理、隔离区与硬链接副本定位依赖下载器主机文件系统",
+    },
+    "torrent_backup": {
+        "label": "下载器种子文件备份管理",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "无法从下载器主机读取 torrent_save_path 或源种子文件",
+    },
+    "seed_transfer": {
+        "label": "种子转移",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "转移依赖源种子备份或源下载器文件系统，Android 主服务端不提供",
+    },
+    "level3_recycle": {
+        "label": "三级删除与回收站文件操作",
+        PLATFORM_DESKTOP: LEVEL_SUPPORTED,
+        PLATFORM_ANDROID_SERVER: LEVEL_UNSUPPORTED,
+        "note_android-server": "三级删除的重命名、备份、恢复与彻底清理均依赖下载器主机文件系统",
     },
     "system_notifications": {
         "label": "系统通知",
@@ -119,7 +158,14 @@ def resolve_platform() -> str:
     desktop 恰是能力全集，回落不会误伤降级展示，只会在漏注入时少降级）。
     """
     raw = (os.environ.get(_ENV_KEY) or "").strip().lower()
-    return raw if raw in VALID_PLATFORMS else PLATFORM_DESKTOP
+    if raw in VALID_PLATFORMS:
+        return raw
+
+    # Android 壳工程会显式注入 android-server；这里仍保留真实运行时兜底，
+    # 防止环境变量漏注入时错误回落 desktop，从而意外开放文件系统能力。
+    if raw in {"android", "android_server"} or hasattr(sys, "getandroidapilevel") or os.getenv("TERMUX_VERSION"):
+        return PLATFORM_ANDROID_SERVER
+    return PLATFORM_DESKTOP
 
 
 def is_android_server() -> bool:
@@ -158,12 +204,31 @@ def capability_level(key: str, platform: str | None = None) -> str:
     return definition[target]
 
 
+class PlatformCapabilityUnsupportedError(RuntimeError):
+    """当前主机形态不具备某项能力。"""
+
+    def __init__(self, capability: str, operation: str | None = None, platform: str | None = None):
+        self.capability = capability
+        self.operation = operation or capability
+        self.platform = platform or resolve_platform()
+        super().__init__(f"当前主机形态不支持能力: {capability}（operation={self.operation}）")
+
+
+def require_capability(capability: str, operation: str | None = None, *, allow_degraded: bool = False) -> None:
+    """要求当前平台具备指定能力；API、服务和任务执行层共用。"""
+
+    level = capability_level(capability)
+    if level == LEVEL_UNSUPPORTED or (level == LEVEL_DEGRADED and not allow_degraded):
+        raise PlatformCapabilityUnsupportedError(capability, operation)
+
+
 def capability_payload() -> Dict[str, Any]:
     """API 载荷：形态 + 矩阵 + 降级统计（CommonResponse.data 形状）。"""
     platform = resolve_platform()
     matrix = get_capability_matrix(platform)
     levels = [entry["level"] for entry in matrix.values()]
     return {
+        "schemaVersion": CAPABILITY_SCHEMA_VERSION,
         "platform": platform,
         "capabilities": matrix,
         "degradedCount": levels.count(LEVEL_DEGRADED),

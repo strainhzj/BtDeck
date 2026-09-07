@@ -52,6 +52,7 @@ from app.services.torrent_ratio_values import (
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
+from app.core.platform_capabilities import LEVEL_UNSUPPORTED, capability_level
 
 logger = logging.getLogger(__name__)
 
@@ -1323,16 +1324,18 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
     # 标记已完成首次全量同步
     current_time = datetime.now()
 
+    backup_enabled = capability_level("torrent_backup") != LEVEL_UNSUPPORTED
+
     # 初始化备份服务和路径映射服务
     path_mapping_service = None
-    if bt_downloader.path_mapping:
+    if backup_enabled and bt_downloader.path_mapping:
         try:
             path_mapping_service = PathMappingService(bt_downloader.path_mapping)
             logger.debug(f"加载路径映射服务成功: {bt_downloader.nickname}")
         except Exception as e:
             logger.warning(f"加载路径映射服务失败: {e}")
 
-    backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service)
+    backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service) if backup_enabled else None
 
     # ⚡ 性能优化1：批量查询所有已存在的种子
     logger.debug(f"[PERF] 开始批量查询下载器 {bt_downloader.nickname} 的所有种子...")
@@ -1550,6 +1553,9 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             # Tracker 同步（使用独立事务）
             await sync_add_tracker_async(db, downloader_type_str, mode, torrent_info, torrent_info_id)
 
+            if not backup_enabled:
+                continue
+
             if not backup_file_path:
                 legacy_path = _resolve_legacy_backup_file_path(torrent_info_id, torrent_info.name)
                 if legacy_path:
@@ -1574,6 +1580,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                 logger.debug(f"种子已备份，跳过备份: {torrent_info.name}")
 
             if not already_backed_up:
+                assert backup_service is not None
                 try:
                     backup_result = await call_downloader_api(
                         downloader_id,
@@ -1942,16 +1949,18 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
         used_sync_maindata = False
     current_time = datetime.now()
 
+    backup_enabled = capability_level("torrent_backup") != LEVEL_UNSUPPORTED
+
     # 初始化备份服务和路径映射服务
     path_mapping_service = None
-    if bt_downloader.path_mapping:
+    if backup_enabled and bt_downloader.path_mapping:
         try:
             path_mapping_service = PathMappingService(bt_downloader.path_mapping)
             logger.debug(f"加载路径映射服务成功: {bt_downloader.nickname}")
         except Exception as e:
             logger.warning(f"加载路径映射服务失败: {e}")
 
-    backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service)
+    backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service) if backup_enabled else None
 
     # ⚡ 性能优化1：批量查询所有已存在的种子
     logger.debug(f"[PERF] 开始批量查询下载器 {bt_downloader.nickname} 的所有种子...")
@@ -2187,6 +2196,9 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             # Tracker 同步（使用独立事务）
             await sync_add_tracker_async(db, downloader_type_str, mode, torrent_info, torrent_info_id)
 
+            if not backup_enabled:
+                continue
+
             if not backup_file_path:
                 legacy_path = _resolve_legacy_backup_file_path(torrent_info_id, torrent_info.name)
                 if legacy_path:
@@ -2211,6 +2223,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                 logger.debug(f"种子已备份，跳过备份: {torrent_info.name}")
 
             if not already_backed_up:
+                assert backup_service is not None
                 try:
                     backup_result = await call_downloader_api(
                         downloader_id,

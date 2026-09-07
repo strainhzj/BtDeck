@@ -1,9 +1,9 @@
 # frontend/api — axios API 封装
 
-> 12 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`。
+> 13 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 关键词速查（12 个 .ts，跳过 torrents_patch.txt）
+## 关键词速查（13 个 .ts，跳过 torrents_patch.txt）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -19,6 +19,7 @@
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
+| 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`，前端入口 fail-closed |
 
 > 所有文件均 `import request from '@/utils/request'`（行号见上表）。`torrents.ts` 是最大且最核心的 API 模块。
 

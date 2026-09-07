@@ -10,6 +10,7 @@ import type { ApiEnvelope } from '@/utils/request'
  */
 
 export type CapabilityLevel = 'supported' | 'degraded' | 'unsupported'
+export type CachedCapabilityLevel = CapabilityLevel | 'unknown'
 
 export interface PlatformCapabilityEntry {
   label: string
@@ -19,6 +20,7 @@ export interface PlatformCapabilityEntry {
 }
 
 export interface PlatformCapabilitiesData {
+  schemaVersion?: number
   platform: 'desktop' | 'android-server'
   capabilities: Record<string, PlatformCapabilityEntry>
   degradedCount: number
@@ -28,7 +30,7 @@ export interface PlatformCapabilitiesData {
 let cache: PlatformCapabilitiesData | null = null
 let inflight: Promise<PlatformCapabilitiesData | null> | null = null
 
-/** 读取主机能力矩阵（进程内单例缓存；force 强制刷新）。失败返回 null——调用方按全能力兜底，不阻断页面。 */
+/** 读取主机能力矩阵（进程内单例缓存；force 强制刷新）。失败保留 unknown，受限入口必须闭锁。 */
 export function loadPlatformCapabilities(force = false): Promise<PlatformCapabilitiesData | null> {
   if (cache && !force) return Promise.resolve(cache)
   if (inflight && !force) return inflight
@@ -48,14 +50,35 @@ export function loadPlatformCapabilities(force = false): Promise<PlatformCapabil
   return inflight
 }
 
-/** 同步读取已缓存的能力级别（未加载/加载失败返回 supported——与后端 fail-safe 方向一致）。 */
-export function cachedCapabilityLevel(key: string): CapabilityLevel {
-  return cache?.capabilities[key]?.level ?? 'supported'
+/** 需要真实下载器主机文件系统的能力，取不到矩阵时必须 fail-closed。 */
+export const FILESYSTEM_CAPABILITIES = [
+  'downloader_filesystem_access',
+  'path_mapping',
+  'orphan_files',
+  'torrent_backup',
+  'seed_transfer',
+  'level3_recycle'
+] as const
+
+/** 同步读取已缓存的能力级别；受限能力在未加载/失败时返回 unknown。 */
+export function cachedCapabilityLevel(key: string): CachedCapabilityLevel {
+  const level = cache?.capabilities[key]?.level
+  if (level) return level
+  return (FILESYSTEM_CAPABILITIES as readonly string[]).includes(key) ? 'unknown' : 'supported'
 }
 
-/** 同步读取缓存形态（未加载返回 desktop）。 */
-export function cachedPlatform(): 'desktop' | 'android-server' {
-  return cache?.platform ?? 'desktop'
+/** 同步读取缓存形态（未加载/失败返回 unknown，避免误把 Android 当桌面）。 */
+export function cachedPlatform(): 'desktop' | 'android-server' | 'unknown' {
+  return cache?.platform ?? 'unknown'
+}
+
+/** 能力只有明确 supported 才允许进入需要文件系统的功能。 */
+export function isCapabilityAvailable(key: string): boolean {
+  return cachedCapabilityLevel(key) === 'supported'
+}
+
+export function isCapabilityUnknown(key: string): boolean {
+  return cachedCapabilityLevel(key) === 'unknown'
 }
 
 /** 自定义脚本任务类型（0=shell/1=cmd/2=powershell/3=python 文件）是否被当前主机形态禁用。 */

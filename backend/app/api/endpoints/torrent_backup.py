@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.auth.dependencies import require_authenticated_user
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
@@ -43,7 +44,7 @@ from app.downloader.models import BtDownloaders
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(capability_dependency("torrent_backup", "torrent_backup.api"))])
 
 
 # ==================== 辅助函数 ====================

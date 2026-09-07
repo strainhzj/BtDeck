@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.platform_capabilities import require_capability
 from app.database import AsyncSessionLocal
 from app.models.orphan_file import OrphanScanResult
 from app.services.orphan_lease import OrphanLeaseBusyError, orphan_maintenance_scope
@@ -29,6 +30,7 @@ class OrphanScanJobService:
 
     async def submit_scan(self, *, scan_type: str, operator: str) -> Dict[str, Any]:
         """创建 queued 扫描；已有 queued/running 时幂等返回现有任务。"""
+        require_capability("orphan_files", "orphan_files.submit_scan")
         try:
             async with admission_controller.db_write_scope():
                 active_result = await self.db.execute(
@@ -172,6 +174,7 @@ class OrphanScanDispatcher:
         return self._closed
 
     def submit(self, scan_id: str) -> bool:
+        require_capability("orphan_files", "orphan_files.dispatch_scan")
         if self._closed:
             raise RuntimeError("孤儿扫描调度器已关闭")
         existing = self._tasks.get(scan_id)
@@ -223,6 +226,7 @@ class OrphanScanDispatcher:
             self._results.pop(oldest_scan_id, None)
 
     async def recover_pending_scans(self) -> int:
+        require_capability("orphan_files", "orphan_files.recover_scans")
         async with self.session_factory() as db:
             scan_ids = await OrphanScanJobService(db).queued_scan_ids()
         for scan_id in scan_ids:
@@ -314,6 +318,7 @@ class OrphanScanDispatcher:
             return await OrphanScanJobService(db).get_scan(scan_id)
 
     async def execute_scan(self, scan_id: str) -> Dict[str, Any]:
+        require_capability("orphan_files", "orphan_files.execute_scan")
         from app.services.orphan_scanner import OrphanScanner
 
         async with self._serial_lock:

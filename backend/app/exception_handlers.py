@@ -24,6 +24,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.platform_capabilities import PlatformCapabilityUnsupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,27 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         default_status=exc.status_code,
         default_code=code,
         default_msg=default_msg,
+    )
+
+
+async def platform_capability_handler(request: Request, exc: PlatformCapabilityUnsupportedError) -> JSONResponse:
+    """把平台能力拒绝统一成可被前端识别的 403 信封。"""
+
+    del request
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "status": "error",
+            "msg": "当前 BtDeck 服务端不支持该能力",
+            "code": "403",
+            "data": {
+                "reasonCode": "PLATFORM_CAPABILITY_UNSUPPORTED",
+                "capability": exc.capability,
+                "platform": exc.platform,
+                "operation": exc.operation,
+                "retryable": False,
+            },
+        },
     )
 
 
@@ -234,5 +256,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器。应在 create_app() 中、路由挂载前调用。"""
     # Starlette 的 handler 签名按 Exception 声明（具体异常型处理器是惯用窄化写法）
     app.add_exception_handler(HTTPException, cast(Any, http_exception_handler))
+    app.add_exception_handler(PlatformCapabilityUnsupportedError, cast(Any, platform_capability_handler))
     app.add_exception_handler(RequestValidationError, cast(Any, validation_exception_handler))
     app.add_exception_handler(Exception, cast(Any, unhandled_exception_handler))

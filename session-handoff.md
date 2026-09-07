@@ -4419,3 +4419,17 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 相关 5 suites / 204 passed；前端全量 90 suites / 1297 passed；`npm run typecheck`、`npm run lint`、`npm run build` 通过。构建仅保留既有 Browserslist/Sass 警告。
 - 根 `bash ./init.sh --ci` 仍被当前 Windows/WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
 - 本批尚未 Git 提交。保留并未触碰工作区其它 Android、发布构建、生成契约与数据目录修改；后续提交时只暂存本批前端源码、测试和四类项目记录文件。
+
+## 2026-09-07 交接：Android 主服务端路径映射能力硬禁用
+
+### 已完成
+
+- 后端能力矩阵新增并冻结六项 Android 主服务端不支持能力：下载器文件系统访问、路径映射、孤儿文件、种子备份、种子转移、三级回收站；统一 403 错误契约为 `PLATFORM_CAPABILITY_UNSUPPORTED`。
+- 路由、服务、旧同步旁路、定时任务、启动恢复均已加门禁；Android 启动不扫描宿主文件系统，历史孤儿任务仅标记失败；桌面/NAS 行为保持不变，伴侣模式由远端 BtDeck 能力矩阵决定。
+- 前端能力加载 fail-closed，受限路由/侧栏隐藏，下载器路径字段剔除，三级删除/转移/定时任务入口禁用；文档与 roadmap 已同步。
+- 新增 `backend/tests/tasks/test_task_capabilities.py`；既有后端 API/任务回归、前端 lint 与生产构建已通过。
+
+### 待验证/注意
+
+- 本轮最终回归需执行新增任务能力测试、`git diff --check`，并尝试根 `bash ./init.sh --ci`；后者在当前 Windows/WSL 环境可能继续因 `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+- 未执行 Git 提交；工作区含本批后端、前端、测试、文档与路线图变更，另有历史未提交内容，提交时需按文件范围审阅。
