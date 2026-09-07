@@ -51,6 +51,78 @@
   },
   "features": [
     {
+      "id": "diagnosis-export-and-downloader-partial-update-20260907",
+      "name": "故障转储诊断导出端点改造 + 下载器更新接口部分更新契约修复",
+      "description": "两项生产报障修复（2026-09-07）：① 原 GET /api/v1/health/sync 业务健康视图按需求改造为 GET /api/v1/health/diagnosis 故障转储/排查/状态分析导出——_build_diagnosis 一次性聚合版本/构建身份、readiness 三检查（复用 /health/ready 探针但只读、不累计失败计数）、readinessFailureTotal 计数快照、原同步业务健康（任务 outcome/freshness/活动 phase/checkpoint age/下载器离线告警/进程 RSS，整体并入 sync 字段），成功路径 JSONResponse 携带 Content-Disposition: attachment 以 btdeck-diagnosis-<UTC时间戳>.json 附件下发（文件即分析文档，不再包 envelope；错误路径保留 503/500（HTTP 层显式状态码）envelope 稳定 reason code diagnosis_query_timeout/diagnosis_unavailable（异常分支经加固轮改为 JSONResponse 显式 HTTP 500，防 blob 下载路径把错误信封当文件保存）），聚合构建沿用 HEALTH_SYNC_DB_TIMEOUT_SECONDS 有界超时；旧 /health/sync 路径移除并加 404 回归锁防静默复活。前端 settings 页新增「状态诊断」页签一键生成并导出诊断 JSON（blob 走统一 request 客户端携带认证头/续期链路；demo 模式生成前端本地快照文件，结构与后端响应对齐并标注 demo: true）。② POST /downloader/update/{id} 422 修复——根因：桌面列表启停开关整行展开 camelCase 行对象（isSearch 键名不匹配且列表接口不返回 isSsl），而 UpdateDownloader 将 is_search/is_ssl/enabled 声明为必填，键缺失在验证器运行前即 422 Field required；修复为三字段改 bool|None=None（缺省/显式 null = 不修改，与 update 端点 case when :x is not null 部分更新 SQL 的既有设计语义对齐；验证器 None 由吞成 False 改为透传，消除 null 静默关闭下载器搜索/启用的隐患），前端开关改 {id, enabled} 最小 payload，upDownloader 参数收紧为 DownloaderUpdatePayload 类型（禁止 any）。Android 服务端镜像 health.py/api.py/request.py 三文件同步。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "用户报障复现：POST /downloader/update/dabb1e6f… 返回 422 missing is_search/is_ssl，请求体为列表行 camelCase（isSearch/enabled/downloaderType…无 isSsl 键）；对照 backend/app/api/endpoints/downloader.py update 端点 SQL（is_search= case when :is_search is not null…）证实端点本就按部分更新设计，必填声明与 SQL 语义矛盾，故取「后端可选+前端最小 payload」双侧修复而非别名兼容（isSsl 键在列表行中根本不存在，别名方案无法修复缺失键）。/sync 改造参照 OOM 治理批次为该端点建立的数据面（tasks/downloaders/process.rssMb）与运维手册消费方式（runbook curl）。",
+      "security_defaults": {
+        "diagnosis_requires_auth": "诊断导出保留 require_authenticated_user 认证，访问仅记录 username 不记录凭据；导出内容为健康状态与内存采样，不含凭据/令牌/路径映射明文",
+        "partial_update_no_credential_leak": "下载器部分更新缺省字段不回读不重写；密码修改仍强制原密码验证（username_changed/password_changing 判定不变）"
+      },
+      "capabilities": [],
+      "implementation_gates": [],
+      "tasks": [
+        {
+          "id": "diag.endpoint_rework",
+          "name": "/health/sync → /health/diagnosis 故障转储导出端点改造",
+          "description": "health.py 端点重命名+聚合构建+附件下发+旧路径移除；api.py 挂载改 diagnosis_router；测试改锚并新增 404 锁/附件头断言/结构断言",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/health.py",
+            "backend/app/api/api.py",
+            "backend/tests/api/test_health.py"
+          ],
+          "evidence": "pytest tests/api/test_health.py 11 passed（含 test_diagnosis_export_returns_attachment_with_checks_and_sync_business_health 断言 Content-Disposition attachment+btdeck-diagnosis-*.json、checks 三键、sync 字段嵌套结构；test_diagnosis_export_old_sync_path_removed 404 锁；timeout 503 diagnosis_query_timeout）；black/flake8/mypy 3 文件通过；backend/docs/operations/sync-stopgap-runbook.md 三处路径引用同步。加固轮（同日）：异常分支由 CommonResponse(HTTP 200+code 500) 改 JSONResponse 显式 HTTP 500——blob 下载路径不解析业务码，200 错误信封会被前端当诊断文件保存（测试首跑抓出并修复，不回显异常细节有专项断言）；新增三测试：internal-error 500 信封不泄露异常文本、诊断导出只读性差分证明（检查失败进 payload 但 readinessFailureTotal 不变，仅 /health/ready 计数）、敏感键/敏感串全量递归扫描锁（password/token/authorization/secret/cookie/username/credential 与访问者 tester 不得出现）；test_health 15 例全绿"
+        },
+        {
+          "id": "diag.frontend_export",
+          "name": "设置页状态诊断页签（生成并导出 JSON）",
+          "description": "新增 api/health.ts blob 下载与 settings 页「状态诊断」页签；demo 模式生成前端本地快照",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/health.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/settings-diagnosis-export.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts"
+          ],
+          "evidence": "npm run lint（contract:check + --max-warnings 0）通过；npm run typecheck（tsc --noEmit）零错误；blob 走统一 request 客户端（Bearer 注入+401 静默续期重放），与 audit-logs downloadExportFile 同范式。加固轮（同日）：新增 settings-diagnosis-export.spec 4 例（真实 blob 下载文件名/objectURL 释放/demo 不发 API 且本地快照结构对齐 demo:true/失败提示+loading 复位不产生半截下载）+ api-contracts 扩 2 契约（exportDiagnosisFile blob 路径锁定 /health/diagnosis；列表开关源码契约禁止整行展开回归）；52 例（含既有 46）全绿，lint --max-warnings 0 + tsc 零错误"
+        },
+        {
+          "id": "dlupdate.partial_contract",
+          "name": "下载器更新接口部分更新契约修复（422 根修）",
+          "description": "UpdateDownloader is_search/is_ssl/enabled 改可选缺省=不修改；列表启停开关最小 payload；upDownloader 类型收紧",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/downloader/request.py",
+            "backend/tests/api/test_downloader_path_mapping_update.py",
+            "frontend/src/api/downloader.ts",
+            "frontend/src/views/downloader/index.vue",
+            "backend/tests/downloader/test_update_downloader_request.py",
+            "backend/tests/api/test_downloader_update_partial.py"
+          ],
+          "evidence": "新增 test_toggle_enabled_only_keeps_other_fields（只传 enabled，断言 is_search/is_ssl/nickname/host 以 None 传入且 SQL case-when 保持原值）；tests/api/test_downloader_path_mapping_update.py 3 passed + downloader 相关回归 47 passed（add_except_bug/delay_probe/torrent_stats/cache_sync）；前端 lint+typecheck 绿；既有全字段调用方（DownloaderSettingsDialog/mobile DownloaderDialog 表单）不受影响（显式传值语义不变）。加固轮（同日）：新增 pydantic 契约 11 例（三布尔缺省=None 不 422/显式 null 透传不为 False（旧隐患锁）/0-1 字符串转换/布尔透传/非法值仍拒/事故 camelCase 体形状接受）+ 路由级回归 4 例（走完整 FastAPI 验证链：事故请求体原样 200 且 DB 仅 enabled 落库 is_search/is_ssl 保持/最小 payload 往返/非法值仍 422）"
+        },
+        {
+          "id": "diag.android_mirror_sync",
+          "name": "Android 服务端镜像三文件同步",
+          "description": "health.py/api.py/request.py 修改同步至 android/app/src/server/python 本地 staged 树（构建期由 stage-server.py 从 backend 全量重生成，gitignored）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "android/app/src/server/python/app/api/endpoints/health.py",
+            "android/app/src/server/python/app/api/api.py",
+            "android/app/src/server/python/app/downloader/request.py"
+          ],
+          "evidence": "android/app/src/server/ 整树为 android/tools/stage-server.py 构建期从 backend/app 全量 staged 产物（android/.gitignore L15 忽略，不入 git）；本批手动同步 health.py/api.py/request.py 保持本地 staged 树一致（md5 与 backend 侧一致：a44101e6…/2c826771…；request.py 因 git autocrlf 往返行尾差异仅 EOL、内容逐字节等价），下次构建 staging 会自动重生成"
+        }
+      ]
+    },
+    {
       "id": "oom-peak-governance-20260905",
       "name": "定时任务 OOM 峰值治理（R1-R3 核心 + R5/R6 加固 + RSS 观测）",
       "description": "对抗验证确认三个高频 cron 任务在 10 万种子规模下单轮内存峰值逼近/超过后端容器 1G 限额。修复：R1 reannounce 读段 JOIN+双列包含式 LIKE 保守超集预过滤+tracker_id keyset 分页轻量列扫描+命中子集分块回查（原全量 TrackerInfo ORM 加载 50 万行≈1.3GB，顺带消除巨型 IN 超 SQLite 32766 绑定变量上限隐患，Python 精确匹配语义原样保留）；R2 qB tracker-only fetch 分页化仅留 hash 可变轻对象（页重叠 hash 去重，不带 include_trackers/sort——空库 sort 触发 qB BadParams）；R3 TR info-only base 改独立精简字段 TR_INFO_BASE_FIELDS（不动共享 TR_BASE_FIELDS）+detail 按批拉取-处理-释放（批内 hashString 重排保游标全序，flush 仍走 2000 行缓冲上限，锚定单次 bulk_upsert 断言）；TR tracker-only 两阶段（slim [id,hashString] 排序切批→ids 批量拉 trackerStats，此前零覆盖新增 6 用例首网）；R5 脚本任务输出改带上限增量读取（CRON_SCRIPT_OUTPUT_MAX_BYTES 默认 64KB，超限 drain 防管道写满死锁，字节截断后再 decode）；R6 内部类结果渲染改有界摘要 _summarize_result_for_log（execution_log/phase 行与 [:2000] 原样）；批次 5 进程 RSS 观测——sync_observability.get_process_rss_mb（Linux /proc + Windows ctypes 伪句柄 c_void_p 修复 + macOS ru_maxrss 语义陷阱规避返回 None）+EVENT_PROCESS_MEMORY 专属白名单（rss_mb 绝不进 COMMON_FIELDS）+lifecycle run_process_memory_loop（6.8 节门控）+/sync 端点顶层 process.rssMb（last-sample 模式）+四处配置透传（config/根 compose/release 模板/env.example）。已知暂缓（下轮）：qB info 全量快照路径首轮/12h 触发的 ~270MB 峰值（1G 内可承受）。设计经三路独立审查代理实证修订（修正 1 项阻断级 LIKE 漏检、2 项条件性阻断的游标/flush 回归）。 Tier-1（2026-09-05 同日，移动端 2.237GiB 实测驱动）：重启后 15 分钟 819MiB 证实分配器高水位棘轮+重启强制全量快照双放大器——三标记持久化消除重启全量、采样循环空闲归还（malloc_trim/M_PURGE）压棘轮、android-server profile 门控无意义后台件。",

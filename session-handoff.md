@@ -1,3 +1,31 @@
+## 2026-09-07（续二）：/health/sync → /health/diagnosis 故障转储导出 + 下载器更新 422 根修（未提交）
+
+### 交付内容（对应用户报障两项）
+
+1. **诊断导出端点**：`GET /api/v1/health/sync` 改造为 `GET /api/v1/health/diagnosis`——`_build_diagnosis` 聚合 版本/构建身份 + readiness 三检查（只读不计数）+ readinessFailureTotal + 原同步业务健康（并入 `sync` 字段，含 process.rssMb）；成功路径 JSONResponse 带 `Content-Disposition: attachment`（`btdeck-diagnosis-<UTC>.json`，文件即分析文档不包 envelope），超时/异常 503/500 envelope 稳定 reason code；旧路径移除 + 404 回归锁。`api.py` 挂载改 `health.diagnosis_router`。
+2. **前端诊断入口**：settings 新增「状态诊断」页签（一键生成并导出诊断 JSON）；`api/health.ts` blob 走统一 request 客户端（Bearer+401 续期重放）；demo 模式生成前端本地快照（`demo: true`，绕开 demoRequest 无 blob 支持）。
+3. **下载器 422 根修**：根因＝列表启停开关整行展开 camelCase 行对象（isSearch 键不匹配且 getList 不返回 isSsl）+ `UpdateDownloader` 三布尔字段必填。修复＝后端 `is_search/is_ssl/enabled` 改 `bool | None = None`（缺省=不修改，对齐端点 case-when 部分更新 SQL；验证器 None 改透传不再吞成 False）+ 前端开关改 `{id, enabled}` 最小 payload（`upDownloader` 收紧为 `DownloaderUpdatePayload`）。
+4. Android 镜像三文件同步（health.py/api.py/request.py；注意：`android/app/src/server/` 整树为 stage-server.py 构建期从 backend 全量 staged 产物且 gitignored，手动同步只为本地树一致，下次构建自动重生成）。
+
+### 关键坑位（下批必读）
+
+- `tests/release/test_health_build_identity.py` 以**符号** `health.sync_router` 挂载路由（非路径字符串）——按路径 grep "health/sync" 会漏；改名路由符号时须 grep 符号名。首轮全量因此 25 failed（该文件 6 例 + 待复核的关联失败），已改锚 `diagnosis_router` 重跑全量确认。
+- UpdateDownloader 验证器旧注释 "✅修复 None→False" 实为危险语义：显式 null 会被静默写成 False（关闭搜索/停用）。现 None=不修改；新增回归 `test_toggle_enabled_only_keeps_other_fields`。
+- 前端全量 `test:unit --runInBand` 在干净 HEAD 亦崩（FilterGroup.spec 渲染后 UnhandledPromiseRejection "cancel"，单跑通过）——存量套件隔离问题，非本批引入，待专项。
+- **勿跑 `npm run build`**：会覆盖 demo dist（20260907 zip 刚重建）；类型门禁用 `npm run typecheck`。
+
+### 验证
+
+- 加固轮（同日续三）后终态：后端定向 **37 passed**（test_health 15 / downloader_update_partial 4 / update_downloader_request 11 / build_identity 6 / path_mapping 3）+ black/flake8/mypy 绿；前端 **52 passed**（api-contracts 48 含 +2 契约 / settings-diagnosis-export 4 新）+ lint --max-warnings 0 + tsc 零错误。
+- 加固轮抓出并修复一个生产级缺陷：诊断导出异常分支原为 CommonResponse（HTTP 200+业务码 500），blob 下载不解析业务码会把错误信封当诊断文件保存——已改 JSONResponse 显式 HTTP 500（含不回显异常细节断言）。
+- 全量基线：后端 4606 passed + 19 存量回收站失败（a2cb083 干净 HEAD 复现，与本批无关，待专项）；前端全量 test:unit 存量崩溃（FilterGroup 隔离问题）。
+- **用户补充关键信息：导出环境是 Docker 部署** → 诊断 JSON 的 `build.status="invalid"` 语义升级：build_identity_block 三态 ok/dev/invalid（`build_info.py:158`），invalid=身份文件存在但 get_build_info() 抛 BuildInfoError（dev 源码模式才会返回 "dev"）→ Docker 镜像内注入了身份文件但内容非法/缺字段，属发布链路（generate_build_info.py 注入）缺陷线索；且 invalid 在 /health/ready 是 fail-closed 503。
+- **下一对话待办（诊断续）**：①事件循环 lag 根因（p99 134.6/max 324.6ms 超 100ms 阈值，与 info 同步窗口重合旁证：checkpoint 在导出前 159s 更新；对照 sync-stopgap-runbook/sync-contention-runbook 错峰与升级门槛）；②Docker build identity invalid 排查（build_info.locate_build_info + 镜像构建链路 BTDECK_BUILD_INFO 注入）；③readinessFailureTotal={} 与 lag failed 并存 → /health/ready 疑似从未被调用，检查 compose/Dockerfile healthcheck 配置；④时间戳双基准治理（lastSuccessfulDataAt/lastAttemptAt 来自 cron 任务表为本地时间误标 Z（+8h），generatedAt/checkpoint* 为真 UTC；serialize_utc_datetime 对 naive 一律标 Z，修复候选在写入侧统一 UTC，历史"待用户定夺"项）；⑤full 任务 degraded=从未跑过 manual_sync_full 的预期态（可手动触发一次转绿）。
+- 文档：runbook 三处路径、roadmap（根 README 四处 + backend/api README health 行）、feature_list 新 feature（4 tasks done，加固轮 evidence 已追加）、progress.md 续二/续三节。
+- 未执行 Git 提交（等用户确认）。
+
+---
+
 ## 2026-09-06（第二批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（后端全绿）
 
 - **缺口1 摘要**：顶层 str 键/超大 int·Decimal 不再先建完整字符串（8M 键旧实现 ~38MiB）——键值按

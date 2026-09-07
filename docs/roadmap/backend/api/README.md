@@ -21,7 +21,7 @@
 | 定时任务 API cron | `cron_tasks.py` | 定时任务（cron）配置与日志 CRUD/启停 |
 | 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息（`/user/info` 实时下发 `mustChangePassword` 强制改密标志，W9 补全；异常兜底 code 500 防前端误登出）/改密/2FA（挂 `/user` 与 `/users`；2FA 输入错误一律 400，业务 401 仅保留 token 缺陷两处自愈语义）；2FA 二维码 Pillow 缺失（Android 服务端）时降级手动录入——`_generate_totp_qr_png` 返回 None 则信封带 secret+qr_available=False（2026-09-04） |
 | 仪表盘 dashboard | `dashboard.py` | 仪表盘聚合数据，委托 `DashboardService` |
-| 健康检查 health | `health.py` | liveness/readiness 与受保护同步业务健康；数据库查询和同步健康均有界超时；live/ready 的 data 携带 version（伴侣模式 Phase 2 版本提示，2026-08-23 起） |
+| 健康检查 health | `health.py` | liveness/readiness 与受认证故障转储/状态分析导出：`GET /api/v1/health/diagnosis` 以 JSON 附件（`Content-Disposition: attachment`，文件名 `btdeck-diagnosis-*.json`）聚合版本/构建身份、readiness 检查、同步业务健康（原 `/health/sync` 数据并入 `sync` 字段）与进程 RSS（2026-09-07 改造）；数据库查询和聚合构建均有界超时；live/ready 的 data 携带 version（伴侣模式 Phase 2 版本提示，2026-08-23 起） |
 | 下载器核心 downloader | `downloader.py` | 下载器核心 API（连通性测试/添加管理）；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed |
 | 能力探测 capability | `downloader_capabilities.py` | 下载器能力探测 |
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |

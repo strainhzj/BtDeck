@@ -7271,3 +7271,25 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - API 测试更新为 schemaVersion=2、20 项、degraded=5、unsupported=9，并覆盖路径映射、孤儿、备份、转移、三级删除六个代表性入口的 403 信封；启动测试补齐真实临时 SQLite 的幂等收敛和目标文件保留断言。
 - AVD `btdeck-a35` 已重建并安装最新 server APK；`LocalServerAndroidTest` 通过（1/1）：健康/静态首页、登录、矩阵计数、五类 403、无 dispatcher、停止/重启均通过。`adb logcat` 记录 Android 跳过文件系统对账并完成历史任务收敛。
 - 验证：后端定向 39 passed，前端能力/任务 4 suites 30 passed，frontend lint/typecheck/build、flake8/mypy/ruff format、`git diff --check` 通过；`bash ./init.sh --ci` 通过（前端脚本仍有既有 null-byte 警告）。未执行 Git 提交，保留未跟踪 `data/`。
+
+## 2026-09-07（续二）：/health/sync 改造故障转储诊断导出 + 下载器更新 422 根修
+
+- **用户报障两项**：① /sync 接口按需求改为"故障转储/排查/状态分析"接口，点击后生成并导出分析 JSON 文件；② `POST /downloader/update/{id}` 返回 422（missing `is_search`/`is_ssl`）。
+- **422 根因（实证）**：桌面列表启停开关 `handleToggleEnable` 整行展开 camelCase 行对象（`isSearch` 键名不匹配；且 getList 接口本就不返回 isSsl——见 `views/downloader/types.ts:20` 注释），而 `UpdateDownloader` 把 `is_search`/`is_ssl`/`enabled` 声明为必填，键缺失在验证器运行前即 422。对照 update 端点 SQL（`is_search= case when :is_search is not null then …`）证实端点本就按部分更新设计，必填声明与 SQL 语义矛盾。
+- **修复（双侧）**：后端三字段改 `bool | None = None`（缺省=不修改；验证器 None 由吞成 False 改透传，消除显式 null 静默关闭搜索/启用的隐患）；前端开关改 `{id, enabled}` 最小 payload，`upDownloader` 参数收紧为 `DownloaderUpdatePayload`（显式全字段调用方 DownloaderSettingsDialog/mobile DownloaderDialog 语义不变）。别名兼容方案被否决：isSsl 键在列表行中根本不存在，别名无法修复缺失键。
+- **/sync 改造**：`GET /api/v1/health/sync` → `GET /api/v1/health/diagnosis`。`_build_diagnosis` 聚合版本/构建身份 + readiness 三检查（复用 /health/ready 探针、只读、不累计失败计数）+ readinessFailureTotal 快照 + 原同步业务健康（并入 `sync` 字段，含 process.rssMb）；成功路径 JSONResponse 携带 `Content-Disposition: attachment`（`btdeck-diagnosis-<UTC>.json`，文件即分析文档不包 envelope），超时/异常保留 503/500 envelope 稳定 reason code；旧路径移除并加 404 回归锁。`api.py` 挂载改 `health.diagnosis_router`。
+- **前端诊断入口**：settings 页新增「状态诊断」页签——一键"生成并导出诊断文件"；blob 走统一 request 客户端（Bearer 注入 + 401 静默续期重放，同 audit-logs downloadExportFile 范式）；demo 模式生成前端本地快照（结构与后端对齐 + `demo: true`），绕开 demoRequest 不支持 blob 的限制。新增 `frontend/src/api/health.ts`。
+- **Android 镜像**：`android/app/src/server/python` 的 health.py/api.py/request.py 三文件同步（同步前 md5 与 backend HEAD 一致证明确为镜像维护）。
+- **测试**：test_health 4 处改锚（路径/结构/超时函数名）+ 新增旧路径 404 锁与附件头断言（11 passed）；test_downloader_path_mapping_update 新增 `test_toggle_enabled_only_keeps_other_fields`（只传 enabled，断言其余字段 None 传入且 case-when 保持原值，3 passed）；downloader 相关回归 47 passed；black/flake8/mypy 改动文件全绿；前端 lint（--max-warnings 0）+ typecheck 零错误。**npm run build 有意未跑**：常规构建会覆盖 demo dist（20260907 zip 刚重建，见上节），typecheck 已覆盖类型完整性。
+- **存量问题记录（与本批无关）**：前端全量 `test:unit --runInBand` 在干净 HEAD 亦崩于 FilterGroup.spec 渲染后的 UnhandledPromiseRejection "cancel"（单跑该 spec 通过，stash 验证过），属既有套件隔离问题，待专项治理。
+- **文档**：sync-stopgap-runbook.md 三处路径引用更新（含 curl 附件说明）；roadmap 根 README（生成日期/本次新增/下载器行/设置行）与 backend/api README health 行更新；feature_list 新增 `diagnosis-export-and-downloader-partial-update-20260907`（4 tasks 全 done）。未执行 Git 提交。
+
+## 2026-09-07（续三）：诊断导出+下载器 422 修复回归加固——后端 +18/前端 +6，抓出并修复 blob 误下载缺陷
+
+- **用户要求**：为本批修改补充足回归测试；并确认导出环境为 Docker 部署（build invalid 语义随之升级为发布链路线索，见 session-handoff 待办）。
+- **抓出生产级缺陷（测试首跑即红）**：诊断导出异常分支原样沿用旧 /sync 的 `CommonResponse(code="500")` —— HTTP 200 + 业务码 500。blob 下载路径（request.ts 拦截器对 blob 直接返回原始 data，不解析业务码）会把错误信封当诊断文件保存，用户拿到一个"看起来导出成功"的坏文件。修复：改 `JSONResponse(status_code=500, envelope)`，并加"不回显异常细节"断言（异常文本可能含路径）。
+- **后端 +18**：test_health 11→15——internal-error 500 信封不泄露异常文本、诊断导出只读性差分证明（db 探针失败进 payload 但 readinessFailureTotal 不变；随后 /health/ready 503 一次即计数 db_unavailable=1，证明计数仅由 ready 触发）、敏感键/敏感串递归全量扫描锁（password/token/authorization/secret/cookie/username/credential 键与 bearer/jwt/secret 串及访问者用户名不得出现）；新增 tests/downloader/test_update_downloader_request.py 11 例（缺省=None 不 422、显式 null 透传不为 False（旧 None→False 静默关闭隐患锁）、"0"/"1" 转换、布尔透传、非法值仍拒、事故 camelCase 体形状接受）；新增 tests/api/test_downloader_update_partial.py 4 例（完整 FastAPI 路由链：**事故请求体原样重放** 200 且 DB 仅 enabled 落库、最小 payload 往返启停、is_search/is_ssl 两次均保持 True、非法布尔仍 422）。
+- **前端 +6**：新增 tests/unit/settings-diagnosis-export.spec.ts 4 例（真实模式 blob 下载 btdeck-diagnosis-*.json+objectURL 释放、demo 不发 API 本地快照 demo:true 结构对齐、失败提示+loading 复位不半截下载）；api-contracts.spec 扩 2（exportDiagnosisFile blob 契约锁定 /health/diagnosis、列表开关源码契约 `upDownloader({ id: downloader.id, enabled: newEnabled })` 禁止整行展开回归）。
+- **验证**：后端定向 37 passed（test_health 15+update_partial 4+request 契约 11+build_identity 6+path_mapping 3）+ black/flake8/mypy 绿；前端 52 passed（api-contracts 48+settings 新 4）+ lint --max-warnings 0 + tsc 零错误。Android 镜像 health.py 同步（md5 一致）。
+- **测试坑（记录勿重踩）**：① jsdom 无 URL.createObjectURL，须注入 jest.fn 桩并 spy HTMLAnchorElement.prototype.click 捕获 download 文件名；② vue 组件 $message mock 形态按调用方式选——settings 组件用 `$message.success(...)` 方法式，plain jest.fn() 会报 "error is not a function"；③ 闭包内赋值的 `let captured: Blob | null` 逃不过 TS 控制流收窄（仍判 null），改数组捕获；④ jest.mock 工厂外的具名 import 若仅用于 mock 路径会触发 no-unused-vars 警告（--max-warnings 0 直接红），mock 后不需要真 import。
+- 未执行 Git 提交。
