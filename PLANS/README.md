@@ -7,7 +7,7 @@
 
 | 计划 | 范围 | 状态 |
 |------|------|------|
-| [MCP 服务与可选能力开放](./mcp-service-capabilities.md) | 同进程 MCP、全局/逐能力开关、统一认证、Tracker/路径脱敏、六项首批工具与 G0～G11 实现门禁 | 📝 待实施（2026-09-08 现状审计：前置 service 解耦已落地，W0 待启动，工具 0/6、Gate 0/12 完成）；feature `mcp-service-capabilities-2026-08-28` |
+| [MCP 服务与可选能力开放](./mcp-service-capabilities.md) | 同进程 MCP、全局/逐能力开关、统一认证、Tracker/路径脱敏、六项首批工具与 G0～G11 实现门禁 | 🚧 实施中（2026-09-08 W0 契约/选型 + W1 配置控制面（fail-closed/CAS/kill switch/设置 UI）落地；下一步 W2 挂载与认证接线；工具 0/6、Gate 0/12 PASS）；feature `mcp-service-capabilities-2026-08-28` |
 | [双模式客户端](./dual-mode-client.md) | 服务端模式/伴侣客户端模式、安卓壳工程、移动 UI 与发布验收 | 🔶 进行中；feature `v1.0.6-dual-mode-client`（9 task 完成 8，剩 Play/侧载/跨模式发布验收） |
 | [前端静态展示 Demo](./frontend-static-showcase-demo.md) | 不依赖真实后端的静态 Demo 构建与独立交付 | 🔶 进行中；feature `frontend-static-showcase-demo-2026-08-23`（7 阶段完成 6，剩 Docker demo 镜像构建与浏览器人工验收） |
 | [v1.0.8 数据库升级](./v1.0.8.md) | PostgreSQL 数据源支持（条件演进路线）+ SQLite→PG 迁移 | ⏸️ 暂缓（2026-09-08 决策：数据库源变动暂不处理）。注意：原计划中下载器连接池部分已被 `app.state.store` 缓存 + DownloaderApiRuntime 容量治理覆盖；重启前须先按归档 sync 计划 W5-3 重写对齐当前架构 |

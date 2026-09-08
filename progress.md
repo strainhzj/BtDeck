@@ -7333,3 +7333,29 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：feature_list.json JSON 校验通过；改动文件 flake8/black/mypy 抽查无新增违规——`cron_executor.py` 的 black join 差异与 `test_sync_api_responsiveness.py:107` E305 经 git stash 对照证实均为 HEAD 既有，与本批无关；前端 4 文件纯注释变更不影响 tsc；根 `bash ./init.sh --ci` 通过。
 - **存量观察（非本批引入）**：全仓 black --check 在 `app/`、`scripts/` 下存在多个既有不达标文件（add_welcome_and_update_notifications.py、debug_orphan_misclassification.py、tracker_sync_task.py 等）；feature_list.json 存在两个悬空计划引用（`PLANS/orphan-files-state-consistency-fix`×9、`PLANS/oom-peak-governance-20260905.md`×1，目标文件不存在）。建议后续专项清理。
 - 未执行 Git 提交。
+
+## 2026-09-08（续）：MCP W0 批次交付——契约层/错误码/SDK 选型探针/G0 门禁/威胁模型/Gate 骨架
+
+- **用户指令**：继续推进 PLANS/mcp-service-capabilities.md。按 §11.3 从 W0 六项交付物启动（用户指令即 §10.2 批次确认）；遵守 W0 纪律——不动生产 requirements、不改 app/auth//factory/业务 service、不做设置 UI。
+- **契约层（backend/app/mcp/）**：`contracts.py` 固化 6 工具目录（风险分级+confirm/幂等/审计要求）、输入契约（含 tracker 仅域名、批量≤100、上传 10/64MiB 双上限）、输出 allowlist（点路径嵌套）、脱敏数据字典（8 类含 §10.1-6 的 TrackerMessageLog.msg 与 sample_urls）、预算常量与配置键；`errors.py` 23 个稳定错误码 + HTTP 语义对齐表 + 固定默认文案 + principal REASON_* 映射。
+- **SDK 选型（核心结论：官方 mcp 1.30.0 + streamable HTTP stateless）**：新探针 `backend/scripts/mcp_sdk_probe.py`（隔离 venv 按仓库锁定组合安装后 selfcheck 重入 + 可选 onefile）。矩阵：py3.11/3.12 × fastmcp 2.14.3/mcp 1.30.0 在 fastapi 0.115.6+starlette 0.41.3 下 C1~C4 全 PASS；C5 onefile 官方 mcp 零附加参数 PASS（10.9MB/17.6s），fastmcp FAIL（PackageNotFoundError→补 --copy-metadata 再缺 burner_redis 隐藏导入，29.7MB）+ 实测未声明运行时依赖 packaging → 选官方 SDK。两 spec 的 fastmcp 排除条目保持有效；SDK 入 requirements 推迟 W4。
+- **探针实测接线知识（W2 直接复用）**：①fastmcp 2.14.3 无文档所载 FastMCPManager，实际机制是 http_app() 返回 StarletteWithLifespan + 父 lifespan 手动 `sub_asgi.lifespan(sub_asgi)`；官方 SDK 同理须父 lifespan 内 `session_manager.run()`。②挂载点 /mcp + 子应用路由 / 时 POST /mcp 会 307 到 /mcp/。③工具内可读父 lifespan 写入的共享标记（RuntimeContext 注入前提实证）。④官方 SDK 参数名 stateless（非 fastmcp 的 stateless_http）。
+- **G0 静态门禁**：`tests/mcp/test_mcp_architecture_constraints.py` 15 项——app/mcp/** 禁 import 全局 app（任何位置，严于 endpoint 的仅顶层）/禁 app.api*/禁构造下载器客户端；12 个负向反例证规则有牙 + 6 个合法引用防误报（app.api_schema 精确前缀匹配防误命中）。§10.1-8 定夺：包 __init__.py + 差异化文件名双保险，根级同名文件零冲突。
+- **测试**：tests/mcp 三文件 69 项（G0 15 + 契约 26 + 探针/证据锚定 28）+ tests/release/test_mcp_gate_skeleton.py 12 项全绿；含 feature_list.json capabilities 单一事实源交叉校验、四份证据 JSON 防删改锚定（fastmcp C5 FAIL 是决策证据，按文件区分 verdict 预期）。相邻回归（根架构约束 23 + 既有 aggregate gate report）合计 132 passed。
+- **Gate 骨架**：`release/schemas/mcp-gate-fragment.schema.json`（对齐发布 G0~G10 片段语义 + fail-closed 加强：PASS 必须带非空 evidence）+ `scripts/release/aggregate_mcp_gates.py`（空片段目录=12×NOT_RUN=BLOCKED、exit 1，"NOT_RUN 即红"占位实证；坏 JSON/schema 违例=INDETERMINATE 不静默降级）。CI 接线随 W4 制品批次。
+- **威胁模型**：`docs/security/mcp-threat-model.md`——信任边界图、STRIDE 12 项矩阵（每项映射 G 门禁与 W0 现状）、5 条现状缺口（含 HTTP 侧未接 principal 内核）、prompt 注入面 7 行分析（输出面枚举化/域名归一/固定文案；服务端无 LLM）、回滚引用计划 §9。
+- **文档/状态回填**：计划新增 §10.4（交付清单+矩阵+选型理由+W2 接线实证）、§11 波次表与 §11.3 更新；PLANS/README 状态改"实施中"；feature_list W0 任务转 in_progress（evidence 完整，待评审转 done）、.3/.7 文件清单纳入已落地前置模块（principal/runtime_context/audit_context/cron_trigger 等）。
+- **坑（记录勿重踩）**：①并行跑两个探针 pip install 会网络争用超时（600s），矩阵串行跑；②PyInstaller 静态分析追踪不到运行时 sys.path.insert 导入的模块——须把探针模块复制进 specpath 目录否则冻结包缺 fastapi；③str.format 模板里 `body.get("result", {})` 的单花括号会变 auto-positional 替换字段——模板内所有字面量花括号必须双写。
+- **验证**：black(24.10.0)/flake8/mypy 9 文件全绿；新增+相邻 132 passed；SDK 探针矩阵 4 份证据 JSON 落库 tests/mcp/evidence/。未运行完整后端全量套件（W0 无业务代码改动，影响面为纯新增文件）。未执行 Git 提交。
+
+## 2026-09-08（续二）：MCP W1 配置控制面——McpSettingsService + 认证设置 API + 设置 UI
+
+- **用户指令**：启动 W1 配置控制面（W0 契约/威胁模型随推进获得接受，任务 .1 转 done）。
+- **后端服务（app/services/mcp_settings_service.py）**：configs 表首个版本化 JSON 键 `mcp.runtime.v1`。fail-closed 加载——缺失/JSON 损坏/非对象/未知 schemaVersion/字段缺失或类型非法（含 bool revision、缺任一能力码）**整体回落默认全关，不部分采信**；revision CAS——expectedRevision 与库中比较不符抛冲突（无行/损坏行基线 revision 0，可建行与修复）；kill switch——`BTDECK_MCP_FORCE_DISABLED` 只读覆盖 `effective_enabled`（存储意图允许落库，解除后按存储值恢复）。默认 seed 定义在 app/data/default_mcp_settings.py（与 contracts 能力目录联动，无启动期写库——首次 GET revision 0、首次 PUT 建行）。
+- **后端端点（app/api/endpoints/mcp_settings.py，挂载 /api/v1/mcp）**：GET 下发生效配置 + 能力目录元数据（单一事实源 contracts.CAPABILITY_CATALOG，UI 零文案副本）；PUT CAS 更新（409 带 currentRevision）/载荷校验（全量能力码、拒未知码 400）；认证门禁 `require_mcp_control_plane_user` 直连 principal 内核（无/坏 token/用户不存在 401，禁用/强制改密 403，X-Access-Token 双兼容复用 `_extract_access_token` 防 BTD201）；PUT best-effort 审计（audit_enums 新增 MCP_SETTINGS_UPDATE，种子无关配置变更也入 torrent_audit_log，operator=principal）。
+- **前端**：`api/mcp-settings.ts`（envelope 类型 + 409 语义注释）+ `views/settings/components/McpSettingsPanel.vue`（全局开关 + 6 能力开关带风险标签/说明/写操作注意项、kill switch 只读横幅（含"保存保留意图"语义）、409 自动重载、dirty 跟踪禁用保存、demo 只读占位、加载失败重试）；settings/index.vue 新增 MCP 服务页签；**移动端零新代码**——mobile/settings.vue 本就包装整个桌面设置页，页签自动同源。settings-card 样式是父组件 scoped 不穿透，面板自带同变量卡片样式。
+- **测试**：后端 test_mcp_settings 28 项——G1 fail-closed 7 形态参数化 + kill switch 双向（存储值回显/生效恒关/PUT 保留意图）、G2 CAS（建行 rev1/409 不写穿/顺序 0→1→2/损坏行 rev0 修复/未知码 400/缺码 400/schema 422）、G3 认证矩阵（principal 真链路：真 User 行+真 token，含 X-Access-Token 兼容）、G11 审计（成功写入 operator/revision、409 不追加）。前端 mcp-settings.spec 8 项（目录渲染单一事实源、CAS 载荷与收敛、409 重载、非 409 不重载、kill switch 横幅且不锁保存、demo 零请求、失败重试、dirty 禁用）。
+- **相邻回归加固**：test_auth_route_coverage 的鉴权依赖登记表按其设计扩展点登记 `require_mcp_control_plane_user`（原口径只认 require_authenticated_user/get_current_user）。
+- **验证**：后端受影响回归 150 passed（tests/mcp 69 + mcp_settings 28 + 路由覆盖 17 + 审计 41 + 根架构约束 23 - 计数重叠）+ black/flake8/mypy 全部改动文件绿；前端 lint（contract:check + --max-warnings 0）+ typecheck 绿，settings/mobile 相邻 specs 19 项绿。**npm run build 有意未跑**（会覆盖 20260907 demo dist；typecheck 已覆盖类型）。
+- **坑（记录勿重踩）**：①jest 挂载 ElementUI 组件后 wrapper.vm as PanelVm 需 as unknown as 中转（CombinedVueInstance 不重叠）；②click 触发用 wrapper.vm.$emit 而非 wrapper.$emit；③eslint no-non-null-assertion 在 --max-warnings 0 下即红——find/find Button 模式改显式抛错辅助函数；④异步 load 后断言需 setTimeout(0) 刷微任务（Promise.resolve() 一轮不够）。
+- **状态**：feature_list W0/W1 任务 done（evidence 完整，Gate 整体 PASS 待 W2~W4 运行时与制品证据）；计划 §11 波次表/§11.3、PLANS/README 同步。未执行 Git 提交。

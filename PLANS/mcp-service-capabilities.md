@@ -1,8 +1,8 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: MCP 专项待实施（pending）；2026-09-05 前置 service 解耦已落地，2026-09-08 完成现状审计（§11），W0 待启动
-> **规划日期**: 2026-08-28（2026-09-05 复核）
+> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4，契约/威胁模型待评审后进入 W1）
+> **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
 
@@ -420,19 +420,62 @@ W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应�
   task_type 4/5/6 一律不作为放行依据，仅显式 task_code 白名单。
 - W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。
 
+### 10.4 W0 交付与 SDK 选型结论（2026-09-08）
+
+§10.2 六项交付物全部落地；本节为选型结论的权威记录（证据 JSON 在
+`backend/tests/mcp/evidence/`，被 `tests/mcp/test_sdk_compatibility.py` 锚定防删改）。
+
+**交付清单**：
+
+| # | 交付物 | 实际文件 |
+|---|--------|----------|
+| 1 | 能力契约 | `backend/app/mcp/contracts.py`（6 工具目录/输入契约/输出 allowlist/脱敏字典/预算常量/配置键）+ `backend/app/mcp/__init__.py` |
+| 2 | 错误码 | `backend/app/mcp/errors.py`（23 码 + HTTP 对齐表 + 默认文案 + principal 原因码映射） |
+| 3 | SDK 探针 | `backend/scripts/mcp_sdk_probe.py`（隔离 venv + selfcheck 重入 + 可选 onefile）+ 4 份证据 JSON |
+| 4 | G0 静态门禁 | `backend/tests/mcp/test_mcp_architecture_constraints.py`（§10.1-8 定夺：包 `__init__.py` + 差异化文件名双保险，根级同名文件零冲突） |
+| 5 | 威胁模型 | `docs/security/mcp-threat-model.md`（STRIDE 矩阵、W0 现状缺口、prompt 注入面、门禁映射、回滚引用） |
+| 6 | Gate 骨架 | `release/schemas/mcp-gate-fragment.schema.json` + `scripts/release/aggregate_mcp_gates.py` + `backend/tests/release/test_mcp_gate_skeleton.py`（fail-closed：PASS 必须带非空 evidence；空片段目录=12×NOT_RUN=BLOCKED，exit≠0） |
+
+**SDK 兼容矩阵**（隔离 venv，仓库锁定 fastapi 0.115.6 + starlette 0.41.3 + pydantic 2.12.4 + httpx 0.28.1 + uvicorn 0.35.0 + packaging 24.2）：
+
+| 组合 | C1 import/C2 挂载顺序/C3 lifespan 共存/C4 协议握手 | C5 PyInstaller onefile (py3.12) |
+|------|------|------|
+| py3.11 + fastmcp 2.14.3 | 全 PASS | — |
+| py3.11 + mcp 1.30.0 | 全 PASS | — |
+| py3.12 + fastmcp 2.14.3 | 全 PASS | **FAIL**：29.7MB；运行时 `PackageNotFoundError('fastmcp')`；手动补 `--copy-metadata fastmcp mcp` 后再缺 `burner_redis` 隐藏导入（连环补救未穷尽） |
+| py3.12 + mcp 1.30.0 | 全 PASS | **PASS**：10.9MB、构建 17.6s、**零附加打包参数** |
+
+**选型结论：官方 `mcp` SDK（探针锁定 1.30.0），transport 用 streamable HTTP stateless 模式**（W4 才入 requirements/spec，遵守 §10.2 "W0 不动生产依赖"）。理由：
+
+1. W2 必须自建的深度定制（逐能力发现/执行双门禁、principal 认证、脱敏 DTO、稳定错误码）本就要在工具 dispatch 层重写，fastmcp 的高层便利（客户端/代理/Bearer 处理）对 BtDeck 价值低。
+2. 依赖足迹：fastmcp 额外拖入 rich/cyclopts/websockets/py-key-value-aio/pydocket/authlib 等，且实测有**未声明运行时依赖**（`packaging`——仓库恰好已锁，纯探针 venv 缺它即崩）；官方 SDK 直依赖少。
+3. 打包实证（上表 C5）：fastmcp 需未声明依赖 + copy-metadata + 隐藏导入连环补救，G10 要过 EXE/DEB/RPM/Docker 四制品矩阵，此摩擦不可接受；官方 mcp 零参数通过。
+4. fastmcp 2.x API 演进快（其文档中的 `FastMCPManager` 在 2.14.3 已不存在，实际机制是 `http_app()` 返回 `StarletteWithLifespan` + 父 lifespan 手动进入 `sub_asgi.lifespan(sub_asgi)`），锁定维护成本高；官方 SDK 是协议参考实现，fastmcp 自身也依赖它。
+5. 两个 PyInstaller spec 的 `fastmcp` 排除条目**保持有效**（防御性瘦身清单），W4 只需把 `mcp` 入锁并验证。
+
+**W2 接线实证**（探针 C3/C4 已证，供 runtime.py 直接采用）：
+
+- 父应用 lifespan 内手动进入子应用 lifespan（官方 SDK：`async with session_manager.run()` 包进根 lifespan；挂载的 Starlette 子应用 lifespan 不会被 FastAPI 自动运行）。
+- 挂载点 `/mcp` + 子应用路由 `/` 时，`POST /mcp` 会 307 到 `/mcp/`——服务端路由与客户端文档都按 `/mcp/` 对齐。
+- 工具函数可读取父 lifespan 写入的共享标记（marker 回传成功），验证 RuntimeContext 注入前提成立。
+- `StreamableHTTPSessionManager` 的参数名是 `stateless`（官方 SDK）而非 fastmcp 的 `stateless_http`。
+
+**W0 完成判据对账**：契约/错误码/目录/数据字典已固化并经 26 项 `test_contracts.py` 锚定（含 feature_list.json 单一事实源交叉校验）；本节即选型结论；G0 静态门禁基线绿（15 项：3 条规则 × 12 负向反例 + 6 合法引用防误报对照 + 全包扫描）；threat-model 已交付；Gate 骨架 NOT_RUN 即红实证。**契约与威胁模型的人工评审通过后，W0 方可标记 done 并启动 W1。**
+
 ## 11. 2026-09-08 实施现状与后续入口
 
 审计基线：当前工作区 `dev1.0.7`，包含既有未提交改动；前置解耦已在提交 `ba8408f` 落地。
 feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，可用 MCP 工具为 0/6。
 这是验收完成数量，不代表前置工程工作量为零，也不应据此估算剩余工时。
+**同日更新：W0 六项交付物已落地（见 §10.4），SDK 选型定为官方 mcp 1.30.0；契约与威胁模型待评审。**
 
 | 波次 | 当前状态 | 已有证据 / 剩余工作 |
 |------|----------|----------------------|
-| W0 | 未启动 | 契约、错误码、SDK 兼容探针、威胁模型及 MCP Gate 骨架尚未交付 |
-| W1 | 未启动 | 配置 seed/CAS/原子快照、kill switch、设置 API 与桌面/移动 UI 均未实现 |
-| W2 | 前置部分完成 | RuntimeContext、AuditContext、authenticate_access_token 已存在；MCP 挂载、双会话工厂、认证接入、发现/调用门禁和脱敏层尚未实现 |
+| W0 | done（2026-09-08） | 六项交付物落地（§10.4），选型官方 mcp 1.30.0；契约/威胁模型随 W1 启动获得接受 |
+| W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
+| W2 | 前置部分完成 | RuntimeContext、AuditContext、authenticate_access_token 已存在；MCP 挂载（官方 mcp SDK + streamable HTTP stateless，§10.4 接线实证）、双会话工厂、认证接入、发现/调用门禁和脱敏层尚未实现；配置原子快照消费方（tools/list、tools/call）在本波接入 |
 | W3 | 前置部分完成 | Dashboard、等级删除、单种添加已改依赖注入，Cron code 助手已存在；六项工具均未接入 |
-| W4 | 未启动 | 无 MCP 等价/安全/制品测试及 runbook；两个 PyInstaller spec 仍排除 fastmcp，未锁定 MCP SDK |
+| W4 | 未启动 | 无 MCP 等价/安全/制品测试及 runbook；SDK 已选定（mcp 1.30.0）但未入 requirements，两 spec 的 fastmcp 排除条目保持有效 |
 
 ### 11.1 前置交付与未闭合边界
 
@@ -452,7 +495,12 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 
 ### 11.3 下一批工作
 
-从 §10.2 的 W0 六项交付物启动：固化契约及威胁模型，完成 SDK/transport 选型探针与 Gate 骨架。
-同步修正任务文件清单以纳入已完成的前置模块和真实测试落点，避免重复抽取 service。
-其后依次推进 W1 → W2 → W3 → W4；只有各项验收证据齐全才更新任务及 Gate 状态。
+W0（§10.4）与 W1（配置控制面：McpSettingsService + 认证设置 API + 设置 UI）均已落地。
+下一批启动 W2：以官方 mcp SDK 1.30.0 + streamable HTTP stateless 在 SPA fallback 前挂载
+同进程 MCP 应用（父 lifespan 手动进入 session_manager.run()，§10.4 接线实证），接入
+双会话工厂与 principal 认证，实现全局/能力/认证三重门禁与脱敏层；tools/list 与
+tools/call 即时消费 McpSettingsService 的配置快照（kill switch 与 revision 热更新在
+本波获得运行时证据）。其后 W3（六工具三批）→ W4（等价/制品/演练）；每批产出
+MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py` 汇聚（当前 12 门
+NOT_RUN=BLOCKED，逐门回填转绿），才可更新任务及 Gate 状态。
 

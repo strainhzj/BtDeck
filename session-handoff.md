@@ -1,3 +1,28 @@
+## 2026-09-08（续）：MCP W0（契约/SDK 选型/G0 门禁/Gate 骨架）+ W1（配置控制面）已落地待推送后进入 W2
+
+### 交付内容（本会话两批，随本条目一并提交）
+
+- **W0**：`backend/app/mcp/contracts.py`（6 工具目录/输入契约/输出 allowlist/脱敏字典/预算常量）+ `errors.py`（23 稳定错误码+HTTP 对齐表+principal 映射）；SDK 探针 `backend/scripts/mcp_sdk_probe.py` + 4 份锁定组合证据 JSON（`backend/tests/mcp/evidence/`）；G0 静态门禁 + 契约/证据锚定测试（`backend/tests/mcp/`）；威胁模型 `docs/security/mcp-threat-model.md`；MCP-G0~G11 Gate 骨架（`release/schemas/mcp-gate-fragment.schema.json` + `scripts/release/aggregate_mcp_gates.py` + `backend/tests/release/test_mcp_gate_skeleton.py`，空片段目录=12×NOT_RUN=BLOCKED）。
+- **W1**：`McpSettingsService`（configs 表首个版本化 JSON 键 `mcp.runtime.v1`，fail-closed 整体回落/revision CAS/kill switch 只读覆盖）+ `GET/PUT /api/v1/mcp/settings`（principal 认证门禁 401/403、能力目录元数据下发、best-effort 审计 `MCP_SETTINGS_UPDATE`）+ `BTDECK_MCP_FORCE_DISABLED` 配置 + 前端 `McpSettingsPanel.vue` 设置页签（移动端经 mobile/settings.vue 包装自动同源，零新代码）。
+- **SDK 选型结论（计划 §10.4）**：官方 `mcp` SDK **1.30.0** + streamable HTTP stateless。fastmcp 2.14.3 因打包摩擦落选（未声明依赖 packaging、--copy-metadata 后再缺 burner_redis、29.7MB vs 10.9MB）。**SDK 依赖未入生产 requirements（W0 纪律），W4 才锁定。**
+
+### 下一批：W2（计划 §6-W2 + §10.3/§10.4 接线实证）
+
+- 以官方 mcp SDK 在 SPA fallback 前挂载同进程 MCP 应用到根 `/mcp`；**父 lifespan 内手动进入 `session_manager.run()`**（挂载的子应用 lifespan 不会被 FastAPI 自动运行）；客户端端点按 `/mcp/`（无斜杠会 307）。
+- runtime 暴露同步+异步双会话工厂；tools/list 与 tools/call 即时消费 McpSettingsService 快照（G1/G2 的 kill switch、revision 热更新在本波获得运行时证据）。
+- 认证接线复用 `app/auth/principal.py` 内核（HTTP 侧 dependencies.py 仍不接，语义不破坏，见 §10.1-3/§11.1）。
+- 脱敏层（redaction.py）按 contracts.py 脱敏字典实现 + 泄漏扫描器。
+- 预期文件见计划 §6 W2；每批产出 MCP-G<n>.json 片段由 aggregate_mcp_gates.py 汇聚。
+
+### 环境要点（新设备必读）
+
+- 后端质量门用 anaconda base（pytest 8.3.5/mypy/black 24.10/flake8；Windows `C:/Users/thoma/anaconda3/python.exe`）；跑服务用 btpManager。新设备按 backend/scripts/init.sh 重建。
+- tests/mcp/test_sdk_compatibility.py 的就地 selfcheck 在未安装 fastmcp/mcp 的环境自动 skip（锁定组合证据以仓库内 4 份 JSON 为准，不依赖本地重跑）。
+- 前端 Node 22.23.2（engines >=22.23.2 <23）；`npm run lint -- --no-fix` + `npm run typecheck` 为门禁；全量 test:unit --runInBand 在干净 HEAD 亦有 FilterGroup.spec 既有隔离问题（progress 2026-09-07 续三）。
+- 本批有意未跑 `npm run build`（防覆盖 20260907 demo dist）；W2 后端为主不涉及。
+
+---
+
 ## 2026-09-08：MCP 计划现状同步
 
 - 已更新 PLANS/mcp-service-capabilities.md §2/§10/§11、计划索引、feature implementation_review 和 progress；所有 MCP 任务/Gate 保持 pending。

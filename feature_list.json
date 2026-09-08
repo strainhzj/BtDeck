@@ -329,8 +329,8 @@
       "implementation_review": {
         "date": "2026-09-08",
         "workspace_branch": "dev1.0.7",
-        "summary": "前置 service 解耦已落地（ba8408f）；MCP 专项 W0/W1/W4 未启动，W2/W3 仅有前置进展。9 项任务、12 个 Gate 保持 pending，可用 MCP 工具 0/6。详见计划 §11。",
-        "evidence": "31 个 MCP 专项目标文件均缺失；principal/add-service/cron-trigger 定向回归 20 passed、23 warnings（Python 3.13.5，非 3.11/3.12 制品矩阵）。根 init.sh 返回 0，含 jq/虚拟环境/数据库版本/前端 npm 检查警告。未运行 MCP 专项、完整质量及制品门禁。"
+        "summary": "W0（契约/错误码/G0 门禁/威胁模型/Gate 骨架/SDK 选型=官方 mcp 1.30.0）与 W1（配置控制面：McpSettingsService fail-closed+revision CAS+kill switch、认证设置 API+审计、桌面/移动设置 UI）均已落地；W2 挂载/认证接线/脱敏、W3 六工具、W4 制品门禁未启动；可用 MCP 工具 0/6，Gate 0/12 PASS。详见计划 §10.4/§11。",
+        "evidence": "backend/app/mcp/ 契约层 + McpSettingsService + /api/v1/mcp/settings（28 项 API 回归）；SDK 探针矩阵 4 份锁定组合证据 JSON；tests/release MCP Gate 骨架（NOT_RUN=BLOCKED 实证）；后端受影响回归 150 passed、black/flake8/mypy 绿；前端 mcp-settings.spec 8 项、lint/typecheck 绿。"
       },
       "planning_evidence": "2026-08-28 只读核验：torrents_async.py 实测4510行且0路由；app.state.store 在应用 lifespan 内初始化，首批实时能力必须同进程共享；高级查询/模板可直接复用业务核心，仪表盘小改，等级4与Cron中改，单种添加必须先抽 service。当前无 MCP 实现或依赖声明，PyInstaller 规格显式排除 fastmcp。根 ./init.sh --ci 通过；高级搜索/模板/仪表盘46项、等级删除/添加57项、Cron安全与执行器36项，共139项定向回归通过。",
       "security_defaults": {
@@ -489,21 +489,31 @@
           "id": "mcp-service-capabilities-2026-08-28.1",
           "name": "W0 架构、威胁模型与 MCP 运行时兼容探针",
           "description": "固化6项工具schema、错误码、风险分级、能力目录和隐私数据字典；选择并锁定MCP SDK/transport，验证FastAPI lifespan、路由顺序、PyInstaller和现有依赖兼容；建立G0～G11门禁骨架。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "PLANS/mcp-service-capabilities.md",
+            "backend/app/mcp/__init__.py",
             "backend/app/mcp/contracts.py",
             "backend/app/mcp/errors.py",
-            "backend/tests/mcp/test_architecture_constraints.py",
+            "backend/scripts/mcp_sdk_probe.py",
+            "backend/tests/mcp/__init__.py",
+            "backend/tests/mcp/test_mcp_architecture_constraints.py",
+            "backend/tests/mcp/test_contracts.py",
+            "backend/tests/mcp/test_sdk_compatibility.py",
+            "backend/tests/mcp/evidence/",
+            "backend/tests/release/test_mcp_gate_skeleton.py",
+            "scripts/release/aggregate_mcp_gates.py",
+            "release/schemas/mcp-gate-fragment.schema.json",
             "docs/security/mcp-threat-model.md"
-          ]
+          ],
+          "evidence": "2026-09-08 W0 六项交付落地（选型结论详见计划 §10.4）：①契约 contracts.py（6 工具目录/输入契约/输出 allowlist/脱敏字典含 TrackerMessageLog.msg+sample_urls/预算常量）；②错误码 errors.py（23 码+HTTP 对齐表+principal 原因码映射）；③SDK 探针 mcp_sdk_probe.py：隔离 venv 矩阵 py3.11/3.12 × fastmcp 2.14.3/mcp 1.30.0（仓库锁定 fastapi 0.115.6+starlette 0.41.3）C1~C4 全 PASS，C5 onefile 官方 mcp 零附加参数 PASS（10.9MB/17.6s）、fastmcp FAIL（PackageNotFoundError→补 --copy-metadata 再缺 burner_redis，29.7MB）→ 选型官方 mcp SDK 1.30.0 + streamable HTTP stateless；证据 4 份 JSON 在 tests/mcp/evidence/；④G0 静态门禁 15 项绿（禁全局 app/禁 app.api/禁下载器客户端构造 + 12 负向反例 + 6 合法对照）；⑤威胁模型 STRIDE+现状缺口+prompt 注入面；⑥Gate 骨架：mcp-gate-fragment.schema.json（PASS 必须带 evidence）+ aggregate_mcp_gates.py（空目录=12×NOT_RUN=BLOCKED exit 1）+ 12 项测试。质量门禁：black/flake8/mypy 9 文件绿；新增+相邻回归 pytest 132 passed。契约与威胁模型人工评审通过后转 done 并启动 W1。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.2",
           "name": "W1 默认关闭配置、逐能力控制面与设置 UI",
           "description": "复用configs表的mcp.runtime.v1版本化JSON，实现revision CAS、fail-closed默认、内存原子快照和BTDECK_MCP_FORCE_DISABLED；设置页提供全局与6项能力开关、风险说明和环境强制关闭提示，移动端复用桌面设置组件。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/app/services/mcp_settings_service.py",
@@ -511,12 +521,15 @@
             "backend/app/data/default_mcp_settings.py",
             "backend/app/api/api.py",
             "backend/app/core/config.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/api/test_mcp_settings.py",
+            "backend/tests/api/test_auth_route_coverage.py",
             "frontend/src/api/mcp-settings.ts",
             "frontend/src/views/settings/components/McpSettingsPanel.vue",
             "frontend/src/views/settings/index.vue",
-            "backend/tests/api/test_mcp_settings.py",
             "frontend/tests/unit/mcp-settings.spec.ts"
-          ]
+          ],
+          "evidence": "2026-09-08 W1 落地：①McpSettingsService——configs 表首个版本化 JSON 键 mcp.runtime.v1，fail-closed 加载（缺失/损坏/未知 schemaVersion/字段缺失或类型非法整体回落全关，不部分采信）、revision CAS（expectedRevision 不符 409；无行基线 revision 0 可建行/修复损坏行）、kill switch 覆盖（BTDECK_MCP_FORCE_DISABLED 只读覆盖 effectiveEnabled，允许落库保留意图）；②GET/PUT /api/v1/mcp/settings——principal 内核认证门禁（无/坏 token/用户不存在 401，禁用/强制改密 403，X-Access-Token 双兼容复用 _extract_access_token 防 BTD201），GET 下发能力目录元数据（单一事实源 contracts.py），PUT best-effort 审计（新增 AuditOperationType.MCP_SETTINGS_UPDATE）；③设置页新增 MCP 服务页签（全局+6 能力开关、风险分级标签与说明、kill switch 只读横幅、409 冲突自动重载、demo 只读占位、dirty 跟踪禁用保存）；移动端经既有 mobile/settings.vue 包装桌面页自动同源零复制；④测试：后端 test_mcp_settings 28 项（G1 fail-closed 7 形态参数化/G2 CAS 与载荷校验/G3 认证矩阵/G11 审计正反向）+ auth 路由覆盖门禁登记新依赖全绿；前端 mcp-settings.spec 8 项 + 相邻 settings/mobile specs 19 项绿；质量门禁：后端 black/flake8/mypy 全部改动文件绿、受影响回归 150 passed；前端 lint(--max-warnings 0)/typecheck 绿。注：Gate 整体 PASS 仍待 W2~W4（MCP 运行时尚未挂载，G1 的升级/重启矩阵在 W2/W4 补证）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.3",
@@ -532,7 +545,10 @@
             "backend/app/factory.py",
             "backend/app/auth/dependencies.py",
             "backend/tests/mcp/test_auth.py",
-            "backend/tests/mcp/test_capability_gates.py"
+            "backend/tests/mcp/test_capability_gates.py",
+            "backend/app/auth/principal.py",
+            "backend/app/core/runtime_context.py",
+            "backend/app/services/audit_context.py"
           ],
           "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
         },
@@ -590,8 +606,12 @@
             "backend/app/mcp/tools/cron.py",
             "backend/app/tasks/cron_executor.py",
             "backend/app/api/endpoints/cron_tasks.py",
-            "backend/tests/mcp/test_cron_tool.py"
-          ]
+            "backend/tests/mcp/test_cron_tool.py",
+            "backend/app/tasks/cron_trigger.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/tasks/task_profiles.py"
+          ],
+          "evidence": "2026-09-05 前置落地 trigger_task_by_code(task_code)（app/tasks/cron_trigger.py，内置白名单+task_type 0-3 永拒）；W3 剩余：MCP 专用显式 allowlist、confirm/幂等、本次 run_id 返回与 principal 审计（数据源 default_scheduled_tasks.py + task_profiles.py，计划 §10.3：task_type 一律不作为放行依据）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.8",
