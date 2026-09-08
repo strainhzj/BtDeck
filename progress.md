@@ -7418,3 +7418,9 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：tests/mcp 304 项 + tests/services 1273 项全绿（合计 1577）；相邻 90 项绿；mypy/flake8(backend 配置)/black 全绿。**坑：flake8 必须在 backend 目录跑（.flake8 是目录级配置，仓库根跑会退回 79 列默认）**。
 - **门禁**：MCP-G4/G6/G9 片段新增 PASS——聚合 **8/12 PASS**（G0/G2/G3/G4/G6/G7/G8/G9），余 G1/G5/G10/G11。roadmap 三处同步（torrent_crud.md 调用图/backend api README 迁移注记）。
 - 未执行 Git 提交。
+
+## 2026-09-08（续八）：MCP W4-b 升级矩阵 + 六工具 canary——G1/G5 PASS（10/12）
+
+- **G1（test_upgrade_gates.py 5 项）**：升级矩阵补齐——遗留标量配置行共存升级（无 mcp 键→默认全关+遗留行原值不动）、未知未来 schemaVersion 降级 fail-closed（不采信其 revision）、PUT 后新引擎等价重启意图/revision 保持；**生产供给器 wire 级**（真实 _default_settings_provider + monkeypatch app.database.SessionLocal 指临时库——供给器是调用期函数内导入，patch 生效）：首装 SERVICE_DISABLED → 落库开启后无需重启立即生效（仅开启能力可发现）→ kill switch env 优先级最高（库内 enabled=True 仍双面 SERVICE_DISABLED）。
+- **G5（test_canary_gates.py 2 项）**：canary 从 redaction 单元提升到**六工具真实 dispatch 出口**——passkey/token/绝对路径/URL 编码变体埋入 tracker URL/保存路径/种子名/模板条件，响应面与 caplog 日志面零泄漏；携带 canary 的非法输入（magnet/tracker 条件）拒绝文案固定不回显；种子名嵌 canary 命中泄漏扫描→整体 fail-closed INTERNAL_ERROR 不截断放行；tracker 仅输出规范化域名（t/e.canary.example.org 两 tracker 域名集合断言）。坑：初版误把"域名不外发"当预期——脱敏设计本就输出规范化域名，域名非 canary。
+- **验证**：tests/mcp 311 项全绿；black/flake8/mypy 绿。门禁：MCP-G1/G5 片段 PASS，聚合 **10/12**（余 G10/G11）。未执行 Git 提交。
