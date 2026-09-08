@@ -304,6 +304,13 @@
         </div>
       </el-tab-pane>
 
+      <!-- MCP 服务（mcp-service-capabilities W1：全局/能力开关 + 风险说明；移动端经包装自动同源） -->
+      <el-tab-pane label="MCP 服务" name="mcp">
+        <div class="settings-content">
+          <mcp-settings-panel />
+        </div>
+      </el-tab-pane>
+
       <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
       <el-tab-pane label="状态诊断" name="diagnosis">
         <div class="settings-content">
@@ -337,13 +344,14 @@ import { changePassword } from '@/api/users'
 import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
+import McpSettingsPanel from './components/McpSettingsPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import request from '@/utils/request'
 
 @Component({
   name: 'Settings',
-  components: { PlatformCapabilityPanel }
+  components: { PlatformCapabilityPanel, McpSettingsPanel }
 })
 export default class extends Vue {
   // 当前激活的标签页
