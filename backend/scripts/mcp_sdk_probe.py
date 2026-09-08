@@ -309,7 +309,9 @@ def _run_protocol_checks(root: Any, marker: Dict[str, Any]) -> List[Dict[str, An
     try:
         deadline = time.monotonic() + 15.0
         base_url = f"http://127.0.0.1:{port}"
-        with httpx.Client(base_url=base_url, timeout=10.0) as http:
+        # trust_env=False：loopback 自探查绝不走系统代理（Windows 系统代理劫持
+        # 127.0.0.1 的实证坑，同 Chaquopy httpx 先例）；环境代理死活不影响探针。
+        with httpx.Client(base_url=base_url, timeout=10.0, trust_env=False) as http:
             while time.monotonic() < deadline:
                 try:
                     http.get("/nonexistent-health-probe")

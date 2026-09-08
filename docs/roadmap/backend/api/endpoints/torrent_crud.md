@@ -290,7 +290,8 @@ torrent_crud.py
   ├─→ app.torrents.audit_enums.{AuditOperationType, AuditOperationResult}
   │
   ├─→ app.api.endpoints.torrent_helpers          (横向复用)
-  │     └─ get_torrent_infos / convert_to_vo
+  │     └─ get_torrent_infos
+  ├─→ app.services.torrent_vo_conversion.convert_to_vo  (VO 转换族，2026-09-08 W4/G4 自 torrent_helpers 迁入服务层)
   ├─→ app.services.torrent_add_service.{TorrentAddService, TorrentAddParams}  (单添加协议无关主体，2026-09-05 抽取；MCP torrent_add_file 共用)
   ├─→ app.services.torrent_add_helpers           (add 家族辅助，2026-09-08 自 torrent_helpers 迁入服务层)
   │     ├─ calculate_info_hash

@@ -20,10 +20,8 @@ from app.services.audit_service import extract_audit_info_from_request
 from app.services.torrent_add_service import TorrentAddParams, TorrentAddService
 
 # Import from new split modules
-from app.api.endpoints.torrent_helpers import (
-    get_torrent_infos,
-    convert_to_vo,
-)
+from app.api.endpoints.torrent_helpers import get_torrent_infos
+from app.services.torrent_vo_conversion import convert_to_vo
 from app.core.reannounce_config_operations import extract_domains_from_trackers
 from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
