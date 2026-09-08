@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.auth import utils as auth_utils
 from app.auth.models import User
@@ -253,13 +252,25 @@ def _make_token(username: str = "admin", user_id: int = 1) -> str:
 
 
 class _GateStack:
-    """线上层测试栈：内存库 + 可变配置快照 + 挂载 /mcp 的 FastAPI 应用。"""
+    """线上层测试栈：临时文件库 + 可变配置快照 + 挂载 /mcp 的 FastAPI 应用。
+
+    用临时文件库而非 StaticPool 内存库：并发认证路径会在多个 to_thread 工作线程
+    各开 session，StaticPool 的单连接被并发共享是未定义行为（时序相关的
+    INTERNAL_ERROR 假阳性）；文件库每 session 独立连接，与生产行为一致。
+    """
 
     def __init__(self, snapshot: McpRuntimeSettings, ready: bool = True):
+        import tempfile
+        import uuid
+
+        from pathlib import Path
+
+        db_dir = Path(tempfile.gettempdir()) / f"btdeck-mcp-test-{uuid.uuid4().hex}"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        self._db_path = db_dir / "gate.sqlite3"
         engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
+            f"sqlite:///{self._db_path}",
+            connect_args={"check_same_thread": False, "timeout": 15},
         )
         Base.metadata.create_all(bind=engine, tables=[User.__table__])
         self.engine = engine
@@ -289,6 +300,9 @@ class _GateStack:
 
     def close(self) -> None:
         self.engine.dispose()
+        import shutil
+
+        shutil.rmtree(self._db_path.parent, ignore_errors=True)
 
 
 @pytest.fixture
@@ -576,12 +590,14 @@ class TestWireInputAndRuntimeGates:
             stack.close()
 
     async def test_enabled_capability_without_handler_is_internal_error(self, auth_utils_patch):
-        """W2 基线：能力开启但处理器未注册（W3 交付）→ 固定文案 INTERNAL_ERROR。"""
-        stack = _GateStack(_snapshot(enabled=True, on=["dashboard.read"]))
+        """分批接入空档：能力开启但处理器未注册（如 W3-② 的 cron）→ 固定文案 INTERNAL_ERROR。"""
+        stack = _GateStack(_snapshot(enabled=True, on=["cron.trigger"]))
         try:
             async with _mcp_client(stack, headers={"Authorization": f"Bearer {_make_token()}"}) as client:
                 await _handshake(client)
-                call = await _tools_call(client, "dashboard_get", {})
+                call = await _tools_call(
+                    client, "cron_task_trigger", {"task_code": "x", "confirm": True, "idempotency_key": "k"}
+                )
                 assert _call_error_code(call) == "INTERNAL_ERROR"
                 message = call["result"]["structuredContent"]["error"]["message"]
                 assert message == "服务内部错误。"

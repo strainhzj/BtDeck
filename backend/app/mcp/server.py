@@ -88,14 +88,7 @@ def _jsonrpc_mcp_error(error: McpToolError) -> mcp_types.ErrorData:
 
 async def _authenticate_caller(server: Server, runtime: McpRuntime) -> AuthenticatedPrincipal:
     """从当前请求上下文取 token，并在工作线程完成 DB 认证（不占事件循环）。"""
-
-    def _resolve_request() -> Any:
-        try:
-            return server.request_context.request
-        except LookupError:
-            return None
-
-    token: Optional[str] = extract_token_from_request(_resolve_request())
+    token: Optional[str] = extract_token_from_request(_resolve_transport_request(server))
 
     def _run() -> AuthenticatedPrincipal:
         db = runtime.sync_session()
@@ -107,12 +100,39 @@ async def _authenticate_caller(server: Server, runtime: McpRuntime) -> Authentic
     return await asyncio.to_thread(_run)
 
 
+def _audit_context_from_transport_request(request: Any) -> Any:
+    """从 streamable HTTP 请求提取审计四元组（§4.5：进审计日志，不进业务响应）。"""
+    from app.services.audit_context import AuditContext
+
+    if request is None:
+        return AuditContext()
+    try:
+        client = getattr(request, "client", None)
+        ip_address = str(getattr(client, "host", "") or "")
+        headers = getattr(request, "headers", None)
+        user_agent = str(headers.get("user-agent", "") or "") if headers is not None else ""
+        return AuditContext(ip_address=ip_address, user_agent=user_agent)
+    except Exception:  # header 面异常 → 空上下文，不影响业务
+        return AuditContext()
+
+
+def _resolve_transport_request(server: Server) -> Any:
+    """当前请求上下文中的 transport 请求（无上下文返回 None）。"""
+    try:
+        return server.request_context.request
+    except LookupError:
+        return None
+
+
 def create_mcp_server_bundle(state: Any) -> McpServerBundle:
     """构造 MCP 服务束：runtime + lowlevel Server + stateless 会话管理器。
 
     ``state`` 是父应用 ``app.state``（runtime 惰性只读探测 store 等依赖；
     G0：本函数不接收也不反查 FastAPI app 实例）。
     """
+    from app.mcp import tools as mcp_tools
+
+    mcp_tools.register_all()
     runtime = McpRuntime.from_state(state)
     server: Server = Server(MCP_SERVER_NAME)
 
@@ -176,10 +196,13 @@ def create_mcp_server_bundle(state: Any) -> McpServerBundle:
             normalized = catalog.validate_arguments(spec.tool_name, arguments)
             handler = catalog.TOOL_HANDLERS.get(spec.tool_name)
             if handler is None:
-                # W2 基线：注册表为空（六工具 W3 分批注册）；能力开启但无实现
+                # 注册表未覆盖（W3 分批接入中的空档）：能力开启但无实现
                 # 属部署/配置超前，按 INTERNAL_ERROR 固定文案拒绝
                 raise McpToolError(McpErrorCode.INTERNAL_ERROR)
-            payload = await handler(spec, principal, normalized, runtime)
+            call_context = catalog.ToolCallContext(
+                audit=_audit_context_from_transport_request(_resolve_transport_request(server))
+            )
+            payload = await handler(spec, principal, normalized, runtime, call_context)
             final = finalize_tool_output(spec.tool_name, payload)
             logger.info(
                 "MCP tools/call ok tool=%s principal=%s revision=%s",

@@ -101,6 +101,18 @@ def resolve_callable_tool(tool_name: str, snapshot: McpRuntimeSettings) -> Capab
     raise McpToolError(McpErrorCode.CAPABILITY_DISABLED)
 
 
+def spec_by_tool_name(tool_name: str) -> CapabilitySpec:
+    """按工具名查契约目录（validate_arguments 的 confirm 门禁用）。
+
+    目录外名字在 validate_arguments 的 TOOL_INPUT_SPECS 查表处已先行
+    KeyError/拦截，这里的 INVALID_ARGUMENT 仅作防御性兜底。
+    """
+    for spec in CAPABILITY_CATALOG:
+        if spec.tool_name == tool_name:
+            return spec
+    raise McpToolError(McpErrorCode.INVALID_ARGUMENT)
+
+
 # ==============================================================================
 # 入参校验（SDK validate_input 关闭后的服务端强校验；固定文案不回显参数值）
 # ==============================================================================
@@ -139,6 +151,11 @@ def validate_arguments(tool_name: str, arguments: Optional[Dict[str, Any]]) -> D
         _check_type(spec, value)
         _check_budget(spec.name, value)
         normalized[spec.name] = value
+
+    # 契约级 confirm 门禁（§4.7 写操作）：requires_confirm 的工具必须显式 true
+    tool_spec = spec_by_tool_name(tool_name)
+    if tool_spec.requires_confirm and normalized.get("confirm") is not True:
+        raise McpToolError(McpErrorCode.CONFIRM_REQUIRED)
     return normalized
 
 
@@ -179,14 +196,32 @@ def _check_budget(name: str, value: Any) -> None:
 # ==============================================================================
 
 
+def _empty_audit_context() -> Any:
+    from app.services.audit_context import AuditContext
+
+    return AuditContext()
+
+
+@dataclass(frozen=True)
+class ToolCallContext:
+    """单次工具调用的传输层附加上下文（W3）。
+
+    ``audit`` 是协议无关审计四元组（server.py 从 streamable HTTP 请求提取
+    IP/User-Agent 构造）；工具层只允许把它交给审计服务，不得进入业务响应
+    （§4.5 audit_metadata）。缺省空上下文（测试/无传输头场景）。
+    """
+
+    audit: Any = field(default_factory=_empty_audit_context)
+
+
 @dataclass
 class ToolHandlerRegistry:
     """tool_name → 异步处理器注册表。
 
-    处理器统一签名 ``(spec, principal, arguments, runtime) -> dict``（领域结果，
-    交由 redaction.finalize_tool_output 做 allowlist/泄漏扫描/预算）。
-    W2 基线为空注册表：能力开启但未注册处理器时 dispatch 返回 INTERNAL_ERROR
-    （固定文案），不静默成功。
+    处理器统一签名 ``(spec, principal, arguments, runtime, call_context) -> dict``
+    （领域结果，交由 redaction.finalize_tool_output 做 allowlist/泄漏扫描/预算；
+    call_context 见 ToolCallContext）。W2 基线为空注册表：能力开启但未注册
+    处理器时 dispatch 返回 INTERNAL_ERROR（固定文案），不静默成功。
     """
 
     _handlers: Dict[str, Any] = field(default_factory=dict)

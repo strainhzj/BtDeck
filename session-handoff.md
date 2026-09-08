@@ -1,3 +1,21 @@
+## 2026-09-08（续四）：MCP W3-① 只读三工具已落地，待 W3-②③（写/高风险工具）
+
+### 交付内容（本批，未提交）
+
+- **app/mcp/tools/**：三处理器注册入 catalog.TOOL_HANDLERS，签名定稿 `(spec, principal, arguments, runtime, call_context)`（call_context 携审计四元组）。①torrent_advanced_search 复用 search_torrents（dict→模型 model_validate 经 service 命名空间，G0 合规）；②advanced_search_template_create 复用 create_search_template + catalog 级 confirm 门禁 + 进程内 512 LRU 幂等 + MCP_TOOL_CALL 审计（创建/重放两行，detail 无 conditions 原文）；③dashboard_get 复用 DashboardService，仅脱敏聚合。
+- **输入隐私巡检 conditions.py**：tracker_msg 永拒；tracker_url 仅域名+contains 族；搜索顶层 17 键白名单，未知键拒绝。
+- **测试**：tests/mcp 207 项（read 单元 21 + wire E2E 6 含 G5 全响应零泄漏），5 连跑稳定；相邻 383+566 绿。
+- **坑位**：StaticPool 单连接并发竞态（→临时文件库）；审计 log_id uuid4 无序（→按内容断言）；枚举计数既有漂移 48→53 校准。
+- **门禁**：MCP-G0/G2/G3 片段更新含 tools 层；G4/G5 留 W3-②③/W4（聚合 BLOCKED 保持）。
+
+### 下一批：W3-②（计划 §6-W3.2）
+
+- torrent_mark_pending_delete（等级 4 标签标记：info_ids≤100、逐项结果、partial 语义、already_marked 幂等）与 cron_task_trigger（allowlist 数据源 default_scheduled_tasks.py+task_profiles.py、enabled/未运行/执行器策略、run_id 返回、task_type 0-3 永拒）。
+- 复用 torrent_deletion_by_level 与 trigger_task_by_code；写工具审计沿 MCP_TOOL_CALL；处理器签名与注册模式照 W3-①。
+- W3-③：TorrentAddService 的 torrent_helpers 辅助函数归属收尾后接入 torrent_add_file。
+
+---
+
 ## 2026-09-08（续三）：MCP W2（同进程挂载/三重门禁/脱敏层）已落地，待 W3 六工具接入
 
 ### 交付内容（本批，未提交）

@@ -79,6 +79,10 @@ class AuditOperationType(str, Enum):
     CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子
     BATCH_OPERATION = "batch_operation"  # 批量操作
     MCP_SETTINGS_UPDATE = "mcp_settings_update"  # MCP 服务配置变更（mcp-service-capabilities W1/G11）
+    MCP_TOOL_CALL = "mcp_tool_call"  # MCP 工具写操作（mcp-service-capabilities W3/G7）
+    MOVIEPILOT_SETTINGS_UPDATE = "moviepilot_settings_update"  # MoviePilot 集成开关变更（moviepilot-integration）
+    MOVIEPILOT_INSTANCE_UPDATE = "moviepilot_instance_update"  # MoviePilot 实例更新/删除（含下载器映射）
+    MOVIEPILOT_SYNC = "moviepilot_sync"  # MoviePilot 整理历史同步批次（插件推送）
 
     # ========== 归档操作 ==========
     ARCHIVE_LOGS = "archive_logs"  # 归档审计日志

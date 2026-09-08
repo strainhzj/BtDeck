@@ -569,17 +569,21 @@
           "id": "mcp-service-capabilities-2026-08-28.5",
           "name": "W3 高级查询、查询模板与仪表盘工具",
           "description": "优先接入3项低改造能力；高级查询限制pageSize≤200和响应≤1MiB，Tracker输入仅允许域名；模板用户ID来自principal；DashboardService改注入RuntimeContext并只返回脱敏聚合数据。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
+            "backend/app/mcp/tools/__init__.py",
+            "backend/app/mcp/tools/conditions.py",
             "backend/app/mcp/tools/torrents.py",
             "backend/app/mcp/tools/search_templates.py",
             "backend/app/mcp/tools/dashboard.py",
-            "backend/app/services/advanced_search.py",
-            "backend/app/services/dashboard_service.py",
-            "backend/tests/mcp/test_query_tools.py",
-            "backend/tests/mcp/test_dashboard_tool.py"
-          ]
+            "backend/app/mcp/catalog.py",
+            "backend/app/mcp/server.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/mcp/test_tools_read.py",
+            "backend/tests/mcp/test_tools_wire.py"
+          ],
+          "evidence": "2026-09-08 W3-① 落地（只读三工具，官方 mcp 1.30.0 线上全链验证）：app/mcp/tools/{torrents,search_templates,dashboard}.py 三处理器注册入 catalog.TOOL_HANDLERS（签名 (spec, principal, arguments, runtime, call_context)，server.py 构造 ToolCallContext 含审计四元组）；torrent_advanced_search 复用 AdvancedSearchService.search_torrents（dict→EnhancedAdvancedSearchRequest.model_validate 经 service 命名空间导入，G0 不碰 app.api；tracker_msg 条件永拒、tracker_url 仅域名+contains 族），输出映射 camelCase VO→脱敏 DTO（tracker 域名去重/save_path→path_display/hash 不构造，线上断言全响应零泄漏）；advanced_search_template_create 复用 create_search_template（user_id 取 principal 与 HTTP 同语义），confirm 门禁入 catalog 共享校验（CONFIRM_REQUIRED）、进程内有界幂等缓存（512 条 LRU，单 Worker 前提）、MCP_TOOL_CALL 审计两行（创建+重放，detail 仅工具名/模板 id/幂等键 sha256 摘要，不含 conditions 原文）；dashboard_get 复用 DashboardService（AsyncSession+RuntimeContext），仅脱敏聚合 DTO（downloader_list/activities 不进输出，storage 双键 service 无源省略）。测试：tests/mcp 207 项全绿（新增 read 单元 21 + wire E2E 6——真实 JSON-RPC 握手驱动三工具：搜索含 tracker 域名条件命中与隐私拒绝、模板创建+重放单行+审计、仪表盘聚合键集），5 连跑稳定性验证。坑修：测试栈 StaticPool 单连接在并发 to_thread 认证下竞态（import 时序暴露）→改临时文件库；审计 log_id 为 uuid4 无时间序→断言改按内容不依赖行序；枚举计数测试既有漂移（48→真实 53）校准。门禁：MCP-G0/G2/G3 片段更新纳入 tools 层证据（聚合仍 BLOCKED，G4 等价守卫与 G5 全工具 canary 留 W3-②③/W4）。质量门 mypy/flake8/black 全绿；相邻回归 383+566 项绿（enums/audit_logs/advanced_search/mcp_settings/architecture）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.6",
