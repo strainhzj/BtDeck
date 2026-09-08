@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-W1-1 最小文件型 SQLite 争用回归（PLANS/sync-database-blocking-remediation.md）
+W1-1 最小文件型 SQLite 争用回归（PLANS/archive/sync-database-blocking-remediation.md）
 
 【覆盖目标】用真实临时文件型 SQLite（不是内存库、不是 Mock、不是全局
 app.database 引擎）证明：同步分批写入期间，交互（普通请求侧）写操作能
@@ -522,7 +522,7 @@ async def test_bulk_commit_p99_budget_on_22k_rows(contention_db):
 
 
 # =============================================================================
-# W4-3 故障注入用例（PLANS/sync-database-blocking-remediation.md W4-3）
+# W4-3 故障注入用例（PLANS/archive/sync-database-blocking-remediation.md W4-3）
 # 与 scripts/sync_contention_benchmark.py 的 --fault 注入对应：
 # 每个用例断言"可解释降级、无雪崩"（重试有界、最终状态一致）。
 # =============================================================================

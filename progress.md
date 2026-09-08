@@ -7317,3 +7317,13 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **过渡语义（自愈，无需数据迁移）**：cron freshness——存量 Shanghai 戳在切换后显示负 freshness（被按"新鲜"处理），各任务下次运行重盖 UTC 戳即收敛（最多一个调度周期）；业务表按时间排序/展示——旧行(+8h)在新行之上最多 8 小时墙钟后自愈；日志时间戳转 UTC（与 generatedAt 对齐，改善）。
 - **验收**：部署后 `docker exec btdeck-backend date`/`cat /etc/timezone` 为 UTC；二次导出诊断 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt。
 - 未执行 Git 提交。
+
+## 2026-09-08：PLANS 计划盘点归档——14 份已完成/过时计划移入 archive/
+
+- **背景**：v1.0.6 开发基本完成仅卡验证，从 dev 签出 `dev1.0.7` 分支并推送（起点 2192bf3）。对 PLANS/ 19 份计划逐一对照 feature_list.json（70 features）盘点，结论：MCP 能力开放（2026-09-05 基线复核修订，feature pending）是唯一"拿来即用"计划；v1.0.8 PostgreSQL 价值真实但须先按 W5-3 重写；v1.0.7 路径扫描增强伪代码引用的 `path_mapping_service.py` 与 `PathMapping`/`PathMappingRule`/`PathTransferHistory` 模型均不存在；v1.1.0 自动化运维被 `default_scheduled_tasks.py`（14 任务全默认启用）+ `cron_executor` + 任务页事实性覆盖。用户决策：认可归档、v1.0.7 归档、v1.0.8 暂缓保留活跃。
+- **归档动作**：git mv 14 份计划至 `PLANS/archive/`（v1.0.4/v1.0.5/v1.0.5-audit/v1.0.6/v1.0.7/v1.1.0、verified-bugfix-remediation、force-change-deadlock-fix、mobile-ux-enhancements、token-audit-fixes、security-remediation、sync-resource-governance、release-artifact-equivalence-gate、sync-database-blocking-remediation）。PLANS/ 保留 4 份活跃：mcp-service-capabilities（待实施）、dual-mode-client（in-progress，剩 Play 发布验收）、frontend-static-showcase-demo（in-progress，剩 Docker demo 镜像与浏览器人工验收）、v1.0.8（暂缓）。
+- **引用联动**：全仓 sed `PLANS/<file>` → `PLANS/archive/<file>`（34 文件、74/74 行对称变更；progress.md 历史日志保持原样）；AGENTS.md/HARNESS_GUIDE.md 的 v1.0.5.md 示例改为指向 PLANS/README.md 索引。覆盖 feature_list.json evidence 路径、后端 24 个 py（docstring/注释）、4 个前端 ts（块注释）、backend/docs 约束与运维文档、release-gate.yml、session-handoff.md。
+- **新索引**：重写 `PLANS/README.md`（活跃计划表 + 维护约定 + 盘点说明）；新增 `PLANS/archive/README.md`（归档状态表 + 遗留事项：① v1.0.7 可回收价值 = 给 downloader_path_scan 增加 `seed_transfer_audit_log.target_path` 路径来源，补"转移目标路径尚无种子同步进 torrent_info"的发现盲区，收窄后约半天～1 天；② sync 计划 G5 未关项 W5-1 指纹决策/W5-2 DBWriteQueue ADR/W5-3 PostgreSQL 计划重写（并入 v1.0.8 重启时处理）/W5-4 状态收口 + 生产迁移与暂停恢复演练待运维执行）。
+- **验证**：feature_list.json JSON 校验通过；改动文件 flake8/black/mypy 抽查无新增违规——`cron_executor.py` 的 black join 差异与 `test_sync_api_responsiveness.py:107` E305 经 git stash 对照证实均为 HEAD 既有，与本批无关；前端 4 文件纯注释变更不影响 tsc；根 `bash ./init.sh --ci` 通过。
+- **存量观察（非本批引入）**：全仓 black --check 在 `app/`、`scripts/` 下存在多个既有不达标文件（add_welcome_and_update_notifications.py、debug_orphan_misclassification.py、tracker_sync_task.py 等）；feature_list.json 存在两个悬空计划引用（`PLANS/orphan-files-state-consistency-fix`×9、`PLANS/oom-peak-governance-20260905.md`×1，目标文件不存在）。建议后续专项清理。
+- 未执行 Git 提交。

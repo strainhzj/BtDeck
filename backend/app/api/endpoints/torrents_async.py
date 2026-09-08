@@ -3151,7 +3151,7 @@ async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, remove
 
 # ==============================================================================
 # W3-3 第一部分（P1-02）：info-only 现有记录分页读取 + 单轮预算/缓冲上限
-# 详见 PLANS/sync-database-blocking-remediation.md W3-3
+# 详见 PLANS/archive/sync-database-blocking-remediation.md W3-3
 # ==============================================================================
 
 

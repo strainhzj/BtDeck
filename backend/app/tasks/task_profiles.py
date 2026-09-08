@@ -5,7 +5,7 @@
 为 TaskAdmissionController 提供按 task_code 查询的资源准入策略。
 未在 TASK_PROFILES 中注册的 task_code 视为轻量任务，直接放行、不进入资源背压。
 
-详见 PLANS/sync-resource-governance.md 阶段 1。
+详见 PLANS/archive/sync-resource-governance.md 阶段 1。
 
 ⚠️ 运维约束（违反会导致资源治理失效）：
 - TASK_PROFILES 的 key 必须与 app/data/default_scheduled_tasks.py 的 task_code 严格一致；

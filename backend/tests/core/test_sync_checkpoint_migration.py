@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-sync_checkpoints 迁移往返测试（W3-2，PLANS/sync-database-blocking-remediation.md）
+sync_checkpoints 迁移往返测试（W3-2，PLANS/archive/sync-database-blocking-remediation.md）
 
 验证目标：
 1. 空库 upgrade head → sync_checkpoints 表存在（列/唯一约束/索引核对）；

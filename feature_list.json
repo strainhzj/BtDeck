@@ -8,7 +8,7 @@
   "verification": {
     "date": "2026-08-16",
     "scope": "backend lint + 全量 pytest + 前端 lint/build",
-    "report": "PLANS/security-remediation.md",
+    "report": "PLANS/archive/security-remediation.md",
     "gate_status": "pending_final_verify",
     "evidence": "security-remediation-2026-08"
   },
@@ -633,7 +633,7 @@
       "description": "移动端实测审查后的 P0+P1 改进：种子卡片实时速度行（SpeedPollingMixin 复用+未命中清零）、仪表盘/通知静默自动刷新（后台暂停）、通知分页追加、无限滚动+返回顶部、二级页 header 固定映射返回、Tab 图标、44px 触控区、空状态 CTA、任务删除按钮分隔、下拉刷新指示条跳变修复。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/mobile-ux-enhancements.md",
+      "plan_file": "PLANS/archive/mobile-ux-enhancements.md",
       "tasks": [
         {
           "id": "mobile-ux.1",
@@ -765,7 +765,7 @@
       "description": "将用户提供的 Logo 接入桌面/移动前端、浏览器 favicon 与 PWA 图标体系。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.6.md",
+      "plan_file": "PLANS/archive/v1.0.6.md",
       "tasks": [
         {
           "id": "brand-logo-2026-08.1",
@@ -846,7 +846,7 @@
       "description": "①active-torrents 只在种子列表页轮询（详情死路由跳过+后台标签暂停）②标签/分类创建/重命名同步下载器（qB 立即、TR 使用时）③新种子添加时间兜底+首轮快照水合+存量回填 ④路径清理宽限期+auto 来源自动恢复（disabled_by 字段）⑤转移返回值检查+目标查重+批量 400+审计并入 torrent_audit_log ⑥双令牌 refresh 体系（refresh_tokens 表+轮换+登出撤销+前端 401 单飞刷新重放）⑦删除审计补 IP/UA/真实操作者 ⑧CollapsiblePanel 通用折叠组件+偏好持久化",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/verified-bugfix-remediation.md",
+      "plan_file": "PLANS/archive/verified-bugfix-remediation.md",
       "tasks": [
         {
           "id": "verified-bugfix-2026-08.1",
@@ -1763,7 +1763,7 @@
       "description": "种子列表实时速度显示，活跃种子优先排序，1秒轮询",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.4.md",
+      "plan_file": "PLANS/archive/v1.0.4.md",
       "tasks": [
         {
           "id": "v1.0.4.1",
@@ -1908,7 +1908,7 @@
       "description": "支持保存和复用常用查询条件（简单查询 + 高级搜索），含系统预设模板",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.5.md",
+      "plan_file": "PLANS/archive/v1.0.5.md",
       "deviation_from_plan": {
         "reason": "方向转变：探索阶段发现后端与前端已存在完整的 search_templates 基础设施（表 + CRUD 端点 + 服务 + 前端 API），仅前端入口 handleSaveSearchTemplate 是空函数。改为补全现有系统而非从零新建 query_templates，避免重复造轮子。原计划（从零建模型/服务/端点/迁移）废弃。",
         "changes": [
@@ -2076,7 +2076,7 @@
       "description": "基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化。原独立分支 fix/contract-audit 已全部合并入 dev 并删除（2026-06-27）。不覆盖 P2 REST 路由迁移 / P3 前端类型收敛（推迟）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.5-audit.md",
+      "plan_file": "PLANS/archive/v1.0.5-audit.md",
       "deviation_from_plan": {
         "reason": "范围聚焦 P0+P1，P2/P3 推迟；3 个独立子代理审查后修正了 10 项 Blocker（版本号撞号、实施顺序反转、测试改造缺失、ApiError 兼容性、回滚策略等）",
         "audit_corrections": [
@@ -2544,7 +2544,7 @@
       "description": "解决 tracker 与种子信息同步期间其它接口请求容易超时的问题。按方案二（调度器/资源背压）优先，方案三（下载器 API 调用隔离与调度层）后续推进。DBWriteQueue 暂不实现，仅作为后续独立版本候选。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-resource-governance.md",
+      "plan_file": "PLANS/archive/sync-resource-governance.md",
       "tasks": [
         {
           "id": "sync-resource-governance.0",
@@ -2726,7 +2726,7 @@
       "description": "合并原 v1.0.6孤儿文件 + v1.0.7路径扫描增强 + v1.1.0自动清理。自动发现不在任何种子文件清单中的磁盘文件，支持手动清理和定时自动清理超期文件。复用现有 cron_executor 调度（不新建 AutomationService），接入 sync-resource-governance 治理体系。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.6.md",
+      "plan_file": "PLANS/archive/v1.0.6.md",
       "deviation_from_plan": {
         "reason": "旧计划（2024-04-22）全部过时：前端用 Composition API 违反 Options API 约束、AutomationService 与 cron_executor 重复、引用不存在的 PathMapping ORM 模型、未考虑 sync-resource-governance 治理体系。基于代码现状重写计划，合并三版本为一个功能集群。",
         "changes": [
@@ -3716,10 +3716,10 @@
     {
       "id": "sync-database-blocking-remediation-w1",
       "name": "同步任务数据库阻塞修复 W1：SQLite 写事务短事务化（P0）",
-      "description": "修复计划第一批 W1（PLANS/sync-database-blocking-remediation.md，G1 门）：通用批量写入改为真实分批提交、Tracker 关键词状态只写变化行、qB removed 标记纳入统一写治理，并建立最小文件型 SQLite 争用回归。对应风险 P0-02/P0-03/P0-06（部分）、P1-04（部分）、P1-07（部分）。",
+      "description": "修复计划第一批 W1（PLANS/archive/sync-database-blocking-remediation.md，G1 门）：通用批量写入改为真实分批提交、Tracker 关键词状态只写变化行、qB removed 标记纳入统一写治理，并建立最小文件型 SQLite 争用回归。对应风险 P0-02/P0-03/P0-06（部分）、P1-04（部分）、P1-07（部分）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w1.1",
@@ -3778,10 +3778,10 @@
     {
       "id": "sync-database-blocking-remediation-w2",
       "name": "同步任务数据库阻塞修复 W2：统一同步路径与请求响应性（P0）",
-      "description": "修复计划第二批 W2（PLANS/sync-database-blocking-remediation.md，G2 门）：统一 SyncCoordinator 消除手动同步旁路、交互下载器 API 容量保留、清除 async 请求端同步下载器调用与漏 await、SQLite 单 Worker 启动约束。对应风险 P0-01/P0-04/P0-05/P0-06 全部覆盖。",
+      "description": "修复计划第二批 W2（PLANS/archive/sync-database-blocking-remediation.md，G2 门）：统一 SyncCoordinator 消除手动同步旁路、交互下载器 API 容量保留、清除 async 请求端同步下载器调用与漏 await、SQLite 单 Worker 启动约束。对应风险 P0-01/P0-04/P0-05/P0-06 全部覆盖。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w2.1",
@@ -3863,7 +3863,7 @@
       "description": "修复计划 W4-3（G4 门部分）：真实文件型 SQLite 争用基准脚本（三档数据 22k/30k、场景 A/B/C 真实 DML、故障注入 busy/cancel/slow-downloader、SLO 发布门 --assert-slo、JSON 对比输出）、响应性集成测试（后台同步期间 CRUD P95/lag 验收）、故障注入集成回归、运维手册。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-3.1",
@@ -3898,7 +3898,7 @@
       "description": "修复计划 W3-2（G3 门部分）：新增 sync_checkpoints 表（Alembic 迁移 3a4b5c6d7e8f）持久化同步进度，SyncCoordinator 集成（读取/乐观锁推进/终态落库/取消语义），中断与重启后从最后 durable checkpoint 继续；detail_json 白名单清洗防敏感数据。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-2.1",
@@ -4054,7 +4054,7 @@
       "description": "修复计划 W3-1（G3 门部分）：qB Tracker 拉取改为有界 worker 队列（禁止全量 create_task），单轮数量/时间预算硬上限，持久化 cursor 续跑（复用 W3-2 sync_checkpoints），cycle 语义（last_full_sync_at + 清 cursor），RID 确认与 durable commit 对齐，Coordinator 预算透传。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-1.1",
@@ -4091,7 +4091,7 @@
       "description": "修复计划 W3-3（G3 门部分）：info-only 下载器并发配置化（SQLite 默认 1）、现有记录分页读取、内存/单轮硬上限（数量/时间/缓冲）、分阶段流水线验证（fetch 不持写锁/write 无下载器调用）、内存峰值有界测试、RID 增量完整性验证（顺序已正确）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-3.1",
@@ -4127,7 +4127,7 @@
       "description": "修复计划 W3-4（G3 门部分）：统一 outcome 六态（success/partial/skipped/failed/no_action/cancelled）持久化与 API 映射、skip_reason 机器码、数据新鲜度计算（cron_plan 间隔 ×2 周期阈值 + 配置兜底）、前端任务页结果标签/陈旧告警展示。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-4.1",
@@ -4173,7 +4173,7 @@
       "description": "修复计划 W4-1（G4 门部分）：新建 sync_observability.py（稳定事件名/字段白名单/敏感脱敏/lag 采样器/WAL 快照）、run_id contextvars 贯穿全部同步阶段、lag 采样器与 WAL 快照生命周期挂载、阈值告警（lag>500ms/P99>100ms/commit>500ms）、_attach_done_stats CancelledError 缺口修复。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-1.1",
@@ -4202,7 +4202,7 @@
       "description": "修复计划 W4-2（G4 门）：增加不访问外部下载器的进程存活探针、严格超时 SELECT 1 + SQLite 单 Worker + event-loop lag 就绪探针，Docker/Compose 健康检查迁移到 /health/ready；增加受认证同步业务健康视图，复用 outcome/freshness、活动 run/phase、checkpoint age 与缓存下载器离线告警。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-2.1",
@@ -4868,7 +4868,7 @@
       "description": "修复两轮对抗验证确认的 8 项高危 + 中危发现：serve_frontend 未认证路径穿越、cron task_type=4 认证后 RCE、备份导入任意写入、source_file_path 任意读取、下载器密码明文入库 + encrypt fail-open、git 公开真实密钥 + 密码可逆存储、默认凭据无强制改密 + 登录无限速、发行包内嵌 config 目录；另含审计归档/导出穿越、2FA 端点越权、DEBUG/docs/compose 配置加固、starlette CVE 升级、删错文件兜底与前端两处加固。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/security-remediation.md",
+      "plan_file": "PLANS/archive/security-remediation.md",
       "tasks": [
         {
           "id": "w1-serve-frontend-traversal",
@@ -5124,7 +5124,7 @@
       "description": "生产事故：默认口令部署被启动自检置 must_change_password=1 后，重新登录被锁死在 /#/settings?forceChange=1 且设置页不可达。修复：①守卫重定向目标与白名单改用真实页面子路由 /settings/index（原父路径落点内容区空白、真实路径被弹回形成死锁）②/settings 父路由补 redirect（与守卫改动原子交付，单发会无限循环）③守卫 GetUserInfo 分支补拦截（登录后/F5 后首次导航不再放行业务页）④后端 /user/info 实时下发 mustChangePassword、前端 GetUserInfo 同步 store（undefined 不写，防滚动部署误清）⑤改密成功后清除 URL forceChange query。init_db 置位逻辑（W9 安全意图）保留不动。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/force-change-deadlock-fix.md",
+      "plan_file": "PLANS/archive/force-change-deadlock-fix.md",
       "tasks": [
         {
           "id": "force-change-deadlock-fix-2026-08-18.1",
@@ -5653,7 +5653,7 @@
       "description": "为 Windows EXE/Inno Setup、DEB、RPM、Docker backend/frontend 建立同一 Git SHA、统一依赖和唯一前端构建的证据链；补齐首次安装、同版本重装、v1.0.5 升级、重启、卸载、数据保留、跨制品黑盒契约、安全扫描、签名与不可变晋级。G0～G10 任一非豁免门禁失败、未运行或证据缺失均阻断发布。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/release-artifact-equivalence-gate.md",
+      "plan_file": "PLANS/archive/release-artifact-equivalence-gate.md",
       "planning_evidence": "2026-08-28 审计确认：现有 EXE 可启动但内嵌前端哈希与当前源码产物不同；Docker/源码与 Windows/Linux 包的 qbittorrent-api 依赖分叉；CI 无 Windows、PyInstaller、Inno、DEB/RPM 安装和 Docker 组合门禁；历史仅有旧 DEB 首装、RPM 构建、Docker 后端与 EXE 冒烟证据。正式 v1.0.5 标签存在，SHA=29c6f6f68ab35e25f8cf7237ee187de359c77714，可作为升级基线。同日 W0 本地探针批次完成（详见 task .1 evidence；原 release/evidence/w0/ 已于 2026-09-05 移出仓库）：R10 治理方案定格 bullseye 单二进制、Node 锁 22.23.2、v1.0.5 本地制品集对账可用、systemd 容器拓扑成立、release-gate.yml 待推送。 收口语义（2026-09-04，父项置 done）：done 表示**等价性门禁系统与证据链已建成**（九子任务全 done，完整 DAG RC 演练 run 33873168198@2787462：G0~G8 PASS + G9/G10 INDETERMINATE=drill 无生产签名/审批的正确语义，problems=[]），**不代表任何 RC 已 CERTIFIED 或允许发布**——CERTIFIED 需生产 Authenticode/cosign 凭据（GH secrets BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+PASSWORD，用户侧前置）、release manifest 人工填写 approver/approved_at、G0~G10 全 PASS 三条件齐备，取得前发布链保持 INDETERMINATE 阻断（runbook §1.3）。",
       "tasks": [
         {
@@ -5663,7 +5663,7 @@
           "status": "done",
           "scope": "fullstack",
           "files": [
-            "PLANS/release-artifact-equivalence-gate.md",
+            "PLANS/archive/release-artifact-equivalence-gate.md",
             "release/release-config.json",
             ".github/workflows/release-gate.yml"
           ],
@@ -6032,7 +6032,7 @@
       "evidence": {
         "tests": "后端全量 3826 passed/7 skipped（新增 test_init_config_file/test_cuser_business_codes/test_token_cleanup/test_refresh_token_cleanup_task + test_security_config_defaults 扩9用例）；前端全量 872 passed（store-user/permission-guard/request-auth/session/api-contracts 调整与新增，含 F6 级联防护锚点与逃生计数清零用例）",
         "lint": "black/flake8 通过；mypy 零新增错误；eslint 通过（request.ts 自动格式修复）",
-        "verification": "./init.sh 通过；PLANS/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
+        "verification": "./init.sh 通过；PLANS/archive/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
       },
       "files": [
         "backend/app/database.py",

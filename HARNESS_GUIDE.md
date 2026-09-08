@@ -71,7 +71,7 @@
 cat AGENTS.md
 
 # 3. 查看当前版本计划
-cat PLANS/v1.0.5.md
+cat PLANS/README.md   # 活跃计划索引；已完成/过时计划在 PLANS/archive/
 ```
 
 ### 每次会话开始

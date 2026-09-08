@@ -26,7 +26,7 @@
    排队耗时 queue_wait_ms 与远程耗时 remote_call_ms 进入结构化日志与窗口统计。
 
 接入指引：替换散落的 asyncio.to_thread / 直接同步调用。
-详见 PLANS/sync-resource-governance.md 阶段 2、PLANS/sync-database-blocking-remediation.md W2-2
+详见 PLANS/archive/sync-resource-governance.md 阶段 2、PLANS/archive/sync-database-blocking-remediation.md W2-2
 与 code review 修复轮。
 """
 

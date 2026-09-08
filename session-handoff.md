@@ -972,7 +972,7 @@ JSON 小改 workflow 双同步）、批次 F（RC 演练六类故障注入+runbo
 
 ### 结论
 
-- 详细实施计划已落到 `PLANS/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
+- 详细实施计划已落到 `PLANS/archive/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
 - v1.0.6 在 G0～G10 非豁免门禁全部 PASS 前不得发布；测试失败、制品/证据缺失和基础设施不确定都按阻断处理。
 - 升级基线使用正式标签 `v1.0.5@29c6f6f68ab35e25f8cf7237ee187de359c77714`；若只能从标签重建旧制品，必须标记 reconstructed，不能冒充正式历史制品。
 
@@ -1713,7 +1713,7 @@ Jest 33 passed（shell 11 + ui-mode 11 + permission-guard 11）；tsc/ESLint/bui
 ### 变更
 
 - `PLANS/dual-mode-client.md`：评审修订版，补全风险闸门、平台无关改造、伴侣 WebView MVP、Chaquopy/FGS 壳、移动 UI、桌面对齐及发布 DoD。
-- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/v1.0.6.md` 链接。
+- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/archive/v1.0.6.md` 链接。
 - `progress.md`：记录本次计划入册与验证结果。
 
 ### 下一步
@@ -2541,7 +2541,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ## 2026-08-10 交接：W4-2 实施完成（liveness/readiness/同步业务健康接口）
 
-当前任务：`PLANS/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。
+当前任务：`PLANS/archive/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。
 
 ### 本次改动
 
@@ -2855,7 +2855,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ### 产物
 
-- [同步任务数据库阻塞与接口超时修复计划](PLANS/sync-database-blocking-remediation.md)
+- [同步任务数据库阻塞与接口超时修复计划](PLANS/archive/sync-database-blocking-remediation.md)
 - [数据库阻塞与同步问题评估](backend/docs/operations/database-blocking-and-sync-issues-2026-08.md)
 
 ### 计划决策
@@ -2874,7 +2874,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ### 变更边界
 
-- 本次仅改动 PLANS/sync-database-blocking-remediation.md、PLANS/README.md、progress.md 和 session-handoff.md。
+- 本次仅改动 PLANS/archive/sync-database-blocking-remediation.md、PLANS/README.md、progress.md 和 session-handoff.md。
 - 源评估与计划的 19 个风险编号逐项一致；计划链接检查、git diff --check 和 ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning。
 - 未修改业务源码、Schema、迁移或运行配置；未执行 Git stage、commit 或 push。
 
@@ -3891,7 +3891,7 @@ v1.0.6.25 后端补了 TestOperatorContractGuard，但前端无对偶守卫。�
 
 **当前任务**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）
 **状态**: done。6 阶段全部完成。
-**计划文件**: `PLANS/v1.0.6.md`（基于代码现状重写，废弃 2024-04-22 旧计划）
+**计划文件**: `PLANS/archive/v1.0.6.md`（基于代码现状重写，废弃 2024-04-22 旧计划）
 **分支**: dev
 
 ### 本轮完成
@@ -4306,13 +4306,13 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - **根因四层**（两端回归测试实证）：init_db 启动自检置位默认口令标志（database.py:185-192，保留不动）→ 标志仅随登录响应下发、7 天 refresh token 窗口掩盖 → 守卫重定向/白名单写父路径 /settings 而真实改密页在 /settings/index（落点内容区 <!----> 白屏、真实路径与菜单均被弹回 = 死锁）→ 守卫 GetUserInfo 分支首导航放行缺口（双代理审查发现）。
 - **修复 6+1 处**：router.ts /settings 加 redirect:'/settings/index'；permission.ts 守卫目标/白名单改子路由 + GetUserInfo 分支补拦截（抽 isForceChangeBlocked/forceChangeRedirect）+ 拦截弹 Message.warning"请先修改密码：完成修改前仅可访问系统设置页"（3 秒节流——拦截重定向回同一路径时设置页不重新挂载，点其它菜单被弹回原本无任何反馈；设置页 mounted 旧提示移除避免双弹）；cuser.py /user/info 下发 mustChangePassword（双前缀）；users.ts UserInfoData 类型；user.ts GetUserInfo 同步（undefined 不写防滚动部署误清）；settings/index.vue 改密成功清 forceChange query。
 - **发布约束**：router redirect 与守卫白名单必须原子交付（单发前者 → /settings ↔ /settings/index 无限重定向循环，vue-router 3 无环检测已实证）。
-- **生产解困 runbook** 在 PLANS/force-change-deadlock-fix.md 第四节（含 SQL 路径、会话残留必须重登、SQLite 先停后写、bcrypt 哈希生成命令）。
+- **生产解困 runbook** 在 PLANS/archive/force-change-deadlock-fix.md 第四节（含 SQL 路径、会话残留必须重登、SQLite 先停后写、bcrypt 哈希生成命令）。
 
 ### 验证
 
 - 后端：test_login_throttle_and_change_password（12，含 /users/info 两态新用例）+ test_w9_force_change_reproduction（4）+ test_auth_protection_extended 共 97 passed；black/flake8 通过；mypy 44 errors 为既有基线（stash 对比零新增）。
 - 前端：permission-force-change-deadlock.spec 6/6（拦截落点可达/首导航拦截/父 redirect/直达放行/改密闭环/对照）；user-store-must-change-password.spec 7/7（GetUserInfo 三态）；permission-guard/store-user/api-contracts/request-auth 回归 60 passed；改动文件 eslint 通过；npm run typecheck 通过。
-- 文档：PLANS/force-change-deadlock-fix.md 新建并在 PLANS/README 注册；progress.md/feature_list.json（force-change-deadlock-fix-2026-08-18，2 tasks）已更新；roadmap 同步（entry README 路由表行号实测重测+permission 小节补拦截描述、frontend README 行数、backend api README cuser 行、test-coverage 补登与扩展、根 README 元信息）；./init.sh 通过。
+- 文档：PLANS/archive/force-change-deadlock-fix.md 新建并在 PLANS/README 注册；progress.md/feature_list.json（force-change-deadlock-fix-2026-08-18，2 tasks）已更新；roadmap 同步（entry README 路由表行号实测重测+permission 小节补拦截描述、frontend README 行数、backend api README cuser 行、test-coverage 补登与扩展、根 README 元信息）；./init.sh 通过。
 
 ### 回归保护矩阵（本事故全部修改点，2026-08-18 补齐）
 

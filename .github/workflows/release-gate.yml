@@ -1,6 +1,6 @@
 # BtDeck Release Gate（W0 探针阶段）
 #
-# 职责（PLANS/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
+# 职责（PLANS/archive/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
 #   w0-windows-runner : windows-2022 上验证 Inno Setup 安装/静默安装卸载 + NSSM 服务生命周期
 #   w0-linux-systemd  : ubuntu Runner 上验证 Debian 12 / Rocky 9 systemd 特权容器拓扑
 #   w0-node-matrix    : Node 22 下前端全量矩阵（contract:check/typecheck/Jest/build）

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-W4-3 响应性集成测试（PLANS/sync-database-blocking-remediation.md）
+W4-3 响应性集成测试（PLANS/archive/sync-database-blocking-remediation.md）
 
 【与 test_sqlite_sync_contention.py 的关系】
 - test_sqlite_sync_contention（W1）证明"单表写锁争用下交互写可在批次间获得写锁"，

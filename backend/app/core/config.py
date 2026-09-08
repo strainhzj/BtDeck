@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
 
     # 同步任务资源治理配置（sync-resource-governance）
-    # 详见 PLANS/sync-resource-governance.md
+    # 详见 PLANS/archive/sync-resource-governance.md
     # heavy_sync 全局令牌：限制同时运行的重型同步任务数量，避免后台任务挤占请求侧资源
     SYNC_HEAVY_CONCURRENCY: int = 1
     # 每类重型任务最多允许排队等待的名额（按 task_code 计）；超过即跳过本轮
@@ -163,11 +163,11 @@ class Settings(BaseSettings):
     # 最多占用该数量的 per-downloader 并发槽，其余槽始终保留给交互请求
     # （INTERACTIVE lane）。默认 1：后台最多占 1 槽，交互恒保留 1 槽。
     # 若配置与总容量矛盾（total<=1 且本值>=1），运行时自动降级为 0 并记录警告，
-    # 不会破坏交互保留槽。详见 PLANS/sync-database-blocking-remediation.md W2-2
+    # 不会破坏交互保留槽。详见 PLANS/archive/sync-database-blocking-remediation.md W2-2
     DOWNLOADER_BACKGROUND_CAPACITY: int = 1
     # qB tracker 明细并发上限（历史配置，保留兼容旧环境变量）：自 W3-1 起
     # 不再控制任务数上限，任务数由 QB_TRACKER_WORKER_COUNT（有界 worker 队列）
-    # 取代。详见 PLANS/sync-database-blocking-remediation.md W3-1
+    # 取代。详见 PLANS/archive/sync-database-blocking-remediation.md W3-1
     QB_TRACKER_CONCURRENCY: int = 3
     # qB Tracker 有界 worker 队列 worker 数（W3-1）：同时活跃的拉取协程数，
     # 禁止一次性为全部 hash 创建任务对象；10k 级种子时活跃 asyncio 任务数
@@ -195,7 +195,7 @@ class Settings(BaseSettings):
     # 真分批提交开关（W1-1）：True 时 bulk_upsert_with_retry 按
     # SYNC_DB_COMMIT_BATCH_SIZE 真实分批提交（每批独立 commit），消除单大事务
     # 对 SQLite 写锁的长时间持有；False 时回退旧行为（单事务一次提交）。
-    # 详见 PLANS/sync-database-blocking-remediation.md W1-1
+    # 详见 PLANS/archive/sync-database-blocking-remediation.md W1-1
     SYNC_CHUNKED_COMMIT_ENABLED: bool = True
     # 单批最大尝试次数（含首次）：锁冲突时只重试当前失败批
     SYNC_DB_LOCK_RETRY_COUNT: int = 3
@@ -206,18 +206,18 @@ class Settings(BaseSettings):
     # 现有 (status, msg) 做 strip 归一化变化检测，只写变化行（零变化零 DML，
     # 不进 db_write_scope、不 UPDATE、不 commit）；False 时回退旧逻辑（跳过
     # 变化检测，所有匹配 tracker 全部写回）。回退不改变判定规则，只改变写回策略。
-    # 详见 PLANS/sync-database-blocking-remediation.md W1-2
+    # 详见 PLANS/archive/sync-database-blocking-remediation.md W1-2
     SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED: bool = True
     # 统一 SyncCoordinator 开关（W2-1）：True 时手动同步（sync-single）与
     # 定时任务（info/tracker）统一经 app/services/sync_coordinator.py::run_sync
     # 执行（统一资源准入/写治理/观测），torrent_sync_db_async 作为 legacy adapter
     # 内部转发；False 时手动入口回退旧直接调用 torrent_sync_db_async 全量同步的
     # 路径（应急回滚）。⚠️ legacy 只能作为应急回退，禁止与新路径同时执行，
-    # 两个稳定版本后删除。详见 PLANS/sync-database-blocking-remediation.md W2-1
+    # 两个稳定版本后删除。详见 PLANS/archive/sync-database-blocking-remediation.md W2-1
     SYNC_CANONICAL_COORDINATOR_ENABLED: bool = True
 
     # 种子信息同步（info-only）资源治理配置（W3-3 第一部分，P1-02）
-    # 详见 PLANS/sync-database-blocking-remediation.md W3-3
+    # 详见 PLANS/archive/sync-database-blocking-remediation.md W3-3
     # 下载器并发数：SQLite 默认 1（串行处理下载器，避免多下载器并发同步叠加
     # 内存/CPU 峰值挤占请求侧）。配置上限不得超过明确压测值，当前默认 1。
     INFO_SYNC_DOWNLOADER_CONCURRENCY: int = 1
@@ -290,7 +290,7 @@ class Settings(BaseSettings):
     # 定时任务数据新鲜度兜底阈值（秒，W3-4/P1-05）：cron_plan 无法解析出最短
     # 重复间隔时，stale 判断使用该值（默认 2 小时）；可解析时按
     # “2 个调度周期”语义取 2 × 最短重复间隔（如每 5 分钟任务 → 600 秒）。
-    # 详见 PLANS/sync-database-blocking-remediation.md W3-4
+    # 详见 PLANS/archive/sync-database-blocking-remediation.md W3-4
     CRON_STALE_THRESHOLD_SECONDS: float = 7200.0
 
     # 同步观测配置（W4-1 结构化观测工具模块 sync_observability）

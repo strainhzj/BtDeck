@@ -401,7 +401,7 @@ async def bulk_upsert_with_retry(
 ) -> WriteStats:
     """批量 upsert + 真实分批提交 + 批级重试 + db_write_scope 串行化写者。
 
-    核心语义（W1-1，PLANS/sync-database-blocking-remediation.md）：
+    核心语义（W1-1，PLANS/archive/sync-database-blocking-remediation.md）：
     - 真实分批：to_insert / to_update 各自按 batch_size 分块，每批进入
       db_write_scope → 执行该批 DML → 独立 commit，形成真实提交边界，
       不再由一次全量同步持续持有 SQLite 写锁。

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 W3-3 第二部分（P1-02）：info-only 分阶段流水线验证与内存峰值集成测试
-（PLANS/sync-database-blocking-remediation.md W3-3；本文件即计划目标文件
+（PLANS/archive/sync-database-blocking-remediation.md W3-3；本文件即计划目标文件
 tests/integration/test_sync_memory_bound.py）
 
 【覆盖目标】（对应计划 W3-3 "测试"清单与任务书 W3-3 第二部分）：

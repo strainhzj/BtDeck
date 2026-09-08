@@ -2,7 +2,7 @@
 """
 统一同步协调器（SyncCoordinator）
 
-W2-1（PLANS/sync-database-blocking-remediation.md）：消除手动同步旁路。
+W2-1（PLANS/archive/sync-database-blocking-remediation.md）：消除手动同步旁路。
 手动 sync-single 与定时任务（info/tracker）共用同一业务执行入口，统一
 资源准入、写治理、取消/预算语义与结构化观测。
 
@@ -340,7 +340,7 @@ async def _unregister_running_keys(keys: List[str]) -> None:
 
 
 # =============================================================================
-# 持久化同步检查点（W3-2，PLANS/sync-database-blocking-remediation.md）
+# 持久化同步检查点（W3-2，PLANS/archive/sync-database-blocking-remediation.md）
 # =============================================================================
 
 
