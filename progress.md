@@ -1,5 +1,13 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-08：移动端通知一键已读
+
+- **实现**：`frontend/src/views/mobile/notifications.vue` 在通知列表顶部新增未读摘要和“全部已读”按钮；复用 `markAllAsRead()` / `PUT /notifications/read-all`，成功后就地更新当前已加载通知并重新同步 `NotificationModule` 未读角标。
+- **交互**：按钮请求期间显示 loading 并阻止重复提交；非 200/网络失败提示错误且保留未读状态；列表中暂无未读时隐藏操作栏；按钮触控高度 44px。
+- **并发保护**：用 `markAllVersion` 标记操作代际，列表请求在“全部已读”期间返回旧快照时保留本地已读状态，避免轮询/分页响应回写旧未读标识。
+- **回归**：`frontend/tests/unit/mobile-notifications.spec.ts` 新增成功链路、重复提交、失败重试与并发旧响应覆盖，定向测试 **23 passed**；`npm run typecheck`、`npm run lint -- --no-fix`（含 contract:check、Vue lint、Vuex action lint）通过。
+- **未提交**：本批代码与文档变更尚未执行 Git commit。
+
 ## 2026-09-06（第六批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（本轮问题关闭）
 
 ### 背景与修复

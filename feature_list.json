@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-07",
+  "last_updated": "2026-09-08",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,34 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "mobile-notifications-mark-all-read-20260908",
+      "name": "移动端通知一键已读",
+      "description": "移动通知列表新增顶部“全部已读”操作栏，复用现有 PUT /notifications/read-all 接口，覆盖尚未加载的分页通知；成功后就地更新已加载卡片并同步移动端未读角标。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "沿用桌面通知中心已有全部已读端点和前端 API；移动页为独立分页列表，操作入口按 Vuex 未读角标与当前列表未读项的较大值显示，确保角标首轮加载尚未完成时仍可操作；markAllVersion 保留并发列表请求中的本地已读状态，防止旧响应回写未读标识。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、契约检查与 lint 通过",
+        "移动通知单测覆盖成功、重复提交、失败重试与状态保留"
+      ],
+      "tasks": [
+        {
+          "id": "mobile-notifications.mark-all-read",
+          "name": "移动通知页一键已读按钮与交互",
+          "description": "在移动通知列表顶部增加未读摘要和 44px 触控区按钮；复用 markAllAsRead API，处理 loading/重复点击/错误提示/角标同步，并保护并发分页响应的已读状态。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/notifications.vue",
+            "frontend/tests/unit/mobile-notifications.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "frontend/tests/unit/mobile-notifications.spec.ts：23 passed；npm run typecheck 通过；npm run lint -- --no-fix 通过（contract:check、vue-cli-service lint --max-warnings 0、lint-vuex-action）。"
+        }
+      ]
+    },
     {
       "id": "docker-diagnosis-rca-fixes-20260907",
       "name": "Docker 部署诊断导出五项 RCA 与修复——WAL 快照观测阻塞事件循环根修 + 本地镜像构建身份注入加固＋Docker 时区统一 UTC",

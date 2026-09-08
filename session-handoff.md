@@ -1,3 +1,21 @@
+## 2026-09-08：移动端通知一键已读（未提交）
+
+### 交付内容
+
+- `frontend/src/views/mobile/notifications.vue`：通知列表顶部新增未读摘要与“全部已读”按钮，复用 `markAllAsRead()` 调用 `/notifications/read-all`；覆盖全部分页数据，当前已加载卡片立即更新，完成后同步 `NotificationModule.FetchUnreadCount()`。
+- 请求中按钮 loading 且方法级防重复提交；失败提示并保持未读；使用 `markAllVersion` 防止操作期间已经发出的列表请求用旧快照恢复未读状态；按钮触控区最小高度 44px。
+- `frontend/tests/unit/mobile-notifications.spec.ts`：新增成功、重复提交、失败重试与并发旧响应回归。
+- `docs/roadmap/frontend/views/README.md`、`feature_list.json`、`progress.md` 已同步。
+
+### 验证
+
+- `frontend/tests/unit/mobile-notifications.spec.ts`：23 passed。
+- `cd frontend && npm run typecheck`：通过。
+- `cd frontend && npm run lint -- --no-fix`：通过（contract:check、Vue lint、Vuex action lint）。
+- 尚未执行 Git commit；工作区还包含此前未提交的其他批次变更，提交时请按文件范围审阅。
+
+---
+
 ## 2026-09-07（续五）：Docker 时区统一 UTC（RCA④ 环境层根治）+ 远端 compose 配置详情（未提交）
 
 ### 交付内容

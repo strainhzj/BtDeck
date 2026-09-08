@@ -13,11 +13,12 @@ import { shallowMount, Wrapper } from '@vue/test-utils'
 import fs from 'fs'
 import path from 'path'
 import MobileNotifications from '@/views/mobile/notifications.vue'
-import { getNotificationList, markAsRead, NotificationItem } from '@/api/notification'
+import { getNotificationList, markAllAsRead, markAsRead, NotificationItem } from '@/api/notification'
 import { NotificationModule } from '@/store/modules/notification'
 
 jest.mock('@/api/notification', () => ({
   getNotificationList: jest.fn(),
+  markAllAsRead: jest.fn(),
   markAsRead: jest.fn()
 }))
 
@@ -107,6 +108,9 @@ describe('views/mobile/MobileNotifications', () => {
     jest.mocked(markAsRead).mockReset()
     jest.mocked(markAsRead).mockResolvedValue({
       code: '200', status: 'success', msg: 'ok', data: null
+    } as never)
+    jest.mocked(markAllAsRead).mockResolvedValue({
+      code: '200', status: 'success', msg: 'ok', data: { count: 2 }
     } as never)
   })
 
@@ -206,6 +210,75 @@ describe('views/mobile/MobileNotifications', () => {
     expect(markAsRead).not.toHaveBeenCalled()
     const vm = wrapper.vm as unknown as { detailVisible: boolean }
     expect(vm.detailVisible).toBe(true)
+    wrapper.destroy()
+  })
+
+  it('顶部一键已读：覆盖当前已加载列表、同步未读角标并提示后端变更数量', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+
+    expect(wrapper.find('.m-notification-actions').exists()).toBe(true)
+    expect(wrapper.find('.m-unread-summary').text()).toBe('未读 2 条')
+    await wrapper.find('.m-mark-all-button').trigger('click')
+    await flushLifecycle()
+
+    expect(markAllAsRead).toHaveBeenCalledTimes(1)
+    expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
+    expect(wrapper.findAll('.m-notice.is-unread').length).toBe(0)
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('已将 2 条通知标为已读')
+    expect(wrapper.find('.m-notification-actions').exists()).toBe(false)
+    wrapper.destroy()
+  })
+
+  it('一键已读请求进行中禁止重复提交，失败时保留未读状态并允许重试', async() => {
+    let resolveMarkAll: (value: unknown) => void = () => undefined
+    jest.mocked(markAllAsRead).mockReturnValue(new Promise(resolve => {
+      resolveMarkAll = resolve
+    }) as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as {
+      handleMarkAllAsRead(): Promise<void>
+      markingAllAsRead: boolean
+    }
+
+    const firstRequest = vm.handleMarkAllAsRead()
+    await Promise.resolve()
+    expect(vm.markingAllAsRead).toBe(true)
+    await vm.handleMarkAllAsRead()
+    expect(markAllAsRead).toHaveBeenCalledTimes(1)
+
+    resolveMarkAll({ code: '500', status: 'error', msg: '服务暂不可用', data: null })
+    await firstRequest
+    await flushLifecycle()
+    expect(vm.markingAllAsRead).toBe(false)
+    expect(wrapper.findAll('.m-notice.is-unread').length).toBe(2)
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('服务暂不可用')
+    wrapper.destroy()
+  })
+
+  it('一键已读成功后，操作前已发出的列表响应不会恢复旧未读标识', async() => {
+    let resolveRefresh: (value: unknown) => void = () => undefined
+    const wrapper = mountPage()
+    await flushLifecycle()
+    jest.mocked(getNotificationList).mockReturnValueOnce(new Promise(resolve => {
+      resolveRefresh = resolve
+    }) as never)
+    const vm = wrapper.vm as unknown as {
+      loadActiveSpeed(): Promise<boolean>
+      handleMarkAllAsRead(): Promise<void>
+    }
+
+    const refreshRequest = vm.loadActiveSpeed()
+    await Promise.resolve()
+    await vm.handleMarkAllAsRead()
+    resolveRefresh({
+      code: '200', status: 'success', msg: 'ok',
+      data: { total: 3, page: 1, pageSize: 50, list: makeList() }
+    })
+    await refreshRequest
+    await flushLifecycle()
+    expect(wrapper.findAll('.m-notice.is-unread').length).toBe(0)
     wrapper.destroy()
   })
 
