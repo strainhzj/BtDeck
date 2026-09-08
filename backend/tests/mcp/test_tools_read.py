@@ -253,8 +253,9 @@ class TestHandlerRegistration:
             "dashboard_get",
             "torrent_mark_pending_delete",
             "cron_task_trigger",
+            "torrent_add_file",
         ):
             assert tool in names, f"{tool} 未注册"
-        # W3-③ 工具尚未注册
-        assert "torrent_add_file" not in names
+        # W3 收官：六工具处理器全部注册
+        assert len(names) == 6
         assert bundle.server.name == "BtDeck"

@@ -4623,3 +4623,26 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - AVD `btdeck-a35` 真实 instrumentation：`LocalServerAndroidTest` 1 passed。服务报告 schemaVersion=2、20 项能力、degraded=5、unsupported=9；路径映射、孤儿、备份、转移、三级删除均返回 403 `PLATFORM_CAPABILITY_UNSUPPORTED`；健康、静态首页和停止/重启通过。
 - 本轮验证：后端定向 39 passed；前端能力/任务 4 suites 30 passed；frontend lint/typecheck/build、flake8/mypy/ruff format、git diff --check 通过；根 `bash ./init.sh --ci` 通过但保留既有 null-byte 警告。
 - 工作区未提交；本轮新增/修改文件需与既有历史修改一起审阅。未跟踪 `data/` 保持不动。
+
+## 2026-09-08 交接：MCP W3-③ 添加种子工具（六工具齐套，未提交）
+
+### 已完成
+
+- **分层债收尾**：add 家族六辅助（calculate_info_hash / get_transmission_torrent_info / create_qb|tr_torrent_record / _write_audit_log_async / _safe_write_audit_log）自 `app/api/endpoints/torrent_helpers.py` 逐字迁至新模块 `app/services/torrent_add_helpers.py`（tr_client 注解 trClient→Any）；`torrent_add_service` / `torrent_batch_add_service` 改依赖服务层，`torrent_status.py` 端点正向依赖新模块；新模块登记 `tests/architecture/test_async_downloader_calls.py` 守卫。迁移回归 121 项绿。
+- **契约修正**：`torrent_add_file.downloader_id` integer→string（下载器主键实为 `str(uuid.uuid4())`，integer 契约永远无法命中）。
+- **处理器**：`app/mcp/tools/torrent_add.py` + `register_all()` 注册。校验链（SERVER_PATH_FORBIDDEN 先于解码→strict base64→10/64MiB 双上限（env `BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES` 恒钳制硬顶）→bencode/info hash（to_thread））→ require_store → 共享 LRU 幂等 → 共用 `TorrentAddService`（operator=principal.username）→ 领域码映射（404/400→INVALID_ARGUMENT、408/503→DOWNSTREAM_FAILURE、500/未知→INTERNAL_ERROR；上游 msg 只进服务端日志）。输出 allowlist：added/duplicate/info_id/name/downloader_id/downloader_nickname。
+- **TorrentAddResult 扩展**：info_hash/info_id/name/downloader_nickname/created 字段（HTTP 端点只读 status/code/msg，零行为变化）。
+- **测试**：新增 49（单元 44 + wire 5）；tests/mcp 280 全绿；迁移+相邻回归合计 448 passed。既有锚点更新：处理器注册断言六工具、无处理器空档测试改临时摘除注册表锚定、`_ToolStack.create` 加可选 store 参数。
+- **顺手修复**：`app/core/runtime_context.py` 未用 Dict import（ba8408f 遗留，整 app/ flake8 红线）。
+- **门禁**：MCP-G7/G8 片段新增 PASS；G0/G2/G3 摘要与 sha256 证据刷新至六工具；聚合 5/12 PASS、verdict=BLOCKED（余 G1/G4/G5/G6/G9/G10/G11 待 W4）。
+- **文档**：feature_list .8→done、progress.md 续六、计划 §11（W3 done/§11.1 债务收口/§11.3 改指 W4）。
+
+### 提交与红线
+
+- 未执行 Git 提交；本批改动文件=torrent_add_helpers.py（新）/torrent_add.py（新）/test_tools_torrent_add.py（新）+ torrent_add_service / torrent_batch_add_service / torrent_helpers / torrent_status / contracts / tools/__init__ / runtime_context + 四处测试锚点 + 三份记录文件。提交时用显式文件列表，**勿 add 用户并行改动**（MoviePilot 集成 + 前端详情页签，git status 可见）。
+- 本地积压未推送：c0c15b9（W2）/46b09a5（W3-①）/6e45e89（W3-②）+ 本批；github 直连与代理均失联，fetch 走 ghfast.top 镜像（远端 dev1.0.7 顶端 bce0ca9 已核对无新提交），push 待代理恢复。
+- 质量门禁：mypy/black（本批文件）/flake8（整 app/）全绿；`test_torrent_crud_add_fallback.py` 的 black 存量漂移非本批 hunk（stash 验证），未触碰。
+
+### 下一批（W4，task .9）
+
+G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残余 api 依赖清理）、G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期、G10 制品（mcp SDK 入 requirements + 两 spec + 黑盒）、G11 runbook + 观测回滚；同键在途幂等完整矩阵复核（现口径：LRU 只保证完成后重放，在途窗口两次执行，有专项锚定测试）。

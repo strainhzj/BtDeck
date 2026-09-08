@@ -620,17 +620,24 @@
           "id": "mcp-service-capabilities-2026-08-28.8",
           "name": "W3 统一 TorrentAddService 与添加种子工具",
           "description": "从torrent_crud单添加和batch service抽取协议无关TorrentAddService，HTTP/MCP共用；首版只接收受控.torrent内容，不接受磁力/URL/服务器路径，实施10MiB默认/64MiB硬上限、bencode/info hash、确认、幂等和审计。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/services/torrent_add_service.py",
-            "backend/app/mcp/tools/torrents.py",
-            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/services/torrent_add_helpers.py",
+            "backend/app/mcp/tools/torrent_add.py",
+            "backend/app/mcp/tools/__init__.py",
+            "backend/app/mcp/contracts.py",
             "backend/app/services/torrent_batch_add_service.py",
-            "backend/tests/mcp/test_torrent_add_tool.py",
-            "backend/tests/services/test_torrent_add_service.py"
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/api/endpoints/torrent_status.py",
+            "backend/tests/mcp/test_tools_torrent_add.py",
+            "backend/tests/mcp/test_tools_wire.py",
+            "backend/tests/mcp/test_capability_gates.py",
+            "backend/tests/mcp/test_tools_read.py",
+            "backend/tests/architecture/test_async_downloader_calls.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（TorrentAddService 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-08 W3-③ 落地（六工具齐套）：①分层债收尾——add 家族辅助（calculate_info_hash/get_transmission_torrent_info/create_qb|tr_torrent_record/_write_audit_log_async/_safe_write_audit_log）自 app/api/endpoints/torrent_helpers 原样迁至 app/services/torrent_add_helpers（tr_client 注解改 Any，recycle_bin 先例），torrent_add_service/torrent_batch_add_service 改依赖服务层，torrent_status 端点正向依赖；新模块登记 async_downloader_calls 架构守卫（模块级客户端 import 禁止）。②契约修正——torrent_add_file.downloader_id integer→string（下载器主键实为 UUID 字符串，str(uuid.uuid4())，integer 契约永远无法命中）。③处理器 app/mcp/tools/torrent_add.py：输入校验链（磁力/URL/UNC/盘符/Unix 路径形态先于解码 SERVER_PATH_FORBIDDEN、合法 base64 以 / 开头不误判、strict b64 validate、默认 10MiB+硬顶 64MiB 双上限（BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES env 覆盖恒钳制硬顶）、空文件/非 bencode/缺 info dict → UPLOAD_INVALID_CONTENT，bencode 解析 to_thread 化）→ require_store → 共享 LRU 幂等重放 → 共用 TorrentAddService（operator=principal.username，audit_context=call_context.audit）→ 领域码映射（404/400→INVALID_ARGUMENT、408/503→DOWNSTREAM_FAILURE、500/未知→INTERNAL_ERROR 固定文案，上游 msg 只进服务端日志）；输出 allowlist added/duplicate/info_id/name/downloader_id/downloader_nickname（仅昵称）。④TorrentAddResult 扩展 info_hash/info_id/name/downloader_nickname/created 字段（HTTP 端点只读 status/code/msg，行为零变化）。⑤测试：新增单元 44（校验矩阵/错误映射/幂等重放/并发不同键隔离/同键在途首版口径锚定/审计无文件内容）+ wire 5（RUNTIME_NOT_READY/SERVER_PATH_FORBIDDEN/UPLOAD_TOO_LARGE/UPLOAD_INVALID_CONTENT/CONFIRM_REQUIRED/未知下载器→INVALID_ARGUMENT 带审计行）；既有锚点更新（处理器注册六工具齐套、无处理器空档语义改临时摘除注册表锚定）；tests/mcp 280 项 + 迁移回归（add_service/status_migration/add_fallback/transmission_error_sync/batch_add/async_downloader_calls/mcp_settings/gate_skeleton/cron_trigger）合计 448 项全绿；mypy/black/flake8 全绿（含修复 ba8408f 遗留的 runtime_context.py F401 未用 import，恢复整 app/ flake8 门禁）。⑥门禁：MCP-G7（三类写操作确认/幂等/部分失败/审计，同键在途窗口为文档化首版口径、完整重放矩阵 W4）与 MCP-G8（Cron allowlist + 上传安全负测）片段 PASS；G0/G2/G3 摘要与证据刷新至六工具；聚合 5/12 PASS、verdict=BLOCKED（余 7 门 W4）。未执行 Git 提交。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.9",
@@ -654,7 +661,8 @@
             "session-handoff.md"
           ]
         }
-      ]
+      ],
+      "summary": "W0（契约/错误码/G0 门禁/威胁模型/Gate 骨架/SDK 选型=官方 mcp 1.30.0）、W1（配置控制面）、W2（同进程挂载/三重门禁/脱敏层）与 W3 六工具（①高级查询/查询模板/仪表盘 ②等级4标记/Cron 触发 ③添加种子）均已落地；可用 MCP 工具 6/6，Gate 5/12 PASS（G0/G2/G3/G7/G8），余 7 门（G1/G4/G5/G6/G9/G10/G11）随 W4 补证，聚合 verdict=BLOCKED。详见计划 §10.4/§11。"
     },
     {
       "id": "mobile-ux-enhancements-2026-08-28",

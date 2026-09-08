@@ -231,9 +231,9 @@ TOOL_INPUT_SPECS: Dict[str, Tuple[ToolFieldSpec, ...]] = {
         ),
         ToolFieldSpec(
             name="downloader_id",
-            json_type="integer",
+            json_type="string",
             required=True,
-            description="目标下载器 ID（仅 ID，连接信息永不回显）。",
+            description="目标下载器 ID（UUID 字符串主键，仅 ID，连接信息永不回显）。",
             constraints=("必须使用 app.state.store 缓存连接",),
         ),
         ToolFieldSpec(

@@ -590,19 +590,29 @@ class TestWireInputAndRuntimeGates:
             stack.close()
 
     async def test_enabled_capability_without_handler_is_internal_error(self, auth_utils_patch):
-        """分批接入空档：能力开启但处理器未注册（如 W3-③ 的添加种子）→ 固定文案 INTERNAL_ERROR。"""
+        """W3 六工具齐套后，空档语义以"临时摘除处理器"保持锚定：能力开启但注册表
+        无实现（部署/配置超前）→ 固定文案 INTERNAL_ERROR，不静默成功。"""
+        from app.mcp import catalog as catalog_module
+
         stack = _GateStack(_snapshot(enabled=True, on=["torrent.add"]))
         try:
-            async with _mcp_client(stack, headers={"Authorization": f"Bearer {_make_token()}"}) as client:
-                await _handshake(client)
-                call = await _tools_call(
-                    client,
-                    "torrent_add_file",
-                    {"torrent_file_b64": "eA==", "downloader_id": 1, "confirm": True, "idempotency_key": "k"},
-                )
-                assert _call_error_code(call) == "INTERNAL_ERROR"
-                message = call["result"]["structuredContent"]["error"]["message"]
-                assert message == "服务内部错误。"
+            stripped = {k: v for k, v in catalog_module.TOOL_HANDLERS._handlers.items() if k != "torrent_add_file"}
+            with patch.object(catalog_module.TOOL_HANDLERS, "_handlers", stripped):
+                async with _mcp_client(stack, headers={"Authorization": f"Bearer {_make_token()}"}) as client:
+                    await _handshake(client)
+                    call = await _tools_call(
+                        client,
+                        "torrent_add_file",
+                        {
+                            "torrent_file_b64": "eA==",
+                            "downloader_id": "1",
+                            "confirm": True,
+                            "idempotency_key": "k",
+                        },
+                    )
+                    assert _call_error_code(call) == "INTERNAL_ERROR"
+                    message = call["result"]["structuredContent"]["error"]["message"]
+                    assert message == "服务内部错误。"
         finally:
             stack.close()
 

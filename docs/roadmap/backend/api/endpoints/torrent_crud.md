@@ -290,11 +290,13 @@ torrent_crud.py
   ├─→ app.torrents.audit_enums.{AuditOperationType, AuditOperationResult}
   │
   ├─→ app.api.endpoints.torrent_helpers          (横向复用)
+  │     └─ get_torrent_infos / convert_to_vo
+  ├─→ app.services.torrent_add_service.{TorrentAddService, TorrentAddParams}  (单添加协议无关主体，2026-09-05 抽取；MCP torrent_add_file 共用)
+  ├─→ app.services.torrent_add_helpers           (add 家族辅助，2026-09-08 自 torrent_helpers 迁入服务层)
   │     ├─ calculate_info_hash
   │     ├─ get_transmission_torrent_info
   │     ├─ create_qbittorrent_torrent_record
-  │     ├─ create_transmission_torrent_record
-  │     └─ get_torrent_infos
+  │     └─ create_transmission_torrent_record
   ├─→ app.core.reannounce_config_operations.extract_domains_from_trackers (主机域名归一)
   ├─→ app.api.endpoints.torrent_speed.get_active_keys_snapshot  (活动种子快照)
   ├─→ app.api.endpoints.torrent_sync.{qb_add_torrents, tr_add_torrents}  (同步)

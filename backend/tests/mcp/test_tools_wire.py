@@ -70,6 +70,13 @@ def auth_utils_patch():
         yield
 
 
+class _StateWithStore:
+    """app.state 最小替身：仅暴露 store（torrent_add_file 的下载器缓存入口）。"""
+
+    def __init__(self, store: Any):
+        self.store = store
+
+
 class _ToolStack:
     """线上 E2E 栈：同步域库（种子/模板）+ 异步库（审计/定时任务）+ 挂载 /mcp。
 
@@ -83,7 +90,7 @@ class _ToolStack:
         self.app: Any = None
 
     @classmethod
-    async def create(cls, on: list) -> "_ToolStack":
+    async def create(cls, on: list, store: Any = None) -> "_ToolStack":
         stack = cls()
         stack.sync_engine = create_engine(
             "sqlite:///:memory:",
@@ -166,7 +173,7 @@ class _ToolStack:
         await adb.close()
 
         stack.snapshot = _snapshot(on)
-        stack.bundle = create_mcp_server_bundle(state=None)
+        stack.bundle = create_mcp_server_bundle(_StateWithStore(store) if store is not None else None)
         stack.bundle.runtime.settings_provider = lambda: stack.snapshot
         stack.bundle.runtime.session_factory = stack.sync_factory
         stack.bundle.runtime.async_session_factory = stack.async_factory
@@ -493,5 +500,113 @@ class TestWireCronTrigger:
                     {"task_code": "torrent_info_sync_ac608e4d", "confirm": True, "idempotency_key": "k"},
                 )
                 assert _error(resp) == "CRON_TASK_NOT_TRIGGERABLE"
+        finally:
+            await stack.close()
+
+
+class TestWireTorrentAddFile:
+    """W3-③ 添加种子线上拒绝路径（真实下载器成功路径留 W4 等价批）。"""
+
+    def _args(self, torrent_b64: str, key: str = "k") -> Dict[str, Any]:
+        return {
+            "torrent_file_b64": torrent_b64,
+            "downloader_id": "1",
+            "confirm": True,
+            "idempotency_key": key,
+        }
+
+    @staticmethod
+    def _valid_torrent_b64() -> str:
+        import base64
+
+        import bencodepy
+
+        torrent = bencodepy.encode(
+            {
+                b"announce": b"http://tracker.example.com/announce",
+                b"info": {b"name": b"wire-add", b"piece length": 16384, b"length": 1, b"pieces": b"\x00" * 20},
+            }
+        )
+        return base64.b64encode(torrent).decode("ascii")
+
+    async def test_store_not_ready_rejected(self, auth_utils_patch):
+        stack = await _ToolStack.create(on=["torrent.add"])
+        try:
+            async with _stack_client(stack) as client:
+                resp = await _call(client, "torrent_add_file", self._args(self._valid_torrent_b64()))
+                assert _error(resp) == "RUNTIME_NOT_READY"
+        finally:
+            await stack.close()
+
+    async def test_server_path_url_magnet_rejected(self, auth_utils_patch):
+        stack = await _ToolStack.create(on=["torrent.add"])
+        try:
+            async with _stack_client(stack) as client:
+                for raw in (
+                    "magnet:?xt=urn:btih:0123456789",
+                    "https://example.com/x.torrent",
+                    "/config/qbittorrent/x.torrent",
+                ):
+                    resp = await _call(client, "torrent_add_file", self._args(raw))
+                    assert _error(resp) == "SERVER_PATH_FORBIDDEN", raw
+        finally:
+            await stack.close()
+
+    async def test_oversize_and_invalid_content_rejected(self, auth_utils_patch, monkeypatch):
+        monkeypatch.setenv("BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES", "256")
+        stack = await _ToolStack.create(on=["torrent.add"])
+        try:
+            async with _stack_client(stack) as client:
+                import base64
+
+                import bencodepy
+
+                big = bencodepy.encode(
+                    {
+                        b"announce": b"http://t.example.com/a",
+                        b"info": {b"name": b"big", b"piece length": 16384, b"length": 1, b"pieces": b"\x00" * 1024},
+                    }
+                )
+                oversize = await _call(client, "torrent_add_file", self._args(base64.b64encode(big).decode("ascii")))
+                assert _error(oversize) == "UPLOAD_TOO_LARGE"
+
+                garbage = await _call(
+                    client, "torrent_add_file", self._args(base64.b64encode(b"plain text").decode("ascii"))
+                )
+                assert _error(garbage) == "UPLOAD_INVALID_CONTENT"
+        finally:
+            await stack.close()
+
+    async def test_confirm_false_rejected(self, auth_utils_patch):
+        stack = await _ToolStack.create(on=["torrent.add"])
+        try:
+            async with _stack_client(stack) as client:
+                args = self._args(self._valid_torrent_b64())
+                args["confirm"] = False
+                resp = await _call(client, "torrent_add_file", args)
+                assert _error(resp) == "CONFIRM_REQUIRED"
+        finally:
+            await stack.close()
+
+    async def test_unknown_downloader_rejected_with_audit(self, auth_utils_patch):
+        """共用 service 真实路径：缓存空快照 → 领域 404 → INVALID_ARGUMENT + 审计行。"""
+
+        class _EmptySnapshotStore:
+            async def get_snapshot(self):
+                return []
+
+        stack = await _ToolStack.create(on=["torrent.add"], store=_EmptySnapshotStore())
+        try:
+            async with _stack_client(stack) as client:
+                resp = await _call(client, "torrent_add_file", self._args(self._valid_torrent_b64()))
+                assert _error(resp) == "INVALID_ARGUMENT"
+                message = resp["result"]["structuredContent"]["error"]["message"]
+                assert "下载器" not in message  # 固定文案，不透传领域 msg
+
+                audits = await stack.audit_rows()
+                add_rows = [a for a in audits if "torrent_add_file" in (a.operation_detail or "")]
+                assert len(add_rows) == 1
+                assert add_rows[0].operation_result == "failed"
+                assert "torrent_add_file" in (add_rows[0].operation_detail or "")
         finally:
             await stack.close()

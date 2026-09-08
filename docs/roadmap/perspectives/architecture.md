@@ -52,24 +52,30 @@ FastAPI lifespan（请求进入前）
 
 ```
 HTTP POST /api/v1/torrents/add
-  └─ app/api/endpoints/torrent_crud.py:138  create_torrent()
-       │
-       ├─ L171  await app.state.store.get_snapshot()      # 缓存下载器
-       ├─ L225  asyncio.to_thread(write_temp_file)        # 临时文件
-       ├─ L229  await calculate_info_hash(tmp_file_path)   # → torrent_helpers
-       │
-       ├─ [Transmission 分支 L241]
-       │    ├─ L260  await call_downloader_api(tr_client.add_torrent, ...)   # 统一下载器调用封装
-       │    ├─ L278-282  轮询 get_transmission_torrent_info（最多 30s）
-       │    └─ L302  create_transmission_torrent_record(...)  → db.add/commit
-       │
-       ├─ [qBittorrent 分支 L331]
-       │    ├─ L345  await call_downloader_api(qb_client.torrents_add, ...)  # 统一下载器调用封装
-       │    ├─ L369-373  轮询 call_downloader_api(qb_client.torrents_info)（最多 30s）
-       │    └─ L404  create_qbittorrent_torrent_record(...)  → db.add/commit
-       │
-       └─ L471  asyncio.create_task(write_audit_log_async())
-                  └─ 约 L445  audit_service.log_operation  (异步会话)
+  └─ app/api/endpoints/torrent_crud.py:131  create_torrent()   # 2026-09-05 起为协议无关服务的 HTTP 薄壳
+       └─ app/services/torrent_add_service.py  TorrentAddService.add_torrent()
+            │
+            ├─ await app.state.store.get_snapshot()          # 缓存下载器（store 显式注入）
+            ├─ asyncio.to_thread(write_temp_file)            # 临时文件
+            ├─ await calculate_info_hash(tmp_file_path)       # → app/services/torrent_add_helpers（2026-09-08 自 torrent_helpers 迁入服务层）
+            │
+            ├─ [Transmission 分支]
+            │    ├─ await call_downloader_api(tr_client.add_torrent, ...)   # 统一下载器调用封装（INTERACTIVE lane）
+            │    ├─ 轮询 get_transmission_torrent_info（最多 30s）
+            │    └─ create_transmission_torrent_record(...)  → db.add/commit
+            │
+            ├─ [qBittorrent 分支]
+            │    ├─ await call_downloader_api(qb_client.torrents_add, ...)  # 统一下载器调用封装（INTERACTIVE lane）
+            │    ├─ 轮询 call_downloader_api(qb_client.torrents_info)（最多 30s）
+            │    └─ create_qbittorrent_torrent_record(...)  → db.add/commit
+            │
+            └─ asyncio.create_task(write_audit_log_async())
+                     └─ audit_service.log_operation  (异步会话)
+
+MCP tools/call torrent_add_file（2026-09-08 W3-③）
+  └─ app/mcp/tools/torrent_add.py  handle_torrent_add_file()
+       ├─ 内容校验链（SERVER_PATH_FORBIDDEN / 10-64MiB 双上限 / bencode+info hash）→ require_store → 幂等 LRU
+       └─ 复用同一 TorrentAddService（G4：与 HTTP 同一 service；operator=principal.username）
 ```
 
 > 详见第三层样例 [../backend/api/endpoints/torrent_crud.md](../backend/api/endpoints/torrent_crud.md)。
