@@ -1,3 +1,20 @@
+## 2026-09-08（续五）：MCP W3-② 写/高风险工具已落地，待 W3-③ 添加种子
+
+### 交付内容（本批，未提交）
+
+- **torrent_mark_pending_delete**：逐项复用 delete_by_level(...,4)；already_marked 跳过下载器调用；partial 语义逐项保留（db_ok=False 不折叠）；error_code 稳定映射；幂等 LRU；DELETE_L4 + MCP_TOOL_CALL 双层审计。
+- **cron_task_trigger**：复用 trigger_task_by_code + MCP 显式 allowlist（6 个只读/同步任务；孤儿清理/路径扫描/重通告不开放）；五路拒绝码映射；accepted/run_id=null 不伪报完成；幂等+审计。
+- **共享层**：idempotency.py（LRU）、common.py（log_tool_audit）；模板工具重构接入。
+- **真缺陷根修**：trigger_task_by_code 判空与 CRUD 返回形态错配（未命中返回 truthy {total:0,list:[]}→旧代码必崩 TRIGGER_ERROR）；单测 mock 形态漂移掩盖生产路径——mock 已校准真实信封。cron_trigger 另加 session_factory 注入参数。
+- **测试**：tests/mcp 231 项（write 单元 20 + wire 拒绝 4）+ tests/tasks 7 项校准；相邻 360+714 绿；lint/mypy/black 干净。
+- **门禁**：G0/G2/G3 片段更新至五工具；G7/G8 留 W3-③ 补全第三类写操作与上传面。
+
+### 下一批：W3-③（计划 §6-W3.3）
+
+- torrent_add_file：TorrentAddService 的 torrent_helpers 辅助函数归属收尾（§11.1 记录的分层债）后接入；10/64MiB 双上限、bencode/info hash 校验、base64 输入、禁止服务器路径（SERVER_PATH_FORBIDDEN）、与 HTTP /torrent/add 共用边界；G7/G8 证据随后可补全。
+
+---
+
 ## 2026-09-08（续四）：MCP W3-① 只读三工具已落地，待 W3-②③（写/高风险工具）
 
 ### 交付内容（本批，未提交）

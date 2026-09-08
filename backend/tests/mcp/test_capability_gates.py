@@ -590,13 +590,15 @@ class TestWireInputAndRuntimeGates:
             stack.close()
 
     async def test_enabled_capability_without_handler_is_internal_error(self, auth_utils_patch):
-        """分批接入空档：能力开启但处理器未注册（如 W3-② 的 cron）→ 固定文案 INTERNAL_ERROR。"""
-        stack = _GateStack(_snapshot(enabled=True, on=["cron.trigger"]))
+        """分批接入空档：能力开启但处理器未注册（如 W3-③ 的添加种子）→ 固定文案 INTERNAL_ERROR。"""
+        stack = _GateStack(_snapshot(enabled=True, on=["torrent.add"]))
         try:
             async with _mcp_client(stack, headers={"Authorization": f"Bearer {_make_token()}"}) as client:
                 await _handshake(client)
                 call = await _tools_call(
-                    client, "cron_task_trigger", {"task_code": "x", "confirm": True, "idempotency_key": "k"}
+                    client,
+                    "torrent_add_file",
+                    {"torrent_file_b64": "eA==", "downloader_id": 1, "confirm": True, "idempotency_key": "k"},
                 )
                 assert _call_error_code(call) == "INTERNAL_ERROR"
                 message = call["result"]["structuredContent"]["error"]["message"]

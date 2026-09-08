@@ -92,7 +92,7 @@ class _ToolStack:
         )
         Base.metadata.create_all(
             bind=stack.sync_engine,
-            tables=[t.__table__ for t in (User, TorrentInfo, TrackerInfo, SearchTemplate)],
+            tables=[t.__table__ for t in (User, TorrentInfo, TrackerInfo, SearchTemplate, CronTask)],
         )
         stack.sync_factory = sessionmaker(bind=stack.sync_engine)
 
@@ -426,5 +426,72 @@ class TestWireDashboard:
                 assert "downloader_list" not in raw
                 assert "activities" not in raw
                 assert "host" not in raw and "user_agent" not in raw
+        finally:
+            await stack.close()
+
+
+class TestWireMarkPendingDelete:
+    """等级4标记线上拒绝路径（成功/部分成功路径由 test_tools_write 单元覆盖
+    service 替身；真实 service E2E 需下载器适配器，W4 等价批接入）。"""
+
+    async def test_store_not_ready_rejected(self, auth_utils_patch):
+        stack = await _ToolStack.create(on=["torrent.mark_pending_delete"])
+        try:
+            async with _stack_client(stack) as client:
+                resp = await _call(
+                    client,
+                    "torrent_mark_pending_delete",
+                    {"info_ids": ["i-1"], "confirm": True, "idempotency_key": "k"},
+                )
+                assert _error(resp) == "RUNTIME_NOT_READY"
+        finally:
+            await stack.close()
+
+    async def test_confirm_false_and_limit_rejected(self, auth_utils_patch):
+        stack = await _ToolStack.create(on=["torrent.mark_pending_delete"])
+        try:
+            async with _stack_client(stack) as client:
+                no_confirm = await _call(
+                    client,
+                    "torrent_mark_pending_delete",
+                    {"info_ids": ["i-1"], "confirm": False, "idempotency_key": "k"},
+                )
+                assert _error(no_confirm) == "CONFIRM_REQUIRED"
+                over_limit = await _call(
+                    client,
+                    "torrent_mark_pending_delete",
+                    {"info_ids": [f"i-{n}" for n in range(101)], "confirm": True, "idempotency_key": "k"},
+                )
+                assert _error(over_limit) == "ITEM_LIMIT_EXCEEDED"
+        finally:
+            await stack.close()
+
+
+class TestWireCronTrigger:
+    async def test_non_allowlisted_builtin_rejected(self, auth_utils_patch):
+        """内置但未对 MCP 开放的任务（tracker_reannounce）→ CRON_TASK_NOT_ALLOWED。"""
+        stack = await _ToolStack.create(on=["cron.trigger"])
+        try:
+            async with _stack_client(stack) as client:
+                resp = await _call(
+                    client,
+                    "cron_task_trigger",
+                    {"task_code": "tracker_reannounce", "confirm": True, "idempotency_key": "k"},
+                )
+                assert _error(resp) == "CRON_TASK_NOT_ALLOWED"
+        finally:
+            await stack.close()
+
+    async def test_allowlisted_but_missing_task_rejected(self, auth_utils_patch):
+        """白名单任务但库中无任务行 → TASK_NOT_FOUND → CRON_TASK_NOT_TRIGGERABLE。"""
+        stack = await _ToolStack.create(on=["cron.trigger"])
+        try:
+            async with _stack_client(stack) as client:
+                resp = await _call(
+                    client,
+                    "cron_task_trigger",
+                    {"task_code": "torrent_info_sync_ac608e4d", "confirm": True, "idempotency_key": "k"},
+                )
+                assert _error(resp) == "CRON_TASK_NOT_TRIGGERABLE"
         finally:
             await stack.close()

@@ -5,7 +5,6 @@
 """
 
 from contextlib import ExitStack
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,7 +20,15 @@ from app.tasks.cron_trigger import (
 
 
 def _db_task(task_id=7, task_type=4):
-    return SimpleNamespace(id=task_id, task_type=task_type)
+    # 2026-09-08 校准：真实 CRUD 返回 {"total": n, "list": [task.to_dict()]}；
+    # 此前 mock 成 ORM SimpleNamespace(id=..) 掩盖了生产路径的形态错配
+    return {
+        "task_id": task_id,
+        "task_code": "tracker_sync_598b784c",
+        "task_type": task_type,
+        "task_status": 2,
+        "enabled": True,
+    }
 
 
 def _apply_patches(builtin, db_task=None, start=None, start_raises=None):
@@ -31,8 +38,8 @@ def _apply_patches(builtin, db_task=None, start=None, start_raises=None):
 
     crud = stack.enter_context(patch("app.tasks.cron_trigger.CronTaskCRUD"))
     crud_result = MagicMock()
-    crud_result.success = db_task is not None
-    crud_result.data = db_task
+    crud_result.success = True
+    crud_result.data = {"total": 1, "list": [db_task]} if db_task is not None else {"total": 0, "list": []}
     crud.get_cron_task_by_code.return_value = crud_result
 
     db_stack = MagicMock()

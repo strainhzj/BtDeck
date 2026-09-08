@@ -589,33 +589,32 @@
           "id": "mcp-service-capabilities-2026-08-28.6",
           "name": "W3 等级4 pending_delete 标记工具",
           "description": "以store+AuditContext替换TorrentDeletionByLevelService/AsyncDeletionExecutor的FastAPI Request依赖；工具明确不删除任务/文件，要求confirm和幂等键、最多100项，并把下载器成功但DB失败返回partial。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/tools/torrents.py",
-            "backend/app/services/torrent_deletion_by_level.py",
-            "backend/app/services/async_deletion_executor.py",
-            "backend/app/api/endpoints/torrent_deletion.py",
-            "backend/tests/mcp/test_pending_delete_tool.py"
+            "backend/app/mcp/tools/idempotency.py",
+            "backend/app/mcp/tools/common.py",
+            "backend/app/mcp/tools/__init__.py",
+            "backend/tests/mcp/test_tools_write.py",
+            "backend/tests/mcp/test_tools_wire.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（等级4 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-08 W3-② 落地（等级4标记工具）：torrents.py handle_mark_pending_delete 逐项复用 TorrentDeletionByLevelService.delete_by_level(...,4)（G4 同一 service 同一标签语义，store 经 runtime.require_store 注入）；已含 pending_delete 标签的种子按 already_marked 直报且不再触发下载器调用（幂等）；逐项结果保留 partial——下载器成功但 db_update_success=False 时 db_ok=False 不折叠（§4.7）；items.error_code 稳定码映射（不存在→INVALID_ARGUMENT/适配器与下载器→DOWNSTREAM_FAILURE/其他→INTERNAL_ERROR，上游 error 文本不透传）；overall result=success/partial/failed 三态；幂等键进程内 LRU（与模板工具共享 idempotency.py）；逐项 DELETE_L4 领域审计（service 内）+ 每调用 MCP_TOOL_CALL 汇总审计（detail 仅计数/结果/幂等键摘要）。测试：单元 20 项（already_marked 跳过服务调用/混合批次 partial 保留/全失败/replay 不重调/store 缺失 RUNTIME_NOT_READY/confirm+100 上限门禁）+ 线上拒绝路径（store 未就绪/confirm false/101 项超限）。真实下载器成功路径留 W4 等价批（需适配器桩）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.7",
           "name": "W3 内置定时任务触发工具",
           "description": "按稳定task_code解析显式MCP allowlist；启动前校验enabled/running/执行策略，永拒task_type 0-3；返回accepted+run_id并记录真实principal审计，不开放任务定义和启停修改。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/tools/cron.py",
-            "backend/app/tasks/cron_executor.py",
-            "backend/app/api/endpoints/cron_tasks.py",
-            "backend/tests/mcp/test_cron_tool.py",
             "backend/app/tasks/cron_trigger.py",
-            "backend/app/data/default_scheduled_tasks.py",
-            "backend/app/tasks/task_profiles.py"
+            "backend/tests/mcp/test_tools_write.py",
+            "backend/tests/mcp/test_tools_wire.py",
+            "backend/tests/tasks/test_cron_trigger.py"
           ],
-          "evidence": "2026-09-05 前置落地 trigger_task_by_code(task_code)（app/tasks/cron_trigger.py，内置白名单+task_type 0-3 永拒）；W3 剩余：MCP 专用显式 allowlist、confirm/幂等、本次 run_id 返回与 principal 审计（数据源 default_scheduled_tasks.py + task_profiles.py，计划 §10.3：task_type 一律不作为放行依据）。"
+          "evidence": "2026-09-08 W3-② 落地（Cron 触发工具）：cron.py handle_cron_trigger 复用协议无关 trigger_task_by_code（G4；enabled/运行中前检由其内部承担），其上再收敛 MCP 显式 allowlist——6 个内置只读/同步维护类任务（cached_downloader_sync/Tag_Data_Sync/TORRENT_TRACKER_STATUS_JUDGE/torrent_info_sync_ac608e4d/tracker_sync_598b784c/refresh_token_cleanup；孤儿清理/路径扫描/重宣告等副作用面大的任务首版不开放；内置但未开放与目录外名字统一 CRON_TASK_NOT_ALLOWED 防枚举）；拒绝码映射（NOT_FOUND/TRIGGER_REJECTED→CRON_TASK_NOT_TRIGGERABLE，NOT_BUILTIN/TYPE_NOT_ALLOWED→CRON_TASK_NOT_ALLOWED，TRIGGER_ERROR→INTERNAL_ERROR，message 不透传）；accepted 语义返回 run_id=null（执行期写 CronTask.last_run_id，不伪报完成）；幂等 LRU + MCP_TOOL_CALL 审计（接受与拒绝均记）。**根修真缺陷**：trigger_task_by_code 对 get_cron_task_by_code 返回形态判空错配（CRUD 未命中返回 truthy {total:0,list:[]}，旧代码 not data 永不命中→AttributeError→TRIGGER_ERROR），单测 mock 形态漂移（SimpleNamespace ORM 形态）掩盖生产路径缺陷——已按真实契约校准 mock 并根修；另加可选 session_factory 注入参数（MCP runtime 统一连接治理）。测试：单元 12（allowlist 门/accepted/5 拒绝码映射/重放/allowlist⊂内置且副作用任务不开放）+ 线上 2（非白名单内置任务拒/白名单任务无行拒）+ tests/tasks/test_cron_trigger 既有 7 项校准后全绿。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.8",

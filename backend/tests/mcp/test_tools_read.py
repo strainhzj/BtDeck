@@ -242,15 +242,19 @@ class TestServiceErrorMapping:
 
 
 class TestHandlerRegistration:
-    def test_three_read_tools_registered(self):
+    def test_batch_handlers_registered(self):
         from app.mcp.server import create_mcp_server_bundle
 
         bundle = create_mcp_server_bundle(None)
         names = catalog.TOOL_HANDLERS.registered_names()
-        assert "torrent_advanced_search" in names
-        assert "advanced_search_template_create" in names
-        assert "dashboard_get" in names
-        # W3-②/③ 工具尚未注册
-        assert "cron_task_trigger" not in names
-        assert "torrent_mark_pending_delete" not in names
+        for tool in (
+            "torrent_advanced_search",
+            "advanced_search_template_create",
+            "dashboard_get",
+            "torrent_mark_pending_delete",
+            "cron_task_trigger",
+        ):
+            assert tool in names, f"{tool} 未注册"
+        # W3-③ 工具尚未注册
+        assert "torrent_add_file" not in names
         assert bundle.server.name == "BtDeck"

@@ -1,7 +1,7 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4）；同日 W1（配置控制面+设置 UI）、W2（同进程挂载/三重门禁/脱敏层）、W3-①（只读三工具）落地，待 W3-②③ 写/高风险工具
+> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4）；同日 W1（配置控制面+设置 UI）、W2（同进程挂载/三重门禁/脱敏层）、W3-①②（五工具，缺添加种子）落地，待 W3-③ 添加种子
 > **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
@@ -495,14 +495,14 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 
 ### 11.3 下一批工作
 
-W0（§10.4）、W1（配置控制面）、W2（同进程挂载/三重门禁/脱敏层）与 W3-①（只读三工具：
-高级查询/查询模板/仪表盘，处理器签名 `(spec, principal, arguments, runtime, call_context)`，
+W0（§10.4）、W1（配置控制面）、W2（同进程挂载/三重门禁/脱敏层）与 W3-①（只读三工具，处理器签名 `(spec, principal, arguments, runtime, call_context)`，
 出口统一 `finalize_tool_output`）均已落地。
-下一批 W3-②：等级 4 标记（torrent_mark_pending_delete：info_ids≤100、逐项结果、
-下载器成功 DB 失败保留 partial、already_marked 幂等）与 Cron 触发（cron_task_trigger：
-allowlist 数据源 default_scheduled_tasks.py + task_profiles.py，仅显式 task_code 白名单、
-task_type 一律不作为放行依据，返回 accepted/task_code/run_id 不伪报完成）；
-其后 W3-③（TorrentAddService 的 torrent_helpers 辅助函数归属收尾后接入添加种子）。
+W3-①②（五工具：高级查询/查询模板/仪表盘/等级4标记/Cron 触发）亦已落地。
+下一批 W3-③：torrent_add_file——先收尾 TorrentAddService 对
+app/api/endpoints/torrent_helpers 辅助函数的依赖归属（§11.1 记录的分层债），再接入
+10/64MiB 双上限、bencode/info hash/扩展名校验、base64 二进制输入、
+SERVER_PATH_FORBIDDEN（不接受服务器路径/URL/磁力）与共用边界（含下载器调度/超时治理）；
+G7（三类写操作）与 G8（上传安全）证据随第三类写操作落地补全。
 G4（AST 等价守卫+等价契约测试）与 G5（六工具全量 canary 变异）证据随工具齐套补齐；
 W4 补 G1 升级矩阵与 G6~G11 制品面。每批产出 MCP-G<n>.json 片段并由
 `scripts/release/aggregate_mcp_gates.py` 汇聚（当前 G0/G2/G3 PASS + 9 门 NOT_RUN =

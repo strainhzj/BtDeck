@@ -7383,3 +7383,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **坑（记录勿重踩）**：①**StaticPool 内存库在并发 to_thread 认证下竞态**——两个并发 lister 各开 session 共享单连接是未定义行为，单独跑通过纯靠时序，其他模块 import 改变调度即暴露（表现为偶发 INTERNAL_ERROR）→_GateStack 改临时文件库每 session 独立连接（贴生产）；②审计表 log_id 是 uuid4 无时间序，order_by(log_id)=随机序 →断言按内容不依赖行序；③TorrentInfo 自定义位置参数 __init__（26 参全填）；④tests/enums/test_audit_enums 计数既有漂移（HEAD 52≠断言 48，W1/MoviePilot 增员未同步）→校准 53；⑤pydantic 模型从 service 模块命名空间 re-import 绕开 app.api 禁令是 G0 合规路径。
 - **门禁**：MCP-G0/G2/G3 片段更新（G0 扫描面扩至 tools/**；摘要纳入三工具证据）；G4（等价守卫 AST+等价契约测试）与 G5（六工具全量 canary 变异）按证据完整性留 W3-②③/W4，聚合 verdict=BLOCKED 保持。
 - **验证**：mypy/flake8/black 全绿；相邻回归 383+566（enums 校准后/audit_logs/advanced_search 全家/mcp_settings/根架构约束）+ 全量 566 中 1 失败即枚举计数既有红已修。未执行 Git 提交。
+
+## 2026-09-08（续五）：MCP W3-② 写/高风险工具——等级4标记 + Cron 触发
+
+- **用户指令**：提交 W3-①（46b09a5），进入下一批 W3-②（等级4 pending_delete 标记 + 内置定时任务触发）。
+- **等级4标记（torrents.py 追加）**：逐项复用 delete_by_level(...,4)（G4 同一 service；store 经 runtime.require_store 注入不自建连接）；已含标签种子 already_marked 直报且跳过下载器调用（幂等+省 API）；逐项保留 partial（db_update_success=False→db_ok=False 不折叠）；error_code 稳定码映射不透传上游文本；overall 三态（success/partial/failed）；幂等=共享 idempotency.py LRU；审计=逐项 DELETE_L4（service 内）+每调用 MCP_TOOL_CALL 汇总行。审计异步会话生命周期修正：贯穿逐项循环、随外层 finally 关闭（初版 try/finally pass 写法是草稿错误）。
+- **Cron 触发（cron.py）**：复用 trigger_task_by_code + **MCP 显式 allowlist**（6 个内置只读/同步维护任务；孤儿清理/路径扫描/重通告不开放——宁缺勿滥，增删视同契约变更）；拒绝码五路映射；accepted 语义 run_id=null（执行期写 last_run_id，不伪报完成）；幂等+MCP_TOOL_CALL 审计（接受/拒绝均记）。
+- **真缺陷根修（本批最重要发现）**：trigger_task_by_code 前检2 对 get_cron_task_by_code 返回形态判空错配——CRUD 未命中返回 truthy `{"total":0,"list":[]}`，旧代码 `not task_result.data` 永不命中，真实 DB 上"任务不存在"会走 dict.id AttributeError → TRIGGER_ERROR（INTERNAL_ERROR）而非 TASK_NOT_FOUND；既有单测 mock 成 SimpleNamespace ORM 形态掩盖了生产路径（自证陷阱同款）。修法：按 list 判空读 dict 行；单测 mock 校准为真实信封形态；另加可选 session_factory 参数（MCP 注入）。
+- **共享层提取**：idempotency.py（LRU+摘要，模板工具改用并留兼容别名）；common.py log_tool_audit（模板/等级4/Cron 三工具共用）。
+- **测试**：tests/mcp 231 项全绿（新增 write 单元 20 + wire 拒绝路径 4：store 未就绪/confirm false/101 超限/非白名单与无行 Cron 拒绝）；tests/tasks 既有 7 项校准后绿；相邻 360+714 项绿。mypy/flake8/black 全绿。LEVEL4_TAG 是类属性非模块名（import 处修正）；TorrentInfo 唯一约束（hash+downloader_id）造数需去重 hash。
+- **门禁**：G0/G2/G3 片段摘要更新至五工具；G7（三类写操作缺 torrent.add W3-③）与 G8（缺上传面 W3-③）按证据完整性留待，聚合 BLOCKED 保持。feature_list .6/.7 → done。
+- 未执行 Git 提交。
