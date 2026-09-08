@@ -326,6 +326,12 @@
       "status": "pending",
       "branch": "dev",
       "plan_file": "PLANS/mcp-service-capabilities.md",
+      "implementation_review": {
+        "date": "2026-09-08",
+        "workspace_branch": "dev1.0.7",
+        "summary": "前置 service 解耦已落地（ba8408f）；MCP 专项 W0/W1/W4 未启动，W2/W3 仅有前置进展。9 项任务、12 个 Gate 保持 pending，可用 MCP 工具 0/6。详见计划 §11。",
+        "evidence": "31 个 MCP 专项目标文件均缺失；principal/add-service/cron-trigger 定向回归 20 passed、23 warnings（Python 3.13.5，非 3.11/3.12 制品矩阵）。根 init.sh 返回 0，含 jq/虚拟环境/数据库版本/前端 npm 检查警告。未运行 MCP 专项、完整质量及制品门禁。"
+      },
       "planning_evidence": "2026-08-28 只读核验：torrents_async.py 实测4510行且0路由；app.state.store 在应用 lifespan 内初始化，首批实时能力必须同进程共享；高级查询/模板可直接复用业务核心，仪表盘小改，等级4与Cron中改，单种添加必须先抽 service。当前无 MCP 实现或依赖声明，PyInstaller 规格显式排除 fastmcp。根 ./init.sh --ci 通过；高级搜索/模板/仪表盘46项、等级删除/添加57项、Cron安全与执行器36项，共139项定向回归通过。",
       "security_defaults": {
         "global_enabled": false,

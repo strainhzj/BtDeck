@@ -1,3 +1,9 @@
+## 2026-09-08：MCP 计划现状同步
+
+- 已更新 PLANS/mcp-service-capabilities.md §2/§10/§11、计划索引、feature implementation_review 和 progress；所有 MCP 任务/Gate 保持 pending。
+- 前置 service 解耦已落地（ba8408f），本会话 20 项回归通过；尚无 MCP runtime/tools/settings/redaction 或专项测试。init.sh 返回 0 含环境警告。
+- 下一步为计划 §10.2 W0 契约、SDK 探针、威胁模型及门禁骨架；避免重复抽取已存在 service。当前工作区有其他既有改动，未执行 Git 提交。
+
 ## 2026-09-07（续五）：Docker 时区统一 UTC（RCA④ 环境层根治）+ 远端 compose 配置详情（未提交）
 
 ### 交付内容

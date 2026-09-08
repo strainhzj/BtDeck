@@ -1,7 +1,7 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: 已规划，经 2026-09-05 基线复核修订（§10），W0 待启动
+> **状态**: MCP 专项待实施（pending）；2026-09-05 前置 service 解耦已落地，2026-09-08 完成现状审计（§11），W0 待启动
 > **规划日期**: 2026-08-28（2026-09-05 复核）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
@@ -31,12 +31,12 @@ MCP 工具发现结果中消失，并在服务端执行入口再次拒绝缓存�
 |------|------------|----------|
 | 高级查询 | `app/services/advanced_search.py:971` `AdvancedSearchService(db: Session)` 同步会话；`search_torrents(request, user_id) -> Dict`（:989） | 可直接复用业务核心；MCP 需限制返回规模并转换为脱敏 DTO |
 | 创建查询模板 | 同文件 `create_search_template(request, user_id) -> Dict`（:1120） | 可直接复用业务核心；用户 ID 必须来自认证主体 |
-| 仪表盘 | `app/services/dashboard_service.py:18` `DashboardService(db: AsyncSession, app)` 直接探测 `app.state.store`（:38-40） | 小改：改为注入运行时上下文/store，不让工具自行导入全局 app；注意与高级查询的同步会话差异 |
-| 等级 4 | `app/services/torrent_deletion_by_level.py:46` `(db, request: Optional[Request] = None)` 已部分解耦但多路径仍 `raise ValueError`（:95 等 6 处）；`async_deletion_executor.py:31` 仍必传 Request | 中改：以 store + AuditContext 替换 FastAPI Request；保留部分成功语义 |
-| Cron 触发 | `app/tasks/cron_executor.py:1054` `start_task_immediately(task_id) -> bool`（enabled/运行中前检 :1063-1075）；`CronTask.task_code` unique（`app/tasks/cron_models.py:17`，模型不在 app/models/）；内置注册表 `app/data/default_scheduled_tasks.py` + 资源准入 `app/tasks/task_profiles.py` | 中改：task_code 已存在；补策略前检、审计和 run_id/accepted 结果 |
-| 添加种子 | 单种主体仍内联 `app/api/endpoints/torrent_crud.py:138`（嵌套函数 :208/:252/:441）；批量 `torrent_batch_add_service.py` 依赖 `UploadFile`（:16/:58）与 `app.state`（:99/:335） | 必须先抽协议无关 service，再由 HTTP/MCP 共用 |
+| 仪表盘 | 2026-09-08 核验：`app/services/dashboard_service.py:19` 已改为 `DashboardService(db: AsyncSession, runtime: RuntimeContext)`，HTTP 端点已注入上下文 | 前置解耦完成；仍需 MCP 工具、脱敏 DTO 与同步/异步会话工厂 |
+| 等级 4 | 2026-09-08 核验：`app/services/torrent_deletion_by_level.py:47` 与 `async_deletion_executor.py:31` 构造已改 store + AuditContext 注入，HTTP 调用点已适配 | 前置解耦完成；仍需工具确认、幂等、100 项限制、partial 映射与审计契约测试 |
+| Cron 触发 | `app/tasks/cron_trigger.py:48` 已新增 `trigger_task_by_code(task_code)`；复用全局执行器，检查内置注册表与非脚本类型，返回 accepted/task_id/reason | 前置助手完成；HTTP 仍按 task_id 触发；MCP 专用 allowlist、确认/幂等、principal 审计和本次 run_id 返回仍待实现 |
+| 添加种子 | `app/services/torrent_add_service.py:73` 已抽取 TorrentAddService；`app/api/endpoints/torrent_crud.py:152` 已调用；批量添加仍有 UploadFile/app.state 依赖 | 单种 HTTP 前置解耦完成；批量共用边界、MCP 上传限制、幂等、脱敏及工具接入仍待实现 |
 
-核验环境：根 `./init.sh --ci` 通过；高级搜索/模板/仪表盘 46 项、等级删除/添加 57 项、
+历史核验（2026-08-28，非本次重跑）：根 `./init.sh --ci` 通过；高级搜索/模板/仪表盘 46 项、等级删除/添加 57 项、
 Cron 安全与执行器 36 项，共 139 项定向回归通过。当前仓库没有 MCP 实现或依赖声明，
 且 PyInstaller 规格显式排除了 `fastmcp`，交付制品接入必须单独过门禁。
 
@@ -353,6 +353,8 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
 
 ## 10. 2026-09-05 基线复核与 W0 代码调整计划
 
+> 本节保留 2026-09-05 前置解耦之前的历史判断；认证内核、Dashboard/删除/添加服务现状以 §2、§11 为准。W0 契约与探针交付仍待启动。
+
 > 复核环境：dev @ 9ccd12f。核心架构判断（六能力复用面、SPA fallback 挂载顺序、
 > 默认关闭、仓库零 MCP 依赖、两 spec 显式排除 fastmcp）全部成立；以下为漂移修正与
 > W0 启动批次。**按批次纪律：本节经确认后才动代码。**
@@ -417,4 +419,40 @@ W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应�
 - W3：cron.trigger allowlist 数据源改 `default_scheduled_tasks.py` + `task_profiles.py`；
   task_type 4/5/6 一律不作为放行依据，仅显式 task_code 白名单。
 - W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。
+
+## 11. 2026-09-08 实施现状与后续入口
+
+审计基线：当前工作区 `dev1.0.7`，包含既有未提交改动；前置解耦已在提交 `ba8408f` 落地。
+feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，可用 MCP 工具为 0/6。
+这是验收完成数量，不代表前置工程工作量为零，也不应据此估算剩余工时。
+
+| 波次 | 当前状态 | 已有证据 / 剩余工作 |
+|------|----------|----------------------|
+| W0 | 未启动 | 契约、错误码、SDK 兼容探针、威胁模型及 MCP Gate 骨架尚未交付 |
+| W1 | 未启动 | 配置 seed/CAS/原子快照、kill switch、设置 API 与桌面/移动 UI 均未实现 |
+| W2 | 前置部分完成 | RuntimeContext、AuditContext、authenticate_access_token 已存在；MCP 挂载、双会话工厂、认证接入、发现/调用门禁和脱敏层尚未实现 |
+| W3 | 前置部分完成 | Dashboard、等级删除、单种添加已改依赖注入，Cron code 助手已存在；六项工具均未接入 |
+| W4 | 未启动 | 无 MCP 等价/安全/制品测试及 runbook；两个 PyInstaller spec 仍排除 fastmcp，未锁定 MCP SDK |
+
+### 11.1 前置交付与未闭合边界
+
+- `app/core/runtime_context.py` 目前仅持有 store/torrent_stats/start_time；仍需 MCP runtime 提供同步/异步会话工厂、Cron 和就绪/关闭状态。
+- `app/auth/principal.py` 已检查 token、用户存在/启用/强制改密状态；HTTP `dependencies.py` 尚未调用该内核，不能判定 G3 完成。W2 需明确认证接入范围及强制改密例外，统一 §4.4 与 §10.3 的兼容要求。
+- `app/services/audit_context.py` 的值对象仍带 `from_request(Request)` 适配方法；G4 静态守卫须明确适配边界。
+- `TorrentAddService` 仍导入 `app.api.endpoints.torrent_helpers` 中的辅助函数；不能把主体抽取等同于完整分层验收，需核对辅助函数归属及批量添加共用范围。
+- `trigger_task_by_code` 使用整个内置注册表，尚非单独的 MCP allowlist；未接入 HTTP 触发入口，也未返回本次 run_id、确认/幂等和 principal 审计。
+- 输出 DTO、最终泄漏扫描、日志脱敏、查询预算、写入确认/幂等及生命周期矩阵均需在 MCP 接入时补齐。既有 HTTP 行为测试不能替代这些门禁证据。
+
+### 11.2 本次验证证据
+
+- 检查 31 个 MCP 专项目标文件，均不存在；`backend/app/mcp/` 与 `backend/tests/mcp/` 尚未建立。
+- `python -m pytest tests/auth/test_principal.py tests/services/test_torrent_add_service.py tests/tasks/test_cron_trigger.py -q`：20 passed、23 warnings（Python 3.13.5；认证 8、添加 5、Cron 7）。仅验证前置模块，不覆盖计划要求的 Python 3.11/3.12 SDK/制品矩阵。
+- Git Bash 执行根 `./init.sh` 返回 0，但提示 jq 缺失、虚拟环境未激活、数据库版本“未初始化”及前端 npm 检查警告；该轻量检查不代表完整构建、数据库或前端门禁通过。
+- 本次未运行完整后端/前端质量门禁及发布制品验证；历史 139 项回归与本次 20 项测试分开记录。
+
+### 11.3 下一批工作
+
+从 §10.2 的 W0 六项交付物启动：固化契约及威胁模型，完成 SDK/transport 选型探针与 Gate 骨架。
+同步修正任务文件清单以纳入已完成的前置模块和真实测试落点，避免重复抽取 service。
+其后依次推进 W1 → W2 → W3 → W4；只有各项验收证据齐全才更新任务及 Gate 状态。
 

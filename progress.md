@@ -7318,6 +7318,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验收**：部署后 `docker exec btdeck-backend date`/`cat /etc/timezone` 为 UTC；二次导出诊断 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt。
 - 未执行 Git 提交。
 
+## 2026-09-08：MCP 计划现状同步
+
+- 用户要求更新计划现状；修正计划 §2 已过时的 service 基线，§10 标记历史语境，新增 §11 波次进展、未闭合边界、实测证据及 W0 后续入口。
+- feature/9 项任务/12 个 Gate 保持 pending；前置解耦提交 ba8408f 已落地，可用工具 0/6。同步 PLANS/README 和 feature implementation_review。
+- 本会话前置回归 20 passed、23 warnings（Python 3.13.5）；根 init.sh 返回 0 但有环境警告，未等同完整门禁通过。仅更新文档与状态证据，未提交 Git。
+
 ## 2026-09-08：PLANS 计划盘点归档——14 份已完成/过时计划移入 archive/
 
 - **背景**：v1.0.6 开发基本完成仅卡验证，从 dev 签出 `dev1.0.7` 分支并推送（起点 2192bf3）。对 PLANS/ 19 份计划逐一对照 feature_list.json（70 features）盘点，结论：MCP 能力开放（2026-09-05 基线复核修订，feature pending）是唯一"拿来即用"计划；v1.0.8 PostgreSQL 价值真实但须先按 W5-3 重写；v1.0.7 路径扫描增强伪代码引用的 `path_mapping_service.py` 与 `PathMapping`/`PathMappingRule`/`PathTransferHistory` 模型均不存在；v1.1.0 自动化运维被 `default_scheduled_tasks.py`（14 任务全默认启用）+ `cron_executor` + 任务页事实性覆盖。用户决策：认可归档、v1.0.7 归档、v1.0.8 暂缓保留活跃。
