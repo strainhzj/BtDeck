@@ -23,7 +23,15 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 from app.factory import app
 
 # 鉴权依赖函数名：未来若引入新的鉴权依赖，在此登记，保持口径集中。
-_AUTH_DEPENDENCY_NAMES = frozenset({"require_authenticated_user", "get_current_user"})
+_AUTH_DEPENDENCY_NAMES = frozenset(
+    {
+        "require_authenticated_user",
+        "get_current_user",
+        # MCP 设置控制面（mcp-service-capabilities W1）：principal 内核，
+        # 校验比 require_authenticated_user 更严（查 DB 用户存在/启用/非强制改密）
+        "require_mcp_control_plane_user",
+    }
+)
 
 # 业务上必须可匿名访问的端点（必须存在；若被误挂鉴权也报红——login 挂上
 # 鉴权等于无人能登录，health 挂上鉴权会打断 Docker 探针）。

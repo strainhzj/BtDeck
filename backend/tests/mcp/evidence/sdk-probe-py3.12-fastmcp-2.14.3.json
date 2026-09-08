@@ -1,0 +1,57 @@
+{
+  "sdk": "fastmcp",
+  "generated_at": "2026-09-08T03:26:19.341646+00:00",
+  "versions": {
+    "python": "3.12.3",
+    "fastapi": "0.115.6",
+    "starlette": "0.41.3",
+    "pydantic": "2.12.4",
+    "httpx": "0.28.1",
+    "uvicorn": "0.35.0",
+    "fastmcp": "2.14.3",
+    "mcp": "1.30.0"
+  },
+  "checks": [
+    {
+      "name": "C1_import",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "C2_mount_before_spa_fallback",
+      "status": "PASS",
+      "detail": "routes=['/openapi.json', '/docs', '/docs/oauth2-redirect', '/redoc', '/mcp', '/{full_path:path}']"
+    },
+    {
+      "name": "C4_tools_list",
+      "status": "PASS",
+      "detail": "serverInfo=btdeck-probe, tools=['echo']"
+    },
+    {
+      "name": "C4_tools_call_roundtrip",
+      "status": "PASS",
+      "detail": "payload={'value': 42, 'lifespan_marker': 'parent-context-ok'}"
+    },
+    {
+      "name": "C3_parent_lifespan_runs_once",
+      "status": "PASS",
+      "detail": "lifespan_runs=1, marker='parent-context-ok'"
+    },
+    {
+      "name": "C5_pyinstaller_onefile",
+      "status": "FAIL",
+      "detail": "build=55.7s, exe_size=29686861, stdout=BUNDLE_PROBE_FAIL PackageNotFoundError('fastmcp')"
+    }
+  ],
+  "verdict": "FAIL",
+  "sdk_spec": "fastmcp==2.14.3",
+  "python_exe": "C:/Users/thoma/AppData/Local/Programs/Python/Python312/python.exe",
+  "repo_pinned_deps": [
+    "fastapi==0.115.6",
+    "starlette==0.41.3",
+    "pydantic==2.12.4",
+    "httpx==0.28.1",
+    "uvicorn==0.35.0",
+    "packaging==24.2"
+  ]
+}

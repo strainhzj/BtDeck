@@ -78,6 +78,7 @@ class AuditOperationType(str, Enum):
     SYNC_STATUS = "sync_status"  # 同步状态
     CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子
     BATCH_OPERATION = "batch_operation"  # 批量操作
+    MCP_SETTINGS_UPDATE = "mcp_settings_update"  # MCP 服务配置变更（mcp-service-capabilities W1/G11）
 
     # ========== 归档操作 ==========
     ARCHIVE_LOGS = "archive_logs"  # 归档审计日志

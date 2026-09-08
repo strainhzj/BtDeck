@@ -44,6 +44,9 @@ from app.api.endpoints import orphan_files
 from app.api.endpoints import health
 from app.api.endpoints import platform_capabilities
 
+# MCP 服务配置控制面（mcp-service-capabilities W1；运行时工具挂载在 W2）
+from app.api.endpoints import mcp_settings
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -55,6 +58,8 @@ api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(cron_tasks.router, prefix="/cronTasks", tags=["cron-tasks"])
 # 主机能力矩阵（dual-mode-client Phase 4：一致降级单一来源）
 api_router.include_router(platform_capabilities.router, prefix="/platform", tags=["platform-capabilities"])
+# MCP 服务配置控制面（W1）：/api/v1/mcp/settings；W2 的 MCP 运行时挂载在根 /mcp，互不冲突
+api_router.include_router(mcp_settings.router, prefix="/mcp", tags=["mcp"])
 # Dashboard
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 # 添加高级搜索路由

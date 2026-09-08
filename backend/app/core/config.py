@@ -147,6 +147,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
     BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
+    # MCP 服务只读环境紧急开关（mcp-service-capabilities §4.2）：True 时无论
+    # configs.mcp.runtime.v1 存储值如何，MCP 全局强制关闭且 UI 不可覆盖；
+    # 仅作紧急处置（泄漏事件/回滚），常态运营用设置页开关
+    BTDECK_MCP_FORCE_DISABLED: bool = False
 
     # 同步任务资源治理配置（sync-resource-governance）
     # 详见 PLANS/archive/sync-resource-governance.md
