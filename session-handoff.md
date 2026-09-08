@@ -1,3 +1,37 @@
+## 2026-09-08（续三）：MCP W2（同进程挂载/三重门禁/脱敏层）已落地，待 W3 六工具接入
+
+### 交付内容（本批，未提交）
+
+- **同进程挂载**：`backend/app/mcp/server.py`（官方 mcp 1.30.0 lowlevel Server + StreamableHTTPSessionManager(stateless=True, json_response=True)→Starlette 子应用）+ `factory._mount_mcp_service`（SPA fallback 之前挂 /mcp；**SDK 缺失 try-import 跳过=不挂载**，W4 前生产默认态）+ `startup/lifecycle.py`（父 lifespan 手动 __aenter__ 子应用 lifespan=进入 session_manager.run()；mark_ready/mark_closed；清理段最末 __aexit__）。
+- **runtime.py**：McpRuntime——双会话工厂（默认 SessionLocal/AsyncSessionLocal 可注入）+ 惰性 RuntimeContext（torrent_stats 三态哨兵保留）+ fail-closed 配置快照现读（每次 list/call 读 mcp.runtime.v1，PUT 后立即生效）+ require_ready/require_store（RUNTIME_NOT_READY）。
+- **三重门禁**：全局（SERVICE_DISABLED）→ 能力（list 过滤 + call 复核；目录外/别名/旧名统一 CAPABILITY_DISABLED）→ principal 认证（principal 内核+双头 token；未知原因码兜底 AUTH_TOKEN_INVALID）。入参：FORBIDDEN_ARGUMENT + 类型/未知/缺必填 + 契约预算（page_size≤200/info_ids≤100）。
+- **redaction.py**：tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径（裸键=整树放行）/泄漏扫描器（URL 凭据/passkey 含 URL 编码/三类绝对路径/40+64 hex/bytes）/finalize_tool_output（扫描命中=INTERNAL_ERROR 整体失败；>1MiB=RESULT_TOO_LARGE）。
+- **测试**：tests/mcp 179 项全绿（auth 16/gates 单元 21+线上 20——真实 JSON-RPC 握手矩阵含并发快照切换零撕裂、factory 路由序断言；redaction 43 含 canary 负例）。相邻回归 127 项绿；mypy/flake8/black 全绿。
+- **门禁片段**：release/build/mcp-gate-fragments/MCP-G{0,2,3}.json PASS；聚合 verdict=BLOCKED（9 门 NOT_RUN 待 W3/W4）。
+- **状态回填**：feature_list .3/.4 → done；计划 §11 W2→done、§11.3 指向 W3；progress.md 续三。
+
+### 下一批：W3（计划 §6-W3）
+
+- 六工具按风险三批接入 `catalog.TOOL_HANDLERS`（签名 `(spec, principal, arguments, runtime) -> dict`，出口统一 finalize_tool_output）：①高级查询/查询模板/仪表盘 → ②等级 4 标记+Cron 触发（confirm/幂等/审计）→ ③TorrentAddService 共用边界收尾后接入添加种子。
+- W2 遗留观察：G5 工具级 E2E canary、G9 在途写收尾语义随 W3 工具落地补证；G1 升级矩阵与 G6~G11 制品面在 W4。
+
+### 环境要点（新设备必读）
+
+- 后端质量门用 anaconda base（本机 `C:/software/anaconda3/python.exe`，pytest 8.3.5/mypy/black 24.10/flake8）；**W2 起 anaconda base 已装 mcp==1.30.0**（线上层 wire 测试依赖；无 SDK 环境自动 skip）。跑服务用 btpManager。
+- 本机 git 代理 192.168.5.60:10808 失联期间，fetch 走 `https://ghfast.top/https://github.com/strainhzj/BtDeck.git`（仓库 public）；代理恢复后 origin 照常。
+- tests/mcp/test_sdk_compatibility.py 的就地 selfcheck 在未装 fastmcp/mcp 时自动 skip（锁定组合证据以仓库内 4 份 JSON 为准）。
+- 前端 Node 22.23.2；门禁 `npm run lint -- --no-fix` + `npm run typecheck`；勿跑 npm run build（覆盖 demo dist）。W2 纯后端未涉及前端。
+- pytest-timeout 未安装（勿用 --timeout 参数）。
+
+### W2 关键坑位（勿重踩）
+
+- **SDK 缓存刷新旁路**：call_tool 装饰器在工具定义缓存未命中时内部以 `handler(None)` 调 list 处理器——list 处理器必须手动注册（不用 @server.list_tools()），req=None 视为缓存刷新只回 schema 元数据不做授权；执行门禁在 call 路径独立强制。
+- SDK 两处异常路径都会把 str(exc) 渲染进响应文本（call_tool 装饰器 except Exception 与 _handle_request ErrorData）——处理器必须自捕获一切并渲染固定文案。
+- McpError 在 `mcp.shared.exceptions`（非 mcp.types）；JSON-RPC 应用级错误码 -32000，稳定字符串码放 data.error_code。
+- allowlist 点路径：裸键=整树放行（dashboard totals/status_counts），带子路径=逐元素过滤——初版把裸键当"无子路径全清空"是错的。
+
+---
+
 ## 2026-09-08（续）：MCP W0（契约/SDK 选型/G0 门禁/Gate 骨架）+ W1（配置控制面）已落地待推送后进入 W2
 
 ### 交付内容（本会话两批，随本条目一并提交）

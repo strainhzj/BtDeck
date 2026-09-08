@@ -1,7 +1,7 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4，契约/威胁模型待评审后进入 W1）
+> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4）；同日 W1（配置控制面+设置 UI）、W2（同进程挂载/三重门禁/脱敏层）落地，待 W3 六工具接入
 > **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
@@ -473,8 +473,8 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 |------|----------|----------------------|
 | W0 | done（2026-09-08） | 六项交付物落地（§10.4），选型官方 mcp 1.30.0；契约/威胁模型随 W1 启动获得接受 |
 | W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
-| W2 | 前置部分完成 | RuntimeContext、AuditContext、authenticate_access_token 已存在；MCP 挂载（官方 mcp SDK + streamable HTTP stateless，§10.4 接线实证）、双会话工厂、认证接入、发现/调用门禁和脱敏层尚未实现；配置原子快照消费方（tools/list、tools/call）在本波接入 |
-| W3 | 前置部分完成 | Dashboard、等级删除、单种添加已改依赖注入，Cron code 助手已存在；六项工具均未接入 |
+| W2 | done（2026-09-08） | 官方 mcp SDK 1.30.0 + streamable HTTP stateless 同进程挂载落地（/mcp 先于 SPA fallback，SDK 缺失 try-import 跳过=不挂载；父 lifespan 手动进入 session_manager.run()）；runtime 双会话工厂+就绪/关闭状态（RUNTIME_NOT_READY）+ fail-closed 配置快照现读；principal 认证接入（映射+未知码兜底）；双门禁（list 过滤/call 复核，别名旧名统一 CAPABILITY_DISABLED）+ FORBIDDEN_ARGUMENT + 契约预算；redaction 全套（tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径/泄漏扫描器/1MiB 预算）。tests/mcp 179 项绿；MCP-G0/G2/G3 片段 PASS（聚合 BLOCKED 待 W3/W4）。SDK 缓存刷新旁路坑：call 装饰器内部以 handler(None) 调 list 处理器——手动注册区分两路径 |
+| W3 | 前置部分完成 | Dashboard、等级删除、单种添加已改依赖注入，Cron code 助手已存在；六项工具均未接入（catalog.TOOL_HANDLERS 注册面已就绪，处理器签名 (spec, principal, arguments, runtime)） |
 | W4 | 未启动 | 无 MCP 等价/安全/制品测试及 runbook；SDK 已选定（mcp 1.30.0）但未入 requirements，两 spec 的 fastmcp 排除条目保持有效 |
 
 ### 11.1 前置交付与未闭合边界
@@ -495,12 +495,13 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 
 ### 11.3 下一批工作
 
-W0（§10.4）与 W1（配置控制面：McpSettingsService + 认证设置 API + 设置 UI）均已落地。
-下一批启动 W2：以官方 mcp SDK 1.30.0 + streamable HTTP stateless 在 SPA fallback 前挂载
-同进程 MCP 应用（父 lifespan 手动进入 session_manager.run()，§10.4 接线实证），接入
-双会话工厂与 principal 认证，实现全局/能力/认证三重门禁与脱敏层；tools/list 与
-tools/call 即时消费 McpSettingsService 的配置快照（kill switch 与 revision 热更新在
-本波获得运行时证据）。其后 W3（六工具三批）→ W4（等价/制品/演练）；每批产出
-MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py` 汇聚（当前 12 门
-NOT_RUN=BLOCKED，逐门回填转绿），才可更新任务及 Gate 状态。
+W0（§10.4）、W1（配置控制面）与 W2（同进程挂载/双会话工厂/三重门禁/脱敏层）均已落地。
+下一批启动 W3：六项工具按风险分三批接入 `catalog.TOOL_HANDLERS`（处理器统一签名
+`(spec, principal, arguments, runtime) -> dict`，出口统一过 `finalize_tool_output`）：
+①高级查询/查询模板/仪表盘（只读）→ ②等级 4 标记与 Cron 触发（写/高风险，confirm+幂等+审计）
+→ ③TorrentAddService 收尾共用边界后接入添加种子。运行时门禁/认证/脱敏管道已就绪，
+W3 重点是领域 DTO 对齐 allowlist 契约与 G4（service 共用）/G5（工具级零泄漏）证据；
+其后 W4（等价/制品/演练）补 G1 升级矩阵、G6~G11 运行时与制品证据。每批产出
+MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py` 汇聚
+（当前 G0/G2/G3 PASS + 9 门 NOT_RUN = BLOCKED，逐门回填转绿），才可更新任务及 Gate 状态。
 

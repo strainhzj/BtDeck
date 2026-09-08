@@ -535,7 +535,7 @@
           "id": "mcp-service-capabilities-2026-08-28.3",
           "name": "W2 同进程 MCP、RuntimeContext 与统一认证",
           "description": "在SPA fallback前挂载同进程MCP应用，显式注入父应用store/统计/cron/session factory；抽取HTTP/MCP共用token→principal认证内核，落实全局开关、能力开关和认证三重执行门禁。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/server.py",
@@ -550,20 +550,20 @@
             "backend/app/core/runtime_context.py",
             "backend/app/services/audit_context.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。 || 2026-09-08 W2 落地（官方 mcp SDK 1.30.0 + streamable HTTP stateless）：server.py lowlevel Server + StreamableHTTPSessionManager(stateless=True, json_response=True) 挂载为 Starlette 子应用，factory._mount_mcp_service 在 SPA fallback 之前挂载到 /mcp（SDK 缺失 try-import 跳过，W4 前生产默认态）；lifespan 手动进入 sub_asgi.router.lifespan_context（FastAPI 不自动运行挂载子应用 lifespan），mark_ready/mark_closed 驱动 RUNTIME_NOT_READY 稳定拒绝，清理段最末拆卸会话管理器；runtime.py 双会话工厂（SessionLocal/AsyncSessionLocal 可注入）+ 惰性 RuntimeContext（torrent_stats 三态哨兵保留）+ fail-closed 配置快照供给（每次 list/call 现读 mcp.runtime.v1，PUT 后立即生效无需重启）；auth.py 复用 principal 内核与 _extract_access_token（X-Access-Token/Bearer 双兼容），PRINCIPAL_REASON_TO_ERROR 映射 + 未知原因码兜底 AUTH_TOKEN_INVALID；catalog.py 双门禁（tools/list 过滤 + tools/call 复核，目录外/别名/旧名统一 CAPABILITY_DISABLED 防枚举）+ FORBIDDEN_ARGUMENT（user_id/operator/username）+ 契约级预算（page_size≤200/info_ids≤100）；SDK 缓存刷新以 handler(None) 形态旁路进入 list 处理器——手动注册区分真实请求与缓存刷新，刷新只供 schema 验证元数据不做授权，执行门禁在 call 路径独立强制。测试：tests/mcp 179 项全绿（新增 auth 16 + capability_gates 单元20/线上20）；相邻回归 route-coverage/architecture/factory-frontend/mcp-settings/principal 67 项 + cron-trigger/gate-skeleton/audit 60 项绿。门禁片段：release/build/mcp-gate-fragments/MCP-G{0,2,3}.json PASS（聚合 verdict=BLOCKED，余 9 门 NOT_RUN 待 W3/W4）。质量门：mypy/flake8/black 全绿（anaconda base，mcp 1.30.0）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.4",
           "name": "W2 MCP 输出 DTO、Tracker/路径脱敏与泄漏扫描",
           "description": "所有工具使用显式allowlist DTO；Tracker只返回域名和规范状态，移除原始消息/passkey；绝对路径和下载器连接信息不输出；自由错误文本与日志统一清洗，最终序列化前fail-closed扫描敏感canary。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/redaction.py",
             "backend/app/mcp/contracts.py",
-            "backend/tests/mcp/test_redaction.py",
-            "backend/tests/mcp/test_redaction_mutations.py"
-          ]
+            "backend/tests/mcp/test_redaction.py"
+          ],
+          "evidence": "2026-09-08 W2 落地：redaction.py 按 REDACTION_DATA_DICTIONARY 实现——redact_tracker_url（scheme/userinfo/端口/路径/query/passkey/fragment 全剥离仅留小写合规 hostname，含 punycode）；is_safe_tracker_domain（输入侧仅域名，禁 :/?#@\\ 与 passkey 载体，FQDN 尾点归一）；redact_path_to_display（盘符/UNC/挂载根/父目录全剥离仅留末段）；redact_free_text（URL 凭据/完整 URL/passkey 类参数/三类绝对路径 → 固定占位符）；apply_output_allowlist（点路径语义：裸键=整树放行，items.*=逐元素过滤，契约外字段丢弃）；scan_for_leaks 最终序列化前泄漏扫描器（scheme URL/URL 凭据/敏感参数含 URL 编码变体 unquote 复检/Windows 盘符/UNC/Unix 挂载路径/40 与 64 位 hex 种子哈希/bytes）；finalize_tool_output 统一出口：allowlist→泄漏扫描（命中即 LeakScanError→INTERNAL_ERROR 整体失败不截断放行）→1MiB 序列化预算（RESULT_TOO_LARGE 整体失败）。变异式 canary 矩阵并入 test_redaction.py（嵌套集合/URL 编码 passkey/camelCase 键/哈希/路径六类负例，未拆独立 mutations 文件）；测试 43 项全绿。W3 工具接入后由真实工具响应复验 G5（canary 变异在 W4）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.5",

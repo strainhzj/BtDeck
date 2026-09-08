@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Optional
 
 # app/auth/principal.py 的拒绝原因码 → MCP 错误码（统一认证内核接线用，
 # W2 transport 捕获 PrincipalAuthenticationError 后按本表映射）。
@@ -127,6 +127,20 @@ DEFAULT_MESSAGES: Dict[McpErrorCode, str] = {
     McpErrorCode.PARTIAL_FAILURE: "操作部分成功，详见逐项结果。",
     McpErrorCode.INTERNAL_ERROR: "服务内部错误。",
 }
+
+
+class McpToolError(Exception):
+    """MCP 工具执行/门禁失败的运行时异常（W2 dispatch 层）。
+
+    ``code`` 是稳定错误码；``message`` 缺省取固定文案（禁止插值上游异常文本，
+    §4.5 free_text_error 政策）。transport 捕获后渲染为 isError 的
+    CallToolResult / JSON-RPC error，不得让 str(exc) 直接外泄。
+    """
+
+    def __init__(self, code: McpErrorCode, message: Optional[str] = None):
+        self.code = code
+        self.message = message if message is not None else DEFAULT_MESSAGES[code]
+        super().__init__(self.message)
 
 
 def all_codes() -> frozenset[str]:
