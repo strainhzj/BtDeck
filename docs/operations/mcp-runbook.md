@@ -90,3 +90,13 @@ C:/software/anaconda3/python.exe scripts/release/aggregate_mcp_gates.py \
 
 `verdict=READY` 需 12 门全 PASS；`NOT_RUN`/`INDETERMINATE` = `BLOCKED`（fail-closed）。
 制品面（EXE/DEB/RPM/Docker）发布前须黑盒复验：默认关闭 + 部分能力发现 + 脱敏 smoke。
+
+### 8.1 制品黑盒三段配方（2026-09-09 G10 实证流程）
+
+对任一制品起隔离实例（临时 `CONFIG_DIR`；Windows EXE 加 `BTDECK_MODE=server` 跳模式向导）后按序验证：
+
+1. **A 默认关闭**（免认证）：`POST /mcp/` `initialize` → `serverInfo {name: BtDeck, version: <mcp SDK 版>}`（SDK 捆载）；`tools/list` → JSON-RPC `-32000` + `data.error_code=SERVICE_DISABLED`。
+2. **B 部分开启**（真实控制面链路）：`admin` 首登（默认口令 + `must_change_password=true`）→ `/api/v1/user/changePassword` 清标志（请求体必带 `userId` 字段，端点忽略其值）→ `PUT /api/v1/mcp/settings` 仅开一项能力（`expectedRevision` 取自 GET）→ 带 Bearer `tools/list` 应**只**列出该能力。
+3. **C 脱敏 smoke**：预置含 canary 的种子行（tracker_url 埋 passkey、save_path 埋绝对路径、info_hash 埋 40 位哈希；制品内无 python 时用字面量 `INSERT`——注意 `torrent_info.has_tracker_error` 等列为迁移层 NOT NULL 无模型默认，字面量 SQL 必须显式补值）→ `tools/call torrent_advanced_search` → 断言 `tracker_domains` 仅规范化域名、整包响应无 canary/passkey/hash/announce 原文。
+
+注意事项：探测客户端 `trust_env=false`（注册表系统代理会劫持 loopback）；deb/rpm 包内二进制应先做 sha256 一致性对齐再抽测；dirty 身份（dev 构建）制品 `/health/ready` 会 503（身份门禁预期），就绪探测改用 `initialize` 握手。

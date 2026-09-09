@@ -1,7 +1,7 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: MCP 专项实施中；2026-09-05 前置 service 解耦落地，2026-09-08 完成现状审计（§11）与 W0 六项交付（§10.4）；同日 W1（配置控制面+设置 UI）、W2（同进程挂载/三重门禁/脱敏层）、W3-①②（五工具，缺添加种子）落地，待 W3-③ 添加种子
+> **状态**: **已收官（2026-09-09）**：W0~W4 全部落地，六工具 6/6，G0～G11 门禁 12/12 PASS → 聚合 verdict=READY，feature 终态 done（§11）。2026-09-08 完成 W0~W3 + W4 代码/测试/文档面；2026-09-09 W4-d 完成 G10 制品黑盒全矩阵（EXE/DEB/RPM/Docker）+ 锁 pywin32 平台标记根修（b7bba8d）
 > **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
@@ -470,6 +470,9 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 **同日更新：W0~W3 全部落地（六工具 6/6）；W4 代码/测试/文档面完成——Gate 11/12 PASS
 （G0~G9+G11），G10 INDETERMINATE（EXE 黑盒+依赖锁定已验；Docker/DEB/RPM 黑盒环境阻断待复验），
 verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
+**2026-09-09 W4-d 收官更新：G10 转 PASS——锁 pywin32 平台标记根修（b7bba8d，Linux 三产线
+解锁）+ Docker/DEB/RPM 本地实构黑盒全矩阵 + EXE B/C 段补测；聚合 12/12 PASS → verdict=READY；
+任务 .9 与 feature 终态 done。**
 
 | 波次 | 当前状态 | 已有证据 / 剩余工作 |
 |------|----------|----------------------|
@@ -477,7 +480,7 @@ verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
 | W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
 | W2 | done（2026-09-08） | 官方 mcp SDK 1.30.0 + streamable HTTP stateless 同进程挂载落地（/mcp 先于 SPA fallback，SDK 缺失 try-import 跳过=不挂载；父 lifespan 手动进入 session_manager.run()）；runtime 双会话工厂+就绪/关闭状态（RUNTIME_NOT_READY）+ fail-closed 配置快照现读；principal 认证接入（映射+未知码兜底）；双门禁（list 过滤/call 复核，别名旧名统一 CAPABILITY_DISABLED）+ FORBIDDEN_ARGUMENT + 契约预算；redaction 全套（tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径/泄漏扫描器/1MiB 预算）。tests/mcp 179 项绿；MCP-G0/G2/G3 片段 PASS（聚合 BLOCKED 待 W3/W4）。SDK 缓存刷新旁路坑：call 装饰器内部以 handler(None) 调 list 处理器——手动注册区分两路径 |
 | W3 | done（2026-09-08，①②③ 三批） | ①高级查询/查询模板/仪表盘三处理器落地（tools/ 包 + conditions 输入巡检：tracker_msg 永拒、tracker_url 仅域名+contains 族；catalog 级 confirm 门禁；模板幂等=进程内 512 LRU + MCP_TOOL_CALL 审计；处理器签名 (spec, principal, arguments, runtime, call_context)）。②等级 4 标记与 Cron 触发（写/高风险）。③分层债收尾（add 家族辅助迁 app/services/torrent_add_helpers，torrent_status 正向依赖，新模块入 async_downloader_calls 守卫）+ torrent_add_file 落地（校验链：路径/URL/磁力先于解码 SERVER_PATH_FORBIDDEN、10/64MiB 双上限 env 钳制、bencode/info hash to_thread；共用 TorrentAddService；TorrentAddResult 扩展领域字段 HTTP 零影响；契约修正 downloader_id integer→string——主键实为 UUID 字符串）。tests/mcp 280 项；G7/G8 片段 PASS，聚合 5/12（余 7 门 W4） |
-| W4 | 代码/测试/文档面完成（2026-09-08，a/b/c 三段）；制品黑盒留残项 | G1/G4/G5/G6/G9/G11 新增 PASS（聚合 11/12）；G10：依赖锁定（mcp~=1.30.0+pyjwt[crypto]~=2.10.1 连动升级，锁 --generate-hashes 重生成、既有钉零漂移）+双 spec hiddenimports+**Windows EXE 本地实构黑盒**（initialize→BtDeck/1.30.0、tools/list→SERVICE_DISABLED 默认关闭）已验；**Docker/DEB/RPM 黑盒被环境阻断**（Docker VM trixie apt 404+出网 1.3KB/s，宿主 .xz 200 证明仓库正常）→ G10 INDETERMINATE、verdict=BLOCKED 保持；runbook 交付 docs/operations/mcp-runbook.md。待网络恢复：容器/类 Unix 制品黑盒复验 + 锁的 Linux 侧哈希安装 |
+| W4 | done（2026-09-09，a/b/c/d 四段收官） | G1/G4/G5/G6/G9/G11 PASS（2026-09-08 三段）；G10 PASS（2026-09-09 W4-d）：依赖锁定（mcp~=1.30.0+pyjwt[crypto]~=2.10.1 连动升级，锁 --generate-hashes 重生成）+双 spec hiddenimports+**锁 pywin32 平台标记根修 b7bba8d**（pip-compile 在 Windows 丢 mcp 双分支 win32 约束标记→Linux 三产线 pip --require-hashes 全断；补标记+回归锚定，Windows dry-run+Linux 双实装验证）+**四制品黑盒全矩阵**：EXE（W4-c 构建制品，A 复验+B/C 补齐三段）、Docker（干净树镜像 65bf9a9e 三段）、DEB（本地实构 node22+fpm 容器跑 build-linux.sh，debian:12 解包运行三段）、RPM（与 DEB 二进制逐字节一致 sha256+包内 kind=linux-rpm+A 段）。**聚合 12/12 PASS → verdict=READY**；runbook 交付+§8.1 黑盒三段配方。 |
 
 ### 11.1 前置交付与未闭合边界
 
@@ -498,16 +501,17 @@ verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
 
 ### 11.3 下一批工作
 
-W0~W3 全部落地；W4（task .9）代码/测试/文档面已完成：G4 AST 守卫+等价契约（含
-advanced_search→torrent_helpers 残余依赖清理=VO 转换族迁 torrent_vo_conversion）、
-G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期矩阵、G11 回滚演练+prompt
-注入+runbook 全部 PASS；G10 依赖锁定+双 spec+**Windows EXE 黑盒**已验。
-**残项（G10 → INDETERMINATE，环境阻断）**：Docker 镜像黑盒（本机 Docker VM
-trixie apt 404+出网 1.3KB/s；宿主 Packages.xz 200 证明仓库正常——待 Docker Desktop
-网络恢复）、DEB/RPM（Linux CI 制品）、锁的 Linux 侧 --require-hashes 安装验证。
-网络恢复后：build-and-export-images.bat/CI 复验三制品默认关闭/部分能力/脱敏 smoke →
-G10 转 PASS → 聚合 READY。同批处理：本地七笔积压推送（代理恢复后）；
-同键在途幂等完整矩阵复核结论=维持首版口径（W4-a/G7 已锚定在途窗口行为）。
+**已无下一批——feature 收官（2026-09-09 W4-d）**。原 §11.3 残项全部闭合：
+Docker 镜像黑盒（干净树 b7bba8d 实构镜像 65bf9a9e，三段 PASS）、DEB/RPM（本地
+node22+fpm 工具链容器实构双包，debian:12 解包运行三段/同二进制验证+A 段）、
+锁的 Linux 侧 --require-hashes 安装验证（Docker builder pip wheel + DEB 打包 venv
+pip install 双实装）；另根修锁 pywin32 平台标记缺陷（b7bba8d，G10 黑盒抓出的
+生产缺陷——pip-compile 在 Windows 丢标记致 Linux 三产线全断）。聚合 12/12 PASS
+→ verdict=READY；任务 .9 与 feature 终态 done。后续 MCP 相关演进（新能力、
+schema v2、fastmcp 评估等）按新 feature 立项。
+
+历史残项处置记录：同键在途幂等完整矩阵复核结论=维持首版口径（W4-a/G7 已锚定
+在途窗口行为）；七笔积压已于 2026-09-09 会话前全部推送（顶端 cc1c8c4）。
 每批产出 MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py`
 汇聚（逐门回填转绿，12 门全 PASS → READY），才可更新任务及 Gate 状态。
 

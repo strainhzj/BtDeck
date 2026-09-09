@@ -1,3 +1,27 @@
+## 2026-09-09（续十）：MCP W4-d G10 收官——12/12 READY、feature 终态 done（本批含一笔已提交修复 b7bba8d + 收官笔待提交）
+
+### 交付内容
+
+- **锁跨平台根修（b7bba8d 已提交）**：requirements-lock.txt pywin32==312 补 `; sys_platform == "win32"`——pip-compile 在 Windows 解析 mcp 1.30.0 双 python_version 分支 win32 约束时丢标记，Linux 侧 --require-hashes 全断（Docker/DEB/RPM 三产线；上会话 apt 阻挡掩蔽）；test_dependency_lock.py 补锚定。12 锁测试 + checker + Windows dry-run + Linux 双实装全绿。
+- **G10 四制品黑盒全矩阵**（Docker 干净树镜像 65bf9a9e 三段 / DEB debian:12 解包运行三段 / RPM 二进制逐字节一致+kind+A 段 / EXE W4-c 制品 A 复验+B/C 补齐）：A initialize→BtDeck/1.30.0+SERVICE_DISABLED；B 控制面 PUT 部分开启→tools/list 仅见开启能力；C canary 种子脱敏零泄漏。黑盒编排与种子脚本沉淀 release/build/（gitignored 本地件：run-docker-smoke.sh / run-deb-rpm-smoke.sh / run-exe-smoke.sh / mcp_g10_smoke.py / mcp_g10_seed.py / gen_seed_sql.py / run-deb-rpm-build.sh）。
+- **门禁终态**：MCP-G10.json 片段 PASS（evidence 八条含 deb/rpm sha256）→ aggregate **12/12 PASS → verdict=READY**（release/build/mcp-gate-report.json）。
+- **收官**：feature_list 任务 .9+feature 顶层 done；PLANS §11 终态（W4 done 行+§11.3 收官注记）；runbook §8.1 黑盒三段配方；progress.md 续十。
+
+### 工作区红线遵守情况
+
+- 用户并行 MoviePilot 件（backend/app/**moviepilot**、alembic、api.py、前端详情页签、moviepilot-plugin/、PLANS/moviepilot-integration.md、roadmap README 日期）全程未触碰、未 add。
+- 混合文件（feature_list.json/progress.md/session-handoff.md）部分暂存提交，提交前对并行工作内容做双模式关键词零泄漏自检通过。
+- DEB/RPM 构建在干净 clone（release/build/deb-src @ b7bba8d）容器内进行，宿主 frontend/dist 未动。
+
+### 坑位（本批新增七条，详见 progress.md 续十）
+
+MSYS 路径转换改写容器绝对路径（MSYS_NO_PATHCONV=1）；docker cp 目录静默拷空（tar 管道）；Windows clone 须 --config core.autocrlf=false；node 基底缺 libpython3.11.so（PyInstaller）；制品库字面量种子须显式补迁移层 NOT NULL 列（has_tracker_error，INSERT OR IGNORE 静默吞行）；deb.debian.org trixie 间歇 404→NJU 镜像稳；build-linux.sh dev 模式过不了 verify-package（dirty 硬拒无逃生舱，干净树唯一路径）。
+
+### 下一批入口
+
+- MCP feature 已收官，无既定下一批。可选跟进：CI w2-strict-linux-build（workflow_dispatch）跑一遍 Linux 制品管线对 b7bba8d 后树做正式 CI 级复验；正式发布时 build-images.sh --release 六处版本一致+干净树要求适用。
+- 用户并行线（MoviePilot 联调 task .4）仍阻塞于部署信息。
+
 ## 2026-09-08（续五）：MCP W3-② 写/高风险工具已落地，待 W3-③ 添加种子
 
 ### 交付内容（本批，未提交）

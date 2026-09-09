@@ -323,13 +323,13 @@
       "id": "mcp-service-capabilities-2026-08-28",
       "name": "MCP 服务与可选能力开放（默认关闭 + 强制脱敏）",
       "description": "在 FastAPI 同进程内提供 MCP 服务，首批开放高级种子查询、等级4 pending_delete 标记、添加种子、创建高级查询组合、仪表盘读取和定时任务触发。服务全局开关与6项预置能力均可独立配置且默认关闭；关闭能力不可发现、缓存直调仍拒绝。所有 MCP 查询结果、错误与日志强制执行数据最小化和脱敏，首版不允许返回原始 Tracker URL/消息、passkey/token、绝对路径或下载器凭据。G0～G11 任一门禁失败、未运行或证据缺失均阻止开放或进入发布制品。",
-      "status": "pending",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/mcp-service-capabilities.md",
       "implementation_review": {
         "date": "2026-09-08",
         "workspace_branch": "dev1.0.7",
-        "summary": "W0（契约/错误码/G0 门禁/威胁模型/Gate 骨架/SDK 选型=官方 mcp 1.30.0）与 W1（配置控制面：McpSettingsService fail-closed+revision CAS+kill switch、认证设置 API+审计、桌面/移动设置 UI）均已落地；W2 挂载/认证接线/脱敏、W3 六工具、W4 制品门禁未启动；可用 MCP 工具 0/6，Gate 0/12 PASS。详见计划 §10.4/§11。",
+        "summary": "终态（2026-09-09）：W0~W4 全部落地，六工具 6/6 可用，G0～G11 门禁 12/12 PASS → 聚合 verdict=READY（G10 残项 Docker/DEB/RPM 黑盒与锁 Linux 侧哈希安装已于 W4-d 闭合；另根修 pip-compile 丢 pywin32 平台标记致 Linux 产线全断的锁缺陷 b7bba8d）。EXE/DEB/RPM/Docker 四制品完成默认关闭+部分能力发现+脱敏 smoke 黑盒矩阵。历史：W0 契约/错误码/G0/威胁模型/Gate 骨架/SDK 选型（官方 mcp 1.30.0）→ W1 配置控制面+设置 UI → W2 同进程挂载/三重门禁/脱敏层 → W3 六工具三批 → W4 等价/预算/生命周期/升级矩阵/canary/回滚+runbook。详见计划 §10.4/§11。",
         "evidence": "backend/app/mcp/ 契约层 + McpSettingsService + /api/v1/mcp/settings（28 项 API 回归）；SDK 探针矩阵 4 份锁定组合证据 JSON；tests/release MCP Gate 骨架（NOT_RUN=BLOCKED 实证）；后端受影响回归 150 passed、black/flake8/mypy 绿；前端 mcp-settings.spec 8 项、lint/typecheck 绿。"
       },
       "planning_evidence": "2026-08-28 只读核验：torrents_async.py 实测4510行且0路由；app.state.store 在应用 lifespan 内初始化，首批实时能力必须同进程共享；高级查询/模板可直接复用业务核心，仪表盘小改，等级4与Cron中改，单种添加必须先抽 service。当前无 MCP 实现或依赖声明，PyInstaller 规格显式排除 fastmcp。根 ./init.sh --ci 通过；高级搜索/模板/仪表盘46项、等级删除/添加57项、Cron安全与执行器36项，共139项定向回归通过。",
@@ -643,7 +643,7 @@
           "id": "mcp-service-capabilities-2026-08-28.9",
           "name": "W4 等价回归、负向安全、制品与上线回滚门禁",
           "description": "完成6能力HTTP/MCP领域结果等价、开关组合、认证、脱敏canary/变异、启停竞态、prompt注入和资源边界测试；锁定依赖并修正PyInstaller/Docker，验证EXE/DEB/RPM/Docker默认关闭、部分能力与脱敏黑盒；交付runbook和G0～G11证据。",
-          "status": "in_progress",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/requirements.txt",
@@ -660,7 +660,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "2026-09-08 W4（代码/测试/文档面，G10 制品黑盒留残项）：①W4-a：VO 转换族迁 app/services/torrent_vo_conversion（分层债第二笔）+ G4（AST 纯度守卫动态闭包+负向变异、六工具↔HTTP 同 service 映射、四能力等价契约——含添加种子 HTTP 薄壳与 MCP 双跑同库 duplicate 指向同一行的成功路径兑现）+ G6（pageSize 0/200/201、1MiB 整体失败不截断、RegexSearchTimeout 固定文案、慢查询不阻塞 list、软删除排除）+ G9（未就绪/store 缺失矩阵、关闭拒绝、在途写一致性收尾含审计）。②W4-b：G1 升级矩阵（遗留行共存/未知 schemaVersion 降级/重启保持/生产供给器 wire 首装默认关→落库热生效→kill switch 优先级）+ G5 六工具 canary 清扫（passkey/token/路径/URL 编码变体埋种子数据，响应+caplog 零泄漏；携带 canary 非法输入不回显；种子名 canary 命中扫描整体fail-closed）。③W4-c：G10——mcp~=1.30.0 入 requirements.txt（连动 pyjwt 2.8.0→2.10.1[crypto]，auth 回归116 绿）+ pip-compile --generate-hashes 重生成锁（+14 传递钉、既有钉零漂移、哈希 dry-run 全解析+打包 venv 实装）+ 双 spec mcp hiddenimports + 打包契约/依赖结构 25 项绿 + Windows EXE 本地实构黑盒（initialize→BtDeck/1.30.0；tools/list→SERVICE_DISABLED 默认关闭）；**残项：Docker/DEB/RPM 黑盒（Docker VM trixie apt 404+出网 1.3KB/s 环境劣化、宿主 .xz 200 证明仓库正常；DEB/RPM 为 Linux CI 制品）**。G11——回滚演练（热关闭立即生效+写路径审计留痕）+供给器故障注入 fail-closed+prompt 注入载荷（数据保真不执行+描述静态）+runbook 交付。④tests/mcp 315 项全绿（280→315：升级矩阵 5+canary 2+回滚/注入 4+等价 10+预算 8+生命周期 6）；探针 loopback trust_env=False 根修（注册表系统代理劫持 127.0.0.1 实证）。聚合 11/12 PASS、verdict=BLOCKED（G10 INDETERMINATE fail-closed）。任务保持 in_progress：待网络恢复后 Docker/DEB/RPM 黑盒复验 + 锁在 CI 的 Linux 侧哈希安装验证。"
+          "evidence": "2026-09-08 W4（代码/测试/文档面，G10 制品黑盒留残项）：①W4-a：VO 转换族迁 app/services/torrent_vo_conversion（分层债第二笔）+ G4（AST 纯度守卫动态闭包+负向变异、六工具↔HTTP 同 service 映射、四能力等价契约——含添加种子 HTTP 薄壳与 MCP 双跑同库 duplicate 指向同一行的成功路径兑现）+ G6（pageSize 0/200/201、1MiB 整体失败不截断、RegexSearchTimeout 固定文案、慢查询不阻塞 list、软删除排除）+ G9（未就绪/store 缺失矩阵、关闭拒绝、在途写一致性收尾含审计）。②W4-b：G1 升级矩阵（遗留行共存/未知 schemaVersion 降级/重启保持/生产供给器 wire 首装默认关→落库热生效→kill switch 优先级）+ G5 六工具 canary 清扫（passkey/token/路径/URL 编码变体埋种子数据，响应+caplog 零泄漏；携带 canary 非法输入不回显；种子名 canary 命中扫描整体fail-closed）。③W4-c：G10——mcp~=1.30.0 入 requirements.txt（连动 pyjwt 2.8.0→2.10.1[crypto]，auth 回归116 绿）+ pip-compile --generate-hashes 重生成锁（+14 传递钉、既有钉零漂移、哈希 dry-run 全解析+打包 venv 实装）+ 双 spec mcp hiddenimports + 打包契约/依赖结构 25 项绿 + Windows EXE 本地实构黑盒（initialize→BtDeck/1.30.0；tools/list→SERVICE_DISABLED 默认关闭）；**残项：Docker/DEB/RPM 黑盒（Docker VM trixie apt 404+出网 1.3KB/s 环境劣化、宿主 .xz 200 证明仓库正常；DEB/RPM 为 Linux CI 制品）**。G11——回滚演练（热关闭立即生效+写路径审计留痕）+供给器故障注入 fail-closed+prompt 注入载荷（数据保真不执行+描述静态）+runbook 交付。④tests/mcp 315 项全绿（280→315：升级矩阵 5+canary 2+回滚/注入 4+等价 10+预算 8+生命周期 6）；探针 loopback trust_env=False 根修（注册表系统代理劫持 127.0.0.1 实证）。聚合 11/12 PASS、verdict=BLOCKED（G10 INDETERMINATE fail-closed）。⑤W4-d（2026-09-09，G10 收官）：**锁跨平台缺陷根修**——上会话 apt 阻挡掩蔽的生产缺陷：pip-compile 在 Windows 解析 mcp 1.30.0 双 python_version 分支 pywin32 约束时丢失环境标记，锁内 pywin32==312 成无条件钉，Linux 侧 pip wheel/install --require-hashes 直接 No matching distribution、Docker/DEB/RPM 三条产线全断；修复 b7bba8d（条目补 ; sys_platform == \"win32\"，哈希不变 Windows 语义不变）+ test_dependency_lock 锚定防复发，12 锁测试绿 + Windows dry-run 全解析 + Linux 双实装（Docker builder pip wheel / DEB 打包 venv pip install）= §11.3 残项锁 Linux 侧哈希安装验证闭合。**Docker 黑盒**：干净树 b7bba8d 上下文实构镜像（identity dirty=false；deb.debian.org trixie 404 用 NJU 镜像绕开），容器三段全 PASS——A initialize→BtDeck/1.30.0 + tools/list→SERVICE_DISABLED；B 首登改密→PUT 仅开高级查询（revision 0→1）→tools/list 仅见该工具；C canary 种子（passkey/绝对路径/hash 埋雷）advanced_search 命中且整包零泄漏。**DEB/RPM 本地实构**（node:22-bookworm+ruby fpm 工具链容器跑 build-linux.sh，干净树 verify dirty=false 通过）：debian:12 解包真实 .deb 跑包内二进制三段全 PASS；RPM 解包验证二进制与 DEB 逐字节一致（sha256 同值）+ 包内 kind=linux-rpm + A 段独立 PASS。**EXE 补测**：W4-c 制品 A 复验 + B/C 补齐三段全 PASS。聚合 **12/12 PASS → verdict=READY**（release/build/mcp-gate-report.json）。runbook §8.1 沉淀黑盒三段配方。坑位：MSYS 路径转换改写容器绝对路径（MSYS_NO_PATHCONV=1）、docker cp 目录静默拷空（tar 管道）、Windows clone 须 core.autocrlf=false、node 基底缺 libpython3.11、制品库字面量种子须显式补 has_tracker_error 等迁移层 NOT NULL 列。"
         }
       ],
       "summary": "W0~W3 全部落地（六工具齐套）；W4 代码/测试/文档面完成：G1/G4/G5/G6/G9/G11 新增 PASS，聚合 11/12（G0/G2/G3/G1/G4/G5/G6/G7/G8/G9/G11），G10 INDETERMINATE——依赖锁定+双 spec+Windows EXE 黑盒（默认关闭+SDK 捆载实证）已验，Docker/DEB/RPM 黑盒被本机网络环境阻断（Docker VM trixie apt 404 + 出网劣化；github 失联同根源），待网络恢复由发布管线复验；verdict=BLOCKED 保持。详见计划 §11。"
