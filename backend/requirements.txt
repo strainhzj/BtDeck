@@ -35,7 +35,6 @@ gmssl~=3.2.2
 # 升级需重新验证 FORCE_SCHEME_FROM_HOST/HTTPADAPTER_ARGS 行为）
 qbittorrent-api~=2025.2.0
 ping3~=4.0.8
-pyjwt~=2.8.0
 aiosqlite~=0.21.0
 pillow~=11.1.0
 transmission-rpc~=7.0.11
@@ -57,3 +56,9 @@ packaging~=24.0
 # 审计日志 Excel 导出（openpyxl 直写；pandas/numpy 已随 dual-mode-client
 # Phase 1.3 依赖瘦身移除，全仓零 import 已核实）
 openpyxl~=3.1.0
+# MCP 服务运行时（feature mcp-service-capabilities，官方 mcp SDK streamable HTTP；
+# 探针矩阵见 backend/scripts/mcp_sdk_probe.py，W0 §10.4 选型）。SDK 最低要求
+# pyjwt>=2.10.1 且带 [crypto] extra（引入 cryptography）——与原 pyjwt~=2.8.0
+# 冲突，随本依赖一并升级（JWT 用面为 HS256 encode/decode，2.10 兼容）。
+mcp~=1.30.0
+pyjwt[crypto]~=2.10.1

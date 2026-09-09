@@ -467,8 +467,9 @@ W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应�
 审计基线：当前工作区 `dev1.0.7`，包含既有未提交改动；前置解耦已在提交 `ba8408f` 落地。
 feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，可用 MCP 工具为 0/6。
 这是验收完成数量，不代表前置工程工作量为零，也不应据此估算剩余工时。
-**同日更新：W0~W3 全部落地——六工具齐套（6/6），Gate 5/12 PASS（G0/G2/G3/G7/G8），
-聚合 BLOCKED 待 W4 补证；SDK 选型定为官方 mcp 1.30.0。**
+**同日更新：W0~W3 全部落地（六工具 6/6）；W4 代码/测试/文档面完成——Gate 11/12 PASS
+（G0~G9+G11），G10 INDETERMINATE（EXE 黑盒+依赖锁定已验；Docker/DEB/RPM 黑盒环境阻断待复验），
+verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
 
 | 波次 | 当前状态 | 已有证据 / 剩余工作 |
 |------|----------|----------------------|
@@ -476,7 +477,7 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 | W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
 | W2 | done（2026-09-08） | 官方 mcp SDK 1.30.0 + streamable HTTP stateless 同进程挂载落地（/mcp 先于 SPA fallback，SDK 缺失 try-import 跳过=不挂载；父 lifespan 手动进入 session_manager.run()）；runtime 双会话工厂+就绪/关闭状态（RUNTIME_NOT_READY）+ fail-closed 配置快照现读；principal 认证接入（映射+未知码兜底）；双门禁（list 过滤/call 复核，别名旧名统一 CAPABILITY_DISABLED）+ FORBIDDEN_ARGUMENT + 契约预算；redaction 全套（tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径/泄漏扫描器/1MiB 预算）。tests/mcp 179 项绿；MCP-G0/G2/G3 片段 PASS（聚合 BLOCKED 待 W3/W4）。SDK 缓存刷新旁路坑：call 装饰器内部以 handler(None) 调 list 处理器——手动注册区分两路径 |
 | W3 | done（2026-09-08，①②③ 三批） | ①高级查询/查询模板/仪表盘三处理器落地（tools/ 包 + conditions 输入巡检：tracker_msg 永拒、tracker_url 仅域名+contains 族；catalog 级 confirm 门禁；模板幂等=进程内 512 LRU + MCP_TOOL_CALL 审计；处理器签名 (spec, principal, arguments, runtime, call_context)）。②等级 4 标记与 Cron 触发（写/高风险）。③分层债收尾（add 家族辅助迁 app/services/torrent_add_helpers，torrent_status 正向依赖，新模块入 async_downloader_calls 守卫）+ torrent_add_file 落地（校验链：路径/URL/磁力先于解码 SERVER_PATH_FORBIDDEN、10/64MiB 双上限 env 钳制、bencode/info hash to_thread；共用 TorrentAddService；TorrentAddResult 扩展领域字段 HTTP 零影响；契约修正 downloader_id integer→string——主键实为 UUID 字符串）。tests/mcp 280 项；G7/G8 片段 PASS，聚合 5/12（余 7 门 W4） |
-| W4 | 未启动 | 无 MCP 等价/安全/制品测试及 runbook；SDK 已选定（mcp 1.30.0）但未入 requirements，两 spec 的 fastmcp 排除条目保持有效 |
+| W4 | 代码/测试/文档面完成（2026-09-08，a/b/c 三段）；制品黑盒留残项 | G1/G4/G5/G6/G9/G11 新增 PASS（聚合 11/12）；G10：依赖锁定（mcp~=1.30.0+pyjwt[crypto]~=2.10.1 连动升级，锁 --generate-hashes 重生成、既有钉零漂移）+双 spec hiddenimports+**Windows EXE 本地实构黑盒**（initialize→BtDeck/1.30.0、tools/list→SERVICE_DISABLED 默认关闭）已验；**Docker/DEB/RPM 黑盒被环境阻断**（Docker VM trixie apt 404+出网 1.3KB/s，宿主 .xz 200 证明仓库正常）→ G10 INDETERMINATE、verdict=BLOCKED 保持；runbook 交付 docs/operations/mcp-runbook.md。待网络恢复：容器/类 Unix 制品黑盒复验 + 锁的 Linux 侧哈希安装 |
 
 ### 11.1 前置交付与未闭合边界
 
@@ -497,18 +498,16 @@ feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，�
 
 ### 11.3 下一批工作
 
-W0（§10.4）、W1（配置控制面）、W2（同进程挂载/三重门禁/脱敏层）与 W3 三批
-（①只读三工具 ②等级4标记/Cron 触发 ③添加种子）均已落地——**六工具齐套**，
-处理器签名 `(spec, principal, arguments, runtime, call_context)`，出口统一
-`finalize_tool_output`。W3-③ 同步收尾 §11.1 分层债（torrent_add_helpers 迁移）
-并修正 downloader_id 契约类型（integer→string，主键实为 UUID 字符串）。
-门禁现况：G0/G2/G3/G7/G8 五门 PASS（G7 三类写操作齐套、G8 上传安全负测齐套），
-聚合 verdict=BLOCKED，余 7 门待 W4。
-下一批 **W4（task .9）**：HTTP/MCP 等价契约测试（G4 含 AST 守卫与服务层
-残余 api 依赖清理——advanced_search→torrent_helpers 一并处置）、G5 六工具
-canary 变异、G1 升级矩阵、G6 查询预算、G9 生命周期矩阵、G10 制品
-（mcp SDK 入 requirements + 两 spec 验证 + EXE/DEB/RPM/Docker 黑盒）、
-G11 观测回滚 + runbook；同键在途幂等完整矩阵亦在 W4 复核。
+W0~W3 全部落地；W4（task .9）代码/测试/文档面已完成：G4 AST 守卫+等价契约（含
+advanced_search→torrent_helpers 残余依赖清理=VO 转换族迁 torrent_vo_conversion）、
+G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期矩阵、G11 回滚演练+prompt
+注入+runbook 全部 PASS；G10 依赖锁定+双 spec+**Windows EXE 黑盒**已验。
+**残项（G10 → INDETERMINATE，环境阻断）**：Docker 镜像黑盒（本机 Docker VM
+trixie apt 404+出网 1.3KB/s；宿主 Packages.xz 200 证明仓库正常——待 Docker Desktop
+网络恢复）、DEB/RPM（Linux CI 制品）、锁的 Linux 侧 --require-hashes 安装验证。
+网络恢复后：build-and-export-images.bat/CI 复验三制品默认关闭/部分能力/脱敏 smoke →
+G10 转 PASS → 聚合 READY。同批处理：本地七笔积压推送（代理恢复后）；
+同键在途幂等完整矩阵复核结论=维持首版口径（W4-a/G7 已锚定在途窗口行为）。
 每批产出 MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py`
 汇聚（逐门回填转绿，12 门全 PASS → READY），才可更新任务及 Gate 状态。
 

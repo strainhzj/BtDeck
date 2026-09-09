@@ -4646,3 +4646,24 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 ### 下一批（W4，task .9）
 
 G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残余 api 依赖清理）、G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期、G10 制品（mcp SDK 入 requirements + 两 spec + 黑盒）、G11 runbook + 观测回滚；同键在途幂等完整矩阵复核（现口径：LRU 只保证完成后重放，在途窗口两次执行，有专项锚定测试）。
+## 2026-09-08 交接：MCP W4 三段（a/b/c）——11/12 门 PASS，G10 制品黑盒环境阻断
+
+### 已完成（本段四笔提交 + W4-c 待提交见下）
+
+- **W4-a（7c8492a）**：VO 转换族迁 `app/services/torrent_vo_conversion.py`（G4 前置）；G4（test_service_parity 10：AST 纯度守卫+映射表+四能力等价，添加种子双跑同库成功路径兑现）；G6（test_query_budget_gates 8）；G9（test_lifecycle_gates 6，在途写一致性收尾）。
+- **W4-b（451c29f）**：G1 升级矩阵（test_upgrade_gates 5：遗留共存/降级 fail-closed/重启保持/生产供给器 wire 首装默认关→热生效→kill switch 优先级）；G5 六工具 canary（test_canary_gates 2：响应+caplog 零泄漏、拒绝不回显、种子名 canary 命中扫描整体 fail-closed）。
+- **W4-c（待提交文件见下）**：mcp~=1.30.0 入 requirements.txt（**pyjwt 连动 2.8.0→2.10.1[crypto]**，auth 回归 116 绿）+ requirements-lock.txt pip-compile 重生成（+14 新钉、既有钉零漂移、哈希 dry-run+打包 venv 实装双验）；双 spec mcp hiddenimports；**Windows EXE 本地实构黑盒**（initialize→BtDeck/1.30.0、tools/list→SERVICE_DISABLED）；G11（test_rollback_gates 4 + runbook）；探针 trust_env=False 根修。
+- **门禁终态**：11/12 PASS（G0~G9+G11）+ **G10 INDETERMINATE** → BLOCKED。G10 残项=Docker/DEB/RPM 黑盒：Docker VM trixie apt 404+出网 1.3KB/s（宿主 Packages.xz 200 证明仓库正常=纯 Docker Desktop 网络问题）；DEB/RPM 是 Linux CI 制品。feature .9=in_progress。
+
+### 关键坑（勿重踩）
+
+- Windows 桌面 EXE（desktop_main 入口）冒烟必须 `BTDECK_MODE=server`（否则卡首次模式向导等交互，py-spy dump 定位）+ 隔离 CONFIG_DIR；build-windows.bat 整跑会自建前端**覆盖 demo dist**（红线），只跑后端 PyInstaller 段。
+- pip-compile 在本机必须 `no_proxy='*'`（注册表系统代理 192.168.5.60 失联，urllib.getproxies 会拖死）；生成走阿里 pypi 源正常。
+- flake8 必须在 backend/ 目录跑（.flake8 目录级配置）；probe/wire 测试栈缺 TrackerInfo/SearchTemplate/CronTask(异步) 表会以 INTERNAL_ERROR 假阳性出现。
+- 读工具不产生 MCP_TOOL_CALL 审计（设计），断言审计留痕要用写工具。
+
+### 提交与红线
+
+- W4-c 待提交：backend/requirements.txt、requirements-lock.txt、deploy/btdeck.spec、deploy/btdeck-windows.spec、backend/tests/mcp/test_rollback_gates.py、docs/operations/mcp-runbook.md、backend/scripts/mcp_sdk_probe.py（trust_env 修复，若未随 W4-a 提交）、feature_list/progress/session-handoff/PLANS。用户并行改动（MoviePilot+前端页签）零触碰。
+- 本地积压未推送：c0c15b9/46b09a5/6e45e89/df40661/7c8492a/451c29f+本批；github 直连与代理均失联，fetch 走 ghfast.top。
+- 下一步：网络恢复→Docker/DEB/RPM 黑盒（G10 转 PASS→READY）+ 推送积压；容器构建可用 mirrors 腾讯源替代阿里 trixie 试试。

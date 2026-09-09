@@ -643,7 +643,7 @@
           "id": "mcp-service-capabilities-2026-08-28.9",
           "name": "W4 等价回归、负向安全、制品与上线回滚门禁",
           "description": "完成6能力HTTP/MCP领域结果等价、开关组合、认证、脱敏canary/变异、启停竞态、prompt注入和资源边界测试；锁定依赖并修正PyInstaller/Docker，验证EXE/DEB/RPM/Docker默认关闭、部分能力与脱敏黑盒；交付runbook和G0～G11证据。",
-          "status": "pending",
+          "status": "in_progress",
           "scope": "fullstack",
           "files": [
             "backend/requirements.txt",
@@ -659,10 +659,11 @@
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
-          ]
+          ],
+          "evidence": "2026-09-08 W4（代码/测试/文档面，G10 制品黑盒留残项）：①W4-a：VO 转换族迁 app/services/torrent_vo_conversion（分层债第二笔）+ G4（AST 纯度守卫动态闭包+负向变异、六工具↔HTTP 同 service 映射、四能力等价契约——含添加种子 HTTP 薄壳与 MCP 双跑同库 duplicate 指向同一行的成功路径兑现）+ G6（pageSize 0/200/201、1MiB 整体失败不截断、RegexSearchTimeout 固定文案、慢查询不阻塞 list、软删除排除）+ G9（未就绪/store 缺失矩阵、关闭拒绝、在途写一致性收尾含审计）。②W4-b：G1 升级矩阵（遗留行共存/未知 schemaVersion 降级/重启保持/生产供给器 wire 首装默认关→落库热生效→kill switch 优先级）+ G5 六工具 canary 清扫（passkey/token/路径/URL 编码变体埋种子数据，响应+caplog 零泄漏；携带 canary 非法输入不回显；种子名 canary 命中扫描整体fail-closed）。③W4-c：G10——mcp~=1.30.0 入 requirements.txt（连动 pyjwt 2.8.0→2.10.1[crypto]，auth 回归116 绿）+ pip-compile --generate-hashes 重生成锁（+14 传递钉、既有钉零漂移、哈希 dry-run 全解析+打包 venv 实装）+ 双 spec mcp hiddenimports + 打包契约/依赖结构 25 项绿 + Windows EXE 本地实构黑盒（initialize→BtDeck/1.30.0；tools/list→SERVICE_DISABLED 默认关闭）；**残项：Docker/DEB/RPM 黑盒（Docker VM trixie apt 404+出网 1.3KB/s 环境劣化、宿主 .xz 200 证明仓库正常；DEB/RPM 为 Linux CI 制品）**。G11——回滚演练（热关闭立即生效+写路径审计留痕）+供给器故障注入 fail-closed+prompt 注入载荷（数据保真不执行+描述静态）+runbook 交付。④tests/mcp 315 项全绿（280→315：升级矩阵 5+canary 2+回滚/注入 4+等价 10+预算 8+生命周期 6）；探针 loopback trust_env=False 根修（注册表系统代理劫持 127.0.0.1 实证）。聚合 11/12 PASS、verdict=BLOCKED（G10 INDETERMINATE fail-closed）。任务保持 in_progress：待网络恢复后 Docker/DEB/RPM 黑盒复验 + 锁在 CI 的 Linux 侧哈希安装验证。"
         }
       ],
-      "summary": "W0（契约/错误码/G0 门禁/威胁模型/Gate 骨架/SDK 选型=官方 mcp 1.30.0）、W1（配置控制面）、W2（同进程挂载/三重门禁/脱敏层）与 W3 六工具（①高级查询/查询模板/仪表盘 ②等级4标记/Cron 触发 ③添加种子）均已落地；可用 MCP 工具 6/6，Gate 5/12 PASS（G0/G2/G3/G7/G8），余 7 门（G1/G4/G5/G6/G9/G10/G11）随 W4 补证，聚合 verdict=BLOCKED。详见计划 §10.4/§11。"
+      "summary": "W0~W3 全部落地（六工具齐套）；W4 代码/测试/文档面完成：G1/G4/G5/G6/G9/G11 新增 PASS，聚合 11/12（G0/G2/G3/G1/G4/G5/G6/G7/G8/G9/G11），G10 INDETERMINATE——依赖锁定+双 spec+Windows EXE 黑盒（默认关闭+SDK 捆载实证）已验，Docker/DEB/RPM 黑盒被本机网络环境阻断（Docker VM trixie apt 404 + 出网劣化；github 失联同根源），待网络恢复由发布管线复验；verdict=BLOCKED 保持。详见计划 §11。"
     },
     {
       "id": "mobile-ux-enhancements-2026-08-28",
