@@ -480,7 +480,10 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'EOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
+          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
+          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
+          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
+          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
                 ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
@@ -670,7 +673,10 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
+          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
+          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
+          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
+          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
                 ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
@@ -882,7 +888,10 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
+          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
+          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
+          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
+          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
                 ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
@@ -1098,7 +1107,10 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
+          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
+          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
+          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
+          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
                 ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
@@ -1253,7 +1265,10 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
+          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
+          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
+          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
+          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
                 ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document
