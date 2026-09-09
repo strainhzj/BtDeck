@@ -480,13 +480,22 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'EOF'
           FROM python:3.11-bullseye
-          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
-          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
-          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
-          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
+          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
+          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
+          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
+          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
+          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
+          RUN for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           EOF
 
       - name: Run deploy/build-linux.sh --release (fail-closed)
@@ -673,13 +682,22 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
-          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
-          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
-          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
+          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
+          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
+          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
+          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
+          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
+          RUN for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -888,13 +906,22 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
-          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
-          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
-          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
+          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
+          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
+          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
+          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
+          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
+          RUN for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1107,13 +1134,22 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
-          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
-          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
-          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
+          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
+          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
+          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
+          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
+          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
+          RUN for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1265,13 +1301,22 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye 已入 LTS：基镜像内嵌的 debian-security InRelease 会周期性
-          # 过期（2026-09-09 run 34366368985 实证 expired 1d17h → update exit 100），
-          # 关闭 Valid-Until 校验放行（包完整性仍由 apt 哈希校验保证）
-          RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
+          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
+          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
+          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
+          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
+          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
+          RUN for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
