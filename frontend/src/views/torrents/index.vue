@@ -678,6 +678,7 @@
       :error-reason="getTorrentErrorReason(currentRow)"
       :files-state="detailFilesState"
       :peers-state="detailPeersState"
+      :media-state="detailMediaState"
       @close="handleCloseTrackerDetail"
       @reannounce="handleTrackerReannounce"
       @refresh="handleDetailRefresh"

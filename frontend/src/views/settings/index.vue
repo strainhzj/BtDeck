@@ -311,6 +311,13 @@
         </div>
       </el-tab-pane>
 
+      <!-- MoviePilot 集成（moviepilot-integration：全局开关/实例与下载器映射/关联反查；移动端经包装自动同源） -->
+      <el-tab-pane label="MoviePilot" name="moviepilot">
+        <div class="settings-content">
+          <movie-pilot-panel />
+        </div>
+      </el-tab-pane>
+
       <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
       <el-tab-pane label="状态诊断" name="diagnosis">
         <div class="settings-content">
@@ -345,13 +352,14 @@ import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import McpSettingsPanel from './components/McpSettingsPanel.vue'
+import MoviePilotPanel from './components/MoviePilotPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import request from '@/utils/request'
 
 @Component({
   name: 'Settings',
-  components: { PlatformCapabilityPanel, McpSettingsPanel }
+  components: { PlatformCapabilityPanel, McpSettingsPanel, MoviePilotPanel }
 })
 export default class extends Vue {
   // 当前激活的标签页

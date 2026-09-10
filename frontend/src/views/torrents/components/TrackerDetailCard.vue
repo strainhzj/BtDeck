@@ -250,6 +250,68 @@
             <div v-if="peersTruncateNote" class="tracker-truncate-note">{{ peersTruncateNote }}</div>
           </template>
         </template>
+
+        <template v-else-if="activeTab === 'media'">
+          <div v-if="mediaEmptyState === 'loading'" class="tracker-placeholder">媒体库关联加载中...</div>
+          <el-alert
+            v-else-if="mediaEmptyState === 'error'"
+            class="torrent-error-alert"
+            title="媒体库关联加载失败"
+            :description="mediaState.error"
+            type="error"
+            show-icon
+            :closable="false"
+          />
+          <div v-else-if="mediaEmptyState === 'empty'" class="tracker-placeholder">
+            未找到 MoviePilot 整理记录（需已同步且配置下载器映射）
+          </div>
+          <template v-else>
+            <div class="tracker-detail-toolbar">
+              <span class="tracker-detail-count">共 {{ mediaState.list.length }} 条整理记录</span>
+              <el-button type="text" size="mini" @click="handleRefresh">刷新</el-button>
+            </div>
+            <div v-if="mediaState.error" class="tracker-stale-note" :title="mediaState.error">更新失败，显示上次数据</div>
+            <div class="tracker-table-wrapper">
+              <table class="tracker-table tracker-table-detail tracker-fixed-table">
+                <thead>
+                  <tr>
+                    <th>媒体标题</th>
+                    <th style="width: 100px;">季 / 集</th>
+                    <th style="width: 80px;">整理方式</th>
+                    <th>媒体库路径</th>
+                    <th>源文件路径</th>
+                    <th style="width: 120px;">实例</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in mediaState.list" :key="item.id">
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="mediaTitleText(item)">{{ mediaTitleText(item) }}</span>
+                      <span
+                        v-if="item.status === false"
+                        class="tracker-matched-tag"
+                        :title="item.errmsg || '整理失败'"
+                      >整理失败</span>
+                    </td>
+                    <td>{{ mediaSeasonsText(item) }}</td>
+                    <td>{{ mediaModeText(item.transferMode) }}</td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.destPath || '-'">{{ item.destPath || '-' }}</span>
+                    </td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.srcPath || '-'">{{ item.srcPath || '-' }}</span>
+                    </td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.instanceName || item.instanceId">
+                        {{ item.instanceName || item.instanceId }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </template>
       </div>
     </section>
   </template>
@@ -258,6 +320,7 @@
   import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
   import LucideIcon from '@/components/common/LucideIcon.vue'
   import type { TrackerInfo, TorrentFileInfo, TorrentPeerInfo } from '@/api/torrents'
+  import type { MoviePilotAssociationItem } from '@/api/moviepilot'
   import { formatFileSize, formatSpeed } from '@/utils/formatters'
   import type {
     DetailTabDataState,
@@ -282,7 +345,8 @@
   export const DEFAULT_TRACKER_DETAIL_TABS: TrackerDetailTab[] = [
     { label: 'Tracker', value: 'tracker' },
     { label: '文件', value: 'files' },
-    { label: 'Peers', value: 'peers' }
+    { label: 'Peers', value: 'peers' },
+    { label: '媒体库', value: 'media' }
   ]
 
   /** 大列表渲染截断阈值（文件/Peers 行数超限时只渲染前 N 行并提示总数） */
@@ -311,6 +375,7 @@
     @Prop({ type: String, default: '' }) errorReason!: string
     @Prop({ type: Object, default: () => emptyDetailState<TorrentFileInfo>() }) filesState!: DetailTabDataState<TorrentFileInfo>
     @Prop({ type: Object, default: () => emptyDetailState<TorrentPeerInfo>() }) peersState!: DetailTabDataState<TorrentPeerInfo>
+    @Prop({ type: Object, default: () => emptyDetailState<MoviePilotAssociationItem>() }) mediaState!: DetailTabDataState<MoviePilotAssociationItem>
 
     /** 顶部收起条箭头随布局取收起方向：list 随行下挂（向上折叠），traditional 底部锚定（向下折叠） */
     private get collapseIconName(): string {
@@ -437,6 +502,40 @@
       if (state.loading) return 'loading'
       if (state.error) return 'error'
       return 'empty'
+    }
+
+    // ====== 媒体库页签（MoviePilot 整理关联，纯展示） ======
+
+    private get mediaEmptyState(): 'loading' | 'error' | 'empty' | '' {
+      const state = this.mediaState
+      if (state.list.length > 0) return ''
+      if (state.loading) return 'loading'
+      if (state.error) return 'error'
+      return 'empty'
+    }
+
+    /** 标题 + 年份（含整理失败标记的完整悬浮文案） */
+    private mediaTitleText(item: MoviePilotAssociationItem): string {
+      const title = item.title || '未知标题'
+      return item.year ? `${title} (${item.year})` : title
+    }
+
+    private mediaSeasonsText(item: MoviePilotAssociationItem): string {
+      const parts: string[] = []
+      if (item.seasons) parts.push(item.seasons)
+      if (item.episodes) parts.push(item.episodes)
+      return parts.length > 0 ? parts.join(' ') : '-'
+    }
+
+    private mediaModeText(mode: string | null): string {
+      if (!mode) return '-'
+      const labels: Record<string, string> = {
+        copy: '复制',
+        move: '移动',
+        link: '软链接',
+        hardlink: '硬链接'
+      }
+      return labels[mode] || mode
     }
 
     // ====== Tracker 页签辅助 ======
