@@ -1,3 +1,20 @@
+## 2026-09-10（第三批）：GitHub 完整 CI 一轮到绿——rebase origin/dev + 根修远端 19 个存量红（已提交 fbd814f/133066f/294a7e8，已推送）
+
+### 交付内容
+
+- **rebase**：本地两提交（fbd814f/133066f）变基到 origin/dev 新提交 1585638（移动端通知一键已读）之上；四冲突文件（progress/session-handoff/docs/roadmap README/feature_list）双方条目并存合并，JSON 合法性校验通过。
+- **远端 CI 存量红根修（294a7e8）**：`test_recycle_bin_api`×16 + `test_service_close_endpoint`×3 自 2026-09-07 起在 CI 连续 401——回收站路由级 `capability_dependency("level3_recycle")` 内部 `Depends(require_authenticated_user)` 未被测试覆盖（端点参数是 `Depends(get_current_user)`，测试只覆盖了它）。两文件 fixture 改**双符号覆盖**。
+- **CI 终态**：run 34498175790（294a7e84）Backend/Frontend 双 job success——regression workflow 断红三天后首次全绿。
+
+### 关键坑位（下批必读）
+
+- **鉴权覆盖要认依赖链**：路由级 `capability_dependency` 与端点参数可能用不同鉴权符号——覆盖 `get_current_user` 不拦 `require_authenticated_user` 的真实 401；反之只覆盖 `require_authenticated_user` 会让端点参数落到 HTTPBearer 的 "Could not validate credentials"。两个都盖。
+- **本地 8 个 build 身份失败是环境残留**：`release/build-info.json`（gitignore）为 09-03 `--allow-dirty` 打包残留（dirty=true），污染 dev-source 身份测试与 readiness 的 reasonCodes；CI 干净 checkout 不受影响。本地遇同批失败先删/移该文件再判。
+- **GitHub 日志 API 需 admin token**：gh CLI 未装时，`git credential fill`（manager-core）可取到 PAT 供 curl 调 Actions API（runs/jobs/logs）。
+- **远端 regression 连续红不等于"最近改动弄坏"**：先拉上一 run 的 job 日志比对失败集合再定位（本轮 19 个失败在 2192bf3 就存在）。
+
+---
+
 ## 2026-09-10（第二批）：存量测试债清偿——5 套件能力 fail-closed 漂移（前端全量 1514 首次全绿，未提交）
 
 ### 交付内容（feature_list `test-debt-capability-drift-2026-09-10`）

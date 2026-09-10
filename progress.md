@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-10（第三批）：推送 GitHub 走完整 CI——修远端 19 个存量红（回收站鉴权覆盖漂移），regression 首次全绿
+
+- **远端状态发现**：origin/dev 领先一个提交（1585638 移动端通知一键已读，2026-09-08）；`Full-stack regression` 自 2026-09-07（2192bf3）起连续红——backend job 19 failed（与本地一致）。
+- **rebase**：本地两提交变基到 1585638 上（progress/session-handoff/roadmap README/feature_list 四冲突，双方条目并存；JSON/标记校验通过），变基后前端全量 1517 passed + typecheck 绿。
+- **19 个远端 CI 失败根修（294a7e8）**：`test_recycle_bin_api.py`×16 + `test_service_close_endpoint.py`×3 全部 401。根因：回收站路由挂了路由级 `capability_dependency("level3_recycle")`（内部 `Depends(require_authenticated_user)`），而端点参数仍是 `Depends(get_current_user)`——测试只覆盖了后者，路由守卫走真实认证 401。修复：两文件 fixture 双符号覆盖（`get_current_user` + `require_authenticated_user`），21/21 全绿。注意：**不能只覆盖 require_authenticated_user**（端点参数会落到 HTTPBearer 的"Could not validate credentials"）。
+- **本地 8 个 build 身份失败辨析**：`release/build-info.json`（gitignore）为 09-03 本地打包 `--allow-dirty` 残留（dirty=true），污染 dev-source 身份与 readiness；GitHub 干净 checkout 无此文件——CI 不受影响，本地如遇同批失败先查该文件。
+- **CI 终态**：run 34498175790（294a7e84）`Backend / pytest` + `Frontend / type + Jest + build` 双 job **success**（~9 分钟）——regression workflow 自 09-07 断红后首次全绿。
+
+---
+
 ## 2026-09-10（第二批）：存量测试债清偿——能力矩阵 fail-closed 致 5 套件 spec 漂移（前端全量首次 1514 全绿）
 
 上一批受控 stash 基线对照确认的 5 个 HEAD 即红套件（12 failed）全部归因并清偿，根因两类：
