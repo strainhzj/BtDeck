@@ -47,6 +47,9 @@ from app.api.endpoints import platform_capabilities
 # MCP 服务配置控制面（mcp-service-capabilities W1；运行时工具挂载在 W2）
 from app.api.endpoints import mcp_settings
 
+# MoviePilot 集成（整理历史同步 + 任务关联查询）
+from app.api.endpoints import moviepilot
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -60,6 +63,8 @@ api_router.include_router(cron_tasks.router, prefix="/cronTasks", tags=["cron-ta
 api_router.include_router(platform_capabilities.router, prefix="/platform", tags=["platform-capabilities"])
 # MCP 服务配置控制面（W1）：/api/v1/mcp/settings；W2 的 MCP 运行时挂载在根 /mcp，互不冲突
 api_router.include_router(mcp_settings.router, prefix="/mcp", tags=["mcp"])
+# MoviePilot 集成：/api/v1/moviepilot/*（握手/同步/设置/实例/关联查询）
+api_router.include_router(moviepilot.router, prefix="/moviepilot", tags=["moviepilot"])
 # Dashboard
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 # 添加高级搜索路由

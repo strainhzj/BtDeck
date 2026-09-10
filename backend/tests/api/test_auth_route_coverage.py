@@ -30,6 +30,8 @@ _AUTH_DEPENDENCY_NAMES = frozenset(
         # MCP 设置控制面（mcp-service-capabilities W1）：principal 内核，
         # 校验比 require_authenticated_user 更严（查 DB 用户存在/启用/非强制改密）
         "require_mcp_control_plane_user",
+        # MoviePilot 集成/管理面（moviepilot-integration）：同一 principal 内核链路
+        "require_moviepilot_integration_user",
     }
 )
 

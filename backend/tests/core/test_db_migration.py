@@ -56,7 +56,8 @@ def _clean_database_path_env():
 #       → ab68fe061d5b(orphan purge job submit-time ip address)
 #       → 975dad435c03(torrent auxiliary seed count)
 #       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
-EXPECTED_HEAD = "c1d2e3f4a5b6"
+#       → 053003337878(moviepilot integration tables)
+EXPECTED_HEAD = "053003337878"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
@@ -148,9 +149,10 @@ class TestMigrationChainIntegrity:
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
         # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
+        # + 053003337878 加 moviepilot_instance + moviepilot_transfer_history = 35
         assert (
-            count == 33
-        ), f"空库 upgrade 应建 33 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens），实际 {count}"
+            count == 35
+        ), f"空库 upgrade 应建 35 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -748,7 +750,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 33
+        assert _table_count(str(target_db)) == 35
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)
