@@ -1,4 +1,24 @@
-## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全部门禁绿，未提交）
+## 2026-09-10（第二批）：存量测试债清偿——5 套件能力 fail-closed 漂移（前端全量 1514 首次全绿，未提交）
+
+### 交付内容（feature_list `test-debt-capability-drift-2026-09-10`）
+
+- **能力矩阵 fail-closed 漂移 ×4**：`mobile-delete-level-dialog`/`permission-guard`/`torrent-list-view-component`/`traditional-view-component`——`level3_recycle` 门控在矩阵未加载时 fail-closed：等级3 选项被裁（组件 `levelOptions` filter + 视图 `v-if="level3Available"`）、`/recycle-bin` 被守卫 `enforceRouteCapability` 重定向（且目标导航在途，断言读中间态 /404）。修复：各 spec beforeEach 注入 `setPlatformCapabilityCacheForTesting({platform:'desktop', capabilities:{level3_recycle:{level:'supported'}}})` + afterEach `resetPlatformCapabilityCache()`。
+- **request mock 缺 default ×1**：`permission-force-change-deadlock` 的 `@/utils/request` mock 只导出 trySilentRefresh，守卫 `loadPlatformCapabilities` 调 default 导出 → `TypeError: (0, request_1.default) is not a function` 炸导航。修复：整体桩 `@/api/platform-capabilities`（load→null/isAvailable→true/isUnknown→false）。
+- **附带消解 Node22 进程崩溃**：`mobile-delete-level-dialog` 的 `at(3)` 因选项缺失抛错 → 测试失败 → 预置 `Promise.reject('cancel')` 无人消费 → unhandled-rejection 杀 jest worker（表现为套件崩溃无失败明细）。
+
+### 验证
+
+前端全量 **107 套件 / 1514 用例首次全绿**（上一批前后均为 12 failed 的基线）；lint 绿；四套件 102 例 + 死锁套件 8 例（46s→7s）全绿。
+
+### 诊断方法沉淀（下批可复用）
+
+- 进程崩溃吞断言：`NODE_OPTIONS=--unhandled-rejections=warn npx jest <spec>` 降级为警告后看真实 ● 明细。
+- 守卫分支定位：诊断 spec 里 `jest.mock('element-ui')` 捕获 `Message.warning` 文案（'无法确认当前服务端能力' = enforceRouteCapability 重定向；'服务暂时不可用' = abortNavigation）。
+- MSYS /tmp worktree 基线不可信（见上一批坑位）；受控基线用 stash push→跑→pop。
+
+---
+
+## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全部门禁绿，未提交→已提交 55cff67）
 
 ### 交付内容（用户 7 项反馈全闭环，feature_list `mobile-ux-fixes-2026-09` / PLANS/mobile-ux-fixes-2026-09.md）
 

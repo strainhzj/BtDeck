@@ -20,6 +20,10 @@ import {
 } from '@/api/torrents'
 import type { Torrent } from '@/api/torrents'
 import {
+  setPlatformCapabilityCacheForTesting,
+  resetPlatformCapabilityCache
+} from '@/api/platform-capabilities'
+import {
   getLoadingDirectiveSnapshot,
   installLoadingDirectiveProbe
 } from './helpers/loadingDirectiveProbe'
@@ -254,6 +258,15 @@ describe('torrent list view pagination and sorting', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     localStorage.clear()
+    // 视图按 level3Available（level3_recycle 能力）裁剪删除下拉的等级3 项：
+    // 注入 desktop+supported 还原全四级入口契约（矩阵批次落地时未同步本 spec）
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
     consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation()
     mockGetTorrentList.mockResolvedValue(successListResponse())
     mockGetDownloaderList.mockResolvedValue({
@@ -296,6 +309,7 @@ describe('torrent list view pagination and sorting', () => {
 
   afterEach(() => {
     wrapper?.destroy()
+    resetPlatformCapabilityCache()
     consoleDebugSpy.mockRestore()
   })
 
@@ -1177,6 +1191,15 @@ describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () =
   beforeEach(() => {
     jest.clearAllMocks()
     localStorage.clear()
+    // 视图按 level3Available（level3_recycle 能力）裁剪删除下拉的等级3 项：
+    // 注入 desktop+supported 还原全四级入口契约（矩阵批次落地时未同步本 spec）
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
     consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation()
     mockGetTorrentList.mockResolvedValue(successListResponse())
     mockGetDownloaderList.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })
@@ -1189,6 +1212,7 @@ describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () =
 
   afterEach(() => {
     wrapper?.destroy()
+    resetPlatformCapabilityCache()
     consoleDebugSpy.mockRestore()
   })
 
@@ -1495,6 +1519,15 @@ describe('详情卡片文件/Peers 页签数据接线（TrackerDetailDataMixin �
   beforeEach(() => {
     jest.clearAllMocks()
     localStorage.clear()
+    // 视图按 level3Available（level3_recycle 能力）裁剪删除下拉的等级3 项：
+    // 注入 desktop+supported 还原全四级入口契约（矩阵批次落地时未同步本 spec）
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
     consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation()
     mockGetTorrentList.mockResolvedValue(successListResponse())
     mockGetDownloaderList.mockResolvedValue({ status: 'success', msg: 'ok', code: '200', data: [] })

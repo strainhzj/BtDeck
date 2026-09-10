@@ -1,5 +1,16 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-10（第二批）：存量测试债清偿——能力矩阵 fail-closed 致 5 套件 spec 漂移（前端全量首次 1514 全绿）
+
+上一批受控 stash 基线对照确认的 5 个 HEAD 即红套件（12 failed）全部归因并清偿，根因两类：
+
+1. **能力矩阵 fail-closed 漂移（4 套件）**：主机能力矩阵批次给等级3（回收站）加了能力门控（`level3_recycle`），矩阵未加载时 fail-closed（unknown=不可用）——`DeleteLevelDialog.levelOptions` 裁掉等级3、两视图删除下拉 `v-if="level3Available"` 少一项、守卫 `enforceRouteCapability` 把 `/recycle-bin`（meta.requiredCapability）重定向仪表盘且重定向目标导航在途（断言读到中间态 /404）。相关 spec 当时未同步。修复：各 spec beforeEach 注入 `setPlatformCapabilityCacheForTesting`（desktop+supported）+ afterEach `resetPlatformCapabilityCache`。附带消解 Node22 崩溃链：`at(3)` 抛错 → 预置 `Promise.reject('cancel')` 无人消费 → unhandled-rejection 杀进程。
+2. **request mock 缺 default（1 套件）**：permission-force-change-deadlock 对 `@/utils/request` 的 mock 只给 trySilentRefresh，守卫 `loadPlatformCapabilities` 内部调 default 导出直接 TypeError 炸导航。修复：整体桩掉 `@/api/platform-capabilities`（本 spec 只回归强制改密拦截），套件耗时 46s→7s。
+
+验证：前端全量 **107 套件 / 1514 用例首次全绿**（此前 12 failed）；lint 绿。诊断方法沉淀：NODE_OPTIONS=--unhandled-rejections=warn 暴露被进程崩溃吞掉的真实断言；element-ui Message.warning mock 捕获守卫分支文案定位 redirect 源。
+
+---
+
 ## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全绿未提交）
 
 用户验收反馈 7 项手机端问题全部闭环；计划经独立子代理对抗性审查（APPROVE_WITH_AMENDMENTS，5 MAJOR/6 MINOR 全部吸收：Tracker 汇报入口取舍、e2e 纳入验证、duplicates 模式分发、弹层内联宽度覆盖手段、安卓单测可测性先行）。详见 PLANS/mobile-ux-fixes-2026-09.md 与 feature_list `mobile-ux-fixes-2026-09`（6 任务全 done）。

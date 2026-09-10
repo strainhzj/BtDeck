@@ -656,6 +656,41 @@
       ]
     },
     {
+      "id": "test-debt-capability-drift-2026-09-10",
+      "name": "存量测试债清偿：能力矩阵 fail-closed 致 5 套件 spec 漂移 + request mock 缺 default 致守卫 TypeError",
+      "description": "mobile-ux-fixes 批次受控基线对照发现的存量红套件（HEAD 即 12 failed）：4 套件（mobile-delete-level-dialog/permission-guard/torrent-list-view-component/traditional-view-component）因主机能力矩阵批次落地后 level3_recycle fail-closed（矩阵未加载=unknown=隐藏等级3/重定向回收站路由）而断言漂移，注入 setPlatformCapabilityCacheForTesting(desktop+supported) 还原健康态；permission-force-change-deadlock 因其 @/utils/request mock 未提供可调用 default，守卫 loadPlatformCapabilities 真实调用 TypeError 炸导航，整体桩掉 @/api/platform-capabilities。附带消解 Node22 unhandled-rejection 进程崩溃链（at(3) 抛错→预置 rejected promise 无人消费）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mobile-ux-fixes-2026-09.md",
+      "tasks": [
+        {
+          "id": "test-debt.1",
+          "name": "四套件能力缓存注入（mobile-delete-level-dialog/permission-guard/torrent-list-view/traditional-view）",
+          "description": "各 spec beforeEach 注入 setPlatformCapabilityCacheForTesting（desktop + level3_recycle supported）、afterEach resetPlatformCapabilityCache；还原四级删除全量入口、/recycle-bin 路由放行与'roles 已加载放行'分支语义。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/mobile-delete-level-dialog.spec.ts",
+            "frontend/tests/unit/permission-guard.spec.ts",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "四套件 10+11+36+45=102 例全绿；全量 107 套件/1514 例首次全绿；Node22 崩溃链消除。"
+        },
+        {
+          "id": "test-debt.2",
+          "name": "permission-force-change-deadlock 补 platform-capabilities 桩",
+          "description": "该 spec 对 @/utils/request 的 mock 缺可调用 default 导出，守卫 loadPlatformCapabilities 真实调用 TypeError 炸导航；整体桩掉 @/api/platform-capabilities（loadPlatformCapabilities→null、isCapabilityAvailable→true），本 spec 只回归强制改密拦截。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/permission-force-change-deadlock.spec.ts"
+          ],
+          "evidence": "8 例全绿；套件耗时 46s→7s（TypeError 重试链消除）。"
+        }
+      ]
+    },
+    {
       "id": "mobile-ux-fixes-2026-09",
       "name": "手机端七问题修复（确认弹框适配/伴侣健康探测/种子页提速/快捷操作/桌面版入口移除/下载器编辑页签）",
       "description": "用户验收反馈的 7 个手机端问题：①确认弹框全局 ≤768 适配；②高负载伴侣模式红色 toast 对症缓解（幂等 GET 瞬态重试）；③种子页提速（tracker-domains TTL 缓存+懒加载、with_trackers 瘦身、content-visibility）；④移动种子页补齐查找重复任务+快捷操作四项；⑤桌面版入口全部移除；⑥「版本未知·服务存活检查失败」根修（nginx /health 代理+双端 /api/v1 别名回退）；⑦下载器新增/编辑统一 DownloaderSettingsDialog 整页（含全部页签）并删除旧 DownloaderDialog。",
