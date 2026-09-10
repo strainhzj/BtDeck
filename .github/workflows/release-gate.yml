@@ -480,18 +480,21 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'EOF'
           FROM python:3.11-bullseye
-          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
-          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
-          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
-          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
-          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
-          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
-          RUN for i in 1 2 3 4 5; do \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
                 apt-get -o Acquire::Check-Valid-Until=false update \
                 && apt-get install -y --no-install-recommends \
                       ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
                 && break \
-                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
               done \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document \
@@ -682,18 +685,21 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
-          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
-          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
-          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
-          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
-          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
-          RUN for i in 1 2 3 4 5; do \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
                 apt-get -o Acquire::Check-Valid-Until=false update \
                 && apt-get install -y --no-install-recommends \
                       ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
                 && break \
-                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
               done \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document \
@@ -906,18 +912,21 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
-          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
-          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
-          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
-          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
-          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
-          RUN for i in 1 2 3 4 5; do \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
                 apt-get -o Acquire::Check-Valid-Until=false update \
                 && apt-get install -y --no-install-recommends \
                       ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
                 && break \
-                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
               done \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document \
@@ -1134,18 +1143,21 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
-          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
-          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
-          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
-          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
-          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
-          RUN for i in 1 2 3 4 5; do \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
                 apt-get -o Acquire::Check-Valid-Until=false update \
                 && apt-get install -y --no-install-recommends \
                       ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
                 && break \
-                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
               done \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document \
@@ -1301,18 +1313,21 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          # bullseye LTS 已结束（2026-08），Debian 正将其迁入 archive.debian.org：
-          # 迁移期 deb.debian.org 各 fastly 边缘分发状态不一致——run 34366368985
-          # 实证 InRelease 过期（update exit 100）、run 34367636116 实证池文件 404
-          # （同刻权威索引/池一致，纯边缘漂移；本地构建同象）。对策：关闭
-          # Valid-Until 校验 + 5 次重试环（每轮全新 update），末尾 command -v
-          # 硬校验 fail-closed；包完整性仍由 apt 哈希校验保证
-          RUN for i in 1 2 3 4 5; do \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
                 apt-get -o Acquire::Check-Valid-Until=false update \
                 && apt-get install -y --no-install-recommends \
                       ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
                 && break \
-                || { echo "apt attempt $i failed (CDN edge drift), retry in 15s"; sleep 15; }; \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
               done \
               && rm -rf /var/lib/apt/lists/* \
               && gem install fpm --no-document \
