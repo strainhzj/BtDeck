@@ -104,3 +104,7 @@ release/evidence/
 
 # Demo dist 本地恢复产物（演示环境回滚用 zip，勿入库；2026-09-06 曾被 git add frontend/ 误带入后剔除）
 frontend/BtDeck-demo-dist-*.zip
+
+# 根级运行时数据目录（本地 docker/运行产物：app.db/WAL/迁移备份）。根锚定，
+# 不影响 android/app/src/main/java/com/btdeck/companion/data/（见 2026-08-24 删规则记录）。
+/data/

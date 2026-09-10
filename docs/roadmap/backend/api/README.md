@@ -12,7 +12,7 @@
 | 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（32 次 include_router；prefix→模块映射见下方“路由聚合”） |
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 
-### endpoints/（38 个文件）
+### endpoints/（41 个文件；✨2026-09-09 校准：含本批 moviepilot + W1 mcp_settings 与 torrent_detail 的历史漂移）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -22,6 +22,8 @@
 | 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息（`/user/info` 实时下发 `mustChangePassword` 强制改密标志，W9 补全；异常兜底 code 500 防前端误登出）/改密/2FA（挂 `/user` 与 `/users`；2FA 输入错误一律 400，业务 401 仅保留 token 缺陷两处自愈语义）；2FA 二维码 Pillow 缺失（Android 服务端）时降级手动录入——`_generate_totp_qr_png` 返回 None 则信封带 secret+qr_available=False（2026-09-04） |
 | 仪表盘 dashboard | `dashboard.py` | 仪表盘聚合数据，委托 `DashboardService` |
 | 健康检查 health | `health.py` | liveness/readiness 与受认证故障转储/状态分析导出：`GET /api/v1/health/diagnosis` 以 JSON 附件（`Content-Disposition: attachment`，文件名 `btdeck-diagnosis-*.json`）聚合版本/构建身份、readiness 检查、同步业务健康（原 `/health/sync` 数据并入 `sync` 字段）与进程 RSS（2026-09-07 改造）；数据库查询和聚合构建均有界超时；live/ready 的 data 携带 version（伴侣模式 Phase 2 版本提示，2026-08-23 起） |
+| MCP 配置控制面 mcp-settings ✨2026-09-08 | `mcp_settings.py` | MCP 服务配置 GET/PUT（`/api/v1/mcp/settings`，revision CAS 409）；principal 内核门禁 `require_mcp_control_plane_user`（禁用/强制改密 403）；PUT best-effort 审计（W1，本行 2026-09-09 补记漂移） |
+| MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.py` | `/api/v1/moviepilot/*`：集成面（POST /handshake、POST /sync/transfer-history 批量幂等 upsert）+ 管理面（GET/PUT /settings CAS、GET/instances、PUT/DELETE /instances/{id} 含映射重解析）+ 查询面（GET /associations 正向按 (bt 下载器, hash)、GET /associations/reverse 路径精确/目录前缀反查带任务快照）；集成/管理面 `require_moviepilot_integration_user`（principal 内核），查询面 require_authenticated_user；同步/设置/实例 best-effort 审计 |
 | 下载器核心 downloader | `downloader.py` | 下载器核心 API（连通性测试/添加管理）；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed |
 | 能力探测 capability | `downloader_capabilities.py` | 下载器能力探测 |
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |

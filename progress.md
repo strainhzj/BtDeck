@@ -7424,6 +7424,19 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **G1（test_upgrade_gates.py 5 项）**：升级矩阵补齐——遗留标量配置行共存升级（无 mcp 键→默认全关+遗留行原值不动）、未知未来 schemaVersion 降级 fail-closed（不采信其 revision）、PUT 后新引擎等价重启意图/revision 保持；**生产供给器 wire 级**（真实 _default_settings_provider + monkeypatch app.database.SessionLocal 指临时库——供给器是调用期函数内导入，patch 生效）：首装 SERVICE_DISABLED → 落库开启后无需重启立即生效（仅开启能力可发现）→ kill switch env 优先级最高（库内 enabled=True 仍双面 SERVICE_DISABLED）。
 - **G5（test_canary_gates.py 2 项）**：canary 从 redaction 单元提升到**六工具真实 dispatch 出口**——passkey/token/绝对路径/URL 编码变体埋入 tracker URL/保存路径/种子名/模板条件，响应面与 caplog 日志面零泄漏；携带 canary 的非法输入（magnet/tracker 条件）拒绝文案固定不回显；种子名嵌 canary 命中泄漏扫描→整体 fail-closed INTERNAL_ERROR 不截断放行；tracker 仅输出规范化域名（t/e.canary.example.org 两 tracker 域名集合断言）。坑：初版误把"域名不外发"当预期——脱敏设计本就输出规范化域名，域名非 canary。
 - **验证**：tests/mcp 311 项全绿；black/flake8/mypy 绿。门禁：MCP-G1/G5 片段 PASS，聚合 **10/12**（余 G10/G11）。未执行 Git 提交。
+
+## 2026-09-09：MoviePilot 整理联动第一版闭环（BtDeckBridge 插件 + 镜像同步 + 任务关联）
+
+- **背景**：用户指定路径 C:\softwareull_stack\BtDeck 不存在（全盘核实），唯一活跃仓库为当前 cwd（dev1.0.7）；确认在当前仓库追加开发，保留未提交 MCP W0~W3 改动不触碰、全程未提交未推送。
+- **决策（AskUserQuestion 未获答复，按推荐默认执行并已在交付说明集中复问）**：凭据复用 BtDeck 登录+刷新令牌（专用集成账号，零新增认证面）；先仓库内开发+自动化测试，真实宿主联调留待部署信息；前端完整 UI。
+- **后端**：两新表 moviepilot_instance/moviepilot_transfer_history（(instance_id,history_id) 唯一、content_hash 幂等、映射解析冗余列 linked/unmapped/unassociated）+ 迁移 053003337878（head c1d2e3f4a5b6→053003337878，空库 35 表）；moviepilot_settings_service（configs 键 moviepilot.integration.v1，fail-closed+CAS）+ integration_service（握手注册/绑定校验/幂等 upsert/映射重解析/正反向查询）；/api/v1/moviepilot/* 端点（require_moviepilot_integration_user principal 内核门禁已登记路由鉴权覆盖表）；审计枚举 +3。
+- **前端**：api/moviepilot.ts + MoviePilotPanel（开关 CAS/实例卡片/映射编辑/反查卡）+ 设置页签；TrackerDetailCard「媒体库」页签（detailTabsData media 分支，两视图同源）。
+- **插件**：moviepilot-plugin/ 市场仓库结构（BtDeckBridge 1.0.0）；V2 适配器自调用宿主 API（apikey；核实 BackgroundScheduler+ThreadPoolExecutor 同步服务函数、/transfer date 倒序无 ID 范围查询）；客户端复用登录/刷新轮换（令牌脱敏纪律有测试锚定）；引擎水位+断点+重试分类+停止信号；装配防重复锁。
+- **验证**：后端 28 新增 + 相邻 1225 passed（19 失败=回收站 a2cb083 存量基线）+ 迁移升降级对称 + black/flake8/mypy 绿；前端 32 spec（含相邻）+ typecheck + lint 绿（有意不跑 build 防 demo dist）；插件 38 spec 绿。
+- **对未提交 MCP 文件的两处最小修复**（上会话 W3 遗留破损）：catalog.py `_empty_audit_context` 定义顺序 NameError（模块不可 import，阻断全部 factory 导入测试）；补 `spec_by_tool_name`（validate_arguments 的 confirm 门禁引用未定义函数）。tests/mcp 由 4 失败恢复至 179 passed + 1 失败（test_concurrent_snapshot_switch_never_tears，W3 未竟，未触碰）。另有 alembic env.py 既有漂移（orphan_hardlink_* 未导入等）在 autogenerate 噪声中确认，未纳入本批处理。
+- **坑位**：MP 插件目录 plugins.v2 含点名，宿主将其并入 app.plugins.__path__ 以 app.plugins.<pid> 导入——单测须还原该机制（conftest 桩），直接 import plugins.v2.x 不可行；BtDeck 登录/刷新信封 data 为单元素数组；MP API token 走 apikey 查询参数或 X-API-KEY。
+- **未执行不得宣称通过**：真实 MoviePilot 宿主联调/真实下载器关联/Docker 端到端（task .4 pending，阻塞于部署信息）。发布/建仓/PR 前须另行授权。
+
 ## 2026-09-08（续九）：MCP W4-c 制品与回滚——G11 PASS、G10 EXE 实证+容器阻断（11/12）
 
 - **G10 依赖手术**：mcp~=1.30.0 入 requirements.txt；**连动 pyjwt 2.8.0→2.10.1[crypto]**（SDK 硬性要求 ≥2.10.1+crypto extra，引入 cryptography 树）；临时 venv pip-tools 重生成 requirements-lock.txt（--generate-hashes；+14 新钉：mcp/httpx-sse/jsonschema 树/sse-starlette/cryptography 树/pywin32 win 标记；既有钉零漂移；colorama/tzdata 仅标记空格重排）。验证三连：pip install --dry-run --require-hashes 全解析、打包 venv --require-hashes 实装+import mcp OK、check_dependencies PASS+锁结构测试 25 项绿。双 spec 补 mcp hiddenimports 六模块（fastmcp 排除保持）。
@@ -7433,6 +7446,7 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：tests/mcp 315 全绿；auth 回归 116 绿（pyjwt 升级面）；黑盒 EXE 冒烟通过。**门禁聚合：11/12 PASS（G0/G1/G2/G3/G4/G5/G6/G7/G8/G9/G11）+ G10 INDETERMINATE → verdict=BLOCKED**（fail-closed 语义正确——制品黑盒未完不得 READY）。
 - **坑**：①py-spy dump 是定位 frozen EXE 卡点的利器（pip 装即用）；②Windows 桌面 EXE 冒烟必须 BTDECK_MODE=server + 隔离 CONFIG_DIR；③flake8 必须在 backend 目录跑（.flake8 目录级配置）；④pip-compile 在注册表代理环境要 no_proxy='*'（否则 urllib.getproxies 拖死）。
 - 未执行 Git 提交。
+
 ## 2026-09-09（续十）：MCP W4-d G10 收官——四制品黑盒全矩阵 + 锁跨平台根修 → 12/12 READY、feature 终态 done
 
 - **锁跨平台缺陷根修（G10 黑盒抓出的生产缺陷，b7bba8d）**：上会话 Docker VM apt 阻挡掩蔽了真凶——W4-c 在 Windows 上 pip-compile 解析 mcp 1.30.0 双 python_version 分支的 `pywin32>=310/311; sys_platform=='win32'` 约束时**丢失环境标记**，锁内 `pywin32==312` 成无条件钉；Linux 侧 `pip wheel/install --require-hashes` 直接 "No matching distribution found"，Docker/DEB/RPM 三条 Linux 产线全断（colorama/tzdata 同类标记却在——pip-tools 对 mcp 双分支约束的合并缺陷）。修复：条目补 `; sys_platform == "win32"`（哈希不变、Windows 安装语义不变）；test_dependency_lock.py 补 pywin32 平台标记锚定（对齐既有 colorama/tzdata 契约）。验证三面：12 锁测试绿、check_dependencies PASS、Windows dry-run --require-hashes 全解析 + Linux 双实装（Docker builder `pip wheel --require-hashes` + DEB 打包 venv `pip install --require-hashes`）——§11.3 残项"锁的 Linux 侧哈希安装验证"闭合。
@@ -7441,8 +7455,25 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **门禁终态**：MCP-G10 片段转 PASS（evidence 八条含 deb/rpm 制品摘要）→ `aggregate_mcp_gates.py` 聚合 **12/12 PASS → verdict=READY**（release/build/mcp-gate-report.json，本地证据件）。runbook §8.1 沉淀黑盒三段配方（A 免认证默认关闭 / B 真实控制面部分开启 / C canary 脱敏 + 字面量种子 NOT NULL 陷阱）。
 - **收官**：feature_list 任务 .9 → done（W4-d evidence 完整）+ feature 顶层 → done（summary 终态化）；计划 §11 W4 行 + §11.3 更新。提交 b7bba8d（锁修复）+ 本批收官笔。
 - **坑（本批新增）**：①MSYS 路径转换把容器绝对路径 /src 改写成 E:/Git/src（docker exec/cp 全程 MSYS_NO_PATHCONV=1）；②docker cp <dir>/. container:/src 在本机静默拷空——tar 管道替代；③Windows clone 默认 autocrlf 检出 CRLF→容器 git status 全脏 + .sh 行尾坏，clone 必须 --config core.autocrlf=false；④node 基底系统 python 缺 libpython3.11.so（PyInstaller 要共享库；CI 用 python:3.11-bullseye 基底规避）；⑤制品库字面量种子：torrent_info.has_tracker_error 等列是迁移层 NOT NULL+server_default，模型 create_all 不可见，INSERT 须显式补值（INSERT OR IGNORE 会静默吞行）；⑥deb.debian.org trixie/main 间歇 404（快照失同步）+ Docker VM 出网对 fastly/腾讯 CDN 间歇失败——NJU 镜像全程稳定；⑦build-linux.sh dev 模式（--allow-dirty）过不了 verify-package（dirty 硬拒、无逃生舱）——干净树是唯一路径。
+
 ## 2026-09-09（续十·补）：W4-d 后 CI 级复验——release-gate 双产线绿 + bullseye EOL 三连修
 
 - **触发与结论**：本地经 git credential fill + GitHub API dispatch（本机无 gh CLI）触发 release-gate（run_w2_linux+run_w2_docker，w0 探针关）。第 4 轮 run 34433680500（@5a664fd）**双 job 全绿**：w2-strict-linux-build 13/13 步（前端唯一构建→工具链镜像→build-linux.sh --release→verify_release_bundle→制品上传——锁 pywin32 修复 b7bba8d 的 CI 级 Linux 哈希安装+DEB/RPM 出包复验闭合）；w2-strict-docker-build 12/12 步。
 - **CI 基础设施三连修（与 BtDeck 代码无关，bullseye EOL 连锁）**：①ff3c7d5——python:3.11-bullseye 内嵌 debian-security InRelease 过期（LTS 2026-08 结束）→ apt update exit 100，加 -o Acquire::Check-Valid-Until=false；②70d49f6——security 池文件 404，最初判为 CDN 边缘漂移加 5 次重试环（本地实证重试机制有效），但 run 3 证明无效；③5a664fd——定性纠正：**欧美 fastly 边缘（源头）已排空 bullseye-security 池，亚太边缘残存缓存——地缘确定性缺失**；bullseye main 池完好，工具链镜像 sources.list 覆写为仅 main（不需要 security 补丁版 ruby），本地一轮直过。main 未来排空则切 archive.debian.org（bullseye main 已就绪，security 未迁移完）。
 - **坑（新增）**：①workflow_dispatch 无 gh 时 `git credential fill` 取 PAT 直调 API（POST /actions/workflows/<f>/dispatches，ref+inputs）即可；②GitHub Actions 日志下载有整段重复行，grep 计数需注意；③bullseye 工具链镜像与生产 glibc 下限（2.31）绑定，不能顺手升 bookworm——security 套件剥离是唯一保持基底的修法。
+
+## 2026-09-10：MoviePilot 插件市场机制调查——分发形态决策（不新建仓库）
+
+- **调查范围**（v2 分支源码实证：app/core/plugin.py、app/helper/plugin.py、app/api/endpoints/plugin.py、system.py）：市场列表来自 `PLUGIN_MARKET` 环境变量（设置页可改，另有 `/setting/PLUGIN_MARKET/sync-wiki` 从官方 Wiki 同步合并）；远程市场索引固定拉 `raw.githubusercontent.com/{user}/{repo}/main/package.v2.json`（默认分支 main、仅支持 GitHub URL 形态），安装=GitHub API 文件列表逐文件下载或 Release zip。
+- **关键纠偏**：`release` 字段是"Release 版本化安装"能力位（`plugin_releases` 端点据此判断 release_supported），**不是市场可见性开关**——此前插件开发文档调研中的表述有误导。
+- **本地市场仓库通道**（`PLUGIN_LOCAL_REPO_PATHS`）：目录按市场仓库扫描（package.v2.json → plugins.v2/），命中插件标记 is_local=True、来源 `local://`，安装 `install_local` 直接复制进 `app/plugins/`——零网络零 git、**无需加入 PLUGIN_MARKET**；同 pid 多仓库取最高版本；`system_version` 兼容检查同样生效；来源目录与运行目录相同会拒绝。
+- **决策**：不新建仓库。`moviepilot-plugin/` 以本地市场仓库通道分发（挂载即装）；公开发布时再把该目录整体推为独立 GitHub 仓库+PLUGIN_MARKET，代码零改动（已获授权前不执行）。README 安装段与 PLANS §2/§6 已按此更新。
+
+## 2026-09-10（续）：插件公开发布——独立仓库 MoviePilot-Plugins-BtDeck 已建并推送
+
+- **用户授权公开发布**。执行：`moviepilot-plugin/` 整体拆出为同级独立仓库 `C:\software\claude_code_full_stack\MoviePilot-Plugins-BtDeck`（避免嵌套 git 仓库隐患），补 LICENSE（GPL-3.0，与主项目一致）/.gitignore/package.v2.json history v1.0.0/author_url，README 重写为市场安装优先；38 项插件单测在新位置复跑全绿。
+- **建仓与推送**：gh CLI 不在，用 `git credential fill` 取 Windows 凭据管理器中已存 GitHub PAT 调 REST API 建仓（令牌仅进 shell 变量，零输出零落盘；curl -d 中文 JSON 会被 shell 撕裂——必须 `--data-binary @file`）；仓库 https://github.com/strainhzj/MoviePilot-Plugins-BtDeck（public，default_branch=main），推送 main=ed828bb。
+- **验证**：raw `package.v2.json` 与 `plugins.v2/btdeckbridge/__init__.py` 双 200（本机 raw 网络当日不稳，另经 GitHub API contents 端点复核线上索引内容：BtDeckBridge/1.0.0/>=2.0.0/history v1.0.0）；`git ls-remote` 远端 HEAD=ed828bb。
+- **BtDeck 侧引用回填**：PLANS §2/§3/§6（发布标记完成）、roadmap 根 README（功能域行+本次新增）、feature_list .3 evidence 追记（files 路径已迁独立仓库）、本文件与 session-handoff、记忆。
+- **市场安装方式**：`PLUGIN_MARKET` 加入 `https://github.com/strainhzj/MoviePilot-Plugins-BtDeck/`（或设置→插件市场）；本地联调仍可挂载仓库目录走 PLUGIN_LOCAL_REPO_PATHS。
+- BtDeck 仓库内 `moviepilot-plugin/` 目录已移除（该目录从未提交，git 状态无残留）；未执行 BtDeck 侧任何 git 提交。

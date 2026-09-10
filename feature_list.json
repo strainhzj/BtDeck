@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-07",
+  "last_updated": "2026-09-10",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -6016,6 +6016,80 @@
       ],
       "evidence_summary": "locked-fix.1：13+5 pytest 全绿三件套门禁通过；locked-fix.2：17 passed + 变异矩阵 3/4/6/2 全检出。",
       "notes": "单颗添加 torrent_add_service.py 首个 DB 语句在网络调用之后、快照新鲜，确认无同构风险未改动；未接 db_write_scope（用户选定范围为根修+兜底+观测，短事务窗口下无必要）；H2（>15s 长写锁）/H3（外部进程共库）备择假设凭 sqlite_errorcode 观测口鉴别。未执行 Git 提交。"
+    },
+    {
+      "id": "moviepilot-integration-2026-09-09",
+      "name": "MoviePilot 整理联动（BtDeckBridge 插件 + 镜像同步 + 任务关联查询）",
+      "description": "MoviePilot V2 插件 BtDeckBridge 将整理历史只读同步到 BtDeck，建立媒体库文件/整理源文件/BT 任务关联：幂等镜像（实例+历史ID 身份、内容哈希变更判定、水位+周期全量重扫+断点续跑）、MoviePilot→BtDeck 下载器映射解析、种子详情媒体库页签与路径反查。全程零写入两侧生产数据；凭据复用 BtDeck 用户令牌体系（专用集成账号）。",
+      "status": "in-progress",
+      "branch": "dev1.0.7",
+      "plan_file": "PLANS/moviepilot-integration.md",
+      "tasks": [
+        {
+          "id": "moviepilot-integration-2026-09-09.1",
+          "name": "后端镜像与关联 API",
+          "description": "两张新表（moviepilot_instance / moviepilot_transfer_history，(instance_id, history_id) 唯一）+ Alembic 迁移 053003337878；设置服务（configs 版本化键 moviepilot.integration.v1，fail-closed+CAS）+ 集成服务（握手注册/绑定校验/幂等 upsert/映射变更重解析/正向反向关联查询）；/api/v1/moviepilot/* 端点（principal 内核门禁 + 查询面轻量门禁）+ 审计枚举 3 项。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/moviepilot_instance.py",
+            "backend/app/models/moviepilot_transfer_history.py",
+            "backend/app/data/default_moviepilot_settings.py",
+            "backend/app/services/moviepilot_settings_service.py",
+            "backend/app/services/moviepilot_integration_service.py",
+            "backend/app/api/endpoints/moviepilot.py",
+            "backend/alembic/versions/053003337878_add_moviepilot_integration_tables.py",
+            "backend/tests/api/test_moviepilot_integration.py"
+          ],
+          "evidence": "2026-09-09：test_moviepilot_integration 28 项绿（设置 fail-closed/CAS/409；握手注册/禁用 403/绑定冒名 403/失效改绑；同步 insert-skip-update 三态/批内单条失败不中断/审计行；映射非法 400+变更重解析 unmapped→linked；正向查询同 hash 双下载器不串联；反查精确/目录前缀/mode 过滤/过短 400/未关联 task=null；认证矩阵 401/403；信封分页字段）。迁移链临时库 upgrade→downgrade→upgrade 对称、空库 35 表、单 head 053003337878（EXPECTED_HEAD+表数断言已更新）。路由鉴权登记 require_moviepilot_integration_user。相邻回归 tests/api+core/test_db_migration+架构约束 1225 passed/19 失败（回收站 a2cb083 存量基线，与本批无关）。black(24.10.0)/flake8/mypy 改动文件全绿。"
+        },
+        {
+          "id": "moviepilot-integration-2026-09-09.2",
+          "name": "前端设置页签与种子详情媒体库页签",
+          "description": "api/moviepilot.ts；MoviePilotPanel.vue（全局开关 CAS/409 自动重载、实例卡片+启用开关+删除二次确认、下载器映射内联编辑保存后重解析、路径反查卡）+ settings 页签注册（移动端经包装自动同源）；TrackerDetailCard 新增媒体库页签（detailTabsData media 分支：键控懒加载+竞态守卫+空列表合法态）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/moviepilot.ts",
+            "frontend/src/views/settings/components/MoviePilotPanel.vue",
+            "frontend/src/views/settings/index.vue",
+            "frontend/src/views/torrents/mixins/detailTabsData.ts",
+            "frontend/src/views/torrents/components/TrackerDetailCard.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/moviepilot-panel.spec.ts",
+            "frontend/tests/unit/detail-tabs-data.spec.ts"
+          ],
+          "evidence": "2026-09-09：moviepilot-panel.spec 8 项（渲染/CAS 保存收敛/409 重载/实例开关/映射空行校验与载荷/反查渲染任务快照与未关联标签/失败提示/demo 零请求）+ detail-tabs-data 扩展 4 项（media 懒加载键控缓存/空列表不重拉/换种子失效/错误保留旧数据）全绿；npm run typecheck 绿；npm run lint 绿（contract:check+eslint --max-warnings 0+vuex 检查）。npm run build 有意未跑（保护 20260907 demo dist）。"
+        },
+        {
+          "id": "moviepilot-integration-2026-09-09.3",
+          "name": "MoviePilot V2 插件 BtDeckBridge",
+          "description": "独立仓库 strainhzj/MoviePilot-Plugins-BtDeck（市场仓库结构：package.v2.json + plugins.v2/btdeckbridge）：宿主适配器自调用 /api/v1/history/transfer（apikey，V2 版本边界）；BtDeck 客户端复用登录/刷新令牌轮换（401 单次重试、令牌脱敏日志）；同步引擎水位+断点+重试分类（4xx 不重试）+停止信号；插件装配（配置页/状态页/周期服务 BackgroundScheduler 线程池/手动 API/防重复锁/实例 UUID 持久化）。",
+          "status": "done",
+          "scope": "plugin",
+          "files": [
+            "MoviePilot-Plugins-BtDeck/package.v2.json（独立仓库 https://github.com/strainhzj/MoviePilot-Plugins-BtDeck）",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/__init__.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/moviepilot_adapter.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/btdeck_client.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/sync.py",
+            "MoviePilot-Plugins-BtDeck/tests/"
+          ],
+          "evidence": "2026-09-09：插件单测 38 项全绿（test_adapter 6：取数/错误分类/字段映射完整性与劣化容错；test_btdeck_client 9：登录存储+Bearer、坏凭据 401、401→refresh→重试链、握手/同步载荷形状、403 包装提示、网络不可达净文案、令牌永不出现于错误与日志；test_sync 10：全量分批/水位推进/服务端幂等 skipped/增量只推新于水位/整页低于水位早停/auto 模式选择/瞬断保留断点并从断点页续跑/4xx 即停无重试/握手失败短路/停止信号；test_plugin_init 13：状态开关/服务注册与间隔钳制/stop+reinit 事件复位/实例 UUID 生成一次且跨重载稳定/无 URL 拒跑/全链路 fake 装配/在途防重复/失败释放锁/表单模型键全覆盖/状态页/API 注册）。MoviePilot V2 源码事实核验：BackgroundScheduler+ThreadPoolExecutor（同步服务函数）、apikey 查询参数鉴权、/transfer date 倒序分页无 ID 范围查询。 2026-09-10 追记：经用户授权公开发布——插件目录拆出为独立仓库 https://github.com/strainhzj/MoviePilot-Plugins-BtDeck（main=ed828bb，GPL-3.0，package.v2.json 增 history v1.0.0，README 改市场安装优先；38 单测在新位置复跑全绿；线上索引经 GitHub API 验证）。上述 files 路径现位于该独立仓库，BtDeck 仓库内已移除。"
+        },
+        {
+          "id": "moviepilot-integration-2026-09-09.4",
+          "name": "真实宿主联调与验收",
+          "description": "独立 MoviePilot V2 测试实例 + BtDeck 测试库 + 测试下载器上的端到端验收：单电影任务/三集合集多文件/同 hash 双下载器不串联/路径映射/硬链接-复制-移动关系/重复同步与网络中断恢复/重启配置重载不重复起任务/历史缺失-文件缺失-hash 缺失八类场景。",
+          "status": "pending",
+          "scope": "integration",
+          "files": [
+            "PLANS/moviepilot-integration.md"
+          ],
+          "evidence": "阻塞于部署信息（未获得，不编造）：MoviePilot V2 完整版本号、部署方式（compose/裸机）、插件目录挂载与 PLUGIN_LOCAL_REPO_PATHS/PLUGIN_AUTO_RELOAD 可行性、BtDeck 地址自 MoviePilot 容器的可达性。联调未执行，不宣称通过。"
+        }
+      ]
     }
   ],
   "tasks": [

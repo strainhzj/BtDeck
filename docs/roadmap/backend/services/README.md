@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（49 个文件，不计 `__init__.py`）
+### services/ 根（54 个文件，不计 `__init__.py`；✨2026-09-09 计数校准：含本批 moviepilot 两服务与 mcp_settings/torrent_add_helpers 等历史漂移）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -20,6 +20,9 @@
 | 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
+| MCP 运行时配置 mcp-settings ✨2026-09-08 | `mcp_settings_service.py` | `mcp.runtime.v1` 版本化 JSON 键读写：fail-closed 加载（缺失/损坏/未知 schemaVersion/字段非法整体回落默认全关）+ revision CAS（`McpSettingsRevisionConflict`→409）+ `BTDECK_MCP_FORCE_DISABLED` kill switch 只读覆盖（本行 2026-09-09 补记漂移） |
+| MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot_integration_service.py` | MoviePilot 整理联动核心：握手注册（UUID 身份+集成账号绑定校验，绑定失效允许改绑）、批量幂等 upsert（`(instance_id, history_id)` 唯一 + 服务端 content_hash 判 skip/update/insert）、下载器映射校验与变更后全量重解析（分块）、正向关联（严格 (bt_downloader_id, download_hash) 不跨下载器串联）与路径反查（精确/目录前缀 + torrent_info 任务快照批量 join）；实例删除连带历史镜像（显式管理动作） |
+| MoviePilot 全局开关 moviepilot-settings ✨2026-09-09 | `moviepilot_settings_service.py` | `moviepilot.integration.v1` 版本化 JSON 键：fail-closed（默认关闭）+ revision CAS，镜像 mcp_settings_service 模式（单 enabled 字段，无能力开关/kill switch） |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L65 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L174 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
 | 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；列表/硬链接/清理链路由 `orphan_files` 能力统一门禁，Android 主服务端不访问下载器目录；桌面端保留原有分批生命周期与 fail-closed 文件操作 |

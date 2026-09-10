@@ -13,7 +13,7 @@
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控 |
-| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04） |
+| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-09 新增 MoviePilot 页签（`components/MoviePilotPanel.vue` 自治面板，注册方式同 McpSettingsPanel 三行式） |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
@@ -43,7 +43,7 @@
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
 | `components/TrackerOperationDialog.vue` | Tracker 操作对话框；✨2026-08-20 修复 announce 状态判断（原 `=== 'True'` 字面量对中文状态文本恒显“异常”，改用共享 `isTrackerAnnounceSuccess`） |
 | `components/TransferDialog.vue` | 转移对话框；桌面两种种子视图与详情页按 `seed_transfer` 能力隐藏入口 |
-| `components/TrackerDetailCard.vue` | 列表/传统视图共用的 Tracker 完整详情弹框：标题、关闭按钮、Tracker/文件/Peers 页签、内容区、错误原因提示、Tracker 名称与 URL、Announce/Scrape 状态、汇报按钮及统一状态语义；✨2026-08-27 命中可视化：`matched_domain`（snake/camel 双读）命中行加 `tracker-row-matched` 高亮与「命中筛选」标签（tooltip 显示命中域名）；通过 `layout` 仅控制两种定位方式；✨2026-09-06 文件/Peers 页签实现：数据经 `files-state`/`peers-state` props 聚合传入（卡片仍零 API 调用），文件表格（名称省略/`formatFileSize`/`el-progress` 细条 clamp 0~100）与 Peers 表格（地址/客户端/进度/双速度，0 速兜底 `-`），loading/错误/空三态 + 更新失败保留旧数据的 stale 提示，超 1000 行 computed 截断并提示总数，刷新按钮 `$emit('refresh', tab)`；✨2026-09-06（第二批）文件页签三列排序（列头按钮循环 升序→降序→还原，先筛选后排序互不禁用）+文件名模糊搜索框（大小写不敏感、no-match 态工具条常驻可改关键词、计数/截断提示随命中数更新，父级清数据时视图态复位）；顶部整行收起条 `.tracker-collapse-bar` L10（2026-09-06 用户反馈由底部上移至 Tracker详情标题之上；chevron 方向随布局取收起方向 list↑/traditional↓、与右上角关闭按钮同 `close` 事件，卡片总高 240px/移动端 180px 不变） |
+| `components/TrackerDetailCard.vue` | 列表/传统视图共用的 Tracker 完整详情弹框：标题、关闭按钮、Tracker/文件/Peers 页签、内容区、错误原因提示、Tracker 名称与 URL、Announce/Scrape 状态、汇报按钮及统一状态语义；✨2026-08-27 命中可视化：`matched_domain`（snake/camel 双读）命中行加 `tracker-row-matched` 高亮与「命中筛选」标签（tooltip 显示命中域名）；通过 `layout` 仅控制两种定位方式；✨2026-09-06 文件/Peers 页签实现：数据经 `files-state`/`peers-state` props 聚合传入（卡片仍零 API 调用），文件表格（名称省略/`formatFileSize`/`el-progress` 细条 clamp 0~100）与 Peers 表格（地址/客户端/进度/双速度，0 速兜底 `-`），loading/错误/空三态 + 更新失败保留旧数据的 stale 提示，超 1000 行 computed 截断并提示总数，刷新按钮 `$emit('refresh', tab)`；✨2026-09-06（第二批）文件页签三列排序（列头按钮循环 升序→降序→还原，先筛选后排序互不禁用）+文件名模糊搜索框（大小写不敏感、no-match 态工具条常驻可改关键词、计数/截断提示随命中数更新，父级清数据时视图态复位）；顶部整行收起条 `.tracker-collapse-bar` L10（2026-09-06 用户反馈由底部上移至 Tracker详情标题之上；chevron 方向随布局取收起方向 list↑/traditional↓、与右上角关闭按钮同 `close` 事件，卡片总高 240px/移动端 180px 不变）；✨2026-09-09 新增「媒体库」页签（`media-state` props 聚合 MoviePilot 整理关联：标题/季集/整理方式/媒体库与源路径/实例，整理失败标记，三态+stale 同文件页签） |
 | `components/SetLocationDialog.vue` | 设置保存位置对话框 |
 | `components/GlobalReplaceTrackerDialog.vue` | 全局替换 Tracker 对话框 |
 | `components/TorrentDetailDialog.vue` | 种子详情对话框 |
@@ -52,7 +52,7 @@
 | `mixins/torrentBatch.ts` | 批量操作薄封装层；异步删除处理占用跳过统计、提交即刷新与无任务短路 |
 | `mixins/columnResize.ts` | 列宽拖拽 mixin（列表/传统两视图共用）：th 右缘手柄拖拽调宽、mouseup 一次性写入 localStorage（key 由子类覆写 `columnWidthStorageKey`，默认宽度覆写 `defaultColumnWidths`）；双击恢复单列默认、`resetColumnWidths` 供列设置菜单整体重置；拖拽中 body 加 `column-resizing` 全局光标，beforeDestroy 成对解绑 |
 | `mixins/speedPolling.ts` | 实时速度轮询 mixin：两视图重复的 1 秒链式轮询单点维护（`loadActiveSpeed` 由子类实现），暂停/销毁期间在途请求不再重启定时器，后台标签页停止轮询、恢复可见先补一次刷新 |
-| `mixins/detailTabsData.ts` | TrackerDetailCard 文件/Peers 页签数据 mixin（class mixin L56，子类提供 `currentRow`/`activeDetailTab`）：文件按 `downloader_id:hash` 键控懒加载一次+手动刷新，Peers 切入立即拉取并 5s 链式轮询（L171，请求完成后再 arm 不堆叠）；`@Watch` 页签切换与 `currentRow` 三向（置空停轮询清数据/换种子失效缓存/卸载 beforeDestroy 兜底），请求序号+当前键双重守卫丢弃过期响应，信封 404 自动停轮询（兜住列表模式删除当前种子未清 currentRow 缺口）；⚠️ visibility handler 必须方法内建闭包——类字段箭头在 vue-class-component 字段默认值共享下捕获幽灵 this（2026-09-06 实证） |
+| `mixins/detailTabsData.ts` | TrackerDetailCard 文件/Peers 页签数据 mixin（class mixin L56，子类提供 `currentRow`/`activeDetailTab`）：文件按 `downloader_id:hash` 键控懒加载一次+手动刷新，Peers 切入立即拉取并 5s 链式轮询（L171，请求完成后再 arm 不堆叠）；`@Watch` 页签切换与 `currentRow` 三向（置空停轮询清数据/换种子失效缓存/卸载 beforeDestroy 兜底），请求序号+当前键双重守卫丢弃过期响应，信封 404 自动停轮询（兜住列表模式删除当前种子未清 currentRow 缺口）；⚠️ visibility handler 必须方法内建闭包——类字段箭头在 vue-class-component 字段默认值共享下捕获幽灵 this（2026-09-06 实证）；✨2026-09-09 新增 media 页签分支（MoviePilot 关联：`getTorrentMoviePilotAssociations` 键控懒加载同文件页签骨架、空列表为合法业务态不重拉、`TrackerDetailTabValue` 扩 'media'） |
 | `mixins/errorTooltipDismiss.ts` | 错误原因 tooltip 收起 mixin（50 行）：window 捕获阶段监听 scroll/wheel，滚动时关闭两视图 `torrentErrorTooltips` 引用；beforeDestroy 成对解绑，避免全局监听残留 |
 | `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测）；✨2026-08-20 展示对齐判定新增共享 helper：`hasTrackerError` L747、`showTrackerErrorTag` L768（error 状态不打标）、`getTorrentErrorReason` L778（errorReason → tracker 消息 → 兜底回退链，两视图委托调用）；✨2026-08-27 新增 `countMatchedTrackerRows` L757（统计含 tracker 域名筛选命中标记的行数，供两视图 `[tracker-filter]` 观察日志）；✨2026-08-29 新增 `buildSpeedSnapshot` L636 的 200/206 增量合并与终态归一、`collectRuntimeStateReconcileCandidates` L551 的复合键连续未命中候选收敛；✨2026-08-30 新增 `RuntimeListMembershipTracker` L351 / `refresh()` L405，以完整快照建立分页外基线、206 增量合并并串行触发权威列表刷新；✨2026-09-06 新增 `TerminalReloadTracker` L444（终态整表刷新按 downloader_id+hash 复合键去重，缺 downloaderId 退化 hash 键有界双触发）与 `isTorrentRowEffectivelyComplete` L596（行级终态保守谓词：完成证据优先、折叠后状态仅 completed/seeding 命中，刻意不等于 reconcile 候选口径反向），供两视图 `applySpeedUpdates` 转移判定与终态触发门控 |
 | `utils/traditionalTorrentIdentity.ts` | 任务行标识（infoId + downloaderId + hash） |
@@ -111,7 +111,9 @@
 | `tasks/index.vue` | 任务管理主页（`TaskManage` L1002）：任务日志统计摘要使用 `btdeck_task_log_stats_collapsed` 持久化折叠状态；`handleViewLogs` L1316 记录可见任务筛选，`resetLogQuery` L1901 / `clearLogTaskFilter` L1917 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮 |
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L373）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
-| `settings/index.vue` | 全局设置页（`Settings`） |
+| `settings/index.vue` | 全局设置页（`Settings`；✨2026-09-09 新增 MoviePilot 页签） |
+| `settings/components/McpSettingsPanel.vue` | MCP 服务配置面板（W1；全局/能力开关+CAS+kill switch 横幅；2026-09-09 补记漂移） |
+| `settings/components/MoviePilotPanel.vue` ✨2026-09-09 | MoviePilot 集成面板：全局开关 CAS（409 自动重载）、实例卡片（启用开关/删除二次确认/同步统计与错误）、MP→BtDeck 下载器映射内联编辑（保存触发后端重解析）、路径反查卡（任务快照/未关联标签）；demo 只读占位；移动端经包装自动同源 |
 | `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框；✨2026-08-27 simple 表单补 Tracker 域名多选（AdvancedMultiSelect，options 懒加载 `/torrents/tracker-domains`，编辑回填 + buildConditions 写入，修复模板保存丢失 tracker 筛选） |

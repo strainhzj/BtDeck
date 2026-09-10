@@ -1,9 +1,9 @@
 # frontend/api — axios API 封装
 
-> 13 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`。
+> 16 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`（✨2026-09-09 计数校准：含本批 moviepilot 与 health/mcp-settings 历史漂移）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 关键词速查（13 个 .ts，跳过 torrents_patch.txt）
+## 关键词速查（16 个 .ts，跳过 torrents_patch.txt）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -17,6 +17,9 @@
 | 孤儿文件 orphan | `orphan-files.ts` | `triggerScan` 提交后台 scan_id/task_id，`getScanStatus` 轮询；`getOrphanFolderChildren` 展开后独立分页；`reviewScanGuardrail` 双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
+| 健康诊断 health ✨2026-09-07 | `health.ts` | 诊断导出 blob 下载（携带认证头；本行 2026-09-09 补记漂移） |
+| MCP 配置 mcp-settings ✨2026-09-08 | `mcp-settings.ts` | MCP 配置 GET/PUT（CAS，409 语义注释；能力目录元数据随 GET 下发单一事实源；本行 2026-09-09 补记漂移） |
+| MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.ts` | MoviePilot 联动：设置 GET/PUT（CAS）/实例列表/更新/删除、正向关联（downloaderId+hash）、路径反查（src/dest/both）；分页信封 {total,page,pageSize,list} |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
 | 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |

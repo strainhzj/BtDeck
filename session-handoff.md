@@ -1,3 +1,11 @@
+## 2026-09-10：插件已公开发布（独立仓库 MoviePilot-Plugins-BtDeck）
+
+- 插件源码自 BtDeck 仓库根 `moviepilot-plugin/` 拆出为同级独立仓库并推送：https://github.com/strainhzj/MoviePilot-Plugins-BtDeck（public，main=ed828bb，GPL-3.0，package.v2.json 含 history v1.0.0；线上索引经 GitHub API 验证）。
+- 市场安装：PLUGIN_MARKET 加入仓库地址；本地联调仍可挂载目录走 PLUGIN_LOCAL_REPO_PATHS。
+- BtDeck 侧引用（PLANS/roadmap/feature_list/progress）已同步；BtDeck 未执行 git 提交。剩余待办：真实宿主联调（task .4，阻塞于部署信息四问）。
+
+---
+
 ## 2026-09-09（续十）：MCP W4-d G10 收官——12/12 READY、feature 终态 done（本批含一笔已提交修复 b7bba8d + 收官笔待提交）
 
 ### 交付内容
@@ -21,6 +29,24 @@ MSYS 路径转换改写容器绝对路径（MSYS_NO_PATHCONV=1）；docker cp �
 
 - MCP feature 已收官，无既定下一批。可选跟进：CI w2-strict-linux-build（workflow_dispatch）跑一遍 Linux 制品管线对 b7bba8d 后树做正式 CI 级复验；正式发布时 build-images.sh --release 六处版本一致+干净树要求适用。
 - 用户并行线（MoviePilot 联调 task .4）仍阻塞于部署信息。
+
+## 2026-09-09：MoviePilot 整理联动第一版闭环（代码+自动化测试完成，联调待部署信息）
+
+### 交付内容（本批，未提交；与未提交 MCP W0~W3 改动共存于 dev1.0.7 工作区）
+
+- **BtDeck 后端**：moviepilot_instance/moviepilot_transfer_history 两表 + 迁移 053003337878（head 前进，空库 35 表）；设置服务（moviepilot.integration.v1 fail-closed+CAS）+ 集成服务（握手/幂等 upsert/映射重解析/正反查）；/api/v1/moviepilot/*（principal 门禁已登记路由鉴权覆盖表）；审计枚举 +3。
+- **BtDeck 前端**：MoviePilotPanel 设置页签（开关 CAS/实例/映射/反查）+ 种子详情卡「媒体库」页签（detailTabsData media 分支）。
+- **插件**：moviepilot-plugin/（BtDeckBridge 1.0.0，市场仓库结构根可直接作 PLUGIN_LOCAL_REPO_PATHS 挂载源）；取数自调用宿主 API、凭据复用 BtDeck 登录/刷新、水位+断点+全量重扫。
+- **测试**：后端 28（幂等三态/多下载器不串联/映射重解析/认证矩阵/审计）+ 迁移对称；前端 32 spec+lint+typecheck（不跑 build 防 demo dist）；插件 38 spec。真实宿主联调未执行（task .4 pending）。
+
+### 对上会话未提交 MCP 文件的两处最小修复（非本批功能，已上报）
+
+- app/mcp/catalog.py：`_empty_audit_context` 定义顺序 NameError（模块不可 import）→ 移至类前；补 `spec_by_tool_name`（confirm 门禁引用的未定义函数）。tests/mcp 4 失败 → 1 失败（余 test_concurrent_snapshot_switch_never_tears 属 W3 未竟）。
+
+### 下一批入口
+
+- **联调（task .4）**：需用户提供 MoviePilot V2 完整版本号/部署方式/插件目录挂载可行性/BtDeck 地址容器内可达性；步骤见 PLANS/moviepilot-integration.md §6 与插件 README。
+- 后续功能（保留标记/辅种识别/删除影响预览/事件触发同步）依赖联调后关联数据成型。
 
 ## 2026-09-08（续五）：MCP W3-② 写/高风险工具已落地，待 W3-③ 添加种子
 
@@ -4670,6 +4696,7 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 ### 下一批（W4，task .9）
 
 G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残余 api 依赖清理）、G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期、G10 制品（mcp SDK 入 requirements + 两 spec + 黑盒）、G11 runbook + 观测回滚；同键在途幂等完整矩阵复核（现口径：LRU 只保证完成后重放，在途窗口两次执行，有专项锚定测试）。
+
 ## 2026-09-08 交接：MCP W4 三段（a/b/c）——11/12 门 PASS，G10 制品黑盒环境阻断
 
 ### 已完成（本段四笔提交 + W4-c 待提交见下）
