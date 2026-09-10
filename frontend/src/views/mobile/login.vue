@@ -19,7 +19,6 @@
       />
       <el-button type="primary" class="m-login-button" :loading="loading" @click="submit">登录</el-button>
     </div>
-    <el-button type="text" size="mini" class="m-login-desktop" @click="switchToDesktop">使用桌面版</el-button>
   </div>
 </template>
 
@@ -28,7 +27,6 @@ import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { isDemoMode } from '@/demo/config'
 import { extractErrorMessage } from '@/utils/formatters'
-import { setStoredUiMode } from '@/utils/ui-mode'
 import AppLogo from '@/components/common/AppLogo.vue'
 
 /** 移动登录页（Phase 4 M1）：复用 user store Login action 与既有 token/守卫链路 */
@@ -76,11 +74,6 @@ export default class MobileLogin extends Vue {
     } finally {
       this.loading = false
     }
-  }
-
-  private switchToDesktop(): void {
-    setStoredUiMode('desktop')
-    this.$router.replace('/login').catch(() => undefined)
   }
 }
 </script>
@@ -131,10 +124,5 @@ export default class MobileLogin extends Vue {
   display: block;
   width: 100%;
   margin-top: 8px;
-}
-
-.m-login-desktop {
-  color: var(--color-text-secondary, #6B7280);
-  margin-top: 16px;
 }
 </style>

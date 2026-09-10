@@ -1,7 +1,7 @@
 <template>
   <div class="m-dl-settings">
-    <div v-if="!downloader && !loadFailed" class="m-hint">加载下载器信息…</div>
-    <div v-else-if="!downloader" class="m-detail-empty">
+    <div v-if="!downloader && !isNew && !loadFailed" class="m-hint">加载下载器信息…</div>
+    <div v-else-if="!downloader && !isNew" class="m-detail-empty">
       <div class="m-hint">未找到下载器（可能已被删除）</div>
       <el-button size="small" @click="back">返回</el-button>
     </div>
@@ -9,11 +9,13 @@
       复用桌面 DownloaderSettingsDialog（visible + downloader 契约，append-to-body
       width 94% top 0，天然贴近全屏）：内部自带 basic/speed/pathManagement/
       tagManagement 页签的取数、归一化与保存编排，移动端零重复实现。
+      id=new 时 downloader 传 null 进新增模式（isEdit=false，速度/路径页签
+      锁定与桌面一致；提交由对话框内部自理）。
     -->
     <downloader-settings-dialog
-      v-if="downloader"
+      v-if="isNew || downloader"
       :visible="dialogVisible"
-      :downloader="downloader"
+      :downloader="isNew ? null : downloader"
       @update:visible="onDialogVisibleChange"
     />
   </div>
@@ -29,7 +31,8 @@ import { Downloader } from '@/views/downloader/types'
 /**
  * 移动下载器设置页（Phase 4 M2）：整页复用桌面设置对话框（fullscreen 近似形态），
  * 覆盖基本设置/速度设置(含分时段调度)/路径维护/标签管理全部能力；
- * 关闭对话框即返回移动下载器页。
+ * 关闭对话框即返回移动下载器页（路由无 keep-alive，返回必触发列表重新加载）。
+ * 2026-09-10（mobile-ux-fixes）：id=new 支持新增模式（downloader=null）。
  */
 @Component({
   name: 'MobileDownloaderSettings',
@@ -41,7 +44,13 @@ export default class MobileDownloaderSettings extends Vue {
   private loadFailed = false
 
   mounted(): void {
+    if (this.isNew) return
     this.load()
+  }
+
+  /** 新增模式：跳过查库，直接以 downloader=null 进入设置对话框 */
+  private get isNew(): boolean {
+    return this.$route.params.id === 'new'
   }
 
   private async load(): Promise<void> {

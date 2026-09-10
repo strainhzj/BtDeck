@@ -18,6 +18,7 @@ import path from 'path'
 import AppLogo from '@/components/common/AppLogo.vue'
 import MobileLayout from '@/layout/mobile/index.vue'
 import { NotificationModule } from '@/store/modules/notification'
+import { setPlatformCapabilityCacheForTesting, resetPlatformCapabilityCache } from '@/api/platform-capabilities'
 
 jest.mock('@/store/modules/notification', () => ({
   NotificationModule: {
@@ -53,6 +54,7 @@ describe('layout/mobile/MobileLayout', () => {
     jest.clearAllMocks()
     jest.useRealTimers()
     setMockUnread(0)
+    resetPlatformCapabilityCache()
   })
 
   it('渲染四个底部 Tab（仪表盘/下载器/种子/通知）', () => {
@@ -82,38 +84,52 @@ describe('layout/mobile/MobileLayout', () => {
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
   })
 
-  it('桌面版出口：写 desktop 偏好并跳桌面仪表盘（不自锁）', async() => {
+  it('桌面版入口全部移除（mobile-ux-fixes 2026-09）：顶栏/抽屉出口与桌面页签分组不再渲染', async() => {
     const wrapper = mountLayout('/m/dashboard')
-    const desktopButton = wrapper.findAll('.mobile-header-desktop').at(0)
-    desktopButton.trigger('click')
-    await wrapper.vm.$nextTick()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-desktop-btn').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-footer').exists()).toBe(false)
+    expect((wrapper.vm as any).desktopMenuItems).toBeUndefined()
+    expect(wrapper.text()).not.toContain('桌面版')
   })
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉，抽屉含移动组 11 项 + 桌面组 2 项完整菜单（系统设置移动化）', async() => {
+  it('汉堡按钮打开抽屉：桌面分组已移除；能力 fail-closed 下仅渲染 9 项（回收站/孤儿文件隐藏）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).drawerVisible).toBe(true)
 
+    // 能力矩阵未加载（cache=null）时 FILESYSTEM 能力 fail-closed：回收站/孤儿文件隐藏
     const items = wrapper.findAll('.mobile-menu-item')
-    expect(items.length).toBe(13)
-    const mobileLabels = (wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)
-    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置'])
-    const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
-    expect(desktopLabels).toEqual(
-      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）'])
+    expect(items.length).toBe(9)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '日志', 'Tracker关键词', '定时任务', '系统设置']
     )
-    // 已移动化/裁撤的页面不在桌面组（系统设置已移动化、查询模板已裁撤仅保留高级搜索）
-    expect(desktopLabels).not.toContain('系统设置')
-    expect(desktopLabels).not.toContain('查询模板')
-    expect(desktopLabels).not.toContain('孤儿文件')
-    expect(desktopLabels).not.toContain('下载器管理')
-    expect(desktopLabels).not.toContain('定时任务')
+    expect(wrapper.text()).not.toContain('全部功能')
+  })
+
+  it('能力矩阵已加载且支持时：抽屉渲染全部 11 项移动菜单', async() => {
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: {
+        level3_recycle: { label: '三级回收', level: 'supported' },
+        orphan_files: { label: '孤儿文件', level: 'supported' }
+      },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.find('.mobile-header-menu').trigger('click')
+    await wrapper.vm.$nextTick()
+    const items = wrapper.findAll('.mobile-menu-item')
+    expect(items.length).toBe(11)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置']
+    )
   })
 
   it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
@@ -134,27 +150,6 @@ describe('layout/mobile/MobileLayout', () => {
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
     expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
-  })
-
-  it('抽屉点桌面功能项：关闭抽屉、push 桌面路径且不写 ui_mode 偏好', async() => {
-    const wrapper = mountLayout('/m/dashboard')
-    const items = wrapper.findAll('.mobile-menu-item')
-    // 移动组 11 项之后为桌面组，首项"种子列表（桌面）"
-    items.at(11).trigger('click')
-    await wrapper.vm.$nextTick()
-    expect((wrapper.vm as any).drawerVisible).toBe(false)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/torrents')
-    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBeNull()
-  })
-
-  it('抽屉底部"完整桌面版"与头部出口行为一致（写偏好）', async() => {
-    const wrapper = mountLayout('/m/dashboard')
-    const footerBtn = wrapper.find('.mobile-menu-desktop-btn')
-    footerBtn.trigger('click')
-    await wrapper.vm.$nextTick()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
   })
 
   // ============ 主题色契约（与桌面端同源） ============

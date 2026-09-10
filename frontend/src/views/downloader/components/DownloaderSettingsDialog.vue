@@ -39,7 +39,7 @@
       </div>
     </template>
 
-    <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
+    <el-tabs v-model="activeTab" :tab-position="tabsPosition" class="settings-tabs">
       <!-- 标签页1: 基本信息（合并后） -->
       <el-tab-pane name="basic">
         <span slot="label" class="workspace-tab-label">
@@ -644,6 +644,13 @@ export default class DownloaderSettingsDialog extends Vue {
   // 当前激活的标签页
   private activeTab = 'basic'
 
+  // ============ ≤780 顶部横向页签（mobile-ux-fixes 2026-09） ============
+  // 手机上左列 64px 图标页签不可读（无文字），基本信息/速度设置/路径管理/标签
+  // 分类管理四页签改为顶部横向滚动（图标+文字）；宽屏保持左列布局不变。
+  private tabsPosition: 'left' | 'top' = 'left'
+  private tabsMediaQuery: MediaQueryList | null = null
+  private tabsMediaHandler: ((mq: MediaQueryList) => void) | null = null
+
   // 提交状态
   private submitting = false
 
@@ -680,6 +687,40 @@ export default class DownloaderSettingsDialog extends Vue {
 
   created(): void {
     loadPlatformCapabilities().then(() => this.$forceUpdate()).catch(() => this.$forceUpdate())
+  }
+
+  mounted(): void {
+    if (typeof window.matchMedia === 'function') {
+      const mql = window.matchMedia('(max-width: 780px)')
+      this.tabsPosition = mql.matches ? 'top' : 'left'
+      this.tabsMediaHandler = (mq: MediaQueryList) => {
+        this.tabsPosition = mq.matches ? 'top' : 'left'
+      }
+      this.tabsMediaQuery = mql
+      const legacy = mql as MediaQueryList & {
+        addListener?: (listener: (mq: MediaQueryList) => void) => void
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.addListener === 'function') {
+        legacy.addListener(this.tabsMediaHandler)
+      }
+    }
+  }
+
+  beforeDestroy(): void {
+    if (this.tabsMediaQuery && this.tabsMediaHandler) {
+      const mql = this.tabsMediaQuery
+      const legacy = mql as MediaQueryList & {
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.removeEventListener === 'function') {
+        mql.removeEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.removeListener === 'function') {
+        legacy.removeListener(this.tabsMediaHandler)
+      }
+    }
   }
 
   // 当前设置
@@ -2173,24 +2214,55 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
+  /* ≤780 顶部横向页签（tabsPosition=top）：图标+文字全可读、横向滚动；
+     左列 .is-left 规则在 top 布局下不命中，无需覆盖 */
   .settings-tabs {
-    ::v-deep > .el-tabs__header.is-left {
-      flex-basis: 64px;
-      width: 64px;
-      padding: 12px 7px;
+    flex-direction: column;
+
+    ::v-deep > .el-tabs__content {
+      width: 100%;
     }
 
-    ::v-deep > .el-tabs__header .el-tabs__item.is-left {
-      justify-content: center;
-      height: 52px;
-      padding: 0 !important;
+    ::v-deep > .el-tabs__header.is-top {
+      box-sizing: border-box;
+      flex: 0 0 auto;
+      width: 100%;
+      margin: 0 0 6px;
+      border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.11);
+      background: rgba(249, 250, 251, 0.72);
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-wrap::after {
+      display: none;
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav {
+      display: flex;
+      white-space: nowrap;
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__item.is-top {
+      height: 42px;
+      line-height: 42px;
+      padding: 0 12px !important;
+      color: var(--color-text-secondary);
+      font-size: 13px;
+      text-align: left !important;
+
+      &.is-active {
+        color: var(--color-primary);
+      }
+
+      &.is-disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
     }
   }
 
   .workspace-tab-label {
-    justify-content: center;
+    justify-content: flex-start;
 
-    &__copy,
     &__lock {
       display: none;
     }

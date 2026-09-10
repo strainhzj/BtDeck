@@ -13,6 +13,32 @@
         筛选<template v-if="activeFilterCount">（{{ activeFilterCount }}）</template>
       </el-button>
       <el-button size="small" icon="el-icon-refresh" :loading="loading" @click="reload">刷新</el-button>
+      <!-- 快捷操作（与桌面种子页同语义四项）：查重/排查是列表模式切换，快捷删重是独立弹窗 -->
+      <el-dropdown trigger="click" @command="handleQuickActionCommand">
+        <el-button size="small" icon="el-icon-s-operation">
+          快捷<i class="el-icon-arrow-down el-icon--right" />
+        </el-button>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="toggle-duplicates">
+            <i v-if="listMode === 'duplicates'" class="el-icon-check" />查找重复任务
+          </el-dropdown-item>
+          <el-dropdown-item command="inspect-same-content">
+            <i v-if="listMode === 'same-content'" class="el-icon-check" />辅种异常排查
+          </el-dropdown-item>
+          <el-dropdown-item command="inspect-single-errors">
+            <i v-if="listMode === 'single-errors'" class="el-icon-check" />错误单种排查
+          </el-dropdown-item>
+          <el-dropdown-item command="delete-duplicates" divided>快捷删除重复种子</el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
+    </div>
+
+    <!-- 列表模式横幅：查重/排查激活时提示口径与结果数，可一键退出 -->
+    <div v-if="listMode !== 'normal'" class="m-mode-banner">
+      <span class="m-mode-banner-text">
+        {{ modeNoun }}模式<template v-if="!loading"> · 共 {{ total }} 条</template>
+      </span>
+      <el-button type="text" size="mini" class="m-mode-banner-exit" @click="exitListMode">退出</el-button>
     </div>
 
     <!-- 简单搜索（自移动高级搜索页迁入）：与桌面 torrents 快捷筛选同字段集（name/下载器/状态/tracker 域） -->
@@ -66,7 +92,8 @@
     </div>
 
     <div v-if="!loading && list.length === 0" class="m-hint m-empty">
-      <template v-if="hasFilters">没有匹配的种子</template>
+      <template v-if="listMode !== 'normal'">未发现{{ modeNoun }}</template>
+      <template v-else-if="hasFilters">没有匹配的种子</template>
       <template v-else-if="optionsLoaded && downloaderOptions.length === 0">
         <div class="m-empty-title">还没有种子</div>
         <div class="m-empty-desc">先添加下载器，同步后即可在这里管理种子</div>
@@ -75,7 +102,7 @@
         </el-button>
       </template>
       <template v-else-if="optionsLoaded">
-        暂无种子——去<el-button type="text" size="mini" class="m-empty-link" @click="goDesktopTorrents">桌面版</el-button>添加，或等待下载器同步
+        暂无种子——添加下载器并同步后，种子会出现在这里
       </template>
       <template v-else>暂无种子</template>
     </div>
@@ -138,15 +165,23 @@
       :busy="anyBusy"
       @confirm="confirmDelete"
     />
+
+    <!-- 快捷删除重复种子（与桌面同款自包含弹窗；D2 批次补手机样式适配） -->
+    <quick-delete-duplicates-dialog
+      :visible.sync="quickDeleteVisible"
+      @close="quickDeleteVisible = false"
+      @deleted="onQuickDeleted"
+    />
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Mixins } from 'vue-property-decorator'
+import { Component, Mixins, Watch } from 'vue-property-decorator'
 import {
   getTorrentList,
   getTrackerDomains,
   getActiveTorrents,
+  getDuplicateTorrents,
   reconcileRuntimeTorrentStates,
   pauseTorrents,
   resumeTorrents,
@@ -154,8 +189,7 @@ import {
   Torrent
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
-import { extractErrorMessage, formatSpeed, normalizeTorrentStatus } from '@/utils/formatters'
-import { setStoredUiMode } from '@/utils/ui-mode'
+import { extractErrorMessage, formatSpeed, normalizeTorrent, normalizeTorrentStatus } from '@/utils/formatters'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import {
   buildSpeedSnapshot,
@@ -171,6 +205,7 @@ import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import { WindowInfiniteScroll } from '@/views/mobile/mixins/window-infinite-scroll'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog.vue'
+import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
 import {
@@ -183,6 +218,14 @@ import {
 const PAGE_SIZE = 20
 /** 返回顶部浮标显示阈值（滚动容器 scrollTop） */
 const BACK_TOP_THRESHOLD_PX = 600
+
+/**
+ * 列表数据源模式（快捷操作切换，三模式互斥、normal 为常规 getList）：
+ * duplicates 走 POST /torrents/duplicates（1-based page/pageSize 分页），
+ * same-content/single-errors 走 getList 的 same_content_only/single_error_only
+ * 过滤参数——与桌面 index.vue 快捷操作同语义。
+ */
+type MobileTorrentListMode = 'normal' | 'duplicates' | 'same-content' | 'single-errors'
 
 interface SelectOption {
   label: string
@@ -207,7 +250,11 @@ interface SelectOption {
  */
 @Component({
   name: 'MobileTorrents',
-  components: { 'm-pull-indicator': MobilePullIndicator, 'm-delete-level-dialog': MobileDeleteLevelDialog }
+  components: {
+    'm-pull-indicator': MobilePullIndicator,
+    'm-delete-level-dialog': MobileDeleteLevelDialog,
+    'quick-delete-duplicates-dialog': QuickDeleteDuplicatesDialog
+  }
 })
 export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin, WindowInfiniteScroll) {
   private list: Torrent[] = []
@@ -220,6 +267,10 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   /** 四级删除对话框：目标行与可见性（confirm 由 DeleteLevelDialog 二次确认后回调） */
   private deleteDialogVisible = false
   private deleteTarget: Torrent | null = null
+  /** 快捷删除重复种子弹窗可见性（自包含组件，自行拉取启用中的下载器） */
+  private quickDeleteVisible = false
+  /** 列表数据源模式（快捷操作切换；reload/fetchPage 按模式分发数据源） */
+  private listMode: MobileTorrentListMode = 'normal'
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -228,6 +279,9 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
   private downloaderOptions: SelectOption[] = []
   private trackerDomainOptions: string[] = []
+  /** tracker 域名候选懒加载状态（失败不清 loaded 标记，下次展开自然重试） */
+  private trackerDomainsLoaded = false
+  private trackerDomainsLoading = false
   private runtimeStateMisses: Record<string, number> = {}
   private runtimeStateReconcileInFlight = false
   private runtimeListMembership = new RuntimeListMembershipTracker()
@@ -241,7 +295,10 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   protected speedPollIntervalMs = 10000
 
   mounted(): void {
-    this.loadFilterOptions()
+    // 下载器选项 mount 即拉（纯 DB 轻查询，空态判断需要区分"没有下载器"）；
+    // tracker 域名候选懒加载——后端是 TrackerInfo 全表扫描，仅在用户展开筛选
+    // 面板时才值得付出（配合后端 TTL 缓存，多客户端挂载不再放大全表扫描）
+    this.loadDownloaderOptions()
     this.reload()
     // 实际滚动容器是 window（.mobile-layout min-height:100vh 会被长列表撑高，
     // .mobile-content 不产生内部滚动——2026-08-28 模拟器实测 scrollHeight==clientHeight）
@@ -412,27 +469,45 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     return count
   }
 
-  private async loadFilterOptions(): Promise<void> {
+  private async loadDownloaderOptions(): Promise<void> {
     try {
-      const [dlRes, domainRes] = await Promise.all([
-        getDownloaderList({ page: 1, pageSize: 100 }),
-        getTrackerDomains()
-      ])
-      if (dlRes.code === '200' && Array.isArray(dlRes.data)) {
-        this.downloaderOptions = dlRes.data.map(
+      const res = await getDownloaderList({ page: 1, pageSize: 100 })
+      if (res.code === '200' && Array.isArray(res.data)) {
+        this.downloaderOptions = res.data.map(
           (d: { id: string, nickname?: string | null }) => ({
             label: String(d.nickname || d.id),
             value: d.id
           })
         )
       }
-      if (domainRes.code === '200' && Array.isArray(domainRes.data)) {
-        this.trackerDomainOptions = domainRes.data
+    } catch {
+      // 选项加载失败不阻塞列表（空态判断退化为"暂无种子"）
+    } finally {
+      this.optionsLoaded = true
+    }
+  }
+
+  /** 首次展开筛选面板时拉取 tracker 域名候选（页内缓存；失败下次展开重试） */
+  private async ensureTrackerDomainOptions(): Promise<void> {
+    if (this.trackerDomainsLoaded || this.trackerDomainsLoading) return
+    this.trackerDomainsLoading = true
+    try {
+      const res = await getTrackerDomains()
+      if (res.code === '200' && Array.isArray(res.data)) {
+        this.trackerDomainOptions = res.data
+        this.trackerDomainsLoaded = true
       }
     } catch {
       // 选项加载失败不阻塞手输条件
     } finally {
-      this.optionsLoaded = true
+      this.trackerDomainsLoading = false
+    }
+  }
+
+  @Watch('filtersExpanded')
+  private onFiltersExpandedChange(expanded: boolean): void {
+    if (expanded) {
+      this.ensureTrackerDomainOptions()
     }
   }
 
@@ -467,6 +542,11 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
 
   private async fetchPage(replace = false): Promise<void> {
+    // 查重模式走独立端点（1-based page/pageSize 分页），其余模式（含排查过滤）走 getList
+    if (this.listMode === 'duplicates') {
+      await this.fetchDuplicatePage(replace)
+      return
+    }
     this.loading = true
     try {
       const res = await getTorrentList({
@@ -474,6 +554,11 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
         limit: PAGE_SIZE,
         sort_by: 'added_date',
         sort_order: 'desc',
+        // 卡片不展示 tracker 明细：跳过后端批量预取与序列化（详情页 refreshBase
+        // 全量回查补齐 tracker 明细，快照短暂缺省属可接受）
+        with_trackers: false,
+        ...(this.listMode === 'same-content' ? { same_content_only: true } : {}),
+        ...(this.listMode === 'single-errors' ? { single_error_only: true } : {}),
         ...(this.filters.name ? { name_like: this.filters.name } : {}),
         ...(this.filters.downloaders.length ? { downloader_id: this.filters.downloaders } : {}),
         ...(this.filters.statuses.length ? { status: this.filters.statuses } : {}),
@@ -491,6 +576,82 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
       // 每页完成后检查：内容仍不足一屏时主动补页（window 滚动驱动，无指令观察器）
       this.maybeLoadMore()
     }
+  }
+
+  /** duplicates 模式分页体：skip/limit（getList 口径）换算为 1-based page/pageSize */
+  private async fetchDuplicatePage(replace: boolean): Promise<void> {
+    this.loading = true
+    try {
+      const res = await getDuplicateTorrents({
+        page: replace ? 1 : Math.floor(this.list.length / PAGE_SIZE) + 1,
+        pageSize: PAGE_SIZE,
+        sort_by: 'added_date',
+        sort_order: 'desc',
+        ...(this.filters.name ? { name_like: this.filters.name } : {}),
+        ...(this.filters.downloaders.length ? { downloader_id: this.filters.downloaders.join(',') } : {}),
+        ...(this.filters.statuses.length ? { status: this.filters.statuses.join(',') } : {})
+      })
+      if (res.code === '200' && res.data) {
+        const pageList = (res.data.list ?? []).map(normalizeTorrent)
+        this.list = replace ? pageList : this.list.concat(pageList)
+        this.total = res.data.total ?? 0
+      }
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.loading = false
+      this.maybeLoadMore()
+    }
+  }
+
+  // ============ 快捷操作（与桌面 index.vue 同语义四项） ============
+
+  private get modeNoun(): string {
+    switch (this.listMode) {
+      case 'duplicates':
+        return '重复种子'
+      case 'same-content':
+        return '同内容种子'
+      case 'single-errors':
+        return '错误单种'
+      default:
+        return ''
+    }
+  }
+
+  private async handleQuickActionCommand(command: string): Promise<void> {
+    // 模式切换等效换筛选：重置终态刷新去重
+    this.terminalReloadedHashes.clear()
+    if (command === 'delete-duplicates') {
+      this.quickDeleteVisible = true
+      return
+    }
+    const modeByCommand: Record<string, MobileTorrentListMode> = {
+      'toggle-duplicates': 'duplicates',
+      'inspect-same-content': 'same-content',
+      'inspect-single-errors': 'single-errors'
+    }
+    const next = modeByCommand[command]
+    if (!next) return
+    // 再点当前模式 = 退出（三模式互斥，切换即退出旧模式）
+    this.listMode = this.listMode === next ? 'normal' : next
+    await this.reload()
+    if (this.listMode !== 'normal') {
+      const prefix = this.listMode === 'duplicates' ? '查找完成，共找到' : '排查完成，共找到'
+      this.$message.success(`${prefix} ${this.total} 条${this.modeNoun}`)
+    }
+  }
+
+  private async exitListMode(): Promise<void> {
+    if (this.listMode === 'normal') return
+    this.terminalReloadedHashes.clear()
+    this.listMode = 'normal'
+    await this.reload()
+  }
+
+  /** 快捷删重完成回调：刷新当前模式列表（查重模式下重取去重结果） */
+  private async onQuickDeleted(): Promise<void> {
+    await this.reload()
   }
 
   /** 卡片点击：快照缓存整行（详情页含 trackerInfo 的数据源），带复合键进详情 */
@@ -596,13 +757,8 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
 
   private goAddDownloader(): void {
     this.$router
-      .replace({ path: '/m/downloader', query: { create: '1' } })
+      .replace('/m/downloader/settings/new')
       .catch(() => undefined)
-  }
-
-  private goDesktopTorrents(): void {
-    setStoredUiMode('desktop')
-    this.$router.replace('/torrents').catch(() => undefined)
   }
 
   private statusLabel(status: string): string {
@@ -628,6 +784,30 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
 
 .m-toolbar-filter {
   flex: 1;
+}
+
+/* 列表模式横幅（查重/排查激活时）：口径提示 + 结果数 + 一键退出 */
+.m-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: rgba(5, 150, 105, 0.08);
+  color: var(--color-primary, #059669);
+}
+
+.m-mode-banner-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.m-mode-banner-exit {
+  color: var(--color-primary, #059669);
+  font-weight: 600;
+  padding: 4px 6px;
 }
 
 .m-torrents-filters {
@@ -656,6 +836,11 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
+  /* 长列表渲染减负：视口外卡片跳过布局/绘制（content-visibility，Chromium WebView
+     支持）。contain-intrinsic-size 用实测平均卡片高度兜底估算，auto 前缀保留最近
+     渲染尺寸——scrollHeight 估算偏差过大时会误导 window-infinite-scroll 的补页判定 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 148px;
 }
 
 .m-torrent-name {
@@ -770,12 +955,6 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
 
 .m-empty-cta {
   margin-top: 2px;
-}
-
-.m-empty-link {
-  padding: 0 2px;
-  font-size: 12px;
-  vertical-align: baseline;
 }
 
 .m-hint {

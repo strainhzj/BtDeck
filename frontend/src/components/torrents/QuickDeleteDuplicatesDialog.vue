@@ -7,6 +7,7 @@
       :before-close="handleClose"
       :close-on-click-modal="false"
       append-to-body
+      custom-class="quick-delete-duplicates-dialog"
     >
       <!-- 配置区 -->
       <div class="qdd-config">
@@ -603,5 +604,53 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
 .qdd-pagination {
   margin-top: 12px;
   text-align: right;
+}
+
+/* ---- 手机适配（mobile-ux-fixes 2026-09）：分组双列纵排、分组列表高度按视口、
+   底部按钮全宽加大触控 ---- */
+@media (max-width: 768px) {
+  .qdd-summary {
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .qdd-groups {
+    max-height: 46vh;
+  }
+
+  .qdd-group-body {
+    flex-direction: column;
+
+    .qdd-col + .qdd-col {
+      border-left: none;
+      border-top: 1px dashed var(--color-border-primary, #ebeef5);
+    }
+  }
+
+  .qdd-pagination {
+    text-align: center;
+  }
+
+  .dialog-footer {
+    display: flex;
+    gap: 8px;
+
+    .el-button {
+      flex: 1;
+      margin-left: 0;
+      min-height: 40px;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+/* 弹窗外壳挂 body（append-to-body），scoped 样式不达；宽度来自 el-dialog width
+   prop 的内联 style（820px），必须 !important 覆盖。仅 ≤768 生效，桌面不变。 */
+@media (max-width: 768px) {
+  .quick-delete-duplicates-dialog {
+    width: 94% !important;
+    margin-top: 6vh !important;
+  }
 }
 </style>

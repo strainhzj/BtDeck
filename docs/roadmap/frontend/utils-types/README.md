@@ -28,6 +28,7 @@
 #### request.ts 关键（axios/Demo 分流封装，L1-300）
 
 - L20 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
+- L179~ 幂等 GET 瞬态失败自动重试（✨2026-09-10）：`isTransientRetryEligible` 仅 GET + 网络错误/502/503/504 触发、超时（ECONNABORTED）与写操作不重试，重试落响应拦截器内静默一次（800ms 延迟），用尽才走 toast——高负载伴侣模式的红色 toast 缓解
 - L49 `NETWORK_TOAST_THROTTLE_MS` + L54 `notifyNetworkError`：网络错误 toast 3 秒同文案节流（断网+1 秒轮询不洪泛，窗口到期复位）
 - L108 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，`isDefiniteFailure` = ApiError code '401' 才判死）
 - L90 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；改用 `UserModule.ExpireSession()`（保留共享 cookie——refresh 防跨标签轮换竞态、access 防他标签 syncTokenFromCookie 级联误杀）

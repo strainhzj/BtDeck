@@ -203,6 +203,7 @@ export interface TorrentListParams {
   active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
   same_content_only?: boolean  // 仅显示同名、同大小且不同 InfoHash 的种子
   single_error_only?: boolean  // 仅显示错误且全局同内容唯一的种子
+  with_trackers?: boolean  // 行内是否携带 tracker_info 明细（移动端列表传 false 瘦身，默认 true）
   skip?: number
   limit?: number
   sort_by?: string

@@ -13,6 +13,7 @@ import {
   getTorrentList,
   getTrackerDomains,
   getActiveTorrents,
+  getDuplicateTorrents,
   reconcileRuntimeTorrentStates
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
@@ -21,6 +22,7 @@ jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
   getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
+  getDuplicateTorrents: jest.fn(),
   reconcileRuntimeTorrentStates: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
@@ -85,6 +87,11 @@ describe('views/mobile/MobileTorrents', () => {
     Object.defineProperty(document.documentElement, 'scrollTop', { value: 0, configurable: true })
     jest.mocked(getTorrentList).mockReset()
     jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [listTorrent], total: 1 } } as never)
+    jest.mocked(getDuplicateTorrents).mockReset()
+    jest.mocked(getDuplicateTorrents).mockResolvedValue({
+      code: '200',
+      data: { list: [listTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
     jest.mocked(getTrackerDomains).mockReset()
     jest.mocked(getTrackerDomains).mockResolvedValue({ code: '200', data: ['tracker.example.com'] } as never)
     jest.mocked(getDownloaderList).mockReset()
@@ -116,12 +123,26 @@ describe('views/mobile/MobileTorrents', () => {
     expect(wrapper.text()).toContain('列表种子')
   })
 
-  it('筛选选项加载：下载器昵称与 Tracker 域候选', async() => {
+  it('筛选选项：下载器 mount 即拉；tracker 域名懒加载到首次展开筛选面板', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
+    // mount 阶段：仅下载器昵称（空态判断需要），tracker 域名全表扫描不预拉
     expect(vm.downloaderOptions).toEqual([{ label: 'QB', value: 'd1' }])
+    expect(getTrackerDomains).not.toHaveBeenCalled()
+    // 首次展开筛选面板：拉取 tracker 域候选并页内缓存
+    vm.filtersExpanded = true
+    await Vue.nextTick()
+    await flushLifecycle()
+    expect(getTrackerDomains).toHaveBeenCalledTimes(1)
     expect(vm.trackerDomainOptions).toEqual(['tracker.example.com'])
+    // 再次收起/展开：不重复请求
+    vm.filtersExpanded = false
+    await Vue.nextTick()
+    vm.filtersExpanded = true
+    await Vue.nextTick()
+    await flushLifecycle()
+    expect(getTrackerDomains).toHaveBeenCalledTimes(1)
   })
 
   it('工具栏「筛选」按钮展开/收起面板', async() => {
@@ -209,17 +230,109 @@ describe('views/mobile/MobileTorrents', () => {
     expect((wrapper.vm as any).list.length).toBe(2)
   })
 
-  it('筛选选项加载失败静默：不弹错不阻塞列表', async() => {
+  it('快捷操作-查找重复任务：激活走 duplicates 端点（skip/limit 换算 1-based page），再点退出回 getList', async() => {
+    // 首页满页 20 条（不同 hash），下一页换算才有意义（floor(20/20)+1=2）
+    const pageOne = Array.from({ length: 20 }, (_, i) => ({ ...listTorrent, hash: `dup-${i}`, infoId: `dup-i-${i}` }))
+    jest.mocked(getDuplicateTorrents).mockResolvedValue({
+      code: '200',
+      data: { list: pageOne, total: 21, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('toggle-duplicates')
+    await flushLifecycle()
+    expect(getDuplicateTorrents).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
+    expect(vm.listMode).toBe('duplicates')
+    expect(wrapper.text()).toContain('重复种子模式')
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('查找完成，共找到 21 条重复种子')
+
+    // 追加页换算：已加载 20 条 → page 2
+    jest.mocked(getDuplicateTorrents).mockResolvedValue({
+      code: '200',
+      data: { list: [listTorrent], total: 21, page: 2, pageSize: 20 }
+    } as never)
+    await vm.loadMore()
+    await flushLifecycle()
+    expect(getDuplicateTorrents).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    expect(vm.list.length).toBe(21)
+
+    // 再点同命令退出：回到 getList 常规模式
+    jest.mocked(getTorrentList).mockClear()
+    await vm.handleQuickActionCommand('toggle-duplicates')
+    await flushLifecycle()
+    expect(vm.listMode).toBe('normal')
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+  })
+
+  it('快捷操作-排查模式：same_content_only/single_error_only 透传 getList 且三模式互斥', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('inspect-same-content')
+    await flushLifecycle()
+    expect(vm.listMode).toBe('same-content')
+    expect(getTorrentList).toHaveBeenLastCalledWith(expect.objectContaining({ same_content_only: true }))
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('排查完成，共找到 1 条同内容种子')
+
+    // 直接切另一排查模式：无需先退出（互斥）
+    await vm.handleQuickActionCommand('inspect-single-errors')
+    await flushLifecycle()
+    expect(vm.listMode).toBe('single-errors')
+    expect(getTorrentList).toHaveBeenLastCalledWith(expect.objectContaining({ single_error_only: true }))
+    // 横幅与空态口径
+    expect(wrapper.text()).toContain('错误单种')
+  })
+
+  it('快捷操作-快捷删除重复种子：打开自包含弹窗，deleted 回调刷新当前列表', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('delete-duplicates')
+    expect(vm.quickDeleteVisible).toBe(true)
+    expect(getDuplicateTorrents).not.toHaveBeenCalled()
+    await vm.onQuickDeleted()
+    // mount 首拉 + deleted 回调刷新
+    expect(getTorrentList).toHaveBeenCalledTimes(2)
+  })
+
+  it('查重模式空态：不落入「暂无种子」桌面引导文案', async() => {
+    jest.mocked(getDuplicateTorrents).mockResolvedValue({
+      code: '200',
+      data: { list: [], total: 0, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('toggle-duplicates')
+    await flushLifecycle()
+    expect(wrapper.text()).toContain('未发现重复种子')
+    expect(wrapper.text()).not.toContain('暂无种子')
+  })
+
+  it('筛选选项加载失败静默：不弹错不阻塞列表，tracker 域名失败下次展开重试', async() => {
     jest.mocked(getDownloaderList).mockRejectedValue(new Error('network') as never)
     jest.mocked(getTrackerDomains).mockRejectedValue(new Error('network') as never)
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
     expect(vm.downloaderOptions).toEqual([])
-    expect(vm.trackerDomainOptions).toEqual([])
     // 列表照常加载（选项失败不阻塞）
     expect(getTorrentList).toHaveBeenCalledTimes(1)
     expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
+    // 展开面板触发懒加载，失败静默且不清 loaded 标记
+    vm.filtersExpanded = true
+    await Vue.nextTick()
+    await flushLifecycle()
+    expect(getTrackerDomains).toHaveBeenCalledTimes(1)
+    expect(vm.trackerDomainOptions).toEqual([])
+    expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
+    vm.filtersExpanded = false
+    await Vue.nextTick()
+    vm.filtersExpanded = true
+    await Vue.nextTick()
+    await flushLifecycle()
+    expect(getTrackerDomains).toHaveBeenCalledTimes(2)
   })
 
   it('getList 网络异常：提示错误且列表停留空态', async() => {
@@ -526,16 +639,17 @@ describe('views/mobile/MobileTorrents', () => {
     expect(cta.exists()).toBe(true)
     expect(wrapper.text()).toContain('先添加下载器')
     await cta.trigger('click')
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({ path: '/m/downloader', query: { create: '1' } })
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader/settings/new')
     wrapper.destroy()
   })
 
-  it('空态区分：有下载器零种子显示桌面版引导而非 CTA', async() => {
+  it('空态区分：有下载器零种子显示纯文案引导（无 CTA、无桌面版入口）', async() => {
     jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [], total: 0 } } as never)
     const wrapper = mountPage()
     await flushLifecycle()
     expect(wrapper.find('.m-empty-cta').exists()).toBe(false)
-    expect(wrapper.text()).toContain('桌面版')
+    expect(wrapper.text()).toContain('暂无种子')
+    expect(wrapper.text()).not.toContain('桌面版')
     wrapper.destroy()
   })
 

@@ -62,7 +62,7 @@
       加载更多（{{ list.length }}/{{ total }}）
     </el-button>
 
-    <div class="m-log-footnote">统计图表与 CSV/Excel 导出请在桌面版「日志管理」页操作</div>
+    <div class="m-log-footnote">统计图表与 CSV/Excel 导出暂未在移动端提供</div>
   </div>
 </template>
 

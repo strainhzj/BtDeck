@@ -1,5 +1,21 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全绿未提交）
+
+用户验收反馈 7 项手机端问题全部闭环；计划经独立子代理对抗性审查（APPROVE_WITH_AMENDMENTS，5 MAJOR/6 MINOR 全部吸收：Tracker 汇报入口取舍、e2e 纳入验证、duplicates 模式分发、弹层内联宽度覆盖手段、安卓单测可测性先行）。详见 PLANS/mobile-ux-fixes-2026-09.md 与 feature_list `mobile-ux-fixes-2026-09`（6 任务全 done）。
+
+1. **伴侣「版本未知·服务存活检查失败」**：根因实锤——`frontend/nginx.conf:138` `location /health` 前缀匹配静态返回 `”healthy\n”` 吞掉 `/health/live`，安卓 HealthClient JSON 解析 null 恰好渲染该文案（无 HTTP 码后缀与症状吻合）。修复：nginx 改精确匹配 + `/health/` 代理（compose 健康检查不受影响）；双端客户端 `probeWithFallback` 回退 `/api/v1` 免认证别名（旧部署不更新 nginx 也修好）；安卓新增可注入 `HttpCall` 探测点写 JVM 单测（不引 mockwebserver）。
+2. **确认弹框手机适配**：全局 `@media≤768` 一处覆盖全部 `$confirm`（92vw !important 胜 Element 主题类规则——420px 来自类规则非内联，审查 m1 修正了计划的原错误认知）。
+3. **高负载伴侣失败（红色 toast）**：`request.ts` 幂等 GET 瞬态静默重试一次（网络错误/502/503/504；超时与写操作不重试；落拦截器内首次失败不弹 toast）。如实定位为缓解措施，负载根源另行治理。
+4. **种子页提速**：tracker-domains 后端 60s TTL 缓存 + 前端懒加载（首展筛选才拉）；`getList` 新增 `with_trackers`（移动列表瘦身，详情页回查补齐）；卡片 `content-visibility:auto`。
+5. **移动种子页快捷操作**：查找重复任务（skip/limit→page/pageSize 换算）+ 辅种/错误单种排查 + 快捷删重弹窗（手机适配）；reload 按模式分发对齐桌面模式。
+6. **桌面版入口全移除**（用户确认取舍：「Tracker 汇报/测试」自此移动端无导航入口）；「见桌面版」文案 6 处改「暂未在移动端提供」。
+7. **下载器新增/编辑**：统一跳设置页（`/m/downloader/settings/:id|new`，DownloaderSettingsDialog 整页全页签）；≤780 页签改顶部横向带文字；旧 DownloaderDialog.vue 删除。
+
+验证：后端 mypy/black/flake8 绿 + 相关 108 passed；前端 lint/typecheck/build 绿 + 全量 1495 passed；安卓 JVM 单测全绿（新增回退 5 例）；`./init.sh` 过。**存量测试债**：permission-guard 等五套件 HEAD 即红（受控 stash 基线对照批次前后 12 failed/88 passed 完全一致，非本批引入；mobile-delete-level-dialog 有进程级 unhandled rejection）。坑位（Kotlin 嵌套注释、MSYS /tmp 假基线、源码契约字面量断言、toast 节流跨用例、能力 fail-closed 断言）详见 session-handoff。
+
+---
+
 ## 2026-09-08：移动端通知一键已读
 
 - **实现**：`frontend/src/views/mobile/notifications.vue` 在通知列表顶部新增未读摘要和“全部已读”按钮；复用 `markAllAsRead()` / `PUT /notifications/read-all`，成功后就地更新当前已加载通知并重新同步 `NotificationModule` 未读角标。
@@ -7,6 +23,8 @@
 - **并发保护**：用 `markAllVersion` 标记操作代际，列表请求在“全部已读”期间返回旧快照时保留本地已读状态，避免轮询/分页响应回写旧未读标识。
 - **回归**：`frontend/tests/unit/mobile-notifications.spec.ts` 新增成功链路、重复提交、失败重试与并发旧响应覆盖，定向测试 **23 passed**；`npm run typecheck`、`npm run lint -- --no-fix`（含 contract:check、Vue lint、Vuex action lint）通过。
 - **未提交**：本批代码与文档变更尚未执行 Git commit。
+
+---
 
 ## 2026-09-06（第六批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（本轮问题关闭）
 
@@ -7324,4 +7342,13 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **关键坑（用户实证确认）**：远端 unraid compose 硬编码 `TZ=Asia/Shanghai`，**compose environment 优先级高于镜像 ENV**——不改远端该行则镜像默认 UTC 不生效；远端同目录 .env 若有 TZ 同样覆盖。修复部署时远端必须同步改（详情见 session-handoff）。
 - **过渡语义（自愈，无需数据迁移）**：cron freshness——存量 Shanghai 戳在切换后显示负 freshness（被按"新鲜"处理），各任务下次运行重盖 UTC 戳即收敛（最多一个调度周期）；业务表按时间排序/展示——旧行(+8h)在新行之上最多 8 小时墙钟后自愈；日志时间戳转 UTC（与 generatedAt 对齐，改善）。
 - **验收**：部署后 `docker exec btdeck-backend date`/`cat /etc/timezone` 为 UTC；二次导出诊断 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt。
+- 未执行 Git 提交。
+
+## 2026-09-10：重新构建应用安装包（全产线 dev 模式）
+
+- **输入**：用户要求重新构建 app 安装包。代码无变更，目的为把 09-07/09-09 批次的修复（WAL/RSS to_thread 化、镜像身份注入加固、容器时区 UTC）烧进最新制品。
+- **执行**：根目录 `build-packages.bat`（默认链 = Windows EXE + Android strict/LAN 双 APK），全链退出码 0。
+- **Windows**：前端 npm ci+build → 发布身份 `1.0.6 @ 2192bf3ec2dc`（dev 模式 --allow-dirty，data/ 未跟踪目录不阻塞）→ PyInstaller → verify-package 全项 **[PASS]** → `dist/btdeck.exe`（50.2MB，12:53 产出，替换 09-08 旧制品）。ISCC 未安装于本机（全盘搜索无 ISCC.exe），Inno Setup 安装器按 dev 模式历史惯例跳过——本机产线以 btdeck.exe 为最终 Windows 制品；如需 Setup 安装器须先装 Inno Setup 6 并加入 PATH。
+- **Android**：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`（103.1MB）与 `btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`（89.2MB）均 12:54 产出，构建日志输出 LAN 变体 SHA256=77b1cbb6...a32de。
+- **Linux DEB/RPM 与 Docker 镜像未在本批重建**（`build-linux.sh`/`build-images.sh` 独立产线；dist 内 v1.0.6 Linux 包仍为 08-30 旧制品）。
 - 未执行 Git 提交。

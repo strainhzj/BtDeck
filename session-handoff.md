@@ -1,3 +1,40 @@
+## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全部门禁绿，未提交）
+
+### 交付内容（用户 7 项反馈全闭环，feature_list `mobile-ux-fixes-2026-09` / PLANS/mobile-ux-fixes-2026-09.md）
+
+1. **「版本未知·服务存活检查失败」根修（双端双修）**：`frontend/nginx.conf` `location /health`（前缀匹配）静态返回纯文本 `"healthy\n"` 吞掉 `/health/live`——改 `location = /health`（compose 健康检查 wget /health 精确命中不变）+ 新增 `location /health/` 代理后端；TLS 示例同步。安卓 `HealthClient.kt` `probeWithFallback`（主路径 HttpError/非 JSON 信封 → 回退 `/api/v1/health/*` 免认证别名，网络/TLS 错误不回退、回退失败保留主路径归因）+ 可注入 `HttpCall` 探测点；`desktop_companion/health.py` 同语义。**旧部署不重发 nginx 也修好**（客户端回退）。
+2. **确认弹框手机适配**：`styles/index.scss` 全局 `@media≤768` 覆盖 `.el-message-box`（`92vw !important` 胜 Element 主题类规则 + 双钮等宽全宽 ≥40px 触控），一处覆盖全部 `$confirm` 调用点。
+3. **高负载伴侣红色 toast 缓解**：`request.ts` 幂等 GET 网络错误/502/503/504 静默重试一次（800ms，落响应拦截器内；超时 ECONNABORTED 与写操作不重试；`_transientRetried` 防循环，与 401 重放 `_retried` 触发集不相交）。**定位为缓解**——负载根源（单 Worker SQLite 串行+容器 1C/1G）另行治理。
+4. **种子页提速**：后端 `/torrents/tracker-domains` 60s TTL 缓存（`reset_tracker_domains_cache` 测试钩子）；`getList` 新增 `with_trackers`（helpers `include_trackers` 跳过 tracker 批量预取+关键词池）；移动页 tracker 域名懒加载（首展筛选才拉）+ 列表 `with_trackers=false`（详情页 refreshBase 全量回查补 tracker）+ 卡片 `content-visibility:auto`。
+5. **移动种子页快捷操作**：「快捷」下拉四项与桌面同语义——查找重复任务（`getDuplicateTorrents`，skip/limit→1-based page/pageSize 换算，模式横幅/退出/专属空态）、辅种异常排查（same_content_only）、错误单种排查（single_error_only）、快捷删除重复种子（自包含弹窗）；`reload/fetchPage` 按模式分发（下拉刷新/终态刷新等一切路径自动走对）；QuickDeleteDuplicatesDialog（custom-class+@media 94%）与 AdvancedMultiSelect 嵌套 popover 视口钳制。
+6. **桌面版入口全移除**（用户确认）：顶栏/抽屉完整桌面版/桌面页签分组/登录页/空态链接 5 处 + 6 处文案改「暂未在移动端提供」。**已知取舍：「Tracker 汇报/测试」自此移动端无导航入口**（仅桌面浏览器可达）；≥768px 默认桌面版与桌面侧栏切换保留。
+7. **下载器新增/编辑**：移动页统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页含全部页签，downloader-settings 支持 new=新增模式）；对话框 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏左列不变）；种子空态 CTA 与 `?create=1` 两处连改；**旧 DownloaderDialog.vue 已删除**（零消费方确认）。
+
+### 验证
+
+- 后端 mypy/black/flake8 绿；`test_torrent_list_api.py` 42 passed（TTL×2+with_trackers×1 新增）+ `tests/desktop_companion` 66 passed（health 21 含回退 5，mock 改按 URL 分发）。
+- 前端 lint/typecheck(0 error)/build 绿；全量 1495 passed。安卓 `:app:testDebugUnitTest` 全绿（新增 HealthClientFallbackTest 5 例）。`./init.sh` 通过。
+- e2e：`tests/e2e/mobile/login.spec.ts` 「使用桌面版」断言改 `toHaveCount(0)`；**`npm run test:mobile` 未在本机跑**（需起服务栈），下批补跑或随发布门禁。
+
+### 存量测试债（重要，非本批引入）
+
+`permission-guard`/`permission-force-change-deadlock`/`torrent-list-view-component`/`traditional-view-component`/`mobile-delete-level-dialog` 五套件 **HEAD 即红**（受控 stash 基线对照：批次前后同为 12 failed/88 passed 完全一致；mobile-delete-level-dialog 进程级 unhandled rejection 'cancel' 崩溃）。疑环境/时序（Node 22）——建议独立批次排查，勿算在本批头上。
+
+### 关键坑位（下批必读）
+
+- **Kotlin 块注释可嵌套**：注释里写 `/health/*` 会开一个永不闭合的嵌套注释 → "Unclosed comment" 编译错（HealthClient 与测试文件各踩一次）。
+- **MSYS /tmp 的 Node 子进程路径不可靠**：worktree 基线实验中 `cd /tmp/... && npx jest` 实际读到主树文件（假基线）；受控基线用 `git stash push → 跑 → pop` + 明确校验。
+- **download-control-room-ui 等源码契约断言**：改共享组件模板属性时先 grep `tests/` 里的 `toContain('字面量')`；`DownloaderSettingsDialog` 含 `DownloaderDialog` 子串，断言须用完整导入路径。
+- **重试单测与 3s toast 节流交互**：同文案节流跨用例生效，toast 计数断言会互相干扰（超时用例只断 adapter 次数）。
+- **能力 fail-closed 语义**：`isCapabilityAvailable` 在矩阵未加载时对 FILESYSTEM 能力（level3_recycle/orphan_files）返回 false——mobile-shell 抽屉菜单断言需注入 `setPlatformCapabilityCacheForTesting` 才见 11 项（默认 9 项）。
+
+### 部署提示
+
+- nginx 变更需 `docker compose up -d --build` 重建 frontend 镜像；不重建时安卓/桌面伴侣靠客户端回退同样修复。
+- 安卓端需重出 APK 才携带 HealthClient 回退（本批未出包）。
+
+---
+
 ## 2026-09-08：移动端通知一键已读（未提交）
 
 ### 交付内容

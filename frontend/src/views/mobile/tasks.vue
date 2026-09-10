@@ -96,7 +96,7 @@
       加载更多（{{ list.length }}/{{ total }}）
     </el-button>
 
-    <div class="m-task-footnote">任务新建/编辑与完整执行日志请在桌面版「定时任务」页操作</div>
+    <div class="m-task-footnote">任务新建/编辑与完整执行日志暂未在移动端提供</div>
   </div>
 </template>
 

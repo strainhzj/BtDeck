@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-08",
+  "last_updated": "2026-09-10",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -652,6 +652,112 @@
             "progress.md",
             "session-handoff.md"
           ]
+        }
+      ]
+    },
+    {
+      "id": "mobile-ux-fixes-2026-09",
+      "name": "手机端七问题修复（确认弹框适配/伴侣健康探测/种子页提速/快捷操作/桌面版入口移除/下载器编辑页签）",
+      "description": "用户验收反馈的 7 个手机端问题：①确认弹框全局 ≤768 适配；②高负载伴侣模式红色 toast 对症缓解（幂等 GET 瞬态重试）；③种子页提速（tracker-domains TTL 缓存+懒加载、with_trackers 瘦身、content-visibility）；④移动种子页补齐查找重复任务+快捷操作四项；⑤桌面版入口全部移除；⑥「版本未知·服务存活检查失败」根修（nginx /health 代理+双端 /api/v1 别名回退）；⑦下载器新增/编辑统一 DownloaderSettingsDialog 整页（含全部页签）并删除旧 DownloaderDialog。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mobile-ux-fixes-2026-09.md",
+      "tasks": [
+        {
+          "id": "mobile-ux-fixes.1",
+          "name": "nginx /health 代理修复 + 安卓/桌面伴侣健康探测 /api/v1 别名回退",
+          "description": "location /health 改精确匹配 + /health/ 代理后端（nginx.conf 与 TLS 示例）；HealthClient.kt probeWithFallback（HttpError/非 JSON 信封回退别名，可注入 HttpCall）与 desktop_companion/health.py 同语义回退。旧部署不更新 nginx 也修好。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/nginx.conf",
+            "deploy/nginx-tls.conf.example",
+            "android/app/src/main/java/com/btdeck/companion/data/HealthClient.kt",
+            "android/app/src/test/java/com/btdeck/companion/HealthClientFallbackTest.kt",
+            "backend/app/desktop_companion/health.py",
+            "backend/tests/desktop_companion/test_health.py"
+          ],
+          "evidence": "test_health.py 21 passed（回退 5 例新增，mock 改按 URL 分发）；HealthClientFallbackTest 5 例 + PinTest JVM 全绿；compose 健康检查 wget /health 精确命中不变。"
+        },
+        {
+          "id": "mobile-ux-fixes.2",
+          "name": "确认弹框手机适配 + 幂等 GET 瞬态重试",
+          "description": "styles/index.scss 全局 @media≤768 覆盖 .el-message-box（92vw+双钮全宽触控）；request.ts 响应拦截器内静默重试一次（GET+网络错误/502/503/504，超时与写操作不重试），重试用尽才走 3s 节流 toast。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/styles/index.scss",
+            "frontend/src/utils/request.ts",
+            "frontend/tests/unit/request-transient-retry.spec.ts"
+          ],
+          "evidence": "request-transient-retry.spec 6 例 + request-auth 16 例全绿；lint/typecheck/build 绿。注：重试为高负载失败的对症缓解，负载根源另行治理。"
+        },
+        {
+          "id": "mobile-ux-fixes.3",
+          "name": "种子页提速：tracker-domains TTL 缓存 + 懒加载 + with_trackers 瘦身 + 渲染减负",
+          "description": "后端 /torrents/tracker-domains 60s 进程内 TTL 缓存；getList 新增 with_trackers（torrent_helpers include_trackers 跳过 tracker 预取与关键词池）；移动页 tracker 域名懒加载（首展筛选才拉）+ 列表携带 with_trackers=false + 卡片 content-visibility:auto。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_torrent_list_api.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "test_torrent_list_api.py 42 passed（TTL 缓存 2 例+with_trackers 1 例新增）；mobile-torrents.spec 43 passed（懒加载断言改写）。"
+        },
+        {
+          "id": "mobile-ux-fixes.4",
+          "name": "移动种子页快捷操作：查找重复任务 + 辅种/错误单种排查 + 快捷删重",
+          "description": "快捷下拉四项（与桌面同语义）：duplicates toggle（getDuplicateTorrents，skip/limit→page/pageSize 换算，模式横幅/退出/空态）、same_content_only/single_error_only 过滤模式、QuickDeleteDuplicatesDialog；reload/fetchPage 按模式分发；删重弹窗与 AdvancedMultiSelect 嵌套 popover 手机适配。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/components/torrents/QuickDeleteDuplicatesDialog.vue",
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "mobile-torrents.spec 43 passed（快捷操作分发/查重分页换算/模式互斥/空态口径 5 例新增）。"
+        },
+        {
+          "id": "mobile-ux-fixes.5",
+          "name": "移动端桌面版入口全部移除",
+          "description": "删顶栏/抽屉完整桌面版/桌面页签分组/登录页/空态链接 5 处入口与 6 处「见桌面版」文案（改「暂未在移动端提供」）；「Tracker 汇报/测试」自此移动端无导航入口（用户确认取舍）；≥768px 默认桌面版与桌面侧栏切换保留。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/src/views/mobile/login.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/views/mobile/tasks.vue",
+            "frontend/src/views/mobile/logs.vue",
+            "frontend/src/views/mobile/recycle-bin.vue",
+            "frontend/src/views/mobile/tracker-keywords.vue",
+            "frontend/src/views/mobile/orphan-files.vue",
+            "frontend/tests/unit/mobile-shell.spec.ts",
+            "frontend/tests/e2e/mobile/login.spec.ts"
+          ],
+          "evidence": "mobile-shell.spec 34 passed（入口缺失断言+能力 fail-closed 9 项/注入 11 项两态改写）；e2e login.spec 断言改 toHaveCount(0)。"
+        },
+        {
+          "id": "mobile-ux-fixes.6",
+          "name": "下载器新增/编辑统一设置页（页签全量）+ 旧 DownloaderDialog 删除",
+          "description": "新增跳 /m/downloader/settings/new（downloader=null 新增模式）、编辑与设置合一跳 :id；DownloaderSettingsDialog :tab-position 响应式（≤780 顶部横向页签带文字）；空态 CTA 与 ?create=1 连改；确认零消费方后删除 DownloaderDialog.vue。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/views/mobile/downloader-settings.vue",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/tests/unit/mobile-downloader.spec.ts",
+            "frontend/tests/unit/mobile-downloader-settings.spec.ts",
+            "frontend/tests/unit/downloader-control-room-ui.spec.ts"
+          ],
+          "evidence": "mobile-downloader.spec 11 + mobile-downloader-settings.spec 6（new 模式用例新增）+ downloader-settings.spec 3 + downloader-control-room-ui.spec 27（tab-position 断言改绑定式锚点）全绿。"
         }
       ]
     },

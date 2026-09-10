@@ -1,7 +1,8 @@
 /**
  * 移动下载器页契约（Phase 4 M2 升级为完整管理）：
- * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 新增/编辑
- * （DownloaderDialog 复用，submit 由本页显式调 add/up 落库）+ 删除 + 设置跳转。
+ * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 删除 + 设置跳转。
+ * 2026-09-10（mobile-ux-fixes）：新增/编辑弃用旧 DownloaderDialog 弹窗，
+ * 统一跳 /m/downloader/settings/:id|new（DownloaderSettingsDialog 整页承载页签）。
  * 注：shallowMount 下 el-button 为 kebab stub 不转发 click——交互直调组件方法。
  */
 
@@ -13,8 +14,6 @@ import {
   getList,
   testConnection,
   syncDownloader,
-  addDownloader,
-  upDownloader,
   deleteDownloader
 } from '@/api/downloader'
 import {
@@ -26,19 +25,12 @@ jest.mock('@/api/downloader', () => ({
   getList: jest.fn(),
   testConnection: jest.fn(),
   syncDownloader: jest.fn(),
-  addDownloader: jest.fn(),
-  upDownloader: jest.fn(),
   deleteDownloader: jest.fn()
 }))
 
 jest.mock('@/views/downloader/sync-task', () => ({
   buildSyncTaskNotice: jest.fn(),
   trackSyncTaskStatus: jest.fn()
-}))
-
-jest.mock('@/views/downloader/components/DownloaderDialog.vue', () => ({
-  name: 'DownloaderDialog',
-  render: (h: (t: string) => unknown) => h('div')
 }))
 
 const mockedList = [
@@ -86,8 +78,6 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     jest.mocked(getList).mockResolvedValue({ code: '200', data: mockedList } as never)
     jest.mocked(testConnection).mockReset()
     jest.mocked(syncDownloader).mockReset()
-    jest.mocked(addDownloader).mockReset()
-    jest.mocked(upDownloader).mockReset()
     jest.mocked(deleteDownloader).mockReset()
     jest.mocked(buildSyncTaskNotice).mockReset().mockReturnValue({
       level: 'success', message: '主力QB 同步完成'
@@ -182,27 +172,24 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     expect(vm.$router.push).toHaveBeenCalledWith('/m/downloader/settings/d1')
   })
 
-  it('新增：submit 显式调 addDownloader 并刷新', async() => {
+  it('新增：跳整页新增模式（settings/new，DownloaderSettingsDialog 承载全部页签）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
     vm.openCreate()
-    expect(vm.editingItem).toBeNull()
-    jest.mocked(addDownloader).mockResolvedValue({ code: '200' } as never)
-    await vm.onDialogSubmit({ nickname: '新下载器', host: '1.2.3.4' })
-    expect(addDownloader).toHaveBeenCalledWith({ nickname: '新下载器', host: '1.2.3.4' })
-    expect(vm.editDialogVisible).toBe(false)
+    expect(vm.$router.push).toHaveBeenCalledWith('/m/downloader/settings/new')
   })
 
-  it('编辑：submit 显式调 upDownloader（以原 id 落库）', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    vm.openEdit(vm.list[1])
-    expect(vm.editingItem).not.toBeNull()
-    jest.mocked(upDownloader).mockResolvedValue({ code: '200' } as never)
-    await vm.onDialogSubmit({ nickname: '改名' })
-    expect(upDownloader).toHaveBeenCalledWith(expect.objectContaining({ id: 'd2', nickname: '改名' }))
+  it('源码契约：旧 DownloaderDialog 弹窗链路不再存在（编辑与设置同页合一）', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../src/views/mobile/downloader.vue'),
+      'utf-8'
+    )
+    // 用完整导入路径断言（DownloaderSettingsDialog 含 DownloaderDialog 子串）
+    expect(source).not.toContain("components/DownloaderDialog.vue")
+    expect(source).not.toContain('onDialogSubmit')
+    expect(source).not.toContain('editDialogVisible')
+    expect(source).toContain('/m/downloader/settings/')
   })
 
   it('删除：确认后调 deleteDownloader 并刷新', async() => {
@@ -226,12 +213,10 @@ describe('views/mobile/MobileDownloader（M2 管理版）', () => {
     expect(source).not.toContain('#409eff')
   })
 
-  it('?create=1 直达新增：挂载即弹新增弹窗（种子页空态 CTA 落点）', async() => {
+  it('?create=1 直达新增：挂载即跳 settings/new（种子页空态 CTA 兼容落点）', async() => {
     const wrapper = mountPage({ create: '1' })
     await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.editDialogVisible).toBe(true)
-    expect(vm.editingItem).toBeNull()
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/m/downloader/settings/new')
     wrapper.destroy()
   })
 })

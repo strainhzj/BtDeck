@@ -28,7 +28,7 @@
 |------|-----------|
 | `index.vue` | 种子管理主入口（列表模式，class L946，extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin, TorrentErrorTooltipDismissMixin, TrackerDetailDataMixin)）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（`showTrackerErrorTag`，error 状态不重复打）、错误原因 tooltip 走共享回退链；✨2026-08-27 筛选命中可视化：`getList()` L1209 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`，响应后 `console.debug('[tracker-filter]')` 观察日志（共享 `countMatchedTrackerRows` 统计命中标记行）；✨2026-08-27 交互修复：L277 查询蒙版全屏锁滚动、L549 错误 tooltip 接入滚动收起 mixin；Tracker 完整详情弹框 L670 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式；✨2026-08-29 速度快照支持 206 增量，按复合键更新 status/progress，连续完整快照未命中时调用 runtime-state/reconcile；✨2026-08-30 `loadActiveSpeed()` L2535 发现新未展示复合键时串行 `getList()` 并重放同轮速度，`handleBatchAddCompleted()` L2213 对后台添加完成再拉表补速；✨2026-09-06 终态整表刷新循环根修：`applySpeedUpdates()` L2498 转移判定（前态在赋值前捕获，稳态完成证据不再报告）+ 两触发点（L2616 主快照/L2545 reconcile）接 `TerminalReloadTracker` 复合键去重（防 DB 同步滞后窗口每秒 getList 循环），筛选/模板/排查模式切换处 `clear()`（`loadActiveSpeed()` 现 L2563、`getList()` 现 L1219） |
 | `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin, TorrentErrorTooltipDismissMixin)，L1017）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（col-status 加宽 90→145px、表 min-width 1435px），状态图标 title 同步提示；Tracker 主域名过滤 L271、快捷入口命令分发 L1973；✨2026-08-27 筛选命中可视化：`getList()` L1357 响应后输出 `[tracker-filter]` 观察日志（共享 `countMatchedTrackerRows`）；✨2026-08-27 交互修复：L309 查询蒙版全屏锁滚动、L561 错误 tooltip 接入滚动收起 mixin；Tracker 完整详情弹框 L746 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件、命中行高亮及 `styles/_tracker-table.scss` 视觉样式；✨2026-08-29 速度快照支持 206 增量，按 downloader_id+hash 更新终态，连续未命中时调用 runtime-state/reconcile；✨2026-08-30 `loadActiveSpeed()` L1559 与 `handleBatchAddCompleted()` L1983 同列表模式完成成员自愈；✨2026-09-06 终态整表刷新循环根修（同列表模式）：`applySpeedUpdates()` L1505 转移判定 + 两触发点（L1628 主快照/L1553 reconcile）接 `TerminalReloadTracker` 去重并追加 `!activeAdvancedSearchRequest` 门控（终态触发不再静默退出高级搜索模式；`loadActiveSpeed()` 现 L1577、`getList()` 现 L1364） |
-| `../mobile/torrents.vue` | 移动种子列表；✨2026-08-30 `loadActiveSpeed()` 发现新活动复合键时调用 `reload()`，列表落行后立即应用同轮进度与速度；✨2026-09-05 验收修复：删除改走四级（`components/DeleteLevelDialog.vue` + `deleteTorrentsWithLevel`）、`reload()` 原子替换（在途期间保留旧列表消除塌陷闪烁）、downloading 筛选终态整页刷新按 hash 去重（`terminalReloadedHashes`，防库内状态滞后时的 10s reload 循环）、无限滚动改 `mixins/window-infinite-scroll.ts`（window 驱动；Element v-infinite-scroll 被从不内滚的 .mobile-content 误判恒在底部，页面打开自动连发请求拉满 total，真栈实测 65s/74 次 getList） |
+| `../mobile/torrents.vue` | 移动种子列表；✨2026-08-30 `loadActiveSpeed()` 发现新活动复合键时调用 `reload()`，列表落行后立即应用同轮进度与速度；✨2026-09-05 验收修复：删除改走四级（`components/DeleteLevelDialog.vue` + `deleteTorrentsWithLevel`）、`reload()` 原子替换（在途期间保留旧列表消除塌陷闪烁）、downloading 筛选终态整页刷新按 hash 去重（`terminalReloadedHashes`，防库内状态滞后时的 10s reload 循环）、无限滚动改 `mixins/window-infinite-scroll.ts`（window 驱动；Element v-infinite-scroll 被从不内滚的 .mobile-content 误判恒在底部，页面打开自动连发请求拉满 total，真栈实测 65s/74 次 getList）；✨2026-09-10 快捷操作下拉（查找重复任务 `getDuplicateTorrents` skip/limit→page/pageSize 换算 + 辅种/错误单种排查 `same_content_only`/`single_error_only` + 快捷删重弹窗）与模式横幅、tracker 域名候选懒加载（首展筛选面板才拉）、getList 携带 `with_trackers=false` 瘦身、卡片 `content-visibility:auto` 长列表减负 |
 | `../mobile/torrent-detail.vue` | 移动种子详情页（快照缓存 + getList 回查 + 5s 活跃轮询）；✨2026-09-05 删除改走四级（与列表页共用 `components/DeleteLevelDialog.vue`，成功后返回列表） |
 | `../mobile/components/DeleteLevelDialog.vue` | 移动四级删除对话框（2026-09-05 新增）：四个等级选项（4 标记待删除/3 回收站/2 删任务保数据/1 完全删除）+ 桌面同款文案二次确认（等级1 error 级），确认后 emit confirm(level)；配套 `../mobile/delete-level.ts` 导出成功提示文案 |
 | `../mobile/notifications.vue` | 移动通知列表：无限滚动分页追加（按 id 去重防跨页重复）+ 30s 静默刷新（已翻页只同步角标）；✨2026-09-05 无限滚动改 `mixins/window-infinite-scroll.ts`（与种子页同源失控根修）；✨2026-09-08 顶部“全部已读”操作复用 `/notifications/read-all`，未读摘要取 Vuex 角标与已加载列表较大值，`markAllVersion` 防并发旧列表响应回写未读状态 |
@@ -69,8 +69,8 @@
 |------|-----------|
 | `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效；`handleSync()` L772 只将 sync-single 返回视为“已受理”，由任务跟踪器在真实终态提示成功/部分/失败/取消并释放占用 |
 | `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L29 统一终态文案，`trackSyncTaskStatus()` L53 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
-| `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询 |
-| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签 |
+| `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询；✨2026-09-10 新增/编辑弃用旧 6 字段弹窗，统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页承载全部页签） |
+| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列） |
 | `components/PathMappingTab.vue` | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
 | `components/TagManagementTab.vue` | 标签/分类检索、过滤、排序、同步与维护工作台 |
 | `components/DownloaderPathManagement.vue` | 下载器路径资产管理面板（筛选、状态、刷新、增删改） |
@@ -79,7 +79,7 @@
 | `components/TemplateSelectionDialog.vue` | 高密度模板选择对话框，含自定义标题、加载与空状态 |
 | `components/BasicSettingsTab.vue` | 兼容保留的基础设置 Tab，应用图标已迁移 Lucide |
 | `components/DownloaderCard.vue` | 单节点遥测卡片，集中展示连接、吞吐、任务、延迟与全部管理动作 |
-| `components/DownloaderDialog.vue` | 下载器新增/编辑对话框 |
+| ~~`components/DownloaderDialog.vue`~~ | 旧 6 字段新增/编辑对话框；2026-09-10 删除（桌面与移动均已统一走 DownloaderSettingsDialog） |
 | `components/PathManagementTab.vue` | 路径映射/路径资产双视图容器 |
 | `types.ts` | 下载器模块 TS 类型定义 |
 | `settings.ts` | 分时段开关/调度规则类型片段 |

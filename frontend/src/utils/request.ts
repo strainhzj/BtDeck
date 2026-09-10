@@ -170,6 +170,54 @@ async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unk
   return Promise.reject(fallbackError)
 }
 
+// ====== 幂等 GET 瞬态失败自动重试（mobile-ux-fixes 2026-09） ======
+
+/**
+ * 重试触发窗口（毫秒）。高负载（全量同步/多客户端轮询）下的网络错误与网关
+ * 502/503/504 多为瞬态，稍候重发即可恢复。
+ */
+const TRANSIENT_RETRY_DELAY_MS = 800
+
+/** 视为瞬态可重试的网关/服务端状态码（404/5xx 其它属确定性失败，不重试） */
+const TRANSIENT_RETRY_STATUSES = new Set([502, 503, 504])
+
+/** 与 401 重放的 _retried 同思路：标记防重试循环 */
+type TransientRetryConfig = AxiosRequestConfig & { _transientRetried?: boolean }
+
+/**
+ * 幂等 GET 瞬态失败重试资格：仅 GET（写操作绝不重放）；网络层错误（请求已
+ * 发出但无响应）或 HTTP 502/503/504 触发；超时（ECONNABORTED，timeout 已
+ * 20s）不重试——重试只会把等待翻倍；每个请求最多重试一次。
+ *
+ * 这是高负载失败（伴侣模式红色 toast）的对症缓解：重试期间静默（不弹网络
+ * 错误提示），重试用尽仍失败才走节流 toast；负载根源（单 Worker 串行 IO）
+ * 由后端另行治理。
+ */
+function isTransientRetryEligible(error: unknown): boolean {
+  const err = error as {
+    config?: TransientRetryConfig
+    request?: unknown
+    response?: { status?: number }
+    code?: string
+  }
+  const config = err.config
+  if (!config || config._transientRetried) return false
+  if (String(config.method || '').toLowerCase() !== 'get') return false
+  if (err.code === 'ECONNABORTED') return false
+  if (err.response) {
+    const status = err.response.status
+    return status !== undefined && TRANSIENT_RETRY_STATUSES.has(status)
+  }
+  // 请求已发出但无响应 = 网络层错误；仅构建阶段失败（无 request）不可重试
+  return Boolean(err.request)
+}
+
+async function retryTransientRequest(config: TransientRetryConfig): Promise<never> {
+  config._transientRetried = true
+  await new Promise((resolve) => { setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS) })
+  return await service.request(config) as never
+}
+
 // Request interceptors
 service.interceptors.request.use(
   (config) => {
@@ -239,6 +287,12 @@ service.interceptors.response.use(
     return Promise.reject(apiError)
   },
   (error) => {
+    // 幂等 GET 瞬态失败（网络错误/502/503/504）：静默重试一次，成功即无感返回；
+    // 重试用尽的失败会带 _transientRetried 标记再次进入本分支走下方归一化
+    if (isTransientRetryEligible(error)) {
+      return retryTransientRequest((error as { config: TransientRetryConfig }).config)
+    }
+
     // 无 response：网络层错误（请求未发出/无响应）
     if (!error.response) {
       const message = error.request

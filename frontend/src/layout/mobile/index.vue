@@ -21,9 +21,6 @@
         <AppLogo v-if="!isSecondaryPage" variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
         <span class="mobile-header-title">{{ headerTitle }}</span>
       </div>
-      <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
-        桌面版
-      </el-button>
     </header>
 
     <main
@@ -90,24 +87,6 @@
           <span>{{ item.label }}</span>
           <span v-if="isActive(item)" class="mobile-menu-item-current">当前</span>
         </button>
-
-        <div class="mobile-menu-group-title">全部功能（桌面版页面）</div>
-        <button
-          v-for="item in desktopMenuItems"
-          :key="item.path"
-          type="button"
-          class="mobile-menu-item"
-          @click="goMenuItem(item)"
-        >
-          <span>{{ item.label }}</span>
-          <span class="mobile-menu-item-arrow">›</span>
-        </button>
-
-        <div class="mobile-menu-footer">
-          <el-button size="small" class="mobile-menu-desktop-btn" @click="switchToDesktop">
-            完整桌面版
-          </el-button>
-        </div>
       </div>
     </el-drawer>
   </div>
@@ -115,7 +94,6 @@
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
-import { setStoredUiMode } from '@/utils/ui-mode'
 import { NotificationModule } from '@/store/modules/notification'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { isCapabilityAvailable } from '@/api/platform-capabilities'
@@ -141,12 +119,13 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
 
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
- * 顶部标题 + 汉堡功能菜单 + 切桌面出口、内容区 router-view、底部 Tab 导航。
- * 原则：不自锁——任何时刻都能切回桌面版（偏好持久化）。
+ * 顶部标题 + 汉堡功能菜单、内容区 router-view、底部 Tab 导航。
+ * 不自锁：偏好仍可经 localStorage（btdeck_ui_mode）或 ≥768px 视口自动进桌面版。
  *
- * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）；
- * 完整功能 11 项塞不进底部 Tab（>5 不可用），低频管理页经抽屉跳
- * 桌面版路由承载（桌面管理页有窄屏断点基础），返回键/刷新回移动版。
+ * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）。
+ * 2026-09-10（mobile-ux-fixes）：移除全部「桌面版」切换入口（顶栏按钮/抽屉
+ * 完整桌面版/桌面页签分组）——手机屏上桌面版本不可用，且「Tracker 汇报/测试」
+ * 等桌面承载页自此仅桌面浏览器可达（用户确认的取舍）。
  *
  * 通知未读角标（M1 余项）：复用桌面同款 Vuex NotificationModule.unreadCount
  * （/notifications/unread-count 现有接口），挂载即拉一次 + 60s 轮询（移动端
@@ -266,12 +245,6 @@ export default class MobileLayout extends Vue {
     ].filter(item => !item.requiredCapability || isCapabilityAvailable(item.requiredCapability))
   }
 
-  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；系统设置已移动化（/m/settings）。 */
-  private desktopMenuItems: MobileTab[] = [
-    { label: '种子列表（桌面）', path: '/torrents' },
-    { label: 'Tracker 汇报/测试（桌面）', path: '/tracker/reannounce-config' }
-  ]
-
   private isActive(tab: MobileTab): boolean {
     return this.$route.path === tab.path || this.$route.path.startsWith(tab.path + '/')
   }
@@ -282,22 +255,12 @@ export default class MobileLayout extends Vue {
     }
   }
 
-  /** 抽屉菜单点击：一律关闭抽屉；移动项 replace 保持单栈，桌面项 push 保留返回。 */
+  /** 抽屉菜单点击：一律关闭抽屉；移动项 replace 保持单栈。 */
   private goMenuItem(item: MobileTab): void {
     this.drawerVisible = false
-    if (this.isActive(item) && item.path.startsWith('/m/')) return
+    if (this.isActive(item)) return
     // 不从 $router 解构方法（丢 this），显式调用
-    if (item.path.startsWith('/m/')) {
-      this.$router.replace(item.path).catch(() => undefined)
-    } else {
-      this.$router.push(item.path).catch(() => undefined)
-    }
-  }
-
-  private switchToDesktop(): void {
-    this.drawerVisible = false
-    setStoredUiMode('desktop')
-    this.$router.replace('/dashboard').catch(() => undefined)
+    this.$router.replace(item.path).catch(() => undefined)
   }
 
   // ============ 手势（v1.0.6 移动独有优化） ============
@@ -460,11 +423,6 @@ export default class MobileLayout extends Vue {
   /* 主题色头部上的白色系前景（#059669 上对比度充足） */
   background: rgba(255, 255, 255, 0.9);
   border-radius: 1px;
-}
-
-.mobile-header-desktop {
-  color: #fff;
-  padding: 4px 0;
 }
 
 /* 头部左侧操作组：二级页 ← 返回与汉堡并存（抽屉全局可达） */
@@ -667,21 +625,5 @@ export default class MobileLayout extends Vue {
 .mobile-menu-item-current {
   font-size: 12px;
   color: var(--color-primary);
-}
-
-.mobile-menu-item-arrow {
-  color: #c0c4cc;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.mobile-menu-footer {
-  margin-top: auto;
-  padding: 16px;
-  border-top: 1px solid #e4e7ed;
-}
-
-.mobile-menu-desktop-btn {
-  width: 100%;
 }
 </style>

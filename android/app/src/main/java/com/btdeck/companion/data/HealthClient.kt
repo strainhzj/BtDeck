@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.net.URI
@@ -25,9 +26,23 @@ import javax.net.ssl.X509TrustManager
  *   只信任这些指纹（trust-any + pin = trust-only-these），主机名校验由钉扎
  *   承担；指纹不匹配按 TLS_ERROR 归类并提示重新确认；
  * - 未传指纹时走系统信任链，自签证书必然 TLS_ERROR——提示用户走 WebView 的
- *   指纹信任流程（README 已登记的 MVP 边界现已通过本参数闭环）。
+ *   指纹信任流程（README 已登记的 MVP 边界现已通过本参数闭环）；
+ * - 根路径 `/health` 系列端点（live/ready）可能被反向代理吞掉（静态健康块
+ *   返回纯文本、SPA 兜底返回 HTML），后端在 `/api/v1` 下挂有同 handler 的
+ *   免认证别名——主路径探测到"HTTP 错误或响应不是 JSON 信封"时回退别名再探
+ *   一次（见 [probeWithFallback]），旧部署无需更新网关配置也能读到真实存活与版本。
  */
-class HealthClient {
+class HealthClient(private val httpCall: HttpCall = HttpCall { request, client ->
+    client.newCall(request).execute()
+}) {
+
+    /** 单次 HTTP 执行点：默认真实 OkHttp；JVM 单测注入按 URL 分发的假实现。 */
+    fun interface HttpCall {
+        /** 与 OkHttp Call.execute 同契约：同步返回 Response，调用方负责 close。 */
+        @Throws(IOException::class)
+        fun execute(request: Request, client: OkHttpClient): Response
+    }
+
 
     data class Report(
         val state: ServerProfile.HealthState,
@@ -72,7 +87,7 @@ class HealthClient {
             null
         }
         val target = pinned?.okHttp ?: client
-        when (val live = probe("$baseUrl/health/live", target, pins) { pinned?.trustManager?.lastServerChain }) {
+        when (val live = probeWithFallback("/health/live", baseUrl, target, pins) { pinned?.trustManager?.lastServerChain }) {
             is ProbeResult.NetworkError -> live.toReport(pins.isNotEmpty())
             is ProbeResult.HttpError ->
                 Report(ServerProfile.HealthState.UNREACHABLE, live.version, "服务存活检查失败：HTTP ${live.code}")
@@ -80,7 +95,7 @@ class HealthClient {
                 if (live.body?.optString("status") != "alive") {
                     return@withContext Report(ServerProfile.HealthState.UNREACHABLE, null, "服务存活检查失败")
                 }
-                when (val ready = probe("$baseUrl/health/ready", target, pins) { pinned?.trustManager?.lastServerChain }) {
+                when (val ready = probeWithFallback("/health/ready", baseUrl, target, pins) { pinned?.trustManager?.lastServerChain }) {
                     is ProbeResult.NetworkError -> ready.toReport(pins.isNotEmpty())
                     is ProbeResult.HttpError ->
                         Report(ServerProfile.HealthState.NOT_READY, ready.version, "服务未就绪：${ready.reason}")
@@ -96,6 +111,28 @@ class HealthClient {
     }
 
     // ============ 内部：单端点探测与错误分类 ============
+
+    /**
+     * 主路径探测的反代兜底：根路径 `/health` 系列端点被网关静态健康块（纯文本
+     * 200）或 SPA 兜底（HTML 200）吞掉时，改探后端 `/api/v1` 下的免认证别名
+     * （同 handler）。仅在主路径 HTTP 错误、或 2xx 但响应不是 JSON 信封
+     * （body=null）时回退；网络/TLS 错误不换路径重试（同主机同结果，徒增等待）。
+     * 回退仍未得到可解析信封则保留主路径结果，错误归因不失真。
+     */
+    private fun probeWithFallback(
+        path: String,
+        baseUrl: String,
+        target: OkHttpClient,
+        pins: List<String>,
+        peerChainProvider: () -> Array<X509Certificate>?,
+    ): ProbeResult {
+        val primary = probe("$baseUrl$path", target, pins, peerChainProvider)
+        val needsFallback = primary is ProbeResult.HttpError ||
+            (primary is ProbeResult.Ok && primary.body == null)
+        if (!needsFallback) return primary
+        val alias = probe("$baseUrl$API_ALIAS_PREFIX$path", target, pins, peerChainProvider)
+        return if (alias is ProbeResult.Ok && alias.body != null) alias else primary
+    }
 
     private sealed class ProbeResult {
         /** HTTP 响应可达：body 为 data 对象（可能为 null），version 提取自 data.version。 */
@@ -124,7 +161,7 @@ class HealthClient {
     ): ProbeResult {
         val request = Request.Builder().url(url).get().build()
         return try {
-            target.newCall(request).execute().use { response ->
+            httpCall.execute(request, target).use { response ->
                 // 手动钉扎（OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容：
                 // 信任链经空 TrustManager 清洗后 peer chain 为空，pin 校验必然失败——
                 // 设备级实测 Certificate pinning failure）。在握手成功的响应上比对
@@ -188,6 +225,9 @@ class HealthClient {
     companion object {
         private const val CONNECT_TIMEOUT_S = 5L
         private const val READ_TIMEOUT_S = 10L
+
+        /** 后端在 API 前缀下挂载的同 handler 健康检查别名（免认证）。 */
+        private const val API_ALIAS_PREFIX = "/api/v1"
         private const val PIN_MISMATCH_DETAIL =
             "证书指纹不匹配（服务器证书已变更，请在页面内重新确认信任）"
 

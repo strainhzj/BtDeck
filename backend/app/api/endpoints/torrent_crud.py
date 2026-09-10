@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import uuid
 from typing import List, Optional
 
@@ -327,6 +328,10 @@ def get_torrents(
         False,
         description="仅显示错误且全局同名同大小内容唯一的种子",
     ),
+    with_trackers: bool = Query(
+        True,
+        description="是否在行内携带 tracker_info 明细数组（移动端列表不展示时传 false 省去批量预取与序列化开销；默认 true 兼容桌面视图）",
+    ),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
@@ -379,6 +384,7 @@ def get_torrents(
             active_keys=active_keys,
             same_content_only=same_content_only,
             single_error_only=single_error_only,
+            include_trackers=with_trackers,
         )
 
         # 构建响应数据，包含总数和列表
@@ -399,16 +405,41 @@ def get_torrents(
         return response
 
 
+# ---- tracker 域名候选 TTL 缓存（mobile-ux-fixes 2026-09） ----
+# 端点是 TrackerInfo 全表扫描 + Python 去重排序，移动端每次挂载/展开筛选都会拉；
+# 多客户端并发挂载会放大扫描成本。60s 进程内 TTL（uvicorn 强制单 Worker，无跨
+# 进程一致性问题）：种子同步写入的新域名最多延迟一个 TTL 出现在筛选候选里。
+_TRACKER_DOMAINS_CACHE_TTL_S = 60.0
+_tracker_domains_cache: dict = {"domains": None, "at": 0.0}
+
+
+def reset_tracker_domains_cache() -> None:
+    """测试钩子：清空 tracker 域名 TTL 缓存（生产无调用方）。"""
+    _tracker_domains_cache["domains"] = None
+    _tracker_domains_cache["at"] = 0.0
+
+
 @router.get("/tracker-domains")
 def get_tracker_domains(
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """返回由定时 Tracker 同步任务采集到的全部 Tracker 主域名。"""
+    """返回由定时 Tracker 同步任务采集到的全部 Tracker 主域名（60s TTL 缓存）。"""
+    now = time.monotonic()
+    cached = _tracker_domains_cache["domains"]
+    if cached is not None and now - _tracker_domains_cache["at"] < _TRACKER_DOMAINS_CACHE_TTL_S:
+        return CommonResponse(
+            status="success",
+            msg="获取 Tracker 主域名成功",
+            code="200",
+            data=cached,
+        )
     try:
         tracker_rows = db.query(TrackerInfo.tracker_url, TrackerInfo.tracker_host).filter(TrackerInfo.dr == 0).all()
         tracker_values = [value for row in tracker_rows for value in (row.tracker_url, row.tracker_host) if value]
         domains = sorted(set(extract_domains_from_trackers(tracker_values)))
+        _tracker_domains_cache["domains"] = domains
+        _tracker_domains_cache["at"] = time.monotonic()
         return CommonResponse(
             status="success",
             msg="获取 Tracker 主域名成功",
