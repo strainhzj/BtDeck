@@ -16,11 +16,12 @@
 |------|----------------------|------|
 | `app/src/main/java/com/btdeck/companion/data/ServerProfile.kt` | `ServerProfile:14` | profile JSON 增加 username；旧 JSON 缺字段按空字符串兼容 |
 | `app/src/main/java/com/btdeck/companion/data/CredentialVault.kt` | `CredentialVault:21`、`buildAutoLoginScript:94` | Android Keystore AES-GCM 密文 + 独立凭据 SharedPreferences；同源登录脚本与 TOTP 临时 prompt |
-| `app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt` | `ServerListActivity:38`、`showProfileActions:116`、`showAddDialog:134` | 用户名/密码录入、清除凭据/忘记服务器操作 |
+| `app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt` | `ServerListActivity:41`、`showProfileActions:124`、`showAddDialog:148` | 用户名/密码录入、清除凭据/忘记服务器操作；✨2026-09-11 录入表单改 `dialog_add_server.xml`（OutlinedBox + TextInputLayout 错误展示，文案不变）+ MaterialAlertDialogBuilder，列表行卡片化 + 健康状态语义色圆点 |
 | `app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt` | `WebViewActivity:43`、`prepareSession:132`、`maybeAutoLogin:196` | 等待异步 CookieManager 清理后加载 profile；有凭据时恢复前端会话 |
 | `app/src/main/java/com/btdeck/companion/net/TrustScope.kt` | `sha256Fingerprint:22` | 自签证书指纹＝公钥 SPKI 的 SHA-256（RFC 7469 pin 语义；此前按整证书 DER 与 OkHttp 校验永不匹配，2026-09-04 设备级实证修复） |
 | `app/src/main/java/com/btdeck/companion/data/HealthClient.kt` | `probe`、`pinnedClient`、`CapturingTrustManager` | 自签钉扎：全信 TrustManager 捕获证书链 + 握手后手动 SPKI pin 比对（OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容，链清洗为空；2026-09-04）；✨2026-09-10 `probeWithFallback` 主路径失败回退 `/api/v1` 健康别名 + 可注入 `HttpCall` L40（JVM 单测假探测，HealthClientFallbackTest） |
 | `app/src/main/res/values-v35/themes.xml` | `windowOptOutEdgeToEdgeEnforcement` | targetSdk 35 强制 e2e 致 AppCompat ActionBar 不下推内容（列表首行画进工具栏，生产路径实证）；退出恢复传统布局，API 36 起出口移除需迁移 insets 自处理（2026-09-04） |
+| `app/src/main/res/values/colors.xml`、`values/themes.xml` | `Theme.BtDeckCompanion`、`ThemeOverlay.BtDeck.MaterialAlertDialog`、`BtDeck.TextInputLayout` | ✨2026-09-11 原生过渡页翡翠绿品牌化：token 与 `frontend/src/styles/theme-variables.scss` emerald 同源（主色 #059669/语义色/灰阶/背景/边框）；基底 DayNight→Light（前端无暗色主题）；对话框统一 Material 风格；`values-v35` 颜色项须与 values 同步 |
 | `app/src/androidTest/java/com/btdeck/companion/`（CompanionOfflineUiTest/SelfSignedCert/ProfileIsolation + TinyLoopbackServer/CompanionTestState） | 设备级 UI 验收 | 离线覆盖层/自签证书信任与换签/多 profile cookie+storage+凭据隔离/自动登录；自持回环 HTTP(S) 假后端（双 PKCS12 证书），Espresso+ActivityScenario（2026-09-04） |
 | `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
 

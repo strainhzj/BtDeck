@@ -1,3 +1,23 @@
+## 2026-09-11（续）：Android 原生过渡页品牌化——Material + 翡翠绿（未提交）
+
+### 交付内容（feature_list `android-native-ui-branding-2026-09-11`）
+
+- **问题**：手机 app 模式选择向导 / 服务器地址表单 / 本机服务对话框全是系统默认 UI（程序化 LinearLayout AlertDialog + holo_blue 主题），与前端翡翠绿风格脱节。
+- **改造**：`colors.xml` token 与前端 emerald 同源；主题 DayNight→Light + MaterialAlertDialog 覆盖（colorAccent 让 WebViewActivity 未改码的 appcompat 对话框也变绿）；向导品牌圆标 + 图标化卡片；列表卡片行 + 健康语义色圆点 + MaterialButton；`dialog_add_server.xml` OutlinedBox 表单（校验文案零变更）；本机服务对话框 XML 化 + 圆形进度。Espresso 依赖 ID/文案全保。
+- **文件**：res 新增 10（colors/themes×2/图标×5/新布局 4 + 重写 3）+ Kotlin 2（WizardActivity/ServerListActivity）+ roadmap/desktop-testing 文档。
+
+### 验证
+
+gradle resources+compile+28 JVM 测试+assembleDebug+androidTest 编译全绿；AVD btdeck-a35 无头模式 10 屏视觉冒烟全过（含本机服务真实启动 → WebView 加载前端登录页）。截图 `android/build/ui-smoke/`（gitignored）。
+
+### 待办（下批）
+
+- **真机目检**：模拟器 swiftshader 渲染与真机 GPU 可能有细微色差；如觉得绿色饱和度/卡片阴影不合适，改 `colors.xml`/卡片 elevation 重装即可。
+- **未跑 connectedDebugAndroidTest**（本轮为 UI 视觉冒烟占用模拟器；Espresso 选择器已静态核对 + androidTest 编译通过，下批 CI 或设备闲时复跑）。
+- **APK 制品未重建入 dist/**：UI 变更后如需发布，走 `build-packages.bat --android` 重出双变体。
+
+---
+
 ## 2026-09-11：品牌图标补齐 Android/DEB/RPM 打包（未提交）
 
 ### 交付内容（feature_list `packaging-brand-icons-2026-09-11`）

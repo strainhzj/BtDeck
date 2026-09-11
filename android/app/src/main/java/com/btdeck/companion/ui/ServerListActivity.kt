@@ -1,8 +1,8 @@
 package com.btdeck.companion.ui
 
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.os.Bundle
-import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -12,7 +12,6 @@ import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
@@ -29,6 +28,8 @@ import com.btdeck.companion.net.LanHostPolicy
 import com.btdeck.companion.server.LocalServerProfile
 import com.btdeck.companion.server.LocalServerState
 import com.btdeck.companion.util.Hosts
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -108,7 +109,7 @@ class ServerListActivity : AppCompatActivity() {
     }
 
     private fun confirmForget(profile: ServerProfile) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.forget_server)
             .setMessage("忘记 \"${profile.displayName}\"（${profile.baseUrl}）？\n将同时清除该服务器的本地记录与已信任的证书指纹。")
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -126,7 +127,7 @@ class ServerListActivity : AppCompatActivity() {
             getString(R.string.clear_saved_credentials),
             getString(R.string.forget_server),
         )
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(profile.displayName)
             .setItems(actions) { _, which ->
                 if (which == 0) {
@@ -145,43 +146,22 @@ class ServerListActivity : AppCompatActivity() {
     // ============ 添加服务器对话框（URL 校验 + 明文风险确认） ============
 
     private fun showAddDialog(existing: ServerProfile? = null) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), 0)
-        }
-        val nameInput = EditText(this).apply {
-            hint = getString(R.string.add_server_name)
-            setText(existing?.displayName.orEmpty())
-        }
-        val urlInput = EditText(this).apply {
-            hint = getString(R.string.add_server_url)
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-            setText(existing?.baseUrl.orEmpty())
-        }
-        val usernameInput = EditText(this).apply {
-            hint = getString(R.string.add_server_username)
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(existing?.username.orEmpty())
-        }
-        val passwordInput = EditText(this).apply {
-            hint = getString(R.string.add_server_password)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        val clearSaved = CheckBox(this).apply {
-            text = getString(R.string.clear_saved_credentials)
-            visibility = if (existing == null) View.GONE else View.VISIBLE
-        }
-        val consent = CheckBox(this).apply {
-            text = getString(R.string.cleartext_consent)
-            visibility = View.GONE
-            isChecked = existing?.cleartextAllowed == true
-        }
-        container.addView(nameInput)
-        container.addView(urlInput)
-        container.addView(usernameInput)
-        container.addView(passwordInput)
-        container.addView(clearSaved)
-        container.addView(consent)
+        val view = layoutInflater.inflate(R.layout.dialog_add_server, null)
+        val nameLayout = view.findViewById<TextInputLayout>(R.id.layout_name)
+        val urlLayout = view.findViewById<TextInputLayout>(R.id.layout_url)
+        val usernameLayout = view.findViewById<TextInputLayout>(R.id.layout_username)
+        val nameInput = view.findViewById<EditText>(R.id.input_name)
+        val urlInput = view.findViewById<EditText>(R.id.input_url)
+        val usernameInput = view.findViewById<EditText>(R.id.input_username)
+        val passwordInput = view.findViewById<EditText>(R.id.input_password)
+        val clearSaved = view.findViewById<CheckBox>(R.id.check_clear_saved)
+        val consent = view.findViewById<CheckBox>(R.id.check_consent)
+
+        nameInput.setText(existing?.displayName.orEmpty())
+        urlInput.setText(existing?.baseUrl.orEmpty())
+        usernameInput.setText(existing?.username.orEmpty())
+        clearSaved.visibility = if (existing == null) View.GONE else View.VISIBLE
+        consent.isChecked = existing?.cleartextAllowed == true
 
         urlInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) {
@@ -194,9 +174,14 @@ class ServerListActivity : AppCompatActivity() {
         consent.visibility =
             if (LanHostPolicy.needsCleartextConsent(urlInput.text.toString())) View.VISIBLE else View.GONE
 
-        AlertDialog.Builder(this)
+        // 输入变化即清除该字段校验错误（对齐旧版 EditText.error 的自动消失行为）
+        clearErrorOnType(nameInput, nameLayout)
+        clearErrorOnType(urlInput, urlLayout)
+        clearErrorOnType(usernameInput, usernameLayout)
+
+        MaterialAlertDialogBuilder(this)
             .setTitle(if (existing == null) R.string.add_server else R.string.edit_server)
-            .setView(container)
+            .setView(view)
             .setPositiveButton(android.R.string.ok, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
@@ -209,10 +194,10 @@ class ServerListActivity : AppCompatActivity() {
                         val password = passwordInput.text.toString()
                         val parsed = Hosts.parse(url)
                         when {
-                            name.isEmpty() -> nameInput.error = "请输入显示名称"
+                            name.isEmpty() -> nameLayout.error = "请输入显示名称"
                             password.isNotEmpty() && username.isEmpty() ->
-                                usernameInput.error = "填写密码时必须输入用户名"
-                            parsed == null -> urlInput.error = "地址无效（仅支持 http/https）"
+                                usernameLayout.error = "填写密码时必须输入用户名"
+                            parsed == null -> urlLayout.error = "地址无效（仅支持 http/https）"
                             else -> {
                                 val consentGranted = consent.isChecked
                                 when (val verdict =
@@ -247,7 +232,7 @@ class ServerListActivity : AppCompatActivity() {
                                         dismiss()
                                     }
                                     is LanHostPolicy.Verdict.Reject ->
-                                        urlInput.error = rejectMessage(verdict)
+                                        urlLayout.error = rejectMessage(verdict)
                                 }
                             }
                         }
@@ -255,6 +240,16 @@ class ServerListActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    private fun clearErrorOnType(input: EditText, layout: TextInputLayout) {
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
+                layout.error = null
+            }
+            override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
+            override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
+        })
     }
 
     private fun rejectMessage(verdict: LanHostPolicy.Verdict.Reject): String = when (verdict.reason) {
@@ -265,8 +260,6 @@ class ServerListActivity : AppCompatActivity() {
         LanHostPolicy.Reason.HTTP_LAN_WITHOUT_CONSENT ->
             "私有地址使用明文 HTTP 需先勾选风险确认"
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     // ============ 列表 ============
 
@@ -292,7 +285,22 @@ class ServerListActivity : AppCompatActivity() {
             val profile = profiles[position]
             view.findViewById<TextView>(R.id.row_name).text = profile.displayName
             view.findViewById<TextView>(R.id.row_url).text = profile.baseUrl
-            view.findViewById<TextView>(R.id.row_health).text = healthLabel(profile.healthState)
+
+            // 健康状态语义色（同前端 --color-success/warning/error），圆点与文案同色
+            val healthColorRes = when (profile.healthState) {
+                ServerProfile.HealthState.UNKNOWN -> R.color.btdeck_text_tertiary
+                ServerProfile.HealthState.READY -> R.color.btdeck_success
+                ServerProfile.HealthState.NOT_READY -> R.color.btdeck_warning
+                ServerProfile.HealthState.UNREACHABLE,
+                ServerProfile.HealthState.TLS_ERROR -> R.color.btdeck_error
+            }
+            val healthColor = view.context.getColor(healthColorRes)
+            view.findViewById<TextView>(R.id.row_health).apply {
+                text = healthLabel(profile.healthState)
+                setTextColor(healthColor)
+            }
+            view.findViewById<View>(R.id.row_health_dot).backgroundTintList =
+                ColorStateList.valueOf(healthColor)
 
             val meta = StringBuilder()
             profile.serverVersion?.let { meta.append("v").append(it).append(" · ") }

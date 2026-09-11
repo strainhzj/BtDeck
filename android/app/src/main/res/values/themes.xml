@@ -1,7 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BtDeckCompanion" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="colorPrimary">@android:color/holo_blue_dark</item>
-        <item name="colorSecondary">@android:color/holo_blue_light</item>
+    <!-- 基底由 DayNight 切到 Light：品牌 token 全为浅色值（前端暗色主题预留未启用），
+         系统暗色模式下自绘视图若沿用 DayNight 会与 MDC 深色属性断裂对比度。 -->
+    <style name="Theme.BtDeckCompanion" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">@color/btdeck_primary</item>
+        <item name="colorPrimaryVariant">@color/btdeck_primary_dark</item>
+        <item name="colorOnPrimary">@color/btdeck_on_primary</item>
+        <item name="colorSecondary">@color/btdeck_primary_light</item>
+        <item name="colorSecondaryVariant">@color/btdeck_primary</item>
+        <item name="colorOnSecondary">@color/btdeck_on_primary</item>
+        <!-- appcompat AlertDialog（如 WebViewActivity 证书确认）按钮色走 colorAccent -->
+        <item name="colorAccent">@color/btdeck_primary</item>
+        <item name="colorError">@color/btdeck_error</item>
+        <item name="android:colorError">@color/btdeck_error</item>
+        <item name="android:colorBackground">@color/btdeck_bg_secondary</item>
+        <item name="colorSurface">@color/btdeck_bg_primary</item>
+        <item name="android:statusBarColor">@color/btdeck_primary_dark</item>
+        <item name="colorControlActivated">@color/btdeck_primary</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.BtDeck.MaterialAlertDialog</item>
+    </style>
+
+    <style name="ThemeOverlay.BtDeck.MaterialAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/btdeck_primary</item>
+        <item name="colorSurface">@color/btdeck_bg_primary</item>
+        <item name="colorOnSurface">@color/btdeck_text_primary</item>
+    </style>
+
+    <!-- 输入框：OutlinedBox + 前端 radius-md(8px) 圆角，聚焦描边默认跟随 colorPrimary -->
+    <style name="BtDeck.TextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
     </style>
 </resources>

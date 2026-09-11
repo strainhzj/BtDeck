@@ -7384,3 +7384,13 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：gradle :app:processDebugResources + :app:compileDebugKotlin BUILD SUCCESSFUL（aapt2 严格校验矢量 pathData/图标引用/R 引用）；merged_manifest 实证 icon/roundIcon 已换；PNG 像素校验 5 抽样全过（绿底占比、标志居中<3% 偏差、圆角外透明、笔画存在）；bash -n + 7 XML/SVG 良构校验绿。DEB/RPM 制品级验证待下次 Linux 构建（CI G6/G10 矩阵复跑）。
 - **未验证面（诚实记录）**：图标视觉效果未经真人目检（像素级断言代替）；DEB/RPM 装 .desktop 后桌面环境实际渲染未实测。
 - 未执行 Git 提交。
+
+## 2026-09-11（续）：Android 原生过渡页品牌化——Material 组件 + 翡翠绿主题（feature_list `android-native-ui-branding-2026-09-11`）
+
+- **输入**：用户反馈"手机 app 端设置伴侣模式/主模式、填写服务器地址等界面用的是系统原生 UI，希望换成符合项目风格的 UI"。范围经确认取"全量 Material 改造"。
+- **现状盘点**：原生三屏（WizardActivity 模式二选一、ServerListActivity 列表 + showAddDialog 表单、本机服务系列对话框）全是系统默认样式——程序化 LinearLayout 拼的 AlertDialog、无 colors.xml、主题 colorPrimary 还是 holo_blue，与前端翡翠绿 #059669 完全脱节。
+- **实现**：① `values/colors.xml` 新建，token 与 `frontend/src/styles/theme-variables.scss` emerald 主题同源（主色 #059669/hover/light/lightest、语义色、文本灰阶、背景、边框）；② `themes.xml`（values + values-v35 同步）主题基底 DayNight→Light（前端暗色主题预留未启用，自绘浅色值在系统暗色下会断裂）、MaterialAlertDialog 主题覆盖、colorAccent 同步（WebViewActivity 未改代码的 appcompat 对话框免费获得翡翠绿按钮）；③ 新增矢量：ic_brand_mark（btdeck 标志 64 视口同 ic_launcher_foreground 几何）、ic_mode_companion（云）、ic_mode_local（手机）、圆形衬底 ×2；④ 向导页品牌圆标头部 + 两张图标化模式卡片（16dp 圆角/描边/ripple/翡翠绿图标衬底）；⑤ 列表行卡片化 + 健康状态语义色圆点与同色文案 + 底部 MaterialButton；⑥ `dialog_add_server.xml`：4× OutlinedBox TextInputLayout（浮动标签/8dp 圆角/密码可见切换）+ 2× CheckBox，校验错误改走 TextInputLayout（文案零变更，输入即清错）；⑦ 本机服务确认/运行态共用 `dialog_local_config.xml`、进度 `dialog_progress.xml`（CircularProgressIndicator），全部 AlertDialog.Builder → MaterialAlertDialogBuilder；LAN 开关初始态仍从 LocalServerState.lanEnabled 恢复。
+- **兼容红线**：Espresso 依赖全保——server_list 仍是 ListView(AdapterView)、row_health 等 ID 与文案（未测试/就绪/未就绪/不可达/证书错误）不变、菜单/按钮字符串不变。
+- **验证**：gradle `:app:processDebugResources`/`:app:compileDebugKotlin`/`:app:testDebugUnitTest`（28 例）/`:app:assembleDebug`/`:app:compileDebugAndroidTestKotlin` 全绿。AVD btdeck-a35 无头模拟器 10 屏视觉冒烟全过：向导、列表、添加表单（明文确认联动 + 空名校验错误）、列表卡片、本机服务确认（LAN 勾选出威胁模型）、启动进度、服务就绪自动进 WebView 加载本机前端（v1.0.6 · 服务就绪）——原生壳与 WebView 内前端同呈翡翠绿。截图存 `android/build/ui-smoke/`（gitignored）。
+- **坑**：① XML 注释不能含 `--`（`--color-primary-lightest` 触发 aapt2 解析失败）；② 带窗口 `-gpu auto` 模拟器在本机挂死 offline>10 分钟，无头 swiftshader_indirect 25-35 秒起（已记入 desktop-testing.md 已知坑 #9）；③ uiautomator dump 后错误提示展开会使对话框内容位移，坐标驱动要每步重新 dump。
+- 未执行 Git 提交。

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本机服务确认对话框内容：启动确认与运行态共用（运行态额外填 text_status
+     并置 VISIBLE）；LAN 开关联动威胁模型文案，警示色对齐前端 warning。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/text_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:textColor="@color/btdeck_text_primary"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/text_start_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/local_server_start_hint"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:textColor="@color/btdeck_text_secondary" />
+
+    <CheckBox
+        android:id="@+id/check_lan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="0dp"
+        android:text="@string/local_server_lan_switch"
+        android:textColor="@color/btdeck_text_primary" />
+
+    <TextView
+        android:id="@+id/text_lan_threat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="8dp"
+        android:text="@string/local_server_lan_threat_model"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="@color/btdeck_warning_dark"
+        android:visibility="gone" />
+</LinearLayout>

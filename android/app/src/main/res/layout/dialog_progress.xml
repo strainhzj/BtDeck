@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 本机服务启动/重启进度对话框内容：翡翠绿圆形进度 + 文案（代码填 text_progress） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="24dp"
+    android:paddingTop="20dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="20dp">
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:indeterminate="true"
+        app:indicatorColor="@color/btdeck_primary"
+        app:indicatorSize="36dp"
+        app:trackCornerRadius="2dp"
+        app:trackThickness="4dp" />
+
+    <TextView
+        android:id="@+id/text_progress"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_weight="1"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:textColor="@color/btdeck_text_secondary" />
+</LinearLayout>

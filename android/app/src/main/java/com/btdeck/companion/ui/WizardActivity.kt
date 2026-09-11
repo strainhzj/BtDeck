@@ -5,8 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.CheckBox
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -19,6 +19,7 @@ import com.btdeck.companion.server.LocalServerProfile
 import com.btdeck.companion.server.LocalServerState
 import com.btdeck.companion.server.ServerService
 import com.btdeck.companion.server.ServerStates
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * 首启向导（计划 Phase 2/3）：模式二选一，支持重新选择。
@@ -61,7 +62,7 @@ class WizardActivity : AppCompatActivity() {
 
     private fun showLocalServerDialog() {
         if (!ServerService.isAbiSupported()) {
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.wizard_local_title)
                 .setMessage(R.string.local_server_unsupported_abi)
                 .setPositiveButton(android.R.string.ok, null)
@@ -79,30 +80,12 @@ class WizardActivity : AppCompatActivity() {
 
     /** 首次/停止态：确认启动（LAN 默认关，勾选前展示威胁模型）。 */
     private fun showStartDialog() {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), 0)
-        }
-        val lanSwitch = CheckBox(this).apply {
-            text = getString(R.string.local_server_lan_switch)
-            isChecked = LocalServerState.lanEnabled
-        }
-        val lanThreat = TextView(this).apply {
-            text = getString(R.string.local_server_lan_threat_model)
-            visibility = if (lanSwitch.isChecked) TextView.VISIBLE else TextView.GONE
-            setPadding(dp(4), dp(8), dp(4), 0)
-            setTextAppearance(android.R.style.TextAppearance_Small)
-        }
-        lanSwitch.setOnCheckedChangeListener { _, checked ->
-            lanThreat.visibility = if (checked) TextView.VISIBLE else TextView.GONE
-        }
-        container.addView(TextView(this).apply { text = getString(R.string.local_server_start_hint) })
-        container.addView(lanSwitch)
-        container.addView(lanThreat)
+        val view = layoutInflater.inflate(R.layout.dialog_local_config, null)
+        val lanSwitch = bindLanToggle(view)
 
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.wizard_local_title)
-            .setView(container)
+            .setView(view)
             .setPositiveButton(R.string.local_server_start) { _, _ ->
                 startLocalServer(lanSwitch.isChecked)
             }
@@ -112,38 +95,22 @@ class WizardActivity : AppCompatActivity() {
 
     /** 运行态：打开界面 / 切换 LAN（重启服务）/ 停止。 */
     private fun showRunningDialog(snapshot: ServerStates.Snapshot) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), 0)
-        }
-        val statusText = TextView(this).apply {
+        val view = layoutInflater.inflate(R.layout.dialog_local_config, null)
+        view.findViewById<TextView>(R.id.text_status).apply {
             text = getString(
                 R.string.local_server_running_status,
                 ServerStates.stateLabel(snapshot.state),
                 snapshot.version ?: "-",
                 snapshot.port ?: 0,
             )
+            visibility = View.VISIBLE
         }
-        val lanSwitch = CheckBox(this).apply {
-            text = getString(R.string.local_server_lan_switch)
-            isChecked = LocalServerState.lanEnabled
-        }
-        val lanThreat = TextView(this).apply {
-            text = getString(R.string.local_server_lan_threat_model)
-            visibility = if (lanSwitch.isChecked) TextView.VISIBLE else TextView.GONE
-            setPadding(dp(4), dp(8), dp(4), 0)
-            setTextAppearance(android.R.style.TextAppearance_Small)
-        }
-        lanSwitch.setOnCheckedChangeListener { _, checked ->
-            lanThreat.visibility = if (checked) TextView.VISIBLE else TextView.GONE
-        }
-        container.addView(statusText)
-        container.addView(lanSwitch)
-        container.addView(lanThreat)
+        view.findViewById<TextView>(R.id.text_start_hint).visibility = View.GONE
+        val lanSwitch = bindLanToggle(view)
 
-        pendingDialog = AlertDialog.Builder(this)
+        pendingDialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.wizard_local_title)
-            .setView(container)
+            .setView(view)
             .setPositiveButton(R.string.local_server_open) { _, _ ->
                 if (lanSwitch.isChecked != LocalServerState.lanEnabled) {
                     restartLocalServer(lanSwitch.isChecked) // 绑定变化：重启后再打开
@@ -158,6 +125,19 @@ class WizardActivity : AppCompatActivity() {
             .show()
     }
 
+    /** LAN 开关联动威胁模型文案（dialog_local_config 布局内两控件）。
+     *  初始勾选态从持久化偏好恢复（旧程序化版本同语义）。 */
+    private fun bindLanToggle(view: View): CheckBox {
+        val lanSwitch = view.findViewById<CheckBox>(R.id.check_lan)
+        lanSwitch.isChecked = LocalServerState.lanEnabled
+        val lanThreat = view.findViewById<TextView>(R.id.text_lan_threat)
+        lanThreat.visibility = if (lanSwitch.isChecked) View.VISIBLE else View.GONE
+        lanSwitch.setOnCheckedChangeListener { _, checked ->
+            lanThreat.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        return lanSwitch
+    }
+
     /** 启动服务并挂状态监听：就绪进 WebView，失败按阶段归因。 */
     private fun startLocalServer(lanEnabled: Boolean) {
         watchLocalState(requireTransition = false)
@@ -167,14 +147,7 @@ class WizardActivity : AppCompatActivity() {
                 .setAction(ServerService.ACTION_START)
                 .putExtra(ServerService.EXTRA_LAN, lanEnabled),
         )
-        pendingDialog = AlertDialog.Builder(this)
-            .setTitle(R.string.wizard_local_title)
-            .setMessage(getString(R.string.local_server_starting_progress))
-            .setNegativeButton(android.R.string.cancel) { _, _ ->
-                stopService(Intent(this, ServerService::class.java).setAction(ServerService.ACTION_STOP))
-            }
-            .setCancelable(false)
-            .show()
+        pendingDialog = buildProgressDialog(R.string.local_server_starting_progress)
     }
 
     /** LAN 绑定变化：先按新绑定重启（服务内部完整重启），随后走监听流程打开。 */
@@ -187,9 +160,16 @@ class WizardActivity : AppCompatActivity() {
                 .setAction(ServerService.ACTION_START)
                 .putExtra(ServerService.EXTRA_LAN, lanEnabled),
         )
-        pendingDialog = AlertDialog.Builder(this)
+        pendingDialog = buildProgressDialog(R.string.local_server_restarting_progress)
+    }
+
+    /** 启动/重启进度对话框（不可取消，取消动作=停止服务）。 */
+    private fun buildProgressDialog(messageRes: Int): AlertDialog {
+        val view = layoutInflater.inflate(R.layout.dialog_progress, null)
+        view.findViewById<TextView>(R.id.text_progress).text = getString(messageRes)
+        return MaterialAlertDialogBuilder(this)
             .setTitle(R.string.wizard_local_title)
-            .setMessage(getString(R.string.local_server_restarting_progress))
+            .setView(view)
             .setNegativeButton(android.R.string.cancel) { _, _ ->
                 stopService(Intent(this, ServerService::class.java).setAction(ServerService.ACTION_STOP))
             }
@@ -240,7 +220,7 @@ class WizardActivity : AppCompatActivity() {
     private fun showErrorDialog(snapshot: ServerStates.Snapshot) {
         stateListener?.let { LocalServerState.removeListener(it) }
         stateListener = null
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.local_server_error_title)
             .setMessage(
                 getString(R.string.local_server_error_body,
@@ -262,8 +242,6 @@ class WizardActivity : AppCompatActivity() {
             )
         }
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 10

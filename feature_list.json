@@ -6511,6 +6511,38 @@
         "contract": "受限能力统一返回 HTTP 403，data.reasonCode=PLATFORM_CAPABILITY_UNSUPPORTED；能力矩阵 schemaVersion=2；Android 启动仅终结历史孤儿任务，不执行宿主文件系统扫描。",
         "behavior": "Android 主服务端隐藏受限路由/菜单、剔除路径配置字段、禁用三级删除/种子转移/受限定时任务；启动仅终结历史未完成孤儿任务且不创建 dispatcher；桌面/NAS 行为不变，伴侣模式继续由远端能力矩阵控制；AVD 实测矩阵为 schemaVersion=2、20 项、degraded=5、unsupported=9，五类受限接口均返回 403。"
       }
+    },
+    {
+      "id": "android-native-ui-branding-2026-09-11",
+      "title": "Android 原生过渡页品牌化（Material 组件 + 翡翠绿主题）",
+      "status": "done",
+      "scope": "android",
+      "description": "手机 app 首启向导（模式二选一）、服务器地址管理列表与添加/编辑表单、本机服务确认/进度等对话框原先全部为系统默认样式（holo_blue 主题 + 程序化 LinearLayout AlertDialog），与前端翡翠绿品牌风格不一致。本批用 Material Components + 前端主题 token 全量重做：colors.xml 与 frontend theme-variables.scss emerald 同源（主色 #059669/语义色/灰阶/背景/边框）；主题基底 DayNight→Light（前端暗色主题预留未启用，避免自绘浅色值在系统暗色下断裂）+ MaterialAlertDialog 主题覆盖（WebViewActivity 未改代码的 appcompat 对话框经 colorAccent 同步获得翡翠绿按钮）；向导页品牌圆标 + 图标化模式卡片；列表改卡片行 + 健康状态语义色圆点 + MaterialButton 主操作；添加/编辑表单改 dialog_add_server.xml（OutlinedBox 输入框 + 浮动标签 + 密码可见切换 + TextInputLayout 错误展示，校验逻辑与错误文案零变更）；本机服务确认/运行/进度对话框 XML 化 + CircularProgressIndicator。全部布局 ID 与 Espresso 依赖文案保持不变。",
+      "files": [
+        "android/app/src/main/res/values/colors.xml",
+        "android/app/src/main/res/values/themes.xml",
+        "android/app/src/main/res/values-v35/themes.xml",
+        "android/app/src/main/res/drawable/ic_brand_mark.xml",
+        "android/app/src/main/res/drawable/ic_mode_companion.xml",
+        "android/app/src/main/res/drawable/ic_mode_local.xml",
+        "android/app/src/main/res/drawable/bg_circle_primary_lightest.xml",
+        "android/app/src/main/res/drawable/bg_health_dot.xml",
+        "android/app/src/main/res/layout/activity_wizard.xml",
+        "android/app/src/main/res/layout/activity_server_list.xml",
+        "android/app/src/main/res/layout/row_server.xml",
+        "android/app/src/main/res/layout/dialog_add_server.xml",
+        "android/app/src/main/res/layout/dialog_local_config.xml",
+        "android/app/src/main/res/layout/dialog_progress.xml",
+        "android/app/src/main/java/com/btdeck/companion/ui/WizardActivity.kt",
+        "android/app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt",
+        "docs/roadmap/android-companion.md",
+        "docs/android/desktop-testing.md"
+      ],
+      "evidence": {
+        "build": "gradle :app:processDebugResources + :app:compileDebugKotlin + :app:testDebugUnitTest（28 用例）+ :app:assembleDebug + :app:compileDebugAndroidTestKotlin 全部 BUILD SUCCESSFUL（JDK 21 + Gradle 8.9）。",
+        "behavior": "AVD btdeck-a35 无头模拟器全链路视觉冒烟 10 屏通过：向导品牌头部与图标卡片、服务器列表翡翠绿 ActionBar + 主按钮、添加表单 OutlinedBox 浮动标签 + 密码切换、http 私有地址自动出现明文确认复选框（TextWatcher 联动）、空名称点确定展示 TextInputLayout 错误且对话框不关闭、列表卡片行（名称/健康胶囊/URL/元信息）、本机服务确认对话框 LAN 勾选联动威胁模型文案、启动进度对话框翡翠绿圆形指示器、服务就绪自动进 WebView 加载本机前端登录页（v1.0.6 · 服务就绪）——原生壳与前端呈现同一翡翠绿视觉。",
+        "compat": "Espresso 依赖全部保留：server_list 仍为 AdapterView（ListView）、row_health 文案（未测试/就绪/未就绪/不可达/证书错误）与 ID 不变、菜单/对话框按钮字符串不变、androidTest 源码编译通过；LAN 开关初始态仍从 LocalServerState.lanEnabled 持久化恢复。"
+      }
     }
   ]
 }
