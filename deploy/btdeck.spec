@@ -239,5 +239,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # TODO: 添加应用图标
+    # Linux ELF 无内嵌应用图标约定（PyInstaller icon 参数仅 Windows/macOS 生效）：
+    # 品牌图标经 build-linux.sh Step 5 的 hicolor 图标 + .desktop 随 deb/rpm 交付，
+    # Web UI 内品牌资产随 frontend_dist 数据打入，二进制本身保持无图标。
+    icon=None,
 )

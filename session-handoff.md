@@ -1,3 +1,24 @@
+## 2026-09-11：品牌图标补齐 Android/DEB/RPM 打包（未提交）
+
+### 交付内容（feature_list `packaging-brand-icons-2026-09-11`）
+
+- **问题**：Android APK 用系统默认机器人图标 + 系统通知图标；DEB/RPM 无图标无 .desktop；btdeck.spec 挂 icon TODO。Windows EXE 已有 favicon.ico、Docker 无图标概念——均无需改。
+- **风格**：用户确认品牌绿 #059669 底 + 白色单色 btdeck 标志。
+- **Android**：mipmap 全密度（方/圆）+ anydpi-v26 自适应（绿背景 + 白标志矢量前景 + monochrome）+ 通知小图标 ic_stat_btdeck；manifest 与 ServerService 改引用。
+- **DEB/RPM**：deploy/btdeck.desktop + deploy/icons/（svg + hicolor 48-256），build-linux.sh fpm 源列表加 usr。
+- **生成器**：tools/generate_brand_icons.py 入库（btdeck-mark 几何参数化复刻，8x 超采样；产物预生成入库，构建环境零新依赖）。
+
+### 验证
+
+gradle processDebugResources + compileDebugKotlin 绿；merged_manifest 实证图标引用；PNG 像素校验 5 抽样绿；bash -n + XML/SVG 良构绿。
+
+### 待办（下批）
+
+- **制品级验证**：DEB/RPM 下次 Linux 构建后 `dpkg -c`/`rpm -ql` 应含 usr/share 图标与 .desktop；CI G6/G10 矩阵复跑。APK 重构建（versionCode 是否 bump 由发布决定）。
+- **图标视觉效果未真人目检**（像素断言代替）——上机后如觉得绿底太深/标志偏小，改 tools/generate_brand_icons.py 的 mark_ratio / 圆角率重生成即可，矢量前景同步调 group scale。
+
+---
+
 ## 2026-09-10（第三批）：GitHub 完整 CI 一轮到绿——rebase origin/dev + 根修远端 19 个存量红（已提交 fbd814f/133066f/294a7e8，已推送）
 
 ### 交付内容

@@ -7373,3 +7373,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **Android**：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`（103.1MB）与 `btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`（89.2MB）均 12:54 产出，构建日志输出 LAN 变体 SHA256=77b1cbb6...a32de。
 - **Linux DEB/RPM 与 Docker 镜像未在本批重建**（`build-linux.sh`/`build-images.sh` 独立产线；dist 内 v1.0.6 Linux 包仍为 08-30 旧制品）。
 - 未执行 Git 提交。
+
+## 2026-09-11：品牌图标补齐 Android/DEB/RPM 打包（feature_list `packaging-brand-icons-2026-09-11`）
+
+- **输入**：用户反馈"手机端与其它打包没有添加项目的 logo"。盘点确认：Android manifest 用系统默认机器人图标（sym_def_app_icon）、通知用系统 stat_notify_sync_noanim；DEB/RPM fpm staging 无图标无 .desktop；btdeck.spec 挂 icon=None TODO。Windows EXE 已有 favicon.ico（PyInstaller + Inno Setup 双挂），Docker 无图标概念（Web UI 品牌资产随前端 dist 打入）——两者无需改动。
+- **风格决策（用户确认）**：品牌绿 #059669 底 + 白色单色 btdeck 标志（另一备选为白底原双色标志）。
+- **Android**：mipmap 全密度传统图标（48-192px 圆角方/圆双形态）+ mipmap-anydpi-v26 自适应图标（绿背景 shape + 白标志矢量前景，笔画端点最远 28.9dp < 33dp 安全区；monochrome 复用前景支持 Android 13+ 主题化图标）+ 24dp 纯白通知小图标 ic_stat_btdeck；manifest 改引 @mipmap/ic_launcher（补 roundIcon），ServerService 通知改 R.drawable.ic_stat_btdeck。
+- **DEB/RPM**：新增 deploy/btdeck.desktop（xdg-open 打开 Web 控制台）+ deploy/icons/（btdeck.svg scalable + hicolor 48/64/128/256 PNG），build-linux.sh 两条 fpm 源列表 etc opt → etc opt usr；图标随包按文件归属自动清理。btdeck.spec icon TODO 消化为注释（Linux ELF 无内嵌图标约定）。
+- **生成器入库**：tools/generate_brand_icons.py 参数化复刻 btdeck-mark.svg 几何（D 形轨道以参数化折线+圆帽绘制保证与 SVG stroke 居中语义一致，8x 超采样）；产物预生成入库，构建环境零新依赖（Pillow 仅重生成时需要）。
+- **验证**：gradle :app:processDebugResources + :app:compileDebugKotlin BUILD SUCCESSFUL（aapt2 严格校验矢量 pathData/图标引用/R 引用）；merged_manifest 实证 icon/roundIcon 已换；PNG 像素校验 5 抽样全过（绿底占比、标志居中<3% 偏差、圆角外透明、笔画存在）；bash -n + 7 XML/SVG 良构校验绿。DEB/RPM 制品级验证待下次 Linux 构建（CI G6/G10 矩阵复跑）。
+- **未验证面（诚实记录）**：图标视觉效果未经真人目检（像素级断言代替）；DEB/RPM 装 .desktop 后桌面环境实际渲染未实测。
+- 未执行 Git 提交。

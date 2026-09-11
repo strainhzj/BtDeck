@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-10",
+  "last_updated": "2026-09-11",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -6147,6 +6147,62 @@
       ],
       "evidence_summary": "locked-fix.1：13+5 pytest 全绿三件套门禁通过；locked-fix.2：17 passed + 变异矩阵 3/4/6/2 全检出。",
       "notes": "单颗添加 torrent_add_service.py 首个 DB 语句在网络调用之后、快照新鲜，确认无同构风险未改动；未接 db_write_scope（用户选定范围为根修+兜底+观测，短事务窗口下无必要）；H2（>15s 长写锁）/H3（外部进程共库）备择假设凭 sqlite_errorcode 观测口鉴别。未执行 Git 提交。"
+    },
+    {
+      "id": "packaging-brand-icons-2026-09-11",
+      "name": "品牌图标补齐 Android/DEB/RPM 打包（logo 此前缺失）",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "brand-icons.1",
+          "name": "Android 启动图标 + 通知小图标接入品牌标志",
+          "description": "原 AndroidManifest 用系统默认 sym_def_app_icon（机器人）、前台服务通知用系统 stat_notify_sync_noanim，APK 无任何品牌图标。新增 mipmap 全密度传统图标（48/72/96/144/192px，圆角方+圆双形态）与 mipmap-anydpi-v26 自适应图标（品牌绿 #059669 背景层 + 白色 btdeck 标志矢量前景，前景笔画端点最远距画布中心 28.9dp 处于 33dp 安全区内；monochrome 复用前景供 Android 13+ 主题化图标），manifest 改引 @mipmap/ic_launcher 并补 roundIcon，通知小图标改用 drawable/ic_stat_btdeck（纯白矢量 24dp，状态栏按 alpha 着色）。图标风格经用户确认：品牌绿底+白色单色标志。",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/main/AndroidManifest.xml",
+            "android/app/src/main/java/com/btdeck/companion/server/ServerService.kt",
+            "android/app/src/main/res/drawable/ic_launcher_background.xml",
+            "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+            "android/app/src/main/res/drawable/ic_stat_btdeck.xml",
+            "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+            "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+            "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+            "android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+            "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+            "android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+            "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+            "android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+            "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+            "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+            "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+            "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
+          ],
+          "evidence": "gradle :app:processDebugResources + :app:compileDebugKotlin BUILD SUCCESSFUL（aapt2 校验矢量 pathData 与 manifest 图标引用，Kotlin 校验 R.drawable.ic_stat_btdeck）；merged_manifest 实证 android:icon=@mipmap/ic_launcher + android:roundIcon=@mipmap/ic_launcher_round；PNG 像素校验 5 抽样全过（绿底 72-79%、白色标志包围盒中心偏差<3%、圆角外 alpha=0、中心排白色笔画存在、几何居中）。"
+        },
+        {
+          "id": "brand-icons.2",
+          "name": "DEB/RPM hicolor 图标 + .desktop 桌面集成；图标生成器入库",
+          "description": "原 build-linux.sh fpm staging 仅装二进制+systemd unit+maintainer 脚本，无图标无 .desktop；deploy/btdeck.spec 挂 icon=None TODO。新增 deploy/btdeck.desktop（Name/Icon=btdeck，Exec=xdg-open http://127.0.0.1:5001 打开 Web 控制台）与 deploy/icons/（btdeck.svg scalable + hicolor 48/64/128/256 PNG），build-linux.sh Step 5 staging 增装 usr/share/applications + usr/share/icons/hicolor，两条 fpm 命令源列表 etc opt → etc opt usr（与 etc/opt 同构：-C staging --prefix /）；图标文件随包由 dpkg/rpm 按文件归属自动清理，无需 maintainer script 参与。tools/generate_brand_icons.py 入库：参数化复刻 btdeck-mark.svg 几何（D 形轨道参数化折线+圆帽保证描边居中语义、8x 超采样 LANCZOS 降采样），产物预生成入库，构建环境不引入 Pillow 依赖。btdeck.spec TODO 消化为注释：Linux ELF 无内嵌图标约定，品牌图标经包管理器交付。Windows EXE 原本已有 favicon.ico（PyInstaller icon + Inno Setup SetupIconFile）、Docker 镜像无图标概念且 Web UI 品牌资产随前端 dist 打入，二者确认无需改动。",
+          "status": "done",
+          "scope": "deploy",
+          "files": [
+            "deploy/build-linux.sh",
+            "deploy/btdeck.spec",
+            "deploy/btdeck.desktop",
+            "deploy/icons/btdeck.svg",
+            "deploy/icons/hicolor/48x48/apps/btdeck.png",
+            "deploy/icons/hicolor/64x64/apps/btdeck.png",
+            "deploy/icons/hicolor/128x128/apps/btdeck.png",
+            "deploy/icons/hicolor/256x256/apps/btdeck.png",
+            "tools/generate_brand_icons.py"
+          ],
+          "evidence": "bash -n build-linux.sh 通过；7 个新增/修改 XML+SVG 良构校验通过；deb/rpm 对称增装 usr/ 不引入等价性漂移（verify_release_bundle 仅抽取 /opt/btdeck/btdeck 二进制比对哈希，不受新增文件影响）。制品级（dpkg -c / rpm -ql 见图标、桌面显示）验证待下次 Linux 构建/CI G6/G10 矩阵复跑。"
+        }
+      ],
+      "evidence_summary": "Android 资源链 gradle 双任务绿 + 像素几何校验绿；DEB/RPM 接线静态验证绿（制品黑盒属 CI/Linux 产线）",
+      "notes": "图标风格 2026-09-11 用户确认：品牌绿 #059669 底 + 白色单色标志。DEB/RPM 与 APK 需各产线下次构建才会带上图标（本批只改产线配置与资产）。"
     }
   ],
   "tasks": [

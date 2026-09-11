@@ -10,10 +10,10 @@
 | Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
-| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO；SPA fallback = `factory.py:_mount_frontend_static` |
+| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO，Linux ELF 无内嵌图标约定（品牌图标经包管理器交付）；SPA fallback = `factory.py:_mount_frontend_static` |
 | 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-android.bat` / `deploy/build-linux.sh` / `build-packages.bat` | Windows EXE、Android 双变体 APK、Linux 包构建；根入口可统一调用 Windows + Android 链 |
 | Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包；安装器、卸载项及快捷方式复用主程序品牌图标 |
-| fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包 |
+| fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包；✨2026-09-11 随包装品牌图标（`deploy/icons/` hicolor 48-256 + scalable + `btdeck.desktop`，deb/rpm 对称） |
 | 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
 | 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
 | 打包依赖 requirements | `deploy/requirements-linux-package.txt` / `requirements-windows-package.txt` | Linux / Windows 打包专用依赖 |

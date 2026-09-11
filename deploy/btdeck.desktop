@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=BtDeck
+GenericName=BitTorrent Client Manager
+Comment=BitTorrent 客户端统一管理平台 —— 打开 Web 控制台
+Exec=xdg-open http://127.0.0.1:5001
+Icon=btdeck
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=false

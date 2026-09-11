@@ -194,7 +194,7 @@ class ServerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(R.drawable.ic_stat_btdeck)
             .setContentTitle(getString(R.string.local_server_notification_title))
             .setContentText(ServerStates.notificationText(LocalServerState.snapshot, lanEnabled))
             .setOngoing(true)
