@@ -382,8 +382,8 @@ if "%BTDECK_ALLOW_DIRTY_IDENTITY%"=="1" (
     set "IDENTITY_ARGS=--allow-dirty"
 )
 echo [INFO] Generating release identity ^(strict mode; %IDENTITY_ARGS%^)...
-rem 不加 -X utf8：双击控制台为 GBK 代码页，python 按本地编码输出中文提示才不乱码
-rem （生成器写盘文件本就显式 encoding=utf-8，不受此影响）。
+rem No -X utf8 here: the double-click console runs a GBK code page, so python prints CN messages via local encoding without mojibake
+rem (generator-written files already use explicit encoding=utf-8, unaffected).
 "!PYTHON_EXE!" "%SCRIPT_DIR%scripts\release\generate_build_info.py" --project-root "%SCRIPT_DIR%." --check-versions
 if errorlevel 1 (
     echo [ERROR] Version declarations inconsistent across the six release files.
@@ -403,8 +403,8 @@ rem dirty=true only passes when the escape hatch is explicitly active.
 if errorlevel 1 goto identity_invalid_runtime
 "!PYTHON_EXE!" -X utf8 -c "import json,os,sys; i=json.load(open(r'%FRONTEND_DIR%\build-info.json',encoding='utf-8')); ok=(i.get('dirty') is False or (i.get('dirty') is True and os.environ.get('BTDECK_ALLOW_DIRTY_IDENTITY')=='1')) and len(i.get('git_sha',''))==40 and i.get('artifact_kind')=='docker-frontend'; print('[INFO] frontend identity', i['git_sha'][:12], 'dirty='+str(i['dirty'])); sys.exit(0 if ok else 1)"
 if errorlevel 1 goto identity_invalid_runtime
-rem 身份读取供 OCI label：写入无引号 set 行到临时 env 文件再逐行执行。
-rem （不用 for /f 反引内联执行——-c 代码含双引号会被 cmd /c 撕裂引号。）
+rem Identity feeds OCI labels: write unquoted set lines to a temp env file, then execute line by line.
+rem (no backquoted for /f inline: cmd /c would strip the double quotes inside the -c code).
 "!PYTHON_EXE!" -X utf8 -c "import json; from datetime import datetime, timezone; i=json.load(open(r'%SCRIPT_DIR%release\build\docker-backend\build-info.json',encoding='utf-8')); c=datetime.fromtimestamp(int(i['source_date_epoch']),tz=timezone.utc).isoformat().replace('+00:00','Z'); open(r'%TEMP%\btdeck-identity.env','w',encoding='utf-8',newline='\n').write('set IDENTITY_VERSION='+i['product_version'].lstrip('v')+'\nset IDENTITY_SHA='+i['git_sha']+'\nset IDENTITY_CREATED='+c+'\n')"
 if errorlevel 1 goto identity_invalid_runtime
 for /f "usebackq delims=" %%l in ("%TEMP%\btdeck-identity.env") do %%l
@@ -480,7 +480,7 @@ if !B_TRIES! GTR 1 set "B_ARGS=%BUILD_ARGS% --no-cache"
 echo [INFO] Building !B_NAME! image !B_TAG! ^(profile !B_IDX!, try !B_TRIES!^)
 docker build !B_ARGS! !MIRROR_ARGS! !OCI_ARGS! -f "!B_DF!" -t "!B_TAG!" "!B_CTX!" > "!B_LOG!" 2>&1
 if not errorlevel 1 goto build_image_ok
-findstr /C:"Could not resolve" /C:"dial tcp" /C:"Connection reset" /C:"Temporary failure" /C:"Connection timed out" /C:"timed out" /C:"Failed to connect" /C:"Unable to fetch" /C:"i/o timeout" /C:"context deadline exceeded" /C:"connection refused" /C:"no route to host" "!B_LOG!" >nul
+findstr /C:"Could not resolve" /C:"dial tcp" /C:"Connection reset" /C:"Temporary failure" /C:"Connection timed out" /C:"timed out" /C:"Failed to connect" /C:"Unable to fetch" /C:"Failed to fetch" /C:"Connection failed" /C:"i/o timeout" /C:"context deadline exceeded" /C:"connection refused" /C:"no route to host" "!B_LOG!" >nul
 if errorlevel 1 (
     echo [ERROR] !B_NAME! image build failed ^(non-network error^).
     echo         See log: !B_LOG!

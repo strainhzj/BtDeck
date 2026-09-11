@@ -7412,3 +7412,18 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试**：后端适配 get_disappeared 二元组签名（regression/active_only_filter 存量用例）+ 新增 2 例（退避期缓存填充、缓存写回安全跳过），定向 112 passed；mypy/black/flake8 绿。前端新增 2 例（宽限内抖动不触发、超 30s 回归触发），torrent-batch 127 passed；npm run lint 绿。
 - **roadmap 同步**：根 README 增量表加 2026-09-11 行；backend/api README torrent-speed 职责补缓存填充；frontend/views README torrentBatch 行号 L351→L358/L405→L432/L444→L471/L596→L623 实测更新 + 滞回语义；test-coverage 补职责描述。
 - 未执行 Git 提交。
+
+## 2026-09-11（续2）：build-and-export-images.bat 双击报"命令语法不正确"根修——工作树 LF 行尾回归 + UTF-8 中文注释 GBK 乱码执行（gitignore 外发现）
+
+- **输入**：用户双击 `build-and-export-images.bat` 报 `[INFO] Proxy env cleared...` 后紧跟 `命令语法不正确。` 即死。
+- **根因 A（致命）**：根目录该 bat 工作树副本为 **LF-only**（9-07 23:28 被编辑器/工具直写落盘，比最后提交 a943021 早 17 分钟；git 对纯行尾漂移视为 clean 故不报警），而 `.gitattributes` 早已声明 `*.bat text eol=crlf`。cmd 对 LF-only 批处理的 goto/call 标签定位存在读位漂移，解析从行中间开始 → `docker info >nul 2>nul` 被撕成两段 → 语法错误整体终止。同病还有 `build-packages.bat`、`deploy/build-android.bat`（均 w/lf）。修复 = 删文件后 `git checkout --` 重新检出（按 attr smudge 回 CRLF），三文件 `git ls-files --eol` 现全 w/crlf；A/B 行为实验（同内容 414 行截断件 LF vs CRLF）实证 LF 件精确复现用户死点、CRLF 件健康跑通。
+- **根因 B（非致命）**：bat 内 4 行中文 rem 注释为 UTF-8 字节，GBK 控制台下被误解码成乱码命令执行（`'…' 不是内部或外部命令` ×2），有吞换行合并破坏后续命令的风险。修复 = 注释转 ASCII 英文（保留原语义：GBK 控制台不加 -X utf8 的原因、OCI 身份走临时 env 文件防 cmd /c 撕引号），文件现全 ASCII。
+- **附带修复**：镜像失败特征表（findstr）补 apt 实测措辞 `Failed to fetch`/`Connection failed`——此前 aliyun trixie 404 判 non-network 直接终止，现可正确触发华为/官方源兜底（网络劣化日实测：6min 仅 492kB、CDN 404）。
+- **验证**：修复后全量实跑：proxy 清理 → 镜像探测 profile 2 (HTTP 200) → 身份生成 PASS → `[OK] Release identity: v1.0.6` → 进入 docker build；乱码命令错误 0（修复前 2）。二轮验证被身份严格门禁按设计拦截（本文件未提交变更 → dirty fail-closed），属预期。
+- **遗留（未修，后续项）**：`backend/start_backend.bat`(11 行)/`deploy/build-windows.bat`(6 行)/`deploy/start.bat`(1 行) 同为 UTF-8 中文注释 + CRLF，同属 GBK 控制台乱码隐患类；python ≥3.15 PEP 686 默认 UTF-8 输出到 GBK 控制台为显示层乱码（仅观感）。可在 init.sh 加 `git ls-files --eol -- '*.bat' '*.cmd'` 无 w/lf 守卫防回归。
+- 未执行 Git 提交（含 bat 修复 3 处内容变更待用户提交，否则下次构建被身份门禁 dirty 拦截）。
+
+## 2026-09-11（续3）：身份门禁 dirty 拦截收口——澄清 bat 并非 git 忽略 + 提交修复清障
+
+- **输入**：用户实跑构建被身份门禁拦截（`M build-and-export-images.bat; M progress.md`），并以为 bat 是 git 忽略文件。核实：bat **被 git 跟踪**（3 次提交历史，.gitignore 第 93 行仅注释提及；真正忽略的是 .btdeck-deploy-credentials.bat），FAIL 里的 M 即"被跟踪且已修改"；生成器脏检查只过滤发布目录/会话产物/构建输出噪音（generate_build_info.py:286），progress.md 为被跟踪会话日志必然计入——发布必须干净检出，属设计行为。
+- **处置**：按门禁指引提交两文件（bat 5 处修复 diff 复核无误：4 行中文注释转 ASCII + findstr 补 `Failed to fetch`/`Connection failed`），data/（未跟踪）不扰动——生成器对未跟踪 data/ 不计 dirty（续 1 首轮实跑已证）。
