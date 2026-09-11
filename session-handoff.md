@@ -1,3 +1,16 @@
+## 2026-09-11（续二）：断速种子快照振荡双修复（未提交）
+
+### 交付内容（feature_list `speed-snapshot-flap-suppression-2026-09-11`）
+
+- **问题**：用户实证桌面端种子列表页放置半小时 65 次 `/torrents/getList`（~5s 一次）。Console 挂桩定位：栈全走 `runtimeListMembership.refresh` 新键路径，`observe` 打印确认为**同一颗断续下载的种子**反复进出 active-torrents 快照。
+- **根因**：补查退避（`_SUPPLEMENT_RETRY_INTERVAL=2s`）让断速种子在退避期轮次从快照缺席 → 前端完整快照基线被替换 → 回归轮被误判"新出现的未展示键" → getList；种子在分页/筛选外恒为未展示 → 循环。加长 TTL 无效（振荡来自退避缺席，非 TTL 过短）。
+- **修复 A（backend）**：`torrent_speed.py` `_TTLQueue` 条目存 `last_supplement` 补查缓存，`get_disappeared` 返回 (待补查分组, 退避期缓存填充) 二元组，端点 `update_supplement_cache()` 写回；`put()` 速度恢复即弃缓存。退避只节流查询、快照成员不缺席。
+- **修复 B（frontend）**：`torrentBatch.ts` `RuntimeListMembershipTracker` 新键判定加 `REAPPEAR_GRACE_MS=30s` 滞回——宽限内回归判为抖动不触发刷新，超宽限才重判新键；`lastSeenAt` 仅完整快照轮回收。
+- **验证**：后端定向三文件 112 passed（新增 2 例），mypy/black/flake8 绿；前端 torrent-batch 127 passed（新增 2 例），lint 绿；`./init.sh` 通过。roadmap 四处已同步（根 README 增量行 / backend api / frontend views 行号 / test-coverage）。
+- **注意**：`get_disappeared` 签名改二元组，存量测试已全量适配；若外部脚本直接调它需同步。
+
+---
+
 ## 2026-09-11（续）：Android 原生过渡页品牌化——Material + 翡翠绿（未提交）
 
 ### 交付内容（feature_list `android-native-ui-branding-2026-09-11`）

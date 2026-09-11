@@ -1370,6 +1370,35 @@ describe('实时列表成员自愈', () => {
     )).toEqual([])
   })
 
+  it('快照抖动：掉出一轮再回来（宽限期内）不判为新键', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('flap')], true)
+    // 完整快照轮缺席：基线被替换（模拟补查退避缺席）
+    expect(tracker.observe(visible, [], true)).toEqual([])
+    now += 5_000
+    // 5 秒后回来：滞回宽限（30s）内，判为快照抖动而非新成员
+    expect(tracker.observe(visible, [update('flap')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('flap')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('离开超过滞回宽限（30s）后回来才重新判为新键', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('long-gone')], true)
+    expect(tracker.observe(visible, [], true)).toEqual([])
+    now += 31_000
+    expect(tracker.observe(visible, [update('long-gone')], true)).toEqual(['speed:dl-a:long-gone'])
+
+    nowSpy.mockRestore()
+  })
+
   it('权威列表刷新并发时只执行一次，并在刷新后应用同轮速度', async() => {
     const tracker = new RuntimeListMembershipTracker()
     let releaseRefresh!: () => void

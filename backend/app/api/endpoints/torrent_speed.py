@@ -165,16 +165,19 @@ class _TTLQueue:
                 "downloader_id": downloader_id,
                 "downloader_type": downloader_type,
                 "hash": torrent_hash,
+                "last_supplement": None,
             }
             return
 
         # 重新出现在速度快照中的种子可以立即进入下一次终态核验；
         # 不保留上一次补查的退避时间，避免短暂恢复速度后再次消失时被延迟。
+        # 速度恢复即以主体实时数据为准，同时丢弃过期的补查缓存。
         entry.update(
             {
                 "last_time": now,
                 "next_probe_at": 0.0,
                 "downloader_type": downloader_type,
+                "last_supplement": None,
             }
         )
 
@@ -196,15 +199,22 @@ class _TTLQueue:
                 dl_id: cursor for dl_id, cursor in self._group_cursors.items() if dl_id in active_groups
             }
 
-    def get_disappeared(self, active_keys: Set[Tuple[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+    def get_disappeared(
+        self, active_keys: Set[Tuple[str, str]]
+    ) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
         """
         获取活跃列表中已消失但仍在 TTL 内的种子，按 downloader_id 分组返回。
         限制每组最多 _MAX_SUPPLEMENT_COUNT 个，避免对下载器造成过大压力。
+
+        返回 (待实际补查的分组, 退避期内以缓存直接填充的条目)：
+        退避机制只节流对下载器的实际查询，缓存填充保证断速种子在快照中
+        不缺席——否则前端成员对账会把"补查节流的暂时缺席"误判为新种子，
+        反复触发整表 getList 刷新。
         """
         now = time.monotonic()
         self.cleanup()
         if not self._store:
-            return {}
+            return {}, []
 
         # 每个下载器单独维护轮转游标：既限制单次补查量，又避免某个下载器的
         # 前 N 个任务长期占满配额，导致同组后半段或其它下载器永远得不到补查。
@@ -213,6 +223,7 @@ class _TTLQueue:
             grouped_entries.setdefault(entry["downloader_id"], []).append((key, entry))
 
         result: Dict[str, List[Dict[str, Any]]] = {}
+        cached_fills: List[Dict[str, Any]] = []
         for dl_id, entries in grouped_entries.items():
             start = self._group_cursors.get(dl_id, 0) % len(entries)
             selected: List[Dict[str, Any]] = []
@@ -224,6 +235,10 @@ class _TTLQueue:
                 if key in active_keys or now - entry["last_time"] > self._ttl:
                     continue
                 if now < entry.get("next_probe_at", 0.0):
+                    # 退避期内不对下载器发起查询，但用上次补查结果填充快照。
+                    cached = entry.get("last_supplement")
+                    if cached is not None:
+                        cached_fills.append(dict(cached))
                     continue
                 selected.append(entry)
                 entry["next_probe_at"] = now + _SUPPLEMENT_RETRY_INTERVAL
@@ -231,7 +246,23 @@ class _TTLQueue:
             self._group_cursors[dl_id] = (start + inspected) % len(entries)
             if selected:
                 result[dl_id] = selected
-        return result
+        return result, cached_fills
+
+    def update_supplement_cache(self, items: List[Dict[str, Any]]) -> None:
+        """补查结果写回 TTL 队列，供退避期内的快照缓存填充。
+
+        只命中更新、不主动清除：补查超时/失败的下载器返回空结果时保留旧缓存，
+        短暂故障期间快照成员仍连续。种子被删除后的残留缓存由 TTL 过期兜底回收
+        （最多滞留 _TTL_SECONDS，期间以 0 速度填充，无刷新副作用）。
+        """
+        for item in items:
+            dl_id = str(item.get("downloader_id") or "")
+            torrent_hash = str(item.get("hash") or "")
+            if not dl_id or not torrent_hash:
+                continue
+            entry = self._store.get((dl_id, torrent_hash))
+            if entry is not None:
+                entry["last_supplement"] = dict(item)
 
 
 # 全局 TTL 队列实例
@@ -851,15 +882,18 @@ async def get_active_torrents(
 
         # ---- 检测消失的种子并补查 ----
         _ttl_queue.cleanup()
-        disappeared_by_dl = _ttl_queue.get_disappeared(active_keys)
+        disappeared_by_dl, cached_fills = _ttl_queue.get_disappeared(active_keys)
 
         supplement_data: List[Dict[str, Any]] = []
         if disappeared_by_dl:
             supplement_data = await _supplement_disappeared(disappeared_by_dl, cached_downloaders)
+            _ttl_queue.update_supplement_cache(supplement_data)
 
-        # 合并补查结果到返回数据
+        # 合并补查结果与退避期缓存填充到返回数据（同一键不会同时出现在两者中）
         if supplement_data:
             active_torrents.extend(supplement_data)
+        if cached_fills:
+            active_torrents.extend(cached_fills)
 
         # 完成态一旦得到明确证据就从 TTL 队列移除；否则每次轮询都会重复补查，
         # 且下载器速度为 0 时前端永远等不到最后一个 100% 快照。

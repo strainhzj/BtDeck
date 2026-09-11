@@ -43,12 +43,13 @@ class TestTTLQueue:
 
         # active_keys 中只有 hash_a → hash_b 应该是"消失的"
         active = {("dl_1", "hash_a")}
-        result = q.get_disappeared(active)
+        result, cached_fills = q.get_disappeared(active)
 
         assert "dl_1" in result
         disappeared_hashes = [e["hash"] for e in result["dl_1"]]
         assert "hash_b" in disappeared_hashes
         assert "hash_a" not in disappeared_hashes
+        assert cached_fills == []
 
     def test_cleanup_expired(self):
         """过期的记录应被 cleanup 清除"""
@@ -76,7 +77,7 @@ class TestTTLQueue:
         q.put("dl_1", 0, "hash_a")
         q.put("dl_1", 0, "hash_b")
 
-        result = q.get_disappeared(set())
+        result, _ = q.get_disappeared(set())
         assert len(result["dl_1"]) == 2
 
     def test_get_disappeared_max_supplement_count(self):
@@ -89,7 +90,7 @@ class TestTTLQueue:
         for i in range(_MAX_SUPPLEMENT_COUNT + 10):
             q.put("dl_1", 0, f"hash_{i}")
 
-        result = q.get_disappeared(set())
+        result, _ = q.get_disappeared(set())
         assert len(result["dl_1"]) == _MAX_SUPPLEMENT_COUNT
 
     def test_get_disappeared_rotates_large_group(self):
@@ -101,12 +102,12 @@ class TestTTLQueue:
         for i in range(total):
             q.put("dl_1", 0, f"hash_{i}")
 
-        first = q.get_disappeared(set())
+        first, _ = q.get_disappeared(set())
         assert len(first["dl_1"]) == _MAX_SUPPLEMENT_COUNT
         # 模拟退避窗口结束，验证下一批不是固定的前 N 个。
         for entry in q._store.values():
             entry["next_probe_at"] = time.monotonic() - _SUPPLEMENT_RETRY_INTERVAL
-        second = q.get_disappeared(set())
+        second, _ = q.get_disappeared(set())
         second_hashes = {entry["hash"] for entry in second["dl_1"]}
         assert second_hashes.intersection({f"hash_{i}" for i in range(_MAX_SUPPLEMENT_COUNT, total)})
 
@@ -115,31 +116,81 @@ class TestTTLQueue:
         q = self._make_queue(ttl=60)
         q.put("dl_1", 0, "hash_retry")
 
-        first = q.get_disappeared(set())
+        first, _ = q.get_disappeared(set())
         assert [entry["hash"] for entry in first["dl_1"]] == ["hash_retry"]
-        assert q.get_disappeared(set()) == {}
+        assert q.get_disappeared(set()) == ({}, [])
 
         q._store[("dl_1", "hash_retry")]["next_probe_at"] = time.monotonic() - 0.01
-        retried = q.get_disappeared(set())
+        retried, _ = q.get_disappeared(set())
         assert [entry["hash"] for entry in retried["dl_1"]] == ["hash_retry"]
 
     def test_put_after_speed_recovers_resets_retry_backoff(self):
         """任务恢复速度后再次消失，应立即补查而非沿用旧退避时间。"""
         q = self._make_queue(ttl=60)
         q.put("dl_1", 0, "hash_flapping")
-        assert q.get_disappeared(set())["dl_1"]
-        assert q.get_disappeared(set()) == {}
+        assert q.get_disappeared(set())[0]["dl_1"]
+        assert q.get_disappeared(set())[0] == {}
 
         q.put("dl_1", 0, "hash_flapping")
-        disappeared = q.get_disappeared(set())
+        disappeared, _ = q.get_disappeared(set())
         assert [entry["hash"] for entry in disappeared["dl_1"]] == ["hash_flapping"]
+
+    def test_backoff_window_fills_with_cached_supplement(self):
+        """退避期内以缓存条目填充快照，断速种子不在快照中缺席。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_flap")
+
+        first, fills_before = q.get_disappeared(set())
+        assert [entry["hash"] for entry in first["dl_1"]] == ["hash_flap"]
+        assert fills_before == []
+
+        # 模拟端点补查成功后写回缓存（条目已注入下载器身份）
+        q.update_supplement_cache(
+            [
+                {
+                    "downloader_id": "dl_1",
+                    "downloader_type": 0,
+                    "hash": "hash_flap",
+                    "downloadSpeed": 0,
+                    "uploadSpeed": 0,
+                    "progress": 42,
+                }
+            ]
+        )
+
+        # 退避期内：不再查询下载器，但快照仍含该种子（缓存填充）
+        grouped, cached_fills = q.get_disappeared(set())
+        assert grouped == {}
+        assert len(cached_fills) == 1
+        assert cached_fills[0]["hash"] == "hash_flap"
+        assert cached_fills[0]["downloader_id"] == "dl_1"
+        assert cached_fills[0]["progress"] == 42
+
+        # 速度恢复（put）后缓存被丢弃，重新以实时数据为准
+        q.put("dl_1", 0, "hash_flap")
+        assert q._store[("dl_1", "hash_flap")]["last_supplement"] is None
+
+    def test_update_supplement_cache_ignores_unknown_and_partial_entries(self):
+        """缓存写回只命中已知复合键；缺身份字段的条目安全跳过。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_known")
+
+        q.update_supplement_cache(
+            [
+                {"downloader_id": "dl_1", "hash": "hash_known", "downloadSpeed": 5},
+                {"downloader_id": "dl_1", "hash": "hash_unknown", "downloadSpeed": 5},
+                {"downloadSpeed": 5},
+            ]
+        )
+        assert q._store[("dl_1", "hash_known")]["last_supplement"]["downloadSpeed"] == 5
+        assert ("dl_1", "hash_unknown") not in q._store
 
     def test_remove_completed_task(self):
         """确认完成后从 TTL 队列移除，后续不再补查。"""
         q = self._make_queue(ttl=60)
         q.put("dl_1", 0, "hash_done")
         q.remove("dl_1", "hash_done")
-        assert q.get_disappeared(set()) == {}
+        assert q.get_disappeared(set()) == ({}, [])
 
     def test_get_disappeared_grouped_by_downloader(self):
         """消失种子应按 downloader_id 分组"""
@@ -147,7 +198,7 @@ class TestTTLQueue:
         q.put("dl_1", 0, "hash_a")
         q.put("dl_2", 1, "hash_b")
 
-        result = q.get_disappeared(set())
+        result, _ = q.get_disappeared(set())
         assert "dl_1" in result
         assert "dl_2" in result
 
@@ -174,7 +225,7 @@ class TestTTLQueue:
         key = ("dl_1", "hash_expired")
         q._store[key]["last_time"] = time.monotonic() - 10
 
-        result = q.get_disappeared(set())
+        result, _ = q.get_disappeared(set())
         assert result == {}
 
 
@@ -633,7 +684,7 @@ class TestActiveKeysLogic:
             ("dl_2", "hash_shared"),
         }
 
-        disappeared = q.get_disappeared(active_keys)
+        disappeared, _ = q.get_disappeared(active_keys)
         # 两个下载器的 key 都在 active_keys 中，所以不会返回消失种子
         # 这意味着如果种子从 dl_2 消失（但仍在 dl_1 中），无法检测
         assert "dl_1" not in disappeared
@@ -656,7 +707,7 @@ class TestActiveKeysLogic:
         # 正确的 active_keys：每个种子只属于它实际所在的下载器
         correct_active_keys = {("dl_1", "hash_only_dl1")}
 
-        disappeared = q.get_disappeared(correct_active_keys)
+        disappeared, _ = q.get_disappeared(correct_active_keys)
         # dl_2 的种子不在 active_keys 中，应被检测为消失
         assert "dl_2" in disappeared
         assert any(e["hash"] == "hash_only_dl2" for e in disappeared["dl_2"])

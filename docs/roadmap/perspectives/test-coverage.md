@@ -135,7 +135,7 @@
 
 | 新增/扩展测试文件 | 覆盖源文件 | 覆盖内容 |
 |------------|-----------|---------|
-| `tests/api/test_torrent_speed_regression.py`（1012 行） | `app/api/endpoints/torrent_speed.py` | TTL 补查退避/恢复、超过 20 条任务的公平轮转、完成移除；qB/Transmission 完成状态矩阵、100% 优先级、异常进度与错误终态 |
+| `tests/api/test_torrent_speed_regression.py`（1012 行） | `app/api/endpoints/torrent_speed.py` | TTL 补查退避/恢复、超过 20 条任务的公平轮转、完成移除、退避期缓存填充与写回安全跳过（2026-09-11）；qB/Transmission 完成状态矩阵、100% 优先级、异常进度与错误终态 |
 | `tests/api/test_active_torrents_endpoint.py`（632 行） | `app/api/endpoints/torrent_speed.py` | status/downloadComplete 契约；“下载中有速度→零速完成”两轮闭环强制 100%、响应前同步与 TTL 移除；206 仍交付健康下载器终态；核验 list/missing |
 | `tests/endpoints/test_active_only_filter.py`（601 行） | `app/api/endpoints/torrent_speed.py` | 终态证据同步进度 100、状态与 completed_date；完成时间/完成状态/100% 三种数据库证据分别阻止异步旧快照回退 |
 

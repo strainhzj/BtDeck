@@ -7394,3 +7394,21 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：gradle `:app:processDebugResources`/`:app:compileDebugKotlin`/`:app:testDebugUnitTest`（28 例）/`:app:assembleDebug`/`:app:compileDebugAndroidTestKotlin` 全绿。AVD btdeck-a35 无头模拟器 10 屏视觉冒烟全过：向导、列表、添加表单（明文确认联动 + 空名校验错误）、列表卡片、本机服务确认（LAN 勾选出威胁模型）、启动进度、服务就绪自动进 WebView 加载本机前端（v1.0.6 · 服务就绪）——原生壳与 WebView 内前端同呈翡翠绿。截图存 `android/build/ui-smoke/`（gitignored）。
 - **坑**：① XML 注释不能含 `--`（`--color-primary-lightest` 触发 aapt2 解析失败）；② 带窗口 `-gpu auto` 模拟器在本机挂死 offline>10 分钟，无头 swiftshader_indirect 25-35 秒起（已记入 desktop-testing.md 已知坑 #9）；③ uiautomator dump 后错误提示展开会使对话框内容位移，坐标驱动要每步重新 dump。
 - 未执行 Git 提交。
+
+## 2026-09-11：重建应用安装包（含 edd69b2 Android 品牌化批次）
+
+- **输入**：用户要求再次重建。自 09-10 构建后新增两笔功能提交：e5f2ec5（品牌图标补齐 Android/DEB/RPM 产线）、edd69b2（Android 原生过渡页翡翠绿品牌化，android/ 33 文件 +714/-185）。`build-packages.bat` 默认链退出码 0。
+- **Windows**：`dist/btdeck.exe`（50.2MB，20:46）——身份锚定 **1.0.6 @ edd69b28d5a8**，verify-package 全项 [PASS]。ISCC 仍未安装，Inno Setup 安装器照例跳过。
+- **Android 双 APK 均为 edd69b2 内容（实证）**：LAN APK 20:48 新鲜构建（assembleDebug 非 UP-TO-DATE，哈希 9c70e7a9...4f026 与 gradle 输出一致）；strict APK mtime 停在当日 12:04——RCA：12:04 那次构建时 edd69b2 改动已在工作区（18:11 才提交），gradle 按文件内容判 UP-TO-DATE + copy /Y 同内容不重写时间戳；aapt2 dump resources 实证 strict APK 含 27 处 edd69b2 新增品牌资源（btdeck_primary_deep/btdeck_success 等），内容与 HEAD 等价，非陈旧制品。
+- **产线观察（记录勿误判）**：gradle 输出目录 `app/build/outputs/apk/debug/app-debug.apk` 被两个变体先后复用（strict 先、LAN 后覆盖），事后核验单个变体须对 dist 副本而非 build 目录；copy /Y 源目标同内容时目标 mtime 不更新，判定制品新鲜度须"哈希/内容"而非时间戳。
+- 未执行 Git 提交。
+
+## 2026-09-11（续）：断速种子快照振荡双修复——补查退避缓存填充 + 新键滞回宽限（feature_list `speed-snapshot-flap-suppression-2026-09-11`）
+
+- **输入**：用户观察桌面端种子列表页放置半小时触发 65 次 `/torrents/getList` 且随后停止，要求定位原因并修复。排查路径：XHR 调用栈挂桩（`$vm0` 不可用改 `__vue__` 递归找组件）→ 12/12 栈全走 `runtimeListMembership.refresh` 新键路径且严格每 5s 一次 → 挂桩 `observe` 打印新键确认为**同一颗断续下载的种子**。
+- **根因链**：后端 active-torrents 的补查退避（`_SUPPLEMENT_RETRY_INTERVAL=2s`）让断速种子在退避期轮次从快照缺席（`get_disappeared` 直接跳过、不补查）→ 前端完整快照轮基线被替换、种子出基线 → 回归轮不在基线被误判"新出现的未展示键" → 触发 getList；该种子在分页/筛选外恒为未展示，循环不止。加长 TTL 无效：TTL 管的是"放弃补查时限"，振荡来自退避缺席。
+- **修复 A（backend `torrent_speed.py`）**：`_TTLQueue` 条目新增 `last_supplement` 缓存；`get_disappeared` 改返回 `(待实际补查分组, 退避期缓存填充条目)` 二元组；端点补查成功后 `update_supplement_cache()` 写回（只命中更新不主动清除——补查失败保留旧缓存撑快照连续，删除残留由 TTL 60s 过期兜底）；`put()`（速度恢复）清缓存回归实时数据。
+- **修复 B（frontend `torrentBatch.ts`）**：`RuntimeListMembershipTracker` 新键判定加 `REAPPEAR_GRACE_MS=30s` 滞回——判定读刷新前旧时间戳，键掉出快照后宽限内回归判为抖动不触发，超宽限回归才重判新键；`lastSeenAt` 仅完整快照轮回收超宽限条目（206 部分快照缺席不当真实离开）。
+- **测试**：后端适配 get_disappeared 二元组签名（regression/active_only_filter 存量用例）+ 新增 2 例（退避期缓存填充、缓存写回安全跳过），定向 112 passed；mypy/black/flake8 绿。前端新增 2 例（宽限内抖动不触发、超 30s 回归触发），torrent-batch 127 passed；npm run lint 绿。
+- **roadmap 同步**：根 README 增量表加 2026-09-11 行；backend/api README torrent-speed 职责补缓存填充；frontend/views README torrentBatch 行号 L351→L358/L405→L432/L444→L471/L596→L623 实测更新 + 滞回语义；test-coverage 补职责描述。
+- 未执行 Git 提交。

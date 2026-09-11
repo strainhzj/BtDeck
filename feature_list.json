@@ -6203,6 +6203,41 @@
       ],
       "evidence_summary": "Android 资源链 gradle 双任务绿 + 像素几何校验绿；DEB/RPM 接线静态验证绿（制品黑盒属 CI/Linux 产线）",
       "notes": "图标风格 2026-09-11 用户确认：品牌绿 #059669 底 + 白色单色标志。DEB/RPM 与 APK 需各产线下次构建才会带上图标（本批只改产线配置与资产）。"
+    },
+    {
+      "id": "speed-snapshot-flap-suppression-2026-09-11",
+      "name": "断速种子快照振荡双修复：补查退避缓存填充 + 新键滞回宽限",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "flap.1",
+          "name": "后端：补查退避只节流查询，快照不缺席",
+          "description": "根因：active-torrents 的补查退避（_SUPPLEMENT_RETRY_INTERVAL=2s）让断速种子在退避期轮次从快照缺席，前端完整快照基线被替换后，种子回归被误判为'新出现的未展示键'，反复触发整表 getList（用户实测 ~5s 一次、半小时 65 次）。修复：_TTLQueue 条目新增 last_supplement 缓存，get_disappeared 返回 (待实际补查分组, 退避期缓存填充条目) 二元组，端点补查成功后 update_supplement_cache 写回；put（速度恢复）清缓存以实时数据为准。下载器补查失败时保留旧缓存撑住快照连续；种子删除后的残留缓存由 TTL 60s 过期兜底回收（期间以 0 速度填充，无刷新副作用）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/tests/api/test_torrent_speed_regression.py",
+            "backend/tests/endpoints/test_active_only_filter.py"
+          ]
+        },
+        {
+          "id": "flap.2",
+          "name": "前端：RuntimeListMembershipTracker 新键判定加 30s 滞回宽限",
+          "description": "防御层：键掉出快照后 REAPPEAR_GRACE_MS(30s) 内再出现不判为新键（读取刷新前旧时间戳判定），离开超过宽限再回来才触发权威刷新。对后端一切快照抖动（补查退避缺席、完成态移除、下载器瞬时失败）免疫。lastSeenAt 仅在完整快照轮回收超宽限条目防 Map 无界增长；部分快照（206）不清理不替换基线，缺席不当真实离开。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts"
+          ]
+        }
+      ],
+      "evidence": {
+        "backend": "定向 pytest 三文件 112 passed（test_torrent_speed_regression + test_active_only_filter + test_active_torrents_endpoint，含新增 2 例：退避期缓存填充/缓存写回安全跳过）；mypy no issues；black 已格式化；flake8 通过",
+        "frontend": "torrent-batch.spec.ts 127 passed（含新增 2 例：宽限期内抖动不触发/超 30s 回归触发）；npm run lint 全量通过"
+      }
     }
   ],
   "tasks": [

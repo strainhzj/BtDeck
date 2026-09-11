@@ -342,6 +342,13 @@ export interface SpeedUpdate {
 }
 
 /**
+ * 新键滞回宽限（ms）：快照成员抖动（补查退避缺席、完成态移除、下载器瞬时
+ * 失败）会让同一键"掉出一轮再回来"。掉出后该宽限内再出现不判为新键，
+ * 防止断速种子反复触发整表 getList；离开超过宽限再回来才算真正的新成员。
+ */
+const REAPPEAR_GRACE_MS = 30_000
+
+/**
  * 跟踪“速度快照中存在、当前分页列表中不存在”的复合键。
  *
  * 首个完整快照只建立基线：分页之外的既有活动任务本来就不在当前 list，不能因此
@@ -351,6 +358,7 @@ export interface SpeedUpdate {
 export class RuntimeListMembershipTracker {
   private initialized = false
   private unlistedKeys = new Set<string>()
+  private lastSeenAt = new Map<string, number>()
   private refreshPromise: Promise<boolean> | null = null
 
   observe<T extends TorrentIdentityLike>(
@@ -358,6 +366,7 @@ export class RuntimeListMembershipTracker {
     updates: SpeedUpdate[],
     completeSnapshot: boolean
   ): string[] {
+    const now = Date.now()
     const index = buildTorrentSpeedTargetIndex(torrents)
     const currentUnlisted = new Set<string>()
 
@@ -368,7 +377,10 @@ export class RuntimeListMembershipTracker {
     })
 
     if (!this.initialized) {
-      currentUnlisted.forEach(key => this.unlistedKeys.add(key))
+      currentUnlisted.forEach(key => {
+        this.unlistedKeys.add(key)
+        this.lastSeenAt.set(key, now)
+      })
       if (completeSnapshot) {
         this.initialized = true
         this.unlistedKeys = currentUnlisted
@@ -376,9 +388,22 @@ export class RuntimeListMembershipTracker {
       return []
     }
 
-    const discovered = Array.from(currentUnlisted).filter(key => !this.unlistedKeys.has(key))
+    // 滞回判定必须读取刷新前的旧时间戳：宽限期内回来的是快照抖动而非新成员
+    const discovered = Array.from(currentUnlisted).filter(key => {
+      if (this.unlistedKeys.has(key)) return false
+      const seenAt = this.lastSeenAt.get(key)
+      return seenAt === undefined || now - seenAt >= REAPPEAR_GRACE_MS
+    })
+    currentUnlisted.forEach(key => this.lastSeenAt.set(key, now))
     if (completeSnapshot) {
       this.unlistedKeys = currentUnlisted
+      // 回收长期不在场的滞回时间戳，防 Map 无界增长（部分快照不清理：
+      // 本轮缺席可能是快照不完整，不能当真实离开）
+      this.lastSeenAt.forEach((seenAt, key) => {
+        if (!currentUnlisted.has(key) && now - seenAt >= REAPPEAR_GRACE_MS) {
+          this.lastSeenAt.delete(key)
+        }
+      })
     } else {
       currentUnlisted.forEach(key => this.unlistedKeys.add(key))
     }
@@ -396,6 +421,8 @@ export class RuntimeListMembershipTracker {
     })
     this.initialized = true
     this.unlistedKeys = nextUnlisted
+    const now = Date.now()
+    nextUnlisted.forEach(key => this.lastSeenAt.set(key, now))
   }
 
   /**
