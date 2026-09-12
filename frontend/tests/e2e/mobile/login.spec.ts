@@ -12,6 +12,17 @@ test.describe('移动端登录（/m/login）', () => {
     await expect(page.getByRole('button', { name: '使用桌面版' })).toHaveCount(0)
   })
 
+  // 2026-09-12 回归守护：偏好 mobile 的桌面浏览器须有回桌面出口（仅宽视口渲染）
+  test('宽视口显示桌面版出口：点击写偏好并进入桌面登录页', async({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    // 复现锁死前置：显式偏好 mobile（否则宽视口 auto 解析为桌面模式，/m/login 被分流）
+    await page.addInitScript(() => localStorage.setItem('btdeck_ui_mode', 'mobile'))
+    await page.goto('/#/m/login')
+    await expect(page.getByRole('button', { name: '使用桌面版登录' })).toBeVisible()
+    await page.getByRole('button', { name: '使用桌面版登录' }).click()
+    await expect(page).toHaveURL(/#\/login/)
+  })
+
   test('错误凭据弹出错误提示且停留在登录页', async({ page }) => {
     await page.goto('/#/m/login')
     await page.getByPlaceholder('用户名').fill(E2E_USERNAME)

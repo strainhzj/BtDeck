@@ -1,9 +1,10 @@
 /**
  * 移动布局壳行为契约（dual-mode-client Phase 4 M1 + 2026-08-24 增强）：
- * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航、"桌面版"
- *   出口必须写偏好并离开移动布局（不自锁原则）；
- * - 汉堡抽屉：完整功能菜单（移动组 4 + 桌面组 9），移动项 replace、桌面项
- *   push 且不写 ui_mode 偏好（返回/刷新仍回移动版）；
+ * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航；
+ * - 桌面版出口按视口分流（2026-09-12）：窄视口（手机）不渲染（mobile-ux-fixes
+ *   决策），宽视口（≥768px 桌面浏览器预览）顶栏渲染且点击写 desktop 偏好并
+ *   进 /dashboard（偏好 mobile 单向锁死回归的解锁口，不自锁原则）；
+ * - 汉堡抽屉：完整功能菜单（移动组，能力 fail-closed 隐藏受限项），移动项 replace；
  * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
  *   + 60s 轮询（fake timers），>99 显示 99+；
  * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
@@ -84,13 +85,51 @@ describe('layout/mobile/MobileLayout', () => {
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
   })
 
-  it('桌面版入口全部移除（mobile-ux-fixes 2026-09）：顶栏/抽屉出口与桌面页签分组不再渲染', async() => {
+  it('窄视口不渲染桌面版出口（mobile-ux-fixes 决策保持）：手机屏顶栏/抽屉/分组均无桌面版', async() => {
+    // jsdom 无 window.matchMedia → showDesktopEntry 兜底 false（等价窄视口路径）
     const wrapper = mountLayout('/m/dashboard')
     expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
     expect(wrapper.find('.mobile-menu-desktop-btn').exists()).toBe(false)
     expect(wrapper.find('.mobile-menu-footer').exists()).toBe(false)
     expect((wrapper.vm as any).desktopMenuItems).toBeUndefined()
     expect(wrapper.text()).not.toContain('桌面版')
+  })
+
+  it('宽视口恢复桌面版出口（2026-09-12 回归修复）：渲染 + 点击写 desktop 偏好并进 /dashboard', async() => {
+    // jsdom 无 matchMedia，注入宽视口桩（matches: true）
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      // mounted 同步改 showDesktopEntry，DOM 更新在下一微任务
+      await wrapper.vm.$nextTick()
+      const btn = wrapper.find('.mobile-header-desktop')
+      expect(btn.exists()).toBe(true)
+      expect(btn.text()).toContain('桌面版')
+      // 模拟被 switchToMobile 锁定的偏好，点击出口应解锁
+      localStorage.setItem('btdeck_ui_mode', 'mobile')
+      btn.trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
+      expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/dashboard')
+      wrapper.destroy()
+      // 销毁时解绑媒体查询监听
+      expect(mqlStub.removeEventListener).toHaveBeenCalled()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+    }
+  })
+
+  it('宽视口 matchMedia 不存在或不可用时：出口保持隐藏（安全兜底，不抛错）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
   })
 
   // ============ 汉堡抽屉（2026-08-24） ============

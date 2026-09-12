@@ -19,15 +19,22 @@
       />
       <el-button type="primary" class="m-login-button" :loading="loading" @click="submit">登录</el-button>
     </div>
+    <!-- 桌面版出口（仅宽视口渲染）：偏好 mobile 的桌面浏览器登出态解锁，
+         手机窄屏不渲染（mobile-ux-fixes「app 不显示桌面版」决策保持） -->
+    <button v-if="isWideViewport" type="button" class="m-login-desktop" @click="switchToDesktop">
+      使用桌面版登录
+    </button>
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { isDemoMode } from '@/demo/config'
 import { extractErrorMessage } from '@/utils/formatters'
 import AppLogo from '@/components/common/AppLogo.vue'
+import { setStoredUiMode } from '@/utils/ui-mode'
+import { WideViewport } from '@/views/mobile/mixins/wide-viewport'
 
 /** 移动登录页（Phase 4 M1）：复用 user store Login action 与既有 token/守卫链路 */
 @Component({
@@ -36,13 +43,19 @@ import AppLogo from '@/components/common/AppLogo.vue'
     AppLogo
   }
 })
-export default class MobileLogin extends Vue {
+export default class MobileLogin extends WideViewport {
   private username = ''
   private password = ''
   private loading = false
 
   get demoMode(): boolean {
     return isDemoMode()
+  }
+
+  /** 切回桌面版（宽视口出口）：写 desktop 偏好后进桌面登录页，守卫放行 /login */
+  private switchToDesktop(): void {
+    setStoredUiMode('desktop')
+    this.$router.replace('/login').catch(() => undefined)
   }
 
   private enterDemoMode(): void {
@@ -124,5 +137,17 @@ export default class MobileLogin extends Vue {
   display: block;
   width: 100%;
   margin-top: 8px;
+}
+
+/* 桌面版出口（仅宽视口渲染）：登录卡片下方的低调文字链 */
+.m-login-desktop {
+  margin-top: 20px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #6B7280);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 </style>

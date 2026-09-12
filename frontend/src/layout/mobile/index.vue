@@ -21,6 +21,19 @@
         <AppLogo v-if="!isSecondaryPage" variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
         <span class="mobile-header-title">{{ headerTitle }}</span>
       </div>
+      <!-- 桌面版出口（仅宽视口渲染）：桌面浏览器预览移动版时的回程解锁，
+           手机窄屏不渲染（mobile-ux-fixes「app 不显示桌面版」决策保持） -->
+      <div v-if="isWideViewport" class="mobile-header-right">
+        <button
+          type="button"
+          class="mobile-header-desktop"
+          aria-label="切换到桌面版"
+          @click="switchToDesktop"
+        >
+          <LucideIcon name="monitor" :size="15" />
+          <span>桌面版</span>
+        </button>
+      </div>
     </header>
 
     <main
@@ -93,10 +106,12 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { isCapabilityAvailable } from '@/api/platform-capabilities'
+import { setStoredUiMode } from '@/utils/ui-mode'
+import { WideViewport } from '@/views/mobile/mixins/wide-viewport'
 
 interface MobileTab {
   label: string
@@ -120,12 +135,14 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
  * 顶部标题 + 汉堡功能菜单、内容区 router-view、底部 Tab 导航。
- * 不自锁：偏好仍可经 localStorage（btdeck_ui_mode）或 ≥768px 视口自动进桌面版。
+ * 不自锁：显式偏好 mobile 时宽视口仍停留移动版，须有切回桌面的出口。
  *
  * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）。
- * 2026-09-10（mobile-ux-fixes）：移除全部「桌面版」切换入口（顶栏按钮/抽屉
- * 完整桌面版/桌面页签分组）——手机屏上桌面版本不可用，且「Tracker 汇报/测试」
+ * 2026-09-10（mobile-ux-fixes）：移除手机屏上的「桌面版」切换入口（顶栏按钮/
+ * 抽屉完整桌面版/桌面页签分组）——手机屏上桌面版本不可用，且「Tracker 汇报/测试」
  * 等桌面承载页自此仅桌面浏览器可达（用户确认的取舍）。
+ * 2026-09-12：补宽视口（≥768px）顶栏「桌面版」出口——修复桌面浏览器被
+ * switchToMobile 写死 mobile 偏好后无路回桌面（偏好单向锁死回归）。
  *
  * 通知未读角标（M1 余项）：复用桌面同款 Vuex NotificationModule.unreadCount
  * （/notifications/unread-count 现有接口），挂载即拉一次 + 60s 轮询（移动端
@@ -146,7 +163,7 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
     AppLogo
   }
 })
-export default class MobileLayout extends Vue {
+export default class MobileLayout extends WideViewport {
   private drawerVisible = false
   private unreadTimer = 0
 
@@ -223,6 +240,17 @@ export default class MobileLayout extends Vue {
       window.clearTimeout(this.swipeAnimTimer)
       this.swipeAnimTimer = 0
     }
+  }
+
+  // ============ 桌面版出口（宽视口专属，2026-09-12 回归修复） ============
+
+  /**
+   * 切回桌面版：写 desktop 显式偏好（与桌面侧栏 switchToMobile 对称）后进桌面页。
+   * 守卫按解析后的模式放行 /dashboard（不再被重定向回 /m/*）。
+   */
+  private switchToDesktop(): void {
+    setStoredUiMode('desktop')
+    this.$router.push('/dashboard').catch(() => undefined)
   }
 
   private fetchUnreadCount(): void {
@@ -429,6 +457,26 @@ export default class MobileLayout extends Vue {
 .mobile-header-left {
   display: flex;
   align-items: center;
+}
+
+/* 桌面版出口（仅宽视口渲染，v-if 控制）：主题色头部上的半透明胶囊按钮 */
+.mobile-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.mobile-header-desktop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .mobile-header-back {
