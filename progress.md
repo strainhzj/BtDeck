@@ -7463,3 +7463,23 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：quick-delete spec 6 用例（+4 新增：自动触发/未完成不触发+失效清预览/删除后关闭/源码契约）；新增 `downloader-settings-dialog-init.spec.ts` 3 用例源码契约（**该 SFC 模板含 `?.`，jest buble 模板编译器解析不了无法真挂载**——沿用 downloader-control-room-ui 源码契约模式，行为由浏览器实测兜底）；全量 108 套件 1528 用例全绿；lint/typecheck/build 绿。浏览器实测（375×812 demo）：设置页名称回填「实验室节点 A」、页签图标/副标题 computed display 全 none、删重弹窗无手动按钮且提示可见。
 - **坑**：①Vue watcher 不为初始 prop 值触发——"以固定 true 创建 + 依赖 watch 初始化"的复用形态必踩，挂载补判；②测量 display:none 元素勿用 querySelectorAll 计数（仍在 DOM），须查 computed style；③移动种子页快捷下拉触发按钮文案是「快捷」非「快捷操作」，playwright 定位别按想象写。
 - 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12：断速振荡双修复回归保护加固（speed-snapshot-flap-suppression 续）
+
+- **输入**：用户要求为 6dd0ae0 双修复补足回归测试保护。
+- **后端 +7**：_TTLQueue 性质用例 5（缓存填充不受 `_MAX_SUPPLEMENT_COUNT` 查询配额限制——配额只约束下载器实际查询、完成 remove 不复活缓存、TTL 过期即使有缓存也不填充、active_keys 命中短路防主体+缓存双条目、填充条目为缓存拷贝外部篡改不污染）+ 端点闭环 2（`TestBackoffCacheFillOscillation`：断速种子速度归零→补查 1 次→退避期连续 2 轮零补查查询且快照持续在场"不查但在场"；速度恢复轮弃缓存回归主体实时数据）。端点 mock 复用既有 `torrents_info.side_effect` 按 kwargs 分流主体（status_filter）/补查（hashes）模式。
+- **前端 +5**：滞回性质用例 4（恰 30_000ms 边界 >= 语义、206 部分快照在场同样刷新 seenAt 计入滞回、lastSeenAt 回收不误伤持续在场键、rebaseline 刷新时间戳防刷新后快速掉出回归重复触发）+ 振荡循环模拟 1（秒级在场/缺席交替 8 轮浓缩用户实测场景全程零触发、超宽限回归允许一次合法触发；首版时间轴累计超 30s 触发误红，改密集间隔后正确——写测试时交替间隔必须小于宽限，否则是合法的"长时间离开后回归"）。
+- **坑**：qB `stalledDL` 状态在 `_supplement_qb_sync` 经 `_normalize_runtime_state` 归一为 `downloading`，端点断言须用归一后值。
+- **变异验证 3/3 检出**：①退避分支不收集 cached_fills→4 红；②put 不清缓存→2 红；③前端滞回判定回退为无条件触发→6 红。还原后生产代码与 6dd0ae0 逐字节一致（git diff 空，仅行尾 touch 已 checkout 还原）。
+- **验证**：后端三文件 119 passed（reformat 后 regression+endpoint 92 复跑绿）+ flake8 + black；前端 torrent-batch 132 passed + lint 绿。
+- 工作区另有非本会话的 android/demo/downloader 改动，未触碰。
+- 未执行 Git 提交。
+
+## 2026-09-11（续二）：品牌化批次回归测试补强（android-native-ui-branding 测试保护）
+
+- **输入**：用户要求为本次 UI 品牌化修改添加充足的回归测试保护。
+- **JVM 新增 7 例**（`:app:testDebugUnitTest` 44/44 全绿）：① `HealthUiTest`（3 例）——健康文案与语义色映射从 ServerListActivity 抽出为纯逻辑 `ui/HealthUi.kt`（Espresso 依赖的五条文案 + 灰/绿/橙/红四组语义色互异断言）；② `BrandThemeSyncTest`（4 例）——直读资源文件静态断言：colors.xml token 值锁定 emerald 十三色、values 与 values-v35 主题 item 全集同步（v35 覆盖式继承漏项即静默漂移）、主题 parent 非 DayNight + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对（仓库根不可见 assume 跳过）。
+- **androidTest 新增 `CompanionBrandingUiTest` 6 例**（连同 CompanionOfflineUiTest 存量 2 例共 8/8 通过，AVD btdeck-a35）：colorPrimary 运行时解析 #059669；向导 brand_mark/双模式卡存在；伴侣卡 → 列表且 btn_add_server 为 MaterialButton；添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错且不关框 + 合法输入保存成行；关闭端口 → row_health 文案与 row_health_dot 圆点同染 error 红 #EF4444；本机服务确认对话框 LAN 勾选联动威胁模型文案。
+- **配套微调**：向导品牌 ImageView 加 `brand_mark` ID（可断言）；通知权限经 `uiAutomation.grantRuntimePermission` 预授权（免 GrantPermissionRule 新依赖、免系统弹窗拦截 Espresso）。
+- **踩坑**：① TextInputEditText 直接父容器是 TIL 内部 inputFrame（FrameLayout），断言需沿祖先链找 TextInputLayout；② 测试断言别用"全文 contains"——注释里的字面量会误伤（DayNight 断言解析 parent 属性）；③ Espresso RootMatchers 在 `matcher` 子包。
+- 未执行 Git 提交。

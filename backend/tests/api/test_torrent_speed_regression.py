@@ -185,6 +185,85 @@ class TestTTLQueue:
         assert q._store[("dl_1", "hash_known")]["last_supplement"]["downloadSpeed"] == 5
         assert ("dl_1", "hash_unknown") not in q._store
 
+    def test_cached_fills_not_capped_by_max_supplement_count(self):
+        """缓存填充是内存操作，不受 _MAX_SUPPLEMENT_COUNT 查询配额限制。
+
+        若把 cached_fills 也塞进配额逻辑，超配额的退避期种子会重新缺席快照，
+        振荡修复失效——配额只应约束对下载器的实际查询。
+        """
+        from app.api.endpoints.torrent_speed import _MAX_SUPPLEMENT_COUNT
+
+        q = self._make_queue(ttl=60)
+        total = _MAX_SUPPLEMENT_COUNT + 15
+        for i in range(total):
+            q.put("dl_1", 0, f"hash_{i}")
+
+        # 第一轮：配额内实际补查，写回缓存
+        grouped, _ = q.get_disappeared(set())
+        assert len(grouped["dl_1"]) == _MAX_SUPPLEMENT_COUNT
+        q.update_supplement_cache(
+            [
+                {"downloader_id": "dl_1", "hash": e["hash"], "downloadSpeed": 0, "uploadSpeed": 0}
+                for e in grouped["dl_1"]
+            ]
+        )
+
+        # 退避期轮：配额内全部缓存填充；配额外 15 个正常排队待查
+        grouped2, cached_fills = q.get_disappeared(set())
+        assert len(cached_fills) == _MAX_SUPPLEMENT_COUNT
+        assert len(grouped2["dl_1"]) == 15
+
+    def test_remove_drops_cached_fill_too(self):
+        """确认完成移除后缓存不再续命：完成种子不会被 cached_fills 复活。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_done")
+        q.update_supplement_cache([{"downloader_id": "dl_1", "hash": "hash_done", "downloadSpeed": 0}])
+
+        q.remove("dl_1", "hash_done")
+        grouped, cached_fills = q.get_disappeared(set())
+        assert grouped == {}
+        assert cached_fills == []
+
+    def test_expired_entry_not_filled_even_with_cache(self):
+        """TTL 过期后即使有缓存也不再填充（断速观察期结束，快照成员允许离开）。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_old")
+        q.update_supplement_cache([{"downloader_id": "dl_1", "hash": "hash_old", "downloadSpeed": 0}])
+        q._store[("dl_1", "hash_old")]["last_time"] = time.monotonic() - 61
+
+        grouped, cached_fills = q.get_disappeared(set())
+        assert grouped == {}
+        assert cached_fills == []
+
+    def test_active_key_short_circuits_cached_fill(self):
+        """种子回到 active_keys（重新有速度）时残留缓存不填充，防主体+缓存双重条目。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_live")
+        q.get_disappeared(set())  # 进入退避
+        # 防御场景：绕过 put 直接注入缓存（模拟异常路径），种子同时回到活动集合
+        q._store[("dl_1", "hash_live")]["last_supplement"] = {
+            "downloader_id": "dl_1",
+            "hash": "hash_live",
+            "downloadSpeed": 0,
+        }
+
+        grouped, cached_fills = q.get_disappeared({("dl_1", "hash_live")})
+        assert grouped == {}
+        assert cached_fills == []
+
+    def test_cached_fill_is_snapshot_copy(self):
+        """填充条目是缓存拷贝：外部篡改填充结果不污染后续轮次。"""
+        q = self._make_queue(ttl=60)
+        q.put("dl_1", 0, "hash_x")
+        q.update_supplement_cache([{"downloader_id": "dl_1", "hash": "hash_x", "progress": 7}])
+
+        # 第一次调用选中实际补查（进入退避），第二次起走缓存填充
+        q.get_disappeared(set())
+        _, fills = q.get_disappeared(set())
+        fills[0]["progress"] = 99
+        _, fills2 = q.get_disappeared(set())
+        assert fills2[0]["progress"] == 7
+
     def test_remove_completed_task(self):
         """确认完成后从 TTL 队列移除，后续不再补查。"""
         q = self._make_queue(ttl=60)

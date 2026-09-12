@@ -1399,6 +1399,101 @@ describe('实时列表成员自愈', () => {
     nowSpy.mockRestore()
   })
 
+  it('滞回边界：掉出后 29_999ms 回归不触发，恰好 30_000ms 回归触发（>= 语义）', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('edge-b')], true)
+    tracker.observe(visible, [], true)
+    now += 29_999
+    expect(tracker.observe(visible, [update('edge-b')], true)).toEqual([])
+
+    tracker.observe(visible, [], true)
+    now += 30_000
+    expect(tracker.observe(visible, [update('edge-b')], true)).toEqual(['speed:dl-a:edge-b'])
+
+    nowSpy.mockRestore()
+  })
+
+  it('206 部分快照在场同样计入滞回：partial 见过后快速回归不算离开超宽限', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('p')], true)
+    now += 20_000
+    tracker.observe(visible, [update('p')], false) // partial 在场：刷新 seenAt
+    now += 20_000
+    tracker.observe(visible, [], true) // complete 缺席（距 partial 在场 20s < 30s，seenAt 保留）
+    now += 5_000
+    // 距上次在场（partial 轮）仅 25s：若 partial 在场未计入，距首次 45s 会误触发
+    expect(tracker.observe(visible, [update('p')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('lastSeenAt 回收不误伤在场键：他键超宽限被清理后，在场键短暂掉出回归仍不触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('stayer'), update('leaver')], true)
+    now += 31_000
+    // leaver 缺席超宽限触发 seenAt 清理；stayer 在场刷新自身时间戳
+    tracker.observe(visible, [update('stayer')], true)
+    // stayer 短暂掉出一轮后立即回归：自身时间戳刚刷新（1 秒前），不受清理影响
+    tracker.observe(visible, [], true)
+    now += 1_000
+    expect(tracker.observe(visible, [update('stayer')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('rebaseline 刷新滞回时间戳：权威刷新后键掉出再快速回归不重复触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [], true)
+    const newUpdate = update('after-reload')
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual(['speed:dl-a:after-reload'])
+    // 权威刷新后列表仍不含该行（分页外），rebaseline 重建基线并刷新时间戳
+    tracker.rebaseline(visible, [newUpdate])
+
+    now += 10_000
+    tracker.observe(visible, [], true) // 掉出一轮（complete 基线替换）
+    now += 5_000
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('振荡循环模拟：多轮在场/缺席交替全程零触发，超宽限回归触发一次（用户场景回归）', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('osc')], true)
+    // 浓缩用户实测场景：补查退避造成的秒级在场/缺席交替
+    // （相邻两次在场间隔须小于宽限，否则是合法的"长时间离开后回归"）
+    const flaps: Array<[number, boolean]> = [
+      [1_000, false], [2_000, true], [1_000, false], [3_000, true],
+      [1_000, false], [2_000, true], [1_000, false], [4_000, true]
+    ]
+    flaps.forEach(([offset, present]) => {
+      now += offset
+      expect(tracker.observe(visible, present ? [update('osc')] : [], true)).toEqual([])
+    })
+
+    // 长时间真正离开后再回来：允许一次合法触发
+    now += 35_000
+    tracker.observe(visible, [], true)
+    expect(tracker.observe(visible, [update('osc')], true)).toEqual(['speed:dl-a:osc'])
+
+    nowSpy.mockRestore()
+  })
+
   it('权威列表刷新并发时只执行一次，并在刷新后应用同轮速度', async() => {
     const tracker = new RuntimeListMembershipTracker()
     let releaseRefresh!: () => void

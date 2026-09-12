@@ -6235,8 +6235,8 @@
         }
       ],
       "evidence": {
-        "backend": "定向 pytest 三文件 112 passed（test_torrent_speed_regression + test_active_only_filter + test_active_torrents_endpoint，含新增 2 例：退避期缓存填充/缓存写回安全跳过）；mypy no issues；black 已格式化；flake8 通过",
-        "frontend": "torrent-batch.spec.ts 127 passed（含新增 2 例：宽限期内抖动不触发/超 30s 回归触发）；npm run lint 全量通过"
+        "backend": "定向 pytest 三文件 119 passed（test_torrent_speed_regression + test_active_only_filter + test_active_torrents_endpoint）；mypy no issues；flake8 通过。回归保护加固（2026-09-12）：_TTLQueue 新增 5 性质用例（缓存填充不受查询配额限制/完成移除不复活/TTL 过期不填充/active_keys 短路防双条目/填充条目拷贝隔离）+ 端点闭环 2 例（断速种子退避期连续 4 轮在场且零补查查询、速度恢复弃缓存回归实时数据）；变异验证 2/2 检出（退避不收集缓存→4 红、put 不清缓存→2 红）",
+        "frontend": "torrent-batch.spec.ts 132 passed（新增 2 例：宽限期内抖动不触发/超 30s 回归触发）；npm run lint 全量通过。回归保护加固（2026-09-12）：滞回新增性质用例 4 例（恰 30_000ms 边界 >= 语义、206 部分快照在场计入滞回、lastSeenAt 回收不误伤在场键、rebaseline 刷新时间戳）+ 振荡循环模拟 1 例（秒级在场/缺席交替 8 轮全程零触发、超宽限回归触发一次）；变异验证 1/1 检出（滞回判定回退→6 红）"
       }
     },
     {
@@ -6693,12 +6693,17 @@
         "android/app/src/main/java/com/btdeck/companion/ui/WizardActivity.kt",
         "android/app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt",
         "docs/roadmap/android-companion.md",
-        "docs/android/desktop-testing.md"
+        "docs/android/desktop-testing.md",
+        "android/app/src/main/java/com/btdeck/companion/ui/HealthUi.kt",
+        "android/app/src/test/java/com/btdeck/companion/ui/HealthUiTest.kt",
+        "android/app/src/test/java/com/btdeck/companion/ui/BrandThemeSyncTest.kt",
+        "android/app/src/androidTest/java/com/btdeck/companion/CompanionBrandingUiTest.kt"
       ],
       "evidence": {
         "build": "gradle :app:processDebugResources + :app:compileDebugKotlin + :app:testDebugUnitTest（28 用例）+ :app:assembleDebug + :app:compileDebugAndroidTestKotlin 全部 BUILD SUCCESSFUL（JDK 21 + Gradle 8.9）。",
         "behavior": "AVD btdeck-a35 无头模拟器全链路视觉冒烟 10 屏通过：向导品牌头部与图标卡片、服务器列表翡翠绿 ActionBar + 主按钮、添加表单 OutlinedBox 浮动标签 + 密码切换、http 私有地址自动出现明文确认复选框（TextWatcher 联动）、空名称点确定展示 TextInputLayout 错误且对话框不关闭、列表卡片行（名称/健康胶囊/URL/元信息）、本机服务确认对话框 LAN 勾选联动威胁模型文案、启动进度对话框翡翠绿圆形指示器、服务就绪自动进 WebView 加载本机前端登录页（v1.0.6 · 服务就绪）——原生壳与前端呈现同一翡翠绿视觉。",
-        "compat": "Espresso 依赖全部保留：server_list 仍为 AdapterView（ListView）、row_health 文案（未测试/就绪/未就绪/不可达/证书错误）与 ID 不变、菜单/对话框按钮字符串不变、androidTest 源码编译通过；LAN 开关初始态仍从 LocalServerState.lanEnabled 持久化恢复。"
+        "compat": "Espresso 依赖全部保留：server_list 仍为 AdapterView（ListView）、row_health 文案（未测试/就绪/未就绪/不可达/证书错误）与 ID 不变、菜单/对话框按钮字符串不变、androidTest 源码编译通过；LAN 开关初始态仍从 LocalServerState.lanEnabled 持久化恢复。",
+        "regression_tests": "JVM 新增 7 例（HealthUiTest 3：健康文案/语义色映射 + 四组语义色互异；BrandThemeSyncTest 4：colors.xml token 值锁定、values 与 values-v35 主题 item 同步、Light 基底 + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对——仓库根不可见时 assume 跳过不阻断）；androidTest 新增 CompanionBrandingUiTest 6 例：colorPrimary 运行时解析 #059669、向导品牌头部/双模式卡、伴侣卡进列表且主操作为 MaterialButton、添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错不关框 + 合法输入保存成行、关闭端口→文案与圆点 error 红 #EF4444、LAN 开关联动威胁模型文案。全量 44/44 JVM + 8/8 仪器（含 CompanionOfflineUiTest 存量回归 2 例）通过（AVD btdeck-a35）。为可测性抽出 ui/HealthUi 纯逻辑（adapter 文案/语义色映射收敛），brand_mark 加 ID。"
       }
     }
   ]
