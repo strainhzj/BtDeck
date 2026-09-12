@@ -206,10 +206,11 @@
       custom-class="m-reuse-dialog"
       @success="onTorrentMutated"
     />
+    <!-- TorrentAddDialog 是自定义 modal 非 el-dialog（m-reuse-dialog 宽度覆盖不适用，
+         其 scoped ≤768 媒体块自带移动适配）；其余四弹窗为 el-dialog 懒加载收窄 -->
     <torrent-add-dialog
       :visible.sync="addDialogVisible"
       :downloaders="downloaderRawList"
-      custom-class="m-reuse-dialog"
       @confirm="onTorrentMutated"
       @batch-complete="onTorrentMutated"
     />

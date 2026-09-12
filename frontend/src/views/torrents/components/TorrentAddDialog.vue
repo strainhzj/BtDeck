@@ -110,6 +110,17 @@
             <div class="form-error-tip" v-if="formErrors.save_path">{{ formErrors.save_path }}</div>
           </div>
 
+          <!-- 跳过校验：保存路径已有完整数据（辅种/续种）时跳过 qBittorrent 本地校验，
+               避免进入 CheckingDL 直接做种；数据不完整时勾选会被当作 100% 完成 -->
+          <div class="form-group">
+            <label class="form-label">校验策略</label>
+            <el-checkbox v-model="form.skip_hash_check">跳过校验（数据已完整时直接做种）</el-checkbox>
+            <div class="form-hint">
+              保存路径已有完整数据（辅种/续种）时勾选可跳过 qBittorrent 本地校验，避免 CheckingDL；
+              全新下载请勿勾选（会被当作已完成，无法正常下载）。仅对 qBittorrent 生效。
+            </div>
+          </div>
+
           <!-- 分类 -->
           <div class="form-group">
             <label class="form-label">分类</label>
@@ -204,7 +215,9 @@ export default class TorrentAddDialog extends Vue {
     downloader_id: '',
     save_path: '',
     category: '',
-    tags: [] as string[]
+    tags: [] as string[],
+    /** 跳过校验（默认关：仅保存路径已有完整数据时手动勾选，见表单提示） */
+    skip_hash_check: false
   }
 
   private rules = {
@@ -433,7 +446,8 @@ export default class TorrentAddDialog extends Vue {
       downloader_id: this.form.downloader_id,
       save_path: this.form.save_path,
       category: this.form.category,
-      tags: [...this.form.tags]
+      tags: [...this.form.tags],
+      skip_hash_check: this.form.skip_hash_check
     }
     const torrentFiles = [...this.torrentFiles]
     this.loading = true
@@ -447,7 +461,7 @@ export default class TorrentAddDialog extends Vue {
         category: formSnapshot.category || '',
         tags: formSnapshot.tags.join(','),
         paused: false,
-        skip_hash_check: false,
+        skip_hash_check: formSnapshot.skip_hash_check,
         is_sequential_download: false,
         is_first_last_piece_priority: false
       })
@@ -505,7 +519,8 @@ export default class TorrentAddDialog extends Vue {
       downloader_id: '',
       save_path: '',
       category: '',
-      tags: []
+      tags: [],
+      skip_hash_check: false
     }
     this.torrentFiles = []
     this.selectedFileNames = []
@@ -896,5 +911,94 @@ select.form-input {
 
 .modal-dialog::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-quaternary);
+}
+
+// 表单提示文本（校验策略等说明行）
+.form-hint {
+  font-size: 12px;
+  color: var(--color-text-quaternary);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+// ========================================
+// 移动端适配（≤768）：本弹窗是自定义 modal 非 el-dialog，宽度/布局须自行覆盖
+// ========================================
+@media (max-width: 768px) {
+  // 顶部锚定 + overlay 自身可滚：长表单（文件列表+五组字段）不再受 85vh 挤压
+  .modal-overlay.active {
+    align-items: flex-start;
+    padding: 12px;
+    overflow-y: auto;
+  }
+
+  // 根元素带内联 max-width:600px，须 !important 压制；全宽贴边留 12px 边距
+  .modal-dialog {
+    width: 100%;
+    max-width: calc(100vw - 24px) !important;
+    max-height: none;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+    // 吸顶圆角随内容滚动裁切，收敛为上下同圆角避免视觉断层
+    border-radius: 12px;
+  }
+
+  .modal-title {
+    font-size: 16px;
+  }
+
+  .modal-close {
+    width: 36px;
+    height: 36px;
+  }
+
+  .modal-body {
+    padding: 12px 14px;
+  }
+
+  // 底部按钮改纵向铺满：双钮等宽 + ≥44px 触控高
+  .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .modal-footer-left {
+    display: none;
+  }
+
+  .modal-footer-right {
+    width: 100%;
+
+    .btn-secondary,
+    .btn-primary {
+      flex: 1;
+      min-height: 44px;
+      padding: 10px 16px;
+    }
+  }
+
+  // 文件移除触控目标放大（4px padding 桌面尺寸手指难命中）
+  .file-item .file-remove {
+    min-width: 36px;
+    min-height: 36px;
+    margin: -4px -4px -4px 0;
+    padding: 4px 10px;
+  }
+
+  .file-upload-area {
+    padding: 18px 12px;
+  }
+
+  .file-item {
+    padding: 10px 8px;
+
+    .file-size {
+      margin: 0 8px;
+    }
+  }
 }
 </style>
