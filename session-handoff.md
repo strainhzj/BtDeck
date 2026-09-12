@@ -1,3 +1,19 @@
+## 2026-09-12（续7）：添加种子跳过校验复选框 + 添加弹窗移动端适配（未提交）
+
+### 交付内容（torrent-add-skip-check-mobile-20260912）
+
+- **CheckingDL 根因**：qB 对保存路径已有数据的种子强制校验；后端 skip_hash_check→is_skip_checking 链路通，弹窗硬编码 false。修复=「跳过校验」复选框（用户确认默认关：不完整数据会被当作 100% 完成，须显式 opt-in），透传 addTorrentsBatch，关闭重置不残留；仅 qB 生效（TR add_args 无此参数）。
+- **移动适配**：TorrentAddDialog 是自定义 modal（`.modal-overlay/.modal-dialog`）非 el-dialog——`m-reuse-dialog` el-dialog 宽度覆盖对它无效（上批移动页死 attr 已移除）。≤768 scoped 媒体块：overlay 顶铆+自滚接管（85vh 让位）、dialog 全宽 `!important` 压内联 600px、底部双钮 44px 等宽、文件移除钮 36px。
+- **门禁**：torrent-add-dialog.spec 7 passed（+5）；typecheck/lint/build 绿；全量 110 套件 / 1565 用例绿。
+
+### 关键坑位（下批必读）
+
+- **自定义 modal 弹窗不吃 el-dialog 的 custom-class 收窄方案**——接入移动端前先确认弹窗实现体系（本仓五种复用弹窗四种 el-dialog、一种自定义 modal）。
+- 内联 `style="max-width:600px"` 只能 `!important` 压制；源码契约断言用 `match(/…/s)` dotAll 提取嵌套块。
+- 源码契约数出现次数：`skip_hash_check: false` 恰 2 处（表单默认+关闭重置），`not.toContain('skip_hash_check: false,')` 钉死提交体不再硬编码。
+
+---
+
 ## 2026-09-12（续6）：Tracker批量操作按下载器触发——后端双端点 + 弹窗 scopeDownloader 模式（未提交）
 
 ### 交付内容（tracker-op-by-downloader-20260912）

@@ -39,7 +39,7 @@
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件备份管理（`FileManagement` L310）；路由由 `torrent_backup` 能力门控，Android 主服务端隐藏入口 |
-| `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器 |
+| `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器；✨2026-09-12 新增「跳过校验」复选框（默认关，`form.skip_hash_check` 透传 addTorrentsBatch——qB 对保存路径已有数据的种子强制 CheckingDL 校验，勾选跳过直接做种；关闭弹窗重置回安全默认；仅 qB 生效，TR 的 add_args 无校验跳过参数）；同批 ≤768 移动端适配（自定义 modal 非 el-dialog，m-reuse-dialog 覆盖不适用——overlay 顶铆+自身可滚接管 85vh、dialog 全宽 !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控） |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
 | `components/TrackerOperationDialog.vue` | Tracker 操作对话框；✨2026-08-20 修复 announce 状态判断（原 `=== 'True'` 字面量对中文状态文本恒显“异常”，改用共享 `isTrackerAnnounceSuccess`）；✨2026-09-12 新增可选 `scopeDownloader` prop（`{id,name,total?}`，默认 null 保持桌面行为）——传入时切换为按下载器触发模式：范围行/标题/提交按钮文案换口径（含 total 计数），添加/修改提交走 `addTrackerByDownloader`/`modifyTrackerByDownloader`（服务端解析种子范围，成功提示带成功/失败计数）；模板 `?.` 改 buble 兼容写法（组件首次可被 jest 挂载） |
 | `components/TransferDialog.vue` | 转移对话框；桌面两种种子视图与详情页按 `seed_transfer` 能力隐藏入口 |

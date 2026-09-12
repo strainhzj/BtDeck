@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第三批）：添加种子跳过校验 + 添加弹窗移动端适配 torrent-add-skip-check-mobile（全绿未提交）
+
+用户验收反馈两项闭环（feature_list `torrent-add-skip-check-mobile-20260912`，单任务 done）：
+
+1. **新添加种子 CheckingDL 根因与修复**：qBittorrent 对保存路径已有数据的种子强制本地校验（CheckingDL），后端 `skip_hash_check→is_skip_checking` 链路本就通，但 `TorrentAddDialog` 硬编码 `skip_hash_check: false`。修复：新增「跳过校验」复选框（**默认关，经用户三选一确认**——勾选把不完整数据当作 100% 完成是数据完整性风险，必须显式 opt-in），透传 `addTorrentsBatch`；提示注明全新下载勿勾、仅 qB 生效（TR `add_args` 无校验跳过参数）；关闭弹窗重置回默认不残留。
+2. **添加弹窗移动端适配**：该弹窗是**自定义 modal 非 el-dialog**——上一批的 `m-reuse-dialog` 宽度覆盖对它无效（移动页死 attr 已移除）。≤768 scoped 媒体块：overlay 顶铆 + `overflow-y:auto` 接管滚动（弹窗 85vh 上限让位）、dialog 全宽 `max-width: calc(100vw-24px) !important` 压制根元素内联 600px、底部双钮 44px 等宽铺满、文件移除钮 36px 触控目标、上传区/文件行紧凑化。
+- **验证**：`torrent-add-dialog.spec.ts` 7 passed（+5：skip 双态透传/关闭重置/≤768 源码契约/复选框接线禁硬编码回流）；typecheck/lint 绿；全量 **110 套件 / 1565 用例绿**；build 绿。
+
+---
+
 ## 2026-09-12（第二批）：Tracker批量操作按下载器触发 tracker-op-by-downloader（全绿未提交）
 
 用户跟进反馈闭环（feature_list `tracker-op-by-downloader-20260912`，backend+frontend 双任务 done）：移动端 Tracker操作的「上限 100」改为按下载器触发（方案经三选一确认：后端 by-downloader 端点，前端不再拉种子列表）。

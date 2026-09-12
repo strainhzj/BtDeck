@@ -51,6 +51,34 @@
   },
   "features": [
     {
+      "id": "torrent-add-skip-check-mobile-20260912",
+      "name": "添加种子跳过校验选项（CheckingDL 规避）+ 添加弹窗移动端适配",
+      "description": "用户验收反馈两项：①新添加的种子进入 CheckingDL——根因实锤为 qBittorrent 对保存路径已有数据的种子强制本地校验，而 TorrentAddDialog 硬编码 skip_hash_check:false（后端 /torrents/add·add-batch 的 skip_hash_check→qB is_skip_checking 链路本就通，只差弹窗不传）；修复为新增「跳过校验」复选框（默认关，经用户三选一确认安全默认）：勾选时数据已完整（辅种/续种）直接做种不进 CheckingDL，表单提示注明全新下载勿勾（会被当作 100% 完成）与仅 qB 生效（TR add_args 无校验跳过参数），关闭弹窗重置回默认。②TorrentAddDialog 为自定义 modal 非 el-dialog（此前 m-reuse-dialog 宽度覆盖不适用、移动页死 attr 已移除）：≤768 scoped 媒体块适配——overlay 顶铆+overflow-y auto 接管滚动（弹窗 85vh 上限让位）、dialog 全宽 max-width calc(100vw-24px) !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控目标。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "skip 语义核对：qbittorrent-api torrents_add kwargs is_skip_checking 已在 torrent_add_service L302 透传，TR 分支 add_args 仅 paused/download_dir（transmission_rpc 无跳过校验参数）；默认策略经用户确认「复选框默认关」（勾选把不完整数据当作 100% 完成是数据完整性风险，必须显式 opt-in）。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、lint 通过；skip 参数链路与移动适配源码契约 jest 覆盖"
+      ],
+      "tasks": [
+        {
+          "id": "torrent-add-skip-check-mobile.main",
+          "name": "添加弹窗跳过校验复选框 + 移动端适配",
+          "description": "TorrentAddDialog 新增 skip_hash_check 表单字段/复选框/提示/重置并透传批量添加；≤768 scoped 媒体块（顶铆全宽/44px 按钮/触控目标）；移动页移除对该弹窗的死 custom-class attr。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/components/TorrentAddDialog.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/torrent-add-dialog.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "torrent-add-dialog.spec.ts 7 passed（+5：默认 false 透传/勾选 true 透传/关闭重置不残留/≤768 媒体块源码契约 6 断言/复选框接线与硬编码禁回流）；typecheck、lint 绿；全量 110 套件 1565 用例绿；build 绿。"
+        }
+      ]
+    },
+    {
       "id": "tracker-op-by-downloader-20260912",
       "name": "Tracker批量操作按下载器触发——后端 by-downloader 端点 + 移动端直达弹窗（去除前端种子列表上限）",
       "description": "用户跟进反馈：移动端 Tracker操作的「上限 100」接口值应与分页保持一致，并增加按下载器触发能力（方案经三选一确认）。后端 tracker.py 新增 POST /tracker/addTracker-by-downloader 与 /tracker/modifyTracker-by-downloader（TrackerByDownloaderRequest 请求体：downloader_id + trackers 分号分隔；共享执行体 _apply_tracker_op_by_downloader 服务端解析该下载器全部种子逐条复用既有 qb/tr helper，客户端连接强制 app.state.store 缓存，单条失败不断整体循环，审计改单条汇总 add/modify_by_downloader 口径 + SUCCESS/PARTIAL/FAILED；空 trackers→400、下载器行不存在→404、无种子→404、缓存不可用→500 fail-closed）。前端 TrackerOperationDialog 新增可选 scopeDownloader prop（null=桌面行为不变；传入时范围行/标题/按钮文案切换并提交 by-downloader 端点，成功提示带计数）；移动端选下载器后直达弹窗（getList limit:1 轻取 total 作范围计数，与列表分页同源接口；探测失败省略计数），移除前端拉种子列表与 TRACKER_OPERATION_MAX_TORRENTS=100 上限路径。顺带修复该弹窗模板 ?. 可选链（buble 模板编译器不支持，组件此前不可被 jest 挂载）。",
