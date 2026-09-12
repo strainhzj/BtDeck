@@ -1,4 +1,39 @@
-## 2026-09-12（续7）：添加种子跳过校验复选框 + 添加弹窗移动端适配（未提交）
+## 2026-09-12（续8·交接）：用户验收发现两问题，已根因诊断待新会话实施
+
+> 用户明确「将在新对话继续修改」。本条为可直接开工的交接：根因已实锤、方案已定，无需重新调查。
+
+### 问题 1：App 端（Android WebView）添加种子不弹系统文件管理器
+
+- **根因实锤**：`android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt`（288 行）只设置了 `webViewClient`（L92），**完全没有 `webChromeClient`、没有 `onShowFileChooser`**——Android WebView 对 `<input type="file">`（TorrentAddDialog 的隐藏 input + 程序化 .click()）会静默忽略点击。前端无需改动。
+- **实施要点**：
+  1. `onShowFileChooser` 内用 `fileChooserParams.createIntent()`；`isMultiple` 时补 `putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)`（createIntent 不带 multiple）；**回调必须恰好投递一次**（取消也传 null，双重投递会永久锁死后续选择）——用 ActivityResultLauncher（StartActivityForResult）+ `FileChooserParams.parseResult`。
+  2. **accept=".torrent" 的 MIME 陷阱**：SAF 按 MIME 过滤，".torrent" 扩展名 accept 常导致选择器空列表——建议 `type */*`（可选 EXTRA_MIME_TYPES application/x-bittorrent 作候选项），.torrent 校验由前端负责。
+  3. **安全姿态冲突须核实**：现设置 `allowContentAccess = false`（L88，"禁本地文件面"）——WebView 上传 content:// 很可能需要 `allowContentAccess = true`；文件 URI 来自用户显式选择，放宽范围可接受，但要在真机验证并在代码注释里写明取舍。
+  4. 可测性沿仓内模式：意图构造/结果解析抽 `ui/FileChooser.kt` 纯函数 + JVM 单测（参照 HealthClient 可注入 HttpCall 先例），Activity 保持薄。
+  5. 交付：`deploy/build-android.bat`（双变体）+ 真机安装验证（JVM 测不了端到端选择器）。
+- **相关既有坑**：`.bat` 必须 CRLF/ASCII、双击构建前干净检出（见 memory bat 行尾三坑）。
+
+### 问题 2：转移 / 修改路径弹窗无移动端适配
+
+- **根因实锤（比表面深一层）**：
+  - `SetLocationDialog.vue` 模板根节点是普通 `<div>` 包 el-dialog——移动页传的 `custom-class="m-reuse-dialog"` 经 $attrs 落到外层 div，**永远到不了 el-dialog**，94vw 收窄对「修改路径」从未生效（650px 原样怼手机屏）。
+  - `TransferDialog.vue` 根节点即 el-dialog（透传生效、壳已 94vw），但内部 `label-width 120px` 桌面表单、L88 嵌套删除确认 el-dialog（自带宽度）未适配。
+  - 两组件 `@media` 规则数 = 0。
+- **实施要点**（照 TorrentAddDialog 2026-09-12 适配模式，仓内已有源码契约先例）：
+  1. 组件自治而非依赖调用方：各自 el-dialog 上写 `custom-class="transfer-dialog"` / `"set-location-dialog"` + 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、`.el-dialog__body` max-height 64vh 内滚）。
+  2. scoped ≤768 块收内部布局：表单标签上堆（`.el-form-item__label { display:block; width:auto!important; text-align:left }` + `.el-form-item__content { margin-left:0!important }`）、底部按钮 44px 等宽、路径建议行触控目标；TransferDialog 嵌套删除确认弹窗一并收窄。
+  3. 移动页 `torrents.vue` 对这两处删除已失效/将失效的 `custom-class="m-reuse-dialog"` 透传；**注意 SetLocationDialog 的 $attrs 陷阱写进源码契约**（断言 custom-class 在 el-dialog 上，防回退到根 div）。
+  4. 测试：源码契约模式（jsdom 不应用媒体查询）——断言媒体块关键规则 + custom-class 落位；视觉真机兜底。
+- **连带核实（已查）**：TrackerOperationDialog / GlobalReplaceTrackerDialog 模板根节点即 el-dialog，m-reuse-dialog 透传正常——四弹窗中仅 SetLocationDialog 有 div 包裹陷阱。
+
+### 本会话终态（已提交未推送）
+
+- dev HEAD `8b1c253`：mobile-torrents-actions / tracker-op-by-downloader / torrent-add-skip-check-mobile 三批全绿落地；Docker 双镜像已构建部署 unraid（v1.0.6 @8b1c253，/health/live 验证 ok）。
+- 工作区干净（仅未跟踪 data/）。
+
+---
+
+## 2026-09-12（续7）：添加种子跳过校验复选框 + 添加弹窗移动端适配（已提交 e02564e/8b1c253）
 
 ### 交付内容（torrent-add-skip-check-mobile-20260912）
 
