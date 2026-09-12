@@ -6316,6 +6316,50 @@
           "evidence": "mobile-shell.spec 36 用例全绿（「全部移除」用例改写为窄视口隐藏契约 + 新增宽视口渲染/写偏好/跳转/解绑监听 2 例）；Playwright 三场景实measured：锁死态点击回 /#/dashboard 且偏好变 desktop、375px 窄视口 count=0、宽→窄缩窗即时隐藏；前端全量 107 套件 1521 用例全绿；lint/typecheck/build 绿；e2e 补宽视口回归守护用例（CI 真后端语境，demo 模式自动登录会绕过登录页）。"
         }
       ]
+    },
+    {
+      "id": "mobile-ux-followups-2026-09-12",
+      "name": "下载器设置与快捷删重三项跟进修复（删重弹窗事件触发预览+删除后关闭/移动设置页无数据/页签纯文字）",
+      "description": "用户验收三项：①快捷删除重复种子弹窗预览改为\"完成待检测+保留下载器选择\"后事件自动触发（去手动预览按钮），确认删除提交后关闭弹窗（移动/桌面一致）；②移动端点设置进 /m/downloader/settings/:id 无数据——根因弹窗以 visible=true 创建时 @Watch('visible') 不为初始值触发、initDialog 从未执行；③新增/设置下载器页顶部页签图标窄屏被截断，改纯文字。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "mobile-ux-followups.1",
+          "name": "QuickDeleteDuplicatesDialog：选择完成事件触发预览 + 确认删除后关闭",
+          "description": "删手动\"预览重复\"按钮，配置区加自动预览提示；@Watch detect/keep（deep）→ scheduleAutoPreview（250ms 防抖合并联动剪裁的连续变更；canPreview 不满足时清过期预览）；fetchPreview 加 previewSeq 过期响应丢弃防旧结果覆盖新选择。handleDelete 成功路径（任务受理/无可删项）均 handleClose()（dialogVisible=false + emit close），后台轮询不中断，结果仍走 toast/通知。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/QuickDeleteDuplicatesDialog.vue",
+            "frontend/tests/unit/quick-delete-duplicates-dialog.spec.ts"
+          ],
+          "evidence": "spec 6 用例全绿（新增 4：自动触发/未完成不触发+失效清预览/删除后关闭 emit close/源码契约无 handlePreview）；浏览器实测弹窗无手动按钮、提示文案可见。"
+        },
+        {
+          "id": "mobile-ux-followups.2",
+          "name": "移动设置页无数据根修：弹窗 visible 初始 true 时 mounted 补 initDialog",
+          "description": "/m/downloader/settings/:id|new 整页复用形态下弹窗创建即 visible=true，watcher 不为初始值触发 → 表单从未回填。mounted() 开头 if (this.visible) void this.initDialog()（桌面 visible=false 挂载不受影响，打开仍走 watch 路径）。该 SFC 模板含 ?. 无法过 jest buble 编译，spec 用源码契约（沿用 downloader-control-room-ui 模式）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/tests/unit/downloader-settings-dialog-init.spec.ts"
+          ],
+          "evidence": "浏览器实测 375×812 /m/downloader/settings/demo-downloader-001：名称输入框回填\"实验室节点 A\"（修复前空白）；新增契约 spec 3 用例（mounted 补初始化/watch 路径保留/页签纯文字）全绿。"
+        },
+        {
+          "id": "mobile-ux-followups.3",
+          "name": "设置弹窗顶部页签移动端纯文字化",
+          "description": "≤780 媒体块 .workspace-tab-label 隐藏 __icon 图标盒与 __copy 副标题（small），仅保留标题文字；桌面左侧页签（icon+标题+副标题）不变。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue"
+          ],
+          "evidence": "浏览器实测 computed display：icons ×3 none、smalls ×3 none；截图页签单行纯文字无截断。"
+        }
+      ]
     }
   ],
   "tasks": [

@@ -7453,3 +7453,13 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **e2e**：login.spec.ts 补宽视口回归守护用例（addInitScript 预置偏好 mobile 复现锁死前置；注意 demo 模式自动初始化会话会绕过登录页，该用例属 CI 真后端语境）。
 - **坑**：①jest/jsdom 无 window.matchMedia（实测 undefined）——组件须 typeof 守卫，spec 注入 Object.defineProperty 桩 + finally delete 防跨用例污染；mounted 同步改状态后断言 DOM 需先 nextTick。②playwright 设备描述符工程（iPhone 12）下 setViewportSize 可覆盖视口，但干净上下文 + 宽视口会走 auto→桌面分流，测移动页必须先预置偏好。
 - 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续2）：下载器设置与快捷删重三项跟进修复（feature_list `mobile-ux-followups-2026-09-12`）
+
+- **输入**：用户验收三项：①快捷删重弹窗预览应在"完成待检测+保留下载器选择"后事件触发，确认删除后应关闭弹窗（移动/桌面一致）；②移动端点设置进设置页无数据；③新增/设置下载器页顶部页签图标被截断，改纯文字。
+- **修复①（QuickDeleteDuplicatesDialog）**：删手动「预览重复」按钮，配置区加自动预览提示；@Watch detect/keep（deep）→ `scheduleAutoPreview`（250ms 防抖合并联动剪裁引发的连续变更；canPreview 不满足时清过期预览，避免旧结果误导）；`fetchPreview` 加 `previewSeq` 序号丢弃过期响应（选择再变时防旧结果覆盖新选择）。`handleDelete` 成功路径（任务受理/无可删项）均 `handleClose()`——dialogVisible=false + emit close，后台轮询与 toast 结果链路不中断。
+- **修复②根因（移动设置页无数据）**：整页复用形态 `/m/downloader/settings/:id` 下弹窗**创建即 visible=true**，`@Watch('visible')` 不为初始值触发 → `initDialog()` 从未执行 → 表单空白（列表匹配/路由参数均无问题）。修复：`mounted()` 开头 `if (this.visible) void this.initDialog()`；桌面 visible=false 挂载不受影响。**连带发现**：此前 09-12 打磨批次的 demo 截图里"端口 8080/qBittorrent"实为默认值而非回填数据——该 bug 在打磨批次已存在，视觉复验时被默认值掩盖。
+- **修复③**：≤780 媒体块 `.workspace-tab-label` 隐藏 `__icon` 图标盒与 `__copy` 副标题（small），顶部页签纯文字单行不再截断；桌面左侧页签（图标+标题+副标题）不变。
+- **验证**：quick-delete spec 6 用例（+4 新增：自动触发/未完成不触发+失效清预览/删除后关闭/源码契约）；新增 `downloader-settings-dialog-init.spec.ts` 3 用例源码契约（**该 SFC 模板含 `?.`，jest buble 模板编译器解析不了无法真挂载**——沿用 downloader-control-room-ui 源码契约模式，行为由浏览器实测兜底）；全量 108 套件 1528 用例全绿；lint/typecheck/build 绿。浏览器实测（375×812 demo）：设置页名称回填「实验室节点 A」、页签图标/副标题 computed display 全 none、删重弹窗无手动按钮且提示可见。
+- **坑**：①Vue watcher 不为初始 prop 值触发——"以固定 true 创建 + 依赖 watch 初始化"的复用形态必踩，挂载补判；②测量 display:none 元素勿用 querySelectorAll 计数（仍在 DOM），须查 computed style；③移动种子页快捷下拉触发按钮文案是「快捷」非「快捷操作」，playwright 定位别按想象写。
+- 未执行 Git 提交（待用户指示）。

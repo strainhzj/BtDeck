@@ -1,3 +1,24 @@
+## 2026-09-12（续2）：下载器设置与快捷删重三项跟进修复（未提交）
+
+### 交付内容（feature_list `mobile-ux-followups-2026-09-12`）
+
+- **①快捷删重弹窗**：预览改"完成待检测（≥2）+保留（≥1 子集）选择"事件自动触发（250ms 防抖 + previewSeq 过期响应丢弃），删手动预览按钮；确认删除提交成功即 `handleClose()`（移动/桌面一致），后台轮询与结果 toast 不中断。
+- **②移动设置页无数据根修**：整页复用形态弹窗创建即 visible=true，`@Watch('visible')` 不为初始值触发 → initDialog 从未跑 → 表单空白。`mounted()` 开头补 `if (this.visible) this.initDialog()`。注意：09-12 打磨批次 demo 截图里的"8080/qBittorrent"是默认值不是回填——该 bug 当时已在，被默认值掩盖。
+- **③设置弹窗顶部页签**：≤780 隐藏图标盒与副标题，纯文字单行；桌面左侧页签不变。
+
+### 验证
+
+quick-delete spec 6 用例（+4）；新增 downloader-settings-dialog-init.spec 3 用例源码契约；全量 108 套件 / 1528 用例全绿；lint/typecheck/build 绿；浏览器实测 375×812：名称回填「实验室节点 A」、页签图标 computed display none、弹窗无手动按钮。
+
+### 关键坑位（下批必读）
+
+- **Vue watcher 不为初始 prop 值触发**：「以固定 true 创建 + 依赖 watch 初始化」的复用形态必踩——挂载补判 `if (this.visible)`。
+- **DownloaderSettingsDialog SFC 模板含 `?.`，jest buble 编译不了**——无法真挂载单测，用源码契约（downloader-control-room-ui 模式）+ 浏览器实测兜底。
+- **测量 display:none 用 computed style**，querySelectorAll 计数会误报"仍存在"。
+- 移动种子页快捷下拉触发按钮文案是「快捷」不是「快捷操作」。
+
+---
+
 ## 2026-09-12（续）：桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（未提交）
 
 ### 交付内容（feature_list `mobile-desktop-mode-escape-2026-09-12`）
