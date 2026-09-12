@@ -6371,14 +6371,15 @@
         {
           "id": "downloader-settings-mobile-layout.1",
           "name": "路径映射页签按钮触控友好 + 标签页签搜索与新增并排",
-          "description": "PathMappingTab ≤780 媒体块 header-actions 按钮压过全局紧凑重制的 30px 高/9px 字号——min-height 40px、font 13px、flex:1 并排全宽、margin-left:0 配 gap；TagManagementTab ≤640 工具栏由纵向堆叠改 flex 行布局——toolbar-left（搜索框）弹性撑满 + toolbar-right（新增标签按钮）收缩，同行并排。",
+          "description": "PathMappingTab ≤780 媒体块 header-actions 按钮压过全局紧凑重制的 30px 高/9px 字号——min-height 40px、font 13px、flex:1 并排全宽、margin-left:0 配 gap；TagManagementTab ≤640 工具栏由纵向堆叠改 flex 行布局——toolbar-left（搜索框）弹性撑满 + toolbar-right（新增标签按钮）收缩，同行并排。后续补强：header-actions 与描述文案 margin-top 12px 拉开间距（用户复验反馈按钮贴描述）；新增源码契约 spec（downloader-settings-mobile-layout.spec.ts 5 用例）保护两页签全部移动布局声明——按钮 40px/13px/::v-deep 压制机制、间距 ≥10px、工具栏 flex 并排几何前提（toolbar-left flex:1/toolbar-right flex:0 0 auto/el-input 100% !important），变异验证（删 margin-top 契约即红）通过。",
           "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/downloader/components/PathMappingTab.vue",
-            "frontend/src/views/downloader/components/TagManagementTab.vue"
+            "frontend/src/views/downloader/components/TagManagementTab.vue",
+            "frontend/tests/unit/downloader-settings-mobile-layout.spec.ts"
           ],
-          "evidence": "375×812 浏览器实测：刷新配置/添加映射各 154px 宽 × 40px 高、13px 字号并排；搜索框与新增标签同行（inputRight=250/btnLeft=256）。"
+          "evidence": "375×812 浏览器实测：刷新配置/添加映射各 154px 宽 × 40px 高、13px 字号并排；搜索框与新增标签同行（inputRight=250/btnLeft=256）。 布局契约 spec 5 用例 + 变异验证 1/1 检出；全量 109 套件 1539 用例全绿。"
         },
         {
           "id": "downloader-settings-mobile-layout.2",

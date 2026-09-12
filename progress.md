@@ -7492,3 +7492,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：375×812 实测——刷新配置/添加映射 154px×40px/13px 并排、搜索与新增同行（250/256 边界衔接）、页签 3→4（路径管理出现）、截图目检通过；platform-capabilities-api.spec 16 用例（新增响应式回归：注入缓存 → computed 翻 true、reset → 翻 false）；全量 108 套件 1534 用例全绿；lint/typecheck/build 绿。注：中途一次全量出现 2 例偶发失败（未捕获到用例名），复跑全绿 + 可疑套件三连跑稳定，判定为存量抖动非本批引入。
 - **坑**：①Vue computed 缓存只认响应式依赖——模块级单例缓存被 computed 读取时必踩冻结坑，可观测对象化是通用解；②playwright 路由拦截对 demo 模式无效（demo 在 axios 分流层本地返回，不发网络请求）；③el-dialog 顶栏被 demo 横幅遮挡时 click 会被 pointer-events 拦截，JS evaluate 直调 `.click()` 可绕。
 - 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续4）：路径映射按钮与描述间距 + 两页签移动布局回归保护（downloader-settings-mobile-layout 补强）
+
+- **输入**：用户复验反馈"路径映射配置下的按钮还需要与描述间隔一定的空间"；随后要求提交并为修改添加充足回归测试。
+- **间距修复**：PathMappingTab ≤780 媒体块 `.header-actions` 加 `margin-top: 12px`（此前纵排布局下按钮行紧贴描述文案）。375×812 实测描述底 307 → 按钮顶 322，间距 15px，截图目检通过。
+- **回归保护（downloader-settings-mobile-layout.spec.ts，5 用例源码契约）**：CSS 媒体查询 jsdom 不生效，沿用 mobile-shell/DownloaderSettingsDialog 契约模式——①780 媒体块存在且含 tab-header 列布局/header-actions；②按钮行 margin-top ≥10px；③按钮触控规格 40px 高/13px 字号/flex:1/margin-left:0，**且必须 ::v-deep**（压过全局紧凑重制的机制本身，改回嵌套写法即刻被反压）；④640 工具栏 flex 行布局（非纵堆）；⑤搜索侧 flex:1 撑满 + 新增侧 flex:0 0 auto + el-input width:100% !important（击败模板内联 280px）。**变异验证**：临时删 margin-top → 契约 1 例即红 → 恢复复绿。
+- **坑**：SCSS 嵌套媒体块用正则截断不可靠（嵌套 `}` 与块尾同形）——契约提取改花括号计数。
+- **门禁**：lint/typecheck 绿；相关 3 套件 35 用例 + 全量 109 套件 1539 用例全绿。

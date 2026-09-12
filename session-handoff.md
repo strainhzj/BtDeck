@@ -1,3 +1,18 @@
+## 2026-09-12（续4）：路径映射按钮与描述间距 + 移动布局回归保护（未提交→本批提交）
+
+### 交付内容（downloader-settings-mobile-layout 补强）
+
+- **间距**：PathMappingTab ≤780 `.header-actions` 加 `margin-top: 12px`（按钮行此前紧贴描述），375×812 实测间距 15px。
+- **回归保护**：新增 `downloader-settings-mobile-layout.spec.ts` 5 用例源码契约——按钮 40px/13px/flex:1/**必须 ::v-deep**（压制全局紧凑重制的机制本身）、margin-top ≥10px、640 工具栏 flex 并排几何前提（left flex:1 + right flex:0 0 auto + el-input 100% !important）；变异验证删 margin-top 契约即红。
+- **门禁**：lint/typecheck 绿；相关 3 套件 35 用例 + 全量 109 套件 / 1539 用例全绿。
+
+### 关键坑位（下批必读）
+
+- **SCSS 嵌套媒体块的契约提取用花括号计数**，正则截断会被嵌套 `}` 与块尾同形骗到。
+- CSS 媒体查询 jsdom 不生效——布局回归保护走源码契约（本仓既有模式），视觉由 375×812 浏览器实测兜底。
+
+---
+
 ## 2026-09-12（续3·并行）：设置页两页签移动布局优化 + 能力缓存响应式根修（未提交）
 
 ### 交付内容（feature_list `downloader-settings-mobile-layout-2026-09-12`）
