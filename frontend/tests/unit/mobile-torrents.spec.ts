@@ -3,7 +3,12 @@
  * - 简单搜索自移动高级搜索页迁入：筛选面板（name/下载器/状态/tracker 域）
  *   → getList 透传 name_like/downloader_id/status/tracker_domain；
  * - 查询模板页已裁撤（仅保留高级搜索）：m2 模板缓存回填链路移除；
- * - 下拉刷新带当前筛选重载；空态区分「暂无种子/没有匹配的种子」。
+ * - 下拉刷新带当前筛选重载；空态区分「暂无种子/没有匹配的种子」；
+ * - 2026-09-12：卡片辅种数量（>1 强调）+ 单种转移（能力门控）/修改路径；
+ *   快捷操作全局组（添加种子/Tracker操作/Tracker汇报/全局替换）——Tracker
+ *   操作与汇报先选下载器再执行（汇报空 id=reannounce-all；操作走 by-downloader
+ *   端点服务端解析全部种子，limit:1 轻取计数，无前端列表上限）；
+ *   下载器选项 d.id→downloader_id 映射修正。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -14,9 +19,15 @@ import {
   getTrackerDomains,
   getActiveTorrents,
   getDuplicateTorrents,
-  reconcileRuntimeTorrentStates
+  reconcileRuntimeTorrentStates,
+  reannounceByDownloader,
+  reannounceAll
 } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
+import {
+  setPlatformCapabilityCacheForTesting,
+  resetPlatformCapabilityCache
+} from '@/api/platform-capabilities'
 
 jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
@@ -26,7 +37,9 @@ jest.mock('@/api/torrents', () => ({
   reconcileRuntimeTorrentStates: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
-  deleteTorrentsWithLevel: jest.fn()
+  deleteTorrentsWithLevel: jest.fn(),
+  reannounceByDownloader: jest.fn(),
+  reannounceAll: jest.fn()
 }))
 
 jest.mock('@/api/downloader', () => ({
@@ -63,7 +76,7 @@ const listTorrent = {
 const mountPage = (): Wrapper<Vue> =>
   shallowMount(MobileTorrents, {
     mocks: {
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
       $confirm: jest.fn().mockResolvedValue('confirm'),
       $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) }
     }
@@ -96,6 +109,14 @@ describe('views/mobile/MobileTorrents', () => {
     jest.mocked(getTrackerDomains).mockResolvedValue({ code: '200', data: ['tracker.example.com'] } as never)
     jest.mocked(getDownloaderList).mockReset()
     jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [{ id: 'd1', nickname: 'QB' }] } as never)
+    jest.mocked(reannounceByDownloader).mockReset()
+    jest.mocked(reannounceByDownloader).mockResolvedValue({
+      code: '200', data: { success_count: 3, failed_count: 0, message: 'ok' }
+    } as never)
+    jest.mocked(reannounceAll).mockReset()
+    jest.mocked(reannounceAll).mockResolvedValue({
+      code: '200', data: { success_count: 9, failed_count: 1, message: 'ok' }
+    } as never)
     jest.mocked(getActiveTorrents).mockReset()
     jest.mocked(getActiveTorrents).mockResolvedValue({ code: '200', data: [] } as never)
     jest.mocked(reconcileRuntimeTorrentStates).mockReset()
@@ -106,6 +127,7 @@ describe('views/mobile/MobileTorrents', () => {
 
   afterEach(() => {
     jest.clearAllMocks()
+    resetPlatformCapabilityCache()
   })
 
   it('初始加载：无筛选条件透传 getList，筛选面板默认收起', async() => {
@@ -880,5 +902,235 @@ describe('views/mobile/MobileTorrents', () => {
     expect(source).toContain('deleteTorrentsWithLevel')
     expect(source).not.toContain('deleteTorrents({')
     expect(source).not.toContain('id_recycle')
+  })
+
+  // ============ 2026-09-12：辅种数量 / 单种转移·修改路径 / 快捷操作全局组 ============
+
+  it('卡片辅种数量：蛇形字段渲染数值，缺失回退 1（与桌面列同口径）', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200',
+      data: { list: [
+        { ...listTorrent, hash: 'aux-hot', auxiliary_seed_count: 5 },
+        { ...listTorrent, infoId: 'i2', hash: 'aux-none' }
+      ], total: 2 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const auxTexts = wrapper.findAll('.m-torrent-aux')
+    expect(auxTexts.at(0).text()).toBe('辅种 5')
+    // >1 主题色强调（存在同内容异 InfoHash 种子才值得用户注意）
+    expect(auxTexts.at(0).classes()).toContain('m-torrent-aux-hot')
+    expect(auxTexts.at(1).text()).toBe('辅种 1')
+    expect(auxTexts.at(1).classes()).not.toContain('m-torrent-aux-hot')
+    wrapper.destroy()
+  })
+
+  it('单种转移：能力矩阵 supported 才可用（unknown/unsupported fail-closed 隐藏）', async() => {
+    setPlatformCapabilityCacheForTesting({
+      platform: 'desktop',
+      capabilities: { seed_transfer: { label: '种子转移', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    const wrapper = mountPage()
+    await flushLifecycle()
+    expect((wrapper.vm as any).seedTransferAvailable).toBe(true)
+    wrapper.destroy()
+    // 未加载矩阵（缓存空）→ unknown → fail-closed，android-server 形态同理
+    resetPlatformCapabilityCache()
+    const closed = mountPage()
+    await flushLifecycle()
+    expect((closed.vm as any).seedTransferAvailable).toBe(false)
+    closed.destroy()
+  })
+
+  it('单种转移/修改路径：打开桌面弹窗并规范化行数据（补齐 camelCase 字段）', async() => {
+    setPlatformCapabilityCacheForTesting({
+      platform: 'desktop',
+      capabilities: { seed_transfer: { label: '种子转移', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    // 蛇形原始行：弹窗读取 downloaderId/savePath/infoId，须经 normalizeTorrent 补齐
+    jest.mocked(getTorrentList).mockResolvedValue({
+      code: '200',
+      data: { list: [{
+        ...listTorrent,
+        downloader_id: 'd1', downloaderId: undefined,
+        save_path: '/data/x', savePath: undefined,
+        info_id: 'i1', infoId: undefined
+      }], total: 1 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.openTransfer(vm.list[0])
+    expect(vm.transferVisible).toBe(true)
+    expect(vm.transferTarget).toEqual(expect.objectContaining({
+      downloaderId: 'd1', savePath: '/data/x', infoId: 'i1'
+    }))
+    vm.openSetLocation(vm.list[0])
+    expect(vm.setLocationVisible).toBe(true)
+    // SetLocationDialog 的 torrents=[单行] 形态
+    expect(vm.setLocationTorrents).toHaveLength(1)
+    expect(vm.setLocationTorrents[0]).toEqual(expect.objectContaining({ hash: 'abc', downloaderId: 'd1' }))
+    wrapper.destroy()
+  })
+
+  it('弹窗 success 统一刷新：onTorrentMutated 触发整页重载', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    jest.mocked(getTorrentList).mockClear()
+    await (wrapper.vm as any).onTorrentMutated()
+    expect(getTorrentList).toHaveBeenCalledTimes(1)
+    wrapper.destroy()
+  })
+
+  it('快捷操作-添加种子：打开弹窗；无启用下载器时提示并拦截', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('add-torrent')
+    expect(vm.addDialogVisible).toBe(true)
+    // TorrentAddDialog 的 downloaders prop 喂原始行（downloader_id/nickname）
+    expect(vm.downloaderRawList).toEqual([{ downloader_id: 'd1', nickname: 'QB' }])
+    wrapper.destroy()
+
+    jest.mocked(getDownloaderList).mockResolvedValue({ code: '200', data: [] } as never)
+    const empty = mountPage()
+    await flushLifecycle()
+    const emptyVm = empty.vm as any
+    await emptyVm.handleQuickActionCommand('add-torrent')
+    expect(emptyVm.addDialogVisible).toBe(false)
+    expect(empty.vm.$message.warning).toHaveBeenCalledWith('暂无启用中的下载器，请先添加下载器')
+    empty.destroy()
+  })
+
+  it('快捷操作-Tracker操作：先选下载器，limit:1 轻取计数后以按下载器范围进批量弹窗', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('tracker-operation')
+    expect(vm.pickerVisible).toBe(true)
+    expect(vm.pickerMode).toBe('tracker')
+    jest.mocked(getTorrentList).mockClear()
+    await vm.onPickerDownloader('d1')
+    // 计数探测与列表分页同源 getList：仅取 total（limit:1），不拉种子行
+    expect(getTorrentList).toHaveBeenLastCalledWith(expect.objectContaining({
+      skip: 0,
+      limit: 1,
+      downloader_id: ['d1'],
+      with_trackers: false
+    }))
+    expect(vm.pickerVisible).toBe(false)
+    expect(vm.trackerOperationVisible).toBe(true)
+    // 按下载器触发范围（服务端解析种子集合，无前端 100 上限）
+    expect(vm.trackerOperationScope).toEqual({ id: 'd1', name: 'QB', total: 1 })
+    wrapper.destroy()
+  })
+
+  it('快捷操作-Tracker操作：计数探测失败不阻塞（范围行省略计数）', async() => {
+    jest.mocked(getTorrentList).mockRejectedValue(new Error('network') as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.openTrackerOperationByDownloader('d1')
+    expect(vm.trackerOperationVisible).toBe(true)
+    expect(vm.trackerOperationScope).toEqual({ id: 'd1', name: 'QB' })
+    expect(vm.trackerOperationScope.total).toBeUndefined()
+    wrapper.destroy()
+  })
+
+  it('快捷操作-Tracker操作：该下载器无种子时提示且不进弹窗', async() => {
+    jest.mocked(getTorrentList).mockResolvedValue({ code: '200', data: { list: [], total: 0 } } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.openTrackerOperationByDownloader('d1')
+    expect(vm.trackerOperationVisible).toBe(false)
+    expect(vm.pickerVisible).toBe(false)
+    expect(wrapper.vm.$message.info).toHaveBeenCalledWith('该下载器暂无种子')
+    wrapper.destroy()
+  })
+
+  it('快捷操作-Tracker汇报：按下载器汇报，确认后调 reannounce-by-downloader', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('tracker-reannounce')
+    expect(vm.pickerMode).toBe('reannounce')
+    await vm.onPickerDownloader('d1')
+    expect(reannounceByDownloader).toHaveBeenCalledWith('d1')
+    expect(reannounceAll).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('Tracker汇报完成（成功 3）')
+    wrapper.destroy()
+  })
+
+  it('快捷操作-Tracker汇报：选「全部下载器」走全局汇报并带成功/失败计数', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('tracker-reannounce')
+    // 「全部下载器」仅汇报模式提供：空 id = reannounce-all 全局
+    await vm.onPickerDownloader('')
+    expect(reannounceAll).toHaveBeenCalledTimes(1)
+    expect(reannounceByDownloader).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('Tracker汇报完成（成功 9，失败 1）')
+    wrapper.destroy()
+  })
+
+  it('快捷操作-Tracker汇报：确认框取消不发起请求', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    ;(wrapper.vm.$confirm as jest.Mock).mockRejectedValueOnce('cancel')
+    await vm.onPickerDownloader('d1')
+    expect(reannounceByDownloader).not.toHaveBeenCalled()
+    expect(reannounceAll).not.toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  it('快捷操作-全局替换：打开桌面同款弹窗', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.handleQuickActionCommand('global-replace')
+    expect(vm.globalReplaceVisible).toBe(true)
+    wrapper.destroy()
+  })
+
+  it('下载器选项映射：兼容后端 downloader_id 字段名（旧 d.id 映射值恒 undefined 的回归锚）', async() => {
+    // 后端 DownloaderSimpleVO 实际返回 { downloader_id, nickname }
+    jest.mocked(getDownloaderList).mockResolvedValue({
+      code: '200', data: [{ downloader_id: 'real-id', nickname: '真实QB' }]
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(vm.downloaderOptions).toEqual([{ label: '真实QB', value: 'real-id' }])
+    expect(vm.downloaderRawList).toEqual([{ downloader_id: 'real-id', nickname: '真实QB' }])
+    wrapper.destroy()
+  })
+
+  it('源码契约：转移按钮受能力矩阵门控，Tracker批量走先选下载器语义（禁回流锚）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/torrents.vue', 'utf-8')
+    // 转移 fail-closed 门控（android-server 无下载器主机文件系统）
+    expect(source).toContain('v-if="seedTransferAvailable"')
+    expect(source).toContain("isCapabilityAvailable('seed_transfer')")
+    // 汇报范围：空 id=全局 reannounce-all，指定 id=按下载器
+    expect(source).toContain('reannounceByDownloader(downloaderId)')
+    expect(source).toContain('await reannounceAll()')
+    // Tracker操作按下载器触发：弹窗走 scopeDownloader 模式（by-downloader 端点，
+    // 服务端解析种子范围；前端不再有种子列表上限）
+    expect(source).toContain(':scope-downloader="trackerOperationScope"')
+    expect(source).not.toContain('TRACKER_OPERATION_MAX_TORRENTS')
+    // 快捷操作四项入口
+    expect(source).toContain('command="add-torrent"')
+    expect(source).toContain('command="tracker-operation"')
+    expect(source).toContain('command="tracker-reannounce"')
+    expect(source).toContain('command="global-replace"')
+    // 复用桌面弹窗 ≤768 收窄（custom-class 打标 + !important 覆盖内联宽度）
+    expect(source).toContain('m-reuse-dialog')
   })
 })

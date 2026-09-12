@@ -11,8 +11,9 @@
       <!-- Tab 1: 添加Tracker -->
       <el-tab-pane label="添加Tracker" name="add">
         <el-form :model="addForm" :rules="addRules" ref="addForm" label-width="120px">
-          <el-form-item label="选中的种子">
-            <div v-if="isBatchOperation" class="torrent-list">
+          <el-form-item :label="scoped ? '操作范围' : '选中的种子'">
+            <el-tag v-if="scoped" type="warning">{{ scopeLabel }}{{ scopeTotalSuffix }}</el-tag>
+            <div v-else-if="isBatchOperation" class="torrent-list">
               <el-tag
                 v-for="torrent in selectedTorrents"
                 :key="torrent.info_id"
@@ -23,7 +24,7 @@
                 {{ torrent.name }}
               </el-tag>
             </div>
-            <el-tag v-else type="info">{{ selectedTorrents[0]?.name || '-' }}</el-tag>
+            <el-tag v-else type="info">{{ (selectedTorrents[0] && selectedTorrents[0].name) || '-' }}</el-tag>
           </el-form-item>
 
           <el-form-item label="Tracker地址" prop="trackers">
@@ -41,7 +42,7 @@
 
           <el-form-item>
             <el-button type="primary" @click="handleAddSubmit" :loading="submitting">
-              {{ isBatchOperation ? `批量添加 (${selectedTorrents.length}个种子)` : '添加Tracker' }}
+              {{ addSubmitLabel }}
             </el-button>
           </el-form-item>
         </el-form>
@@ -50,8 +51,9 @@
       <!-- Tab 2: 修改Tracker -->
       <el-tab-pane label="修改Tracker" name="modify">
         <el-form :model="modifyForm" :rules="modifyRules" ref="modifyForm" label-width="120px">
-          <el-form-item label="选中的种子">
-            <div v-if="isBatchOperation" class="torrent-list">
+          <el-form-item :label="scoped ? '操作范围' : '选中的种子'">
+            <el-tag v-if="scoped" type="warning">{{ scopeLabel }}{{ scopeTotalSuffix }}</el-tag>
+            <div v-else-if="isBatchOperation" class="torrent-list">
               <el-tag
                 v-for="torrent in selectedTorrents"
                 :key="torrent.info_id"
@@ -62,7 +64,7 @@
                 {{ torrent.name }}
               </el-tag>
             </div>
-            <el-tag v-else type="info">{{ selectedTorrents[0]?.name || '-' }}</el-tag>
+            <el-tag v-else type="info">{{ (selectedTorrents[0] && selectedTorrents[0].name) || '-' }}</el-tag>
           </el-form-item>
 
           <el-form-item label="当前Tracker列表" v-if="currentTrackers.length > 0">
@@ -93,7 +95,7 @@
 
           <el-form-item>
             <el-button type="primary" @click="handleModifySubmit" :loading="submitting">
-              {{ isBatchOperation ? `批量修改 (${selectedTorrents.length}个种子)` : '修改Tracker' }}
+              {{ modifySubmitLabel }}
             </el-button>
           </el-form-item>
         </el-form>
@@ -109,13 +111,23 @@
 
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
-import { addTracker, modifyTracker } from '@/api/torrents'
+import { addTracker, modifyTracker, addTrackerByDownloader, modifyTrackerByDownloader } from '@/api/torrents'
 import { Torrent, TrackerInfo } from '@/api/torrents'
 import { isTrackerAnnounceSuccess } from '../utils/torrentBatch'
 
+/** 按下载器触发模式的范围描述（移动端无多选的批量语义：服务端解析该下载器全部种子） */
+export interface TrackerScopeDownloader {
+  id: string
+  name: string
+  /** 该下载器种子总数（展示用；未知时省略计数） */
+  total?: number
+}
+
 /**
  * Tracker操作对话框组件
- * @description 提供tracker的添加、修改功能，支持单种子和批量操作
+ * @description 提供tracker的添加、修改功能，支持单种子和批量操作；
+ * 传 scopeDownloader 时切换为按下载器触发模式（提交走 by-downloader 端点，
+ * selectedTorrents 为空数组即可）
  */
 @Component({
   name: 'TrackerOperationDialog'
@@ -124,6 +136,8 @@ export default class TrackerOperationDialog extends Vue {
   @Prop(Boolean) visible!: boolean
   @Prop(Array) selectedTorrents!: Torrent[]
   @Prop(String) operationType!: 'add' | 'modify' | ''
+  /** 按下载器触发模式（null = 常规种子列表模式，桌面行为不变） */
+  @Prop({ type: Object, default: null }) scopeDownloader!: TrackerScopeDownloader | null
 
   // 对话框显示状态
   private dialogVisible = false
@@ -188,15 +202,55 @@ export default class TrackerOperationDialog extends Vue {
   }
 
   /**
+   * 按下载器触发模式
+   */
+  get scoped(): boolean {
+    return this.scopeDownloader !== null
+  }
+
+  /** 操作范围文案（scoped 模式） */
+  get scopeLabel(): string {
+    return this.scopeDownloader ? `下载器「${this.scopeDownloader.name}」全部种子` : ''
+  }
+
+  /** 范围计数后缀（total 未知时省略） */
+  get scopeTotalSuffix(): string {
+    return this.scopeDownloader && typeof this.scopeDownloader.total === 'number'
+      ? `（共 ${this.scopeDownloader.total} 个）`
+      : ''
+  }
+
+  get addSubmitLabel(): string {
+    if (this.scoped) return '添加到该下载器全部种子'
+    return this.isBatchOperation ? `批量添加 (${this.selectedTorrents.length}个种子)` : '添加Tracker'
+  }
+
+  get modifySubmitLabel(): string {
+    if (this.scoped) return '替换该下载器全部种子Tracker'
+    return this.isBatchOperation ? `批量修改 (${this.selectedTorrents.length}个种子)` : '修改Tracker'
+  }
+
+  /**
    * 对话框标题
    */
   get dialogTitle(): string {
+    if (this.scoped) {
+      return `Tracker操作（按下载器） - ${this.scopeDownloader?.name ?? ''}`
+    }
     if (this.isBatchOperation) {
       return `批量Tracker操作 - 已选${this.selectedTorrents.length}个种子`
     } else {
       const torrentName = this.selectedTorrents[0]?.name || '种子'
       return `Tracker操作 - ${torrentName}`
     }
+  }
+
+  /** scoped 模式提交结果提示（带成功/失败计数；失败为 0 时省略） */
+  private scopedResultSuffix(data: { success_count?: number, failed_count?: number } | undefined): string {
+    const ok = data?.success_count
+    const fail = data?.failed_count
+    if (typeof ok !== 'number') return ''
+    return `（成功 ${ok}${typeof fail === 'number' && fail > 0 ? `，失败 ${fail}` : ''}）`
   }
 
   /**
@@ -322,6 +376,22 @@ export default class TrackerOperationDialog extends Vue {
 
     this.submitting = true
     try {
+      // 按下载器触发模式：范围由服务端解析，直接提交 by-downloader 端点
+      if (this.scopeDownloader) {
+        const response = await addTrackerByDownloader({
+          downloader_id: this.scopeDownloader.id,
+          trackers: this.addForm.trackers
+        })
+        if (response.code === '200') {
+          this.$message.success(`添加Tracker成功${this.scopedResultSuffix(response.data)}`)
+          this.$emit('success')
+          this.handleClose()
+        } else {
+          this.$message.error(response.msg || '添加Tracker失败')
+        }
+        return
+      }
+
       // 调试：检查selectedTorrents内容和属性
       console.log("=== 添加Tracker调试 ===")
       console.log("selectedTorrents:", this.selectedTorrents)
@@ -382,6 +452,22 @@ export default class TrackerOperationDialog extends Vue {
 
     this.submitting = true
     try {
+      // 按下载器触发模式：范围由服务端解析，直接提交 by-downloader 端点
+      if (this.scopeDownloader) {
+        const response = await modifyTrackerByDownloader({
+          downloader_id: this.scopeDownloader.id,
+          trackers: this.modifyForm.trackers
+        })
+        if (response.code === '200') {
+          this.$message.success(`修改Tracker成功${this.scopedResultSuffix(response.data)}`)
+          this.$emit('success')
+          this.handleClose()
+        } else {
+          this.$message.error(response.msg || '修改Tracker失败')
+        }
+        return
+      }
+
       // 调试：检查selectedTorrents内容和属性
       console.log("=== 修改Tracker调试 ===")
       console.log("selectedTorrents:", this.selectedTorrents)

@@ -607,6 +607,43 @@ export function modifyTracker(data: ModifyTrackerRequest): Promise<ApiResponse<a
   }) as unknown as Promise<ApiResponse<any>>
 }
 
+/**
+ * Tracker操作（按下载器触发）接口参数类型
+ */
+export interface TrackerByDownloaderRequest {
+  downloader_id: string // 下载器ID（服务端解析该下载器下全部种子）
+  trackers: string // 多个tracker地址用分号分隔
+}
+
+export interface TrackerByDownloaderResponse {
+  success_count: number
+  failed_count: number
+}
+
+/**
+ * 按下载器添加tracker
+ * @description 对该下载器下全部种子添加tracker地址（服务端解析种子范围，无种子列表 URL 长度上限）
+ */
+export function addTrackerByDownloader(data: TrackerByDownloaderRequest): Promise<ApiResponse<TrackerByDownloaderResponse>> {
+  return request({
+    url: '/tracker/addTracker-by-downloader',
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<TrackerByDownloaderResponse>>
+}
+
+/**
+ * 按下载器修改tracker
+ * @description 完全替换该下载器下全部种子的tracker列表（服务端解析种子范围）
+ */
+export function modifyTrackerByDownloader(data: TrackerByDownloaderRequest): Promise<ApiResponse<TrackerByDownloaderResponse>> {
+  return request({
+    url: '/tracker/modifyTracker-by-downloader',
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<TrackerByDownloaderResponse>>
+}
+
 // ==================== 高级搜索相关接口 ====================
 
 /**

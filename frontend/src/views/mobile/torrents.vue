@@ -29,6 +29,12 @@
             <i v-if="listMode === 'single-errors'" class="el-icon-check" />错误单种排查
           </el-dropdown-item>
           <el-dropdown-item command="delete-duplicates" divided>快捷删除重复种子</el-dropdown-item>
+          <!-- 全局操作组（与桌面工具栏同语义）：添加种子/全局替换直接开弹窗；
+               Tracker操作/汇报移动端无多选，改为先选下载器再执行 -->
+          <el-dropdown-item command="add-torrent" divided>添加种子</el-dropdown-item>
+          <el-dropdown-item command="tracker-operation">Tracker操作</el-dropdown-item>
+          <el-dropdown-item command="tracker-reannounce">Tracker汇报</el-dropdown-item>
+          <el-dropdown-item command="global-replace">全局替换Tracker</el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
     </div>
@@ -123,6 +129,11 @@
           <el-tag size="mini" :type="statusTagType(t.status)">{{ statusLabel(t.status) }}</el-tag>
           <span class="m-torrent-meta-text">{{ t.downloaderName }}</span>
           <span class="m-torrent-meta-text">{{ formatSize(t.size) }}</span>
+          <!-- 辅种数量（与桌面列同口径：缺失回退 1） -->
+          <span
+            class="m-torrent-meta-text m-torrent-aux"
+            :class="{'m-torrent-aux-hot': auxiliarySeedCountOf(t) > 1}"
+          >辅种 {{ auxiliarySeedCountOf(t) }}</span>
         </div>
         <el-progress
           :percentage="progressOf(t)"
@@ -141,6 +152,14 @@
         <div class="m-torrent-actions" @click.stop>
           <el-button size="mini" :disabled="actionBusy(t)" @click="pause(t)">暂停</el-button>
           <el-button size="mini" :disabled="actionBusy(t)" @click="resume(t)">恢复</el-button>
+          <!-- 转移受主机能力矩阵门控（android-server 形态无下载器主机文件系统，fail-closed） -->
+          <el-button
+            v-if="seedTransferAvailable"
+            size="mini"
+            :disabled="actionBusy(t)"
+            @click="openTransfer(t)"
+          >转移</el-button>
+          <el-button size="mini" :disabled="actionBusy(t)" @click="openSetLocation(t)">修改路径</el-button>
           <el-button size="mini" type="danger" plain :disabled="actionBusy(t)" @click="remove(t)">删除</el-button>
         </div>
       </div>
@@ -172,6 +191,76 @@
       @close="quickDeleteVisible = false"
       @deleted="onQuickDeleted"
     />
+
+    <!-- 复用桌面种子操作弹窗（custom-class 供 ≤768 收窄宽度；懒加载控制路由包体）：
+         转移/修改路径按单种卡片行执行，添加种子/Tracker操作/全局替换由快捷操作触发 -->
+    <transfer-dialog
+      :visible.sync="transferVisible"
+      :torrent="transferTarget"
+      custom-class="m-reuse-dialog"
+      @success="onTorrentMutated"
+    />
+    <set-location-dialog
+      :visible.sync="setLocationVisible"
+      :torrents="setLocationTorrents"
+      custom-class="m-reuse-dialog"
+      @success="onTorrentMutated"
+    />
+    <torrent-add-dialog
+      :visible.sync="addDialogVisible"
+      :downloaders="downloaderRawList"
+      custom-class="m-reuse-dialog"
+      @confirm="onTorrentMutated"
+      @batch-complete="onTorrentMutated"
+    />
+    <tracker-operation-dialog
+      :visible.sync="trackerOperationVisible"
+      :selected-torrents="[]"
+      :scope-downloader="trackerOperationScope"
+      operation-type=""
+      custom-class="m-reuse-dialog"
+      @success="onTorrentMutated"
+    />
+    <global-replace-tracker-dialog
+      :visible.sync="globalReplaceVisible"
+      custom-class="m-reuse-dialog"
+      @success="onTorrentMutated"
+    />
+
+    <!-- 下载器选择器（Tracker操作/汇报的批量范围入口，移动端无多选的替代语义） -->
+    <el-dialog
+      title="选择下载器"
+      :visible.sync="pickerVisible"
+      width="340px"
+      custom-class="m-downloader-picker"
+    >
+      <div class="m-picker-list">
+        <button
+          v-if="pickerMode === 'reannounce'"
+          type="button"
+          class="m-picker-item"
+          :disabled="pickerBusy"
+          @click="onPickerDownloader('')"
+        >
+          <span>全部下载器</span>
+          <span class="m-picker-item-desc">对全部下载器的所有种子重新汇报 Tracker</span>
+        </button>
+        <button
+          v-for="d in downloaderOptions"
+          :key="d.value"
+          type="button"
+          class="m-picker-item"
+          :disabled="pickerBusy"
+          @click="onPickerDownloader(d.value)"
+        >
+          <span>{{ d.label }}</span>
+          <span class="m-picker-item-desc">
+            {{ pickerMode === 'tracker' ? '对该下载器全部种子批量添加/修改 Tracker' : '对该下载器的所有种子重新汇报 Tracker' }}
+          </span>
+        </button>
+        <div v-if="pickerBusy" class="m-picker-busy"><i class="el-icon-loading" /> 正在获取种子列表…</div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -186,9 +275,13 @@ import {
   pauseTorrents,
   resumeTorrents,
   deleteTorrentsWithLevel,
+  reannounceByDownloader,
+  reannounceAll,
   Torrent
 } from '@/api/torrents'
+import type { DownloaderSimple } from '@/api/torrents'
 import { getList as getDownloaderList } from '@/api/downloader'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 import { extractErrorMessage, formatSpeed, normalizeTorrent, normalizeTorrentStatus } from '@/utils/formatters'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import {
@@ -208,6 +301,7 @@ import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
+import type { TrackerScopeDownloader } from '@/views/torrents/components/TrackerOperationDialog.vue'
 import {
   TORRENT_STATUS_OPTIONS,
   torrentStatusLabel,
@@ -247,13 +341,26 @@ interface SelectOption {
  *
  * 2026-09-05：删除改走四级（DeleteLevelDialog 与桌面删除下拉同语义：4 标记待删除/
  * 3 回收站/2 删任务保数据/1 完全删除，等级1 error 级二次确认），复用 deleteTorrentsWithLevel。
+ *
+ * 2026-09-12：卡片补辅种数量（>1 主题色强调）与单种转移（能力矩阵 fail-closed）/
+ * 修改路径（复用桌面 TransferDialog/SetLocationDialog）；快捷操作补全局组——
+ * 添加种子/Tracker操作/Tracker汇报/全局替换（Tracker操作与汇报移动端无多选，
+ * 改为先选下载器再执行：汇报走 reannounce-by-downloader/reannounce-all；操作
+ * 走 by-downloader 端点由服务端解析该下载器全部种子（无种子列表 URL 上限），
+ * 弹窗经 scopeDownloader 进入按下载器触发模式，limit:1 轻取 total 作范围计数）。
  */
 @Component({
   name: 'MobileTorrents',
   components: {
     'm-pull-indicator': MobilePullIndicator,
     'm-delete-level-dialog': MobileDeleteLevelDialog,
-    'quick-delete-duplicates-dialog': QuickDeleteDuplicatesDialog
+    'quick-delete-duplicates-dialog': QuickDeleteDuplicatesDialog,
+    // 桌面种子操作弹窗按需懒加载（路由包体不随弹窗集合膨胀）
+    'transfer-dialog': () => import('@/views/torrents/components/TransferDialog.vue'),
+    'set-location-dialog': () => import('@/views/torrents/components/SetLocationDialog.vue'),
+    'torrent-add-dialog': () => import('@/views/torrents/components/TorrentAddDialog.vue'),
+    'tracker-operation-dialog': () => import('@/views/torrents/components/TrackerOperationDialog.vue'),
+    'global-replace-tracker-dialog': () => import('@/views/torrents/components/GlobalReplaceTrackerDialog.vue')
   }
 })
 export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMixin, WindowInfiniteScroll) {
@@ -271,6 +378,25 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private quickDeleteVisible = false
   /** 列表数据源模式（快捷操作切换；reload/fetchPage 按模式分发数据源） */
   private listMode: MobileTorrentListMode = 'normal'
+  /** 单种转移弹窗（与桌面详情同款 TransferDialog） */
+  private transferVisible = false
+  private transferTarget: Torrent | null = null
+  /** 单种修改路径弹窗（桌面 SetLocationDialog 的 torrents=[单行] 形态） */
+  private setLocationVisible = false
+  private setLocationTarget: Torrent | null = null
+  /** 添加种子弹窗（桌面 TorrentAddDialog，需要下载器原始行） */
+  private addDialogVisible = false
+  /** Tracker操作弹窗（先选下载器，按下载器触发——服务端解析该下载器全部种子） */
+  private trackerOperationVisible = false
+  private trackerOperationScope: TrackerScopeDownloader | null = null
+  /** 全局替换 Tracker 弹窗（桌面同款自包含） */
+  private globalReplaceVisible = false
+  /** 下载器选择器（Tracker操作/汇报的范围入口） */
+  private pickerVisible = false
+  private pickerMode: 'tracker' | 'reannounce' = 'tracker'
+  private pickerBusy = false
+  /** 下载器原始行（downloader_id/nickname，喂给 TorrentAddDialog 的 downloaders prop） */
+  private downloaderRawList: DownloaderSimple[] = []
   private filters = {
     name: '',
     downloaders: [] as string[],
@@ -473,12 +599,20 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
     try {
       const res = await getDownloaderList({ page: 1, pageSize: 100 })
       if (res.code === '200' && Array.isArray(res.data)) {
-        this.downloaderOptions = res.data.map(
-          (d: { id: string, nickname?: string | null }) => ({
-            label: String(d.nickname || d.id),
-            value: d.id
-          })
-        )
+        // 后端 /downloader/getList 实际返回 downloader_id/nickname（DownloaderSimpleVO）；
+        // 旧映射读 d.id 会让筛选值恒为 undefined，一并修正（兼容两字段名）
+        this.downloaderRawList = (res.data as Array<{
+          downloader_id?: string
+          id?: string
+          nickname?: string | null
+        }>).map(d => ({
+          downloader_id: String(d.downloader_id ?? d.id ?? ''),
+          nickname: String(d.nickname || d.downloader_id || d.id || '')
+        }))
+        this.downloaderOptions = this.downloaderRawList.map(d => ({
+          label: d.nickname,
+          value: d.downloader_id
+        }))
       }
     } catch {
       // 选项加载失败不阻塞列表（空态判断退化为"暂无种子"）
@@ -620,6 +754,27 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   }
 
   private async handleQuickActionCommand(command: string): Promise<void> {
+    // 全局操作组：打开弹窗/选择器，不改列表数据源（不重置终态刷新去重上下文）
+    if (command === 'add-torrent') {
+      if (this.downloaderRawList.length === 0) {
+        this.$message.warning('暂无启用中的下载器，请先添加下载器')
+        return
+      }
+      this.addDialogVisible = true
+      return
+    }
+    if (command === 'tracker-operation') {
+      this.openDownloaderPicker('tracker')
+      return
+    }
+    if (command === 'tracker-reannounce') {
+      this.openDownloaderPicker('reannounce')
+      return
+    }
+    if (command === 'global-replace') {
+      this.globalReplaceVisible = true
+      return
+    }
     // 模式切换等效换筛选：重置终态刷新去重
     this.terminalReloadedHashes.clear()
     if (command === 'delete-duplicates') {
@@ -681,6 +836,129 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   private remove(t: Torrent): void {
     this.deleteTarget = t
     this.deleteDialogVisible = true
+  }
+
+  // ============ 单种转移/修改路径（复用桌面弹窗） ============
+
+  private get seedTransferAvailable(): boolean {
+    // android-server 等无下载器主机文件系统的形态 fail-closed 隐藏入口
+    return isCapabilityAvailable('seed_transfer')
+  }
+
+  /** normalizeTorrent 补齐 camelCase 字段（TransferDialog/SetLocationDialog 读取
+   * downloaderId/savePath/infoId；normal 模式列表行是后端蛇形原始行） */
+  private openTransfer(t: Torrent): void {
+    this.transferTarget = normalizeTorrent(t) as Torrent
+    this.transferVisible = true
+  }
+
+  private openSetLocation(t: Torrent): void {
+    this.setLocationTarget = normalizeTorrent(t) as Torrent
+    this.setLocationVisible = true
+  }
+
+  private get setLocationTorrents(): Torrent[] {
+    return this.setLocationTarget ? [this.setLocationTarget] : []
+  }
+
+  /** 桌面弹窗 @success 统一刷新（弹窗自带成功提示，这里只拉新列表） */
+  private async onTorrentMutated(): Promise<void> {
+    await this.reload()
+  }
+
+  // ============ 快捷操作全局组（先选下载器的批量语义） ============
+
+  private openDownloaderPicker(mode: 'tracker' | 'reannounce'): void {
+    if (this.downloaderOptions.length === 0) {
+      this.$message.warning('暂无启用中的下载器')
+      return
+    }
+    this.pickerMode = mode
+    this.pickerVisible = true
+  }
+
+  private async onPickerDownloader(downloaderId: string): Promise<void> {
+    if (this.pickerMode === 'reannounce') {
+      this.pickerVisible = false
+      await this.confirmAndReannounce(downloaderId)
+      return
+    }
+    await this.openTrackerOperationByDownloader(downloaderId)
+  }
+
+  /** Tracker汇报：空 id = 全部下载器（reannounce-all），否则按下载器（reannounce-by-downloader） */
+  private async confirmAndReannounce(downloaderId: string): Promise<void> {
+    const scopeText = downloaderId
+      ? `下载器「${this.downloaderLabelOf(downloaderId)}」的全部种子`
+      : '全部下载器的全部种子'
+    try {
+      await this.$confirm(`确定对${scopeText}重新汇报 Tracker？`, 'Tracker汇报确认', {
+        confirmButtonText: '汇报',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+    } catch {
+      return
+    }
+    try {
+      const res = downloaderId
+        ? await reannounceByDownloader(downloaderId)
+        : await reannounceAll()
+      if (res.code === '200' && res.data) {
+        const ok = res.data.success_count
+        const fail = res.data.failed_count
+        const suffix = typeof ok === 'number'
+          ? `（成功 ${ok}${typeof fail === 'number' && fail > 0 ? `，失败 ${fail}` : ''}）`
+          : ''
+        this.$message.success(`Tracker汇报完成${suffix}`)
+      } else {
+        this.$message.error(res.msg || 'Tracker汇报失败')
+      }
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    }
+  }
+
+  /**
+   * Tracker操作（先选下载器→按下载器触发）：不再前端拉种子列表（旧口径受
+   * torrentInfoIds Query 参数 URL 长度上限约束），改调 by-downloader 端点由
+   * 服务端解析该下载器全部种子；此处仅轻量取 total（limit:1）作范围计数展示。
+   */
+  private async openTrackerOperationByDownloader(downloaderId: string): Promise<void> {
+    this.pickerBusy = true
+    let total: number | undefined
+    try {
+      const res = await getTorrentList({
+        skip: 0,
+        limit: 1,
+        downloader_id: [downloaderId],
+        with_trackers: false
+      })
+      if (res.code === '200' && res.data) {
+        total = res.data.total ?? 0
+      }
+    } catch {
+      // 计数失败不阻塞操作（弹窗范围行省略计数）
+    } finally {
+      this.pickerBusy = false
+    }
+    if (total === 0) {
+      this.pickerVisible = false
+      this.$message.info('该下载器暂无种子')
+      return
+    }
+    this.trackerOperationScope = {
+      id: downloaderId,
+      name: this.downloaderLabelOf(downloaderId),
+      ...(total !== undefined ? { total } : {})
+    }
+    this.pickerVisible = false
+    this.trackerOperationVisible = true
+  }
+
+  private downloaderLabelOf(downloaderId: string): string {
+    const hit = this.downloaderOptions.find(d => d.value === downloaderId)
+    return hit ? hit.label : downloaderId
   }
 
   private get deleteTargetName(): string {
@@ -771,6 +1049,13 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
 
   private formatSize(bytes: number): string {
     return formatTorrentSize(bytes)
+  }
+
+  /** 辅种数量（与桌面列 {{ torrent.auxiliarySeedCount || 1 }} 同口径：非正数/缺失回退 1） */
+  private auxiliarySeedCountOf(t: Torrent): number {
+    const raw = t.auxiliarySeedCount ?? t.auxiliary_seed_count
+    const value = typeof raw === 'number' ? raw : Number(raw)
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1
   }
 }
 </script>
@@ -870,6 +1155,12 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   text-overflow: ellipsis;
 }
 
+/* 辅种数量：>1（存在同内容异 InfoHash 种子）时主题色强调 */
+.m-torrent-aux-hot {
+  color: var(--color-primary, #059669);
+  font-weight: 600;
+}
+
 .m-torrent-progress-text {
   margin-top: 2px;
   font-size: 11px;
@@ -895,6 +1186,7 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
 
 .m-torrent-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
   margin-top: 6px;
@@ -961,5 +1253,75 @@ export default class MobileTorrents extends Mixins(PullToRefresh, SpeedPollingMi
   text-align: center;
   color: #909399;
   padding: 24px 0;
+}
+
+/* 下载器选择器：原生按钮触控行（≥44px），桌面弹窗体系外的轻量选择面 */
+.m-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  border-radius: 10px;
+  background: var(--color-bg-secondary, #f9fafb);
+  color: #303133;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-picker-item:active {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.m-picker-item:disabled {
+  opacity: 0.6;
+}
+
+.m-picker-item-desc {
+  font-size: 12px;
+  color: #909399;
+}
+
+.m-picker-busy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+  font-size: 13px;
+  color: #909399;
+}
+</style>
+
+<style lang="scss">
+/* 复用的桌面弹窗（未 append-to-body，渲染在本页 DOM 内）：custom-class 打标后
+   仅 ≤768 收窄。类名本页专属，chunk 常驻也不会命中其它页面弹窗。
+   宽度 prop 生成内联 style，须 !important 覆盖；长内容（Tracker操作种子标签列表）
+   限制弹窗体高度内滚。 */
+@media (max-width: 768px) {
+  .m-reuse-dialog {
+    width: 94vw !important;
+    margin-top: 5vh !important;
+
+    .el-dialog__body {
+      max-height: 64vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  .m-downloader-picker {
+    width: 88vw !important;
+    max-width: 360px;
+    margin-top: 20vh !important;
+  }
 }
 </style>
