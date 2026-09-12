@@ -7475,7 +7475,7 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 工作区另有非本会话的 android/demo/downloader 改动，未触碰。
 - 未执行 Git 提交。
 
-## 2026-09-11（续二）：品牌化批次回归测试补强（android-native-ui-branding 测试保护）
+## 2026-09-12（续3）：Android 品牌化批次回归测试补强（android-native-ui-branding 测试保护）
 
 - **输入**：用户要求为本次 UI 品牌化修改添加充足的回归测试保护。
 - **JVM 新增 7 例**（`:app:testDebugUnitTest` 44/44 全绿）：① `HealthUiTest`（3 例）——健康文案与语义色映射从 ServerListActivity 抽出为纯逻辑 `ui/HealthUi.kt`（Espresso 依赖的五条文案 + 灰/绿/橙/红四组语义色互异断言）；② `BrandThemeSyncTest`（4 例）——直读资源文件静态断言：colors.xml token 值锁定 emerald 十三色、values 与 values-v35 主题 item 全集同步（v35 覆盖式继承漏项即静默漂移）、主题 parent 非 DayNight + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对（仓库根不可见 assume 跳过）。
@@ -7483,3 +7483,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **配套微调**：向导品牌 ImageView 加 `brand_mark` ID（可断言）；通知权限经 `uiAutomation.grantRuntimePermission` 预授权（免 GrantPermissionRule 新依赖、免系统弹窗拦截 Espresso）。
 - **踩坑**：① TextInputEditText 直接父容器是 TIL 内部 inputFrame（FrameLayout），断言需沿祖先链找 TextInputLayout；② 测试断言别用"全文 contains"——注释里的字面量会误伤（DayNight 断言解析 parent 属性）；③ Espresso RootMatchers 在 `matcher` 子包。
 - 未执行 Git 提交。
+
+## 2026-09-12（续3）：设置页两页签移动布局优化 + 能力缓存响应式根修（feature_list `downloader-settings-mobile-layout-2026-09-12`）
+
+- **输入**：用户要求：①路径管理页签的刷新配置、添加映射按钮对移动端更友好；②标签/分类管理的新增标签与搜索并排。
+- **布局修复（纯 CSS）**：PathMappingTab ≤780 的 header-actions 按钮被全局紧凑重制压成 30px 高/9px 字号——媒体块内 `::v-deep .el-button` 提升 min-height 40px/font 13px/flex:1 并排/margin-left:0 配 gap（同特异性后位源序胜出）；TagManagementTab ≤640 工具栏由块级纵向堆叠改 flex——搜索框（toolbar-left）弹性撑满 + 新增标签按钮（toolbar-right）收缩同行。
+- **连带根修（能力缓存非响应式致门控 computed 冻结）**：验证路径管理页签时发现 demo 下该页签始终隐藏。插桩实证缓存写入成功（desktop 全 supported）但 `pathMappingAvailable` 仍 false → `__vue__` 直读实锤：**computed 依赖模块级普通变量是非响应式依赖，首次求值（缓存未加载 fail-closed false）后被 Vue 永久缓存，`$forceUpdate` 不会重算 computed**。demo 自动会话走守卫快速路径不等能力加载故必现；真实环境慢加载同样可能中招（守卫 await 分支之外的首渲染）。修复：缓存改 `Vue.observable<{data}>` 容器，读写全走 reactiveCache.data，写入自动触发依赖重算；附带 demo-request /platform/capabilities 由空矩阵改完整桌面六能力全 supported（demo 此前 fail-closed 隐藏全部能力门控 UI）。
+- **验证**：375×812 实测——刷新配置/添加映射 154px×40px/13px 并排、搜索与新增同行（250/256 边界衔接）、页签 3→4（路径管理出现）、截图目检通过；platform-capabilities-api.spec 16 用例（新增响应式回归：注入缓存 → computed 翻 true、reset → 翻 false）；全量 108 套件 1534 用例全绿；lint/typecheck/build 绿。注：中途一次全量出现 2 例偶发失败（未捕获到用例名），复跑全绿 + 可疑套件三连跑稳定，判定为存量抖动非本批引入。
+- **坑**：①Vue computed 缓存只认响应式依赖——模块级单例缓存被 computed 读取时必踩冻结坑，可观测对象化是通用解；②playwright 路由拦截对 demo 模式无效（demo 在 axios 分流层本地返回，不发网络请求）；③el-dialog 顶栏被 demo 横幅遮挡时 click 会被 pointer-events 拦截，JS evaluate 直调 `.click()` 可绕。
+- 未执行 Git 提交（待用户指示）。

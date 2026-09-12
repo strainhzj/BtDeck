@@ -1,3 +1,38 @@
+## 2026-09-12（续3·并行）：设置页两页签移动布局优化 + 能力缓存响应式根修（未提交）
+
+### 交付内容（feature_list `downloader-settings-mobile-layout-2026-09-12`）
+
+- **布局**：PathMappingTab ≤780 按钮压过紧凑重制（30px/9px）→ 40px 高/13px 字号并排全宽；TagManagementTab ≤640 工具栏纵堆改 flex——搜索撑满 + 新增标签收缩同行。
+- **根修**：能力缓存（platform-capabilities.ts）改 `Vue.observable` 容器——此前 computed 依赖模块级普通变量，首次求值 fail-closed false 后被 Vue 永久缓存，`$forceUpdate` 不重算（demo 快速路径必现、真实慢加载同险）。demo 能力矩阵补全为桌面六能力全 supported。
+- **验证**：375×812 实测按钮 154×40px/13px、搜索与新增同行、页签 3→4；能力 spec 16 用例（+响应式回归 1）；全量 108 套件 / 1534 用例全绿；lint/typecheck/build 绿。
+
+### 关键坑位（下批必读）
+
+- **Vue computed 只认响应式依赖**：模块级单例缓存被 computed 读取必踩冻结坑（`$forceUpdate` 不重算 computed）——`Vue.observable` 化是通用解。
+- **playwright 路由拦截对 demo 模式无效**：demo 在 axios 分流层本地返回，不发网络请求；改 demo 数据形态直接编辑 demo-request.ts。
+- **demo 横幅遮挡弹窗顶栏**：click 被 pointer-events 拦截时用 `evaluate(() => el.click())` 绕。
+- 一次全量出现 2 例偶发失败未捕获用例名，复跑全绿 + 可疑套件三连稳定——存量抖动，非本批引入。
+- **并行会话注意**：本批与 Android 品牌化测试补强批次同期在工作区（其改动 android/* + tests），提交时按目录分批勿混提。
+
+---
+
+## 2026-09-12（续3）：Android 品牌化批次回归测试补强（未提交）
+
+### 交付内容（feature_list `android-native-ui-branding-2026-09-11` evidence 增补）
+
+- **JVM +7 例**（全量 44/44 绿）：`HealthUiTest`（3）——健康文案/语义色映射（抽出纯逻辑 `ui/HealthUi.kt`，四组语义色互异断言）；`BrandThemeSyncTest`（4）——colors.xml token 值锁定、values↔values-v35 主题 item 全集同步（v35 覆盖式继承漏项即静默漂移）、Light 基底 + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对（仓库根不可见 assume 跳过）。
+- **androidTest +6 例** `CompanionBrandingUiTest`（连同 CompanionOfflineUiTest 存量 2 例共 8/8 绿，AVD btdeck-a35）：colorPrimary 运行时解析 #059669；向导 brand_mark/双模式卡；伴侣卡→列表且 btn_add_server 为 MaterialButton；添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错不关框 + 合法输入保存成行；关闭端口→row_health 文案与 row_health_dot 圆点同染 error 红；LAN 勾选联动威胁模型文案。
+- **配套微调**：向导品牌 ImageView 加 `brand_mark` ID；POST_NOTIFICATIONS 经 `uiAutomation.grantRuntimePermission` 预授权（零新依赖、免系统弹窗拦截）。
+
+### 关键坑（下批必读）
+
+- TextInputEditText 直接父容器是 TextInputLayout 内部 inputFrame（FrameLayout）——表单结构断言沿祖先链找 TIL。
+- 资源静态断言别全文 contains（注释里的字面量会误伤），解析属性值（DayNight 检查解析 parent 属性）。
+- Espresso RootMatchers 在 `matcher` 子包：`androidx.test.espresso.matcher.RootMatchers`。
+- connectedDebugAndroidTest 定向跑：`-Pandroid.testInstrumentationRunnerArguments.class=a.B,c.D`。
+
+---
+
 ## 2026-09-12：断速振荡双修复回归保护加固（未提交）
 
 ### 交付内容（feature_list `speed-snapshot-flap-suppression-2026-09-11` evidence 更新）

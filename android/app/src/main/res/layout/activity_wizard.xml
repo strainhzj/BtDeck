@@ -23,6 +23,7 @@
             android:background="@drawable/bg_circle_primary_lightest">
 
             <ImageView
+                android:id="@+id/brand_mark"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
                 android:layout_gravity="center"

@@ -23,6 +23,8 @@
 | `app/src/main/res/values-v35/themes.xml` | `windowOptOutEdgeToEdgeEnforcement` | targetSdk 35 强制 e2e 致 AppCompat ActionBar 不下推内容（列表首行画进工具栏，生产路径实证）；退出恢复传统布局，API 36 起出口移除需迁移 insets 自处理（2026-09-04） |
 | `app/src/main/res/values/colors.xml`、`values/themes.xml` | `Theme.BtDeckCompanion`、`ThemeOverlay.BtDeck.MaterialAlertDialog`、`BtDeck.TextInputLayout` | ✨2026-09-11 原生过渡页翡翠绿品牌化：token 与 `frontend/src/styles/theme-variables.scss` emerald 同源（主色 #059669/语义色/灰阶/背景/边框）；基底 DayNight→Light（前端无暗色主题）；对话框统一 Material 风格；`values-v35` 颜色项须与 values 同步 |
 | `app/src/androidTest/java/com/btdeck/companion/`（CompanionOfflineUiTest/SelfSignedCert/ProfileIsolation + TinyLoopbackServer/CompanionTestState） | 设备级 UI 验收 | 离线覆盖层/自签证书信任与换签/多 profile cookie+storage+凭据隔离/自动登录；自持回环 HTTP(S) 假后端（双 PKCS12 证书），Espresso+ActivityScenario（2026-09-04） |
+| `app/src/androidTest/.../CompanionBrandingUiTest.kt` | ✨2026-09-11 | 品牌化 UI 回归：colorPrimary 解析 #059669、向导品牌头部/双卡、添加表单 OutlinedBox 标签 + 明文确认联动 + 空名错误不关框、健康圆点/文案 error 红 tint、LAN 开关联动威胁文案（POST_NOTIFICATIONS 经 uiAutomation 预授权） |
+| `app/src/test/.../ui/HealthUiTest.kt`、`ui/BrandThemeSyncTest.kt` | ✨2026-09-11 | JVM 回归：健康文案/语义色映射（HealthUi 纯逻辑）；token 值与前端 emerald 同源比对（读 theme-variables.scss，仓库根不可见自动 assume 跳过）、values 与 values-v35 主题 item 同步、Light 基底 + MaterialAlertDialog/colorAccent 挂线 |
 | `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
 
 ## 约束

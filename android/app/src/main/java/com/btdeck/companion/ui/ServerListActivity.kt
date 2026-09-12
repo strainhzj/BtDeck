@@ -287,16 +287,9 @@ class ServerListActivity : AppCompatActivity() {
             view.findViewById<TextView>(R.id.row_url).text = profile.baseUrl
 
             // 健康状态语义色（同前端 --color-success/warning/error），圆点与文案同色
-            val healthColorRes = when (profile.healthState) {
-                ServerProfile.HealthState.UNKNOWN -> R.color.btdeck_text_tertiary
-                ServerProfile.HealthState.READY -> R.color.btdeck_success
-                ServerProfile.HealthState.NOT_READY -> R.color.btdeck_warning
-                ServerProfile.HealthState.UNREACHABLE,
-                ServerProfile.HealthState.TLS_ERROR -> R.color.btdeck_error
-            }
-            val healthColor = view.context.getColor(healthColorRes)
+            val healthColor = view.context.getColor(HealthUi.colorRes(profile.healthState))
             view.findViewById<TextView>(R.id.row_health).apply {
-                text = healthLabel(profile.healthState)
+                text = HealthUi.label(profile.healthState)
                 setTextColor(healthColor)
             }
             view.findViewById<View>(R.id.row_health_dot).backgroundTintList =
@@ -325,14 +318,6 @@ class ServerListActivity : AppCompatActivity() {
                 ).show()
             }
         }
-    }
-
-    private fun healthLabel(state: ServerProfile.HealthState): String = when (state) {
-        ServerProfile.HealthState.UNKNOWN -> "未测试"
-        ServerProfile.HealthState.READY -> "就绪"
-        ServerProfile.HealthState.NOT_READY -> "未就绪"
-        ServerProfile.HealthState.UNREACHABLE -> "不可达"
-        ServerProfile.HealthState.TLS_ERROR -> "证书错误"
     }
 
     private fun relativeTime(epochMs: Long): String =
