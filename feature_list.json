@@ -6360,6 +6360,40 @@
           "evidence": "浏览器实测 computed display：icons ×3 none、smalls ×3 none；截图页签单行纯文字无截断。"
         }
       ]
+    },
+    {
+      "id": "downloader-settings-mobile-layout-2026-09-12",
+      "name": "设置页移动端两页签布局优化 + 能力缓存响应式根修（路径按钮触控友好/标签搜索并排）",
+      "description": "用户反馈：①路径管理页签的刷新配置、添加映射按钮对移动端更友好；②标签/分类管理的新增标签与搜索并排。实施中发现并根修一个深层缺陷：能力缓存为模块级普通变量，能力门控 computed（pathMappingAvailable/mobileMenuItems）依赖它属非响应式依赖——首次求值（缓存未加载 fail-closed）后被 Vue 永久缓存，$forceUpdate 不重算 computed，缓存后到也救不回（demo 快速路径必现，真实环境慢加载同样可能中招）。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "downloader-settings-mobile-layout.1",
+          "name": "路径映射页签按钮触控友好 + 标签页签搜索与新增并排",
+          "description": "PathMappingTab ≤780 媒体块 header-actions 按钮压过全局紧凑重制的 30px 高/9px 字号——min-height 40px、font 13px、flex:1 并排全宽、margin-left:0 配 gap；TagManagementTab ≤640 工具栏由纵向堆叠改 flex 行布局——toolbar-left（搜索框）弹性撑满 + toolbar-right（新增标签按钮）收缩，同行并排。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/PathMappingTab.vue",
+            "frontend/src/views/downloader/components/TagManagementTab.vue"
+          ],
+          "evidence": "375×812 浏览器实测：刷新配置/添加映射各 154px 宽 × 40px 高、13px 字号并排；搜索框与新增标签同行（inputRight=250/btnLeft=256）。"
+        },
+        {
+          "id": "downloader-settings-mobile-layout.2",
+          "name": "能力缓存响应式根修（Vue.observable）+ demo 完整能力矩阵",
+          "description": "platform-capabilities.ts 缓存改 Vue.observable<{data}> 容器（读写全部走 reactiveCache.data），缓存写入自动触发依赖它的能力门控 computed 重算；demo-request.ts /platform/capabilities 由空 capabilities（fail-closed 全隐藏）改完整桌面矩阵（六项 FILESYSTEM 能力全 supported），demo 模式可展示全部能力门控 UI。诊断过程：插桩证缓存写入成功但 computed 仍 false → __vue__ 直读 pathMappingAvailable 实锤冻结。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/platform-capabilities.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/tests/unit/platform-capabilities-api.spec.ts"
+          ],
+          "evidence": "platform-capabilities-api.spec 16 用例（新增响应式回归 1 例：缓存写入/清空触发 computed true/false 翻转）；浏览器实测修复前 3 页签（路径管理隐藏）→修复后 4 页签且移动抽屉能力项随缓存到位；全量 108 套件 1534 用例全绿、lint/typecheck/build 绿。"
+        }
+      ]
     }
   ],
   "tasks": [
