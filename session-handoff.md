@@ -1,3 +1,39 @@
+## 2026-09-12（续6）：Tracker批量操作按下载器触发——后端双端点 + 弹窗 scopeDownloader 模式（未提交）
+
+### 交付内容（tracker-op-by-downloader-20260912）
+
+- **后端**：`tracker.py` 新增 `/tracker/addTracker-by-downloader`、`/tracker/modifyTracker-by-downloader`（请求体 downloader_id + trackers 分号分隔）；共享执行体 `_apply_tracker_op_by_downloader` 服务端解析该下载器全部种子逐条走既有 qb/tr helper（连接强制 app.state.store），单条失败不断循环；审计单条汇总（by_downloader 口径 + SUCCESS/PARTIAL/FAILED）；校验链 空400/行404/无种子404/缓存不可用500。
+- **弹窗**：`TrackerOperationDialog` 可选 `scopeDownloader` prop（null=桌面零变化）：范围行「下载器「名」全部种子（共 N 个）」/标题/按钮文案切换，提交走 by-downloader 端点带计数提示。修模板 `?.`（buble 不支持，组件首次可 jest 挂载）。
+- **移动端**：选下载器直达弹窗；getList `limit:1` 轻取 total 作计数（失败省略、0 拦截）；删除拉列表与 100 上限路径（源码契约 `TRACKER_OPERATION_MAX_TORRENTS` 禁回流）。
+- **门禁**：后端 8+91 passed、mypy/flake8/black 绿；前端 dialog spec 新增 7 用例、mobile spec 57 passed、typecheck/lint/build 绿、全量 110 套件/1560 用例绿。
+
+### 关键坑位（下批必读）
+
+- **vue-template-es2015-compiler（buble）不支持模板内 `?.`**——此前无 spec 挂载的组件是隐性炸弹，新增挂载即炸 SyntaxError；模板表达式用 `(a[0] && a[0].name) || '-'`。
+- `tests/api/test_health.py` 3 红是**本地脏工作区下 dev-source 身份 fail-closed**（reasonCodes 多 build_identity_invalid），非回归；CI 干净检出即绿，本地勿据此回滚。
+- `AdvancedMultiSelect.performance.spec.ts` L424 `parseTime < 50ms` 为墙钟预算，全量并发下偶发抖动（单跑恒绿）；本批未触碰该组件。
+- 后端审计枚举断言须比对 `AuditOperationResult.PARTIAL` 枚举本体而非字符串 'PARTIAL'（值为小写）。
+
+---
+
+## 2026-09-12（续5）：移动种子页操作补强——辅种数量/转移/修改路径/快捷操作全局组（未提交）
+
+### 交付内容（mobile-torrents-actions-20260912）
+
+- **卡片**：元信息行补「辅种 N」（camel/snake 双读、缺失回退 1 同桌面列口径，>1 `m-torrent-aux-hot` 主题色强调）；操作行补「转移」（`TransferDialog` 单 torrent，`seedTransferAvailable` 能力门控 fail-closed）与「修改路径」（`SetLocationDialog` torrents=[单行]），行经 `normalizeTorrent` 补齐 camelCase；操作行 flex-wrap。
+- **快捷操作全局组**：添加种子（`TorrentAddDialog` + `downloaderRawList`）/ Tracker操作 / Tracker汇报 / 全局替换（`GlobalReplaceTrackerDialog`）。Tracker 操作与汇报移动端无多选，**用户三选一确认「先选下载器再执行」**：原生按钮选择器；汇报 `reannounceByDownloader`/「全部下载器」`reannounceAll`（确认框明示范围+计数）；操作拉该下载器种子（上限 100，Query URL 长度约束，超限 warning 明示）进 `TrackerOperationDialog`。
+- **顺带根修**：下载器选项映射 `d.id`→后端实际字段 `downloader_id`（旧映射筛选值恒 undefined），双字段兼容。
+- **弹窗适配**：五桌面弹窗懒加载；`custom-class="m-reuse-dialog"` ≤768 收窄（94vw !important 覆盖内联 width、体高 64vh 内滚）。
+- **门禁**：mobile-torrents.spec 57 passed（+15）；全量 109 套件 / 1553 用例全绿；typecheck/lint(--no-fix 含 contract:check)/build 全过。
+
+### 关键坑位（下批必读）
+
+- eslint `member-delimiter-style` multiline 配 'none'：多行类型字面量成员**换行无分隔符**（逗号/分号都报错）。
+- 测「全部下载器」汇报须先经 `handleQuickActionCommand('tracker-reannounce')` 置 `pickerMode`（默认 'tracker'，直接调 `onPickerDownloader('')` 会走拉种子分支）。
+- el-dialog `custom-class` 在调用方打标 + 非 scoped 样式块 media 覆盖是复用桌面弹窗做移动适配的最省路径（类名页专属不外泄，宽度内联须 !important）。
+
+---
+
 ## 2026-09-12（续4）：路径映射按钮与描述间距 + 移动布局回归保护（未提交→本批提交）
 
 ### 交付内容（downloader-settings-mobile-layout 补强）

@@ -51,6 +51,79 @@
   },
   "features": [
     {
+      "id": "tracker-op-by-downloader-20260912",
+      "name": "Tracker批量操作按下载器触发——后端 by-downloader 端点 + 移动端直达弹窗（去除前端种子列表上限）",
+      "description": "用户跟进反馈：移动端 Tracker操作的「上限 100」接口值应与分页保持一致，并增加按下载器触发能力（方案经三选一确认）。后端 tracker.py 新增 POST /tracker/addTracker-by-downloader 与 /tracker/modifyTracker-by-downloader（TrackerByDownloaderRequest 请求体：downloader_id + trackers 分号分隔；共享执行体 _apply_tracker_op_by_downloader 服务端解析该下载器全部种子逐条复用既有 qb/tr helper，客户端连接强制 app.state.store 缓存，单条失败不断整体循环，审计改单条汇总 add/modify_by_downloader 口径 + SUCCESS/PARTIAL/FAILED；空 trackers→400、下载器行不存在→404、无种子→404、缓存不可用→500 fail-closed）。前端 TrackerOperationDialog 新增可选 scopeDownloader prop（null=桌面行为不变；传入时范围行/标题/按钮文案切换并提交 by-downloader 端点，成功提示带计数）；移动端选下载器后直达弹窗（getList limit:1 轻取 total 作范围计数，与列表分页同源接口；探测失败省略计数），移除前端拉种子列表与 TRACKER_OPERATION_MAX_TORRENTS=100 上限路径。顺带修复该弹窗模板 ?. 可选链（buble 模板编译器不支持，组件此前不可被 jest 挂载）。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "范围语义沿用 reannounce-by-downloader 现成模式（请求体模型 + 服务端全量解析 + 单条汇总审计）；审计不逐种子刷库（千级种子会刷出千条日志），与按下载器汇报口径对齐；前端 limit:1 计数探测与页面分页同走 getList 接口保持一致。",
+      "capabilities": [],
+      "implementation_gates": [
+        "后端 mypy/black/flake8 通过；新端点 pytest 覆盖校验/分发/计数/审计",
+        "前端 typecheck、lint 通过；dialog 双模式 + 移动端新流程 jest 覆盖"
+      ],
+      "tasks": [
+        {
+          "id": "tracker-op-by-downloader.backend",
+          "name": "后端按下载器 Tracker 批量操作端点",
+          "description": "tracker.py 新增两个 by-downloader 端点与共享执行体（校验链/qb·tr 分发/部分失败计数/汇总审计），test_auth_protection_extended 补两条 401 覆盖。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/tracker.py",
+            "backend/tests/api/test_tracker_by_downloader_api.py",
+            "backend/tests/api/test_auth_protection_extended.py",
+            "docs/roadmap/backend/api/README.md"
+          ],
+          "evidence": "tests/api/test_tracker_by_downloader_api.py 8 passed（空白 trackers 400/下载器行 404/无种子 404/store 缺失 500/qb 成功含审计 kwargs/tr modify 分发 int 化/部分失败 PARTIAL）+ test_auth_protection_extended 91 passed（含新增两条 by-downloader 401）；mypy/flake8/black 绿。"
+        },
+        {
+          "id": "tracker-op-by-downloader.frontend",
+          "name": "TrackerOperationDialog 按下载器模式 + 移动端直达弹窗",
+          "description": "api/torrents.ts 新增 addTrackerByDownloader/modifyTrackerByDownloader；TrackerOperationDialog 可选 scopeDownloader prop（范围行/标题/按钮/提交分支/计数提示，桌面零行为变化）；移动端选下载器后 limit:1 轻取计数进弹窗，移除拉列表与 100 上限路径。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/torrents/components/TrackerOperationDialog.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/tracker-operation-dialog.spec.ts",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "tracker-operation-dialog.spec.ts 7 passed（常规模式不受劫持/批量文案锚/scope 文案含计数/省略计数/双提交端点/非 200 不 emit success）；mobile-torrents.spec.ts 57 passed（limit:1 计数探测参数/探测失败省略计数/无种子拦截/scope 断言/源码契约 TRACKER_OPERATION_MAX_TORRENTS 禁回流）；typecheck、lint 绿。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-torrents-actions-20260912",
+      "name": "移动种子页操作补强——辅种数量 + 单种转移/修改路径 + 快捷操作全局组",
+      "description": "移动种子卡片元信息行补辅种数量（auxiliarySeedCount 蛇形/驼峰双读、缺失回退 1，>1 主题色强调）；卡片操作补「转移」（复用桌面 TransferDialog，受 seed_transfer 能力矩阵 fail-closed 门控）与「修改路径」（SetLocationDialog 单行形态，行经 normalizeTorrent 补齐 camelCase）；快捷操作下拉补全局组四项——添加种子（TorrentAddDialog）、Tracker操作、Tracker汇报、全局替换Tracker（GlobalReplaceTrackerDialog）。移动端无多选，Tracker操作/汇报按用户确认采用「先选下载器再执行」语义：汇报走 reannounce-by-downloader / 空 id=reannounce-all（确认框明示范围与计数）；操作拉取该下载器种子（上限 100，Query 参数 URL 长度约束，超限截断并 warning 明示）进桌面同款批量弹窗。顺带根修：下载器选项映射读 d.id 而后端 DownloaderSimpleVO 实际返回 downloader_id，筛选值恒 undefined——改为双字段兼容并保留原始行喂 TorrentAddDialog。五弹窗按需懒加载 + custom-class ≤768 收窄（94vw + 体高 64vh 内滚）。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "复用桌面 torrents/components 五个既有弹窗（TransferDialog/SetLocationDialog/TorrentAddDialog/TrackerOperationDialog/GlobalReplaceTrackerDialog）与 reannounceByDownloader/reannounceAll 现成 API（此前前端零调用）；批量范围经用户在「当前列表行/全局/先选下载器」三选项中确认为先选下载器。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、lint（--no-fix 含 contract:check、vuex-action）通过",
+        "mobile-torrents.spec 覆盖辅种数量口径、转移能力门控、四快捷操作入口、汇报确认/取消/计数、下载器映射修正"
+      ],
+      "tasks": [
+        {
+          "id": "mobile-torrents-actions.main",
+          "name": "移动种子页卡片与快捷操作扩展",
+          "description": "卡片辅种数量 + 转移/修改路径按钮（能力门控）+ 快捷操作全局组（添加种子/Tracker操作/Tracker汇报/全局替换）+ 下载器选择器 + 下载器选项 downloader_id 映射修正 + 弹窗移动端宽度适配。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "mobile-torrents.spec.ts：57 passed（+15 新用例：辅种数量渲染与回退/hot 强调、转移能力 supported 与 fail-closed、弹窗行规范化、onTorrentMutated 刷新、添加种子空下载器拦截、Tracker操作拉取参数与截断明示与空态、汇报按下载器/全局/取消/计数文案、全局替换入口、downloader_id 映射回归锚、源码契约 8 断言）；npm run typecheck 通过；npm run lint -- --no-fix 通过。"
+        }
+      ]
+    },
+    {
       "id": "mobile-notifications-mark-all-read-20260908",
       "name": "移动端通知一键已读",
       "description": "移动通知列表新增顶部“全部已读”操作栏，复用现有 PUT /notifications/read-all 接口，覆盖尚未加载的分页通知；成功后就地更新已加载卡片并同步移动端未读角标。",

@@ -1,5 +1,31 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第二批）：Tracker批量操作按下载器触发 tracker-op-by-downloader（全绿未提交）
+
+用户跟进反馈闭环（feature_list `tracker-op-by-downloader-20260912`，backend+frontend 双任务 done）：移动端 Tracker操作的「上限 100」改为按下载器触发（方案经三选一确认：后端 by-downloader 端点，前端不再拉种子列表）。
+
+1. **后端**：`tracker.py` 新增 `POST /tracker/addTracker-by-downloader` 与 `/modifyTracker-by-downloader`（`TrackerByDownloaderRequest` 请求体：downloader_id + trackers 分号分隔）。共享执行体 `_apply_tracker_op_by_downloader`：服务端解析该下载器全部种子（torrentInfo dr=0）逐条复用既有 qb/tr helper（客户端连接强制 `app.state.store` 缓存），单条失败不断整体循环；审计改**单条汇总**（add/modify_by_downloader 口径 + SUCCESS/PARTIAL/FAILED，千级种子不逐条刷库，与 reannounce-by-downloader 对齐）。校验链：空 trackers→400 / 下载器行不存在→404 / 无种子→404 / 缓存不可用→500 fail-closed。
+2. **前端弹窗**：`TrackerOperationDialog` 新增可选 `scopeDownloader` prop（`{id,name,total?}`，null=桌面行为零变化）——范围行/标题/提交按钮文案切换，添加/修改提交走 by-downloader 端点，成功提示带成功/失败计数。顺带修模板 `?.`（buble 模板编译器不支持，该组件此前不可被 jest 挂载）。
+3. **移动端**：选下载器后直达弹窗；`openTrackerOperationByDownloader` 仅 getList `limit:1` 轻取 total 作范围计数（与列表分页同源接口；探测失败省略计数、total=0 拦截）。移除前端拉种子列表与 `TRACKER_OPERATION_MAX_TORRENTS=100` 上限路径（源码契约钉死禁回流）。
+- **验证**：后端 `test_tracker_by_downloader_api.py` 8 passed（校验链/qb·tr 分发 int 化/部分失败 PARTIAL/审计 kwargs）+ auth_protection_extended +2 条 401（91 passed）；mypy/flake8/black 绿。前端 `tracker-operation-dialog.spec.ts` 新增 7 用例（常规模式不受劫持/批量文案锚/scope 文案/双提交端点/非 200 不 emit success）、`mobile-torrents.spec.ts` 改造后 57 passed；typecheck/lint/build 绿；全量 **110 套件 / 1560 用例绿**。
+- **存量噪声（非本批引入，已定性）**：① `tests/api/test_health.py` 3 红——dev-source 身份 fail-closed 在**本地脏工作区**下判 `build_identity_invalid`（readiness reasonCodes 多一项），CI 干净检出即绿；② `AdvancedMultiSelect.performance.spec.ts` 间歇性计时抖动（L424 `parseTime < 50ms` 墙钟预算），全量并发下偶发、单独恒绿、组件本批未触碰。
+
+---
+
+## 2026-09-12：移动种子页操作补强 mobile-torrents-actions（全绿未提交）
+
+用户三项验收需求闭环（feature_list `mobile-torrents-actions-20260912`，单任务 done）：
+
+1. **辅种数量**：卡片元信息行补「辅种 N」（auxiliarySeedCount 蛇形/驼峰双读、缺失回退 1，与桌面列 `|| 1` 同口径）；>1 时主题色强调（`m-torrent-aux-hot`）。
+2. **单种转移/修改路径**：卡片操作行新增「转移」（复用桌面 `TransferDialog` 单 torrent 形态，`seedTransferAvailable` = `isCapabilityAvailable('seed_transfer')` fail-closed 门控——android-server 形态隐藏）与「修改路径」（`SetLocationDialog` 的 `torrents=[单行]` 形态）；打开前行数据经 `normalizeTorrent` 补齐 camelCase（normal 模式列表行是后端蛇形原始行）。操作行 flex-wrap 适配五按钮换行。
+3. **快捷操作全局组**：下拉新增四项——添加种子（`TorrentAddDialog`，喂 `downloaderRawList` 原始行）/ Tracker操作 / Tracker汇报 / 全局替换Tracker（`GlobalReplaceTrackerDialog` 自包含）。**Tracker操作与汇报的批量范围经用户三选一确认为「先选下载器再执行」**（移动端无多选）：原生按钮选择器弹窗（≥44px 触控行）；汇报按下载器走 `reannounceByDownloader`、选「全部下载器」走 `reannounceAll`（此前前端零调用的现成端点），确认框明示范围、成功带成功/失败计数；Tracker操作拉取该下载器种子（上限 100——add/modify 走 Query 参数传 ID 列表，过长顶 URL 上限，超限 warning 明示截断）进桌面 `TrackerOperationDialog` 批量弹窗。
+
+- **顺带根修**：下载器选项映射读 `d.id` 而后端 `/downloader/getList`（DownloaderSimpleVO）实际只返回 `downloader_id`/`nickname`——旧映射筛选下拉 value 恒 undefined；改双字段兼容（`downloader_id ?? d.id`）并保留原始行喂添加种子弹窗。
+- **弹窗适配**：五桌面弹窗按需懒加载（路由包体不膨胀）；`custom-class="m-reuse-dialog"` + 非 scoped 样式块 ≤768 收窄（94vw !important 覆盖内联 width、`margin-top 5vh`、弹窗体 `max-height 64vh` 内滚——Tracker 操作的种子标签长列表可滚）。
+- **验证**：`mobile-torrents.spec.ts` 57 passed（+15：辅种数量口径/hot、转移能力 supported+fail-closed、弹窗行规范化、success 统一刷新、添加种子空下载器拦截、Tracker操作拉取参数/截断明示/空态、汇报按下载器/全局/取消/计数文案、下载器映射回归锚、源码契约 8 断言）；typecheck、`lint --no-fix`（含 contract:check、vuex-action）通过。坑位：eslint member-delimiter-style multiline 要求 'none'（成员换行无分隔符，逗号分号都报错）；测试调 `onPickerDownloader('')` 须先经 `handleQuickActionCommand('tracker-reannounce')` 置 pickerMode（默认 'tracker' 会走拉种子分支）。
+
+---
+
 ## 2026-09-10（第三批）：推送 GitHub 走完整 CI——修远端 19 个存量红（回收站鉴权覆盖漂移），regression 首次全绿
 
 - **远端状态发现**：origin/dev 领先一个提交（1585638 移动端通知一键已读，2026-09-08）；`Full-stack regression` 自 2026-09-07（2192bf3）起连续红——backend job 19 failed（与本地一致）。
