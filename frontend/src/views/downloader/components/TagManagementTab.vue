@@ -1200,16 +1200,24 @@ export default class TagManagementTab extends Vue {
 }
 
 @media (max-width: 640px) {
+  /* 搜索与新增并排（2026-09-12 用户反馈）：左侧搜索弹性撑满、右侧按钮收缩不换行 */
   .toolbar {
-    align-items: stretch;
-    flex-direction: column;
+    display: flex;
+    align-items: center;
     gap: 6px;
   }
 
-  .toolbar-left,
-  .toolbar-left .el-input,
-  .toolbar-right .el-button {
+  .toolbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .toolbar-left .el-input {
     width: 100% !important;
+  }
+
+  .toolbar-right {
+    flex: 0 0 auto;
   }
 
   /* 类型筛选页签换行（手机一屏放不下三枚） */

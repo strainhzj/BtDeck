@@ -1077,8 +1077,13 @@ export default class PathMappingTab extends Vue {
   .header-actions {
     width: 100%;
 
-    .el-button {
+    /* 触控友好（2026-09-12 用户反馈）：压过全局紧凑重制的 30px/9px 小按钮 */
+    ::v-deep .el-button {
       flex: 1;
+      min-height: 40px;
+      margin-left: 0;
+      padding: 0 10px;
+      font-size: 13px;
     }
   }
 }

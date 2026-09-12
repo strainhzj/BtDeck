@@ -1,6 +1,7 @@
 /**
  * 主机能力 API 客户端缓存与降级兜底测试（dual-mode-client Phase 4 批次 C）。
  */
+import Vue from 'vue'
 import {
   cachedCapabilityLevel,
   FILESYSTEM_CAPABILITIES,
@@ -55,6 +56,38 @@ describe('缓存读取与兜底', () => {
     setPlatformCapabilityCacheForTesting(androidData())
     resetPlatformCapabilityCache()
     expect(cachedPlatform()).toBe('unknown')
+  })
+
+  it('缓存写入触发依赖它的 computed 重算（响应式门控，2026-09-12 根修回归）', async() => {
+    // 门控 computed（设置弹窗 pathMappingAvailable/移动抽屉菜单项）此前依赖
+    // 模块级普通变量——首次求值（fail-closed false）后被 Vue 永久缓存，
+    // $forceUpdate 不重算 computed，缓存后到也救不回
+    const Comp = Vue.extend({
+      computed: {
+        available(): boolean {
+          return isCapabilityAvailable('path_mapping')
+        }
+      },
+      render(h) {
+        return h('div', String(this.available))
+      }
+    })
+    const vm = new Comp().$mount()
+    expect(vm.available).toBe(false)
+
+    setPlatformCapabilityCacheForTesting({
+      platform: 'desktop',
+      capabilities: { path_mapping: { label: '路径映射', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    await Vue.nextTick()
+    expect(vm.available).toBe(true)
+
+    resetPlatformCapabilityCache()
+    await Vue.nextTick()
+    expect(vm.available).toBe(false)
+    vm.$destroy()
   })
 })
 

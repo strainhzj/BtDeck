@@ -983,7 +983,24 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
   if (path === '/tags/categories') return success(demoStore.getCategories().map((name, index) => ({ id: index + 1, name })))
   if (path === '/tags/tags' || path === '/tags/all') return success(demoStore.getTags())
   if (path.startsWith('/tags/')) return success({ success: true, demo: true }, 'Demo 标签操作已模拟完成')
-  if (path === '/platform/capabilities') return success({ demo: true, capabilities: [] })
+  // 完整桌面矩阵：demo 模式应展示全部能力门控 UI（设置弹窗路径管理页签/回收站/孤儿文件等），
+  // 此前返回空 capabilities 会让 FILESYSTEM 能力 fail-closed、相关页签在 demo 里不渲染
+  if (path === '/platform/capabilities') {
+    return success({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: {
+        downloader_filesystem_access: { label: '下载器文件系统访问', level: 'supported' },
+        path_mapping: { label: '路径映射', level: 'supported' },
+        orphan_files: { label: '孤儿文件', level: 'supported' },
+        torrent_backup: { label: '种子备份', level: 'supported' },
+        seed_transfer: { label: '做种转移', level: 'supported' },
+        level3_recycle: { label: '三级回收', level: 'supported' }
+      },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+  }
   if (path.startsWith('/user/')) return success({ success: true, demo: true }, 'Demo 模式：账户安全操作未执行')
 
   return unsupported(method, path)
