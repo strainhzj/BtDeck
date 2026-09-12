@@ -690,6 +690,11 @@ export default class DownloaderSettingsDialog extends Vue {
   }
 
   mounted(): void {
+    // 整页复用形态（/m/downloader/settings/:id|new）：弹窗创建时 visible 已为
+    // true，@Watch('visible') 不为初始值触发——挂载即补一次初始化，否则表单空白
+    if (this.visible) {
+      void this.initDialog()
+    }
     if (typeof window.matchMedia === 'function') {
       const mql = window.matchMedia('(max-width: 780px)')
       this.tabsPosition = mql.matches ? 'top' : 'left'
@@ -2281,6 +2286,20 @@ export default class DownloaderSettingsDialog extends Vue {
 
   .workspace-tab-label {
     justify-content: flex-start;
+    /* 顶部页签纯文字（2026-09-12 用户反馈：图标+副标题在窄屏被截断） */
+    gap: 0;
+
+    &__icon {
+      display: none;
+    }
+
+    &__copy {
+      gap: 0;
+
+      small {
+        display: none;
+      }
+    }
 
     &__lock {
       display: none;

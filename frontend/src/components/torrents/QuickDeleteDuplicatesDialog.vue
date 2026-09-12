@@ -43,14 +43,7 @@
           <div class="qdd-field-hint">这些下载器中的重复种子将被保留，其余下载器中的重复种子将被删除（只删种子、不删文件）</div>
         </div>
 
-        <el-button
-          type="primary"
-          icon="el-icon-view"
-          :loading="previewLoading"
-          @click="handlePreview"
-        >
-          预览重复
-        </el-button>
+        <div class="qdd-field-hint qdd-auto-hint">完成待检测与保留下载器选择后将自动预览重复结果</div>
       </div>
 
       <el-divider />
@@ -236,6 +229,41 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
     if (next.length !== this.keepDownloaderIds.length) {
       this.keepDownloaderIds = next
     }
+    this.scheduleAutoPreview()
+  }
+
+  /**
+   * 选择完成即事件触发预览（2026-09-12 用户反馈）：待检测 ≥2 且保留 ≥1（子集）
+   * 达成时自动拉预览，无需手动点按钮；选择失效时清掉过期预览。
+   * 防抖合并联动剪裁引发的连续变更，避免重复请求。
+   */
+  @Watch('keepDownloaderIds', { deep: true })
+  onKeepSelectionChange() {
+    this.scheduleAutoPreview()
+  }
+
+  private autoPreviewTimer = 0
+  private readonly AUTO_PREVIEW_DEBOUNCE_MS = 250
+
+  private scheduleAutoPreview(): void {
+    if (this.autoPreviewTimer) window.clearTimeout(this.autoPreviewTimer)
+    if (!this.canPreview) {
+      this.preview = null
+      this.previewError = ''
+      return
+    }
+    this.autoPreviewTimer = window.setTimeout(() => {
+      this.autoPreviewTimer = 0
+      this.currentPage = 1
+      void this.fetchPreview(1)
+    }, this.AUTO_PREVIEW_DEBOUNCE_MS)
+  }
+
+  beforeDestroy(): void {
+    if (this.autoPreviewTimer) {
+      window.clearTimeout(this.autoPreviewTimer)
+      this.autoPreviewTimer = 0
+    }
   }
 
   private async initDialog() {
@@ -262,9 +290,13 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
     }
   }
 
+  private previewSeq = 0
+
   private async fetchPreview(page = 1) {
     this.previewLoading = true
     this.previewError = ''
+    // 选择再次变化会发起新请求：过期响应直接丢弃，防旧结果覆盖新选择
+    const seq = ++this.previewSeq
     try {
       const resp = await getQuickDeleteDuplicatePreview({
         downloader_ids: this.detectDownloaderIds.map(id => String(id)),
@@ -272,6 +304,7 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         page,
         pageSize: this.pageSize
       })
+      if (seq !== this.previewSeq) return
       if (resp.code === '200') {
         this.preview = resp.data
       } else {
@@ -279,20 +312,12 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         this.preview = null
       }
     } catch (e) {
+      if (seq !== this.previewSeq) return
       this.previewError = extractErrorMessage(e)
       this.preview = null
     } finally {
-      this.previewLoading = false
+      if (seq === this.previewSeq) this.previewLoading = false
     }
-  }
-
-  private async handlePreview() {
-    if (!this.canPreview) {
-      this.$message.warning('请选择至少 2 个待检测下载器，并至少选择 1 个保留下载器')
-      return
-    }
-    this.currentPage = 1
-    await this.fetchPreview(1)
   }
 
   private async handlePageChange(page: number) {
@@ -317,6 +342,8 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
       if (!resp.data.task_id) {
         this.$message.info(resp.msg || '未发现可删除的重复种子')
         this.$emit('deleted')
+        // 提交完成（无可删项）即关闭弹窗（2026-09-12 用户反馈，移动/桌面一致）
+        this.handleClose()
         return
       }
       const skippedText = resp.data.skipped_count
@@ -324,6 +351,8 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         : ''
       this.$message.success(`已提交删除任务（共 ${resp.data.total_count} 个种子${skippedText}）`)
       this.$emit('deleted')
+      // 任务已受理即关闭弹窗：轮询在后台继续，结果经 toast/通知中心送达
+      this.handleClose()
       // 后台轮询完成状态，仅用于结果提示（不阻塞对话框）
       void this.pollDeleteStatus(resp.data.task_id)
     } catch (e) {
@@ -406,6 +435,10 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
   font-size: 12px;
   color: var(--color-text-secondary, #909399);
   line-height: 1.4;
+}
+
+.qdd-auto-hint {
+  color: var(--color-primary, #059669);
 }
 
 .qdd-control {
