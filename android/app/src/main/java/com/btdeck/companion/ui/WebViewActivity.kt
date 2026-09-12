@@ -1,7 +1,9 @@
 package com.btdeck.companion.ui
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
 import android.os.Handler
@@ -9,6 +11,8 @@ import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -20,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.btdeck.companion.R
 import com.btdeck.companion.data.CredentialVault
@@ -54,6 +59,25 @@ class WebViewActivity : AppCompatActivity() {
     private var autoLoginStarted = false
     private val healthClient = HealthClient()
 
+    // ============ 文件选择器（<input type="file">，添加种子 .torrent 入口） ============
+
+    /** 当前待决的 WebView 文件回调；同一时刻 WebView 只允许一个待决选择器。 */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    /**
+     * 选择器结果通道（须在 onCreate 前注册）：回调恰好投递一次——取出即清空
+     * 引用，取消/非 OK 收敛为 null；不投递或双重投递都会让 WebView 永久
+     * 拒绝后续 onShowFileChooser（表现为此后点击文件框无反应）。
+     */
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooser
+            pendingFileChooser = null
+            callback?.onReceiveValue(
+                FileChooser.parseResult(result.resultCode, FileChooser.urisFromIntent(result.data))
+            )
+        }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,11 +109,42 @@ class WebViewActivity : AppCompatActivity() {
             builtInZoomControls = true
             displayZoomControls = false
             allowFileAccess = false           // 禁本地文件面
+            // 只门控「页面内引用 content:// 资源」（iframe/img 等）；文件选择器
+            // 上传读取走 ContentResolver + SAF 给本 activity 的临时读授权，
+            // 不经该门。维持 false（默认拒绝）；若真机验收上传失败（个别 ROM
+            // 行为差异），放宽为 true 的安全取舍：文件 URI 始终来自用户显式
+            // 选择，增量攻击面仅页面内 content:// 引用，可接受。
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         webView.webViewClient = CompanionWebViewClient()
+        // 无 WebChromeClient 时 WebView 对 <input type="file"> 点击静默忽略
+        // （此前添加种子的根因）；SAF MIME 陷阱与意图构造见 FileChooser。
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView?,
+                callback: ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams,
+            ): Boolean {
+                // 新选择器请求到达时旧回调必须先作废（取消语义），否则 WebView
+                // 认为仍有待决选择器而锁死后续触发
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = callback
+                return try {
+                    fileChooserLauncher.launch(
+                        FileChooser.buildPickerIntent(FileChooser.pickerParams(params.mode))
+                    )
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    // 无可用文件管理器：同样须投递一次 null 解锁后续选择
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("未找到可用的文件管理器，无法选择种子文件")
+                    false
+                }
+            }
+        }
 
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -113,6 +168,10 @@ class WebViewActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Activity 终止而选择器仍在途：结果通道随 activity 失效，补投 null
+        // 保持「每个待决回调恰好一次」
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         timeoutHandler.removeCallbacksAndMessages(null)
         webView.destroy()
         super.onDestroy()

@@ -192,22 +192,21 @@
       @deleted="onQuickDeleted"
     />
 
-    <!-- 复用桌面种子操作弹窗（custom-class 供 ≤768 收窄宽度；懒加载控制路由包体）：
-         转移/修改路径按单种卡片行执行，添加种子/Tracker操作/全局替换由快捷操作触发 -->
+    <!-- 复用桌面种子操作弹窗（懒加载控制路由包体）：转移/修改路径弹窗组件内
+         自带 ≤768 适配（自有 custom-class + 组件内媒体块，SetLocationDialog
+         根节点即 el-dialog）；Tracker操作/全局替换仍由本页 m-reuse-dialog 收窄 -->
     <transfer-dialog
       :visible.sync="transferVisible"
       :torrent="transferTarget"
-      custom-class="m-reuse-dialog"
       @success="onTorrentMutated"
     />
     <set-location-dialog
       :visible.sync="setLocationVisible"
       :torrents="setLocationTorrents"
-      custom-class="m-reuse-dialog"
       @success="onTorrentMutated"
     />
     <!-- TorrentAddDialog 是自定义 modal 非 el-dialog（m-reuse-dialog 宽度覆盖不适用，
-         其 scoped ≤768 媒体块自带移动适配）；其余四弹窗为 el-dialog 懒加载收窄 -->
+         其 scoped ≤768 媒体块自带移动适配）；其余弹窗为 el-dialog 懒加载收窄 -->
     <torrent-add-dialog
       :visible.sync="addDialogVisible"
       :downloaders="downloaderRawList"

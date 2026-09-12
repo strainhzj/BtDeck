@@ -1,12 +1,14 @@
 <template>
-  <div>
-    <el-dialog
-      :title="`修改保存路径（已选择${torrents.length}个种子）`"
-      :visible.sync="dialogVisible"
-      width="650px"
-      :before-close="handleClose"
-      :close-on-click-modal="false"
-    >
+  <!-- 根节点即 el-dialog（曾用 div 包裹：调用方透传的 custom-class 经 $attrs
+       落到外层 div，移动端收窄从未生效——勿回退为 div 包裹） -->
+  <el-dialog
+    :title="`修改保存路径（已选择${torrents.length}个种子）`"
+    :visible.sync="dialogVisible"
+    width="650px"
+    custom-class="set-location-dialog"
+    :before-close="handleClose"
+    :close-on-click-modal="false"
+  >
       <!-- 当前路径信息 -->
       <div class="current-path-section">
         <div class="section-title">当前路径：</div>
@@ -67,7 +69,6 @@
         </el-button>
       </span>
     </el-dialog>
-  </div>
 </template>
 
 <script lang="ts">
@@ -337,6 +338,76 @@ export default class SetLocationDialog extends Vue {
     margin-left: 8px;
     color: #9CA3AF;
     font-size: 12px;
+  }
+}
+
+// ========================================
+// 移动端适配（≤768）内部布局：表单标签上堆、底部按钮/路径建议行触控目标
+// ========================================
+@media (max-width: 768px) {
+  // 当前路径 el-tag 长路径横向溢出
+  .path-info ::v-deep .el-tag {
+    display: block;
+    white-space: normal;
+    height: auto;
+    min-height: 32px;
+    padding: 4px 10px;
+    line-height: 1.5;
+  }
+
+  // 桌面 label-width 110px 左右布局 → 标签上堆、内容全宽
+  ::v-deep .el-form-item__label {
+    display: block;
+    width: auto !important;
+    text-align: left;
+  }
+
+  ::v-deep .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  // 底部双钮等宽 + ≥44px 触控高
+  .dialog-footer {
+    display: flex;
+
+    .el-button {
+      flex: 1;
+      min-height: 44px;
+      margin-left: 0;
+    }
+
+    .el-button + .el-button {
+      margin-left: 12px;
+    }
+  }
+
+  // 路径建议行触控目标（桌面 12px 徽标手指难命中）
+  .path-suggestion {
+    min-height: 36px;
+
+    .path-type,
+    .torrent-count {
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+/* 移动端 ≤768 弹窗骨架收窄（非 scoped：custom-class 打在 el-dialog 根上，
+   类名组件专属，不影响其它页面弹窗）。宽度 prop 生成内联 style，须
+   !important 覆盖（此前 650px 原样怼手机屏的根因即收窄规则从未命中）。 */
+@media (max-width: 768px) {
+  .set-location-dialog {
+    width: 94vw !important;
+    margin-top: 5vh !important;
+
+    .el-dialog__body {
+      max-height: 64vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
   }
 }
 </style>

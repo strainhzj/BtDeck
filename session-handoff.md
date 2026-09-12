@@ -1,3 +1,32 @@
+## 2026-09-12（续9）：两遗留修复已实施（App 文件选择器 + 转移/修改路径弹窗适配），待真机验收
+
+> 续8 交接的两问题本会话全部实施完成（feature_list `mobile-ux-pending-fixes-2026-09-12`）。JVM/前端门禁全绿；**双变体 APK 构建与真机验收待执行**。
+
+### 问题 1（Android 文件选择器）实施结果
+
+- `WebViewActivity` 补 `WebChromeClient.onShowFileChooser`（L125）+ `fileChooserLauncher`（L72，ActivityResultContracts.StartActivityForResult）：回调恰好投递一次（launcher 取出即清空 / 新请求先作废旧回调投 null / onDestroy 补投 / 无文件管理器 ActivityNotFoundException 也投 null）。
+- 新 `ui/FileChooser.kt` 纯函数 + `FileChooserTest` 3 用例（MIME 恒 `*/*` 钉死禁回退 createIntent / MODE_OPEN_MULTIPLE 多选决策 / 取消与零选中收敛 null）。全套件 `testDebugUnitTest` 绿。
+- `allowContentAccess` **维持 false**：判定它只门控页面内 content:// 资源引用，文件上传读取走 ContentResolver + SAF 给 activity 的临时读授权，不经该门。**若真机上传失败**（个别 ROM 行为差异），按 WebViewActivity.kt L89-94 注释放开为 true（取舍已写明）。
+
+### 问题 2（两弹窗移动适配）实施结果
+
+- `SetLocationDialog` 根节点 div 包裹根修（el-dialog 升模板根）+ 自有 `custom-class="set-location-dialog"`；`TransferDialog` 加 `transfer-dialog`，嵌套删除确认 `transfer-delete-confirm` 88vw。非 scoped ≤768 块（94vw/5vh/64vh 内滚）+ scoped 块（标签上堆/44px 按钮/路径建议触控）。移动页 `torrents.vue` 两处 m-reuse-dialog 透传已移除（该类仅余 Tracker操作/全局替换，契约钉死使用处恰 2）。
+- `transfer-set-location-dialogs.spec.ts` 5 用例（含防 div 包裹回退断言）；typecheck/lint 绿；全量 111 套件 / 1570 用例绿。
+
+### 剩余动作（新会话/用户）
+
+1. **双变体 APK 构建**：提交后在干净树跑 `deploy\build-android.bat`（memory bat 三坑：CRLF/ASCII/须干净检出），产物在 `android/dist/`。
+2. **真机验收清单**：①App 添加种子 → 点击选择文件弹 SAF 文件管理器（非静默）；②选单/多个 .torrent 正常入列、取消后再点仍能弹（回调未锁死）；③弹窗不在列表空（MIME 通配生效）；④上传成功后端受理（若失败查 allowContentAccess，见上）；⑤移动页 375 宽转移/修改路径弹窗 94vw、表单标签上堆、嵌套删除确认 88vw。
+3. 前端如需部署验证：镜像走 `build-and-export-images.bat`（先提交保严格身份干净树，自动部署 unraid 192.168.5.51，/health/live 核 gitSha）。
+
+### 本批新坑（后续必读）
+
+- **Kotlin KDoc 内字面 `*/*`**：`*/` 提前终结块注释致编译 Syntax error——注释里写 `*&#47;*`。
+- **安卓 JVM 单测边界**：无 Robolectric/mockito，Intent/ClipData 实例化即抛 stub——可测性靠决策纯函数（PickerParams/isSelectionComplete），装配直译由真机兜底。
+- **前端 node_modules 残缺**（.bin 缺、包 dist 不全）：`npm install` 增量救不回，rm -rf 后 `npm ci`。
+
+---
+
 ## 2026-09-12（续8·交接）：用户验收发现两问题，已根因诊断待新会话实施
 
 > 用户明确「将在新对话继续修改」。本条为可直接开工的交接：根因已实锤、方案已定，无需重新调查。

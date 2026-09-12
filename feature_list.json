@@ -6496,6 +6496,42 @@
           "evidence": "platform-capabilities-api.spec 16 用例（新增响应式回归 1 例：缓存写入/清空触发 computed true/false 翻转）；浏览器实测修复前 3 页签（路径管理隐藏）→修复后 4 页签且移动抽屉能力项随缓存到位；全量 108 套件 1534 用例全绿、lint/typecheck/build 绿。"
         }
       ]
+    },
+    {
+      "id": "mobile-ux-pending-fixes-2026-09-12",
+      "name": "移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）",
+      "description": "用户真机验收发现两问题（根因诊断见 session-handoff 续8，本批为实施）：①App WebView 添加种子点选择文件无反应——WebViewActivity 只设 webViewClient 无 WebChromeClient，<input type=\"file\"> 点击被静默忽略；②移动页转移/修改路径弹窗 600/650px 桌面宽度原样怼手机屏——SetLocationDialog 根节点 div 包裹致透传 custom-class 经 $attrs 落到外层 div 永不到 el-dialog（收窄从未生效），TransferDialog 壳虽经 m-reuse-dialog 94vw 生效但内部 label-width 桌面表单与嵌套删除确认弹窗未适配；两组件 @media 规则数为 0。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "mobile-ux-pending-fixes.1",
+          "name": "Android：WebView 文件选择器（onShowFileChooser + ActivityResultLauncher + FileChooser 纯函数）",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/main/java/com/btdeck/companion/ui/FileChooser.kt",
+            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
+            "android/app/src/test/java/com/btdeck/companion/ui/FileChooserTest.kt"
+          ],
+          "description": "WebViewActivity 补 WebChromeClient.onShowFileChooser + StartActivityForResult launcher：回调恰好投递一次（launcher 取出即清空；新请求先作废旧回调投 null；onDestroy 补投；无文件管理器 catch ActivityNotFoundException 同样投 null 解锁后续）；支持多选（EXTRA_ALLOW_MULTIPLE，SAF MIME 陷阱对策=意图恒 */* 不透传 accept 扩展名当 MIME——FileChooser 纯函数承载决策与结果解析，android.webkit 在 JVM 是 not-mocked stub 故独立实现）；allowContentAccess 维持 false（只门控页面内 content:// 资源引用，上传读取走 ContentResolver+SAF 临时授权，代码注释写明取舍——真机验收复核点）。",
+          "evidence": "FileChooserTest 3 用例绿（MIME 通配钉死禁回退 createIntent/MODE_OPEN_MULTIPLE 多选决策/取消与零选中收敛 null 防双重投递锁死）+ 全套件 testDebugUnitTest BUILD SUCCESSFUL；Intent/ClipData 装配 JVM 不可测由真机验收兜底；双变体构建与真机验收项记录见 session-handoff 续9。"
+        },
+        {
+          "id": "mobile-ux-pending-fixes.2",
+          "name": "前端：TransferDialog/SetLocationDialog 组件内自治 ≤768 适配 + 移动页透传清理",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/components/TransferDialog.vue",
+            "frontend/src/views/torrents/components/SetLocationDialog.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
+          ],
+          "description": "照 TorrentAddDialog 2026-09-12 模式组件自治：SetLocationDialog 根节点 div 包裹根修（el-dialog 升为模板根，$attrs 陷阱消除）；两弹窗自有 custom-class（transfer-dialog/set-location-dialog）+ 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、body 64vh 内滚；TransferDialog 嵌套删除确认 transfer-delete-confirm 88vw，append-to-body 脱离组件树故必须非 scoped）+ scoped 块（label-width 110/120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控；SetLocationDialog 长路径 el-tag 折行）。移动页 torrents.vue 移除两处已失效/将自治的 m-reuse-dialog 透传（该类仅余 Tracker操作/全局替换）；源码契约 spec 钉死 custom-class 落在 el-dialog 开标签（防根 div 包裹回退）+ 媒体块关键规则 + 移动页使用处恰 2。",
+          "evidence": "transfer-set-location-dialogs.spec 5 用例绿；相关 4 套件（含 mobile-torrents 57）73 用例绿；typecheck/lint(--max-warnings 0 含 contract:check) 绿；全量 111 套件 / 1570 用例绿（+1 套件 +5 用例）。"
+        }
+      ]
     }
   ],
   "tasks": [

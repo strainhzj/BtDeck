@@ -17,7 +17,8 @@
 | `app/src/main/java/com/btdeck/companion/data/ServerProfile.kt` | `ServerProfile:14` | profile JSON 增加 username；旧 JSON 缺字段按空字符串兼容 |
 | `app/src/main/java/com/btdeck/companion/data/CredentialVault.kt` | `CredentialVault:21`、`buildAutoLoginScript:94` | Android Keystore AES-GCM 密文 + 独立凭据 SharedPreferences；同源登录脚本与 TOTP 临时 prompt |
 | `app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt` | `ServerListActivity:41`、`showProfileActions:124`、`showAddDialog:148` | 用户名/密码录入、清除凭据/忘记服务器操作；✨2026-09-11 录入表单改 `dialog_add_server.xml`（OutlinedBox + TextInputLayout 错误展示，文案不变）+ MaterialAlertDialogBuilder，列表行卡片化 + 健康状态语义色圆点 |
-| `app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt` | `WebViewActivity:43`、`prepareSession:132`、`maybeAutoLogin:196` | 等待异步 CookieManager 清理后加载 profile；有凭据时恢复前端会话 |
+| `app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt` | `WebViewActivity:48`、`prepareSession:191`、`maybeAutoLogin:255` | 等待异步 CookieManager 清理后加载 profile；有凭据时恢复前端会话；✨2026-09-12 补 WebChromeClient `onShowFileChooser:125`（此前 `<input type="file">` 点击被静默忽略）+ `fileChooserLauncher:72`（ActivityResultLauncher，回调恰好投递一次，取消/销毁收敛 null 防锁死；`allowContentAccess` 维持 false 只门控页面内 content:// 资源引用，上传走 SAF 临时授权） |
+| `app/src/main/java/com/btdeck/companion/ui/FileChooser.kt` | `pickerParams:38`、`buildPickerIntent:42`、`parseResult:60` | ✨2026-09-12 文件选择器纯逻辑：恒 `*/*` 规避 `accept=".torrent"` 扩展名被 SAF 当 MIME 过滤空列表（不用 FileChooserParams.createIntent）；多选补 EXTRA_ALLOW_MULTIPLE；结果解析独立实现（android.webkit JVM 是 not-mocked stub） |
 | `app/src/main/java/com/btdeck/companion/net/TrustScope.kt` | `sha256Fingerprint:22` | 自签证书指纹＝公钥 SPKI 的 SHA-256（RFC 7469 pin 语义；此前按整证书 DER 与 OkHttp 校验永不匹配，2026-09-04 设备级实证修复） |
 | `app/src/main/java/com/btdeck/companion/data/HealthClient.kt` | `probe`、`pinnedClient`、`CapturingTrustManager` | 自签钉扎：全信 TrustManager 捕获证书链 + 握手后手动 SPKI pin 比对（OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容，链清洗为空；2026-09-04）；✨2026-09-10 `probeWithFallback` 主路径失败回退 `/api/v1` 健康别名 + 可注入 `HttpCall` L40（JVM 单测假探测，HealthClientFallbackTest） |
 | `app/src/main/res/values-v35/themes.xml` | `windowOptOutEdgeToEdgeEnforcement` | targetSdk 35 强制 e2e 致 AppCompat ActionBar 不下推内容（列表首行画进工具栏，生产路径实证）；退出恢复传统布局，API 36 起出口移除需迁移 insets 自处理（2026-09-04） |
@@ -25,6 +26,7 @@
 | `app/src/androidTest/java/com/btdeck/companion/`（CompanionOfflineUiTest/SelfSignedCert/ProfileIsolation + TinyLoopbackServer/CompanionTestState） | 设备级 UI 验收 | 离线覆盖层/自签证书信任与换签/多 profile cookie+storage+凭据隔离/自动登录；自持回环 HTTP(S) 假后端（双 PKCS12 证书），Espresso+ActivityScenario（2026-09-04） |
 | `app/src/androidTest/.../CompanionBrandingUiTest.kt` | ✨2026-09-11 | 品牌化 UI 回归：colorPrimary 解析 #059669、向导品牌头部/双卡、添加表单 OutlinedBox 标签 + 明文确认联动 + 空名错误不关框、健康圆点/文案 error 红 tint、LAN 开关联动威胁文案（POST_NOTIFICATIONS 经 uiAutomation 预授权） |
 | `app/src/test/.../ui/HealthUiTest.kt`、`ui/BrandThemeSyncTest.kt` | ✨2026-09-11 | JVM 回归：健康文案/语义色映射（HealthUi 纯逻辑）；token 值与前端 emerald 同源比对（读 theme-variables.scss，仓库根不可见自动 assume 跳过）、values 与 values-v35 主题 item 同步、Light 基底 + MaterialAlertDialog/colorAccent 挂线 |
+| `app/src/test/.../ui/FileChooserTest.kt` | ✨2026-09-12 | JVM 回归：MIME 通配钉死（禁回退 createIntent 扩展名当 MIME）、MODE_OPEN_MULTIPLE→allowMultiple 决策、取消/零选中判无效（null 语义防 WebView 锁死）；Intent/ClipData 装配 JVM 不可测由真机兜底 |
 | `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
 
 ## 约束

@@ -1,5 +1,16 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第四批）：移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）mobile-ux-pending-fixes
+
+用户验收两遗留问题的实施批次（根因已在上会话实锤并交接，见 session-handoff 续8；feature_list `mobile-ux-pending-fixes-2026-09-12`，android+frontend 双任务 done）：
+
+1. **Android：WebView 文件选择器（添加种子的 .torrent 入口）**：`WebViewActivity` 此前只设 `webViewClient`，无 `WebChromeClient`——`<input type="file">` 点击被静默忽略。补 `onShowFileChooser:125` + `ActivityResultContracts.StartActivityForResult` launcher（`fileChooserLauncher:72`）：**回调恰好投递一次**（launcher 取出即清空、新请求先作废旧回调投 null、`onDestroy` 补投、无文件管理器 catch `ActivityNotFoundException` 也投 null 解锁后续）。新 `ui/FileChooser.kt` 纯函数：意图恒 `*/*`（`accept=".torrent"` 的扩展名会被 SAF 当 MIME 过滤成空列表，不用 `createIntent`）、`MODE_OPEN_MULTIPLE` 补 `EXTRA_ALLOW_MULTIPLE` 多选、结果解析独立实现（`FileChooserParams.parseResult` 在 JVM 是 not-mocked stub）。`allowContentAccess` 维持 false（只门控页面内 content:// 资源引用，上传读取走 ContentResolver+SAF 临时授权；真机验收复核点，注释写明取舍与回退路径）。
+2. **前端：转移/修改路径弹窗组件内自治 ≤768 适配**：`SetLocationDialog` 根节点 div 包裹根修（el-dialog 升为模板根——此前透传的 custom-class 经 $attrs 落到外层 div，94vw 收窄从未生效）；两弹窗自有 custom-class + 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、body 64vh 内滚；`TransferDialog` 嵌套删除确认 `transfer-delete-confirm` 88vw——append-to-body 脱离组件树故必须非 scoped）+ scoped 块（label-width 110/120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控）。移动页 `torrents.vue` 移除两处透传（m-reuse-dialog 仅余 Tracker操作/全局替换）。
+- **验证**：安卓 `FileChooserTest` 3 用例绿 + 全套件 testDebugUnitTest BUILD SUCCESSFUL；前端 `transfer-set-location-dialogs.spec.ts` 5 用例（custom-class 落 el-dialog 开标签防 div 包裹回退/媒体块关键规则/移动页使用处恰 2）+ 相关 4 套件 73 用例绿；typecheck/lint 绿；全量 **111 套件 / 1570 用例绿**。双变体 APK 构建与真机验收：提交后干净树执行，结果记 session-handoff 续9。
+- **坑**：①Kotlin KDoc 注释里字面 `` `*/*` `` 的 `*/` 会提前终结块注释（编译报 Syntax error），注释内写 `*&#47;*`；②安卓仓无 Robolectric/mockito——Intent/ClipData 实例化在 JVM 全抛 stub，可测性靠「决策（PickerParams/isSelectionComplete 纯函数）与装配分离」，装配由真机兜底；③前端 node_modules 残缺（.bin 缺失、包 dist 不全）时 `npm install` 增量救不回，须 rm -rf + `npm ci` 全量。
+
+---
+
 ## 2026-09-12（第三批）：添加种子跳过校验 + 添加弹窗移动端适配 torrent-add-skip-check-mobile（全绿未提交）
 
 用户验收反馈两项闭环（feature_list `torrent-add-skip-check-mobile-20260912`，单任务 done）：

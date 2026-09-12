@@ -1,8 +1,10 @@
 <template>
+  <!-- 根节点即 el-dialog（移动页 custom-class 透传依赖 $attrs 落点，勿用 div 包裹） -->
   <el-dialog
     title="转移种子"
     :visible.sync="dialogVisible"
     width="600px"
+    custom-class="transfer-dialog"
     :before-close="handleClose"
     :close-on-click-modal="false"
   >
@@ -84,11 +86,12 @@
       </el-button>
     </span>
 
-    <!-- 删除确认对话框 -->
+    <!-- 删除确认对话框（append-to-body 脱离组件树，移动收窄须非 scoped 钩子类） -->
     <el-dialog
       width="400px"
       title="确认删除原种子"
       :visible.sync="deleteConfirmVisible"
+      custom-class="transfer-delete-confirm"
       append-to-body
     >
       <div class="delete-confirm-content">
@@ -433,5 +436,81 @@ export default class TransferDialog extends Vue {
 .delete-confirm-content {
   text-align: center;
   padding: 20px;
+}
+
+// ========================================
+// 移动端适配（≤768）内部布局：表单标签上堆、底部按钮/路径建议行触控目标
+// ========================================
+@media (max-width: 768px) {
+  // 桌面 label-width 120px 左右布局 → 标签上堆、内容全宽
+  ::v-deep .el-form-item__label {
+    display: block;
+    width: auto !important;
+    text-align: left;
+  }
+
+  ::v-deep .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  // 底部双钮等宽 + ≥44px 触控高
+  .dialog-footer {
+    display: flex;
+
+    .el-button {
+      flex: 1;
+      min-height: 44px;
+      margin-left: 0;
+    }
+
+    .el-button + .el-button {
+      margin-left: 12px;
+    }
+  }
+
+  // 路径建议行触控目标（桌面 12px 徽标手指难命中）
+  .path-suggestion {
+    min-height: 36px;
+
+    .path-type,
+    .torrent-count {
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+/* 移动端 ≤768 弹窗骨架收窄（非 scoped：嵌套删除确认 append-to-body 脱离组件
+   树，scoped data-v 无法命中）。custom-class 类名组件专属，常驻 chunk 也不
+   影响其它页面弹窗。宽度 prop 生成内联 style，须 !important 覆盖。 */
+@media (max-width: 768px) {
+  .transfer-dialog {
+    width: 94vw !important;
+    margin-top: 5vh !important;
+
+    .el-dialog__body {
+      max-height: 64vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  .transfer-delete-confirm {
+    width: 88vw !important;
+    max-width: 400px;
+    margin-top: 20vh !important;
+
+    .dialog-footer .el-button {
+      flex: 1;
+      min-height: 44px;
+      margin-left: 0;
+    }
+
+    .dialog-footer .el-button + .el-button {
+      margin-left: 12px;
+    }
+  }
 }
 </style>
