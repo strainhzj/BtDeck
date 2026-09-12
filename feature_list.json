@@ -6499,7 +6499,7 @@
     },
     {
       "id": "mobile-ux-pending-fixes-2026-09-12",
-      "name": "移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）",
+      "name": "移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）；复验批：UI 移动化 + versionCode 递增",
       "description": "用户真机验收发现两问题（根因诊断见 session-handoff 续8，本批为实施）：①App WebView 添加种子点选择文件无反应——WebViewActivity 只设 webViewClient 无 WebChromeClient，<input type=\"file\"> 点击被静默忽略；②移动页转移/修改路径弹窗 600/650px 桌面宽度原样怼手机屏——SetLocationDialog 根节点 div 包裹致透传 custom-class 经 $attrs 落到外层 div 永不到 el-dialog（收窄从未生效），TransferDialog 壳虽经 m-reuse-dialog 94vw 生效但内部 label-width 桌面表单与嵌套删除确认弹窗未适配；两组件 @media 规则数为 0。",
       "status": "done",
       "branch": "dev",
@@ -6530,6 +6530,21 @@
           ],
           "description": "照 TorrentAddDialog 2026-09-12 模式组件自治：SetLocationDialog 根节点 div 包裹根修（el-dialog 升为模板根，$attrs 陷阱消除）；两弹窗自有 custom-class（transfer-dialog/set-location-dialog）+ 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、body 64vh 内滚；TransferDialog 嵌套删除确认 transfer-delete-confirm 88vw，append-to-body 脱离组件树故必须非 scoped）+ scoped 块（label-width 110/120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控；SetLocationDialog 长路径 el-tag 折行）。移动页 torrents.vue 移除两处已失效/将自治的 m-reuse-dialog 透传（该类仅余 Tracker操作/全局替换）；源码契约 spec 钉死 custom-class 落在 el-dialog 开标签（防根 div 包裹回退）+ 媒体块关键规则 + 移动页使用处恰 2。",
           "evidence": "transfer-set-location-dialogs.spec 5 用例绿；相关 4 套件（含 mobile-torrents 57）73 用例绿；typecheck/lint(--max-warnings 0 含 contract:check) 绿；全量 111 套件 / 1570 用例绿（+1 套件 +5 用例）。"
+        },
+        {
+          "id": "mobile-ux-pending-fixes.3",
+          "name": "真机复验修复：两弹窗 UI 移动化 + 文件选择器诊断增强 + versionCode 递增",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "android/app/build.gradle.kts",
+            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
+            "frontend/src/views/torrents/components/TransferDialog.vue",
+            "frontend/src/views/torrents/components/SetLocationDialog.vue",
+            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
+          ],
+          "description": "用户真机复验两反馈：①「适配了尺寸但没适配 UI」——两弹窗非 scoped ≤768 块从仅骨架收窄扩为 UI 移动化（头部 padding 收敛+标题 16px 加粗+关闭钮 36px 触控区+圆角 12px+体/底 padding 收敛+divider/表单间距收紧），scoped 块补复选框触控行（删除原种子/移动已下载的文件）、长路径折行、嵌套删除确认 icon 48→36px；②「添加种子仍不弹文件管理器」——前端触发链核实为同步 DOM click（手势保留）无缺陷，弹窗尺寸适配走服务器前端恰好生效而文件选择器在原生层：判定真机仍运行旧 APK（新旧包 versionCode 同为 2 无法分辨装没装上）。处置：versionCode 2→3、versionName 0.2.0→0.2.1（设置-应用可核对）；onShowFileChooser 入口 Toast+Log 诊断（可判定原生层是否触发：无 Toast=旧包或手势链问题，有 Toast 无选择器=ROM 特例）；launch 兜底补 SecurityException 分支（同样投 null 解锁）。SAF（ACTION_GET_CONTENT）机制上免存储权限，不加冗余权限申请。",
+          "evidence": "契约 spec 6 用例（新增 UI 移动化断言：headerbtn 36px/标题 16px/圆角/body padding/复选框触控行）+ 全量 111 套件 1571 用例绿 + lint/typecheck 绿；安卓全套件 testDebugUnitTest BUILD SUCCESSFUL；双变体构建（versionCode=3）与真机复验待提交后执行，结果记 session-handoff 续9 更新。"
         }
       ]
     }

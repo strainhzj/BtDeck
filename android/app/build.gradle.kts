@@ -21,10 +21,13 @@ android {
         applicationId = "com.btdeck.companion"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
+        versionCode = 3
         // LAN 明文构建用独立 versionName，系统"设置-应用"与安装器里可见，
-        // 避免与严格版混淆（曾发生：误装严格版复测报 ERR_CLEARTEXT_NOT_PERMITTED）
-        versionName = if (lanCleartext) "0.2.0-server+lan" else "0.2.0-server"
+        // 避免与严格版混淆（曾发生：误装严格版复测报 ERR_CLEARTEXT_NOT_PERMITTED）。
+        // versionCode 每次 APK 交付必须递增：文件选择器批次（047b1ce）曾因新旧包
+        // 同为 versionCode=2，真机复测无法确认装上与否（尺寸适配走服务器前端
+        // 恰好生效，误导排查方向）
+        versionName = if (lanCleartext) "0.2.1-server+lan" else "0.2.1-server"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

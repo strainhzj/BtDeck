@@ -19,6 +19,7 @@ import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -131,6 +132,13 @@ class WebViewActivity : AppCompatActivity() {
                 // 认为仍有待决选择器而锁死后续触发
                 pendingFileChooser?.onReceiveValue(null)
                 pendingFileChooser = callback
+                // 入口 Toast 兼做真机诊断：SAF 免存储权限（ACTION_GET_CONTENT 走
+                // 系统 DocumentsUI），不弹选择器时凭此 Toast 区分「原生层未触发
+                // （旧 APK / 手势链）」与「launch 后 ROM 特例」
+                android.widget.Toast.makeText(
+                    this@WebViewActivity, "正在打开文件选择器…", android.widget.Toast.LENGTH_SHORT
+                ).show()
+                Log.d(TAG, "onShowFileChooser mode=${params.mode} acceptTypes=${params.acceptTypes?.contentToString()}")
                 return try {
                     fileChooserLauncher.launch(
                         FileChooser.buildPickerIntent(FileChooser.pickerParams(params.mode))
@@ -141,6 +149,12 @@ class WebViewActivity : AppCompatActivity() {
                     pendingFileChooser = null
                     callback.onReceiveValue(null)
                     showError("未找到可用的文件管理器，无法选择种子文件")
+                    false
+                } catch (e: SecurityException) {
+                    // 个别 ROM 对 GET_CONTENT 声明的权限异常：同投 null 解锁并提示
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("文件选择器被系统拒绝（${e.message}）")
                     false
                 }
             }
@@ -339,6 +353,7 @@ class WebViewActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PROFILE_ID = "profile_id"
+        private const val TAG = "WebViewActivity"
         private const val LOAD_TIMEOUT_MS = 20_000L
 
         /** 上一个加载的 profile：切换时先异步清 cookie/storage，再加载新会话。 */

@@ -1,5 +1,16 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第五批·复验）：两弹窗 UI 移动化 + 文件选择器诊断与 versionCode 递增（mobile-ux-pending-fixes.3）
+
+用户真机复验两反馈的修复批（feature_list `mobile-ux-pending-fixes-2026-09-12` task.3）：
+
+1. **「适配了尺寸但没适配 UI」**：两弹窗非 scoped ≤768 块从仅骨架收窄扩为 UI 移动化——头部 padding 收敛（14/16/10）+ 标题 16px 加粗 + 关闭钮 36px 触控区（Element 默认 20×20 指尖难命中）+ 弹窗圆角 12px + 体/底 padding 收敛（12/14、10/14/16）+ divider 与表单间距收紧（10px/14px）；scoped 块补复选框触控行（「删除原种子/移动已下载的文件」padding 6px 0 + 白空间折行）、当前下载器名/长路径 break-all、嵌套删除确认 icon 48→36px（88vw 弹窗内过大）。
+2. **「添加种子仍不弹文件管理器，应该申请手机权限」**：前端触发链核实为同步 DOM click → 隐藏 input.click()（手势保留）无缺陷；**关键判定——弹窗尺寸适配走服务器前端（WebView 加载，无需新 APK 即生效），文件选择器在原生层（必须装新 APK）**：真机「尺寸生效但选择器不弹」指向仍在运行旧 APK，且新旧包 versionCode 同为 2、装没装上无法分辨。处置：versionCode 2→3、versionName 0.2.0→0.2.1（设置-应用可核对）；onShowFileChooser 入口 Toast「正在打开文件选择器…」+ Log 诊断（无 Toast=旧包/手势链未达原生层；有 Toast 无选择器=ROM 特例再深查）；launch 兜底补 SecurityException 分支（同投 null 解锁）。**SAF（ACTION_GET_CONTENT）机制上免存储权限**（系统 DocumentsUI，无需 READ_EXTERNAL_STORAGE/READ_MEDIA_*），不加冗余权限申请。
+- **验证**：契约 spec 6 用例（新增 UI 移动化断言）+ 全量 111 套件 1571 用例绿 + lint/typecheck 绿；安卓全套件 testDebugUnitTest BUILD SUCCESSFUL。
+- **坑**：APK 交付版本号必须递增——原生层修复与前端修复同批交付时，前端经服务器先生效会误导「新包已装」的判断。
+
+---
+
 ## 2026-09-12（第四批）：移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）mobile-ux-pending-fixes
 
 用户验收两遗留问题的实施批次（根因已在上会话实锤并交接，见 session-handoff 续8；feature_list `mobile-ux-pending-fixes-2026-09-12`，android+frontend 双任务 done）：

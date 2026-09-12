@@ -65,7 +65,23 @@ describe('TransferDialog/SetLocationDialog 移动端适配（源码契约）', (
     expect(setLocation).toContain('max-height: 64vh')
   })
 
-  it('scoped ≤768 块：表单标签上堆 + 底部按钮 44px 等宽触控', () => {
+  it('非 scoped ≤768 块：UI 移动化（头部/关闭钮触控/内边距/圆角，2026-09-12 复验）', () => {
+    for (const source of [transferSource(), setLocationSource()]) {
+      const block = unscopedStyleBlock(source)
+      // 关闭钮触控区 36px（Element 默认 20×20 指尖难命中）
+      expect(block).toContain('.el-dialog__headerbtn')
+      expect(block).toContain('width: 36px')
+      // 标题移动字号与弹窗圆角
+      expect(block).toContain('.el-dialog__title')
+      expect(block).toContain('font-size: 16px')
+      expect(block).toContain('border-radius: 12px')
+      // 体/头部/底部内边距收敛（Element 桌面 padding 太松散）
+      expect(block).toMatch(/\.el-dialog__body\s*{[^}]*padding: 12px 14px/s)
+      expect(block).toContain('.el-dialog__footer')
+    }
+  })
+
+  it('scoped ≤768 块：表单标签上堆 + 底部按钮 44px 等宽触控 + 复选框触控行', () => {
     for (const source of [transferSource(), setLocationSource()]) {
       const scoped = scopedStyleBlock(source)
       expect(scoped).toContain('@media (max-width: 768px)')
@@ -73,6 +89,8 @@ describe('TransferDialog/SetLocationDialog 移动端适配（源码契约）', (
       expect(scoped).toContain('width: auto !important')
       expect(scoped).toContain('margin-left: 0 !important')
       expect(scoped).toContain('min-height: 44px')
+      // 「删除原种子/移动已下载的文件」复选框行放大触控
+      expect(scoped).toMatch(/\.el-checkbox\s*{[^}]*padding: 6px 0/s)
     }
   })
 })

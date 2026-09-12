@@ -442,6 +442,11 @@ export default class TransferDialog extends Vue {
 // 移动端适配（≤768）内部布局：表单标签上堆、底部按钮/路径建议行触控目标
 // ========================================
 @media (max-width: 768px) {
+  // 当前下载器名/长路径折行，避免横向溢出
+  .info-text {
+    word-break: break-all;
+  }
+
   // 桌面 label-width 120px 左右布局 → 标签上堆、内容全宽
   ::v-deep .el-form-item__label {
     display: block;
@@ -451,6 +456,18 @@ export default class TransferDialog extends Vue {
 
   ::v-deep .el-form-item__content {
     margin-left: 0 !important;
+  }
+
+  // 「删除原种子」复选框行放大触控（桌面行高手指难命中）
+  ::v-deep .el-checkbox {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    white-space: normal;
+
+    .el-checkbox__label {
+      line-height: 1.5;
+    }
   }
 
   // 底部双钮等宽 + ≥44px 触控高
@@ -478,22 +495,67 @@ export default class TransferDialog extends Vue {
       font-size: 13px;
     }
   }
+
+  // 嵌套删除确认内容收敛（icon 48px 在 88vw 弹窗内过大）
+  .delete-confirm-content {
+    padding: 8px 4px;
+
+    i {
+      font-size: 36px !important;
+      margin-bottom: 10px !important;
+    }
+  }
 }
 </style>
 
 <style lang="scss">
-/* 移动端 ≤768 弹窗骨架收窄（非 scoped：嵌套删除确认 append-to-body 脱离组件
+/* 移动端 ≤768 弹窗骨架 + UI 移动化（非 scoped：嵌套删除确认 append-to-body 脱离组件
    树，scoped data-v 无法命中）。custom-class 类名组件专属，常驻 chunk 也不
-   影响其它页面弹窗。宽度 prop 生成内联 style，须 !important 覆盖。 */
+   影响其它页面弹窗。宽度 prop 生成内联 style，须 !important 覆盖。
+   2026-09-12 复验补强：不止收窄尺寸——头部/关闭钮/内边距/间距按移动触控重制。 */
 @media (max-width: 768px) {
   .transfer-dialog {
     width: 94vw !important;
     margin-top: 5vh !important;
+    border-radius: 12px;
+
+    .el-dialog__header {
+      padding: 14px 16px 10px;
+    }
+
+    .el-dialog__title {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    // 关闭钮触控区 36px（Element 默认 20×20 指尖难命中）
+    .el-dialog__headerbtn {
+      top: 8px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+    }
 
     .el-dialog__body {
+      padding: 12px 14px;
       max-height: 64vh;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+    }
+
+    .el-dialog__footer {
+      padding: 10px 14px 16px;
+    }
+
+    // 桌面 divider/表单间距在 375 屏过于松散
+    .el-divider {
+      margin: 10px 0;
+    }
+
+    .el-form-item {
+      margin-bottom: 14px;
     }
   }
 
@@ -501,6 +563,32 @@ export default class TransferDialog extends Vue {
     width: 88vw !important;
     max-width: 400px;
     margin-top: 20vh !important;
+    border-radius: 12px;
+
+    .el-dialog__header {
+      padding: 14px 16px 10px;
+    }
+
+    .el-dialog__title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .el-dialog__headerbtn {
+      top: 8px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+    }
+
+    .el-dialog__body {
+      padding: 14px 16px;
+    }
+
+    .el-dialog__footer {
+      padding: 10px 14px 16px;
+    }
 
     .dialog-footer .el-button {
       flex: 1;
