@@ -44,4 +44,14 @@ class FileChooserTest {
         assertFalse(FileChooser.isSelectionComplete(0, 1))   // 取消：即使带数据也判无效
         assertFalse(FileChooser.isSelectionComplete(0, 0))
     }
+
+    @Test
+    fun onlyMultipleModeOptsIn() {
+        // 多选是显式 opt-in：打开/保存/未知 mode 一律单选（EXTRA_ALLOW_MULTIPLE
+        // 误开会改变选择器交互形态）
+        assertFalse(FileChooser.pickerParams(FileChooserParams.MODE_OPEN).allowMultiple)
+        assertFalse(FileChooser.pickerParams(FileChooserParams.MODE_SAVE).allowMultiple)
+        assertFalse(FileChooser.pickerParams(-1).allowMultiple)
+        assertFalse(FileChooser.pickerParams(Int.MAX_VALUE).allowMultiple)
+    }
 }

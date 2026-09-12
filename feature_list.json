@@ -6545,6 +6545,19 @@
           ],
           "description": "用户真机复验两反馈：①「适配了尺寸但没适配 UI」——两弹窗非 scoped ≤768 块从仅骨架收窄扩为 UI 移动化（头部 padding 收敛+标题 16px 加粗+关闭钮 36px 触控区+圆角 12px+体/底 padding 收敛+divider/表单间距收紧），scoped 块补复选框触控行（删除原种子/移动已下载的文件）、长路径折行、嵌套删除确认 icon 48→36px；②「添加种子仍不弹文件管理器」——前端触发链核实为同步 DOM click（手势保留）无缺陷，弹窗尺寸适配走服务器前端恰好生效而文件选择器在原生层：判定真机仍运行旧 APK（新旧包 versionCode 同为 2 无法分辨装没装上）。处置：versionCode 2→3、versionName 0.2.0→0.2.1（设置-应用可核对）；onShowFileChooser 入口 Toast+Log 诊断（可判定原生层是否触发：无 Toast=旧包或手势链问题，有 Toast 无选择器=ROM 特例）；launch 兜底补 SecurityException 分支（同样投 null 解锁）。SAF（ACTION_GET_CONTENT）机制上免存储权限，不加冗余权限申请。",
           "evidence": "契约 spec 6 用例（新增 UI 移动化断言：headerbtn 36px/标题 16px/圆角/body padding/复选框触控行）+ 全量 111 套件 1571 用例绿 + lint/typecheck 绿；安卓全套件 testDebugUnitTest BUILD SUCCESSFUL；双变体构建（versionCode=3）与真机复验待提交后执行，结果记 session-handoff 续9 更新。"
+        },
+        {
+          "id": "mobile-ux-pending-fixes.4",
+          "name": "回归测试保护补强（真机验证通过后）",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "android/app/src/test/java/com/btdeck/companion/ui/FileChooserTest.kt",
+            "android/app/src/test/java/com/btdeck/companion/ui/WebViewActivityContractTest.kt",
+            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
+          ],
+          "description": "安卓侧把前端仓「源码契约」模式移植到 JVM 测试（Intent/ClipData 无法 JVM 端到端、仓内无 Robolectric）：新 WebViewActivityContractTest 4 用例——webChromeClient/onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次的四条路径（onReceiveValue(null) 恰 4 处 + launcher 回调先取引用再清空再投递）、FileChooser 禁回退 createIntent（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、APK 版本纪律锚点（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源，防再次脱钩）；FileChooserTest 补 mode 显式 opt-in 用例（OPEN/SAVE/未知值均单选）。前端侧补挂载行为测试 4 用例（注册带 props 的 ElDialog 占位组件）：自有 custom-class 真实到达 ElDialog（customClass prop）、嵌套删除确认第二枚 el-dialog 的 customClass 与 appendToBody、两组件 visible 置真打开流程（按下载器拉路径建议/拉可用下载器）。变异验证 3/3 检出（WebViewActivity 删作废旧回调→红；bat 版本回退脱钩→红；SetLocationDialog 根 div 包裹回退→源码契约红）。",
+          "evidence": "安卓 testDebugUnitTest 全套件绿（FileChooserTest 4 + WebViewActivityContractTest 4，bat 同源断言生效 0 skipped）；前端全量 111 套件 / 1575 用例绿（本 spec 6→10）；typecheck/lint 绿；变异验证后生产代码逐字节还原（git diff 空）。"
         }
       ]
     }

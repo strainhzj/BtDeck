@@ -1,3 +1,22 @@
+## 2026-09-12（续10）：真机验收通过 + 回归测试保护补强完毕（mobile-ux-pending-fixes 全 4 任务 done）
+
+> 用户确认「验证通过」后按指示补齐本轮全部修改的回归保护（feature_list task.4）。
+
+### 测试增量
+
+- **安卓**：`WebViewActivityContractTest`（新，4 用例）——前端仓「源码契约」模式移植到 JVM（Intent/ClipData 实例化是 not-mocked stub、无 Robolectric，无法端到端）：接线/回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处）/MIME 陷阱禁回退 createIntent/**APK 版本纪律锚点**（versionCode ≥3 + bat 产物名与 versionName 同源）；`FileChooserTest` +1（mode 显式 opt-in）。
+- **前端**：`transfer-set-location-dialogs.spec.ts` 挂载行为 +4（ElDialog 占位组件读 customClass prop、嵌套确认弹窗结构、两组件打开流程）——与源码契约分工：div 包裹回退由源码契约拦截（挂载用例不敏感）。
+- **变异验证 3/3 检出**（删作废旧回调/bat 版本回退/根 div 回退各自红），还原后生产代码与 b7371df 逐字节一致。
+- **门禁**：安卓全套件绿（8 新用例）；前端全量 111 套件 / 1575 用例绿；typecheck/lint 绿。
+
+### 新坑（下批必读）
+
+- Kotlin 测试里 `?.[1]` 安全索引链曾报「cannot occur after a dot」（原因未深究）——改 `find(text)` 捕获 + `groupValues[1]` 保守写法绕开。
+- jest 环境未装 Element：el-dialog 解析为未知元素，`findComponent({ name: 'ElDialog' })` 落空——注册带 props 的占位组件（无值属性对应 prop 须声明 `{ type: Boolean }` 才转 true）；el-form stub 需打桩 clearValidate/validate。
+- `FileChooserParams.MODE_OPEN_FOLDER` 常量实际不存在（只有 OPEN/OPEN_MULTIPLE/SAVE），勿臆造。
+
+---
+
 ## 2026-09-12（续9）：两遗留修复已实施（App 文件选择器 + 转移/修改路径弹窗适配），待真机验收
 
 > 续8 交接的两问题本会话全部实施完成（feature_list `mobile-ux-pending-fixes-2026-09-12`）。JVM/前端门禁全绿；**双变体 APK 构建与真机验收待执行**。
@@ -13,12 +32,12 @@
 - `SetLocationDialog` 根节点 div 包裹根修（el-dialog 升模板根）+ 自有 `custom-class="set-location-dialog"`；`TransferDialog` 加 `transfer-dialog`，嵌套删除确认 `transfer-delete-confirm` 88vw。非 scoped ≤768 块（94vw/5vh/64vh 内滚）+ scoped 块（标签上堆/44px 按钮/路径建议触控）。移动页 `torrents.vue` 两处 m-reuse-dialog 透传已移除（该类仅余 Tracker操作/全局替换，契约钉死使用处恰 2）。
 - `transfer-set-location-dialogs.spec.ts` 5 用例（含防 div 包裹回退断言）；typecheck/lint 绿；全量 111 套件 / 1570 用例绿。
 
-### 剩余动作（新会话/用户）
+### 剩余动作（✅ 全部完成，见续10）
 
-1. ~~双变体 APK 构建~~ **已完成两轮**：最新一轮含复验批（versionCode=3 / versionName 0.2.1，UI 移动化 + Toast 诊断），产物 `android/dist/btdeck-companion-0.2.1-*`。**装包后先在「设置-应用」核对版本号为 0.2.1**（上一轮验收无法确认装上的是否新包——旧包新包 versionCode 同为 2 是「选择器不弹」的头号嫌疑）。
-2. **真机验收清单（待用户执行，装 versionCode=3 新 APK）**：①App 添加种子 → 点击选择文件：应先弹 Toast「正在打开文件选择器…」再弹 SAF 文件管理器——**无 Toast = 原生层未触发**（旧包/手势链），**有 Toast 无选择器 = ROM 特例**（回报 logcat WebViewActivity tag）；②选单/多个 .torrent 正常入列、取消后再点仍能弹（回调未锁死）；③弹窗不在列表空（MIME 通配生效）；④上传成功后端受理（若失败查 allowContentAccess，见上）；⑤移动页 375 宽转移/修改路径弹窗：94vw、标题 16px 加粗、关闭钮 36px、表单标签上堆、复选框触控行、嵌套删除确认 88vw icon 36px。
+1. ~~双变体 APK 构建~~ **已完成两轮**：最新一轮含复验批（versionCode=3 / versionName 0.2.1，UI 移动化 + Toast 诊断），产物 `android/dist/btdeck-companion-0.2.1-*`。
+2. ~~真机验收~~ **已通过**（用户确认）：装 versionCode=3 新包后文件选择器与弹窗布局均正常。
 3. ~~前端部署~~ **已完成**：双镜像部署 unraid（/health/live gitSha 与 HEAD 一致），真机 App 重进即可见新弹窗。
-4. **权限说明（回应用户「应该申请手机权限」）**：SAF 文件选择器（ACTION_GET_CONTENT）走系统 DocumentsUI，**机制上不需要任何存储权限**；无需也无法通过申请权限解决不弹问题。真正的判定手段是上述入口 Toast。
+4. **权限说明（回应用户「应该申请手机权限」）**：SAF 文件选择器（ACTION_GET_CONTENT）走系统 DocumentsUI，**机制上不需要任何存储权限**；无需也无法通过申请权限解决不弹问题（真机验证已证实：0.2.1 包直接弹出）。
 
 ### 本批新坑（后续必读）
 

@@ -26,7 +26,7 @@
 | `app/src/androidTest/java/com/btdeck/companion/`（CompanionOfflineUiTest/SelfSignedCert/ProfileIsolation + TinyLoopbackServer/CompanionTestState） | 设备级 UI 验收 | 离线覆盖层/自签证书信任与换签/多 profile cookie+storage+凭据隔离/自动登录；自持回环 HTTP(S) 假后端（双 PKCS12 证书），Espresso+ActivityScenario（2026-09-04） |
 | `app/src/androidTest/.../CompanionBrandingUiTest.kt` | ✨2026-09-11 | 品牌化 UI 回归：colorPrimary 解析 #059669、向导品牌头部/双卡、添加表单 OutlinedBox 标签 + 明文确认联动 + 空名错误不关框、健康圆点/文案 error 红 tint、LAN 开关联动威胁文案（POST_NOTIFICATIONS 经 uiAutomation 预授权） |
 | `app/src/test/.../ui/HealthUiTest.kt`、`ui/BrandThemeSyncTest.kt` | ✨2026-09-11 | JVM 回归：健康文案/语义色映射（HealthUi 纯逻辑）；token 值与前端 emerald 同源比对（读 theme-variables.scss，仓库根不可见自动 assume 跳过）、values 与 values-v35 主题 item 同步、Light 基底 + MaterialAlertDialog/colorAccent 挂线 |
-| `app/src/test/.../ui/FileChooserTest.kt` | ✨2026-09-12 | JVM 回归：MIME 通配钉死（禁回退 createIntent 扩展名当 MIME）、MODE_OPEN_MULTIPLE→allowMultiple 决策、取消/零选中判无效（null 语义防 WebView 锁死）；Intent/ClipData 装配 JVM 不可测由真机兜底 |
+| `app/src/test/.../ui/FileChooserTest.kt`、`ui/WebViewActivityContractTest.kt` | ✨2026-09-12 | JVM 回归：MIME 通配钉死（禁回退 createIntent 扩展名当 MIME）、MODE_OPEN_MULTIPLE→allowMultiple 决策、取消/零选中判无效（null 语义防 WebView 锁死）、mode 显式 opt-in；接线契约（webChromeClient/onShowFileChooser/launcher、回调恰一次四路径 onReceiveValue(null) 恰 4 处、APK 版本纪律锚点 versionCode≥3 + bat 产物名同源）——Intent/ClipData 装配 JVM 不可测由真机兜底 |
 | `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
 
 ## 约束

@@ -1,5 +1,14 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第六批）：两遗留修复回归测试保护补强（mobile-ux-pending-fixes.4，真机验证通过后）
+
+- **安卓侧（源码契约模式移植）**：真机验证过的行为无法 JVM 端到端（Intent/ClipData 是 not-mocked stub、无 Robolectric），新 `WebViewActivityContractTest` 4 用例直读实现文件钉死结构——onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处 + launcher 回调「先取引用再清空再投递」序列正则）、FileChooser 禁回退 `createIntent`（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、**APK 版本纪律锚点**（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源——曾脱钩 0.1.0-mvp vs 0.2.0-server）；FileChooserTest 补 mode 显式 opt-in（OPEN/SAVE/未知值均单选；MODE_OPEN_FOLDER 常量实际不存在，勿臆造）。
+- **前端侧（挂载行为）**：测试环境未装 Element——注册带 props 的 ElDialog 占位组件（appendToBody 须声明 Boolean 类型，无值属性才是 true）；4 用例：自有 custom-class 真实到达 ElDialog（customClass prop）、嵌套删除确认第二枚 el-dialog 的 customClass/appendToBody、两组件 visible 置真打开流程（按下载器拉路径/拉下载器，el-form stub 需打桩 clearValidate/validate）。与源码契约分工：**div 包裹回退由源码契约拦截**（挂载用例对该回退不敏感——div 回退时模板字面量仍在 el-dialog 上）。
+- **变异验证 3/3 检出**：WebViewActivity 删「作废旧回调」→ callbackDeliveredExactlyOnce 红；bat 版本回退 0.1.0-mvp → apkVersionKeepsAscendingAndAligned 红；SetLocationDialog 根 div 包裹回退 → 源码契约「custom-class 落 el-dialog 开标签」红。还原后生产代码与 b7371df 逐字节一致（git diff 空）。
+- **门禁**：安卓 testDebugUnitTest 全套件绿（新 8 用例）；前端全量 111 套件 / **1575 用例绿**（本 spec 6→10）；typecheck/lint 绿。
+
+---
+
 ## 2026-09-12（第五批·复验）：两弹窗 UI 移动化 + 文件选择器诊断与 versionCode 递增（mobile-ux-pending-fixes.3）
 
 用户真机复验两反馈的修复批（feature_list `mobile-ux-pending-fixes-2026-09-12` task.3）：
