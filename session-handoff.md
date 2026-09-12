@@ -1,3 +1,36 @@
+## 2026-09-12（续）：桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（未提交）
+
+### 交付内容（feature_list `mobile-desktop-mode-escape-2026-09-12`）
+
+- **根因**：mobile-ux-fixes.5 移除移动布局全部桌面版入口的回归——桌面侧栏 switchToMobile 写显式偏好 mobile（优先于视口），守卫把桌面页全分流 /m/*，偏好再无写回 desktop 的路径 → 桌面 web 用户单向锁死（ui-mode 不自锁原则被破坏）。
+- **修复**：新建 `wide-viewport.ts` class mixin（matchMedia ≥768 初值+change 监听，matchMedia 缺失兜底隐藏）；移动布局顶栏「桌面版」胶囊按钮与移动登录页「使用桌面版登录」文字链均 `v-if=isWideViewport`——**手机窄屏仍不渲染**（保住「app 不显示桌面版」决策），宽视口点击写 desktop 偏好并回桌面页。
+- **验证**：mobile-shell 36 用例全绿（改写移除契约为窄视口隐藏 + 新增宽视口 2 例）；Playwright 三场景：锁死态点击回 /#/dashboard+偏好 desktop、375px count=0、缩窗即时隐藏；全量 107 套件 1521 全绿；lint/typecheck/build 绿；e2e 补 CI 语境回归守护用例。
+
+### 关键坑位（下批必读）
+
+- **jsdom 无 window.matchMedia**（实测 undefined）：组件必须 typeof 守卫；spec 用 Object.defineProperty 注桩 + finally delete 防污染；mounted 改状态断言 DOM 先 nextTick。
+- **playwright 干净上下文 + 宽视口 = auto 桌面分流**：测移动页须 addInitScript 预置 `btdeck_ui_mode=mobile`；demo 模式自动初始化会话会绕过登录页（登录页 e2e 属 CI 真后端语境）。
+- 上一批下载器设置 CSS 打磨与本批均未提交；两批一起提交时用独立两个 commit（feature_list 条目已分开）。
+
+---
+
+## 2026-09-12：下载器设置页移动端适配优化（未提交）
+
+### 交付内容（feature_list `downloader-settings-mobile-polish-2026-09-12`）
+
+- **问题**：用户反馈设置页手机上难以查看、排布不友好。375×812 实测：页签导航 388px 超容器被裁切、弹窗横向溢出 464>374、速度页签双列挤压、标签三个内嵌弹窗固定 500px 超屏、底栏三按钮拥挤。
+- **修复（5 文件纯 CSS，+190/-10）**：外壳 ≤780 页签横滑（nav-scroll overflow-x:auto + 渐隐 mask）+ 弹窗 100vw 收口 + 底栏纵排全宽 40px 按钮 + 基本表单折行断点 520→780；速度页签 ≤768 折单列（输入组 flex-wrap、规则操作换行）；标签弹窗 custom-class + 非 scoped 块 92% 宽（弹窗挂 body，scoped 够不到）+ 网格单列；路径两组件弹窗 92% + 表格 12px 可读性。
+- **验证**：eslint/typecheck 绿；三套件 36 用例全绿（含 DownloaderDialog 删除的源码契约断言）；build 成功；375×812 截图逐项复验（基本信息/速度含规则卡/标签网格/新增弹窗 left=15 width=345=92%）。
+
+### 关键坑位（下批必读）
+
+- **el-dialog width prop 是内联 style**：移动端覆盖须 custom-class + 媒体查询 !important；且弹窗挂 body，**scoped 样式不生效**，要追加非 scoped 样式块。
+- **同 custom-class 多弹窗**：页面 3 个 tag-mgmt-dialog（未开实例宽 0），测量要取 visible 实例。
+- **设置弹窗的滚动容器是 `.tab-content`**（不是 .el-dialog__body），脚本滚动别找错。
+- demo server（VUE_APP_DEMO_MODE=true :8090）复验用，进程已停。
+
+---
+
 ## 2026-09-11（续二）：断速种子快照振荡双修复（未提交）
 
 ### 交付内容（feature_list `speed-snapshot-flap-suppression-2026-09-11`）

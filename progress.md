@@ -7427,3 +7427,29 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 
 - **输入**：用户实跑构建被身份门禁拦截（`M build-and-export-images.bat; M progress.md`），并以为 bat 是 git 忽略文件。核实：bat **被 git 跟踪**（3 次提交历史，.gitignore 第 93 行仅注释提及；真正忽略的是 .btdeck-deploy-credentials.bat），FAIL 里的 M 即"被跟踪且已修改"；生成器脏检查只过滤发布目录/会话产物/构建输出噪音（generate_build_info.py:286），progress.md 为被跟踪会话日志必然计入——发布必须干净检出，属设计行为。
 - **处置**：按门禁指引提交两文件（bat 5 处修复 diff 复核无误：4 行中文注释转 ASCII + findstr 补 `Failed to fetch`/`Connection failed`），data/（未跟踪）不扰动——生成器对未跟踪 data/ 不计 dirty（续 1 首轮实跑已证）。
+
+## 2026-09-12：下载器设置页移动端适配优化（feature_list `downloader-settings-mobile-polish-2026-09-12`）
+
+- **输入**：用户反馈"下载器设置页面的移动端适配优化不足，页面难以查看并且排布对移动端不友好"（mobile-ux-fixes.7 统一 DownloaderSettingsDialog 整页后的视觉打磨批次，纯 CSS 无逻辑变更）。
+- **实测取证（375×812，demo 模式 dev server + 浏览器视口）**：①顶部页签导航 388px 超容器 334px 被裁切不可滑；②弹窗 scrollWidth 464 > clientWidth 374 横向溢出；③速度设置双列挤压、限速规则操作按钮（上移/下移/开关/删除）同行放不下；④标签管理三个内嵌 el-dialog 固定 500px/400px 超屏（Element width prop 走内联 style，需 custom-class + 媒体查询 !important 覆盖）；⑤底栏 模板/取消/保存 三按钮同行拥挤。
+- **外壳（DownloaderSettingsDialog ≤780 媒体块）**：页签 nav-scroll 改 overflow-x:auto + 触控惯性 + 隐藏滚动条 + 右缘渐隐 mask 提示可滑、nav 折 flex/nowrap；弹窗 max-width:100vw + overflow-x:hidden 收口；底栏纵排全宽按钮（flex:1 + min-height:40px，`.dialog-footer .workspace-footer-button` 高特异性胜 520 图标按钮规则）+ 底部安全区 padding；基本表单 .el-col width:100% 折行断点 520→780（与 tabsPosition matchMedia 断点一致）。
+- **速度设置页签（≤768）**：限速表单折单列；速度输入组 flex-wrap（单位下拉定宽 96px、数字输入 flex 撑满）；规则头部/操作组换行、按钮 min-height:34px；规则内容（起止时间）折单列。
+- **标签管理页签**：三个弹窗（新增/编辑 500px、删除确认 400px）加 custom-class="tag-mgmt-dialog" + **非 scoped** 追加样式块（弹窗挂 body，scoped 选择器够不到）≤768 宽 92%/max-width:500px、label 顶置、底栏按钮全宽 40px；640 媒体类型页签换行 + 标签网格折单列。
+- **路径管理两组件**：DownloaderPathManagement 弹窗同 custom-class 方案（path-mgmt-dialog）；两组件 el-table ≤780 cell 12px/1.5 行高、mini 按钮加高 30px 保触控。
+- **视觉复验（截图逐项确认）**：基本信息单列+底栏两行全宽 ✓；速度页签含一条规则的完整卡片（时间选择器/星期换行/输入组）✓；标签页签单列网格+类型筛选 ✓；新增标签弹窗实测 left=15/width=345（375×92% 恰好）居中 ✓；顶部页签横滑可用、无可见裁切 ✓。
+- **门禁**：6 组件 eslint 绿；typecheck 绿；downloader-settings/mobile-downloader-settings/downloader-control-room-ui 三套件 36 用例全绿（含源码契约断言）；npm run build 成功。
+- **坑**：①Element el-dialog 的 width prop 是内联 style，媒体查询要 custom-class + !important 才能赢；且弹窗挂 body 下 scoped 样式不生效，必须非 scoped 块。②页面里 3 个同 custom-class 弹窗（未开的 display:none 宽 0），getBoundingClientRect 取 visible 那个才作数。③弹窗滚动容器是 .tab-content 不是 .el-dialog__body。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续）：桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（feature_list `mobile-desktop-mode-escape-2026-09-12`）
+
+- **输入**：用户反馈"当前桌面 web 端打开移动端页面后无法回到桌面端的页面"。
+- **根因（mobile-ux-fixes.5 的回归）**：桌面侧栏「📱移动版」入口 `switchToMobile()` 写显式偏好 `btdeck_ui_mode=mobile`；ui-mode 解析**显式偏好优先于视口**（三原则之 2），守卫据此把所有桌面顶层页重定向到 /m/*；而上一批按用户决策移除了移动布局全部桌面版入口——偏好再无写回 desktop 的路径，桌面 web 用户单向锁死。ui-mode.ts 第 3 条原则（移动版提供切回桌面出口，不自锁）被破坏，且布局头部注释"≥768px 视口自动进桌面版"本就与解析规则不符（偏好 mobile 时不会自动回），一并更正。
+- **修复（宽视口门控出口，手机窄屏仍不渲染——保住「app 不显示桌面版」决策）**：
+  - 新建 `views/mobile/mixins/wide-viewport.ts`（class mixin，惯例同 PullToRefresh）：matchMedia(min-width:768px) 初值 + change 监听（缩窗即时隐藏/扩窗即时出现），matchMedia 不可用兜底 false，beforeDestroy 解绑；
+  - `layout/mobile/index.vue` 顶栏右侧条件渲染「桌面版」胶囊按钮 → 写 desktop 偏好 + push /dashboard（与桌面 switchToMobile 对称的逆操作）；
+  - `views/mobile/login.vue` 卡片下条件渲染「使用桌面版登录」文字链 → 写偏好 + replace /login（登出态锁死的同款解锁）。
+- **验证**：mobile-shell.spec 36 用例全绿（原「全部移除」用例改写为"窄视口不渲染"契约；新增宽视口渲染/点击写偏好跳 /dashboard/销毁解绑 2 例）；Playwright 三场景实测：①偏好 mobile+1280px 锁死态→出口可见→点击→/#/dashboard+偏好变 desktop+桌面壳渲染；②375px 窄视口出口 count=0；③宽视口缩窗到 500px 出口即时隐藏。前端全量 107 套件 1521 用例全绿；lint/typecheck/build 绿。
+- **e2e**：login.spec.ts 补宽视口回归守护用例（addInitScript 预置偏好 mobile 复现锁死前置；注意 demo 模式自动初始化会话会绕过登录页，该用例属 CI 真后端语境）。
+- **坑**：①jest/jsdom 无 window.matchMedia（实测 undefined）——组件须 typeof 守卫，spec 注入 Object.defineProperty 桩 + finally delete 防跨用例污染；mounted 同步改状态后断言 DOM 需先 nextTick。②playwright 设备描述符工程（iPhone 12）下 setViewportSize 可覆盖视口，但干净上下文 + 宽视口会走 auto→桌面分流，测移动页必须先预置偏好。
+- 未执行 Git 提交（待用户指示）。

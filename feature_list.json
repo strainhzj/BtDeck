@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-11",
+  "last_updated": "2026-09-12",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -6238,6 +6238,84 @@
         "backend": "定向 pytest 三文件 112 passed（test_torrent_speed_regression + test_active_only_filter + test_active_torrents_endpoint，含新增 2 例：退避期缓存填充/缓存写回安全跳过）；mypy no issues；black 已格式化；flake8 通过",
         "frontend": "torrent-batch.spec.ts 127 passed（含新增 2 例：宽限期内抖动不触发/超 30s 回归触发）；npm run lint 全量通过"
       }
+    },
+    {
+      "id": "downloader-settings-mobile-polish-2026-09-12",
+      "name": "下载器设置页移动端适配优化（外壳页签横滑/速度页签折单列/标签页签弹窗与网格/路径表格可读性）",
+      "description": "mobile-ux-fixes.7 后续打磨：用户反馈设置页在手机上难以查看、排布不友好。375×812 实测问题——①顶部页签导航 388px 超容器 334px 被裁切；②弹窗横向溢出（scrollWidth 464 > 374）；③速度设置双列挤压、限速规则操作按钮不换行；④标签管理三个内嵌 el-dialog 固定 500px/400px 超屏；⑤底栏三按钮同行拥挤。全部 CSS 层修复，无逻辑变更。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "downloader-settings-mobile-polish.1",
+          "name": "设置弹窗外壳：页签横滑导航 + 横向收口 + 底栏纵排全宽 + 基本表单折行捉到 780",
+          "description": "DownloaderSettingsDialog ≤780 媒体块：el-tabs__nav-scroll 改 overflow-x:auto + 触控惯性 + 隐藏滚动条 + 右缘渐隐 mask 提示可滑，nav 折 flex/nowrap；弹窗 max-width:100vw + overflow-x:hidden 收口；底栏 .dialog-footer 纵排、左右组全宽、按钮 flex:1 + min-height:40px（高特异性胜 520 图标按钮规则）+ 安全区 padding；.workspace-basic-form .el-col width:100% 折行断点从 520 上提到 780（与 tabsPosition 联动断点一致）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue"
+          ],
+          "evidence": "375×812 视觉复验：页签横滑可用（nav-scroll overflow-x:auto 实测）、无可见裁切、底栏两行全宽 40px 按钮、基本表单单列；lint/typecheck 绿。"
+        },
+        {
+          "id": "downloader-settings-mobile-polish.2",
+          "name": "速度设置页签 ≤768 折单列：限速输入组换行 + 规则卡片操作/内容纵排",
+          "description": "SpeedSettingsTab ≤768：.speed-limit-form .el-col 全宽；.speed-input-group flex-wrap + 单位下拉定宽 96px + 数字输入 flex 撑满；.rule-header/.rule-actions 换行、按钮加 min-height:34px；.rule-content 折单列。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/SpeedSettingsTab.vue"
+          ],
+          "evidence": "375×812 实测含一条限速规则的卡片：时间选择器单列、星期复选框自然换行、下载/上传限速输入组不拥挤，无横向溢出。"
+        },
+        {
+          "id": "downloader-settings-mobile-polish.3",
+          "name": "标签管理页签：三个内嵌弹窗 custom-class 92% 宽 + 标签网格单列 + 类型页签换行",
+          "description": "TagManagementTab 三个 el-dialog（新增/编辑 500px、删除确认 400px）加 custom-class=\"tag-mgmt-dialog\"，追加非 scoped 样式块（弹窗挂 body，scoped 够不到）≤768 宽 92%/max-width 500px、表单 label 顶置、底栏按钮 flex 全宽 40px；640 媒体 .type-tabs 换行 + .tag-grid 折 1fr 单列。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/TagManagementTab.vue"
+          ],
+          "evidence": "375×812 实测新增标签弹窗 getBoundingClientRect left=15/width=345（恰 92%）居中；标签卡片单列、类型筛选不溢出。"
+        },
+        {
+          "id": "downloader-settings-mobile-polish.4",
+          "name": "路径管理两组件：路径资产弹窗 92% 宽 + 两表格移动可读性",
+          "description": "DownloaderPathManagement 500px 弹窗同 custom-class 方案（path-mgmt-dialog 非scoped 768 媒体块）；PathMappingTab 与 DownloaderPathManagement 的 el-table ≤780 cell 字号 12px/行高 1.5、mini 按钮加高 30px 保触控。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderPathManagement.vue",
+            "frontend/src/views/downloader/components/PathMappingTab.vue"
+          ],
+          "evidence": "lint/typecheck 绿；downloader-settings/mobile-downloader-settings/downloader-control-room-ui 三套件 36 用例全绿；npm run build 成功。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-desktop-mode-escape-2026-09-12",
+      "name": "桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（偏好单向锁死回归修复）",
+      "description": "mobile-ux-fixes.5 移除移动布局全部桌面版入口的回归：桌面侧栏 switchToMobile 写显式偏好 mobile 后，守卫按偏好（优先于视口）把桌面页全部分流到 /m/*，而移动端再无出口写回 desktop——偏好单向锁死，桌面 web 用户进移动版后回不去。ui-mode 三原则第 3 条（不自锁）被破坏。修复：宽视口（≥768px）条件渲染桌面版出口（手机窄屏仍不渲染，保住「app 不显示桌面版」决策），出口写 desktop 偏好后进桌面页。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "mobile-desktop-mode-escape.1",
+          "name": "WideViewport mixin + 移动布局顶栏/移动登录页宽视口桌面版出口",
+          "description": "新建 views/mobile/mixins/wide-viewport.ts（matchMedia(min-width:768) 初值+change 监听随窗口宽即时显隐；matchMedia 不可用兜底隐藏；class mixin 生命周期合并惯例同 PullToRefresh）。MobileLayout 顶栏右侧重建 .mobile-header-desktop 胶囊按钮（v-if=isWideViewport）→ setStoredUiMode('desktop') + push /dashboard；MobileLogin 卡片下加「使用桌面版登录」文字链（同门控）→ 写偏好 + replace /login。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/mixins/wide-viewport.ts",
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/src/views/mobile/login.vue",
+            "frontend/tests/unit/mobile-shell.spec.ts",
+            "frontend/tests/e2e/mobile/login.spec.ts"
+          ],
+          "evidence": "mobile-shell.spec 36 用例全绿（「全部移除」用例改写为窄视口隐藏契约 + 新增宽视口渲染/写偏好/跳转/解绑监听 2 例）；Playwright 三场景实measured：锁死态点击回 /#/dashboard 且偏好变 desktop、375px 窄视口 count=0、宽→窄缩窗即时隐藏；前端全量 107 套件 1521 用例全绿；lint/typecheck/build 绿；e2e 补宽视口回归守护用例（CI 真后端语境，demo 模式自动登录会绕过登录页）。"
+        }
+      ]
     }
   ],
   "tasks": [
