@@ -170,7 +170,7 @@
     <el-dialog
       :title="dialogMode === 'add' ? '添加路径' : '编辑路径'"
       :visible.sync="dialogVisible"
-      width="500px"
+      width="500px" custom-class="path-mgmt-dialog"
       :before-close="handleDialogClose"
       :close-on-click-modal="false"
     >
@@ -976,6 +976,17 @@ export default class DownloaderPathManagement extends Vue {
 }
 
 @media (max-width: 780px) {
+  /* Element 表格自带横向滚动；手机下增大单元格行高与字号提升可读性 */
+  ::v-deep .el-table .cell {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  ::v-deep .el-table .el-button--mini {
+    min-height: 30px;
+    padding: 5px 8px;
+  }
+
   .tab-header {
     align-items: flex-start;
     flex-direction: column;
@@ -993,6 +1004,28 @@ export default class DownloaderPathManagement extends Vue {
 @media (prefers-reduced-motion: reduce) {
   .is-spinning {
     animation: none;
+  }
+}
+</style>
+
+<style lang="scss">
+/* 内嵌弹窗手机适配（mobile-ux-fixes 2026-09-12）：挂 body，scoped 不达，
+   宽度 prop 内联需 !important 覆盖；页脚按钮全宽 */
+@media (max-width: 768px) {
+  .path-mgmt-dialog {
+    width: 92% !important;
+    max-width: 500px;
+  }
+
+  .path-mgmt-dialog .dialog-footer {
+    display: flex;
+    gap: 8px;
+  }
+
+  .path-mgmt-dialog .dialog-footer .el-button {
+    flex: 1;
+    margin-left: 0;
+    min-height: 40px;
   }
 }
 </style>

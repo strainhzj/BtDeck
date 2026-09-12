@@ -957,4 +957,49 @@ export default class SpeedSettingsTab extends Vue {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* 手机适配（mobile-ux-fixes 2026-09-12）：下载/上传双列折单列、
+   限速输入+单位组可换行（inline width:100px 的单位下拉以 !important 收窄）、
+   规则卡头部标题与操作组分行、时间字段纵排、星期选择换行 */
+@media (max-width: 768px) {
+  .speed-limit-form .el-col {
+    width: 100%;
+  }
+
+  .speed-input-group {
+    flex-wrap: wrap;
+  }
+
+  .speed-input-group .el-select {
+    width: 96px !important;
+  }
+
+  .speed-input-group .el-input-number {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .rule-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rule-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .rule-actions .el-button + .el-button {
+    margin-left: 0;
+  }
+
+  .rule-actions .el-button {
+    min-height: 34px;
+  }
+
+  .rule-content {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
 </style>

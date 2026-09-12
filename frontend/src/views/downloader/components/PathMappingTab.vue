@@ -1058,6 +1058,17 @@ export default class PathMappingTab extends Vue {
 }
 
 @media (max-width: 780px) {
+  /* Element 表格自带横向滚动；手机下增大单元格行高与字号提升可读性 */
+  ::v-deep .el-table .cell {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  ::v-deep .el-table .el-button--mini {
+    min-height: 30px;
+    padding: 5px 8px;
+  }
+
   .tab-header {
     align-items: flex-start;
     flex-direction: column;

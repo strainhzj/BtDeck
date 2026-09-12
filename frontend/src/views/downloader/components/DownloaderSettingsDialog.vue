@@ -2193,6 +2193,9 @@ export default class DownloaderSettingsDialog extends Vue {
     height: 100vh;
     margin: 0 !important;
     border-radius: 0;
+    /* 手机内容横向收口：超出宽度的子内容在各自容器内滚动而非撑破对话框 */
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .workspace-header {
@@ -2214,8 +2217,8 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
-  /* ≤780 顶部横向页签（tabsPosition=top）：图标+文字全可读、横向滚动；
-     左列 .is-left 规则在 top 布局下不命中，无需覆盖 */
+  /* ≤780 顶部横向页签（tabsPosition=top）：图标+文字全可读、横向滚动、
+     右缘渐隐提示可滑；左列 .is-left 规则在 top 布局下不命中，无需覆盖 */
   .settings-tabs {
     flex-direction: column;
 
@@ -2236,8 +2239,24 @@ export default class DownloaderSettingsDialog extends Vue {
       display: none;
     }
 
+    /* 页签超出可视宽度时横向滑动（隐藏滚动条，右缘渐隐暗示还有页签） */
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+    }
+
     ::v-deep > .el-tabs__header.is-top .el-tabs__nav {
       display: flex;
+      width: max-content;
       white-space: nowrap;
     }
 
@@ -2268,6 +2287,34 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
+  /* 底部操作栏纵排两行：模板行在上、取消/保存行贴近拇指；按钮全宽 + 40px 触控 */
+  ::v-deep .el-dialog__footer {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .footer-left,
+  .footer-right {
+    width: 100%;
+  }
+
+  .footer-left .workspace-footer-button,
+  .footer-right .workspace-footer-button {
+    flex: 1;
+    min-height: 40px;
+    margin-left: 0;
+  }
+
+  /* 520 断点把次要按钮收成纯图标——页脚全宽按钮恢复文字标签更易读 */
+  .dialog-footer .workspace-footer-button span span {
+    display: inline-flex;
+  }
+
   .tab-content {
     padding: 14px 12px 22px;
   }
@@ -2287,6 +2334,11 @@ export default class DownloaderSettingsDialog extends Vue {
     grid-column: 1 / -1;
   }
 
+  /* 基本信息内层 el-row 双列（下载器名/类型等）整段手机宽度折单列 */
+  .workspace-basic-form ::v-deep .el-col {
+    width: 100%;
+  }
+
   .footer-hint {
     display: none;
   }
@@ -2295,10 +2347,6 @@ export default class DownloaderSettingsDialog extends Vue {
 @media (max-width: 520px) {
   .workspace-eyebrow {
     display: none;
-  }
-
-  .workspace-basic-form ::v-deep .el-col {
-    width: 100%;
   }
 
   .workspace-footer-button {
