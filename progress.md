@@ -7568,3 +7568,25 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **回归保护（downloader-settings-mobile-layout.spec.ts，5 用例源码契约）**：CSS 媒体查询 jsdom 不生效，沿用 mobile-shell/DownloaderSettingsDialog 契约模式——①780 媒体块存在且含 tab-header 列布局/header-actions；②按钮行 margin-top ≥10px；③按钮触控规格 40px 高/13px 字号/flex:1/margin-left:0，**且必须 ::v-deep**（压过全局紧凑重制的机制本身，改回嵌套写法即刻被反压）；④640 工具栏 flex 行布局（非纵堆）；⑤搜索侧 flex:1 撑满 + 新增侧 flex:0 0 auto + el-input width:100% !important（击败模板内联 280px）。**变异验证**：临时删 margin-top → 契约 1 例即红 → 恢复复绿。
 - **坑**：SCSS 嵌套媒体块用正则截断不可靠（嵌套 `}` 与块尾同形）——契约提取改花括号计数。
 - **门禁**：lint/typecheck 绿；相关 3 套件 35 用例 + 全量 109 套件 1539 用例全绿。
+
+## 2026-09-12（续5）：移动端本机服务同步滞后根修——staging 重建 + versionCode 4 交付（android-embedded-server-resync-20260912）
+
+- **输入**：用户反馈"移动端本机服务没有同步伴侣模式相关的修改，请查看 git 提交历史进行同步"。
+- **根因（非代码缺失，是构建链缺口）**：嵌入 APK 的本机服务端（backend/app + frontend/dist）由 `android/tools/stage-server.py` 手工蒸馏到 gitignored 源集 `android/app/src/server/`；`deploy/build-android.bat` **不执行 staging**，Gradle 也不追踪上游变化。暂存目录停留在 **9 月 7 日 18:13**——即使 9 月 12 日构建的 versionCode 3 新 APK（文件选择器批次）嵌入的仍是 9 月 7 日内容。伴侣模式连 unraid（047b1ce+）一切正常、本机服务缺全部 9/7 之后批次，正是用户观察到的不一致来源。
+- **缺失范围（9/7 18:13 → ef0c07e，共 13 个实质批次）**：断速振荡双修复（6dd0ae0）、下载器设置移动打磨（8f3eb10）、桌面版出口回修（fbe25b6）、快捷删重三跟进（d16e4f5）、设置页两页签移动布局+能力缓存响应式（5d07c88）、间距补强（e642d8e）、Tracker 按下载器双端点（608bda8）、移动种子页操作补强（2aa3834）、添加种子跳过校验+弹窗适配（e02564e）、转移/修改路径弹窗移动化（047b1ce 前端面）等。
+- **同步动作**：①`npm run build` 重建 dist（2026-09-12T14:11Z）；②重跑 stage-server.py（app 276 / alembic 32 / dist 365 文件）；③版本纪律：versionCode 3→4、versionName 0.2.2-server(+lan)、bat `BTDECK_APK_VERSION=0.2.2` 同源（锚点测试 apkVersionKeepsAscendingAndAligned 仍绿）；④`deploy/build-android.bat` 双变体构建 + apksigner 验证通过，产物 `android/dist/btdeck-companion-0.2.2-{strict,lan-cleartext}-debug.apk`（89.35MB，22:13）。
+- **验证**：`diff -rq backend/app staged python/app` 零差异；APK 载荷 `assets/chaquopy/app.imy` 内抽查——tracker.pyc 含 by-downloader 路由常量、前端 chunk `m-torrents.bfce591b.js` 与新 dist 同 hash；badging 确认 versionCode='4'/versionName='0.2.2-server('+lan)。requirements 自 9/5 无变化，无 Chaquopy pip 重装坑。
+- **流程缺口登记（待防再犯）**：build-android.bat 不含"staging 过期检测"——上游 backend/frontend 变更后仅重跑 bat 会静默交付旧嵌入服务。候选对策（未实施）：bat 前置比对 staged 关键文件 mtime/内容与源，或 staging 移入 gradle task 依赖。本批以手工三步链（build dist → stage → bat）完成。
+- 未执行 Git 提交（android/app/build.gradle.kts + deploy/build-android.bat 两处版本号变更在工作区待用户指示）。
+
+## 2026-09-12（续6）：APK 关闭桌面版逃生出口——伴侣 App WebView 恒移动端（companion-app-mobile-only-20260912）
+
+- **输入**：用户决策「apk 不需要逃生出口，apk 全程都是移动端操作，不会出现转入桌面端的情况」——fbe25b6 为桌面浏览器预览移动版加的宽视口（≥768px）桌面版出口，在 APK 场景（平板/横屏）反而构成误触入口。
+- **实现（环境门控，双端协作）**：
+  - 安卓 `WebViewActivity` settings 块 UA 追加 ` BtDeckCompanion` 标记（本机服务端/远程伴侣两模式共用同一 WebView，均生效）；
+  - 前端 `utils/ui-mode.ts` 新增 `isCompanionAppWebView()`（UA 含标记），`currentUiMode()` 命中即恒 `'mobile'`——路由守卫/登录分流全链生效，**顺带压制旧 APK 无条件出口可能已写入 WebView localStorage 的 `btdeck_ui_mode=desktop` 偏好**（迁移安全）；
+  - 前端 `views/mobile/mixins/wide-viewport.ts` mounted 早退（App WebView 不挂 matchMedia 监听、恒 false）——顶栏/登录页两处桌面版出口永不渲染，桌面浏览器（无标记）出口语义不变。
+- **回归保护**：前端 ui-mode.spec +3（仅含标记为真/App WebView 压制 desktop 偏好含登录分流/无标记语义不变）+ mobile-shell.spec +1（宽视口桩 + UA 桩 → 出口仍隐藏且不挂监听），两套件 56 用例全绿，lint/typecheck 绿；安卓 WebViewActivityContractTest +1（源码契约：UA 必须追加 BtDeckCompanion，丢失则平板/横屏出口回潮），随 bat 构建的 testDebugUnitTest 全绿。
+- **交付**：npm run build → stage-server.py（app 276/alembic 32/dist 365）→ versionCode 4→5、versionName 0.2.3-server(+lan)、bat `BTDECK_APK_VERSION=0.2.3` → 双变体构建+签名验证通过，产物 `android/dist/btdeck-companion-0.2.3-{strict,lan-cleartext}-debug.apk`（22:41）。
+- **载荷验证**：APK 内 `assets/chaquopy/app.imy` 的 `app.f1f5264c.js` 含 BtDeckCompanion 检测；classes2/7.dex 含标记字符串常量；badging versionCode='5'。
+- 未执行 Git 提交（前端 4 文件 + 安卓 3 文件 + bat 版本号在工作区待用户指示）。

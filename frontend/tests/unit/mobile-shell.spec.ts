@@ -4,6 +4,7 @@
  * - 桌面版出口按视口分流（2026-09-12）：窄视口（手机）不渲染（mobile-ux-fixes
  *   决策），宽视口（≥768px 桌面浏览器预览）顶栏渲染且点击写 desktop 偏好并
  *   进 /dashboard（偏好 mobile 单向锁死回归的解锁口，不自锁原则）；
+ *   伴侣 App WebView 恒不渲染（同日用户决策：APK 全程移动端，UA 标记门控）；
  * - 汉堡抽屉：完整功能菜单（移动组，能力 fail-closed 隐藏受限项），移动项 replace；
  * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
  *   + 60s 轮询（fake timers），>99 显示 99+；
@@ -124,6 +125,36 @@ describe('layout/mobile/MobileLayout', () => {
       expect(mqlStub.removeEventListener).toHaveBeenCalled()
     } finally {
       delete (window as unknown as { matchMedia?: unknown }).matchMedia
+    }
+  })
+
+  it('伴侣 App WebView：宽视口也不渲染桌面版出口（APK 全程移动端，2026-09-12 用户决策）', async() => {
+    // UA 含 WebViewActivity 注入的 BtDeckCompanion 标记：即便平板/横屏 ≥768px
+    // （matchMedia matches: true），mixin 早退恒 false，出口永不渲染
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 BtDeckCompanion',
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('桌面版')
+      // App WebView 早退：不挂媒体查询监听（卸载也无从泄漏）
+      expect(mqlStub.addEventListener).not.toHaveBeenCalled()
+      wrapper.destroy()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+      delete (window.navigator as unknown as { userAgent?: string }).userAgent
     }
   })
 

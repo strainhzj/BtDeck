@@ -1,7 +1,8 @@
 /**
  * ui-mode 工具契约（dual-mode-client Phase 4 M1）：
- * 偏好持久化、视口判定、模式合成与登录分流——移动/桌面视图选择的三条
- * 原则（非 UA 唯一依据 / 显式选择优先 / 移动版可切回桌面）的行为锁定。
+ * 偏好持久化、视口判定、模式合成与登录分流——移动/桌面视图选择的
+ * 原则（非 UA 唯一依据 / 显式选择优先 / 移动版可切回桌面 / 伴侣
+ * App WebView 恒移动端）的行为锁定。
  */
 
 describe('utils/ui-mode', () => {
@@ -113,6 +114,42 @@ describe('utils/ui-mode', () => {
     it('无 redirect 时裸登录路径', () => {
       uiMode.setStoredUiMode('mobile')
       expect(uiMode.loginPathForMode()).toBe('/m/login')
+    })
+  })
+
+  describe('伴侣 App WebView（UA 标记强制移动端，2026-09-12 用户决策）', () => {
+    const APP_UA =
+      'Mozilla/5.0 (Linux; Android 15; Pixel 6) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 BtDeckCompanion'
+
+    const stubUa = (ua: string | null): void => {
+      if (ua === null) {
+        delete (window.navigator as unknown as { userAgent?: string }).userAgent
+      } else {
+        Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+      }
+    }
+
+    afterEach(() => stubUa(null))
+
+    it('isCompanionAppWebView：仅 UA 含 App 注入标记时为真', () => {
+      expect(uiMode.isCompanionAppWebView()).toBe(false)
+      stubUa('Mozilla/5.0 (Windows NT 10.0) Chrome/120 Safari/537.36')
+      expect(uiMode.isCompanionAppWebView()).toBe(false)
+      stubUa(APP_UA)
+      expect(uiMode.isCompanionAppWebView()).toBe(true)
+    })
+
+    it('App WebView 恒移动端：desktop 偏好（旧 APK 出口可写入）被压制', () => {
+      stubUa(APP_UA)
+      localStorage.setItem('btdeck_ui_mode', 'desktop')
+      expect(uiMode.currentUiMode()).toBe('mobile')
+      expect(uiMode.loginPathForMode('/torrents')).toBe('/m/login?redirect=%2Ftorrents')
+    })
+
+    it('无标记时既有语义不变：desktop 偏好仍进桌面登录（桌面浏览器出口保持）', () => {
+      localStorage.setItem('btdeck_ui_mode', 'desktop')
+      expect(uiMode.currentUiMode()).toBe('desktop')
+      expect(uiMode.loginPathForMode('/torrents')).toBe('/login?redirect=%2Ftorrents')
     })
   })
 })

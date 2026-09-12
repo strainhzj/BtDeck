@@ -50,6 +50,18 @@ class WebViewActivityContractTest {
     }
 
     @Test
+    fun userAgentInjectsCompanionMarkerForAppOnlyMobileUi() {
+        val s = source("ui/WebViewActivity.kt")
+        // UA 标记是前端「App WebView 恒移动端」的判定输入（ui-mode 的
+        // isCompanionAppWebView / wide-viewport mixin 据此压制桌面版出口
+        // 与 desktop 偏好）；丢了它平板/横屏 ≥768px 会重新渲染桌面版出口
+        assertTrue(
+            "WebView UA 必须追加 BtDeckCompanion 标记（前端据此恒移动端）",
+            s.contains("userAgentString = \"\$userAgentString BtDeckCompanion\""),
+        )
+    }
+
+    @Test
     fun pickerIntentAvoidsMimeTrapAndKeepsMultiple() {
         val s = source("ui/FileChooser.kt")
         // 禁回退 createIntent（acceptTypes 原样当 MIME → SAF 空列表）

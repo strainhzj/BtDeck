@@ -117,6 +117,11 @@ class WebViewActivity : AppCompatActivity() {
             // 选择，增量攻击面仅页面内 content:// 引用，可接受。
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
+            // APK 全程移动端（2026-09-12 用户决策）：UA 追加伴侣 App 标记，
+            // 前端 ui-mode/wide-viewport 据此强制移动端并永不渲染桌面版出口
+            // （平板/横屏 ≥768px 也不出）；桌面浏览器访问服务器前端无此标记，
+            // 宽视口逃生出口不受影响
+            userAgentString = "$userAgentString BtDeckCompanion"
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         webView.webViewClient = CompanionWebViewClient()

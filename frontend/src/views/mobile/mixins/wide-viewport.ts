@@ -1,7 +1,9 @@
 /**
  * 宽视口检测 mixin（2026-09-12 桌面版出口回归修复）：
- * 显式偏好 mobile 时宽视口仍停留移动版（ui-mode 三原则：偏好优先于视口），
+ * 显式偏好 mobile 时宽视口仍停留移动版（ui-mode 原则：偏好优先于视口），
  * 桌面浏览器预览移动版需要出口；手机窄屏不渲染出口（mobile-ux-fixes 决策）。
+ * 伴侣 App WebView 恒 false（同日用户决策：APK 全程移动端，无逃生出口需求，
+ * 平板/横屏 ≥768px 也不渲染——UA 标记见 WebViewActivity）。
  *
  * - 提供 isWideViewport 响应式状态（≥ MOBILE_VIEWPORT_BREAKPOINT），
  *   挂载时读初值 + 媒体查询监听跟随窗口宽度变化（增删窗口即时显隐）；
@@ -10,7 +12,7 @@
  *   先 mixin 后页面，同 PullToRefresh 惯例）。
  */
 import { Component, Vue } from 'vue-property-decorator'
-import { MOBILE_VIEWPORT_BREAKPOINT } from '@/utils/ui-mode'
+import { MOBILE_VIEWPORT_BREAKPOINT, isCompanionAppWebView } from '@/utils/ui-mode'
 
 @Component
 export class WideViewport extends Vue {
@@ -20,6 +22,7 @@ export class WideViewport extends Vue {
   private wideViewportHandler: ((ev: MediaQueryListEvent) => void) | null = null
 
   mounted(): void {
+    if (isCompanionAppWebView()) return
     if (typeof window.matchMedia !== 'function') return
     const mql = window.matchMedia(`(min-width: ${MOBILE_VIEWPORT_BREAKPOINT}px)`)
     this.isWideViewport = mql.matches
