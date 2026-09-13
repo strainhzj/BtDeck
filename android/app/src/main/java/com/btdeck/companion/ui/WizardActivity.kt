@@ -17,6 +17,7 @@ import com.btdeck.companion.R
 import com.btdeck.companion.data.ServerProfileStore
 import com.btdeck.companion.server.LocalServerProfile
 import com.btdeck.companion.server.LocalServerState
+import com.btdeck.companion.server.ServerPrewarm
 import com.btdeck.companion.server.ServerService
 import com.btdeck.companion.server.ServerStates
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -69,6 +70,8 @@ class WizardActivity : AppCompatActivity() {
                 .show()
             return
         }
+        // 用户已表达本机服务端意图：阅读配置弹窗（LAN 威胁模型）期间后台预热
+        ServerPrewarm.prewarmAsync(this)
         maybeRequestNotificationPermission()
         val snapshot = LocalServerState.snapshot
         if (snapshot.isRunning) {

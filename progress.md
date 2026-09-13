@@ -7602,3 +7602,23 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **回归保护**：`WebViewActivityContractTest` +2——返回双入口接线契约（箭头开关/onSupportNavigateUp 直调 exitToSourcePage 不走 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退）+ 标题布局契约（根节点 clickable+focusable、双行 ID、colorOnPrimary）。**变异验证**：箭头开关置 false → 契约即红 → 逐字节还原。套件 7 用例 0 skipped 全绿。
 - **交付（版本纪律）**：versionCode 5→6、versionName 0.2.4-server(+lan)、bat `BTDECK_APK_VERSION=0.2.4` 同源；`deploy/build-android.bat` 双变体构建+apksigner 验证通过，产物 `android/dist/btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk`（09-13 10:43，89.36MB）。badging versionCode='6'；classes7.dex 含 `exitToSourcePage`、APK 含 `res/layout/action_bar_web_title.xml`。纯原生变更，嵌入服务 staging（9/12 续6 重建）无需重跑。
 - 未执行 Git 提交（安卓 4 文件 + bat 在工作区待用户指示）。
+
+## 2026-09-13：重建应用安装包（WebView 返回导航 + 移动端专用批次）
+
+- **输入**：用户要求再次重建。自 09-11 构建后新增两笔 Android 修复提交：fc6a9d9（伴侣 App WebView 关闭桌面版出口 + 嵌入服务同步重建）、b17fbb3（WebView 返回来源页双入口）。`build-packages.bat` 默认链退出码 0。
+- **Windows**：`dist/btdeck.exe`（50.2MB，11:08）——身份锚定 **1.0.6 @ b17fbb3dfa22**，verify-package 四项全 [PASS]。ISCC 仍未装，安装器照例跳过。
+- **Android**：两个变体均全新编译（assembleDebug 非 UP-TO-DATE，strict 1m13s / LAN 27s），APK 版本名随版本纪律递增至 **0.2.4**：`btdeck-companion-0.2.4-strict-debug.apk`（89.4MB，11:09）与 `btdeck-companion-0.2.4-lan-cleartext-debug.apk`（89.4MB，11:10）。
+- **dist 积累观察**：android/dist 现存 5 组历史版本 APK（0.1.0-mvp / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4，09-12 用户自建多轮），未做清理——安装时认准 0.2.4 文件名。
+- 未执行 Git 提交。
+
+## 2026-09-13（续）：本机服务端启动等待优化——prewarm 预热 + 双层轮询收敛（local-server-startup-prewarm-20260913）
+
+- **输入**：用户报「移动端 apk 点击运行本次服务要等十几秒，请排查」；排查结论（架构现状非回归）确认后用户拍板实施优化 1（预热）+2（轮询粒度）。
+- **归因（桌面基准，data/startup_timing_probe.py 按 _bootstrap 同序分阶段计时）**：总 3.4s = 导入 alembic 链 0.4s + 冷迁移（建全表）0.9s + 深导入 app.main（1198 模块）1.3s + lifespan（含二次幂等迁移热态仅 42ms）1.2s + 双层 1s 轮询量化 ~1s；手机放大 3-5x → 10-20s，与 AVD 实证 15s / btdeck_server 注释上限 42s 一致。openpyxl（1.3s 重导入）已是函数级延迟不占链；迁移双跑热态 42ms 无害。
+- **Python（android/server-python/btdeck_server.py）**：抽 `_init_phases(root)` 共享重活三段（env+迁移+深导入，迁移前置于深导入的顺序契约收敛到一处）；新增 `prewarm(data_root)`——16MB 栈后台线程跑三段，不动 _state、不占端口、starting/running 跳过、进程内幂等；`_init_lock` 串行 prewarm↔_bootstrap（防冷首跑两线程同时对同一 SQLite 跑 alembic → database is locked）；健康自检 `time.sleep(1)`→`_HEALTH_POLL_INTERVAL_S=0.2`；init 段错误归因改读 `_init_phase`（bind/health 仍本地 phase）。
+- **Kotlin**：新增 `server/ServerPrewarm.kt`——`PythonBoot`（Python.start 进程级锁互斥 + isStarted 短路，Chaquopy 未承诺线程安全）+ `ServerPrewarm`（AtomicBoolean 进程内一次、ABI 门、runCatching 失败静默——正式启动重跑完整链路走正式错误通道）。接线两处：`CompanionApp.onCreate`（lastPort>0 内存门：曾用过本机服务端的设备才冷启预热，纯伴侣用户不为此平白加载 Python 后端）+ `WizardActivity.showLocalServerDialog`（点开卡片即预热，阅读 LAN 威胁模型文案的时间做重叠）。`ServerService`：POLL_INTERVAL_MS 1000→200ms 配快照变更检测（data class 相等比较，不变快照不刷镜像/通知，防 5Hz notify 刷屏；starting 期端口先出现仍视为变更）；Python.start 收敛到 PythonBoot.ensureStarted；DATA_DIR 公开供预热同源 data_root。
+- **验证**：桌面冒烟 SMOKE PASS（data/prewarm_smoke.py）——prewarm 后 start→running **1.33s**（冷基线 3.4s）、prewarm 后 state 仍 stopped（向导契约不破）、幂等、/health/live 200、stop 0.17s 干净。staging 重跑（app 276/alembic 32/dist 365）后 `:app:testDebugUnitTest` + `:app:assembleDebug` 全绿。
+- **回归保护**：新增 `ServerPrewarmContractTest` 5 例（python prewarm 不动状态+锁双持有/健康 0.2s/Kotlin 200ms+变更检测/Python.start 集中互斥/接线门禁——lastPort 门、compareAndSet、DATA_DIR 同源、runCatching）。**变异验证 3/3 检出后逐字节还原**：轮询回退 1000L → 红（粒度断言）；_bootstrap 弃 _init_lock → 红（双持有断言）；CompanionApp 去 lastPort 门 → 红（内存门断言）。
+- **版本纪律**：versionCode 6→7、versionName 0.2.5-server(+lan)、bat `BTDECK_APK_VERSION=0.2.5` 字节级替换（CRLF 保持）。
+- **交付待办**：双变体 APK 未构建（按三步链：npm run build 已过期的前端无需变 → 本批为 android+嵌入服务变更，staging 已重跑 → deploy/build-android.bat 即可）；余真机验收——预热后点击启动预期 3-5s（原十几秒），首装首次仍含 pyc 编译略慢属正常。
+- 未执行 Git 提交（安卓 5 文件改动+2 新增、bat、feature_list.json、progress.md 在工作区待用户指示）。

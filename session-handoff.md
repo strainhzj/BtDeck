@@ -4934,3 +4934,19 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - AVD `btdeck-a35` 真实 instrumentation：`LocalServerAndroidTest` 1 passed。服务报告 schemaVersion=2、20 项能力、degraded=5、unsupported=9；路径映射、孤儿、备份、转移、三级删除均返回 403 `PLATFORM_CAPABILITY_UNSUPPORTED`；健康、静态首页和停止/重启通过。
 - 本轮验证：后端定向 39 passed；前端能力/任务 4 suites 30 passed；frontend lint/typecheck/build、flake8/mypy/ruff format、git diff --check 通过；根 `bash ./init.sh --ci` 通过但保留既有 null-byte 警告。
 - 工作区未提交；本轮新增/修改文件需与既有历史修改一起审阅。未跟踪 `data/` 保持不动。
+
+## 2026-09-13 交接：本机服务端启动等待优化（prewarm 预热 + 轮询收敛）
+
+### 已完成
+
+- 归因：真机点「运行本次服务」等十几秒 = 手机 CPU/IO 对启动链（alembic 导入+冷迁移+深导入 app.main 1198 模块+lifespan+双层 1s 轮询量化，桌面基准 3.4s）放大 3-5x，属架构现状非回归（AVD 实证 15s 印证）。探针脚本留 data/startup_timing_probe.py。
+- Python（android/server-python/btdeck_server.py，staging 已重跑）：抽 _init_phases 共享三段；新增 prewarm(data_root)（不动 _state/不占端口/active 跳过/幂等）；_init_lock 串行 prewarm↔_bootstrap 防冷首跑双迁移 database is locked；健康自检 1s→0.2s。
+- Kotlin：新文件 ServerPrewarm.kt（PythonBoot Python.start 进程级互斥 + ServerPrewarm AtomicBoolean 一次/ABI 门/失败静默）；接线 CompanionApp 冷启（lastPort>0 内存门，纯伴侣用户不加载 Python）与 WizardActivity 点开本机服务卡片；ServerService 轮询 1000→200ms + 快照变更检测（防 5Hz notify），Python.start 收敛到 PythonBoot。
+- 验证：桌面冒烟 SMOKE PASS（prewarm 后 start→running 1.33s vs 冷基线 3.4s）；契约测试 ServerPrewarmContractTest 5 例全绿 0 skipped；变异验证 3/3 检出后逐字节还原；:app:testDebugUnitTest + :app:assembleDebug 全绿。
+- 版本纪律：versionCode 6→7、versionName 0.2.5-server(+lan)、deploy/build-android.bat BTDECK_APK_VERSION=0.2.5（字节级替换保 CRLF）。feature_list.json evidence 与 progress.md 已回填。
+
+### 待办/注意
+
+- 双变体 APK 未构建：本批改了嵌入服务（btdeck_server.py）→ 出包前确保 staging 最新（已重跑 2026-09-13）→ deploy/build-android.bat；预期产物 btdeck-companion-0.2.5-{strict,lan-cleartext}-debug.apk。
+- 真机验收：预热后点击启动预期 3-5s（原十几秒）；首装首次仍含 Chaquopy pyc 编译略慢属正常；冷启预热仅在 lastPort>0 设备触发（首次使用者由向导卡片入口预热）。
+- 未执行 Git 提交；工作区改动 = 安卓 5 文件 + 2 新增（ServerPrewarm.kt / ServerPrewarmContractTest.kt）+ bat 版本号 + feature_list.json + progress.md + 本文件。data/ 下探针/冒烟脚本为未跟踪辅助产物。
