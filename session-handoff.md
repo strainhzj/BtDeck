@@ -1,3 +1,16 @@
+## 2026-09-13：WebView 返回来源页双入口已交付（webview-return-navigation-2026-09-13），待真机验收
+
+> 用户反馈「无法主动返回选择模式/服务器选择页，请在仪表盘设返回按钮、左上角名称加点击事件」——本会话实施+构建完毕，装 0.2.4 包即可验收。
+
+### 交付内容
+
+- **返回双入口（纯安卓，前端零改动）**：`WebViewActivity.setupActionBar()`——① `setDisplayHomeAsUpEnabled(true)` 左上角返回箭头；② 原生 title 无点击 API，custom view（`action_bar_web_title.xml`，名称+地址/版本两行，根节点整体可点）承载左上角名称。两入口都 `exitToSourcePage()`=直接 `finish()` 回启动来源 activity（伴侣模式=服务器列表、本机模式=向导），**不带 WebView 历史**。
+- **两处易错点**（代码注释+契约已钉死）：`onSupportNavigateUp()` 必须直调不走 super（AppCompat 默认落 onBackPressed，先被 WebView 历史耗掉，箭头点了只翻页）；副标题健康提示必须写 custom view TextView（原生 subtitle 已随 `setDisplayShowTitleEnabled(false)` 隐藏，写 `supportActionBar?.subtitle` 静默不可见）。
+- **门禁与交付**：`WebViewActivityContractTest` +2 共 7 用例全绿（变异验证：箭头开关置 false 即红）；versionCode 5→6 / versionName 0.2.4-server(+lan) / bat 0.2.4 同源；双变体 APK 构建签名验证通过 `android/dist/btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk`（badging versionCode='6'，classes7.dex 含新方法）。纯原生变更，嵌入服务 staging 无需重跑。
+- **真机验收点**：①左上角出现 ← 箭头，点击回到服务器列表（伴侣）/向导（本机）；②点左上角服务器名同样返回；③名称下方健康提示（v版本·状态）仍正常显示刷新。
+
+---
+
 ## 2026-09-12（续10）：真机验收通过 + 回归测试保护补强完毕（mobile-ux-pending-fixes 全 4 任务 done）
 
 > 用户确认「验证通过」后按指示补齐本轮全部修改的回归保护（feature_list task.4）。

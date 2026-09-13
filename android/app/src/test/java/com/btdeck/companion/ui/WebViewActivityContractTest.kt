@@ -74,6 +74,59 @@ class WebViewActivityContractTest {
         assertTrue(s.contains("type = params.mimeType"))
     }
 
+    /**
+     * 返回来源页双入口接线契约（2026-09-13 真机反馈）：
+     * WebView 内此前无主动返回（系统返回键被 WebView 历史优先占用），
+     * 用户困在仪表盘回不到模式/服务器选择页。变体对应真机踩过的坑：
+     * - 丢 setDisplayHomeAsUpEnabled → 左上角无返回箭头；
+     * - onSupportNavigateUp 走 super → 默认落到 onBackPressed，先被
+     *   WebView 历史（SPA 路由）耗掉，箭头点了只翻页不退出；
+     * - 副标题仍写 supportActionBar?.subtitle → 原生 subtitle 已随
+     *   setDisplayShowTitleEnabled(false) 隐藏，健康提示静默不可见。
+     */
+    @Test
+    fun actionBarExposesTwoReturnEntriesToSourcePages() {
+        val s = source("ui/WebViewActivity.kt")
+        assertTrue(
+            "action bar 必须开启 home-as-up 返回箭头",
+            s.contains("setDisplayHomeAsUpEnabled(true)"),
+        )
+        assertTrue(
+            "onSupportNavigateUp 必须直接 exitToSourcePage 且不调 super（super 默认走 onBackPressed 先耗 WebView 历史）",
+            Regex("override fun onSupportNavigateUp\\(\\):\\s*Boolean\\s*\\{\\s*exitToSourcePage\\(\\)\\s*return true\\s*\\}")
+                .containsMatchIn(s),
+        )
+        // 原生 title 无点击 API：名称须由 custom view 承载并整体可点
+        assertTrue(
+            "标题区必须以 action_bar_web_title custom view 承载（名称可点）",
+            s.contains("R.layout.action_bar_web_title"),
+        )
+        assertTrue(
+            "custom view 根节点必须挂点击监听走 exitToSourcePage",
+            Regex("setOnClickListener\\s*\\{\\s*exitToSourcePage\\(\\)\\s*\\}").containsMatchIn(s),
+        )
+        assertFalse(
+            "副标题更新必须写 custom view TextView；supportActionBar?.subtitle 已隐藏不可见",
+            s.contains("supportActionBar?.subtitle"),
+        )
+    }
+
+    /** 自定义标题布局契约：根节点可点（clickable+focusable）且两行文本 ID 齐。 */
+    @Test
+    fun actionBarTitleLayoutIsClickableContainer() {
+        val layout = File("src/main/res/layout/action_bar_web_title.xml")
+        assumeTrue("布局文件不可见（非模块工作目录）：$layout", layout.isFile)
+        val text = layout.readText()
+        assertTrue(
+            "标题区根节点必须 clickable+focusable（整体点击返回）",
+            text.contains("android:clickable=\"true\"") && text.contains("android:focusable=\"true\""),
+        )
+        assertTrue("标题行 ID 缺失", text.contains("@+id/action_bar_title"))
+        assertTrue("副标题行 ID 缺失", text.contains("@+id/action_bar_subtitle"))
+        // 名称与地址须可读：显式 colorOnPrimary（custom view 不保证继承覆盖层标题色）
+        assertTrue("标题文本必须显式 colorOnPrimary", text.contains("android:textColor=\"?attr/colorOnPrimary\""))
+    }
+
     /** APK 交付版本纪律锚点：发版递增 versionCode 并同步 bat 产物名（发版时抬升）。 */
     @Test
     fun apkVersionKeepsAscendingAndAligned() {

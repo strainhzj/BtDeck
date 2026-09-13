@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-12",
+  "last_updated": "2026-09-13",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -6558,6 +6558,40 @@
           ],
           "description": "安卓侧把前端仓「源码契约」模式移植到 JVM 测试（Intent/ClipData 无法 JVM 端到端、仓内无 Robolectric）：新 WebViewActivityContractTest 4 用例——webChromeClient/onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次的四条路径（onReceiveValue(null) 恰 4 处 + launcher 回调先取引用再清空再投递）、FileChooser 禁回退 createIntent（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、APK 版本纪律锚点（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源，防再次脱钩）；FileChooserTest 补 mode 显式 opt-in 用例（OPEN/SAVE/未知值均单选）。前端侧补挂载行为测试 4 用例（注册带 props 的 ElDialog 占位组件）：自有 custom-class 真实到达 ElDialog（customClass prop）、嵌套删除确认第二枚 el-dialog 的 customClass 与 appendToBody、两组件 visible 置真打开流程（按下载器拉路径建议/拉可用下载器）。变异验证 3/3 检出（WebViewActivity 删作废旧回调→红；bat 版本回退脱钩→红；SetLocationDialog 根 div 包裹回退→源码契约红）。",
           "evidence": "安卓 testDebugUnitTest 全套件绿（FileChooserTest 4 + WebViewActivityContractTest 4，bat 同源断言生效 0 skipped）；前端全量 111 套件 / 1575 用例绿（本 spec 6→10）；typecheck/lint 绿；变异验证后生产代码逐字节还原（git diff 空）。"
+        }
+      ]
+    },
+    {
+      "id": "webview-return-navigation-2026-09-13",
+      "name": "WebView 返回来源页双入口（action bar 返回箭头 + 左上角名称可点）",
+      "description": "用户真机反馈：WebView 内无法主动返回到模式选择（向导）/伴侣模式服务器选择页——action bar 只设 title/subtitle 无 home-as-up，唯一退出路径系统返回键又被 onBackPressedDispatcher 优先导向 WebView 历史（SPA 路由翻页）。实现：setDisplayHomeAsUpEnabled 显左上角返回箭头；原生 title 无点击 API，以 custom view（action_bar_web_title.xml 名称+地址两行）承载左上角名称整体可点；两入口都直接 finish 回退到启动来源 activity（伴侣=服务器列表/本机=向导）不带 WebView 历史。onSupportNavigateUp 禁走 super（默认落 onBackPressed 先耗历史）；副标题健康提示同步改写 custom view TextView（原生 subtitle 已隐藏）。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "webview-return-navigation.1",
+          "name": "返回双入口实现 + 布局",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
+            "android/app/src/main/res/layout/action_bar_web_title.xml"
+          ],
+          "description": "setupActionBar()：setDisplayHomeAsUpEnabled(true) + custom view 两行标题（根节点 clickable+focusable+ripple、文本显式 colorOnPrimary、maxWidth 防长名溢出）挂点击；exitToSourcePage()=finish 回来源页；onSupportNavigateUp 覆写直调不走 super；onOptionsItemSelected 兜底 android.R.id.home；refreshVersionHint 副标题写 custom view TextView。",
+          "evidence": "testDebugUnitTest 全绿（编译验证布局引用）；APK 载荷 classes7.dex 含 exitToSourcePage、res/layout/action_bar_web_title.xml 打入包。"
+        },
+        {
+          "id": "webview-return-navigation.2",
+          "name": "契约回归 + 版本纪律交付",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/test/java/com/btdeck/companion/ui/WebViewActivityContractTest.kt",
+            "android/app/build.gradle.kts",
+            "deploy/build-android.bat"
+          ],
+          "description": "契约 +2：返回双入口接线（箭头开关/onSupportNavigateUp 直调 exitToSourcePage 且不 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退——原生 subtitle 已隐藏写它健康提示静默不可见）+ 标题布局（clickable+focusable/双行 ID/colorOnPrimary）。versionCode 5→6、versionName 0.2.4-server(+lan)、bat BTDECK_APK_VERSION=0.2.4 同源（apkVersionKeepsAscendingAndAligned 仍绿）。",
+          "evidence": "WebViewActivityContractTest 7 用例 0 skipped 0 failures；变异验证（箭头开关置 false）契约即红后逐字节还原；deploy/build-android.bat 双变体构建+apksigner 验证通过，产物 btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk（badging versionCode='6'）。"
         }
       ]
     }

@@ -8,6 +8,8 @@ import android.net.http.SslError
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
@@ -23,6 +25,7 @@ import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.ActionBar
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +57,9 @@ class WebViewActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var errorOverlay: LinearLayout
     private lateinit var errorText: TextView
+    /** action bar 自定义标题区两行文本（原生 title/subtitle 已隐藏，写入走这里）。 */
+    private var headerTitle: TextView? = null
+    private var headerSubtitle: TextView? = null
 
     private val timeoutHandler = Handler(Looper.getMainLooper())
     private var loadFinished = false
@@ -91,8 +97,7 @@ class WebViewActivity : AppCompatActivity() {
             finish()
             return
         }
-        supportActionBar?.title = profile.displayName
-        supportActionBar?.subtitle = profile.baseUrl
+        setupActionBar()
 
         webView = findViewById(R.id.web_view)
         errorOverlay = findViewById(R.id.error_overlay)
@@ -196,6 +201,55 @@ class WebViewActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    // ============ 返回来源页（2026-09-13 用户反馈补齐） ============
+    // WebView 内此前只有系统返回键一条路，且被 WebView 历史优先占用——用户
+    // 无法主动回到模式选择（向导）/服务器选择页。现给 action bar 配左上角
+    // 返回箭头，并让「名称」整体可点（原生 title TextView 无公开点击 API，
+    // 以 custom view 承载两行文本实现）。两条入口都直接 finish 回退到启动
+    // 本页的来源 activity：伴侣模式=服务器列表，本机模式=向导。
+
+    private fun setupActionBar() {
+        val actionBar = supportActionBar ?: return
+        actionBar.setDisplayHomeAsUpEnabled(true)
+        actionBar.setDisplayShowTitleEnabled(false)
+        actionBar.setDisplayShowCustomEnabled(true)
+        val titleArea = layoutInflater.inflate(R.layout.action_bar_web_title, null)
+        headerTitle = titleArea.findViewById(R.id.action_bar_title)
+        headerSubtitle = titleArea.findViewById(R.id.action_bar_subtitle)
+        headerTitle?.text = profile.displayName
+        headerSubtitle?.text = profile.baseUrl
+        titleArea.setOnClickListener { exitToSourcePage() }
+        // 默认 custom view 居中：贴齐返回箭头左侧起点并垂直居中
+        actionBar.setCustomView(
+            titleArea,
+            ActionBar.LayoutParams(
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                Gravity.START or Gravity.CENTER_VERTICAL,
+            ),
+        )
+    }
+
+    /** 返回来源页：直接 finish，不带 WebView 历史（与系统返回键语义区分）。 */
+    private fun exitToSourcePage() {
+        finish()
+    }
+
+    /** 返回箭头：禁走 super——默认会落到 onBackPressed，先被 WebView 历史耗掉。 */
+    override fun onSupportNavigateUp(): Boolean {
+        exitToSourcePage()
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            exitToSourcePage()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+
     private fun load() {
         loadFinished = false
         autoLoginStarted = false
@@ -235,7 +289,9 @@ class WebViewActivity : AppCompatActivity() {
             store.upsert(profile)
             if (!isDestroyed) {
                 val version = report.version?.let { "v$it" } ?: "版本未知"
-                supportActionBar?.subtitle = "$version · ${report.detail}"
+                // 原生 subtitle 已随 setDisplayShowTitleEnabled(false) 隐藏，
+                // 健康提示必须写 custom view 内 TextView 才可见
+                headerSubtitle?.text = "$version · ${report.detail}"
             }
         }
     }

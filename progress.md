@@ -7590,3 +7590,15 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **交付**：npm run build → stage-server.py（app 276/alembic 32/dist 365）→ versionCode 4→5、versionName 0.2.3-server(+lan)、bat `BTDECK_APK_VERSION=0.2.3` → 双变体构建+签名验证通过，产物 `android/dist/btdeck-companion-0.2.3-{strict,lan-cleartext}-debug.apk`（22:41）。
 - **载荷验证**：APK 内 `assets/chaquopy/app.imy` 的 `app.f1f5264c.js` 含 BtDeckCompanion 检测；classes2/7.dex 含标记字符串常量；badging versionCode='5'。
 - 未执行 Git 提交（前端 4 文件 + 安卓 3 文件 + bat 版本号在工作区待用户指示）。
+
+## 2026-09-13：WebView 返回来源页双入口——action bar 返回箭头 + 左上角名称可点（webview-return-navigation-20260913）
+
+- **输入**：用户反馈「移动端 app 无法主动返回到选择模式、选择伴侣模式服务器的页面，请在仪表盘设置返回按钮，左上角的名称也设置点击事件」。
+- **根因**：`WebViewActivity` 的 action bar 只设 title/subtitle（无 `setDisplayHomeAsUpEnabled`），WebView 内唯一退出路径是系统返回键——且被 `onBackPressedDispatcher` 回调优先导向 WebView 历史（SPA 路由翻页），用户困在仪表盘回不到向导/服务器列表。
+- **实现（纯安卓原生，前端零改动）**：
+  - `setupActionBar()`：`setDisplayHomeAsUpEnabled(true)` 显左上角返回箭头；原生 title TextView 无公开点击 API，改 custom view（新 `action_bar_web_title.xml`：名称+地址/版本两行，根节点 clickable+focusable+ripple，文本显式 colorOnPrimary）承载，整体点击 → `exitToSourcePage()`。
+  - `exitToSourcePage()`=直接 `finish()` 回退到启动来源 activity（伴侣模式=服务器列表、本机模式=向导），不带 WebView 历史；`onSupportNavigateUp()` 覆写禁走 super（AppCompat 默认落 onBackPressed 会先被 WebView 历史耗掉），另 `onOptionsItemSelected` 兜底 `android.R.id.home`。
+  - 副标题健康提示（`refreshVersionHint`）从 `supportActionBar?.subtitle` 改写 custom view 内 TextView——原生 subtitle 已随 `setDisplayShowTitleEnabled(false)` 隐藏，写旧 API 会静默不可见。
+- **回归保护**：`WebViewActivityContractTest` +2——返回双入口接线契约（箭头开关/onSupportNavigateUp 直调 exitToSourcePage 不走 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退）+ 标题布局契约（根节点 clickable+focusable、双行 ID、colorOnPrimary）。**变异验证**：箭头开关置 false → 契约即红 → 逐字节还原。套件 7 用例 0 skipped 全绿。
+- **交付（版本纪律）**：versionCode 5→6、versionName 0.2.4-server(+lan)、bat `BTDECK_APK_VERSION=0.2.4` 同源；`deploy/build-android.bat` 双变体构建+apksigner 验证通过，产物 `android/dist/btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk`（09-13 10:43，89.36MB）。badging versionCode='6'；classes7.dex 含 `exitToSourcePage`、APK 含 `res/layout/action_bar_web_title.xml`。纯原生变更，嵌入服务 staging（9/12 续6 重建）无需重跑。
+- 未执行 Git 提交（安卓 4 文件 + bat 在工作区待用户指示）。
