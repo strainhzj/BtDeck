@@ -4950,3 +4950,14 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 双变体 APK 未构建：本批改了嵌入服务（btdeck_server.py）→ 出包前确保 staging 最新（已重跑 2026-09-13）→ deploy/build-android.bat；预期产物 btdeck-companion-0.2.5-{strict,lan-cleartext}-debug.apk。
 - 真机验收：预热后点击启动预期 3-5s（原十几秒）；首装首次仍含 Chaquopy pyc 编译略慢属正常；冷启预热仅在 lastPort>0 设备触发（首次使用者由向导卡片入口预热）。
 - 未执行 Git 提交；工作区改动 = 安卓 5 文件 + 2 新增（ServerPrewarm.kt / ServerPrewarmContractTest.kt）+ bat 版本号 + feature_list.json + progress.md + 本文件。data/ 下探针/冒烟脚本为未跟踪辅助产物。
+
+## 2026-09-13 交接（续2）：首启 pyc 编译疑云澄清 + chaquopy pyc 三开关钉死
+
+### 结论与纠正
+
+- 纠正前一批 handoff 的错误说法「覆盖安装首次启动会重新编译 pyc」：解剖 0.2.5 APK 实证 8 个 .imy bundle 全部 .pyc 零 .py——Chaquopy 17 默认构建期全量预编译，设备上无现场编译。首启一次性成本实为资源解包+建库迁移，已由 prewarm 吸收。
+- 加固：build.gradle.kts 显式 pyc { src/pip/stdlib = true } + ServerPrewarmContractTest 新增契约（6 例全绿）；assembleDebug 重建产物 .py=0/.pyc=4261 与默认一致。纯声明式零行为变化，不递版本号不出包，随下次交付生效。
+
+### 待办
+
+- 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。

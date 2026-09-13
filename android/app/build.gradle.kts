@@ -95,6 +95,16 @@ val serverMode = providers.gradleProperty("btdeck.server").getOrElse("on") != "o
 chaquopy {
     defaultConfig {
         version = "3.12"
+        // 字节码全量构建期预编译（2026-09-13 解剖 0.2.5 APK 实证：8 个 .imy
+        // bundle 全部 .pyc 零 .py——Chaquopy 17 默认即构建期编译，设备上无
+        // 现场编译）。显式钉死三开关：防未来插件升级默认翻转，否则首启在
+        // 手机上现场编译上千模块（十几秒级回潮）。首启真正的一次性成本只剩
+        // 资源解包 + 建库迁移，已由 ServerPrewarm 后台预热吸收。
+        pyc {
+            src = true
+            pip = true
+            stdlib = true
+        }
         pip {
             // Chaquopy 无 extraIndexUrls DSL 属性，pip 旗标统一经 options(...) 传。
             // android-wheels 索引（自建 Android wheel：pydantic-core/bcrypt/greenlet/

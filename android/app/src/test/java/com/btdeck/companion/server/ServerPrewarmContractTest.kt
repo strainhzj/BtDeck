@@ -125,6 +125,24 @@ class ServerPrewarmContractTest {
     }
 
     @Test
+    fun pythonBytecodeIsPrecompiledAtBuildTime() {
+        val gradle = File("build.gradle.kts")
+        assumeTrue("build.gradle.kts 不可见（非模块工作目录），跳过", gradle.isFile)
+        val s = gradle.readText()
+        // 0.2.5 APK 实证：8 个 .imy bundle 全部 .pyc 零 .py（Chaquopy 17 默认
+        // 构建期编译）。显式钉死 src/pip/stdlib 三开关——任一回落 false，首启
+        // 就会在手机上现场编译上千模块（十几秒级回潮，预热优化部分失效）
+        val block = Regex("pyc\\s*\\{[\\s\\S]*?\\}").find(s)?.value
+            ?: error("chaquopy defaultConfig 缺 pyc 块（构建期预编译钉死）")
+        for (flag in listOf("src", "pip", "stdlib")) {
+            assertTrue(
+                "pyc.$flag 必须显式 true（构建期预编译钉死，防插件默认翻转）",
+                Regex("$flag\\s*=\\s*true").containsMatchIn(block),
+            )
+        }
+    }
+
+    @Test
     fun prewarmIsWiredWithOnceGuardAndMemoryGate() {
         val app = source("CompanionApp.kt")
         val wizard = source("ui/WizardActivity.kt")

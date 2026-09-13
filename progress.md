@@ -7622,3 +7622,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **版本纪律**：versionCode 6→7、versionName 0.2.5-server(+lan)、bat `BTDECK_APK_VERSION=0.2.5` 字节级替换（CRLF 保持）。
 - **交付待办**：双变体 APK 未构建（按三步链：npm run build 已过期的前端无需变 → 本批为 android+嵌入服务变更，staging 已重跑 → deploy/build-android.bat 即可）；余真机验收——预热后点击启动预期 3-5s（原十几秒），首装首次仍含 pyc 编译略慢属正常。
 - 未执行 Git 提交（安卓 5 文件改动+2 新增、bat、feature_list.json、progress.md 在工作区待用户指示）。
+
+## 2026-09-13（续2）：首启 pyc 编译疑云澄清——构建期全量预编译实证 + 三开关钉死（chaquopy-pyc-pin-20260913）
+
+- **输入**：用户问「能否避免首次启动因 Chaquopy 重新编译 pyc 略慢」。排查发现该前提不成立——上一批 handoff 中「覆盖安装首次启动重新编译 pyc」是我（会话内）的错误推断，特此纠正。
+- **实证（解剖 0.2.5 APK）**：assets/chaquopy 下 8 个 .imy bundle 全部 .pyc 零 .py（源集 app.imy 270 pyc/4.3MB、依赖 requirements-common 1888 pyc/29.2MB、标准库 stdlib-common 580 pyc/9.9MB、bootstrap 96 pyc）——Chaquopy 17 默认就是构建期全量预编译，**设备上不存在 pyc 现场编译**。首启真正的一次性成本=Chaquopy 资源解包（首跑把 payload 解到数据目录，btdeck_server.py 注释「AssetFinder 目录可写」即此机制）+ 首跑建库迁移，两者均已被 prewarm 后台预热吸收，用户点击后的等待不受影响。
+- **加固**：build.gradle.kts 的 chaquopy.defaultConfig 显式 `pyc { src = true; pip = true; stdlib = true }`（DSL 实证：插件 jar PycExtension 三 Boolean 属性）——防未来插件升级默认翻转后「设备现场编译上千模块」回潮。契约测试 ServerPrewarmContractTest +1（pyc 三开关必须显式 true），6 例全绿 0 skipped。
+- **验证**：DSL 变更后 chaquopy 任务自动重跑（Gradle 正常追踪该属性为任务输入，不踩 requirements 文件不追踪的老坑）；:app:assembleDebug 重建产物仍 .py=0/.pyc=4261，与默认行为逐位一致。
+- **交付决定**：纯声明式钉死、产物零变化 → 不递增版本号、不重新出包（0.2.5 双 APK 本就正确）；本改动随下次交付生效。未执行 Git 提交（build.gradle.kts + 测试 + progress/session-handoff 待用户指示——随后同批提交）。
