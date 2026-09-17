@@ -30,7 +30,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_authenticated_user
 from app.database import Base, get_async_db
 from app.downloader.models import BtDownloaders
 from app.services.audit_service import get_audit_service
@@ -83,7 +83,7 @@ def client(db_session):
 
     关键：patch app.database.SessionLocal，让 RecycleBinService.__init__ 内的
     `from app.database import SessionLocal; self.db = SessionLocal()` 拿到内存库 session。
-    同时覆盖 get_async_db（端点参数）和 get_current_user（认证）。
+    同时覆盖 get_async_db（端点参数）、get_current_user（端点认证参数）与 require_authenticated_user（路由级 capability_dependency 认证）。
     """
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
@@ -93,6 +93,8 @@ def client(db_session):
 
     app.dependency_overrides[get_async_db] = override_get_async_db
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(username="tester")
+    # 路由级 capability_dependency 内部走 require_authenticated_user（端点参数走 get_current_user），两个都得覆盖
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
 
     with patch("app.database.SessionLocal", return_value=db_session):
         yield TestClient(app, raise_server_exceptions=False)

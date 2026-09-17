@@ -1,9 +1,11 @@
 /**
  * 移动布局壳行为契约（dual-mode-client Phase 4 M1 + 2026-08-24 增强）：
- * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航、"桌面版"
- *   出口必须写偏好并离开移动布局（不自锁原则）；
- * - 汉堡抽屉：完整功能菜单（移动组 4 + 桌面组 9），移动项 replace、桌面项
- *   push 且不写 ui_mode 偏好（返回/刷新仍回移动版）；
+ * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航；
+ * - 桌面版出口按视口分流（2026-09-12）：窄视口（手机）不渲染（mobile-ux-fixes
+ *   决策），宽视口（≥768px 桌面浏览器预览）顶栏渲染且点击写 desktop 偏好并
+ *   进 /dashboard（偏好 mobile 单向锁死回归的解锁口，不自锁原则）；
+ *   伴侣 App WebView 恒不渲染（同日用户决策：APK 全程移动端，UA 标记门控）；
+ * - 汉堡抽屉：完整功能菜单（移动组，能力 fail-closed 隐藏受限项），移动项 replace；
  * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
  *   + 60s 轮询（fake timers），>99 显示 99+；
  * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
@@ -18,6 +20,7 @@ import path from 'path'
 import AppLogo from '@/components/common/AppLogo.vue'
 import MobileLayout from '@/layout/mobile/index.vue'
 import { NotificationModule } from '@/store/modules/notification'
+import { setPlatformCapabilityCacheForTesting, resetPlatformCapabilityCache } from '@/api/platform-capabilities'
 
 jest.mock('@/store/modules/notification', () => ({
   NotificationModule: {
@@ -53,6 +56,7 @@ describe('layout/mobile/MobileLayout', () => {
     jest.clearAllMocks()
     jest.useRealTimers()
     setMockUnread(0)
+    resetPlatformCapabilityCache()
   })
 
   it('渲染四个底部 Tab（仪表盘/下载器/种子/通知）', () => {
@@ -82,38 +86,120 @@ describe('layout/mobile/MobileLayout', () => {
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
   })
 
-  it('桌面版出口：写 desktop 偏好并跳桌面仪表盘（不自锁）', async() => {
+  it('窄视口不渲染桌面版出口（mobile-ux-fixes 决策保持）：手机屏顶栏/抽屉/分组均无桌面版', async() => {
+    // jsdom 无 window.matchMedia → showDesktopEntry 兜底 false（等价窄视口路径）
     const wrapper = mountLayout('/m/dashboard')
-    const desktopButton = wrapper.findAll('.mobile-header-desktop').at(0)
-    desktopButton.trigger('click')
-    await wrapper.vm.$nextTick()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-desktop-btn').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-footer').exists()).toBe(false)
+    expect((wrapper.vm as any).desktopMenuItems).toBeUndefined()
+    expect(wrapper.text()).not.toContain('桌面版')
+  })
+
+  it('宽视口恢复桌面版出口（2026-09-12 回归修复）：渲染 + 点击写 desktop 偏好并进 /dashboard', async() => {
+    // jsdom 无 matchMedia，注入宽视口桩（matches: true）
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      // mounted 同步改 showDesktopEntry，DOM 更新在下一微任务
+      await wrapper.vm.$nextTick()
+      const btn = wrapper.find('.mobile-header-desktop')
+      expect(btn.exists()).toBe(true)
+      expect(btn.text()).toContain('桌面版')
+      // 模拟被 switchToMobile 锁定的偏好，点击出口应解锁
+      localStorage.setItem('btdeck_ui_mode', 'mobile')
+      btn.trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
+      expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/dashboard')
+      wrapper.destroy()
+      // 销毁时解绑媒体查询监听
+      expect(mqlStub.removeEventListener).toHaveBeenCalled()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+    }
+  })
+
+  it('伴侣 App WebView：宽视口也不渲染桌面版出口（APK 全程移动端，2026-09-12 用户决策）', async() => {
+    // UA 含 WebViewActivity 注入的 BtDeckCompanion 标记：即便平板/横屏 ≥768px
+    // （matchMedia matches: true），mixin 早退恒 false，出口永不渲染
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 BtDeckCompanion',
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('桌面版')
+      // App WebView 早退：不挂媒体查询监听（卸载也无从泄漏）
+      expect(mqlStub.addEventListener).not.toHaveBeenCalled()
+      wrapper.destroy()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+      delete (window.navigator as unknown as { userAgent?: string }).userAgent
+    }
+  })
+
+  it('宽视口 matchMedia 不存在或不可用时：出口保持隐藏（安全兜底，不抛错）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
   })
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉，抽屉含移动组 11 项 + 桌面组 2 项完整菜单（系统设置移动化）', async() => {
+  it('汉堡按钮打开抽屉：桌面分组已移除；能力 fail-closed 下仅渲染 9 项（回收站/孤儿文件隐藏）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).drawerVisible).toBe(true)
 
+    // 能力矩阵未加载（cache=null）时 FILESYSTEM 能力 fail-closed：回收站/孤儿文件隐藏
     const items = wrapper.findAll('.mobile-menu-item')
-    expect(items.length).toBe(13)
-    const mobileLabels = (wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)
-    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置'])
-    const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
-    expect(desktopLabels).toEqual(
-      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）'])
+    expect(items.length).toBe(9)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '日志', 'Tracker关键词', '定时任务', '系统设置']
     )
-    // 已移动化/裁撤的页面不在桌面组（系统设置已移动化、查询模板已裁撤仅保留高级搜索）
-    expect(desktopLabels).not.toContain('系统设置')
-    expect(desktopLabels).not.toContain('查询模板')
-    expect(desktopLabels).not.toContain('孤儿文件')
-    expect(desktopLabels).not.toContain('下载器管理')
-    expect(desktopLabels).not.toContain('定时任务')
+    expect(wrapper.text()).not.toContain('全部功能')
+  })
+
+  it('能力矩阵已加载且支持时：抽屉渲染全部 11 项移动菜单', async() => {
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: {
+        level3_recycle: { label: '三级回收', level: 'supported' },
+        orphan_files: { label: '孤儿文件', level: 'supported' }
+      },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.find('.mobile-header-menu').trigger('click')
+    await wrapper.vm.$nextTick()
+    const items = wrapper.findAll('.mobile-menu-item')
+    expect(items.length).toBe(11)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置']
+    )
   })
 
   it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
@@ -134,27 +220,6 @@ describe('layout/mobile/MobileLayout', () => {
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
     expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
-  })
-
-  it('抽屉点桌面功能项：关闭抽屉、push 桌面路径且不写 ui_mode 偏好', async() => {
-    const wrapper = mountLayout('/m/dashboard')
-    const items = wrapper.findAll('.mobile-menu-item')
-    // 移动组 11 项之后为桌面组，首项"种子列表（桌面）"
-    items.at(11).trigger('click')
-    await wrapper.vm.$nextTick()
-    expect((wrapper.vm as any).drawerVisible).toBe(false)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/torrents')
-    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBeNull()
-  })
-
-  it('抽屉底部"完整桌面版"与头部出口行为一致（写偏好）', async() => {
-    const wrapper = mountLayout('/m/dashboard')
-    const footerBtn = wrapper.find('.mobile-menu-desktop-btn')
-    footerBtn.trigger('click')
-    await wrapper.vm.$nextTick()
-    expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
   })
 
   // ============ 主题色契约（与桌面端同源） ============

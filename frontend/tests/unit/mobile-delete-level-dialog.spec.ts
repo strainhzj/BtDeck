@@ -11,6 +11,10 @@ import { shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
 import MobileDeleteLevelDialog from '@/views/mobile/components/DeleteLevelDialog.vue'
 import { DELETE_LEVEL_SUCCESS_TEXT } from '@/views/mobile/delete-level'
+import {
+  setPlatformCapabilityCacheForTesting,
+  resetPlatformCapabilityCache
+} from '@/api/platform-capabilities'
 
 const mountDialog = (confirmResult: Promise<string>): Wrapper<Vue> =>
   shallowMount(MobileDeleteLevelDialog, {
@@ -49,6 +53,22 @@ const levelOption = (level: number): { level: number, label: string, icon: strin
 }
 
 describe('views/mobile/components/DeleteLevelDialog', () => {
+  beforeEach(() => {
+    // 组件按 level3_recycle 能力裁剪等级3 选项（矩阵未加载时 fail-closed）；
+    // 注入 desktop+supported 还原全四级契约（能力矩阵批次落地时本 spec 未同步）
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+  })
+
+  afterEach(() => {
+    resetPlatformCapabilityCache()
+  })
+
   it('四个等级选项：与桌面删除下拉同语义、顺序 4→1', () => {
     const wrapper = mountDialog(Promise.resolve('confirm'))
     const options = (wrapper.vm as any).levelOptions as Array<{ level: number, label: string }>

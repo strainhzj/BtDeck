@@ -1457,4 +1457,14 @@ export default class AdvancedMultiSelect extends Vue {
     flex-shrink: 0;
   }
 }
+
+/* 手机适配（mobile-ux-fixes 2026-09）：内层批量粘贴/高级选项 popover 是
+   append-to-body=false 的嵌套浮层，width prop 内联 320/280px 在窄屏（≤375px）
+   会溢出外层弹壳——统一按视口钳制（外层 .ams__dropdown-popper 已有同款 max-width）。 */
+@media (max-width: 768px) {
+  .ams__dropdown-popper .el-popover {
+    max-width: calc(100vw - 48px);
+    box-sizing: border-box;
+  }
+}
 </style>

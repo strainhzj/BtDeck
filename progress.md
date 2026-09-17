@@ -1,5 +1,120 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-12（第六批）：两遗留修复回归测试保护补强（mobile-ux-pending-fixes.4，真机验证通过后）
+
+- **安卓侧（源码契约模式移植）**：真机验证过的行为无法 JVM 端到端（Intent/ClipData 是 not-mocked stub、无 Robolectric），新 `WebViewActivityContractTest` 4 用例直读实现文件钉死结构——onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处 + launcher 回调「先取引用再清空再投递」序列正则）、FileChooser 禁回退 `createIntent`（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、**APK 版本纪律锚点**（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源——曾脱钩 0.1.0-mvp vs 0.2.0-server）；FileChooserTest 补 mode 显式 opt-in（OPEN/SAVE/未知值均单选；MODE_OPEN_FOLDER 常量实际不存在，勿臆造）。
+- **前端侧（挂载行为）**：测试环境未装 Element——注册带 props 的 ElDialog 占位组件（appendToBody 须声明 Boolean 类型，无值属性才是 true）；4 用例：自有 custom-class 真实到达 ElDialog（customClass prop）、嵌套删除确认第二枚 el-dialog 的 customClass/appendToBody、两组件 visible 置真打开流程（按下载器拉路径/拉下载器，el-form stub 需打桩 clearValidate/validate）。与源码契约分工：**div 包裹回退由源码契约拦截**（挂载用例对该回退不敏感——div 回退时模板字面量仍在 el-dialog 上）。
+- **变异验证 3/3 检出**：WebViewActivity 删「作废旧回调」→ callbackDeliveredExactlyOnce 红；bat 版本回退 0.1.0-mvp → apkVersionKeepsAscendingAndAligned 红；SetLocationDialog 根 div 包裹回退 → 源码契约「custom-class 落 el-dialog 开标签」红。还原后生产代码与 b7371df 逐字节一致（git diff 空）。
+- **门禁**：安卓 testDebugUnitTest 全套件绿（新 8 用例）；前端全量 111 套件 / **1575 用例绿**（本 spec 6→10）；typecheck/lint 绿。
+
+---
+
+## 2026-09-12（第五批·复验）：两弹窗 UI 移动化 + 文件选择器诊断与 versionCode 递增（mobile-ux-pending-fixes.3）
+
+用户真机复验两反馈的修复批（feature_list `mobile-ux-pending-fixes-2026-09-12` task.3）：
+
+1. **「适配了尺寸但没适配 UI」**：两弹窗非 scoped ≤768 块从仅骨架收窄扩为 UI 移动化——头部 padding 收敛（14/16/10）+ 标题 16px 加粗 + 关闭钮 36px 触控区（Element 默认 20×20 指尖难命中）+ 弹窗圆角 12px + 体/底 padding 收敛（12/14、10/14/16）+ divider 与表单间距收紧（10px/14px）；scoped 块补复选框触控行（「删除原种子/移动已下载的文件」padding 6px 0 + 白空间折行）、当前下载器名/长路径 break-all、嵌套删除确认 icon 48→36px（88vw 弹窗内过大）。
+2. **「添加种子仍不弹文件管理器，应该申请手机权限」**：前端触发链核实为同步 DOM click → 隐藏 input.click()（手势保留）无缺陷；**关键判定——弹窗尺寸适配走服务器前端（WebView 加载，无需新 APK 即生效），文件选择器在原生层（必须装新 APK）**：真机「尺寸生效但选择器不弹」指向仍在运行旧 APK，且新旧包 versionCode 同为 2、装没装上无法分辨。处置：versionCode 2→3、versionName 0.2.0→0.2.1（设置-应用可核对）；onShowFileChooser 入口 Toast「正在打开文件选择器…」+ Log 诊断（无 Toast=旧包/手势链未达原生层；有 Toast 无选择器=ROM 特例再深查）；launch 兜底补 SecurityException 分支（同投 null 解锁）。**SAF（ACTION_GET_CONTENT）机制上免存储权限**（系统 DocumentsUI，无需 READ_EXTERNAL_STORAGE/READ_MEDIA_*），不加冗余权限申请。
+- **验证**：契约 spec 6 用例（新增 UI 移动化断言）+ 全量 111 套件 1571 用例绿 + lint/typecheck 绿；安卓全套件 testDebugUnitTest BUILD SUCCESSFUL。
+- **坑**：APK 交付版本号必须递增——原生层修复与前端修复同批交付时，前端经服务器先生效会误导「新包已装」的判断。
+
+---
+
+## 2026-09-12（第四批）：移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）mobile-ux-pending-fixes
+
+用户验收两遗留问题的实施批次（根因已在上会话实锤并交接，见 session-handoff 续8；feature_list `mobile-ux-pending-fixes-2026-09-12`，android+frontend 双任务 done）：
+
+1. **Android：WebView 文件选择器（添加种子的 .torrent 入口）**：`WebViewActivity` 此前只设 `webViewClient`，无 `WebChromeClient`——`<input type="file">` 点击被静默忽略。补 `onShowFileChooser:125` + `ActivityResultContracts.StartActivityForResult` launcher（`fileChooserLauncher:72`）：**回调恰好投递一次**（launcher 取出即清空、新请求先作废旧回调投 null、`onDestroy` 补投、无文件管理器 catch `ActivityNotFoundException` 也投 null 解锁后续）。新 `ui/FileChooser.kt` 纯函数：意图恒 `*/*`（`accept=".torrent"` 的扩展名会被 SAF 当 MIME 过滤成空列表，不用 `createIntent`）、`MODE_OPEN_MULTIPLE` 补 `EXTRA_ALLOW_MULTIPLE` 多选、结果解析独立实现（`FileChooserParams.parseResult` 在 JVM 是 not-mocked stub）。`allowContentAccess` 维持 false（只门控页面内 content:// 资源引用，上传读取走 ContentResolver+SAF 临时授权；真机验收复核点，注释写明取舍与回退路径）。
+2. **前端：转移/修改路径弹窗组件内自治 ≤768 适配**：`SetLocationDialog` 根节点 div 包裹根修（el-dialog 升为模板根——此前透传的 custom-class 经 $attrs 落到外层 div，94vw 收窄从未生效）；两弹窗自有 custom-class + 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、body 64vh 内滚；`TransferDialog` 嵌套删除确认 `transfer-delete-confirm` 88vw——append-to-body 脱离组件树故必须非 scoped）+ scoped 块（label-width 110/120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控）。移动页 `torrents.vue` 移除两处透传（m-reuse-dialog 仅余 Tracker操作/全局替换）。
+- **验证**：安卓 `FileChooserTest` 3 用例绿 + 全套件 testDebugUnitTest BUILD SUCCESSFUL；前端 `transfer-set-location-dialogs.spec.ts` 5 用例（custom-class 落 el-dialog 开标签防 div 包裹回退/媒体块关键规则/移动页使用处恰 2）+ 相关 4 套件 73 用例绿；typecheck/lint 绿；全量 **111 套件 / 1570 用例绿**。
+- **构建与部署（提交 047b1ce 后）**：`deploy\build-android.bat` 双变体通过（Strict + LAN 均 BUILD SUCCESSFUL，v2 签名验证过，产物 `android/dist/btdeck-companion-0.1.0-mvp-{strict,lan-cleartext}-debug.apk`）；Docker 双镜像 `build-and-export-images.bat` 已自动部署 unraid（/health/live gitSha=047b1ce 与 HEAD 一致，v1.0.6）。**余真机五项验收**（清单见 session-handoff 续9）。
+- **坑**：①Kotlin KDoc 注释里字面 `` `*/*` `` 的 `*/` 会提前终结块注释（编译报 Syntax error），注释内写 `*&#47;*`；②安卓仓无 Robolectric/mockito——Intent/ClipData 实例化在 JVM 全抛 stub，可测性靠「决策（PickerParams/isSelectionComplete 纯函数）与装配分离」，装配由真机兜底；③前端 node_modules 残缺（.bin 缺失、包 dist 不全）时 `npm install` 增量救不回，须 rm -rf + `npm ci` 全量。
+
+---
+
+## 2026-09-12（第三批）：添加种子跳过校验 + 添加弹窗移动端适配 torrent-add-skip-check-mobile（全绿未提交）
+
+用户验收反馈两项闭环（feature_list `torrent-add-skip-check-mobile-20260912`，单任务 done）：
+
+1. **新添加种子 CheckingDL 根因与修复**：qBittorrent 对保存路径已有数据的种子强制本地校验（CheckingDL），后端 `skip_hash_check→is_skip_checking` 链路本就通，但 `TorrentAddDialog` 硬编码 `skip_hash_check: false`。修复：新增「跳过校验」复选框（**默认关，经用户三选一确认**——勾选把不完整数据当作 100% 完成是数据完整性风险，必须显式 opt-in），透传 `addTorrentsBatch`；提示注明全新下载勿勾、仅 qB 生效（TR `add_args` 无校验跳过参数）；关闭弹窗重置回默认不残留。
+2. **添加弹窗移动端适配**：该弹窗是**自定义 modal 非 el-dialog**——上一批的 `m-reuse-dialog` 宽度覆盖对它无效（移动页死 attr 已移除）。≤768 scoped 媒体块：overlay 顶铆 + `overflow-y:auto` 接管滚动（弹窗 85vh 上限让位）、dialog 全宽 `max-width: calc(100vw-24px) !important` 压制根元素内联 600px、底部双钮 44px 等宽铺满、文件移除钮 36px 触控目标、上传区/文件行紧凑化。
+- **验证**：`torrent-add-dialog.spec.ts` 7 passed（+5：skip 双态透传/关闭重置/≤768 源码契约/复选框接线禁硬编码回流）；typecheck/lint 绿；全量 **110 套件 / 1565 用例绿**；build 绿。
+
+---
+
+## 2026-09-12（第二批）：Tracker批量操作按下载器触发 tracker-op-by-downloader（全绿未提交）
+
+用户跟进反馈闭环（feature_list `tracker-op-by-downloader-20260912`，backend+frontend 双任务 done）：移动端 Tracker操作的「上限 100」改为按下载器触发（方案经三选一确认：后端 by-downloader 端点，前端不再拉种子列表）。
+
+1. **后端**：`tracker.py` 新增 `POST /tracker/addTracker-by-downloader` 与 `/modifyTracker-by-downloader`（`TrackerByDownloaderRequest` 请求体：downloader_id + trackers 分号分隔）。共享执行体 `_apply_tracker_op_by_downloader`：服务端解析该下载器全部种子（torrentInfo dr=0）逐条复用既有 qb/tr helper（客户端连接强制 `app.state.store` 缓存），单条失败不断整体循环；审计改**单条汇总**（add/modify_by_downloader 口径 + SUCCESS/PARTIAL/FAILED，千级种子不逐条刷库，与 reannounce-by-downloader 对齐）。校验链：空 trackers→400 / 下载器行不存在→404 / 无种子→404 / 缓存不可用→500 fail-closed。
+2. **前端弹窗**：`TrackerOperationDialog` 新增可选 `scopeDownloader` prop（`{id,name,total?}`，null=桌面行为零变化）——范围行/标题/提交按钮文案切换，添加/修改提交走 by-downloader 端点，成功提示带成功/失败计数。顺带修模板 `?.`（buble 模板编译器不支持，该组件此前不可被 jest 挂载）。
+3. **移动端**：选下载器后直达弹窗；`openTrackerOperationByDownloader` 仅 getList `limit:1` 轻取 total 作范围计数（与列表分页同源接口；探测失败省略计数、total=0 拦截）。移除前端拉种子列表与 `TRACKER_OPERATION_MAX_TORRENTS=100` 上限路径（源码契约钉死禁回流）。
+- **验证**：后端 `test_tracker_by_downloader_api.py` 8 passed（校验链/qb·tr 分发 int 化/部分失败 PARTIAL/审计 kwargs）+ auth_protection_extended +2 条 401（91 passed）；mypy/flake8/black 绿。前端 `tracker-operation-dialog.spec.ts` 新增 7 用例（常规模式不受劫持/批量文案锚/scope 文案/双提交端点/非 200 不 emit success）、`mobile-torrents.spec.ts` 改造后 57 passed；typecheck/lint/build 绿；全量 **110 套件 / 1560 用例绿**。
+- **存量噪声（非本批引入，已定性）**：① `tests/api/test_health.py` 3 红——dev-source 身份 fail-closed 在**本地脏工作区**下判 `build_identity_invalid`（readiness reasonCodes 多一项），CI 干净检出即绿；② `AdvancedMultiSelect.performance.spec.ts` 间歇性计时抖动（L424 `parseTime < 50ms` 墙钟预算），全量并发下偶发、单独恒绿、组件本批未触碰。
+
+---
+
+## 2026-09-12：移动种子页操作补强 mobile-torrents-actions（全绿未提交）
+
+用户三项验收需求闭环（feature_list `mobile-torrents-actions-20260912`，单任务 done）：
+
+1. **辅种数量**：卡片元信息行补「辅种 N」（auxiliarySeedCount 蛇形/驼峰双读、缺失回退 1，与桌面列 `|| 1` 同口径）；>1 时主题色强调（`m-torrent-aux-hot`）。
+2. **单种转移/修改路径**：卡片操作行新增「转移」（复用桌面 `TransferDialog` 单 torrent 形态，`seedTransferAvailable` = `isCapabilityAvailable('seed_transfer')` fail-closed 门控——android-server 形态隐藏）与「修改路径」（`SetLocationDialog` 的 `torrents=[单行]` 形态）；打开前行数据经 `normalizeTorrent` 补齐 camelCase（normal 模式列表行是后端蛇形原始行）。操作行 flex-wrap 适配五按钮换行。
+3. **快捷操作全局组**：下拉新增四项——添加种子（`TorrentAddDialog`，喂 `downloaderRawList` 原始行）/ Tracker操作 / Tracker汇报 / 全局替换Tracker（`GlobalReplaceTrackerDialog` 自包含）。**Tracker操作与汇报的批量范围经用户三选一确认为「先选下载器再执行」**（移动端无多选）：原生按钮选择器弹窗（≥44px 触控行）；汇报按下载器走 `reannounceByDownloader`、选「全部下载器」走 `reannounceAll`（此前前端零调用的现成端点），确认框明示范围、成功带成功/失败计数；Tracker操作拉取该下载器种子（上限 100——add/modify 走 Query 参数传 ID 列表，过长顶 URL 上限，超限 warning 明示截断）进桌面 `TrackerOperationDialog` 批量弹窗。
+
+- **顺带根修**：下载器选项映射读 `d.id` 而后端 `/downloader/getList`（DownloaderSimpleVO）实际只返回 `downloader_id`/`nickname`——旧映射筛选下拉 value 恒 undefined；改双字段兼容（`downloader_id ?? d.id`）并保留原始行喂添加种子弹窗。
+- **弹窗适配**：五桌面弹窗按需懒加载（路由包体不膨胀）；`custom-class="m-reuse-dialog"` + 非 scoped 样式块 ≤768 收窄（94vw !important 覆盖内联 width、`margin-top 5vh`、弹窗体 `max-height 64vh` 内滚——Tracker 操作的种子标签长列表可滚）。
+- **验证**：`mobile-torrents.spec.ts` 57 passed（+15：辅种数量口径/hot、转移能力 supported+fail-closed、弹窗行规范化、success 统一刷新、添加种子空下载器拦截、Tracker操作拉取参数/截断明示/空态、汇报按下载器/全局/取消/计数文案、下载器映射回归锚、源码契约 8 断言）；typecheck、`lint --no-fix`（含 contract:check、vuex-action）通过。坑位：eslint member-delimiter-style multiline 要求 'none'（成员换行无分隔符，逗号分号都报错）；测试调 `onPickerDownloader('')` 须先经 `handleQuickActionCommand('tracker-reannounce')` 置 pickerMode（默认 'tracker' 会走拉种子分支）。
+
+---
+
+## 2026-09-10（第三批）：推送 GitHub 走完整 CI——修远端 19 个存量红（回收站鉴权覆盖漂移），regression 首次全绿
+
+- **远端状态发现**：origin/dev 领先一个提交（1585638 移动端通知一键已读，2026-09-08）；`Full-stack regression` 自 2026-09-07（2192bf3）起连续红——backend job 19 failed（与本地一致）。
+- **rebase**：本地两提交变基到 1585638 上（progress/session-handoff/roadmap README/feature_list 四冲突，双方条目并存；JSON/标记校验通过），变基后前端全量 1517 passed + typecheck 绿。
+- **19 个远端 CI 失败根修（294a7e8）**：`test_recycle_bin_api.py`×16 + `test_service_close_endpoint.py`×3 全部 401。根因：回收站路由挂了路由级 `capability_dependency("level3_recycle")`（内部 `Depends(require_authenticated_user)`），而端点参数仍是 `Depends(get_current_user)`——测试只覆盖了后者，路由守卫走真实认证 401。修复：两文件 fixture 双符号覆盖（`get_current_user` + `require_authenticated_user`），21/21 全绿。注意：**不能只覆盖 require_authenticated_user**（端点参数会落到 HTTPBearer 的"Could not validate credentials"）。
+- **本地 8 个 build 身份失败辨析**：`release/build-info.json`（gitignore）为 09-03 本地打包 `--allow-dirty` 残留（dirty=true），污染 dev-source 身份与 readiness；GitHub 干净 checkout 无此文件——CI 不受影响，本地如遇同批失败先查该文件。
+- **CI 终态**：run 34498175790（294a7e84）`Backend / pytest` + `Frontend / type + Jest + build` 双 job **success**（~9 分钟）——regression workflow 自 09-07 断红后首次全绿。
+
+---
+
+## 2026-09-10（第二批）：存量测试债清偿——能力矩阵 fail-closed 致 5 套件 spec 漂移（前端全量首次 1514 全绿）
+
+上一批受控 stash 基线对照确认的 5 个 HEAD 即红套件（12 failed）全部归因并清偿，根因两类：
+
+1. **能力矩阵 fail-closed 漂移（4 套件）**：主机能力矩阵批次给等级3（回收站）加了能力门控（`level3_recycle`），矩阵未加载时 fail-closed（unknown=不可用）——`DeleteLevelDialog.levelOptions` 裁掉等级3、两视图删除下拉 `v-if="level3Available"` 少一项、守卫 `enforceRouteCapability` 把 `/recycle-bin`（meta.requiredCapability）重定向仪表盘且重定向目标导航在途（断言读到中间态 /404）。相关 spec 当时未同步。修复：各 spec beforeEach 注入 `setPlatformCapabilityCacheForTesting`（desktop+supported）+ afterEach `resetPlatformCapabilityCache`。附带消解 Node22 崩溃链：`at(3)` 抛错 → 预置 `Promise.reject('cancel')` 无人消费 → unhandled-rejection 杀进程。
+2. **request mock 缺 default（1 套件）**：permission-force-change-deadlock 对 `@/utils/request` 的 mock 只给 trySilentRefresh，守卫 `loadPlatformCapabilities` 内部调 default 导出直接 TypeError 炸导航。修复：整体桩掉 `@/api/platform-capabilities`（本 spec 只回归强制改密拦截），套件耗时 46s→7s。
+
+验证：前端全量 **107 套件 / 1514 用例首次全绿**（此前 12 failed）；lint 绿。诊断方法沉淀：NODE_OPTIONS=--unhandled-rejections=warn 暴露被进程崩溃吞掉的真实断言；element-ui Message.warning mock 捕获守卫分支文案定位 redirect 源。
+
+---
+
+## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全绿未提交）
+
+用户验收反馈 7 项手机端问题全部闭环；计划经独立子代理对抗性审查（APPROVE_WITH_AMENDMENTS，5 MAJOR/6 MINOR 全部吸收：Tracker 汇报入口取舍、e2e 纳入验证、duplicates 模式分发、弹层内联宽度覆盖手段、安卓单测可测性先行）。详见 PLANS/mobile-ux-fixes-2026-09.md 与 feature_list `mobile-ux-fixes-2026-09`（6 任务全 done）。
+
+1. **伴侣「版本未知·服务存活检查失败」**：根因实锤——`frontend/nginx.conf:138` `location /health` 前缀匹配静态返回 `”healthy\n”` 吞掉 `/health/live`，安卓 HealthClient JSON 解析 null 恰好渲染该文案（无 HTTP 码后缀与症状吻合）。修复：nginx 改精确匹配 + `/health/` 代理（compose 健康检查不受影响）；双端客户端 `probeWithFallback` 回退 `/api/v1` 免认证别名（旧部署不更新 nginx 也修好）；安卓新增可注入 `HttpCall` 探测点写 JVM 单测（不引 mockwebserver）。
+2. **确认弹框手机适配**：全局 `@media≤768` 一处覆盖全部 `$confirm`（92vw !important 胜 Element 主题类规则——420px 来自类规则非内联，审查 m1 修正了计划的原错误认知）。
+3. **高负载伴侣失败（红色 toast）**：`request.ts` 幂等 GET 瞬态静默重试一次（网络错误/502/503/504；超时与写操作不重试；落拦截器内首次失败不弹 toast）。如实定位为缓解措施，负载根源另行治理。
+4. **种子页提速**：tracker-domains 后端 60s TTL 缓存 + 前端懒加载（首展筛选才拉）；`getList` 新增 `with_trackers`（移动列表瘦身，详情页回查补齐）；卡片 `content-visibility:auto`。
+5. **移动种子页快捷操作**：查找重复任务（skip/limit→page/pageSize 换算）+ 辅种/错误单种排查 + 快捷删重弹窗（手机适配）；reload 按模式分发对齐桌面模式。
+6. **桌面版入口全移除**（用户确认取舍：「Tracker 汇报/测试」自此移动端无导航入口）；「见桌面版」文案 6 处改「暂未在移动端提供」。
+7. **下载器新增/编辑**：统一跳设置页（`/m/downloader/settings/:id|new`，DownloaderSettingsDialog 整页全页签）；≤780 页签改顶部横向带文字；旧 DownloaderDialog.vue 删除。
+
+验证：后端 mypy/black/flake8 绿 + 相关 108 passed；前端 lint/typecheck/build 绿 + 全量 1495 passed；安卓 JVM 单测全绿（新增回退 5 例）；`./init.sh` 过。**存量测试债**：permission-guard 等五套件 HEAD 即红（受控 stash 基线对照批次前后 12 failed/88 passed 完全一致，非本批引入；mobile-delete-level-dialog 有进程级 unhandled rejection）。坑位（Kotlin 嵌套注释、MSYS /tmp 假基线、源码契约字面量断言、toast 节流跨用例、能力 fail-closed 断言）详见 session-handoff。
+
+---
+
+## 2026-09-08：移动端通知一键已读
+
+- **实现**：`frontend/src/views/mobile/notifications.vue` 在通知列表顶部新增未读摘要和“全部已读”按钮；复用 `markAllAsRead()` / `PUT /notifications/read-all`，成功后就地更新当前已加载通知并重新同步 `NotificationModule` 未读角标。
+- **交互**：按钮请求期间显示 loading 并阻止重复提交；非 200/网络失败提示错误且保留未读状态；列表中暂无未读时隐藏操作栏；按钮触控高度 44px。
+- **并发保护**：用 `markAllVersion` 标记操作代际，列表请求在“全部已读”期间返回旧快照时保留本地已读状态，避免轮询/分页响应回写旧未读标识。
+- **回归**：`frontend/tests/unit/mobile-notifications.spec.ts` 新增成功链路、重复提交、失败重试与并发旧响应覆盖，定向测试 **23 passed**；`npm run typecheck`、`npm run lint -- --no-fix`（含 contract:check、Vue lint、Vuex action lint）通过。
+- **未提交**：本批代码与文档变更尚未执行 Git commit。
+
+---
+
 ## 2026-09-06（第六批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（本轮问题关闭）
 
 ### 背景与修复
@@ -7477,3 +7592,201 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **BtDeck 侧引用回填**：PLANS §2/§3/§6（发布标记完成）、roadmap 根 README（功能域行+本次新增）、feature_list .3 evidence 追记（files 路径已迁独立仓库）、本文件与 session-handoff、记忆。
 - **市场安装方式**：`PLUGIN_MARKET` 加入 `https://github.com/strainhzj/MoviePilot-Plugins-BtDeck/`（或设置→插件市场）；本地联调仍可挂载仓库目录走 PLUGIN_LOCAL_REPO_PATHS。
 - BtDeck 仓库内 `moviepilot-plugin/` 目录已移除（该目录从未提交，git 状态无残留）；未执行 BtDeck 侧任何 git 提交。
+
+## 2026-09-10：重新构建应用安装包（全产线 dev 模式）
+
+- **输入**：用户要求重新构建 app 安装包。代码无变更，目的为把 09-07/09-09 批次的修复（WAL/RSS to_thread 化、镜像身份注入加固、容器时区 UTC）烧进最新制品。
+- **执行**：根目录 `build-packages.bat`（默认链 = Windows EXE + Android strict/LAN 双 APK），全链退出码 0。
+- **Windows**：前端 npm ci+build → 发布身份 `1.0.6 @ 2192bf3ec2dc`（dev 模式 --allow-dirty，data/ 未跟踪目录不阻塞）→ PyInstaller → verify-package 全项 **[PASS]** → `dist/btdeck.exe`（50.2MB，12:53 产出，替换 09-08 旧制品）。ISCC 未安装于本机（全盘搜索无 ISCC.exe），Inno Setup 安装器按 dev 模式历史惯例跳过——本机产线以 btdeck.exe 为最终 Windows 制品；如需 Setup 安装器须先装 Inno Setup 6 并加入 PATH。
+- **Android**：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`（103.1MB）与 `btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`（89.2MB）均 12:54 产出，构建日志输出 LAN 变体 SHA256=77b1cbb6...a32de。
+- **Linux DEB/RPM 与 Docker 镜像未在本批重建**（`build-linux.sh`/`build-images.sh` 独立产线；dist 内 v1.0.6 Linux 包仍为 08-30 旧制品）。
+- 未执行 Git 提交。
+
+## 2026-09-11：品牌图标补齐 Android/DEB/RPM 打包（feature_list `packaging-brand-icons-2026-09-11`）
+
+- **输入**：用户反馈"手机端与其它打包没有添加项目的 logo"。盘点确认：Android manifest 用系统默认机器人图标（sym_def_app_icon）、通知用系统 stat_notify_sync_noanim；DEB/RPM fpm staging 无图标无 .desktop；btdeck.spec 挂 icon=None TODO。Windows EXE 已有 favicon.ico（PyInstaller + Inno Setup 双挂），Docker 无图标概念（Web UI 品牌资产随前端 dist 打入）——两者无需改动。
+- **风格决策（用户确认）**：品牌绿 #059669 底 + 白色单色 btdeck 标志（另一备选为白底原双色标志）。
+- **Android**：mipmap 全密度传统图标（48-192px 圆角方/圆双形态）+ mipmap-anydpi-v26 自适应图标（绿背景 shape + 白标志矢量前景，笔画端点最远 28.9dp < 33dp 安全区；monochrome 复用前景支持 Android 13+ 主题化图标）+ 24dp 纯白通知小图标 ic_stat_btdeck；manifest 改引 @mipmap/ic_launcher（补 roundIcon），ServerService 通知改 R.drawable.ic_stat_btdeck。
+- **DEB/RPM**：新增 deploy/btdeck.desktop（xdg-open 打开 Web 控制台）+ deploy/icons/（btdeck.svg scalable + hicolor 48/64/128/256 PNG），build-linux.sh 两条 fpm 源列表 etc opt → etc opt usr；图标随包按文件归属自动清理。btdeck.spec icon TODO 消化为注释（Linux ELF 无内嵌图标约定）。
+- **生成器入库**：tools/generate_brand_icons.py 参数化复刻 btdeck-mark.svg 几何（D 形轨道以参数化折线+圆帽绘制保证与 SVG stroke 居中语义一致，8x 超采样）；产物预生成入库，构建环境零新依赖（Pillow 仅重生成时需要）。
+- **验证**：gradle :app:processDebugResources + :app:compileDebugKotlin BUILD SUCCESSFUL（aapt2 严格校验矢量 pathData/图标引用/R 引用）；merged_manifest 实证 icon/roundIcon 已换；PNG 像素校验 5 抽样全过（绿底占比、标志居中<3% 偏差、圆角外透明、笔画存在）；bash -n + 7 XML/SVG 良构校验绿。DEB/RPM 制品级验证待下次 Linux 构建（CI G6/G10 矩阵复跑）。
+- **未验证面（诚实记录）**：图标视觉效果未经真人目检（像素级断言代替）；DEB/RPM 装 .desktop 后桌面环境实际渲染未实测。
+- 未执行 Git 提交。
+
+## 2026-09-11（续）：Android 原生过渡页品牌化——Material 组件 + 翡翠绿主题（feature_list `android-native-ui-branding-2026-09-11`）
+
+- **输入**：用户反馈"手机 app 端设置伴侣模式/主模式、填写服务器地址等界面用的是系统原生 UI，希望换成符合项目风格的 UI"。范围经确认取"全量 Material 改造"。
+- **现状盘点**：原生三屏（WizardActivity 模式二选一、ServerListActivity 列表 + showAddDialog 表单、本机服务系列对话框）全是系统默认样式——程序化 LinearLayout 拼的 AlertDialog、无 colors.xml、主题 colorPrimary 还是 holo_blue，与前端翡翠绿 #059669 完全脱节。
+- **实现**：① `values/colors.xml` 新建，token 与 `frontend/src/styles/theme-variables.scss` emerald 主题同源（主色 #059669/hover/light/lightest、语义色、文本灰阶、背景、边框）；② `themes.xml`（values + values-v35 同步）主题基底 DayNight→Light（前端暗色主题预留未启用，自绘浅色值在系统暗色下会断裂）、MaterialAlertDialog 主题覆盖、colorAccent 同步（WebViewActivity 未改代码的 appcompat 对话框免费获得翡翠绿按钮）；③ 新增矢量：ic_brand_mark（btdeck 标志 64 视口同 ic_launcher_foreground 几何）、ic_mode_companion（云）、ic_mode_local（手机）、圆形衬底 ×2；④ 向导页品牌圆标头部 + 两张图标化模式卡片（16dp 圆角/描边/ripple/翡翠绿图标衬底）；⑤ 列表行卡片化 + 健康状态语义色圆点与同色文案 + 底部 MaterialButton；⑥ `dialog_add_server.xml`：4× OutlinedBox TextInputLayout（浮动标签/8dp 圆角/密码可见切换）+ 2× CheckBox，校验错误改走 TextInputLayout（文案零变更，输入即清错）；⑦ 本机服务确认/运行态共用 `dialog_local_config.xml`、进度 `dialog_progress.xml`（CircularProgressIndicator），全部 AlertDialog.Builder → MaterialAlertDialogBuilder；LAN 开关初始态仍从 LocalServerState.lanEnabled 恢复。
+- **兼容红线**：Espresso 依赖全保——server_list 仍是 ListView(AdapterView)、row_health 等 ID 与文案（未测试/就绪/未就绪/不可达/证书错误）不变、菜单/按钮字符串不变。
+- **验证**：gradle `:app:processDebugResources`/`:app:compileDebugKotlin`/`:app:testDebugUnitTest`（28 例）/`:app:assembleDebug`/`:app:compileDebugAndroidTestKotlin` 全绿。AVD btdeck-a35 无头模拟器 10 屏视觉冒烟全过：向导、列表、添加表单（明文确认联动 + 空名校验错误）、列表卡片、本机服务确认（LAN 勾选出威胁模型）、启动进度、服务就绪自动进 WebView 加载本机前端（v1.0.6 · 服务就绪）——原生壳与 WebView 内前端同呈翡翠绿。截图存 `android/build/ui-smoke/`（gitignored）。
+- **坑**：① XML 注释不能含 `--`（`--color-primary-lightest` 触发 aapt2 解析失败）；② 带窗口 `-gpu auto` 模拟器在本机挂死 offline>10 分钟，无头 swiftshader_indirect 25-35 秒起（已记入 desktop-testing.md 已知坑 #9）；③ uiautomator dump 后错误提示展开会使对话框内容位移，坐标驱动要每步重新 dump。
+- 未执行 Git 提交。
+
+## 2026-09-11：重建应用安装包（含 edd69b2 Android 品牌化批次）
+
+- **输入**：用户要求再次重建。自 09-10 构建后新增两笔功能提交：e5f2ec5（品牌图标补齐 Android/DEB/RPM 产线）、edd69b2（Android 原生过渡页翡翠绿品牌化，android/ 33 文件 +714/-185）。`build-packages.bat` 默认链退出码 0。
+- **Windows**：`dist/btdeck.exe`（50.2MB，20:46）——身份锚定 **1.0.6 @ edd69b28d5a8**，verify-package 全项 [PASS]。ISCC 仍未安装，Inno Setup 安装器照例跳过。
+- **Android 双 APK 均为 edd69b2 内容（实证）**：LAN APK 20:48 新鲜构建（assembleDebug 非 UP-TO-DATE，哈希 9c70e7a9...4f026 与 gradle 输出一致）；strict APK mtime 停在当日 12:04——RCA：12:04 那次构建时 edd69b2 改动已在工作区（18:11 才提交），gradle 按文件内容判 UP-TO-DATE + copy /Y 同内容不重写时间戳；aapt2 dump resources 实证 strict APK 含 27 处 edd69b2 新增品牌资源（btdeck_primary_deep/btdeck_success 等），内容与 HEAD 等价，非陈旧制品。
+- **产线观察（记录勿误判）**：gradle 输出目录 `app/build/outputs/apk/debug/app-debug.apk` 被两个变体先后复用（strict 先、LAN 后覆盖），事后核验单个变体须对 dist 副本而非 build 目录；copy /Y 源目标同内容时目标 mtime 不更新，判定制品新鲜度须"哈希/内容"而非时间戳。
+- 未执行 Git 提交。
+
+## 2026-09-11（续）：断速种子快照振荡双修复——补查退避缓存填充 + 新键滞回宽限（feature_list `speed-snapshot-flap-suppression-2026-09-11`）
+
+- **输入**：用户观察桌面端种子列表页放置半小时触发 65 次 `/torrents/getList` 且随后停止，要求定位原因并修复。排查路径：XHR 调用栈挂桩（`$vm0` 不可用改 `__vue__` 递归找组件）→ 12/12 栈全走 `runtimeListMembership.refresh` 新键路径且严格每 5s 一次 → 挂桩 `observe` 打印新键确认为**同一颗断续下载的种子**。
+- **根因链**：后端 active-torrents 的补查退避（`_SUPPLEMENT_RETRY_INTERVAL=2s`）让断速种子在退避期轮次从快照缺席（`get_disappeared` 直接跳过、不补查）→ 前端完整快照轮基线被替换、种子出基线 → 回归轮不在基线被误判"新出现的未展示键" → 触发 getList；该种子在分页/筛选外恒为未展示，循环不止。加长 TTL 无效：TTL 管的是"放弃补查时限"，振荡来自退避缺席。
+- **修复 A（backend `torrent_speed.py`）**：`_TTLQueue` 条目新增 `last_supplement` 缓存；`get_disappeared` 改返回 `(待实际补查分组, 退避期缓存填充条目)` 二元组；端点补查成功后 `update_supplement_cache()` 写回（只命中更新不主动清除——补查失败保留旧缓存撑快照连续，删除残留由 TTL 60s 过期兜底）；`put()`（速度恢复）清缓存回归实时数据。
+- **修复 B（frontend `torrentBatch.ts`）**：`RuntimeListMembershipTracker` 新键判定加 `REAPPEAR_GRACE_MS=30s` 滞回——判定读刷新前旧时间戳，键掉出快照后宽限内回归判为抖动不触发，超宽限回归才重判新键；`lastSeenAt` 仅完整快照轮回收超宽限条目（206 部分快照缺席不当真实离开）。
+- **测试**：后端适配 get_disappeared 二元组签名（regression/active_only_filter 存量用例）+ 新增 2 例（退避期缓存填充、缓存写回安全跳过），定向 112 passed；mypy/black/flake8 绿。前端新增 2 例（宽限内抖动不触发、超 30s 回归触发），torrent-batch 127 passed；npm run lint 绿。
+- **roadmap 同步**：根 README 增量表加 2026-09-11 行；backend/api README torrent-speed 职责补缓存填充；frontend/views README torrentBatch 行号 L351→L358/L405→L432/L444→L471/L596→L623 实测更新 + 滞回语义；test-coverage 补职责描述。
+- 未执行 Git 提交。
+
+## 2026-09-11（续2）：build-and-export-images.bat 双击报"命令语法不正确"根修——工作树 LF 行尾回归 + UTF-8 中文注释 GBK 乱码执行（gitignore 外发现）
+
+- **输入**：用户双击 `build-and-export-images.bat` 报 `[INFO] Proxy env cleared...` 后紧跟 `命令语法不正确。` 即死。
+- **根因 A（致命）**：根目录该 bat 工作树副本为 **LF-only**（9-07 23:28 被编辑器/工具直写落盘，比最后提交 a943021 早 17 分钟；git 对纯行尾漂移视为 clean 故不报警），而 `.gitattributes` 早已声明 `*.bat text eol=crlf`。cmd 对 LF-only 批处理的 goto/call 标签定位存在读位漂移，解析从行中间开始 → `docker info >nul 2>nul` 被撕成两段 → 语法错误整体终止。同病还有 `build-packages.bat`、`deploy/build-android.bat`（均 w/lf）。修复 = 删文件后 `git checkout --` 重新检出（按 attr smudge 回 CRLF），三文件 `git ls-files --eol` 现全 w/crlf；A/B 行为实验（同内容 414 行截断件 LF vs CRLF）实证 LF 件精确复现用户死点、CRLF 件健康跑通。
+- **根因 B（非致命）**：bat 内 4 行中文 rem 注释为 UTF-8 字节，GBK 控制台下被误解码成乱码命令执行（`'…' 不是内部或外部命令` ×2），有吞换行合并破坏后续命令的风险。修复 = 注释转 ASCII 英文（保留原语义：GBK 控制台不加 -X utf8 的原因、OCI 身份走临时 env 文件防 cmd /c 撕引号），文件现全 ASCII。
+- **附带修复**：镜像失败特征表（findstr）补 apt 实测措辞 `Failed to fetch`/`Connection failed`——此前 aliyun trixie 404 判 non-network 直接终止，现可正确触发华为/官方源兜底（网络劣化日实测：6min 仅 492kB、CDN 404）。
+- **验证**：修复后全量实跑：proxy 清理 → 镜像探测 profile 2 (HTTP 200) → 身份生成 PASS → `[OK] Release identity: v1.0.6` → 进入 docker build；乱码命令错误 0（修复前 2）。二轮验证被身份严格门禁按设计拦截（本文件未提交变更 → dirty fail-closed），属预期。
+- **遗留（未修，后续项）**：`backend/start_backend.bat`(11 行)/`deploy/build-windows.bat`(6 行)/`deploy/start.bat`(1 行) 同为 UTF-8 中文注释 + CRLF，同属 GBK 控制台乱码隐患类；python ≥3.15 PEP 686 默认 UTF-8 输出到 GBK 控制台为显示层乱码（仅观感）。可在 init.sh 加 `git ls-files --eol -- '*.bat' '*.cmd'` 无 w/lf 守卫防回归。
+- 未执行 Git 提交（含 bat 修复 3 处内容变更待用户提交，否则下次构建被身份门禁 dirty 拦截）。
+
+## 2026-09-11（续3）：身份门禁 dirty 拦截收口——澄清 bat 并非 git 忽略 + 提交修复清障
+
+- **输入**：用户实跑构建被身份门禁拦截（`M build-and-export-images.bat; M progress.md`），并以为 bat 是 git 忽略文件。核实：bat **被 git 跟踪**（3 次提交历史，.gitignore 第 93 行仅注释提及；真正忽略的是 .btdeck-deploy-credentials.bat），FAIL 里的 M 即"被跟踪且已修改"；生成器脏检查只过滤发布目录/会话产物/构建输出噪音（generate_build_info.py:286），progress.md 为被跟踪会话日志必然计入——发布必须干净检出，属设计行为。
+- **处置**：按门禁指引提交两文件（bat 5 处修复 diff 复核无误：4 行中文注释转 ASCII + findstr 补 `Failed to fetch`/`Connection failed`），data/（未跟踪）不扰动——生成器对未跟踪 data/ 不计 dirty（续 1 首轮实跑已证）。
+
+## 2026-09-12：下载器设置页移动端适配优化（feature_list `downloader-settings-mobile-polish-2026-09-12`）
+
+- **输入**：用户反馈"下载器设置页面的移动端适配优化不足，页面难以查看并且排布对移动端不友好"（mobile-ux-fixes.7 统一 DownloaderSettingsDialog 整页后的视觉打磨批次，纯 CSS 无逻辑变更）。
+- **实测取证（375×812，demo 模式 dev server + 浏览器视口）**：①顶部页签导航 388px 超容器 334px 被裁切不可滑；②弹窗 scrollWidth 464 > clientWidth 374 横向溢出；③速度设置双列挤压、限速规则操作按钮（上移/下移/开关/删除）同行放不下；④标签管理三个内嵌 el-dialog 固定 500px/400px 超屏（Element width prop 走内联 style，需 custom-class + 媒体查询 !important 覆盖）；⑤底栏 模板/取消/保存 三按钮同行拥挤。
+- **外壳（DownloaderSettingsDialog ≤780 媒体块）**：页签 nav-scroll 改 overflow-x:auto + 触控惯性 + 隐藏滚动条 + 右缘渐隐 mask 提示可滑、nav 折 flex/nowrap；弹窗 max-width:100vw + overflow-x:hidden 收口；底栏纵排全宽按钮（flex:1 + min-height:40px，`.dialog-footer .workspace-footer-button` 高特异性胜 520 图标按钮规则）+ 底部安全区 padding；基本表单 .el-col width:100% 折行断点 520→780（与 tabsPosition matchMedia 断点一致）。
+- **速度设置页签（≤768）**：限速表单折单列；速度输入组 flex-wrap（单位下拉定宽 96px、数字输入 flex 撑满）；规则头部/操作组换行、按钮 min-height:34px；规则内容（起止时间）折单列。
+- **标签管理页签**：三个弹窗（新增/编辑 500px、删除确认 400px）加 custom-class="tag-mgmt-dialog" + **非 scoped** 追加样式块（弹窗挂 body，scoped 选择器够不到）≤768 宽 92%/max-width:500px、label 顶置、底栏按钮全宽 40px；640 媒体类型页签换行 + 标签网格折单列。
+- **路径管理两组件**：DownloaderPathManagement 弹窗同 custom-class 方案（path-mgmt-dialog）；两组件 el-table ≤780 cell 12px/1.5 行高、mini 按钮加高 30px 保触控。
+- **视觉复验（截图逐项确认）**：基本信息单列+底栏两行全宽 ✓；速度页签含一条规则的完整卡片（时间选择器/星期换行/输入组）✓；标签页签单列网格+类型筛选 ✓；新增标签弹窗实测 left=15/width=345（375×92% 恰好）居中 ✓；顶部页签横滑可用、无可见裁切 ✓。
+- **门禁**：6 组件 eslint 绿；typecheck 绿；downloader-settings/mobile-downloader-settings/downloader-control-room-ui 三套件 36 用例全绿（含源码契约断言）；npm run build 成功。
+- **坑**：①Element el-dialog 的 width prop 是内联 style，媒体查询要 custom-class + !important 才能赢；且弹窗挂 body 下 scoped 样式不生效，必须非 scoped 块。②页面里 3 个同 custom-class 弹窗（未开的 display:none 宽 0），getBoundingClientRect 取 visible 那个才作数。③弹窗滚动容器是 .tab-content 不是 .el-dialog__body。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续）：桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（feature_list `mobile-desktop-mode-escape-2026-09-12`）
+
+- **输入**：用户反馈"当前桌面 web 端打开移动端页面后无法回到桌面端的页面"。
+- **根因（mobile-ux-fixes.5 的回归）**：桌面侧栏「📱移动版」入口 `switchToMobile()` 写显式偏好 `btdeck_ui_mode=mobile`；ui-mode 解析**显式偏好优先于视口**（三原则之 2），守卫据此把所有桌面顶层页重定向到 /m/*；而上一批按用户决策移除了移动布局全部桌面版入口——偏好再无写回 desktop 的路径，桌面 web 用户单向锁死。ui-mode.ts 第 3 条原则（移动版提供切回桌面出口，不自锁）被破坏，且布局头部注释"≥768px 视口自动进桌面版"本就与解析规则不符（偏好 mobile 时不会自动回），一并更正。
+- **修复（宽视口门控出口，手机窄屏仍不渲染——保住「app 不显示桌面版」决策）**：
+  - 新建 `views/mobile/mixins/wide-viewport.ts`（class mixin，惯例同 PullToRefresh）：matchMedia(min-width:768px) 初值 + change 监听（缩窗即时隐藏/扩窗即时出现），matchMedia 不可用兜底 false，beforeDestroy 解绑；
+  - `layout/mobile/index.vue` 顶栏右侧条件渲染「桌面版」胶囊按钮 → 写 desktop 偏好 + push /dashboard（与桌面 switchToMobile 对称的逆操作）；
+  - `views/mobile/login.vue` 卡片下条件渲染「使用桌面版登录」文字链 → 写偏好 + replace /login（登出态锁死的同款解锁）。
+- **验证**：mobile-shell.spec 36 用例全绿（原「全部移除」用例改写为"窄视口不渲染"契约；新增宽视口渲染/点击写偏好跳 /dashboard/销毁解绑 2 例）；Playwright 三场景实测：①偏好 mobile+1280px 锁死态→出口可见→点击→/#/dashboard+偏好变 desktop+桌面壳渲染；②375px 窄视口出口 count=0；③宽视口缩窗到 500px 出口即时隐藏。前端全量 107 套件 1521 用例全绿；lint/typecheck/build 绿。
+- **e2e**：login.spec.ts 补宽视口回归守护用例（addInitScript 预置偏好 mobile 复现锁死前置；注意 demo 模式自动初始化会话会绕过登录页，该用例属 CI 真后端语境）。
+- **坑**：①jest/jsdom 无 window.matchMedia（实测 undefined）——组件须 typeof 守卫，spec 注入 Object.defineProperty 桩 + finally delete 防跨用例污染；mounted 同步改状态后断言 DOM 需先 nextTick。②playwright 设备描述符工程（iPhone 12）下 setViewportSize 可覆盖视口，但干净上下文 + 宽视口会走 auto→桌面分流，测移动页必须先预置偏好。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续2）：下载器设置与快捷删重三项跟进修复（feature_list `mobile-ux-followups-2026-09-12`）
+
+- **输入**：用户验收三项：①快捷删重弹窗预览应在"完成待检测+保留下载器选择"后事件触发，确认删除后应关闭弹窗（移动/桌面一致）；②移动端点设置进设置页无数据；③新增/设置下载器页顶部页签图标被截断，改纯文字。
+- **修复①（QuickDeleteDuplicatesDialog）**：删手动「预览重复」按钮，配置区加自动预览提示；@Watch detect/keep（deep）→ `scheduleAutoPreview`（250ms 防抖合并联动剪裁引发的连续变更；canPreview 不满足时清过期预览，避免旧结果误导）；`fetchPreview` 加 `previewSeq` 序号丢弃过期响应（选择再变时防旧结果覆盖新选择）。`handleDelete` 成功路径（任务受理/无可删项）均 `handleClose()`——dialogVisible=false + emit close，后台轮询与 toast 结果链路不中断。
+- **修复②根因（移动设置页无数据）**：整页复用形态 `/m/downloader/settings/:id` 下弹窗**创建即 visible=true**，`@Watch('visible')` 不为初始值触发 → `initDialog()` 从未执行 → 表单空白（列表匹配/路由参数均无问题）。修复：`mounted()` 开头 `if (this.visible) void this.initDialog()`；桌面 visible=false 挂载不受影响。**连带发现**：此前 09-12 打磨批次的 demo 截图里"端口 8080/qBittorrent"实为默认值而非回填数据——该 bug 在打磨批次已存在，视觉复验时被默认值掩盖。
+- **修复③**：≤780 媒体块 `.workspace-tab-label` 隐藏 `__icon` 图标盒与 `__copy` 副标题（small），顶部页签纯文字单行不再截断；桌面左侧页签（图标+标题+副标题）不变。
+- **验证**：quick-delete spec 6 用例（+4 新增：自动触发/未完成不触发+失效清预览/删除后关闭/源码契约）；新增 `downloader-settings-dialog-init.spec.ts` 3 用例源码契约（**该 SFC 模板含 `?.`，jest buble 模板编译器解析不了无法真挂载**——沿用 downloader-control-room-ui 源码契约模式，行为由浏览器实测兜底）；全量 108 套件 1528 用例全绿；lint/typecheck/build 绿。浏览器实测（375×812 demo）：设置页名称回填「实验室节点 A」、页签图标/副标题 computed display 全 none、删重弹窗无手动按钮且提示可见。
+- **坑**：①Vue watcher 不为初始 prop 值触发——"以固定 true 创建 + 依赖 watch 初始化"的复用形态必踩，挂载补判；②测量 display:none 元素勿用 querySelectorAll 计数（仍在 DOM），须查 computed style；③移动种子页快捷下拉触发按钮文案是「快捷」非「快捷操作」，playwright 定位别按想象写。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12：断速振荡双修复回归保护加固（speed-snapshot-flap-suppression 续）
+
+- **输入**：用户要求为 6dd0ae0 双修复补足回归测试保护。
+- **后端 +7**：_TTLQueue 性质用例 5（缓存填充不受 `_MAX_SUPPLEMENT_COUNT` 查询配额限制——配额只约束下载器实际查询、完成 remove 不复活缓存、TTL 过期即使有缓存也不填充、active_keys 命中短路防主体+缓存双条目、填充条目为缓存拷贝外部篡改不污染）+ 端点闭环 2（`TestBackoffCacheFillOscillation`：断速种子速度归零→补查 1 次→退避期连续 2 轮零补查查询且快照持续在场"不查但在场"；速度恢复轮弃缓存回归主体实时数据）。端点 mock 复用既有 `torrents_info.side_effect` 按 kwargs 分流主体（status_filter）/补查（hashes）模式。
+- **前端 +5**：滞回性质用例 4（恰 30_000ms 边界 >= 语义、206 部分快照在场同样刷新 seenAt 计入滞回、lastSeenAt 回收不误伤持续在场键、rebaseline 刷新时间戳防刷新后快速掉出回归重复触发）+ 振荡循环模拟 1（秒级在场/缺席交替 8 轮浓缩用户实测场景全程零触发、超宽限回归允许一次合法触发；首版时间轴累计超 30s 触发误红，改密集间隔后正确——写测试时交替间隔必须小于宽限，否则是合法的"长时间离开后回归"）。
+- **坑**：qB `stalledDL` 状态在 `_supplement_qb_sync` 经 `_normalize_runtime_state` 归一为 `downloading`，端点断言须用归一后值。
+- **变异验证 3/3 检出**：①退避分支不收集 cached_fills→4 红；②put 不清缓存→2 红；③前端滞回判定回退为无条件触发→6 红。还原后生产代码与 6dd0ae0 逐字节一致（git diff 空，仅行尾 touch 已 checkout 还原）。
+- **验证**：后端三文件 119 passed（reformat 后 regression+endpoint 92 复跑绿）+ flake8 + black；前端 torrent-batch 132 passed + lint 绿。
+- 工作区另有非本会话的 android/demo/downloader 改动，未触碰。
+- 未执行 Git 提交。
+
+## 2026-09-12（续3）：Android 品牌化批次回归测试补强（android-native-ui-branding 测试保护）
+
+- **输入**：用户要求为本次 UI 品牌化修改添加充足的回归测试保护。
+- **JVM 新增 7 例**（`:app:testDebugUnitTest` 44/44 全绿）：① `HealthUiTest`（3 例）——健康文案与语义色映射从 ServerListActivity 抽出为纯逻辑 `ui/HealthUi.kt`（Espresso 依赖的五条文案 + 灰/绿/橙/红四组语义色互异断言）；② `BrandThemeSyncTest`（4 例）——直读资源文件静态断言：colors.xml token 值锁定 emerald 十三色、values 与 values-v35 主题 item 全集同步（v35 覆盖式继承漏项即静默漂移）、主题 parent 非 DayNight + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对（仓库根不可见 assume 跳过）。
+- **androidTest 新增 `CompanionBrandingUiTest` 6 例**（连同 CompanionOfflineUiTest 存量 2 例共 8/8 通过，AVD btdeck-a35）：colorPrimary 运行时解析 #059669；向导 brand_mark/双模式卡存在；伴侣卡 → 列表且 btn_add_server 为 MaterialButton；添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错且不关框 + 合法输入保存成行；关闭端口 → row_health 文案与 row_health_dot 圆点同染 error 红 #EF4444；本机服务确认对话框 LAN 勾选联动威胁模型文案。
+- **配套微调**：向导品牌 ImageView 加 `brand_mark` ID（可断言）；通知权限经 `uiAutomation.grantRuntimePermission` 预授权（免 GrantPermissionRule 新依赖、免系统弹窗拦截 Espresso）。
+- **踩坑**：① TextInputEditText 直接父容器是 TIL 内部 inputFrame（FrameLayout），断言需沿祖先链找 TextInputLayout；② 测试断言别用"全文 contains"——注释里的字面量会误伤（DayNight 断言解析 parent 属性）；③ Espresso RootMatchers 在 `matcher` 子包。
+- 未执行 Git 提交。
+
+## 2026-09-12（续3）：设置页两页签移动布局优化 + 能力缓存响应式根修（feature_list `downloader-settings-mobile-layout-2026-09-12`）
+
+- **输入**：用户要求：①路径管理页签的刷新配置、添加映射按钮对移动端更友好；②标签/分类管理的新增标签与搜索并排。
+- **布局修复（纯 CSS）**：PathMappingTab ≤780 的 header-actions 按钮被全局紧凑重制压成 30px 高/9px 字号——媒体块内 `::v-deep .el-button` 提升 min-height 40px/font 13px/flex:1 并排/margin-left:0 配 gap（同特异性后位源序胜出）；TagManagementTab ≤640 工具栏由块级纵向堆叠改 flex——搜索框（toolbar-left）弹性撑满 + 新增标签按钮（toolbar-right）收缩同行。
+- **连带根修（能力缓存非响应式致门控 computed 冻结）**：验证路径管理页签时发现 demo 下该页签始终隐藏。插桩实证缓存写入成功（desktop 全 supported）但 `pathMappingAvailable` 仍 false → `__vue__` 直读实锤：**computed 依赖模块级普通变量是非响应式依赖，首次求值（缓存未加载 fail-closed false）后被 Vue 永久缓存，`$forceUpdate` 不会重算 computed**。demo 自动会话走守卫快速路径不等能力加载故必现；真实环境慢加载同样可能中招（守卫 await 分支之外的首渲染）。修复：缓存改 `Vue.observable<{data}>` 容器，读写全走 reactiveCache.data，写入自动触发依赖重算；附带 demo-request /platform/capabilities 由空矩阵改完整桌面六能力全 supported（demo 此前 fail-closed 隐藏全部能力门控 UI）。
+- **验证**：375×812 实测——刷新配置/添加映射 154px×40px/13px 并排、搜索与新增同行（250/256 边界衔接）、页签 3→4（路径管理出现）、截图目检通过；platform-capabilities-api.spec 16 用例（新增响应式回归：注入缓存 → computed 翻 true、reset → 翻 false）；全量 108 套件 1534 用例全绿；lint/typecheck/build 绿。注：中途一次全量出现 2 例偶发失败（未捕获到用例名），复跑全绿 + 可疑套件三连跑稳定，判定为存量抖动非本批引入。
+- **坑**：①Vue computed 缓存只认响应式依赖——模块级单例缓存被 computed 读取时必踩冻结坑，可观测对象化是通用解；②playwright 路由拦截对 demo 模式无效（demo 在 axios 分流层本地返回，不发网络请求）；③el-dialog 顶栏被 demo 横幅遮挡时 click 会被 pointer-events 拦截，JS evaluate 直调 `.click()` 可绕。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-09-12（续4）：路径映射按钮与描述间距 + 两页签移动布局回归保护（downloader-settings-mobile-layout 补强）
+
+- **输入**：用户复验反馈"路径映射配置下的按钮还需要与描述间隔一定的空间"；随后要求提交并为修改添加充足回归测试。
+- **间距修复**：PathMappingTab ≤780 媒体块 `.header-actions` 加 `margin-top: 12px`（此前纵排布局下按钮行紧贴描述文案）。375×812 实测描述底 307 → 按钮顶 322，间距 15px，截图目检通过。
+- **回归保护（downloader-settings-mobile-layout.spec.ts，5 用例源码契约）**：CSS 媒体查询 jsdom 不生效，沿用 mobile-shell/DownloaderSettingsDialog 契约模式——①780 媒体块存在且含 tab-header 列布局/header-actions；②按钮行 margin-top ≥10px；③按钮触控规格 40px 高/13px 字号/flex:1/margin-left:0，**且必须 ::v-deep**（压过全局紧凑重制的机制本身，改回嵌套写法即刻被反压）；④640 工具栏 flex 行布局（非纵堆）；⑤搜索侧 flex:1 撑满 + 新增侧 flex:0 0 auto + el-input width:100% !important（击败模板内联 280px）。**变异验证**：临时删 margin-top → 契约 1 例即红 → 恢复复绿。
+- **坑**：SCSS 嵌套媒体块用正则截断不可靠（嵌套 `}` 与块尾同形）——契约提取改花括号计数。
+- **门禁**：lint/typecheck 绿；相关 3 套件 35 用例 + 全量 109 套件 1539 用例全绿。
+
+## 2026-09-12（续5）：移动端本机服务同步滞后根修——staging 重建 + versionCode 4 交付（android-embedded-server-resync-20260912）
+
+- **输入**：用户反馈"移动端本机服务没有同步伴侣模式相关的修改，请查看 git 提交历史进行同步"。
+- **根因（非代码缺失，是构建链缺口）**：嵌入 APK 的本机服务端（backend/app + frontend/dist）由 `android/tools/stage-server.py` 手工蒸馏到 gitignored 源集 `android/app/src/server/`；`deploy/build-android.bat` **不执行 staging**，Gradle 也不追踪上游变化。暂存目录停留在 **9 月 7 日 18:13**——即使 9 月 12 日构建的 versionCode 3 新 APK（文件选择器批次）嵌入的仍是 9 月 7 日内容。伴侣模式连 unraid（047b1ce+）一切正常、本机服务缺全部 9/7 之后批次，正是用户观察到的不一致来源。
+- **缺失范围（9/7 18:13 → ef0c07e，共 13 个实质批次）**：断速振荡双修复（6dd0ae0）、下载器设置移动打磨（8f3eb10）、桌面版出口回修（fbe25b6）、快捷删重三跟进（d16e4f5）、设置页两页签移动布局+能力缓存响应式（5d07c88）、间距补强（e642d8e）、Tracker 按下载器双端点（608bda8）、移动种子页操作补强（2aa3834）、添加种子跳过校验+弹窗适配（e02564e）、转移/修改路径弹窗移动化（047b1ce 前端面）等。
+- **同步动作**：①`npm run build` 重建 dist（2026-09-12T14:11Z）；②重跑 stage-server.py（app 276 / alembic 32 / dist 365 文件）；③版本纪律：versionCode 3→4、versionName 0.2.2-server(+lan)、bat `BTDECK_APK_VERSION=0.2.2` 同源（锚点测试 apkVersionKeepsAscendingAndAligned 仍绿）；④`deploy/build-android.bat` 双变体构建 + apksigner 验证通过，产物 `android/dist/btdeck-companion-0.2.2-{strict,lan-cleartext}-debug.apk`（89.35MB，22:13）。
+- **验证**：`diff -rq backend/app staged python/app` 零差异；APK 载荷 `assets/chaquopy/app.imy` 内抽查——tracker.pyc 含 by-downloader 路由常量、前端 chunk `m-torrents.bfce591b.js` 与新 dist 同 hash；badging 确认 versionCode='4'/versionName='0.2.2-server('+lan)。requirements 自 9/5 无变化，无 Chaquopy pip 重装坑。
+- **流程缺口登记（待防再犯）**：build-android.bat 不含"staging 过期检测"——上游 backend/frontend 变更后仅重跑 bat 会静默交付旧嵌入服务。候选对策（未实施）：bat 前置比对 staged 关键文件 mtime/内容与源，或 staging 移入 gradle task 依赖。本批以手工三步链（build dist → stage → bat）完成。
+- 未执行 Git 提交（android/app/build.gradle.kts + deploy/build-android.bat 两处版本号变更在工作区待用户指示）。
+
+## 2026-09-12（续6）：APK 关闭桌面版逃生出口——伴侣 App WebView 恒移动端（companion-app-mobile-only-20260912）
+
+- **输入**：用户决策「apk 不需要逃生出口，apk 全程都是移动端操作，不会出现转入桌面端的情况」——fbe25b6 为桌面浏览器预览移动版加的宽视口（≥768px）桌面版出口，在 APK 场景（平板/横屏）反而构成误触入口。
+- **实现（环境门控，双端协作）**：
+  - 安卓 `WebViewActivity` settings 块 UA 追加 ` BtDeckCompanion` 标记（本机服务端/远程伴侣两模式共用同一 WebView，均生效）；
+  - 前端 `utils/ui-mode.ts` 新增 `isCompanionAppWebView()`（UA 含标记），`currentUiMode()` 命中即恒 `'mobile'`——路由守卫/登录分流全链生效，**顺带压制旧 APK 无条件出口可能已写入 WebView localStorage 的 `btdeck_ui_mode=desktop` 偏好**（迁移安全）；
+  - 前端 `views/mobile/mixins/wide-viewport.ts` mounted 早退（App WebView 不挂 matchMedia 监听、恒 false）——顶栏/登录页两处桌面版出口永不渲染，桌面浏览器（无标记）出口语义不变。
+- **回归保护**：前端 ui-mode.spec +3（仅含标记为真/App WebView 压制 desktop 偏好含登录分流/无标记语义不变）+ mobile-shell.spec +1（宽视口桩 + UA 桩 → 出口仍隐藏且不挂监听），两套件 56 用例全绿，lint/typecheck 绿；安卓 WebViewActivityContractTest +1（源码契约：UA 必须追加 BtDeckCompanion，丢失则平板/横屏出口回潮），随 bat 构建的 testDebugUnitTest 全绿。
+- **交付**：npm run build → stage-server.py（app 276/alembic 32/dist 365）→ versionCode 4→5、versionName 0.2.3-server(+lan)、bat `BTDECK_APK_VERSION=0.2.3` → 双变体构建+签名验证通过，产物 `android/dist/btdeck-companion-0.2.3-{strict,lan-cleartext}-debug.apk`（22:41）。
+- **载荷验证**：APK 内 `assets/chaquopy/app.imy` 的 `app.f1f5264c.js` 含 BtDeckCompanion 检测；classes2/7.dex 含标记字符串常量；badging versionCode='5'。
+- 未执行 Git 提交（前端 4 文件 + 安卓 3 文件 + bat 版本号在工作区待用户指示）。
+
+## 2026-09-13：WebView 返回来源页双入口——action bar 返回箭头 + 左上角名称可点（webview-return-navigation-20260913）
+
+- **输入**：用户反馈「移动端 app 无法主动返回到选择模式、选择伴侣模式服务器的页面，请在仪表盘设置返回按钮，左上角的名称也设置点击事件」。
+- **根因**：`WebViewActivity` 的 action bar 只设 title/subtitle（无 `setDisplayHomeAsUpEnabled`），WebView 内唯一退出路径是系统返回键——且被 `onBackPressedDispatcher` 回调优先导向 WebView 历史（SPA 路由翻页），用户困在仪表盘回不到向导/服务器列表。
+- **实现（纯安卓原生，前端零改动）**：
+  - `setupActionBar()`：`setDisplayHomeAsUpEnabled(true)` 显左上角返回箭头；原生 title TextView 无公开点击 API，改 custom view（新 `action_bar_web_title.xml`：名称+地址/版本两行，根节点 clickable+focusable+ripple，文本显式 colorOnPrimary）承载，整体点击 → `exitToSourcePage()`。
+  - `exitToSourcePage()`=直接 `finish()` 回退到启动来源 activity（伴侣模式=服务器列表、本机模式=向导），不带 WebView 历史；`onSupportNavigateUp()` 覆写禁走 super（AppCompat 默认落 onBackPressed 会先被 WebView 历史耗掉），另 `onOptionsItemSelected` 兜底 `android.R.id.home`。
+  - 副标题健康提示（`refreshVersionHint`）从 `supportActionBar?.subtitle` 改写 custom view 内 TextView——原生 subtitle 已随 `setDisplayShowTitleEnabled(false)` 隐藏，写旧 API 会静默不可见。
+- **回归保护**：`WebViewActivityContractTest` +2——返回双入口接线契约（箭头开关/onSupportNavigateUp 直调 exitToSourcePage 不走 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退）+ 标题布局契约（根节点 clickable+focusable、双行 ID、colorOnPrimary）。**变异验证**：箭头开关置 false → 契约即红 → 逐字节还原。套件 7 用例 0 skipped 全绿。
+- **交付（版本纪律）**：versionCode 5→6、versionName 0.2.4-server(+lan)、bat `BTDECK_APK_VERSION=0.2.4` 同源；`deploy/build-android.bat` 双变体构建+apksigner 验证通过，产物 `android/dist/btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk`（09-13 10:43，89.36MB）。badging versionCode='6'；classes7.dex 含 `exitToSourcePage`、APK 含 `res/layout/action_bar_web_title.xml`。纯原生变更，嵌入服务 staging（9/12 续6 重建）无需重跑。
+- 未执行 Git 提交（安卓 4 文件 + bat 在工作区待用户指示）。
+
+## 2026-09-13：重建应用安装包（WebView 返回导航 + 移动端专用批次）
+
+- **输入**：用户要求再次重建。自 09-11 构建后新增两笔 Android 修复提交：fc6a9d9（伴侣 App WebView 关闭桌面版出口 + 嵌入服务同步重建）、b17fbb3（WebView 返回来源页双入口）。`build-packages.bat` 默认链退出码 0。
+- **Windows**：`dist/btdeck.exe`（50.2MB，11:08）——身份锚定 **1.0.6 @ b17fbb3dfa22**，verify-package 四项全 [PASS]。ISCC 仍未装，安装器照例跳过。
+- **Android**：两个变体均全新编译（assembleDebug 非 UP-TO-DATE，strict 1m13s / LAN 27s），APK 版本名随版本纪律递增至 **0.2.4**：`btdeck-companion-0.2.4-strict-debug.apk`（89.4MB，11:09）与 `btdeck-companion-0.2.4-lan-cleartext-debug.apk`（89.4MB，11:10）。
+- **dist 积累观察**：android/dist 现存 5 组历史版本 APK（0.1.0-mvp / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4，09-12 用户自建多轮），未做清理——安装时认准 0.2.4 文件名。
+- 未执行 Git 提交。
+
+## 2026-09-13（续）：本机服务端启动等待优化——prewarm 预热 + 双层轮询收敛（local-server-startup-prewarm-20260913）
+
+- **输入**：用户报「移动端 apk 点击运行本次服务要等十几秒，请排查」；排查结论（架构现状非回归）确认后用户拍板实施优化 1（预热）+2（轮询粒度）。
+- **归因（桌面基准，data/startup_timing_probe.py 按 _bootstrap 同序分阶段计时）**：总 3.4s = 导入 alembic 链 0.4s + 冷迁移（建全表）0.9s + 深导入 app.main（1198 模块）1.3s + lifespan（含二次幂等迁移热态仅 42ms）1.2s + 双层 1s 轮询量化 ~1s；手机放大 3-5x → 10-20s，与 AVD 实证 15s / btdeck_server 注释上限 42s 一致。openpyxl（1.3s 重导入）已是函数级延迟不占链；迁移双跑热态 42ms 无害。
+- **Python（android/server-python/btdeck_server.py）**：抽 `_init_phases(root)` 共享重活三段（env+迁移+深导入，迁移前置于深导入的顺序契约收敛到一处）；新增 `prewarm(data_root)`——16MB 栈后台线程跑三段，不动 _state、不占端口、starting/running 跳过、进程内幂等；`_init_lock` 串行 prewarm↔_bootstrap（防冷首跑两线程同时对同一 SQLite 跑 alembic → database is locked）；健康自检 `time.sleep(1)`→`_HEALTH_POLL_INTERVAL_S=0.2`；init 段错误归因改读 `_init_phase`（bind/health 仍本地 phase）。
+- **Kotlin**：新增 `server/ServerPrewarm.kt`——`PythonBoot`（Python.start 进程级锁互斥 + isStarted 短路，Chaquopy 未承诺线程安全）+ `ServerPrewarm`（AtomicBoolean 进程内一次、ABI 门、runCatching 失败静默——正式启动重跑完整链路走正式错误通道）。接线两处：`CompanionApp.onCreate`（lastPort>0 内存门：曾用过本机服务端的设备才冷启预热，纯伴侣用户不为此平白加载 Python 后端）+ `WizardActivity.showLocalServerDialog`（点开卡片即预热，阅读 LAN 威胁模型文案的时间做重叠）。`ServerService`：POLL_INTERVAL_MS 1000→200ms 配快照变更检测（data class 相等比较，不变快照不刷镜像/通知，防 5Hz notify 刷屏；starting 期端口先出现仍视为变更）；Python.start 收敛到 PythonBoot.ensureStarted；DATA_DIR 公开供预热同源 data_root。
+- **验证**：桌面冒烟 SMOKE PASS（data/prewarm_smoke.py）——prewarm 后 start→running **1.33s**（冷基线 3.4s）、prewarm 后 state 仍 stopped（向导契约不破）、幂等、/health/live 200、stop 0.17s 干净。staging 重跑（app 276/alembic 32/dist 365）后 `:app:testDebugUnitTest` + `:app:assembleDebug` 全绿。
+- **回归保护**：新增 `ServerPrewarmContractTest` 5 例（python prewarm 不动状态+锁双持有/健康 0.2s/Kotlin 200ms+变更检测/Python.start 集中互斥/接线门禁——lastPort 门、compareAndSet、DATA_DIR 同源、runCatching）。**变异验证 3/3 检出后逐字节还原**：轮询回退 1000L → 红（粒度断言）；_bootstrap 弃 _init_lock → 红（双持有断言）；CompanionApp 去 lastPort 门 → 红（内存门断言）。
+- **版本纪律**：versionCode 6→7、versionName 0.2.5-server(+lan)、bat `BTDECK_APK_VERSION=0.2.5` 字节级替换（CRLF 保持）。
+- **交付待办**：双变体 APK 未构建（按三步链：npm run build 已过期的前端无需变 → 本批为 android+嵌入服务变更，staging 已重跑 → deploy/build-android.bat 即可）；余真机验收——预热后点击启动预期 3-5s（原十几秒），首装首次仍含 pyc 编译略慢属正常。
+- 未执行 Git 提交（安卓 5 文件改动+2 新增、bat、feature_list.json、progress.md 在工作区待用户指示）。
+
+## 2026-09-13（续2）：首启 pyc 编译疑云澄清——构建期全量预编译实证 + 三开关钉死（chaquopy-pyc-pin-20260913）
+
+- **输入**：用户问「能否避免首次启动因 Chaquopy 重新编译 pyc 略慢」。排查发现该前提不成立——上一批 handoff 中「覆盖安装首次启动重新编译 pyc」是我（会话内）的错误推断，特此纠正。
+- **实证（解剖 0.2.5 APK）**：assets/chaquopy 下 8 个 .imy bundle 全部 .pyc 零 .py（源集 app.imy 270 pyc/4.3MB、依赖 requirements-common 1888 pyc/29.2MB、标准库 stdlib-common 580 pyc/9.9MB、bootstrap 96 pyc）——Chaquopy 17 默认就是构建期全量预编译，**设备上不存在 pyc 现场编译**。首启真正的一次性成本=Chaquopy 资源解包（首跑把 payload 解到数据目录，btdeck_server.py 注释「AssetFinder 目录可写」即此机制）+ 首跑建库迁移，两者均已被 prewarm 后台预热吸收，用户点击后的等待不受影响。
+- **加固**：build.gradle.kts 的 chaquopy.defaultConfig 显式 `pyc { src = true; pip = true; stdlib = true }`（DSL 实证：插件 jar PycExtension 三 Boolean 属性）——防未来插件升级默认翻转后「设备现场编译上千模块」回潮。契约测试 ServerPrewarmContractTest +1（pyc 三开关必须显式 true），6 例全绿 0 skipped。
+- **验证**：DSL 变更后 chaquopy 任务自动重跑（Gradle 正常追踪该属性为任务输入，不踩 requirements 文件不追踪的老坑）；:app:assembleDebug 重建产物仍 .py=0/.pyc=4261，与默认行为逐位一致。
+- **交付决定**：纯声明式钉死、产物零变化 → 不递增版本号、不重新出包（0.2.5 双 APK 本就正确）；本改动随下次交付生效。未执行 Git 提交（build.gradle.kts + 测试 + progress/session-handoff 待用户指示——随后同批提交）。

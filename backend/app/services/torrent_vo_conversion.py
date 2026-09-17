@@ -299,32 +299,39 @@ def convert_to_vos_with_trackers(
     *,
     batch_size: Optional[int] = None,
     requested_tracker_domains: Optional[List[str]] = None,
+    include_trackers: bool = True,
 ) -> List[TorrentInfoVO]:
-    """Convert torrent rows with bounded batched related-data prefetching."""
+    """Convert torrent rows with bounded batched related-data prefetching.
+
+    ``include_trackers=False`` 时跳过 tracker 批量预取与关键词池加载，VO 的
+    tracker_info 为空数组——移动端列表卡片不展示 tracker 明细，省去行均
+    tracker 数组的查询/序列化开销（详情页按需全量回查补齐）。
+    """
     torrent_list = list(torrents)
     if not torrent_list:
         return []
 
     # 每次列表转换只加载一次关键词池，供展示覆写与判定任务同口径。
-    tracker_keyword_map = load_active_keyword_map(db)
+    tracker_keyword_map = load_active_keyword_map(db) if include_trackers else None
 
     requested_batch_size = batch_size if batch_size is not None else _RELATED_PREFETCH_BATCH_SIZE
     effective_batch_size = _safe_related_prefetch_batch_size(db, requested_batch_size)
 
     tracker_map: Dict[str, List[TrackerInfo]] = {}
     info_ids = list(dict.fromkeys(str(torrent.info_id) for torrent in torrent_list if torrent.info_id is not None))
-    for start in range(0, len(info_ids), effective_batch_size):
-        info_id_batch = info_ids[start : start + effective_batch_size]
-        trackers = (
-            db.query(TrackerInfo)
-            .filter(
-                TrackerInfo.torrent_info_id.in_(info_id_batch),
-                TrackerInfo.dr == 0,
+    if include_trackers:
+        for start in range(0, len(info_ids), effective_batch_size):
+            info_id_batch = info_ids[start : start + effective_batch_size]
+            trackers = (
+                db.query(TrackerInfo)
+                .filter(
+                    TrackerInfo.torrent_info_id.in_(info_id_batch),
+                    TrackerInfo.dr == 0,
+                )
+                .all()
             )
-            .all()
-        )
-        for tracker in trackers:
-            tracker_map.setdefault(str(tracker.torrent_info_id), []).append(tracker)
+            for tracker in trackers:
+                tracker_map.setdefault(str(tracker.torrent_info_id), []).append(tracker)
 
     from app.downloader.models import BtDownloaders
 

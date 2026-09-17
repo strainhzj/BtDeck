@@ -1,6 +1,19 @@
 <template>
   <div class="m-notifications">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
+    <div v-if="hasUnread" class="m-notification-actions" role="toolbar" aria-label="通知操作">
+      <span class="m-unread-summary">未读 {{ actionUnreadCount }} 条</span>
+      <el-button
+        class="m-mark-all-button"
+        type="text"
+        size="small"
+        :loading="markingAllAsRead"
+        :disabled="markingAllAsRead"
+        @click="handleMarkAllAsRead"
+      >
+        全部已读
+      </el-button>
+    </div>
     <div v-if="!loading && list.length === 0" class="m-hint">暂无通知</div>
     <!-- 无限滚动：window 滚动驱动（mixins/window-infinite-scroll；Element 指令会被
          从不内滚的 .mobile-content 误判恒在底部导致自动连发请求拉满 total） -->
@@ -72,7 +85,7 @@
 
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
-import { getNotificationList, markAsRead, NotificationFailureItem, NotificationItem } from '@/api/notification'
+import { getNotificationList, markAllAsRead, markAsRead, NotificationFailureItem, NotificationItem } from '@/api/notification'
 import { extractErrorMessage } from '@/utils/formatters'
 import { notificationFailureTarget, plainNotificationContent, renderNotificationContent } from '@/utils/notification-markdown'
 import { NotificationModule } from '@/store/modules/notification'
@@ -101,6 +114,9 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
   private total = 0
   private page = 1
   private loading = false
+  private markingAllAsRead = false
+  /** 用于防止“全部已读”期间已发出的列表请求回写旧的未读状态 */
+  private markAllVersion = 0
   private detailVisible = false
   private detail: NotificationItem | null = null
 
@@ -134,13 +150,27 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
     return this.loading || this.list.length >= this.total
   }
 
+  private get visibleUnreadCount(): number {
+    return this.list.filter(item => !item.is_read).length
+  }
+
+  /** 未读角标可能尚未完成首轮请求，列表中的未读项仍应显示操作入口。 */
+  private get actionUnreadCount(): number {
+    return Math.max(NotificationModule.unreadCount, this.visibleUnreadCount)
+  }
+
+  private get hasUnread(): boolean {
+    return this.actionUnreadCount > 0
+  }
+
   /** 整表重载（首屏/下拉刷新）：重置回第 1 页 */
   private async load(): Promise<void> {
+    const requestVersion = this.markAllVersion
     this.loading = true
     try {
       const res = await getNotificationList({ page: 1, pageSize: NOTIFICATION_PAGE_SIZE })
       if (res.code === '200' && res.data) {
-        this.list = res.data.list ?? []
+        this.list = this.mergeReadState(res.data.list ?? [], requestVersion !== this.markAllVersion)
         this.total = res.data.total ?? 0
         this.page = 1
       }
@@ -156,13 +186,17 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
   /** WindowInfiniteScroll 子类实现：无限滚动追加下一页，按 id 去重（新通知插入头部会使后页 offset 前移产生重复） */
   protected async loadMore(): Promise<void> {
     if (this.infiniteDisabled) return
+    const requestVersion = this.markAllVersion
     this.loading = true
     try {
       const nextPage = this.page + 1
       const res = await getNotificationList({ page: nextPage, pageSize: NOTIFICATION_PAGE_SIZE })
       if (res.code === '200' && res.data) {
         const existing = new Set(this.list.map(n => n.id))
-        const fresh = (res.data.list ?? []).filter(n => !existing.has(n.id))
+        const fresh = this.mergeReadState(
+          (res.data.list ?? []).filter(n => !existing.has(n.id)),
+          requestVersion !== this.markAllVersion
+        )
         this.list = this.list.concat(fresh)
         this.page = res.data.page ?? nextPage
         this.total = res.data.total ?? this.total
@@ -173,6 +207,18 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
       this.loading = false
       this.maybeLoadMore()
     }
+  }
+
+  /**
+   * “全部已读”期间保留当前列表已经展示为已读的项，避免并发列表请求用旧快照覆盖界面状态。
+   */
+  private mergeReadState(items: NotificationItem[], preserveReadState: boolean): NotificationItem[] {
+    if (!preserveReadState) return items
+    const locallyReadIds = new Set(this.list.filter(item => item.is_read).map(item => item.id))
+    return items.map(item => {
+      if (locallyReadIds.has(item.id)) item.is_read = true
+      return item
+    })
   }
 
   private openDetail(n: NotificationItem): void {
@@ -193,6 +239,32 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
       }
     } catch (e) {
       this.$message.error(extractErrorMessage(e))
+    }
+  }
+
+  private async handleMarkAllAsRead(): Promise<void> {
+    if (this.markingAllAsRead || !this.hasUnread) return
+    const unreadBeforeRequest = this.actionUnreadCount
+    this.markAllVersion += 1
+    this.markingAllAsRead = true
+    try {
+      const res = await markAllAsRead()
+      if (res.code !== '200') {
+        this.$message.error(res.msg || '全部已读失败')
+        return
+      }
+
+      this.list.forEach(item => {
+        item.is_read = true
+      })
+      // API 返回真实变更数量，未返回时回退到操作前的未读数。
+      const count = res.data && typeof res.data.count === 'number' ? res.data.count : unreadBeforeRequest
+      await NotificationModule.FetchUnreadCount().catch(() => undefined)
+      this.$message.success(count > 0 ? `已将 ${count} 条通知标为已读` : '所有通知已标记为已读')
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.markingAllAsRead = false
     }
   }
 
@@ -256,6 +328,30 @@ export default class MobileNotifications extends Mixins(PullToRefresh, SpeedPoll
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 8px;
+}
+
+.m-notification-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0 4px 0 12px;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.m-unread-summary {
+  color: #166534;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.m-mark-all-button {
+  min-height: 44px;
+  padding: 0 8px;
+  color: #047857;
+  font-size: 13px;
 }
 
 .m-notice.is-unread {

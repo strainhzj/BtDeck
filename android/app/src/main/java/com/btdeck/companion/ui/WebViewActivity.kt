@@ -1,25 +1,34 @@
 package com.btdeck.companion.ui
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.ActionBar
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.btdeck.companion.R
 import com.btdeck.companion.data.CredentialVault
@@ -48,11 +57,33 @@ class WebViewActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var errorOverlay: LinearLayout
     private lateinit var errorText: TextView
+    /** action bar 自定义标题区两行文本（原生 title/subtitle 已隐藏，写入走这里）。 */
+    private var headerTitle: TextView? = null
+    private var headerSubtitle: TextView? = null
 
     private val timeoutHandler = Handler(Looper.getMainLooper())
     private var loadFinished = false
     private var autoLoginStarted = false
     private val healthClient = HealthClient()
+
+    // ============ 文件选择器（<input type="file">，添加种子 .torrent 入口） ============
+
+    /** 当前待决的 WebView 文件回调；同一时刻 WebView 只允许一个待决选择器。 */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    /**
+     * 选择器结果通道（须在 onCreate 前注册）：回调恰好投递一次——取出即清空
+     * 引用，取消/非 OK 收敛为 null；不投递或双重投递都会让 WebView 永久
+     * 拒绝后续 onShowFileChooser（表现为此后点击文件框无反应）。
+     */
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooser
+            pendingFileChooser = null
+            callback?.onReceiveValue(
+                FileChooser.parseResult(result.resultCode, FileChooser.urisFromIntent(result.data))
+            )
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,8 +97,7 @@ class WebViewActivity : AppCompatActivity() {
             finish()
             return
         }
-        supportActionBar?.title = profile.displayName
-        supportActionBar?.subtitle = profile.baseUrl
+        setupActionBar()
 
         webView = findViewById(R.id.web_view)
         errorOverlay = findViewById(R.id.error_overlay)
@@ -85,11 +115,60 @@ class WebViewActivity : AppCompatActivity() {
             builtInZoomControls = true
             displayZoomControls = false
             allowFileAccess = false           // 禁本地文件面
+            // 只门控「页面内引用 content:// 资源」（iframe/img 等）；文件选择器
+            // 上传读取走 ContentResolver + SAF 给本 activity 的临时读授权，
+            // 不经该门。维持 false（默认拒绝）；若真机验收上传失败（个别 ROM
+            // 行为差异），放宽为 true 的安全取舍：文件 URI 始终来自用户显式
+            // 选择，增量攻击面仅页面内 content:// 引用，可接受。
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
+            // APK 全程移动端（2026-09-12 用户决策）：UA 追加伴侣 App 标记，
+            // 前端 ui-mode/wide-viewport 据此强制移动端并永不渲染桌面版出口
+            // （平板/横屏 ≥768px 也不出）；桌面浏览器访问服务器前端无此标记，
+            // 宽视口逃生出口不受影响
+            userAgentString = "$userAgentString BtDeckCompanion"
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         webView.webViewClient = CompanionWebViewClient()
+        // 无 WebChromeClient 时 WebView 对 <input type="file"> 点击静默忽略
+        // （此前添加种子的根因）；SAF MIME 陷阱与意图构造见 FileChooser。
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView?,
+                callback: ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams,
+            ): Boolean {
+                // 新选择器请求到达时旧回调必须先作废（取消语义），否则 WebView
+                // 认为仍有待决选择器而锁死后续触发
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = callback
+                // 入口 Toast 兼做真机诊断：SAF 免存储权限（ACTION_GET_CONTENT 走
+                // 系统 DocumentsUI），不弹选择器时凭此 Toast 区分「原生层未触发
+                // （旧 APK / 手势链）」与「launch 后 ROM 特例」
+                android.widget.Toast.makeText(
+                    this@WebViewActivity, "正在打开文件选择器…", android.widget.Toast.LENGTH_SHORT
+                ).show()
+                Log.d(TAG, "onShowFileChooser mode=${params.mode} acceptTypes=${params.acceptTypes?.contentToString()}")
+                return try {
+                    fileChooserLauncher.launch(
+                        FileChooser.buildPickerIntent(FileChooser.pickerParams(params.mode))
+                    )
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    // 无可用文件管理器：同样须投递一次 null 解锁后续选择
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("未找到可用的文件管理器，无法选择种子文件")
+                    false
+                } catch (e: SecurityException) {
+                    // 个别 ROM 对 GET_CONTENT 声明的权限异常：同投 null 解锁并提示
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("文件选择器被系统拒绝（${e.message}）")
+                    false
+                }
+            }
+        }
 
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -113,10 +192,63 @@ class WebViewActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Activity 终止而选择器仍在途：结果通道随 activity 失效，补投 null
+        // 保持「每个待决回调恰好一次」
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         timeoutHandler.removeCallbacksAndMessages(null)
         webView.destroy()
         super.onDestroy()
     }
+
+    // ============ 返回来源页（2026-09-13 用户反馈补齐） ============
+    // WebView 内此前只有系统返回键一条路，且被 WebView 历史优先占用——用户
+    // 无法主动回到模式选择（向导）/服务器选择页。现给 action bar 配左上角
+    // 返回箭头，并让「名称」整体可点（原生 title TextView 无公开点击 API，
+    // 以 custom view 承载两行文本实现）。两条入口都直接 finish 回退到启动
+    // 本页的来源 activity：伴侣模式=服务器列表，本机模式=向导。
+
+    private fun setupActionBar() {
+        val actionBar = supportActionBar ?: return
+        actionBar.setDisplayHomeAsUpEnabled(true)
+        actionBar.setDisplayShowTitleEnabled(false)
+        actionBar.setDisplayShowCustomEnabled(true)
+        val titleArea = layoutInflater.inflate(R.layout.action_bar_web_title, null)
+        headerTitle = titleArea.findViewById(R.id.action_bar_title)
+        headerSubtitle = titleArea.findViewById(R.id.action_bar_subtitle)
+        headerTitle?.text = profile.displayName
+        headerSubtitle?.text = profile.baseUrl
+        titleArea.setOnClickListener { exitToSourcePage() }
+        // 默认 custom view 居中：贴齐返回箭头左侧起点并垂直居中
+        actionBar.setCustomView(
+            titleArea,
+            ActionBar.LayoutParams(
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                Gravity.START or Gravity.CENTER_VERTICAL,
+            ),
+        )
+    }
+
+    /** 返回来源页：直接 finish，不带 WebView 历史（与系统返回键语义区分）。 */
+    private fun exitToSourcePage() {
+        finish()
+    }
+
+    /** 返回箭头：禁走 super——默认会落到 onBackPressed，先被 WebView 历史耗掉。 */
+    override fun onSupportNavigateUp(): Boolean {
+        exitToSourcePage()
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            exitToSourcePage()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
 
     private fun load() {
         loadFinished = false
@@ -157,7 +289,9 @@ class WebViewActivity : AppCompatActivity() {
             store.upsert(profile)
             if (!isDestroyed) {
                 val version = report.version?.let { "v$it" } ?: "版本未知"
-                supportActionBar?.subtitle = "$version · ${report.detail}"
+                // 原生 subtitle 已随 setDisplayShowTitleEnabled(false) 隐藏，
+                // 健康提示必须写 custom view 内 TextView 才可见
+                headerSubtitle?.text = "$version · ${report.detail}"
             }
         }
     }
@@ -280,6 +414,7 @@ class WebViewActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PROFILE_ID = "profile_id"
+        private const val TAG = "WebViewActivity"
         private const val LOAD_TIMEOUT_MS = 20_000L
 
         /** 上一个加载的 profile：切换时先异步清 cookie/storage，再加载新会话。 */

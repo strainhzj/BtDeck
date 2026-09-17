@@ -14,7 +14,6 @@ import com.btdeck.companion.R
 import com.btdeck.companion.ui.WizardActivity
 import com.chaquo.python.PyException
 import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,9 +95,7 @@ class ServerService : Service() {
         updateNotification()
         try {
             val dataRoot = withContext(Dispatchers.IO) {
-                if (!Python.isStarted()) {
-                    Python.start(AndroidPlatform(this@ServerService))
-                }
+                PythonBoot.ensureStarted(this@ServerService)
                 File(filesDir, DATA_DIR).absolutePath
             }
             callServer("start", dataRoot, if (lan) HOST_LAN else HOST_LOOPBACK, prefs.lastPort)
@@ -130,15 +127,19 @@ class ServerService : Service() {
         stopSelf()
     }
 
-    /** 每秒轮询 Python status → 状态镜像 + 通知；running/error 停止轮询。 */
+    /** 轮询 Python status → 状态镜像 + 通知；running/error 停止轮询。
+     *  200ms 粒度 + 快照变更检测：不变快照不刷镜像/通知（避免高频 notify），
+     *  starting 期间端口先出现（state 不变 port 变）也视为变更。 */
     private fun pollStatus() {
         pollJob?.cancel()
         pollJob = scope.launch {
+            var last: ServerStates.Snapshot? = null
             while (isActive) {
                 val snapshot = runCatching {
                     ServerStates.parseStatus(callServer("status"))
                 }.getOrNull()
-                if (snapshot != null) {
+                if (snapshot != null && snapshot != last) {
+                    last = snapshot
                     LocalServerState.update(snapshot)
                     updateNotification()
                     if (snapshot.isTerminal) {
@@ -194,7 +195,7 @@ class ServerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(R.drawable.ic_stat_btdeck)
             .setContentTitle(getString(R.string.local_server_notification_title))
             .setContentText(ServerStates.notificationText(LocalServerState.snapshot, lanEnabled))
             .setOngoing(true)
@@ -231,10 +232,13 @@ class ServerService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val REQ_STOP = 1
         private const val REQ_OPEN = 2
-        private const val DATA_DIR = "btdeck-server"
+        const val DATA_DIR = "btdeck-server"
         private const val HOST_LOOPBACK = "127.0.0.1"
         private const val HOST_LAN = "0.0.0.0"
-        private const val POLL_INTERVAL_MS = 1000L
+
+        // 200ms：原 1s 粒度让 running 就绪后 UI 平均白等 0.5s（最多 1s）；
+        // 配合 Python 侧健康自检 0.2s，点击"启动"到界面就绪的双层量化同步收敛
+        private const val POLL_INTERVAL_MS = 200L
 
         /** 当前设备是否支持本机服务端（Chaquopy Python 3.12 仅 64 位 ABI）。 */
         fun isAbiSupported(): Boolean =

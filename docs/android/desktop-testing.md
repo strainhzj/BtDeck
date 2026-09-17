@@ -105,6 +105,11 @@ USB 调试 + `adb install -r <lan-cleartext apk>`；服务器地址填宿主机�
 6. **后端登录端点行为差异**：`POST /api/v1/auth/login` 的 password **明文**直传（无 base64 解码），`/user/changePassword` 的旧/新密码 **base64** 编码——写脚本时注意。
 7. **devServer 局域网访问**：`vue.config.js` 已 `host:'0.0.0.0'`、`allowedHosts:["main.btpmanager.top"]`；真机/其它设备用 IP 访问 dev server 时需把 IP 加进 allowedHosts（L2 走 10.0.2.2 时 Host 是 IP，如被拒同理）。后端 CORS 在 dev 下走前端同源代理不受影响。
 8. **模拟器资源**：AVD 全量冷启约 70 秒（本机实测），日常建议不关模拟器只重装 APK。
+9. **带窗口模拟器可能挂死 offline（2026-09-11 实证）**：`-gpu auto` 有窗口模式在本机
+   启动后 adb 持续 `offline` >10 分钟不恢复（qemu 进程存活但 guest 未起来）。改用无头模式
+   25-35 秒即可完成启动，截图走 `adb exec-out screencap`：
+   `emulator.exe -avd btdeck-a35 -no-window -no-snapshot-save -no-boot-anim -gpu swiftshader_indirect -no-audio`。
+   注意无头模式偶发进程自退（约 5 分钟内），交互脚本要紧凑、每步后校验 `adb devices`。
 
 ## 七、一次性重建（若 `C:\software\android-build-env` 被删除）
 

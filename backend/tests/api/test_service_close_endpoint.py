@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_authenticated_user
 from app.database import Base, get_async_db
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo
@@ -75,6 +75,8 @@ def client_with_close_spy(db_session):
 
     app.dependency_overrides[get_async_db] = override_get_async_db
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(username="tester")
+    # 路由级 capability_dependency 内部走 require_authenticated_user（端点参数走 get_current_user），两个都得覆盖
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
 
     with patch("app.database.SessionLocal", return_value=db_session):
         with patch.object(RecycleBinService, "close", wraps=RecycleBinService.close) as spy:
@@ -119,6 +121,8 @@ class TestRecycleBinEndpointClosesService:
 
         app.dependency_overrides[get_async_db] = override_get_async_db
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(username="tester")
+        # 路由级 capability_dependency 内部走 require_authenticated_user（端点参数走 get_current_user），两个都得覆盖
+        app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
 
         with patch("app.database.SessionLocal", return_value=db_session):
             with patch.object(RecycleBinService, "close", wraps=RecycleBinService.close) as spy:

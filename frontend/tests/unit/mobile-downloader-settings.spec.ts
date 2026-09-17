@@ -70,6 +70,16 @@ describe('views/mobile/MobileDownloaderSettings', () => {
     expect(vm.downloader).toBeTruthy()
   })
 
+  it('id=new 新增模式：跳过查库，对话框以 downloader=null 进入（isEdit=false）', async() => {
+    const wrapper = mountPage('new')
+    await flushLifecycle()
+    expect(getList).not.toHaveBeenCalled()
+    const dialog = wrapper.find('downloader-settings-dialog-stub')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.props('downloader')).toBeNull()
+    expect(wrapper.text()).not.toContain('未找到下载器')
+  })
+
   it('未找到下载器：空态 + 返回按钮', async() => {
     const wrapper = mountPage('missing')
     await flushLifecycle()

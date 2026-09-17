@@ -130,7 +130,7 @@
     <el-dialog
       :visible.sync="showDialog"
       :title="dialogTitle"
-      width="500px"
+      width="500px" custom-class="tag-mgmt-dialog"
       :before-close="handleDialogClose"
       :close-on-click-modal="false"
       modal-append-to-body
@@ -178,7 +178,7 @@
     <el-dialog
       :visible.sync="showBatchDeleteDialog"
       title="批量删除确认"
-      width="400px"
+      width="400px" custom-class="tag-mgmt-dialog"
     >
       <div class="batch-delete-content">
         <LucideIcon class="warning-icon" name="alert-triangle" :size="40" :stroke-width="1.5" />
@@ -198,7 +198,7 @@
     <el-dialog
       :visible.sync="showCategorySelectDialog"
       title="选择目标分类"
-      width="500px"
+      width="500px" custom-class="tag-mgmt-dialog"
       :before-close="handleCancelDeleteCategory"
       :close-on-click-modal="false"
       append-to-body
@@ -1200,18 +1200,37 @@ export default class TagManagementTab extends Vue {
 }
 
 @media (max-width: 640px) {
+  /* 搜索与新增并排（2026-09-12 用户反馈）：左侧搜索弹性撑满、右侧按钮收缩不换行 */
   .toolbar {
-    align-items: stretch;
-    flex-direction: column;
+    display: flex;
+    align-items: center;
     gap: 6px;
   }
 
-  .toolbar-left,
-  .toolbar-left .el-input,
-  .toolbar-right .el-button {
+  .toolbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .toolbar-left .el-input {
     width: 100% !important;
   }
+
+  .toolbar-right {
+    flex: 0 0 auto;
+  }
+
+  /* 类型筛选页签换行（手机一屏放不下三枚） */
+  .type-tabs {
+    flex-wrap: wrap;
+  }
+
+  /* 标签卡片网格：手机单列（210px min 在 375px 下仍会双列过挤） */
+  .tag-grid {
+    grid-template-columns: 1fr;
+  }
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .tag-card {
@@ -1220,6 +1239,38 @@ export default class TagManagementTab extends Vue {
 
   .is-spinning {
     animation: none;
+  }
+}
+</style>
+
+<style lang="scss">
+/* 内嵌新增/编辑/确认弹窗手机适配（mobile-ux-fixes 2026-09-12）：
+   挂 body（append-to-body），scoped 不达；宽度来自 el-dialog width prop 内联，
+   必须 !important 覆盖；表单 label 纵排、页脚按钮全宽 */
+@media (max-width: 768px) {
+  .tag-mgmt-dialog {
+    width: 92% !important;
+    max-width: 500px;
+  }
+
+  .tag-mgmt-dialog .el-form-item__label {
+    width: auto !important;
+    text-align: left;
+  }
+
+  .tag-mgmt-dialog .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  .tag-mgmt-dialog .dialog-footer {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag-mgmt-dialog .dialog-footer .el-button {
+    flex: 1;
+    margin-left: 0;
+    min-height: 40px;
   }
 }
 </style>

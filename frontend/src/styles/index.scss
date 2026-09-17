@@ -169,3 +169,41 @@ div:focus {
     color: var(--color-error);
   }
 }
+
+/* 确认弹框（Element MessageBox）手机端适配（mobile-ux-fixes 2026-09）。
+   全项目 $confirm/$alert 共享：420px 定宽来自 Element 主题类规则 .el-message-box
+   （非内联 style），同特异性下需 !important 覆盖；MessageBox 挂载在 <body>，
+   视口媒体查询不受调用方父级影响，一处全局规则即覆盖桌面/移动全部调用点
+   （种子删除/下载器删除/孤儿文件/任务/回收站/四级删除二次确认等）。 */
+@media (max-width: 768px) {
+  .el-message-box {
+    width: 92vw !important;
+    max-width: 420px;
+    border-radius: 12px;
+  }
+
+  .el-message-box__title {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  .el-message-box__message {
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+
+  /* 双钮等宽全宽排布，触控目标加高到 ≥40px */
+  .el-message-box__btns {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0 0;
+
+    .el-button {
+      flex: 1;
+      margin: 0;
+      min-height: 40px;
+    }
+  }
+}
+

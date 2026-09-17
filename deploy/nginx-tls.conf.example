@@ -72,6 +72,26 @@ server {
         proxy_set_header Connection "";
     }
 
+    # 健康检查：/health 本体静态 200（容器探活）；/health/live、/health/ready
+    # 代理到后端——伴侣客户端靠它们探测存活并读版本，落到 try_files 的
+    # index.html 会造成「版本未知 · 服务存活检查失败」误报。
+    location = /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+    location /health/ {
+        proxy_pass http://btdeck-backend:5001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        access_log off;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
         # 隐藏文件

@@ -8,6 +8,11 @@
 
 差异：urllib 单一 timeout 同时覆盖连接与读（安卓为 5s/10s 分离），此处取 10s
 对齐读超时上限；仅用标准库，不引入新依赖。
+
+回退兜底（与安卓端一致）：根路径 ``/health`` 系列端点可能被反向代理吞掉
+（静态健康块返回纯文本、SPA 兜底返回 HTML），主路径探测到"HTTP 错误或响应
+不是 JSON 信封"时回退探测 ``/api/v1`` 前缀下的免认证别名（同 handler），
+旧部署无需更新网关配置也能读到真实存活与版本。
 """
 
 import json
@@ -31,6 +36,8 @@ from app.desktop_companion.profiles import (
 logger = logging.getLogger(__name__)
 
 _TIMEOUT_S = 10
+
+_API_ALIAS_PREFIX = "/api/v1"
 
 
 @dataclass(frozen=True)
@@ -102,7 +109,7 @@ def _to_network_error(exc: BaseException) -> _NetworkError:
 
 class HealthClient:
     def check(self, base_url: str) -> HealthReport:
-        live = self._probe_endpoint(f"{base_url}/health/live")
+        live = self._probe_endpoint_with_fallback(base_url, "/health/live")
         if isinstance(live, _NetworkError):
             return self._network_report(live)
         if not live.ok:
@@ -110,7 +117,7 @@ class HealthClient:
         if live.body.get("status") != "alive":
             return _empty_report(HEALTH_UNREACHABLE, "服务存活检查失败")
 
-        ready = self._probe_endpoint(f"{base_url}/health/ready")
+        ready = self._probe_endpoint_with_fallback(base_url, "/health/ready")
         if isinstance(ready, _NetworkError):
             return self._network_report(ready)
         if not ready.ok:
@@ -132,6 +139,27 @@ class HealthClient:
             return _probe(url)
         except _NetworkError as exc:
             return exc
+
+    def _probe_endpoint_with_fallback(self, base_url: str, path: str) -> _HttpProbeOutcome | _NetworkError:
+        """主路径探测 + 反代兜底（与安卓端 HealthClient.probeWithFallback 语义一致）。
+
+        根路径 ``/health`` 系列端点被网关静态健康块（纯文本 200）或 SPA 兜底
+        （HTML 200）吞掉时，改探后端 ``/api/v1`` 前缀下的免认证别名（同 handler）。
+        仅在主路径 HTTP 错误、或 2xx 但响应不是 JSON 信封（data 为空）时回退；
+        网络/TLS 错误不换路径重试（同主机同结果，徒增等待）。回退仍未得到可解析
+        信封则保留主路径结果，错误归因不失真。
+        """
+        primary = self._probe_endpoint(f"{base_url}{path}")
+        if isinstance(primary, _NetworkError):
+            return primary
+        if primary.ok and primary.body:
+            return primary
+        alias = self._probe_endpoint(f"{base_url}{_API_ALIAS_PREFIX}{path}")
+        if isinstance(alias, _NetworkError):
+            return primary
+        if alias.ok and alias.body:
+            return alias
+        return primary
 
     def _network_report(self, exc: _NetworkError) -> HealthReport:
         if exc.tls_error:

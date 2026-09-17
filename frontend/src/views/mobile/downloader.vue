@@ -35,21 +35,13 @@
             同步
           </el-button>
           <el-button size="mini" @click="openSettings(d)">设置</el-button>
-          <el-button size="mini" @click="openEdit(d)">编辑</el-button>
           <el-button size="mini" type="danger" plain :disabled="busyId === d.id" @click="removeOne(d)">删除</el-button>
         </div>
       </div>
 
-      <div class="m-dl-footnote">路径映射在设置 → 路径维护中配置；能力矩阵等高级信息见桌面版</div>
+      <div class="m-dl-footnote">路径映射在设置 → 路径维护中配置</div>
     </template>
     <div v-else class="m-hint">暂无下载器</div>
-
-    <!-- 新增/编辑：复用桌面 DownloaderDialog（submit 后由本页显式落库） -->
-    <downloader-dialog
-      :visible.sync="editDialogVisible"
-      :downloader="editingItem"
-      @submit="onDialogSubmit"
-    />
   </div>
 </template>
 
@@ -59,15 +51,11 @@ import {
   getList,
   testConnection,
   syncDownloader,
-  addDownloader,
-  upDownloader,
   deleteDownloader
 } from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
-import DownloaderDialog from '@/views/downloader/components/DownloaderDialog.vue'
-import { Downloader } from '@/views/downloader/types'
 import {
   buildSyncTaskNotice,
   trackSyncTaskStatus
@@ -88,15 +76,15 @@ interface MobileDownloaderItem {
 
 /**
  * 移动下载器页（Phase 4 M2 升级为完整管理）：
- * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 新增/编辑
- * （DownloaderDialog 复用，submit 由本页显式调 add/up 落库）+ 删除；
- * 高级设置（速度/调度/路径/标签）经 /m/downloader/settings/:id 承载。
+ * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 删除；
+ * 新增/编辑（含速度/调度/路径/标签页签）经 /m/downloader/settings/:id 整页
+ * 承载（DownloaderSettingsDialog，2026-09-10 mobile-ux-fixes 起旧 6 字段
+ * DownloaderDialog 弹窗弃用，移动端新增走 settings/new）。
  */
 @Component({
   name: 'MobileDownloader',
   components: {
-    'm-pull-indicator': MobilePullIndicator,
-    'downloader-dialog': DownloaderDialog
+    'm-pull-indicator': MobilePullIndicator
   }
 })
 export default class MobileDownloader extends Mixins(PullToRefresh) {
@@ -106,12 +94,10 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   private syncingId = ''
   private syncTaskTracker: SyncTaskTrackingHandle | null = null
   private busyId = ''
-  private editDialogVisible = false
-  private editingItem: Downloader | null = null
 
   mounted(): void {
     this.load()
-    // 种子页空态 CTA 直达新增（?create=1）：一步弹出新增表单，省掉找按钮
+    // 种子页空态 CTA 直达新增（?create=1）：跳整页新增模式（含全部页签）
     if (this.$route.query.create === '1') {
       this.openCreate()
     }
@@ -222,32 +208,9 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
       .catch(() => undefined)
   }
 
+  /** 新增：整页新增模式（DownloaderSettingsDialog downloader=null，含全部页签） */
   private openCreate(): void {
-    this.editingItem = null
-    this.editDialogVisible = true
-  }
-
-  private openEdit(item: MobileDownloaderItem): void {
-    this.editingItem = item as unknown as Downloader
-    this.editDialogVisible = true
-  }
-
-  /** 桌面对话框 submit 仅抛表单数据不落库，此处显式按模式调新增/更新 */
-  private async onDialogSubmit(formData: object): Promise<void> {
-    try {
-      const res = this.editingItem
-        ? await upDownloader({ ...(formData as { id?: string }), id: this.editingItem.id ?? this.editingItem.downloaderId })
-        : await addDownloader(formData)
-      if (res.code === '200') {
-        this.$message.success(this.editingItem ? '下载器已更新' : '下载器已添加')
-        this.editDialogVisible = false
-        await this.load()
-      } else {
-        this.$message.error(res.msg || '保存失败')
-      }
-    } catch (e) {
-      this.$message.error(extractErrorMessage(e))
-    }
+    this.$router.push('/m/downloader/settings/new').catch(() => undefined)
   }
 
   private removeOne(item: MobileDownloaderItem): void {
@@ -387,14 +350,5 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   text-align: center;
   color: #909399;
   padding: 24px 0;
-}
-</style>
-
-<!-- 新增/编辑对话框挂 body（append-to-body 缺省），窄视口下压宽度提升可用性 -->
-<style>
-@media (max-width: 768px) {
-  .downloader-dialog {
-    width: 94% !important;
-  }
 }
 </style>

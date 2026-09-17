@@ -20,6 +20,10 @@ import {
   addTorrent
 } from '@/api/torrents'
 import type { ApiResponse, Torrent, TorrentListResponseData } from '@/api/torrents'
+import {
+  setPlatformCapabilityCacheForTesting,
+  resetPlatformCapabilityCache
+} from '@/api/platform-capabilities'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import {
   getLoadingDirectiveSnapshot,
@@ -380,6 +384,15 @@ describe('TraditionalView component regressions', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     localStorage.clear()
+    // 视图按 level3Available（level3_recycle 能力）裁剪删除下拉的等级3 项：
+    // 注入 desktop+supported 还原全四级入口契约（矩阵批次落地时未同步本 spec）
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
     mockGetTorrentList.mockResolvedValue(successListResponse())
     mockGetDownloaderList.mockResolvedValue({
       status: 'success',
@@ -445,6 +458,7 @@ describe('TraditionalView component regressions', () => {
     if (wrapper) {
       wrapper.destroy()
     }
+    resetPlatformCapabilityCache()
   })
 
   it('只显示命名为“删除”的四级删除入口', async() => {
@@ -1689,6 +1703,7 @@ describe('终态整表刷新循环治理（稳态证据 + 滞后窗口）', () =
     if (wrapper) {
       wrapper.destroy()
     }
+    resetPlatformCapabilityCache()
   })
 
   it('滞后窗口循环：status 筛选下同一完成证据只触发一次 getList（含转移判定锚）', async() => {

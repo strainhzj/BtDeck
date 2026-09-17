@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标背景层：品牌绿实底（与前端主题色 #059669 一致，几何再生成见
+     tools/generate_brand_icons.py 头注） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#059669" />
+</shape>

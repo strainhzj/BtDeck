@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WebView 页 action bar 自定义标题区（2026-09-13 返回入口补齐）：
+     原生 ActionBar 的 title TextView 没有公开点击 API，改以 custom view
+     承载「服务器名 + 地址/版本」两行，根节点整体可点 = 返回来源页。
+     文本色显式走 colorOnPrimary：custom view 经 activity inflater 载入，
+     不保证继承 DarkActionBar 覆层的标题默认色。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/action_bar_title_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:clickable="true"
+    android:focusable="true"
+    android:background="?attr/selectableItemBackground"
+    android:paddingStart="8dp"
+    android:paddingEnd="16dp">
+
+    <TextView
+        android:id="@+id/action_bar_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxWidth="240dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Title"
+        android:textColor="?attr/colorOnPrimary" />
+
+    <TextView
+        android:id="@+id/action_bar_subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxWidth="300dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Subtitle"
+        android:textColor="?attr/colorOnPrimary"
+        android:alpha="0.75" />
+</LinearLayout>

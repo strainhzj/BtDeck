@@ -1058,6 +1058,17 @@ export default class PathMappingTab extends Vue {
 }
 
 @media (max-width: 780px) {
+  /* Element 表格自带横向滚动；手机下增大单元格行高与字号提升可读性 */
+  ::v-deep .el-table .cell {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  ::v-deep .el-table .el-button--mini {
+    min-height: 30px;
+    padding: 5px 8px;
+  }
+
   .tab-header {
     align-items: flex-start;
     flex-direction: column;
@@ -1065,9 +1076,16 @@ export default class PathMappingTab extends Vue {
 
   .header-actions {
     width: 100%;
+    /* 与上方描述文案拉开间距（2026-09-12 用户反馈：按钮贴着描述） */
+    margin-top: 12px;
 
-    .el-button {
+    /* 触控友好（2026-09-12 用户反馈）：压过全局紧凑重制的 30px/9px 小按钮 */
+    ::v-deep .el-button {
       flex: 1;
+      min-height: 40px;
+      margin-left: 0;
+      padding: 0 10px;
+      font-size: 13px;
     }
   }
 }

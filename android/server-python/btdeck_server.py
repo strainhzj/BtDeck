@@ -8,6 +8,11 @@ Kotlin ServerService 经 Chaquopy callAttr 调用 start/stop/status，返回 JSO
 运行体，4096 与 ps16k AVD 均 9/9 全绿）：异步启动 + 状态轮询、Alembic
 fail-fast、优雅停机、幂等重启。
 
+预热（2026-09-13 启动等待优化）：prewarm() 在用户点"启动"前后台执行
+重活三段（env+迁移+深导入，手机上合计约十秒级），不动 _state、不占端口；
+正式启动只剩 bind+lifespan+健康自检。与 _bootstrap 经 _init_lock 串行，
+杜绝两线程同时对同一 SQLite 跑 alembic（冷首跑双写 → database is locked）。
+
 坑位沉淀（wheels 仓 gate.md 实证，勿改）：
 - 深导入（fastapi→pydantic→typing_extensions 链）必须在 16MB 大栈线程执行
   （默认线程栈在 Python 递归限触发前先耗尽 C 栈）；
@@ -36,8 +41,11 @@ STATE_RUNNING = "running"
 STATE_ERROR = "error"
 
 _HEALTH_TIMEOUT_S = 120  # 首启含迁移+导入，16K AVD 实证最长约 42s
+_HEALTH_POLL_INTERVAL_S = 0.2  # 健康自检轮询粒度（原 1s：白等最多 1s 才见 running）
 
 _lock = threading.Lock()
+_init_lock = threading.Lock()  # 重活三段互斥（prewarm ↔ _bootstrap 串行）
+_init_phase = "idle"  # 最近一次 init 阶段标记（env/migration/import），错误归因用
 _state: dict = {
     "state": STATE_STOPPED,
     "port": None,
@@ -97,30 +105,45 @@ def _pick_port(host: str, preferred_port: int) -> int:
     raise RuntimeError(f"无法获得可用端口（host={host}）")
 
 
-def _bootstrap(root: Path, host: str, preferred_port: int) -> None:
-    """启动链：物化迁移 → 环境锚定 → Alembic fail-fast → 深导入 → uvicorn → 健康自检。
+def _init_phases(root: Path) -> None:
+    """重活三段：物化迁移 → 环境锚定 → Alembic fail-fast → 深导入。
 
-    在 16MB 大栈线程执行（start() 起线程前已设 stack_size）。
+    prewarm 与 _bootstrap 共用，调用方持有 _init_lock（串行防冷首跑双迁移）；
+    已预热后再执行，sys.modules 命中使本函数回落为热态 no-op（迁移 ~40ms）。
     顺序契约：迁移必须先于 `from app import main`——app 导入链存在模块级 DB
     查询（实证：空库时 tracker_keyword_config 查询失败刷日志，依赖 lifespan
     补救）；迁移先行让深导入看到的是已建好的库。
     """
+    global _init_phase
+    _init_phase = "env"
+    _materialize_alembic()
+    _prepare_env(root)
+
+    _init_phase = "migration"
+    from app.core.migration import migrate_database
+
+    if not migrate_database():
+        raise RuntimeError("migrate_database() 返回 False（详见服务端日志）")
+
+    _init_phase = "import"
+    from app import main  # noqa: F401  完整 import graph
+    import httpx  # noqa: F401
+    import uvicorn  # noqa: F401
+
+
+def _bootstrap(root: Path, host: str, preferred_port: int) -> None:
+    """启动链：重活三段（见 _init_phases）→ uvicorn → 健康自检。
+
+    在 16MB 大栈线程执行（start() 起线程前已设 stack_size）。
+    """
     global _server, _uvicorn_thread
-    phase = "env"
+    phase = "init"  # init 段失败归因读 _init_phase（见 except）
     server = None
     uvicorn_thread = None
     try:
-        _materialize_alembic()
-        _prepare_env(root)
-
-        phase = "migration"
-        from app.core.migration import migrate_database
-
-        if not migrate_database():
-            raise RuntimeError("migrate_database() 返回 False（详见服务端日志）")
-
-        phase = "import"
-        from app import main  # noqa: F401  完整 import graph
+        with _init_lock:
+            _init_phases(root)
+        # sys.modules 已热，重导入为 no-op——仅绑定本函数后续使用的局部名
         from app.version import CURRENT_VERSION
 
         phase = "bind"
@@ -166,22 +189,60 @@ def _bootstrap(root: Path, host: str, preferred_port: int) -> None:
                 last_error = RuntimeError(f"/health/live HTTP {resp.status_code}")
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-            time.sleep(1)
+            time.sleep(_HEALTH_POLL_INTERVAL_S)
         raise TimeoutError(f"健康握手超时（{_HEALTH_TIMEOUT_S}s）: {last_error}")
     except BaseException as exc:  # noqa: BLE001
         # 尽力关掉可能已起的 uvicorn（健康超时但服务仍可能监听）
         if server is not None:
             server.should_exit = True
+        failed_phase = _init_phase if phase == "init" else phase
         detail = "".join(traceback.format_exception(exc))[-4000:]
         with _lock:
             _state.update(
                 state=STATE_ERROR,
                 port=None,
-                error=f"[{phase}] {exc}",
-                errorPhase=phase,
+                error=f"[{failed_phase}] {exc}",
+                errorPhase=failed_phase,
             )
             # error 字段只带摘要；完整 traceback 打到 logcat（Chaquopy 转 stdout/stderr）
-            print(f"btdeck_server start failed at phase={phase}\n{detail}", file=sys.stderr)
+            print(
+                f"btdeck_server start failed at phase={failed_phase}\n{detail}",
+                file=sys.stderr,
+            )
+
+
+def prewarm(data_root: str) -> str:
+    """预热：后台执行重活三段（env+迁移+深导入），不动 _state、不占端口。
+
+    Kotlin 在用户表达本机服务端意图时调用（App 冷启且曾用过 / 向导点开本机
+    服务卡片）；等用户真正点"启动"时 sys.modules 已热，_bootstrap 只剩
+    bind+lifespan+健康自检。语义：尽力而为——失败只打日志，正式启动重跑
+    _init_phases 并走正式错误通道；starting/running 时跳过（同样的事
+    _bootstrap 正在做/已做完）。幂等：进程内重复调用回落为热态 no-op。
+    """
+    with _lock:
+        if _state["state"] in (STATE_STARTING, STATE_RUNNING):
+            return json.dumps({"ok": True, "state": _state["state"], "skipped": "active"})
+    root = Path(str(data_root))
+    threading.stack_size(16 * 1024 * 1024)  # 深导入需大栈（同 _bootstrap）
+    threading.Thread(
+        target=_prewarm_worker, args=(root,),
+        name="btdeck-prewarm", daemon=True,
+    ).start()
+    return json.dumps({"ok": True, "state": "prewarming"})
+
+
+def _prewarm_worker(root: Path) -> None:
+    try:
+        with _init_lock:
+            _init_phases(root)
+    except BaseException as exc:  # noqa: BLE001
+        detail = "".join(traceback.format_exception(exc))[-2000:]
+        print(
+            f"btdeck_server prewarm failed at phase={_init_phase}\n{detail}",
+            file=sys.stderr,
+        )
+
 
 
 def start(data_root: str, host: str = "127.0.0.1", preferred_port: int = 0) -> str:

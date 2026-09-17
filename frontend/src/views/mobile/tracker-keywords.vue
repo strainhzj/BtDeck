@@ -65,7 +65,7 @@
     </el-button>
 
     <div class="m-tracker-kw-footnote">
-      导入/导出、快捷操作（左匹配）、汇报配置与测试工具请在桌面版「Tracker管理」页操作
+      导入/导出、快捷操作（左匹配）、汇报配置与测试工具暂未在移动端提供
     </div>
 
     <add-keyword-dialog

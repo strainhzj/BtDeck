@@ -202,6 +202,19 @@ PYEOF
     cp "${DEPLOY_DIR}/package-scripts/postrm.sh" "${PKG_STAGING}/postrm.sh"
     chmod +x "${PKG_STAGING}"/*.sh
 
+    # 桌面集成（品牌图标）：.desktop 启动器打开 Web 控制台；hicolor 图标由
+    # tools/generate_brand_icons.py 预生成入库（构建环境不引入 Pillow 依赖）。
+    # 图标随包由 dpkg/rpm 按文件归属自动清理，无需 maintainer script 参与。
+    mkdir -p "${PKG_STAGING}/usr/share/applications"
+    cp "${DEPLOY_DIR}/btdeck.desktop" "${PKG_STAGING}/usr/share/applications/"
+    mkdir -p "${PKG_STAGING}/usr/share/icons/hicolor/scalable/apps"
+    cp "${DEPLOY_DIR}/icons/btdeck.svg" "${PKG_STAGING}/usr/share/icons/hicolor/scalable/apps/btdeck.svg"
+    for size in 48 64 128 256; do
+        mkdir -p "${PKG_STAGING}/usr/share/icons/hicolor/${size}x${size}/apps"
+        cp "${DEPLOY_DIR}/icons/hicolor/${size}x${size}/apps/btdeck.png" \
+            "${PKG_STAGING}/usr/share/icons/hicolor/${size}x${size}/apps/btdeck.png"
+    done
+
     # 构建 .deb
     fpm -s dir --force \
         -t deb \
@@ -218,7 +231,8 @@ PYEOF
         --prefix / \
         -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb" \
         etc \
-        opt
+        opt \
+        usr
 
     # 构建 .rpm
     retag_build_info linux-rpm
@@ -236,7 +250,8 @@ PYEOF
         --prefix / \
         -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm" \
         etc \
-        opt
+        opt \
+        usr
 
     # 清理临时目录
     rm -rf "${PKG_STAGING}"

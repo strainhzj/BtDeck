@@ -32,6 +32,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
+from app.api.endpoints import torrent_crud as torrent_crud_module
+from app.api.endpoints.torrent_crud import reset_tracker_domains_cache
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
@@ -618,6 +620,22 @@ class TestFilters:
         matched = self._matched_domains_by_url(body)
         assert set(matched.values()) == {None}
 
+    def test_with_trackers_false_omits_tracker_details(self, client, db_session):
+        """with_trackers=false（移动端列表瘦身）：行内 trackerInfo 为空数组，其余字段不受影响。"""
+        self._make_multi_tracker_torrent(db_session)
+
+        slim = client.get(URL, params={"with_trackers": "false"})
+        assert slim.json()["code"] == "200"
+        slim_row = slim.json()["data"]["list"][0]
+        assert _info_ids(slim.json()) == {"multi-tracker"}
+        assert slim_row["trackerInfo"] == []
+        # 基础字段仍在（瘦身只裁 tracker 明细）
+        assert slim_row["name"] == "multi-tracker"
+
+        default = client.get(URL)
+        default_row = default.json()["data"]["list"][0]
+        assert len(default_row["trackerInfo"]) == 2
+
     def test_tracker_domain_like_underscore_is_literal(self, client, db_session):
         """like 已转义：筛 myXtracker.example.com 不得经 `_` 单字符通配命中 my_tracker 行。"""
         torrent = make_torrent(
@@ -658,6 +676,7 @@ class TestFilters:
         assert matched["https://my_tracker.example.com/announce"] == "my_tracker.example.com"
 
     def test_tracker_domains_endpoint_returns_sorted_synced_domains(self, client, db_session):
+        reset_tracker_domains_cache()
         torrent = make_torrent(
             db_session,
             info_id="domain-list",
@@ -700,6 +719,51 @@ class TestFilters:
 
         assert body["code"] == "200"
         assert body["data"] == ["a.example.com", "z.example.com"]
+
+    def test_tracker_domains_ttl_cache_serves_within_window_and_refreshes_after(self, client, db_session):
+        """60s TTL 缓存：窗口内命中缓存（DB 新增不可见），过期后重扫（新域名出现）。"""
+        reset_tracker_domains_cache()
+        torrent = make_torrent(
+            db_session,
+            info_id="ttl-cache",
+            downloader_id="dl-a",
+            hash_="h-ttl-cache",
+            name="ttl-cache",
+            size=1024,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+
+        def _add_tracker(tracker_id: str, host: str) -> None:
+            db_session.add(
+                TrackerInfo(
+                    tracker_id=tracker_id,
+                    torrent_info_id=torrent.info_id,
+                    tracker_url=f"https://{host}/announce",
+                    tracker_host=host,
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                )
+            )
+            db_session.commit()
+
+        _add_tracker("trk-ttl-first", "first.example.com")
+        first = client.get(TRACKER_DOMAINS_URL)
+        assert first.json()["data"] == ["first.example.com"]
+
+        # 窗口内：DB 新增域名被缓存屏蔽（TTL 语义）
+        _add_tracker("trk-ttl-second", "second.example.com")
+        cached = client.get(TRACKER_DOMAINS_URL)
+        assert cached.json()["data"] == ["first.example.com"]
+
+        # 过期（模拟时间推进）：重扫拿到全部域名
+        torrent_crud_module._tracker_domains_cache["at"] = 0.0
+        refreshed = client.get(TRACKER_DOMAINS_URL)
+        assert refreshed.json()["code"] == "200"
+        assert refreshed.json()["data"] == ["first.example.com", "second.example.com"]
+        reset_tracker_domains_cache()
 
     def test_single_error_filter_requires_global_content_uniqueness(self, client, db_session):
         make_torrent(

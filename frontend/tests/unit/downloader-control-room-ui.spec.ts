@@ -76,7 +76,10 @@ describe('下载器控制台视觉骨架', () => {
 describe('下载器设置工作台', () => {
   it('使用自定义标题、左侧模式导航和紧凑基础信息网格', () => {
     expect(settingsDialog).toContain('class="workspace-header"')
-    expect(settingsDialog).toContain('tab-position="left"')
+    // mobile-ux-fixes 2026-09：tab-position 改为响应式绑定（≤780 顶部横向页签，
+    // 宽屏仍为 left）——断言绑定式而非固定字面量
+    expect(settingsDialog).toContain(':tab-position="tabsPosition"')
+    expect(settingsDialog).toContain("matchMedia('(max-width: 780px)')")
     expect(settingsDialog).toContain('class="workspace-basic-form"')
     expect(settingsDialog).toContain('label-position="top"')
     expect(settingsDialog).toContain('label-width="auto"')

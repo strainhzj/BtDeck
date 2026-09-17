@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 翡翠绿主题 token——与 frontend/src/styles/theme-variables.scss [data-theme="emerald"]
+     同源一一对应（主色/语义色/文本灰阶/背景/边框），原生过渡页与 WebView 内前端
+     呈同一品牌色系。全部为浅色值：前端暗色主题"预留未启用"，本应用同步只做浅色。 -->
+<resources>
+    <!-- 主色调（emerald） -->
+    <color name="btdeck_primary">#059669</color>
+    <color name="btdeck_primary_dark">#047857</color>
+    <color name="btdeck_primary_deep">#065F46</color>
+    <color name="btdeck_primary_light">#10B981</color>
+    <color name="btdeck_primary_lightest">#D1FAE5</color>
+    <color name="btdeck_on_primary">#FFFFFF</color>
+
+    <!-- 语义色 -->
+    <color name="btdeck_success">#10B981</color>
+    <color name="btdeck_warning">#F59E0B</color>
+    <color name="btdeck_warning_dark">#D97706</color>
+    <color name="btdeck_error">#EF4444</color>
+    <color name="btdeck_info">#3B82F6</color>
+
+    <!-- 文本灰阶 -->
+    <color name="btdeck_text_primary">#1F2937</color>
+    <color name="btdeck_text_secondary">#6B7280</color>
+    <color name="btdeck_text_tertiary">#9CA3AF</color>
+
+    <!-- 背景 / 边框 -->
+    <color name="btdeck_bg_primary">#FFFFFF</color>
+    <color name="btdeck_bg_secondary">#F9FAFB</color>
+    <color name="btdeck_border">#E5E7EB</color>
+</resources>

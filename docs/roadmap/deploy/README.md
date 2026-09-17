@@ -10,16 +10,16 @@
 | Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
-| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO；SPA fallback = `factory.py:_mount_frontend_static` |
+| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO，Linux ELF 无内嵌图标约定（品牌图标经包管理器交付）；SPA fallback = `factory.py:_mount_frontend_static` |
 | 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-android.bat` / `deploy/build-linux.sh` / `build-packages.bat` | Windows EXE、Android 双变体 APK、Linux 包构建；根入口可统一调用 Windows + Android 链 |
 | Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包；安装器、卸载项及快捷方式复用主程序品牌图标 |
-| fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包 |
+| fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包；✨2026-09-11 随包装品牌图标（`deploy/icons/` hicolor 48-256 + scalable + `btdeck.desktop`，deb/rpm 对称） |
 | 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
 | 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
 | 打包依赖 requirements | `deploy/requirements-linux-package.txt` / `requirements-windows-package.txt` | Linux / Windows 打包专用依赖 |
 | 打包辅助 analyze-package | `deploy/analyze-package-size.py` / `verify-package.py` | 打包体积分析 / 产物校验 |
 | 发布门禁工具链 release-gate | `scripts/release/`（sign_artifacts / build_release_manifest / aggregate_gate_report / verify_release_bundle / fault_injection_drills 等）+ `release/schemas/` + `deploy/docker-compose.release.yml` + `docs/release/runbook.md` | v1.0.6 发布等价门禁（G0~G10）：签名（Authenticode+cosign fail-closed）、发布清单（CERTIFIED 只人工审批）、门禁汇聚（rc-gate DAG）、digest-only 发布组合模板、六类故障注入演练与发布 runbook（2026-09-03 批次 D/E/F） |
-| TLS 参考配置 nginx-tls | `deploy/nginx-tls.conf.example` | HTTPS 反代参考配置（安全修复 W14）：HTTP 301 → HTTPS、HSTS、证书挂载说明，保留 `/api/` 内网代理 |
+| TLS 参考配置 nginx-tls | `deploy/nginx-tls.conf.example` | HTTPS 反代参考配置（安全修复 W14）：HTTP 301 → HTTPS、HSTS、证书挂载说明，保留 `/api/` 内网代理；✨2026-09-10 补 `/health/` 代理（`location = /health` 静态 + 深路径转后端，修伴侣健康探测被吞） |
 | 构建产物 artifact | 仓库根 `dist/`（`btdeck.exe`、`btdeck-linux`、`BtDeck-v1.0.9-*.deb/.rpm`、`config`） / `build/btdeck-windows/` | Windows/Linux 可执行与安装包 / PyInstaller 中间产物（均已 .gitignore，不入库） |
 
 ## 部署模式总览

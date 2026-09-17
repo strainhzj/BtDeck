@@ -429,7 +429,10 @@ class TestActiveSpeedEndpointWiring:
                     "app.api.endpoints.torrent_speed._gather_active_speeds",
                     new=AsyncMock(return_value=gathered),
                 ),
-                patch("app.api.endpoints.torrent_speed._ttl_queue.get_disappeared", return_value={}),
+                patch(
+                    "app.api.endpoints.torrent_speed._ttl_queue.get_disappeared",
+                    return_value=({}, []),
+                ),
                 patch(
                     "app.api.endpoints.torrent_speed._sync_torrents_to_db",
                     new=AsyncMock(),

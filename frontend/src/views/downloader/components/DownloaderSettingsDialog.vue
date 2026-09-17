@@ -39,7 +39,7 @@
       </div>
     </template>
 
-    <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
+    <el-tabs v-model="activeTab" :tab-position="tabsPosition" class="settings-tabs">
       <!-- 标签页1: 基本信息（合并后） -->
       <el-tab-pane name="basic">
         <span slot="label" class="workspace-tab-label">
@@ -644,6 +644,13 @@ export default class DownloaderSettingsDialog extends Vue {
   // 当前激活的标签页
   private activeTab = 'basic'
 
+  // ============ ≤780 顶部横向页签（mobile-ux-fixes 2026-09） ============
+  // 手机上左列 64px 图标页签不可读（无文字），基本信息/速度设置/路径管理/标签
+  // 分类管理四页签改为顶部横向滚动（图标+文字）；宽屏保持左列布局不变。
+  private tabsPosition: 'left' | 'top' = 'left'
+  private tabsMediaQuery: MediaQueryList | null = null
+  private tabsMediaHandler: ((mq: MediaQueryList) => void) | null = null
+
   // 提交状态
   private submitting = false
 
@@ -680,6 +687,45 @@ export default class DownloaderSettingsDialog extends Vue {
 
   created(): void {
     loadPlatformCapabilities().then(() => this.$forceUpdate()).catch(() => this.$forceUpdate())
+  }
+
+  mounted(): void {
+    // 整页复用形态（/m/downloader/settings/:id|new）：弹窗创建时 visible 已为
+    // true，@Watch('visible') 不为初始值触发——挂载即补一次初始化，否则表单空白
+    if (this.visible) {
+      void this.initDialog()
+    }
+    if (typeof window.matchMedia === 'function') {
+      const mql = window.matchMedia('(max-width: 780px)')
+      this.tabsPosition = mql.matches ? 'top' : 'left'
+      this.tabsMediaHandler = (mq: MediaQueryList) => {
+        this.tabsPosition = mq.matches ? 'top' : 'left'
+      }
+      this.tabsMediaQuery = mql
+      const legacy = mql as MediaQueryList & {
+        addListener?: (listener: (mq: MediaQueryList) => void) => void
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.addListener === 'function') {
+        legacy.addListener(this.tabsMediaHandler)
+      }
+    }
+  }
+
+  beforeDestroy(): void {
+    if (this.tabsMediaQuery && this.tabsMediaHandler) {
+      const mql = this.tabsMediaQuery
+      const legacy = mql as MediaQueryList & {
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.removeEventListener === 'function') {
+        mql.removeEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.removeListener === 'function') {
+        legacy.removeListener(this.tabsMediaHandler)
+      }
+    }
   }
 
   // 当前设置
@@ -2152,6 +2198,9 @@ export default class DownloaderSettingsDialog extends Vue {
     height: 100vh;
     margin: 0 !important;
     border-radius: 0;
+    /* 手机内容横向收口：超出宽度的子内容在各自容器内滚动而非撑破对话框 */
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .workspace-header {
@@ -2173,27 +2222,116 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
+  /* ≤780 顶部横向页签（tabsPosition=top）：图标+文字全可读、横向滚动、
+     右缘渐隐提示可滑；左列 .is-left 规则在 top 布局下不命中，无需覆盖 */
   .settings-tabs {
-    ::v-deep > .el-tabs__header.is-left {
-      flex-basis: 64px;
-      width: 64px;
-      padding: 12px 7px;
+    flex-direction: column;
+
+    ::v-deep > .el-tabs__content {
+      width: 100%;
     }
 
-    ::v-deep > .el-tabs__header .el-tabs__item.is-left {
-      justify-content: center;
-      height: 52px;
-      padding: 0 !important;
+    ::v-deep > .el-tabs__header.is-top {
+      box-sizing: border-box;
+      flex: 0 0 auto;
+      width: 100%;
+      margin: 0 0 6px;
+      border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.11);
+      background: rgba(249, 250, 251, 0.72);
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-wrap::after {
+      display: none;
+    }
+
+    /* 页签超出可视宽度时横向滑动（隐藏滚动条，右缘渐隐暗示还有页签） */
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav {
+      display: flex;
+      width: max-content;
+      white-space: nowrap;
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__item.is-top {
+      height: 42px;
+      line-height: 42px;
+      padding: 0 12px !important;
+      color: var(--color-text-secondary);
+      font-size: 13px;
+      text-align: left !important;
+
+      &.is-active {
+        color: var(--color-primary);
+      }
+
+      &.is-disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
     }
   }
 
   .workspace-tab-label {
-    justify-content: center;
+    justify-content: flex-start;
+    /* 顶部页签纯文字（2026-09-12 用户反馈：图标+副标题在窄屏被截断） */
+    gap: 0;
 
-    &__copy,
+    &__icon {
+      display: none;
+    }
+
+    &__copy {
+      gap: 0;
+
+      small {
+        display: none;
+      }
+    }
+
     &__lock {
       display: none;
     }
+  }
+
+  /* 底部操作栏纵排两行：模板行在上、取消/保存行贴近拇指；按钮全宽 + 40px 触控 */
+  ::v-deep .el-dialog__footer {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .footer-left,
+  .footer-right {
+    width: 100%;
+  }
+
+  .footer-left .workspace-footer-button,
+  .footer-right .workspace-footer-button {
+    flex: 1;
+    min-height: 40px;
+    margin-left: 0;
+  }
+
+  /* 520 断点把次要按钮收成纯图标——页脚全宽按钮恢复文字标签更易读 */
+  .dialog-footer .workspace-footer-button span span {
+    display: inline-flex;
   }
 
   .tab-content {
@@ -2215,6 +2353,11 @@ export default class DownloaderSettingsDialog extends Vue {
     grid-column: 1 / -1;
   }
 
+  /* 基本信息内层 el-row 双列（下载器名/类型等）整段手机宽度折单列 */
+  .workspace-basic-form ::v-deep .el-col {
+    width: 100%;
+  }
+
   .footer-hint {
     display: none;
   }
@@ -2223,10 +2366,6 @@ export default class DownloaderSettingsDialog extends Vue {
 @media (max-width: 520px) {
   .workspace-eyebrow {
     display: none;
-  }
-
-  .workspace-basic-form ::v-deep .el-col {
-    width: 100%;
   }
 
   .workspace-footer-button {

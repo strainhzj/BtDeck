@@ -59,6 +59,7 @@ def get_torrent_infos(
     active_keys: Optional[Set[Tuple[str, str]]] = None,
     same_content_only: bool = False,
     single_error_only: bool = False,
+    include_trackers: bool = True,
 ) -> Dict[str, Any]:
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     # 构建基础查询（排除回收站中的种子：dr=0 且 deleted_at=NULL）
@@ -393,6 +394,7 @@ def get_torrent_infos(
             db,
             query_result_list,
             requested_tracker_domains=requested_tracker_domains or None,
+            include_trackers=include_trackers,
         )
 
         logger.debug(

@@ -21,9 +21,19 @@
         <AppLogo v-if="!isSecondaryPage" variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
         <span class="mobile-header-title">{{ headerTitle }}</span>
       </div>
-      <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
-        桌面版
-      </el-button>
+      <!-- 桌面版出口（仅宽视口渲染）：桌面浏览器预览移动版时的回程解锁，
+           手机窄屏不渲染（mobile-ux-fixes「app 不显示桌面版」决策保持） -->
+      <div v-if="isWideViewport" class="mobile-header-right">
+        <button
+          type="button"
+          class="mobile-header-desktop"
+          aria-label="切换到桌面版"
+          @click="switchToDesktop"
+        >
+          <LucideIcon name="monitor" :size="15" />
+          <span>桌面版</span>
+        </button>
+      </div>
     </header>
 
     <main
@@ -90,35 +100,18 @@
           <span>{{ item.label }}</span>
           <span v-if="isActive(item)" class="mobile-menu-item-current">当前</span>
         </button>
-
-        <div class="mobile-menu-group-title">全部功能（桌面版页面）</div>
-        <button
-          v-for="item in desktopMenuItems"
-          :key="item.path"
-          type="button"
-          class="mobile-menu-item"
-          @click="goMenuItem(item)"
-        >
-          <span>{{ item.label }}</span>
-          <span class="mobile-menu-item-arrow">›</span>
-        </button>
-
-        <div class="mobile-menu-footer">
-          <el-button size="small" class="mobile-menu-desktop-btn" @click="switchToDesktop">
-            完整桌面版
-          </el-button>
-        </div>
       </div>
     </el-drawer>
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
-import { setStoredUiMode } from '@/utils/ui-mode'
+import { Component } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { isCapabilityAvailable } from '@/api/platform-capabilities'
+import { setStoredUiMode } from '@/utils/ui-mode'
+import { WideViewport } from '@/views/mobile/mixins/wide-viewport'
 
 interface MobileTab {
   label: string
@@ -141,12 +134,15 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
 
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
- * 顶部标题 + 汉堡功能菜单 + 切桌面出口、内容区 router-view、底部 Tab 导航。
- * 原则：不自锁——任何时刻都能切回桌面版（偏好持久化）。
+ * 顶部标题 + 汉堡功能菜单、内容区 router-view、底部 Tab 导航。
+ * 不自锁：显式偏好 mobile 时宽视口仍停留移动版，须有切回桌面的出口。
  *
- * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）；
- * 完整功能 11 项塞不进底部 Tab（>5 不可用），低频管理页经抽屉跳
- * 桌面版路由承载（桌面管理页有窄屏断点基础），返回键/刷新回移动版。
+ * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）。
+ * 2026-09-10（mobile-ux-fixes）：移除手机屏上的「桌面版」切换入口（顶栏按钮/
+ * 抽屉完整桌面版/桌面页签分组）——手机屏上桌面版本不可用，且「Tracker 汇报/测试」
+ * 等桌面承载页自此仅桌面浏览器可达（用户确认的取舍）。
+ * 2026-09-12：补宽视口（≥768px）顶栏「桌面版」出口——修复桌面浏览器被
+ * switchToMobile 写死 mobile 偏好后无路回桌面（偏好单向锁死回归）。
  *
  * 通知未读角标（M1 余项）：复用桌面同款 Vuex NotificationModule.unreadCount
  * （/notifications/unread-count 现有接口），挂载即拉一次 + 60s 轮询（移动端
@@ -167,7 +163,7 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
     AppLogo
   }
 })
-export default class MobileLayout extends Vue {
+export default class MobileLayout extends WideViewport {
   private drawerVisible = false
   private unreadTimer = 0
 
@@ -246,6 +242,17 @@ export default class MobileLayout extends Vue {
     }
   }
 
+  // ============ 桌面版出口（宽视口专属，2026-09-12 回归修复） ============
+
+  /**
+   * 切回桌面版：写 desktop 显式偏好（与桌面侧栏 switchToMobile 对称）后进桌面页。
+   * 守卫按解析后的模式放行 /dashboard（不再被重定向回 /m/*）。
+   */
+  private switchToDesktop(): void {
+    setStoredUiMode('desktop')
+    this.$router.push('/dashboard').catch(() => undefined)
+  }
+
   private fetchUnreadCount(): void {
     // 后台标签页跳过本轮（省电；恢复可见后下一轮周期自然补拉）
     if (document.hidden) return
@@ -266,12 +273,6 @@ export default class MobileLayout extends Vue {
     ].filter(item => !item.requiredCapability || isCapabilityAvailable(item.requiredCapability))
   }
 
-  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；系统设置已移动化（/m/settings）。 */
-  private desktopMenuItems: MobileTab[] = [
-    { label: '种子列表（桌面）', path: '/torrents' },
-    { label: 'Tracker 汇报/测试（桌面）', path: '/tracker/reannounce-config' }
-  ]
-
   private isActive(tab: MobileTab): boolean {
     return this.$route.path === tab.path || this.$route.path.startsWith(tab.path + '/')
   }
@@ -282,22 +283,12 @@ export default class MobileLayout extends Vue {
     }
   }
 
-  /** 抽屉菜单点击：一律关闭抽屉；移动项 replace 保持单栈，桌面项 push 保留返回。 */
+  /** 抽屉菜单点击：一律关闭抽屉；移动项 replace 保持单栈。 */
   private goMenuItem(item: MobileTab): void {
     this.drawerVisible = false
-    if (this.isActive(item) && item.path.startsWith('/m/')) return
+    if (this.isActive(item)) return
     // 不从 $router 解构方法（丢 this），显式调用
-    if (item.path.startsWith('/m/')) {
-      this.$router.replace(item.path).catch(() => undefined)
-    } else {
-      this.$router.push(item.path).catch(() => undefined)
-    }
-  }
-
-  private switchToDesktop(): void {
-    this.drawerVisible = false
-    setStoredUiMode('desktop')
-    this.$router.replace('/dashboard').catch(() => undefined)
+    this.$router.replace(item.path).catch(() => undefined)
   }
 
   // ============ 手势（v1.0.6 移动独有优化） ============
@@ -462,15 +453,30 @@ export default class MobileLayout extends Vue {
   border-radius: 1px;
 }
 
-.mobile-header-desktop {
-  color: #fff;
-  padding: 4px 0;
-}
-
 /* 头部左侧操作组：二级页 ← 返回与汉堡并存（抽屉全局可达） */
 .mobile-header-left {
   display: flex;
   align-items: center;
+}
+
+/* 桌面版出口（仅宽视口渲染，v-if 控制）：主题色头部上的半透明胶囊按钮 */
+.mobile-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.mobile-header-desktop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .mobile-header-back {
@@ -667,21 +673,5 @@ export default class MobileLayout extends Vue {
 .mobile-menu-item-current {
   font-size: 12px;
   color: var(--color-primary);
-}
-
-.mobile-menu-item-arrow {
-  color: #c0c4cc;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.mobile-menu-footer {
-  margin-top: auto;
-  padding: 16px;
-  border-top: 1px solid #e4e7ed;
-}
-
-.mobile-menu-desktop-btn {
-  width: 100%;
 }
 </style>

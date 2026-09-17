@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-10",
+  "last_updated": "2026-09-13",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,135 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "torrent-add-skip-check-mobile-20260912",
+      "name": "添加种子跳过校验选项（CheckingDL 规避）+ 添加弹窗移动端适配",
+      "description": "用户验收反馈两项：①新添加的种子进入 CheckingDL——根因实锤为 qBittorrent 对保存路径已有数据的种子强制本地校验，而 TorrentAddDialog 硬编码 skip_hash_check:false（后端 /torrents/add·add-batch 的 skip_hash_check→qB is_skip_checking 链路本就通，只差弹窗不传）；修复为新增「跳过校验」复选框（默认关，经用户三选一确认安全默认）：勾选时数据已完整（辅种/续种）直接做种不进 CheckingDL，表单提示注明全新下载勿勾（会被当作 100% 完成）与仅 qB 生效（TR add_args 无校验跳过参数），关闭弹窗重置回默认。②TorrentAddDialog 为自定义 modal 非 el-dialog（此前 m-reuse-dialog 宽度覆盖不适用、移动页死 attr 已移除）：≤768 scoped 媒体块适配——overlay 顶铆+overflow-y auto 接管滚动（弹窗 85vh 上限让位）、dialog 全宽 max-width calc(100vw-24px) !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控目标。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "skip 语义核对：qbittorrent-api torrents_add kwargs is_skip_checking 已在 torrent_add_service L302 透传，TR 分支 add_args 仅 paused/download_dir（transmission_rpc 无跳过校验参数）；默认策略经用户确认「复选框默认关」（勾选把不完整数据当作 100% 完成是数据完整性风险，必须显式 opt-in）。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、lint 通过；skip 参数链路与移动适配源码契约 jest 覆盖"
+      ],
+      "tasks": [
+        {
+          "id": "torrent-add-skip-check-mobile.main",
+          "name": "添加弹窗跳过校验复选框 + 移动端适配",
+          "description": "TorrentAddDialog 新增 skip_hash_check 表单字段/复选框/提示/重置并透传批量添加；≤768 scoped 媒体块（顶铆全宽/44px 按钮/触控目标）；移动页移除对该弹窗的死 custom-class attr。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/components/TorrentAddDialog.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/torrent-add-dialog.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "torrent-add-dialog.spec.ts 7 passed（+5：默认 false 透传/勾选 true 透传/关闭重置不残留/≤768 媒体块源码契约 6 断言/复选框接线与硬编码禁回流）；typecheck、lint 绿；全量 110 套件 1565 用例绿；build 绿。"
+        }
+      ]
+    },
+    {
+      "id": "tracker-op-by-downloader-20260912",
+      "name": "Tracker批量操作按下载器触发——后端 by-downloader 端点 + 移动端直达弹窗（去除前端种子列表上限）",
+      "description": "用户跟进反馈：移动端 Tracker操作的「上限 100」接口值应与分页保持一致，并增加按下载器触发能力（方案经三选一确认）。后端 tracker.py 新增 POST /tracker/addTracker-by-downloader 与 /tracker/modifyTracker-by-downloader（TrackerByDownloaderRequest 请求体：downloader_id + trackers 分号分隔；共享执行体 _apply_tracker_op_by_downloader 服务端解析该下载器全部种子逐条复用既有 qb/tr helper，客户端连接强制 app.state.store 缓存，单条失败不断整体循环，审计改单条汇总 add/modify_by_downloader 口径 + SUCCESS/PARTIAL/FAILED；空 trackers→400、下载器行不存在→404、无种子→404、缓存不可用→500 fail-closed）。前端 TrackerOperationDialog 新增可选 scopeDownloader prop（null=桌面行为不变；传入时范围行/标题/按钮文案切换并提交 by-downloader 端点，成功提示带计数）；移动端选下载器后直达弹窗（getList limit:1 轻取 total 作范围计数，与列表分页同源接口；探测失败省略计数），移除前端拉种子列表与 TRACKER_OPERATION_MAX_TORRENTS=100 上限路径。顺带修复该弹窗模板 ?. 可选链（buble 模板编译器不支持，组件此前不可被 jest 挂载）。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "范围语义沿用 reannounce-by-downloader 现成模式（请求体模型 + 服务端全量解析 + 单条汇总审计）；审计不逐种子刷库（千级种子会刷出千条日志），与按下载器汇报口径对齐；前端 limit:1 计数探测与页面分页同走 getList 接口保持一致。",
+      "capabilities": [],
+      "implementation_gates": [
+        "后端 mypy/black/flake8 通过；新端点 pytest 覆盖校验/分发/计数/审计",
+        "前端 typecheck、lint 通过；dialog 双模式 + 移动端新流程 jest 覆盖"
+      ],
+      "tasks": [
+        {
+          "id": "tracker-op-by-downloader.backend",
+          "name": "后端按下载器 Tracker 批量操作端点",
+          "description": "tracker.py 新增两个 by-downloader 端点与共享执行体（校验链/qb·tr 分发/部分失败计数/汇总审计），test_auth_protection_extended 补两条 401 覆盖。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/tracker.py",
+            "backend/tests/api/test_tracker_by_downloader_api.py",
+            "backend/tests/api/test_auth_protection_extended.py",
+            "docs/roadmap/backend/api/README.md"
+          ],
+          "evidence": "tests/api/test_tracker_by_downloader_api.py 8 passed（空白 trackers 400/下载器行 404/无种子 404/store 缺失 500/qb 成功含审计 kwargs/tr modify 分发 int 化/部分失败 PARTIAL）+ test_auth_protection_extended 91 passed（含新增两条 by-downloader 401）；mypy/flake8/black 绿。"
+        },
+        {
+          "id": "tracker-op-by-downloader.frontend",
+          "name": "TrackerOperationDialog 按下载器模式 + 移动端直达弹窗",
+          "description": "api/torrents.ts 新增 addTrackerByDownloader/modifyTrackerByDownloader；TrackerOperationDialog 可选 scopeDownloader prop（范围行/标题/按钮/提交分支/计数提示，桌面零行为变化）；移动端选下载器后 limit:1 轻取计数进弹窗，移除拉列表与 100 上限路径。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/torrents/components/TrackerOperationDialog.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/tracker-operation-dialog.spec.ts",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "tracker-operation-dialog.spec.ts 7 passed（常规模式不受劫持/批量文案锚/scope 文案含计数/省略计数/双提交端点/非 200 不 emit success）；mobile-torrents.spec.ts 57 passed（limit:1 计数探测参数/探测失败省略计数/无种子拦截/scope 断言/源码契约 TRACKER_OPERATION_MAX_TORRENTS 禁回流）；typecheck、lint 绿。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-torrents-actions-20260912",
+      "name": "移动种子页操作补强——辅种数量 + 单种转移/修改路径 + 快捷操作全局组",
+      "description": "移动种子卡片元信息行补辅种数量（auxiliarySeedCount 蛇形/驼峰双读、缺失回退 1，>1 主题色强调）；卡片操作补「转移」（复用桌面 TransferDialog，受 seed_transfer 能力矩阵 fail-closed 门控）与「修改路径」（SetLocationDialog 单行形态，行经 normalizeTorrent 补齐 camelCase）；快捷操作下拉补全局组四项——添加种子（TorrentAddDialog）、Tracker操作、Tracker汇报、全局替换Tracker（GlobalReplaceTrackerDialog）。移动端无多选，Tracker操作/汇报按用户确认采用「先选下载器再执行」语义：汇报走 reannounce-by-downloader / 空 id=reannounce-all（确认框明示范围与计数）；操作拉取该下载器种子（上限 100，Query 参数 URL 长度约束，超限截断并 warning 明示）进桌面同款批量弹窗。顺带根修：下载器选项映射读 d.id 而后端 DownloaderSimpleVO 实际返回 downloader_id，筛选值恒 undefined——改为双字段兼容并保留原始行喂 TorrentAddDialog。五弹窗按需懒加载 + custom-class ≤768 收窄（94vw + 体高 64vh 内滚）。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "复用桌面 torrents/components 五个既有弹窗（TransferDialog/SetLocationDialog/TorrentAddDialog/TrackerOperationDialog/GlobalReplaceTrackerDialog）与 reannounceByDownloader/reannounceAll 现成 API（此前前端零调用）；批量范围经用户在「当前列表行/全局/先选下载器」三选项中确认为先选下载器。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、lint（--no-fix 含 contract:check、vuex-action）通过",
+        "mobile-torrents.spec 覆盖辅种数量口径、转移能力门控、四快捷操作入口、汇报确认/取消/计数、下载器映射修正"
+      ],
+      "tasks": [
+        {
+          "id": "mobile-torrents-actions.main",
+          "name": "移动种子页卡片与快捷操作扩展",
+          "description": "卡片辅种数量 + 转移/修改路径按钮（能力门控）+ 快捷操作全局组（添加种子/Tracker操作/Tracker汇报/全局替换）+ 下载器选择器 + 下载器选项 downloader_id 映射修正 + 弹窗移动端宽度适配。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "mobile-torrents.spec.ts：57 passed（+15 新用例：辅种数量渲染与回退/hot 强调、转移能力 supported 与 fail-closed、弹窗行规范化、onTorrentMutated 刷新、添加种子空下载器拦截、Tracker操作拉取参数与截断明示与空态、汇报按下载器/全局/取消/计数文案、全局替换入口、downloader_id 映射回归锚、源码契约 8 断言）；npm run typecheck 通过；npm run lint -- --no-fix 通过。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-notifications-mark-all-read-20260908",
+      "name": "移动端通知一键已读",
+      "description": "移动通知列表新增顶部“全部已读”操作栏，复用现有 PUT /notifications/read-all 接口，覆盖尚未加载的分页通知；成功后就地更新已加载卡片并同步移动端未读角标。",
+      "status": "done",
+      "branch": "dev",
+      "planning_evidence": "沿用桌面通知中心已有全部已读端点和前端 API；移动页为独立分页列表，操作入口按 Vuex 未读角标与当前列表未读项的较大值显示，确保角标首轮加载尚未完成时仍可操作；markAllVersion 保留并发列表请求中的本地已读状态，防止旧响应回写未读标识。",
+      "capabilities": [],
+      "implementation_gates": [
+        "前端 typecheck、契约检查与 lint 通过",
+        "移动通知单测覆盖成功、重复提交、失败重试与状态保留"
+      ],
+      "tasks": [
+        {
+          "id": "mobile-notifications.mark-all-read",
+          "name": "移动通知页一键已读按钮与交互",
+          "description": "在移动通知列表顶部增加未读摘要和 44px 触控区按钮；复用 markAllAsRead API，处理 loading/重复点击/错误提示/角标同步，并保护并发分页响应的已读状态。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/notifications.vue",
+            "frontend/tests/unit/mobile-notifications.spec.ts",
+            "docs/roadmap/frontend/views/README.md"
+          ],
+          "evidence": "frontend/tests/unit/mobile-notifications.spec.ts：23 passed；npm run typecheck 通过；npm run lint -- --no-fix 通过（contract:check、vue-cli-service lint --max-warnings 0、lint-vuex-action）。"
+        }
+      ]
+    },
     {
       "id": "docker-diagnosis-rca-fixes-20260907",
       "name": "Docker 部署诊断导出五项 RCA 与修复——WAL 快照观测阻塞事件循环根修 + 本地镜像构建身份注入加固＋Docker 时区统一 UTC",
@@ -664,6 +793,147 @@
         }
       ],
       "summary": "W0~W3 全部落地（六工具齐套）；W4 代码/测试/文档面完成：G1/G4/G5/G6/G9/G11 新增 PASS，聚合 11/12（G0/G2/G3/G1/G4/G5/G6/G7/G8/G9/G11），G10 INDETERMINATE——依赖锁定+双 spec+Windows EXE 黑盒（默认关闭+SDK 捆载实证）已验，Docker/DEB/RPM 黑盒被本机网络环境阻断（Docker VM trixie apt 404 + 出网劣化；github 失联同根源），待网络恢复由发布管线复验；verdict=BLOCKED 保持。详见计划 §11。"
+    },
+    {
+      "id": "test-debt-capability-drift-2026-09-10",
+      "name": "存量测试债清偿：能力矩阵 fail-closed 致 5 套件 spec 漂移 + request mock 缺 default 致守卫 TypeError",
+      "description": "mobile-ux-fixes 批次受控基线对照发现的存量红套件（HEAD 即 12 failed）：4 套件（mobile-delete-level-dialog/permission-guard/torrent-list-view-component/traditional-view-component）因主机能力矩阵批次落地后 level3_recycle fail-closed（矩阵未加载=unknown=隐藏等级3/重定向回收站路由）而断言漂移，注入 setPlatformCapabilityCacheForTesting(desktop+supported) 还原健康态；permission-force-change-deadlock 因其 @/utils/request mock 未提供可调用 default，守卫 loadPlatformCapabilities 真实调用 TypeError 炸导航，整体桩掉 @/api/platform-capabilities。附带消解 Node22 unhandled-rejection 进程崩溃链（at(3) 抛错→预置 rejected promise 无人消费）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mobile-ux-fixes-2026-09.md",
+      "tasks": [
+        {
+          "id": "test-debt.1",
+          "name": "四套件能力缓存注入（mobile-delete-level-dialog/permission-guard/torrent-list-view/traditional-view）",
+          "description": "各 spec beforeEach 注入 setPlatformCapabilityCacheForTesting（desktop + level3_recycle supported）、afterEach resetPlatformCapabilityCache；还原四级删除全量入口、/recycle-bin 路由放行与'roles 已加载放行'分支语义。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/mobile-delete-level-dialog.spec.ts",
+            "frontend/tests/unit/permission-guard.spec.ts",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "四套件 10+11+36+45=102 例全绿；全量 107 套件/1514 例首次全绿；Node22 崩溃链消除。"
+        },
+        {
+          "id": "test-debt.2",
+          "name": "permission-force-change-deadlock 补 platform-capabilities 桩",
+          "description": "该 spec 对 @/utils/request 的 mock 缺可调用 default 导出，守卫 loadPlatformCapabilities 真实调用 TypeError 炸导航；整体桩掉 @/api/platform-capabilities（loadPlatformCapabilities→null、isCapabilityAvailable→true），本 spec 只回归强制改密拦截。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/permission-force-change-deadlock.spec.ts"
+          ],
+          "evidence": "8 例全绿；套件耗时 46s→7s（TypeError 重试链消除）。"
+        }
+      ]
+    },
+    {
+      "id": "mobile-ux-fixes-2026-09",
+      "name": "手机端七问题修复（确认弹框适配/伴侣健康探测/种子页提速/快捷操作/桌面版入口移除/下载器编辑页签）",
+      "description": "用户验收反馈的 7 个手机端问题：①确认弹框全局 ≤768 适配；②高负载伴侣模式红色 toast 对症缓解（幂等 GET 瞬态重试）；③种子页提速（tracker-domains TTL 缓存+懒加载、with_trackers 瘦身、content-visibility）；④移动种子页补齐查找重复任务+快捷操作四项；⑤桌面版入口全部移除；⑥「版本未知·服务存活检查失败」根修（nginx /health 代理+双端 /api/v1 别名回退）；⑦下载器新增/编辑统一 DownloaderSettingsDialog 整页（含全部页签）并删除旧 DownloaderDialog。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mobile-ux-fixes-2026-09.md",
+      "tasks": [
+        {
+          "id": "mobile-ux-fixes.1",
+          "name": "nginx /health 代理修复 + 安卓/桌面伴侣健康探测 /api/v1 别名回退",
+          "description": "location /health 改精确匹配 + /health/ 代理后端（nginx.conf 与 TLS 示例）；HealthClient.kt probeWithFallback（HttpError/非 JSON 信封回退别名，可注入 HttpCall）与 desktop_companion/health.py 同语义回退。旧部署不更新 nginx 也修好。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/nginx.conf",
+            "deploy/nginx-tls.conf.example",
+            "android/app/src/main/java/com/btdeck/companion/data/HealthClient.kt",
+            "android/app/src/test/java/com/btdeck/companion/HealthClientFallbackTest.kt",
+            "backend/app/desktop_companion/health.py",
+            "backend/tests/desktop_companion/test_health.py"
+          ],
+          "evidence": "test_health.py 21 passed（回退 5 例新增，mock 改按 URL 分发）；HealthClientFallbackTest 5 例 + PinTest JVM 全绿；compose 健康检查 wget /health 精确命中不变。"
+        },
+        {
+          "id": "mobile-ux-fixes.2",
+          "name": "确认弹框手机适配 + 幂等 GET 瞬态重试",
+          "description": "styles/index.scss 全局 @media≤768 覆盖 .el-message-box（92vw+双钮全宽触控）；request.ts 响应拦截器内静默重试一次（GET+网络错误/502/503/504，超时与写操作不重试），重试用尽才走 3s 节流 toast。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/styles/index.scss",
+            "frontend/src/utils/request.ts",
+            "frontend/tests/unit/request-transient-retry.spec.ts"
+          ],
+          "evidence": "request-transient-retry.spec 6 例 + request-auth 16 例全绿；lint/typecheck/build 绿。注：重试为高负载失败的对症缓解，负载根源另行治理。"
+        },
+        {
+          "id": "mobile-ux-fixes.3",
+          "name": "种子页提速：tracker-domains TTL 缓存 + 懒加载 + with_trackers 瘦身 + 渲染减负",
+          "description": "后端 /torrents/tracker-domains 60s 进程内 TTL 缓存；getList 新增 with_trackers（torrent_helpers include_trackers 跳过 tracker 预取与关键词池）；移动页 tracker 域名懒加载（首展筛选才拉）+ 列表携带 with_trackers=false + 卡片 content-visibility:auto。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_torrent_list_api.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "test_torrent_list_api.py 42 passed（TTL 缓存 2 例+with_trackers 1 例新增）；mobile-torrents.spec 43 passed（懒加载断言改写）。"
+        },
+        {
+          "id": "mobile-ux-fixes.4",
+          "name": "移动种子页快捷操作：查找重复任务 + 辅种/错误单种排查 + 快捷删重",
+          "description": "快捷下拉四项（与桌面同语义）：duplicates toggle（getDuplicateTorrents，skip/limit→page/pageSize 换算，模式横幅/退出/空态）、same_content_only/single_error_only 过滤模式、QuickDeleteDuplicatesDialog；reload/fetchPage 按模式分发；删重弹窗与 AdvancedMultiSelect 嵌套 popover 手机适配。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/components/torrents/QuickDeleteDuplicatesDialog.vue",
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/tests/unit/mobile-torrents.spec.ts"
+          ],
+          "evidence": "mobile-torrents.spec 43 passed（快捷操作分发/查重分页换算/模式互斥/空态口径 5 例新增）。"
+        },
+        {
+          "id": "mobile-ux-fixes.5",
+          "name": "移动端桌面版入口全部移除",
+          "description": "删顶栏/抽屉完整桌面版/桌面页签分组/登录页/空态链接 5 处入口与 6 处「见桌面版」文案（改「暂未在移动端提供」）；「Tracker 汇报/测试」自此移动端无导航入口（用户确认取舍）；≥768px 默认桌面版与桌面侧栏切换保留。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/src/views/mobile/login.vue",
+            "frontend/src/views/mobile/torrents.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/views/mobile/tasks.vue",
+            "frontend/src/views/mobile/logs.vue",
+            "frontend/src/views/mobile/recycle-bin.vue",
+            "frontend/src/views/mobile/tracker-keywords.vue",
+            "frontend/src/views/mobile/orphan-files.vue",
+            "frontend/tests/unit/mobile-shell.spec.ts",
+            "frontend/tests/e2e/mobile/login.spec.ts"
+          ],
+          "evidence": "mobile-shell.spec 34 passed（入口缺失断言+能力 fail-closed 9 项/注入 11 项两态改写）；e2e login.spec 断言改 toHaveCount(0)。"
+        },
+        {
+          "id": "mobile-ux-fixes.6",
+          "name": "下载器新增/编辑统一设置页（页签全量）+ 旧 DownloaderDialog 删除",
+          "description": "新增跳 /m/downloader/settings/new（downloader=null 新增模式）、编辑与设置合一跳 :id；DownloaderSettingsDialog :tab-position 响应式（≤780 顶部横向页签带文字）；空态 CTA 与 ?create=1 连改；确认零消费方后删除 DownloaderDialog.vue。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/views/mobile/downloader-settings.vue",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/tests/unit/mobile-downloader.spec.ts",
+            "frontend/tests/unit/mobile-downloader-settings.spec.ts",
+            "frontend/tests/unit/downloader-control-room-ui.spec.ts"
+          ],
+          "evidence": "mobile-downloader.spec 11 + mobile-downloader-settings.spec 6（new 模式用例新增）+ downloader-settings.spec 3 + downloader-control-room-ui.spec 27（tab-position 断言改绑定式锚点）全绿。"
+        }
+      ]
     },
     {
       "id": "mobile-ux-enhancements-2026-08-28",
@@ -3584,7 +3854,7 @@
             "backend/app/factory.py",
             "backend/tests/"
           ],
-          "evidence": "2026-08-29 Phase 3 安卓本地服务端壳工程全量落地（双 AVD 实证；Phase 5 设备矩阵遗留故 in-progress 不置 done）。① Python 侧：android/tools/stage-server.py（移植 android-wheels staging：backend/app+alembic(.pymig)+alembic.ini+frontend/dist→app/src/server/ 源集，requirements 生成含 pillow ANDROID-DROP）；android/server-python/btdeck_server.py（start/stop/status JSON 契约：异步启动+状态轮询、Alembic fail-fast 且迁移前置于深导入[实证修复：导入期模块级查询打空库]、端口优先复用+SO_REUSEADDR[实证修复：重启 TIME_WAIT 端口被拒]、健康自检 trust_env=False[实证修复：Windows 注册表系统代理把 127.0.0.1 探测转发成代理 503]）；桌面冒烟 SMOKE PASS（start 4s→running、/health/live+/health/ready 200 v1.0.6、SPA 首页 200、stop 干净、重启 2s）。② 壳工程：Chaquopy 17.0.0 接线（Python 3.12 + --extra-index-url=strainhzj.github.io/android-wheels/simple + -r staged requirements；实证坑：pip 块无任何 install() 时整个 pip 配置含 options() 被判空跳过→requirements imy 22 字节空，tzdata install() 兼任生效锚点）；ndk.abiFilters 收敛 arm64-v8a/x86_64（32 位设备不可装，登记 README）；FGS specialUse（FOREGROUND_SERVICE(_SPECIAL_USE)+POST_NOTIFICATIONS 权限+PROPERTY_SPECIAL_USE_FGS_SUBTYPE+START_STICKY）；ServerService（通知 channel+停止 action+每秒轮询状态镜像+绑定变化完整重启+data 锚定 filesDir/btdeck-server）；ServerStates/LocalServerProfile/LocalServerState（纯 JVM 可测契约层）；LanHostPolicy 回环豁免（Hosts.isLoopbackHost：127/8+::1+localhost 免明文确认，LAN 私有主机仍需确认+单测锁定）。③ JVM 单测 28 绿（testImplementation org.json:json 修 not-mocked stub）。④ 向导集成：ABI 检测→通知权限请求（13+，拒绝不阻断）→确认对话框（LAN 开关默认关+威胁模型文案）→启动进度→running 自动写入本机 profile（固定 id local-server+动态端口 baseUrl）复用 WebViewActivity 全链→错误按 env/migration/import/bind/health 阶段归因；ServerList 本机 profile 未运行引导。⑤ 双 AVD 实证：btdeck-a35（Android 15，4096 页）connectedDebugAndroidTest 1/1 绿（start→空库迁移→健康握手→静态 SPA 首页→优雅停机→重启端口复用）；手动全流程实录（uiautomator dump/dumpsys 铁证）：向导→通知权限 Allow→确认框（LAN 默认不勾）→15s 内 running→WebViewActivity 自动打开→SPA 登录页渲染（截图视觉实证）→标题'本机服务端 v1.0.6 · 服务就绪'→常驻通知'BtDeck 本机服务 v1.0.6 · http://127.0.0.1:36519'+停止 action；FGS types=0x40000000（specialUse）+stopIfKilled=false；ACTION_STOP→服务销毁；ACTION_START 重启 running 端口 36519 复用；am crash 崩溃恢复：pid 3816→4301、ServiceRecord 重建、通知与端口 36519 复原（START_STICKY 生效）。btdeck-16k（ps16k，16KB 页）connectedDebugAndroidTest 绿 + 向导启动链抽验（10s WebView、通知 41241、types=0x40000000）。LAN 明文变体 -Pbtdeck.lanCleartext=true 构建通过（versionName 0.2.0-server+lan，双 ABI）。APK debug 90.4MB（依赖+前端 dist 全量）。⑥ 后端零源码改动（cuser 延迟导入已就位）。遗留登记：arm64 真机/升级安装迁移演练/OEM 电池与 Doze 设备矩阵属 Phase 5；pillow ANDROID-DROP 致 2FA 二维码接口暂不可用（其余零影响）；release+bundletool 体积精算 Phase 5。 收口（2026-09-04，in-progress→done）：①2FA Pillow 缺失产品处理落地（优雅降级手动录入，此前为 code=500 卡步骤1 且 secret 已落库不可见的非优雅失败）：后端 verifyPasswordFor2FA/2faVerifyQrCode 抽 _generate_totp_qr_png 助手，ImportError 时返回成功信封 qr_code_base64 空串+qr_available=False+secret（绑定不中断；旧图片端点改明确 503 信封指引手动录入）；前端 settings 步骤 2 无二维码时渲染手动录入块（secret 等宽字体+复制按钮走共享 clipboard util+账户名/TOTP 参数说明+使用步骤双分支），桌面 PIL 可用路径零变化；测试后端 6 例（PIL 可用零变化/降级成功信封/首启 secret 落库/图片端点 503/已启用空响应）+前端 6 例（img 正常/降级块/复制成功失败/重置清理/源码契约），双端变异验证（ImportError 上抛复刻 500→红；移除手动块→红）。②targetSdk 35 强制 edge-to-edge 布局缺陷修复（发现过程见 task .3 收口：列表首行画进状态栏/工具栏，生产路径同症）→values-v35 主题 windowOptOutEdgeToEdgeEnforcement=true+API36 迁移义务注释。③TrustScope SPKI 指纹+HealthClient 手动钉扎（详见 task .3 收口）。④appcompat 1.7.0→1.7.1。⑤assembleRelease+bundleRelease 复验成功。⑥本机 AVD 设备矩阵（双页宽 FGS/通知/崩溃恢复/旋转/LAN 重绑/API24/34/35）此前批次已实证。正式移交 task .7 阻塞清单：arm64 真机矩阵（会话中一台 SDY-AN00 短暂接入 adb 后掉线未复现，无稳定设备）、跨版本升级迁移演练（需 v1.0.7 版本对）、Doze deep 真机、Play Console 人工项——见 play-release.md §10/§11 SOP。"
+          "evidence": "2026-08-29 Phase 3 安卓本地服务端壳工程全量落地（双 AVD 实证；Phase 5 设备矩阵遗留故 in-progress 不置 done）。① Python 侧：android/tools/stage-server.py（移植 android-wheels staging：backend/app+alembic(.pymig)+alembic.ini+frontend/dist→app/src/server/ 源集，requirements 生成含 pillow ANDROID-DROP）；android/server-python/btdeck_server.py（start/stop/status JSON 契约：异步启动+状态轮询、Alembic fail-fast 且迁移前置于深导入[实证修复：导入期模块级查询打空库]、端口优先复用+SO_REUSEADDR[实证修复：重启 TIME_WAIT 端口被拒]、健康自检 trust_env=False[实证修复：Windows 注册表系统代理把 127.0.0.1 探测转发成代理 503]）；桌面冒烟 SMOKE PASS（start 4s→running、/health/live+/health/ready 200 v1.0.6、SPA 首页 200、stop 干净、重启 2s）。② 壳工程：Chaquopy 17.0.0 接线（Python 3.12 + --extra-index-url=strainhzj.github.io/android-wheels/simple + -r staged requirements；实证坑：pip 块无任何 install() 时整个 pip 配置含 options() 被判空跳过→requirements imy 22 字节空，tzdata install() 兼任生效锚点）；ndk.abiFilters 收敛 arm64-v8a/x86_64（32 位设备不可装，登记 README）；FGS specialUse（FOREGROUND_SERVICE(_SPECIAL_USE)+POST_NOTIFICATIONS 权限+PROPERTY_SPECIAL_USE_FGS_SUBTYPE+START_STICKY）；ServerService（通知 channel+停止 action+每秒轮询状态镜像+绑定变化完整重启+data 锚定 filesDir/btdeck-server）；ServerStates/LocalServerProfile/LocalServerState（纯 JVM 可测契约层）；LanHostPolicy 回环豁免（Hosts.isLoopbackHost：127/8+::1+localhost 免明文确认，LAN 私有主机仍需确认+单测锁定）。③ JVM 单测 28 绿（testImplementation org.json:json 修 not-mocked stub）。④ 向导集成：ABI 检测→通知权限请求（13+，拒绝不阻断）→确认对话框（LAN 开关默认关+威胁模型文案）→启动进度→running 自动写入本机 profile（固定 id local-server+动态端口 baseUrl）复用 WebViewActivity 全链→错误按 env/migration/import/bind/health 阶段归因；ServerList 本机 profile 未运行引导。⑤ 双 AVD 实证：btdeck-a35（Android 15，4096 页）connectedDebugAndroidTest 1/1 绿（start→空库迁移→健康握手→静态 SPA 首页→优雅停机→重启端口复用）；手动全流程实录（uiautomator dump/dumpsys 铁证）：向导→通知权限 Allow→确认框（LAN 默认不勾）→15s 内 running→WebViewActivity 自动打开→SPA 登录页渲染（截图视觉实证）→标题'本机服务端 v1.0.6 · 服务就绪'→常驻通知'BtDeck 本机服务 v1.0.6 · http://127.0.0.1:36519'+停止 action；FGS types=0x40000000（specialUse）+stopIfKilled=false；ACTION_STOP→服务销毁；ACTION_START 重启 running 端口 36519 复用；am crash 崩溃恢复：pid 3816→4301、ServiceRecord 重建、通知与端口 36519 复原（START_STICKY 生效）。btdeck-16k（ps16k，16KB 页）connectedDebugAndroidTest 绿 + 向导启动链抽验（10s WebView、通知 41241、types=0x40000000）。LAN 明文变体 -Pbtdeck.lanCleartext=true 构建通过（versionName 0.2.0-server+lan，双 ABI）。APK debug 90.4MB（依赖+前端 dist 全量）。⑥ 后端零源码改动（cuser 延迟导入已就位）。遗留登记：arm64 真机/升级安装迁移演练/OEM 电池与 Doze 设备矩阵属 Phase 5；pillow ANDROID-DROP 致 2FA 二维码接口暂不可用（其余零影响）；release+bundletool 体积精算 Phase 5。 收口（2026-09-04，in-progress→done）：①2FA Pillow 缺失产品处理落地（优雅降级手动录入，此前为 code=500 卡步骤1 且 secret 已落库不可见的非优雅失败）：后端 verifyPasswordFor2FA/2faVerifyQrCode 抽 _generate_totp_qr_png 助手，ImportError 时返回成功信封 qr_code_base64 空串+qr_available=False+secret（绑定不中断；旧图片端点改明确 503 信封指引手动录入）；前端 settings 步骤 2 无二维码时渲染手动录入块（secret 等宽字体+复制按钮走共享 clipboard util+账户名/TOTP 参数说明+使用步骤双分支），桌面 PIL 可用路径零变化；测试后端 6 例（PIL 可用零变化/降级成功信封/首启 secret 落库/图片端点 503/已启用空响应）+前端 6 例（img 正常/降级块/复制成功失败/重置清理/源码契约），双端变异验证（ImportError 上抛复刻 500→红；移除手动块→红）。②targetSdk 35 强制 edge-to-edge 布局缺陷修复（发现过程见 task .3 收口：列表首行画进状态栏/工具栏，生产路径同症）→values-v35 主题 windowOptOutEdgeToEdgeEnforcement=true+API36 迁移义务注释。③TrustScope SPKI 指纹+HealthClient 手动钉扎（详见 task .3 收口）。④appcompat 1.7.0→1.7.1。⑤assembleRelease+bundleRelease 复验成功。⑥本机 AVD 设备矩阵（双页宽 FGS/通知/崩溃恢复/旋转/LAN 重绑/API24/34/35）此前批次已实证。正式移交 task .7 阻塞清单：arm64 真机矩阵（会话中一台 SDY-AN00 短暂接入 adb 后掉线未复现，无稳定设备）、跨版本升级迁移演练（需 v1.0.7 版本对）、Doze deep 真机、Play Console 人工项——见 play-release.md §10/§11 SOP。\n【2026-09-13 启动等待优化（prewarm 预热+轮询收敛）】用户报真机点『运行本次服务』等十几秒。桌面基准归因（data/startup_timing_probe.py）：总 3.4s=导入 alembic 0.4+冷迁移 0.9+深导入 app.main 1.3+lifespan 1.2（热态迁移仅 42ms），手机放大 3-5x 落 10-20s，与 AVD 实证 15s 一致，属架构现状非回归。修复：①btdeck_server 抽 _init_phases（env+迁移+深导入）共享段+新增 prewarm(data_root)（不动 _state/不占端口，starting/running 跳过），_init_lock 串行防冷首跑双迁移 database is locked；②Kotlin 新增 ServerPrewarm（AtomicBoolean 进程内一次+ABI 门）与 PythonBoot（Python.start 进程级互斥），接线 CompanionApp 冷启（lastPort>0 内存门，纯伴侣用户不加载 Python）+Wizard 点开本机服务卡片；③健康自检 sleep 1s→0.2s + ServerService POLL_INTERVAL_MS 1000→200ms 配快照变更检测（防 5Hz 通知刷屏）。桌面冒烟 SMOKE PASS（data/prewarm_smoke.py）：prewarm 后 start→running 1.33s（冷基线 3.4s）、状态不动/幂等/停机干净。versionCode 6→7/versionName 0.2.5-server+bat 同步。契约测试 ServerPrewarmContractTest 5 例（python 语义/锁双持有/0.2s/200ms/接线与门禁），变异验证 3/3 检出（轮询回退/去锁/去 lastPort 门）后逐字节还原；:app:testDebugUnitTest+:app:assembleDebug 全绿。余真机验收：预热后点击启动预期 3-5s（原十几秒）。"
         },
         {
           "id": "v1.0.6-dual-mode-client.5",
@@ -6090,6 +6360,40 @@
           "evidence": "阻塞于部署信息（未获得，不编造）：MoviePilot V2 完整版本号、部署方式（compose/裸机）、插件目录挂载与 PLUGIN_LOCAL_REPO_PATHS/PLUGIN_AUTO_RELOAD 可行性、BtDeck 地址自 MoviePilot 容器的可达性。联调未执行，不宣称通过。"
         }
       ]
+    },
+    {
+      "id": "webview-return-navigation-2026-09-13",
+      "name": "WebView 返回来源页双入口（action bar 返回箭头 + 左上角名称可点）",
+      "description": "用户真机反馈：WebView 内无法主动返回到模式选择（向导）/伴侣模式服务器选择页——action bar 只设 title/subtitle 无 home-as-up，唯一退出路径系统返回键又被 onBackPressedDispatcher 优先导向 WebView 历史（SPA 路由翻页）。实现：setDisplayHomeAsUpEnabled 显左上角返回箭头；原生 title 无点击 API，以 custom view（action_bar_web_title.xml 名称+地址两行）承载左上角名称整体可点；两入口都直接 finish 回退到启动来源 activity（伴侣=服务器列表/本机=向导）不带 WebView 历史。onSupportNavigateUp 禁走 super（默认落 onBackPressed 先耗历史）；副标题健康提示同步改写 custom view TextView（原生 subtitle 已隐藏）。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "webview-return-navigation.1",
+          "name": "返回双入口实现 + 布局",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
+            "android/app/src/main/res/layout/action_bar_web_title.xml"
+          ],
+          "description": "setupActionBar()：setDisplayHomeAsUpEnabled(true) + custom view 两行标题（根节点 clickable+focusable+ripple、文本显式 colorOnPrimary、maxWidth 防长名溢出）挂点击；exitToSourcePage()=finish 回来源页；onSupportNavigateUp 覆写直调不走 super；onOptionsItemSelected 兜底 android.R.id.home；refreshVersionHint 副标题写 custom view TextView。",
+          "evidence": "testDebugUnitTest 全绿（编译验证布局引用）；APK 载荷 classes7.dex 含 exitToSourcePage、res/layout/action_bar_web_title.xml 打入包。"
+        },
+        {
+          "id": "webview-return-navigation.2",
+          "name": "契约回归 + 版本纪律交付",
+          "status": "done",
+          "scope": "android",
+          "files": [
+            "android/app/src/test/java/com/btdeck/companion/ui/WebViewActivityContractTest.kt",
+            "android/app/build.gradle.kts",
+            "deploy/build-android.bat"
+          ],
+          "description": "契约 +2：返回双入口接线（箭头开关/onSupportNavigateUp 直调 exitToSourcePage 且不 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退——原生 subtitle 已隐藏写它健康提示静默不可见）+ 标题布局（clickable+focusable/双行 ID/colorOnPrimary）。versionCode 5→6、versionName 0.2.4-server(+lan)、bat BTDECK_APK_VERSION=0.2.4 同源（apkVersionKeepsAscendingAndAligned 仍绿）。",
+          "evidence": "WebViewActivityContractTest 7 用例 0 skipped 0 failures；变异验证（箭头开关置 false）契约即红后逐字节还原；deploy/build-android.bat 双变体构建+apksigner 验证通过，产物 btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk（badging versionCode='6'）。"
+        }
+      ]
     }
   ],
   "tasks": [
@@ -6397,6 +6701,43 @@
         "tests": "后端能力/API/任务/生命周期回归 39 passed；前端能力与任务相关 4 suites / 30 passed，npm run lint、typecheck、build 通过；Android AVD btdeck-a35 instrumentation LocalServerAndroidTest 1 passed。",
         "contract": "受限能力统一返回 HTTP 403，data.reasonCode=PLATFORM_CAPABILITY_UNSUPPORTED；能力矩阵 schemaVersion=2；Android 启动仅终结历史孤儿任务，不执行宿主文件系统扫描。",
         "behavior": "Android 主服务端隐藏受限路由/菜单、剔除路径配置字段、禁用三级删除/种子转移/受限定时任务；启动仅终结历史未完成孤儿任务且不创建 dispatcher；桌面/NAS 行为不变，伴侣模式继续由远端能力矩阵控制；AVD 实测矩阵为 schemaVersion=2、20 项、degraded=5、unsupported=9，五类受限接口均返回 403。"
+      }
+    },
+    {
+      "id": "android-native-ui-branding-2026-09-11",
+      "title": "Android 原生过渡页品牌化（Material 组件 + 翡翠绿主题）",
+      "status": "done",
+      "scope": "android",
+      "description": "手机 app 首启向导（模式二选一）、服务器地址管理列表与添加/编辑表单、本机服务确认/进度等对话框原先全部为系统默认样式（holo_blue 主题 + 程序化 LinearLayout AlertDialog），与前端翡翠绿品牌风格不一致。本批用 Material Components + 前端主题 token 全量重做：colors.xml 与 frontend theme-variables.scss emerald 同源（主色 #059669/语义色/灰阶/背景/边框）；主题基底 DayNight→Light（前端暗色主题预留未启用，避免自绘浅色值在系统暗色下断裂）+ MaterialAlertDialog 主题覆盖（WebViewActivity 未改代码的 appcompat 对话框经 colorAccent 同步获得翡翠绿按钮）；向导页品牌圆标 + 图标化模式卡片；列表改卡片行 + 健康状态语义色圆点 + MaterialButton 主操作；添加/编辑表单改 dialog_add_server.xml（OutlinedBox 输入框 + 浮动标签 + 密码可见切换 + TextInputLayout 错误展示，校验逻辑与错误文案零变更）；本机服务确认/运行/进度对话框 XML 化 + CircularProgressIndicator。全部布局 ID 与 Espresso 依赖文案保持不变。",
+      "files": [
+        "android/app/src/main/res/values/colors.xml",
+        "android/app/src/main/res/values/themes.xml",
+        "android/app/src/main/res/values-v35/themes.xml",
+        "android/app/src/main/res/drawable/ic_brand_mark.xml",
+        "android/app/src/main/res/drawable/ic_mode_companion.xml",
+        "android/app/src/main/res/drawable/ic_mode_local.xml",
+        "android/app/src/main/res/drawable/bg_circle_primary_lightest.xml",
+        "android/app/src/main/res/drawable/bg_health_dot.xml",
+        "android/app/src/main/res/layout/activity_wizard.xml",
+        "android/app/src/main/res/layout/activity_server_list.xml",
+        "android/app/src/main/res/layout/row_server.xml",
+        "android/app/src/main/res/layout/dialog_add_server.xml",
+        "android/app/src/main/res/layout/dialog_local_config.xml",
+        "android/app/src/main/res/layout/dialog_progress.xml",
+        "android/app/src/main/java/com/btdeck/companion/ui/WizardActivity.kt",
+        "android/app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt",
+        "docs/roadmap/android-companion.md",
+        "docs/android/desktop-testing.md",
+        "android/app/src/main/java/com/btdeck/companion/ui/HealthUi.kt",
+        "android/app/src/test/java/com/btdeck/companion/ui/HealthUiTest.kt",
+        "android/app/src/test/java/com/btdeck/companion/ui/BrandThemeSyncTest.kt",
+        "android/app/src/androidTest/java/com/btdeck/companion/CompanionBrandingUiTest.kt"
+      ],
+      "evidence": {
+        "build": "gradle :app:processDebugResources + :app:compileDebugKotlin + :app:testDebugUnitTest（28 用例）+ :app:assembleDebug + :app:compileDebugAndroidTestKotlin 全部 BUILD SUCCESSFUL（JDK 21 + Gradle 8.9）。",
+        "behavior": "AVD btdeck-a35 无头模拟器全链路视觉冒烟 10 屏通过：向导品牌头部与图标卡片、服务器列表翡翠绿 ActionBar + 主按钮、添加表单 OutlinedBox 浮动标签 + 密码切换、http 私有地址自动出现明文确认复选框（TextWatcher 联动）、空名称点确定展示 TextInputLayout 错误且对话框不关闭、列表卡片行（名称/健康胶囊/URL/元信息）、本机服务确认对话框 LAN 勾选联动威胁模型文案、启动进度对话框翡翠绿圆形指示器、服务就绪自动进 WebView 加载本机前端登录页（v1.0.6 · 服务就绪）——原生壳与前端呈现同一翡翠绿视觉。",
+        "compat": "Espresso 依赖全部保留：server_list 仍为 AdapterView（ListView）、row_health 文案（未测试/就绪/未就绪/不可达/证书错误）与 ID 不变、菜单/对话框按钮字符串不变、androidTest 源码编译通过；LAN 开关初始态仍从 LocalServerState.lanEnabled 持久化恢复。",
+        "regression_tests": "JVM 新增 7 例（HealthUiTest 3：健康文案/语义色映射 + 四组语义色互异；BrandThemeSyncTest 4：colors.xml token 值锁定、values 与 values-v35 主题 item 同步、Light 基底 + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对——仓库根不可见时 assume 跳过不阻断）；androidTest 新增 CompanionBrandingUiTest 6 例：colorPrimary 运行时解析 #059669、向导品牌头部/双模式卡、伴侣卡进列表且主操作为 MaterialButton、添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错不关框 + 合法输入保存成行、关闭端口→文案与圆点 error 红 #EF4444、LAN 开关联动威胁模型文案。全量 44/44 JVM + 8/8 仪器（含 CompanionOfflineUiTest 存量回归 2 例）通过（AVD btdeck-a35）。为可测性抽出 ui/HealthUi 纯逻辑（adapter 文案/语义色映射收敛），brand_mark 加 ID。"
       }
     }
   ]

@@ -1,10 +1,13 @@
 /**
  * UI 模式工具（dual-mode-client Phase 4 M1）
  *
- * 移动/桌面视图选择的三条原则（与计划一致）：
+ * 移动/桌面视图选择的原则（与计划一致）：
  * 1. 不以 UA 自动识别作为唯一依据——默认 auto=按视口宽度判定；
  * 2. 用户显式选择优先并持久化（localStorage）；
- * 3. 窄视口默认移动版，且移动版头部提供切回桌面的出口（不自锁）。
+ * 3. 窄视口默认移动版，且移动版头部提供切回桌面的出口（不自锁）；
+ * 4. 伴侣 App WebView 恒移动端（2026-09-12 用户决策）：APK 全程移动端
+ *    操作，不存在桌面浏览器预览场景——无视口与偏好，UA 含 App 注入
+ *    标记即强制 mobile（顺带覆盖旧 APK 无条件出口写入的 desktop 偏好）。
  */
 
 const MODE_STORAGE_KEY = 'btdeck_ui_mode'
@@ -35,8 +38,15 @@ export function resolveUiMode(preference: UiModePreference, width?: number): Res
   return isNarrowViewport(width) ? 'mobile' : 'desktop'
 }
 
-/** 当前会话应使用的模式（偏好 + 视口合成） */
+/** 伴侣 App WebView（WebViewActivity 在 UA 追加 BtDeckCompanion 标记） */
+export function isCompanionAppWebView(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return navigator.userAgent.includes('BtDeckCompanion')
+}
+
+/** 当前会话应使用的模式（偏好 + 视口合成；App WebView 强制移动端） */
 export function currentUiMode(): ResolvedUiMode {
+  if (isCompanionAppWebView()) return 'mobile'
   return resolveUiMode(getStoredUiMode())
 }
 

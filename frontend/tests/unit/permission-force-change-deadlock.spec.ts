@@ -31,6 +31,14 @@ const mockUserModule = {
 jest.mock('@/store/modules/user', () => ({ UserModule: mockUserModule }))
 jest.mock('@/utils/session', () => ({ isTokenExpired: jest.fn(() => false) }))
 jest.mock('@/utils/request', () => ({ trySilentRefresh: jest.fn(async() => true) }))
+// 守卫经 loadPlatformCapabilities 拉取主机能力矩阵（内部调 @/utils/request 的
+// default 导出——上方 mock 未提供可调用 default，真实调用会 TypeError 炸守卫）。
+// 此处整体桩掉能力层：能力可用、永不重定向（本 spec 只回归强制改密拦截）。
+jest.mock('@/api/platform-capabilities', () => ({
+  loadPlatformCapabilities: jest.fn(async() => null),
+  isCapabilityAvailable: jest.fn(() => true),
+  isCapabilityUnknown: jest.fn(() => false)
+}))
 jest.mock('nprogress', () => ({ configure: jest.fn(), start: jest.fn(), done: jest.fn() }))
 jest.mock('nprogress/nprogress.css', () => ({}))
 jest.mock('element-ui', () => ({ Message: { warning: jest.fn(), error: jest.fn(), success: jest.fn() } }))
