@@ -272,7 +272,9 @@ async def main() -> int:
             "conditions": VALID_TEMPLATE_CONDITIONS,
             "is_public": False,
             "confirm": True,
-            "idempotency_key": "lv-tpl-001",
+            # 幂等键必须每次运行唯一：服务端进程内 LRU 按 (tool, user, key)
+            # 重放首次结果——固定键会把本次创建重放成上次运行已清理的模板。
+            "idempotency_key": f"lv-tpl-{int(__import__('time').time())}",
         }
         err, payload = await mcp_call(mcp_url, token, "advanced_search_template_create", tpl_args)
         tpl_id = payload.get("template_id") if isinstance(payload, dict) else None
