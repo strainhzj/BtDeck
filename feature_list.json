@@ -54,7 +54,7 @@
       "id": "desktop-bilingual-20260918",
       "name": "桌面 Web 中英双语（核心试用 M1 → 全部桌面 M2）",
       "description": "保留中文，增加可切换英文，覆盖英语用户首次登录/强制改密、qBittorrent 与 Transmission 接入和日常管理，最终覆盖全部现有桌面页面。不含移动 Web 专项英文化、Android 原生界面、README/部署文档、静态 Demo fixtures、跨设备语言同步及历史日志全文翻译；共享组件仍须回归移动中文。保持 Vue 2 Options API，不升级框架，不改变统一 API 和业务语义。",
-      "status": "pending",
+      "status": "in_progress",
       "plan": "PLANS/desktop-bilingual.md",
       "planning_evidence": "2026-09-18 用户确认桌面优先，要求详细计划后明确要求添加 feature 与 plan。本轮仅文档登记，未授权启动实现/安装依赖/提交 Git。静态调研、范围、依赖、P0～P7、验收矩阵、风险与估算已落计划；所有实现任务 pending。",
       "estimates": {
@@ -109,7 +109,7 @@
           "id": "desktop-bilingual-20260918.p0",
           "name": "范围、术语、错误与系统内容清单",
           "description": "详见 PLANS/desktop-bilingual.md P0；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "depends_on": [],
           "files": [
@@ -121,13 +121,13 @@
             "全部桌面路由/弹窗/状态有清单，明确 M1 可达范围",
             "独立文案去重、错误契约、预设身份与时间约定核对完成，更新估算"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "2026-09-18 P0 静态盘点完成，产出 PLANS/bilingual/（routes-inventory / copy-catalog.md+json / error-contract / system-content / terminology / 可重跑 p0_extract.py）。路由：桌面 19 条全部登记，M1 范围划定（5 项边界待定项已列提案待用户拍板）；文案：桌面唯一 3088（原始 5138），M1 core 987 + partial 588，插值重组后实际键约 1300～1450，工作量重估 M1 22～36 人日；错误契约：18 条 M1 失败路径样例（登录/下载器/删除/422/能力拒绝）附 reasonCode 提案，识别 code=200 携带错误语义、f\"系统异常:{str(e)}\"动态拼接等坑；系统内容：4 查询预设+5 设置预设身份提案（preset_key+Alembic 一次性名称回填）、orphan_scan_completed 通知已结构化/批量添加通知需补 event、时间约定 naive-UTC 与本地混用结论语义冻结；高级搜索契约链核实（后端 json 源→generated.ts 禁直改）；术语表含已确认「辅种=cross-seed」。业务代码零改动，验收以静态盘点口径为准。"
         },
         {
           "id": "desktop-bilingual-20260918.p1",
           "name": "Vue 2 双语基础与 Element UI 接线",
           "description": "详见 PLANS/desktop-bilingual.md P1；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "depends_on": [
             "desktop-bilingual-20260918.p0"
@@ -143,7 +143,7 @@
             "L01～L05/F01 通过，选型与维护风险有记录",
             "登录前后可切换并持久化，状态不丢失，中英文键及插值参数一致"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "2026-09-18 P1 完成。选型：vue-i18n@8.28.2 精确钉版（v8 终版已停维护，风险缓解：src/i18n 单封装层+最小 API 面 t/tc/setLocale，记录 PLANS/bilingual/p1-i18n-decision.md）。新增 src/i18n/（types/index/element-locale.d.ts/locales zh-CN·en：navigation 路由+顶栏 26 键、time 相对时间七档含复数、el 子树为 Element 官方语言包）。接线：main.ts（ElementLocale.i18n 挂接先于 Vue.use(ElementUI)+根实例注入）、router.ts 21 处桌面路由 titleKey（移动路由不带保持中文）、permission.ts afterEach 标题走 resolvePageTitle（titleKey 优先回退中文）、store app.ts language 状态+SetLanguage（rawError，委托 i18n 层持久化 btdeck-lang）、Navbar 语言下拉+登录页语言按钮（自名常量不随语言翻译，切换后显式刷新标题）、formatters.ts 相对时间七档 i18n 化、SidebarItem/Breadcrumb routeTitle()。语言顺序：手动偏好(localStorage)>浏览器语言顺序匹配(en*→en,zh*→zh-CN)>默认中文；无效存储值清除回退；缺译 en 回退 zh-CN，zh 缺键返回空串+warn 不渲染原始键。新测试：i18n-message-parity（键集合/插值参数/复数支数/zh 无空串门禁，el 子树 vendor 键漂移如 en 独有 el.datepicker.week 不入门禁）+i18n-locale（L01/L02/L05/F01 含存储不可用注入）+navbar-language-switcher（源码契约 8 例含 main.ts 接线钉死）共 24 用例；shared-utils.spec 钉 zh-CN。验证：typecheck 绿、lint 三项绿、build 绿、全量 Jest 115 套件 1622 用例零回归（基线 112/1598）。roadmap 已同步（根 README 功能域行+entry/components-layout/utils-types/store 分支更新）。"
         },
         {
           "id": "desktop-bilingual-20260918.p2",
