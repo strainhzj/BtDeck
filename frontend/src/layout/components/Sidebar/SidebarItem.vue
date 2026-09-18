@@ -22,7 +22,7 @@
           <span
             v-if="theOnlyOneChild.meta.title"
             slot="title"
-          >{{ theOnlyOneChild.meta.title }}</span>
+          >{{ titleText(theOnlyOneChild.meta) }}</span>
         </el-menu-item>
       </sidebar-item-link>
     </template>
@@ -43,7 +43,7 @@
           v-if="item.meta && item.meta.title"
           class="submenu-label"
           slot="title"
-        >{{ item.meta.title }}</span>
+        >{{ titleText(item.meta) }}</span>
         <LucideIcon
           name="chevron-down"
           :size="14"
@@ -73,6 +73,7 @@ import { RouteConfig } from 'vue-router'
 import { isExternal } from '@/utils/validate'
 import SidebarItemLink from './SidebarItemLink.vue'
 import { isCapabilityAvailable } from '@/api/platform-capabilities'
+import { routeTitle } from '@/i18n'
 
 @Component({
   // Set 'name' here to prevent uglifyjs from causing recursive component not work
@@ -87,6 +88,11 @@ export default class extends Vue {
   @Prop({ default: false }) private isCollapse!: boolean
   @Prop({ default: true }) private isFirstLevel!: boolean
   @Prop({ default: '' }) private basePath!: string
+
+  /** 菜单标题：titleKey（桌面双语键）优先，移动/未配置路由回退中文原值 */
+  private titleText(meta: unknown): string {
+    return routeTitle(meta)
+  }
 
   get showingChildNumber() {
     if (this.item.children) {

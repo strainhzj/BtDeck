@@ -25,6 +25,7 @@ import {
   downloaderTypeToString,
   getDownloaderTypeLabel
 } from '@/utils/downloaderType'
+import { setLocale } from '@/i18n'
 import {
   getStatusIcon,
   getStatusText,
@@ -46,6 +47,11 @@ import { TorrentStatus } from '@/types/torrent'
 
 describe('共享格式化与规范化工具', () => {
   let warnSpy: jest.SpyInstance
+
+  // formatRelativeTime 文案已接 i18n（P1）：钉住中文，断言不随浏览器语言漂移
+  beforeAll(() => {
+    setLocale('zh-CN')
+  })
 
   beforeEach(() => {
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)

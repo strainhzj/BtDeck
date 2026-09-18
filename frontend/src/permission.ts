@@ -3,6 +3,7 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { Message } from 'element-ui'
 import { Route } from 'vue-router'
+import { resolvePageTitle } from '@/i18n'
 import { UserModule } from '@/store/modules/user'
 import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
@@ -293,6 +294,8 @@ router.afterEach((to: Route) => {
   // 导航成功即清零瞬时中止计数（连续计数只针对"一直失败到不了任何页面"）
   consecutiveTransientAborts = 0
 
-  // set page title
-  document.title = to.meta?.title || 'BtDeck'
+  // set page title（titleKey 优先走双语键，移动路由无 titleKey 保持中文）
+  // 语言切换后的标题刷新由切换入口（Navbar/登录页）显式调用 resolvePageTitle，
+  // 因为 vue-i18n@8 无公开的 locale 订阅 API。
+  document.title = resolvePageTitle(to)
 })

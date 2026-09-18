@@ -1,4 +1,5 @@
 import { TorrentStatus } from '@/types/torrent'
+import { translate, translateChoice } from '@/i18n'
 
 export function normalizeTorrent(torrent: any): any {
   if (!torrent) {
@@ -540,9 +541,9 @@ export function getFileExtension(filename: string | null | undefined): string {
 }
 
 /**
- * 格式化时间差(相对时间)
- * @param timestamp 时间戳
- * @returns 相对时间描述,如 "2小时前"
+ * 格式化时间差(相对时间，文案走 i18n，随界面语言切换)
+ * @param timestamp 时间戳（秒或毫秒，或可被 Date 解析的字符串）
+ * @returns 相对时间描述（七档，键见 i18n locales 的 time 分组；不在此处写死文案）
  */
 export function formatRelativeTime(
   timestamp: number | string | null | undefined
@@ -572,19 +573,22 @@ export function formatRelativeTime(
     const diffDays = Math.floor(diffHours / 24)
 
     if (diffSecs < 60) {
-      return '刚刚'
+      return translate('time.justNow')
     } else if (diffMins < 60) {
-      return `${diffMins}分钟前`
+      return translateChoice('time.minutesAgo', diffMins, { n: diffMins })
     } else if (diffHours < 24) {
-      return `${diffHours}小时前`
+      return translateChoice('time.hoursAgo', diffHours, { n: diffHours })
     } else if (diffDays < 7) {
-      return `${diffDays}天前`
+      return translateChoice('time.daysAgo', diffDays, { n: diffDays })
     } else if (diffDays < 30) {
-      return `${Math.floor(diffDays / 7)}周前`
+      const weeks = Math.floor(diffDays / 7)
+      return translateChoice('time.weeksAgo', weeks, { n: weeks })
     } else if (diffDays < 365) {
-      return `${Math.floor(diffDays / 30)}个月前`
+      const months = Math.floor(diffDays / 30)
+      return translateChoice('time.monthsAgo', months, { n: months })
     } else {
-      return `${Math.floor(diffDays / 365)}年前`
+      const years = Math.floor(diffDays / 365)
+      return translateChoice('time.yearsAgo', years, { n: years })
     }
   } catch (error) {
     console.warn('相对时间格式化错误:', timestamp, error)

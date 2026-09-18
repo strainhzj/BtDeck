@@ -1,5 +1,7 @@
 import { VuexModule, Module, Mutation, Action, getModule } from 'vuex-module-decorators'
 import { getSidebarStatus, setSidebarStatus } from '@/utils/cookies'
+import { getLocale, setLocale } from '@/i18n'
+import { Locale } from '@/i18n/types'
 import store from '@/store'
 
 export enum DeviceType {
@@ -13,6 +15,7 @@ export interface IAppState {
     opened: boolean
     withoutAnimation: boolean
   }
+  language: Locale
 }
 
 @Module({ dynamic: true, store, name: 'app' })
@@ -23,6 +26,9 @@ class App extends VuexModule implements IAppState {
   }
 
   public device = DeviceType.Desktop
+
+  /** 界面语言（持久化在 i18n 层的 localStorage，此处为响应式镜像） */
+  public language: Locale = getLocale()
 
   @Mutation
   private TOGGLE_SIDEBAR(withoutAnimation: boolean) {
@@ -45,6 +51,18 @@ class App extends VuexModule implements IAppState {
   @Mutation
   private TOGGLE_DEVICE(device: DeviceType) {
     this.device = device
+  }
+
+  @Mutation
+  private SET_LANGUAGE(locale: Locale) {
+    this.language = locale
+    // i18n 层负责：i18n.locale、localStorage 持久化、document.lang
+    setLocale(locale)
+  }
+
+  @Action({ rawError: true })
+  public SetLanguage(locale: Locale) {
+    this.SET_LANGUAGE(locale)
   }
 
   @Action({ rawError: true })

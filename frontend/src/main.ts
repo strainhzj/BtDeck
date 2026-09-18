@@ -19,8 +19,10 @@ import Vue from 'vue'
 
 import 'normalize.css'
 import ElementUI from 'element-ui'
+import ElementLocale from 'element-ui/lib/locale'
 import SvgIcon from 'vue-svgicon'
 
+import i18n from '@/i18n'
 import '@/styles/element-variables.scss'
 import '@/styles/index.scss'
 import '@/styles/management-list-page.scss'
@@ -45,6 +47,9 @@ import { initSessionWatch } from '@/utils/session'
 import { isDemoMode } from '@/demo/config'
 import { UserModule } from '@/store/modules/user'
 
+// Element UI 内置文案（日期选择器/分页/弹窗按钮等）挂到 vue-i18n 单例：
+// 语言切换时已挂载组件也响应式更新（L04），语言包经 i18n messages 的 el 子树提供。
+ElementLocale.i18n((path: string) => i18n.t(path) as string)
 Vue.use(ElementUI)
 
 // 全局注册 Lucide 图标组件，统一替换界面中的 emoji / el-icon-* / 自绘 SVG。
@@ -85,5 +90,6 @@ router.onReady(() => clearChunkRecoveryQuery())
 new Vue({
   router,
   store,
+  i18n,
   render: (h) => h(App)
 }).$mount('#app')

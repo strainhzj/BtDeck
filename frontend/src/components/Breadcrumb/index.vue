@@ -11,11 +11,11 @@
         <span
           v-if="item.redirect === 'noredirect' || index === breadcrumbs.length-1"
           class="no-redirect"
-        >{{ item.meta.title }}</span>
+        >{{ titleText(item.meta) }}</span>
         <a
           v-else
           @click.prevent="handleLink(item)"
-        >{{ item.meta.title }}</a>
+        >{{ titleText(item.meta) }}</a>
       </el-breadcrumb-item>
     </transition-group>
   </el-breadcrumb>
@@ -25,6 +25,7 @@
 import { compile } from 'path-to-regexp'
 import { Component, Vue, Watch } from 'vue-property-decorator'
 import { RouteRecord, Route } from 'vue-router'
+import { routeTitle } from '@/i18n'
 
 @Component({
   name: 'Breadcrumb'
@@ -52,7 +53,7 @@ export default class extends Vue {
     const hasDashboard = matched.some(item => this.isDashboard(item))
     if (!hasDashboard) {
       matched = [
-		{ path: '/dashboard', meta: { title: 'Dashboard' } } as unknown as RouteRecord
+		{ path: '/dashboard', meta: { title: 'Dashboard', titleKey: 'navigation.routes.dashboard' } } as unknown as RouteRecord
       ].concat(matched)
     }
     this.breadcrumbs = matched.filter(item => {
@@ -65,6 +66,11 @@ export default class extends Vue {
       return false
     }
     return route.path === '/dashboard' || route.path === 'dashboard'
+  }
+
+  /** 面包屑标题：titleKey（桌面双语键）优先，回退 meta.title 中文原值 */
+  private titleText(meta: unknown) {
+    return routeTitle(meta)
   }
 
   private pathCompile(path: string) {
