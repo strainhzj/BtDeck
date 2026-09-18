@@ -4989,6 +4989,15 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。
 
+## 2026-09-18：双语化 P3-1 范围已确认待实施（本会话上下文耗尽前固化）
+
+- 用户已确认 P3-1 范围：仪表盘（图表/图例/tooltip/卡片）+ 种子列表骨架（筛选/列头/空态/分页/工具栏/视图切换）+ TorrentAddDialog（含跳过校验）+ 暂停/恢复/开始/校验单条与批量反馈 + BatchOperationDialog + **Q1：快捷删重与重复扫描两弹窗纳入 M1 随本批**；Q2（修改路径/转移三弹窗）与 Q3（全局替换 Tracker）定 M2 留 P6。
+- 高级搜索共享层特殊风险（实施必读）：契约链 = 后端 `app/contracts/advanced_search_contract.json`（39 处中文）→ `frontend/scripts/generate-advanced-search-contract.js` → `generated.ts`（禁直改）；双语必须改契约源（加 en 字段或平行结构）+ 重跑生成 + 同步 contract:check 门禁与后端契约测试；字段/操作符映射按稳定值（field/operator code）而非中文 label。
+- 实施顺序建议：先契约链设计（风险最高）→ 列表骨架 → 添加弹窗/操作反馈 → 删重两弹窗 → 仪表盘 → 验证（全量 Jest/typecheck/lint/build；搜索参数不变性契约 spec；后端若动契约 json 则 pytest）。P3-2（详情/Tracker 卡片与操作/汇报/查询模板页与 4 预设展示）待本批后另批。
+- 状态：feature p2= in_progress（余人工验收），p3 待本批开工后置 in_progress。
+
+---
+
 ## 2026-09-18：双语化 P2 第一批完成（文案+错误契约，未提交）
 
 - 首次使用闭环双语化已落地（auth/settings M1/downloader M1/通知壳层）+ 错误契约 M1 子集（后端 reasonCode + 前端 apiErrorMessage）；四项验证全绿（前端 114 套 1604 例 + 后端 api 1172 例）。
