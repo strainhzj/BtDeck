@@ -4989,6 +4989,14 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。
 
+## 2026-09-18：双语化提取批（dev1.0.7 → dev 线）
+
+- 双语化 P0/P1 三提交已 cherry-pick 至 `dev-i18n-extract`（基于 dev b067ba55）：基础设施/语言包/接线/测试全部落地，四项验证全绿（typecheck/lint/Jest 114 套 1604 例/build）。
+- 冲突仅 4 处共享文档（PLANS/README、session-handoff、roadmap README、progress），均已按“保 dev 结构+双语增量”解决；未提取 1.0.7 线的 MCP/MoviePilot/CI 提交。
+- 下一步：用户确认后 `git checkout dev; git merge --ff-only dev-i18n-extract`，推送另行确认；双语后续 P2～P7（文案迁移主体）见 PLANS/desktop-bilingual.md 与 PLANS/bilingual/ 盘点数据。
+
+---
+
 ## 2026-09-18：桌面 Web 中英双语已登记，待实施
 
 - 用户要求添加 feature 与 plan；本轮只修改规划文档，不实施业务、不安装依赖、不提交 Git。

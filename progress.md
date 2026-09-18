@@ -1,5 +1,13 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18（提取批）：双语化 P0/P1 成果自 dev1.0.7 提取至 dev 线（dev-i18n-extract 分支，待并回确认）
+
+- **提取集三提交 cherry-pick**：`42b81f9`（双语功能与执行计划登记）→ `788d657`（P1 vue-i18n@8.28.2 基础设施与双入口接线）→ `53119be`（P0 盘点五清单+选型治理回填）。源为合并后的 `origin/dev1.0.7`（merge-base 实测 = dev b067ba55，即 0e307ee 已把 dev 全量合入 1.0.7 线，代码提交 29 文件零冲突落地）。
+- **冲突解决（剔除原则：保 dev 结构+双语增量，弃 1.0.7 独有内容）**：PLANS/README.md（插入桌面双语行，弃 archive 重构）；session-handoff.md（接纳双语登记段）；docs/roadmap/README.md（生成日期/本次新增两单元格前置 2026-09-18 双语条目，弃 MoviePilot/MCP 条目）；progress.md（保第五/四批双语记录，弃第三批 CI 复刻/第二批存量用例/设置页热点三节——对应未提取提交）。
+- **污染检查**：i18n 目录无 MCP/MoviePilot 残留；总差异 43 文件 +32044/-60，后端 0 文件（后端门禁不适用）。
+- **验证**：npm install（vue-i18n@8.28.2 精确钉版落地）；typecheck 绿；lint 三项绿（contract:check + eslint --max-warnings 0 + vuex-action）；全量 Jest **114 套件 1604 用例绿**（基线 111/1575 + 新 3 套件 25 例 + shared-utils 扩展）；build 绿（46.6s）。
+- **待办**：并回 dev 与推送待用户确认；临时计划文件 TMP-dev107-i18n-extract-plan.md 未入库；本机 bash 工具经 settings.json shellPath 切至 PowerShell（WSL 默认发行版 docker-desktop 无 bash）。
+
 ## 2026-09-18（第五批）：双语化 P1——vue-i18n@8.28.2 基础设施 + 双入口接线（全绿未提交）
 
 用户确认启动 P1（语言基础设施）。业务面：桌面 21 条路由标题/顶栏/相对时间可中英切换，移动路由零变化。
