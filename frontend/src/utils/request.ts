@@ -5,6 +5,7 @@ import { setRefreshToken, getRefreshToken } from '@/utils/cookies'
 import { refreshAccessToken } from '@/api/users'
 import { refreshTokensOnce, type TokenPair, type RefreshOutcome } from '@/utils/token-refresh'
 import { buildLoginRedirectTarget } from '@/utils/session'
+import { translate } from '@/i18n'
 import { ApiError } from '@/types/api'
 import { isDemoMode } from '@/demo/config'
 import { demoRequest } from '@/demo/demo-request'
@@ -101,7 +102,7 @@ export function redirectToLogin(): void {
     return
   }
   redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
-  Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
+  Message({ message: translate('common.sessionExpired'), type: 'warning', duration: 3000 })
   // ExpireSession 保留共享 cookie（access + refresh）：多标签共享 cookie 下，
   // "确证死亡"判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效
   // 令牌一并杀死（access cookie 被删还会经 syncTokenFromCookie 级联误杀
@@ -268,7 +269,7 @@ service.interceptors.response.use(
       // 207 保留部分成功的 warning 提示（业务依赖此行为）
       if (res.code === '207') {
         Message({
-          message: res.msg || '部分操作成功',
+          message: res.msg || translate('common.partialSuccess'),
           type: 'warning',
           duration: 5 * 1000
         })
@@ -296,8 +297,8 @@ service.interceptors.response.use(
     // 无 response：网络层错误（请求未发出/无响应）
     if (!error.response) {
       const message = error.request
-        ? '网络连接失败，请检查网络连接'
-        : error.message || '网络错误'
+        ? translate('errors.network.unavailable')
+        : error.message || translate('errors.network.generic')
       // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）；
       // 3 秒同文案节流防轮询洪泛
       notifyNetworkError(message)

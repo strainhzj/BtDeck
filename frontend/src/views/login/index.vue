@@ -33,7 +33,7 @@
         <div class="logo-container">
           <AppLogo variant="full" class="login-logo" />
         </div>
-        <p class="login-subtitle">统一管理您的下载器</p>
+        <p class="login-subtitle">{{ $t('auth.subtitle') }}</p>
       </div>
 
       <!-- 登录表单 -->
@@ -50,7 +50,7 @@
           <el-input
             ref="username"
             v-model="loginForm.username"
-            placeholder="用户名"
+                        :placeholder="$t('auth.usernamePlaceholder')"
             name="username"
             type="text"
             autocomplete="username"
@@ -66,7 +66,7 @@
             ref="password"
             v-model="loginForm.password"
             :type="passwordType"
-            placeholder="密码"
+            :placeholder="$t('auth.passwordPlaceholder')"
             name="password"
             autocomplete="current-password"
             prefix-icon="el-icon-lock"
@@ -87,7 +87,7 @@
           <el-input
             ref="twofa"
             v-model="loginForm.twofa_code"
-            placeholder="双因素验证码（如有设置必须填写）"
+            :placeholder="$t('auth.twofaPlaceholder')"
             name="twofa_code"
             type="text"
             maxlength="6"
@@ -99,8 +99,8 @@
 
         <!-- 记住我 & 忘记密码 -->
         <div class="login-options">
-          <el-checkbox v-model="rememberMe">记住我</el-checkbox>
-          <el-link type="primary" :underline="false">忘记密码？</el-link>
+          <el-checkbox v-model="rememberMe">{{ $t('auth.rememberMe') }}</el-checkbox>
+          <el-link type="primary" :underline="false">{{ $t('auth.forgotPassword') }}</el-link>
         </div>
 
         <!-- 登录按钮 -->
@@ -111,7 +111,7 @@
           class="login-button"
           native-type="submit"
         >
-          {{ loading ? '登录中...' : '登录' }}
+          {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
         </el-button>
       </el-form>
 
@@ -121,14 +121,14 @@
         class="demo-entry-button"
         @click="enterDemoMode"
       >
-        进入演示模式
+        {{ $t('auth.enterDemo') }}
       </el-button>
 
       <!-- 底部链接 -->
       <div class="login-footer">
         <p class="footer-text">
-          还没有账号？
-          <el-link type="primary" :underline="false">立即注册</el-link>
+          {{ $t('auth.noAccount') }}
+          <el-link type="primary" :underline="false">{{ $t('auth.registerNow') }}</el-link>
         </p>
       </div>
     </div>
@@ -152,7 +152,7 @@ import { isDemoMode } from '@/demo/config'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
 import { LOCALE_AUTONYMS, Locale, SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/types'
-import { resolvePageTitle } from '@/i18n'
+import { apiErrorMessage, resolvePageTitle } from '@/i18n'
 
 @Component({
   name: 'Login',
@@ -212,7 +212,7 @@ export default class extends Vue {
       return
     }
     if (!/^\d{6}$/.test(value)) {
-      callback(new Error('双因素验证码必须是6位数字'))
+      callback(new Error(this.$t('auth.validation.twofaDigits')))
       return
     }
     callback()
@@ -220,7 +220,7 @@ export default class extends Vue {
 
   private validateUsername = (rule: any, value: string, callback: Function) => {
     if (!isValidUsername(value)) {
-      callback(new Error('请输入正确的用户名'))
+      callback(new Error(this.$t('auth.validation.username')))
     } else {
       callback()
     }
@@ -228,7 +228,7 @@ export default class extends Vue {
 
   private validatePassword = (rule: any, value: string, callback: Function) => {
     if (value.length < 5) {
-      callback(new Error('密码长度不能少于5位'))
+      callback(new Error(this.$t('auth.validation.passwordMin')))
     } else {
       callback()
     }
@@ -260,14 +260,14 @@ export default class extends Vue {
           // 先显示成功消息，确保用户能看到反馈
           // 检查组件是否已销毁，避免在销毁的组件上更新状态
           if (!this.isDestroyed) {
-            this.$message.success('登录成功')
+            this.$message.success(this.$t('auth.loginSuccess'))
           }
           // 登录成功后主动触发路由导航，让路由守卫处理重定向逻辑
           // 路由守卫会检测到token存在，并自动跳转到redirect参数或首页
           await this.$router.push(this.redirect || '/')
         } catch (error) {
-          // 显示后端返回的错误消息
-          const errorMessage = error instanceof Error ? error.message : '登录失败，请重试'
+          // 错误契约：reasonCode 命中 errors.byCode.* 时本地化；未契约化路径保留原始信息
+          const errorMessage = apiErrorMessage(error, this.$t('auth.loginFailed'))
           if (!this.isDestroyed) {
             this.$message.error(errorMessage)
           }
@@ -285,7 +285,7 @@ export default class extends Vue {
 
   private enterDemoMode(): void {
     UserModule.InitializeDemoSession()
-    this.$message.success('已进入演示模式')
+    this.$message.success(this.$t('auth.demoEntered'))
     this.$router.replace(this.redirect || '/dashboard').catch(() => undefined)
   }
 

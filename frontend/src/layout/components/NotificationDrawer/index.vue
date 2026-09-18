@@ -13,7 +13,7 @@
     <!-- 自定义头部 -->
     <template slot="title">
       <div class="drawer-header">
-        <span class="drawer-title"><LucideIcon name="bell" :size="16" />通知中心</span>
+        <span class="drawer-title"><LucideIcon name="bell" :size="16" />{{ $t('common.notifications.title') }}</span>
         <div class="drawer-header-actions">
           <el-button
             v-if="unreadCount > 0"
@@ -23,7 +23,7 @@
           >
             全部已读
           </el-button>
-          <button type="button" class="drawer-close" aria-label="关闭通知中心" @click="handleClose">
+          <button type="button" class="drawer-close" :aria-label="$t('common.notifications.closeLabel')" @click="handleClose">
             <LucideIcon name="x" :size="15" />
           </button>
         </div>
@@ -60,14 +60,14 @@
           @view="handleView"
         />
         <div v-if="hasMore" class="load-more">
-          <el-button type="text" size="small" @click="loadMore">加载更多</el-button>
+          <el-button type="text" size="small" @click="loadMore">{{ $t('common.loadMore') }}</el-button>
         </div>
       </template>
 
       <!-- 空状态 -->
       <div v-else class="drawer-empty">
         <LucideIcon name="bell" :size="34" :stroke-width="1.35" />
-        <p>暂无通知</p>
+        <p>{{ $t('common.notifications.empty') }}</p>
       </div>
     </div>
   </el-drawer>
@@ -84,7 +84,7 @@
     <template #title>
       <div class="detail-dialog-header">
         <span>{{ detailTitle }}</span>
-        <button type="button" aria-label="关闭通知详情" @click="detailVisible = false">
+        <button type="button" :aria-label="$t('common.notifications.closeDetail')" @click="detailVisible = false">
           <LucideIcon name="x" :size="15" />
         </button>
       </div>
@@ -95,7 +95,7 @@
     </div>
     <div class="detail-content" v-html="detailHtml" />
     <div v-if="detailFailureList.length > 0" class="detail-failures">
-      <h4>失败明细</h4>
+      <h4>{{ $t('common.notifications.failedDetail') }}</h4>
       <ul>
         <li v-for="(item, index) in detailFailureList" :key="failureItemKey(item, index)">
           <span class="detail-failure-target">{{ failureItemTarget(item) }}</span>：{{ item.reason }}
@@ -104,7 +104,7 @@
     </div>
     <div v-if="detailReleaseUrl" class="detail-footer">
       <a :href="detailReleaseUrl" target="_blank" class="detail-link">
-        <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
+        <LucideIcon name="external-link" :size="13" /> {{ $t('common.notifications.viewRelease') }}
       </a>
     </div>
   </el-dialog>
@@ -136,12 +136,17 @@ export default class extends Vue {
   private detailCreatedAt = ''
   private detailExtraData: NotificationExtraData | null = null
 
-  private tabs = [
-    { label: '全部', value: 'all' },
-    { label: '未读', value: 'unread' },
-    { label: '更新', value: 'version_update' },
-    { label: '系统', value: 'system' }
-  ]
+  private tabsValue = ['all', 'unread', 'version_update', 'system']
+
+  /** 筛选页签文案经计算属性生成：语言切换后响应式更新（不在字段初始化时固化译文） */
+  private get tabs() {
+    return [
+      { label: this.$t('common.notifications.filterAll'), value: this.tabsValue[0] },
+      { label: this.$t('common.notifications.filterUnread'), value: this.tabsValue[1] },
+      { label: this.$t('common.notifications.filterUpdate'), value: this.tabsValue[2] },
+      { label: this.$t('common.notifications.filterSystem'), value: this.tabsValue[3] }
+    ]
+  }
 
   get drawerVisible() {
     return NotificationModule.drawerVisible

@@ -1,12 +1,12 @@
 {
  "generated_note": "P0 static scan; comment lines excluded; inline comments NOT stripped; interpolation fragments appear split (e.g. 共/项); generated *.generated.ts kept but flagged m1=generated",
  "scope": "frontend/src desktop files (views/mobile, demo, tests, *.spec.* excluded)",
- "raw_hits": 5138,
- "unique_strings": 3088,
+ "raw_hits": 5032,
+ "unique_strings": 2992,
  "items": [
   {
    "zh": "取消",
-   "count": 78,
+   "count": 76,
    "group": "tasks",
    "m1": "m2",
    "locations": [
@@ -85,26 +85,6 @@
    ]
   },
   {
-   "zh": "删除",
-   "count": 30,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "components/torrents/AdvancedSearchWorkspace.vue:100",
-    "components/torrents/AdvancedSearchWorkspace.vue:369",
-    "components/torrents/CompactTable.vue:178",
-    "components/torrents/CompactTable.vue:587",
-    "components/torrents/CompactTable.vue:670",
-    "layout/components/NotificationDrawer/NotificationItem.vue:31",
-    "views/downloader/components/DownloaderCard.vue:135",
-    "views/downloader/components/DownloaderPathManagement.vue:153",
-    "views/downloader/components/PathMappingTab.vue:130",
-    "views/downloader/components/SpeedSettingsTab.vue:114",
-    "views/downloader/components/TagManagementTab.vue:111",
-    "views/orphan-files/index.vue:755"
-   ]
-  },
-  {
    "zh": "失败",
    "count": 29,
    "group": "errors",
@@ -122,6 +102,26 @@
     "views/logs/audit.vue:94",
     "views/logs/audit.vue:821",
     "views/orphan-files/index.vue:1107"
+   ]
+  },
+  {
+   "zh": "删除",
+   "count": 28,
+   "group": "torrent",
+   "m1": "core",
+   "locations": [
+    "components/torrents/AdvancedSearchWorkspace.vue:100",
+    "components/torrents/AdvancedSearchWorkspace.vue:369",
+    "components/torrents/CompactTable.vue:178",
+    "components/torrents/CompactTable.vue:587",
+    "components/torrents/CompactTable.vue:670",
+    "layout/components/NotificationDrawer/NotificationItem.vue:31",
+    "views/downloader/components/DownloaderCard.vue:135",
+    "views/downloader/components/DownloaderPathManagement.vue:153",
+    "views/downloader/components/PathMappingTab.vue:130",
+    "views/downloader/components/SpeedSettingsTab.vue:114",
+    "views/downloader/components/TagManagementTab.vue:111",
+    "views/orphan-files/index.vue:755"
    ]
   },
   {
@@ -245,28 +245,8 @@
    ]
   },
   {
-   "zh": "下载器",
-   "count": 18,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:62",
-    "components/torrents/advancedSearchFields.ts:75",
-    "layout/mobile/index.vue:189",
-    "views/dashboard/index.vue:26",
-    "views/downloader/index.vue:787",
-    "views/orphan-files/index.vue:133",
-    "views/orphan-files/index.vue:423",
-    "views/orphan-files/index.vue:613",
-    "views/settings/components/MoviePilotPanel.vue:45",
-    "views/settings/components/MoviePilotPanel.vue:109",
-    "views/torrents/FileManagement.vue:29",
-    "views/torrents/FileManagement.vue:124"
-   ]
-  },
-  {
    "zh": "共",
-   "count": 18,
+   "count": 17,
    "group": "torrent",
    "m1": "partial",
    "locations": [
@@ -278,8 +258,8 @@
     "views/query-templates/index.vue:69",
     "views/tasks/index.vue:229",
     "views/tasks/index.vue:486",
-    "views/torrents/index.vue:704",
-    "views/torrents/index.vue:2135",
+    "views/torrents/index.vue:703",
+    "views/torrents/index.vue:2134",
     "views/torrents/TraditionalView.vue:718",
     "views/torrents/components/TrackerDetailCard.vue:218"
    ]
@@ -294,9 +274,9 @@
     "components/torrents/CompactTable.vue:48",
     "views/query-templates/components/QueryTemplateDialog.vue:63",
     "views/torrents/index.vue:491",
-    "views/torrents/index.vue:1111",
+    "views/torrents/index.vue:1110",
     "views/torrents/TraditionalView.vue:504",
-    "views/torrents/TraditionalView.vue:1192",
+    "views/torrents/TraditionalView.vue:1191",
     "views/torrents/components/TorrentDetailDialog.vue:29",
     "views/tracker/keywords-search.vue:87",
     "views/tracker/keywords-search.vue:88",
@@ -325,6 +305,26 @@
    ]
   },
   {
+   "zh": "下载器",
+   "count": 16,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:62",
+    "components/torrents/advancedSearchFields.ts:75",
+    "layout/mobile/index.vue:189",
+    "views/dashboard/index.vue:26",
+    "views/downloader/index.vue:787",
+    "views/orphan-files/index.vue:133",
+    "views/orphan-files/index.vue:423",
+    "views/orphan-files/index.vue:613",
+    "views/torrents/FileManagement.vue:29",
+    "views/torrents/FileManagement.vue:124",
+    "views/torrents/FileManagement.vue:197",
+    "views/torrents/TraditionalView.vue:265"
+   ]
+  },
+  {
    "zh": "个种子",
    "count": 16,
    "group": "torrent",
@@ -337,10 +337,10 @@
     "views/recycle-bin/index.vue:778",
     "views/recycle-bin/index.vue:799",
     "views/recycle-bin/index.vue:801",
-    "views/torrents/index.vue:1655",
-    "views/torrents/index.vue:1844",
-    "views/torrents/index.vue:2014",
-    "views/torrents/index.vue:2123",
+    "views/torrents/index.vue:1654",
+    "views/torrents/index.vue:1843",
+    "views/torrents/index.vue:2013",
+    "views/torrents/index.vue:2122",
     "views/torrents/components/BatchOperationDialog.vue:21"
    ]
   },
@@ -385,26 +385,6 @@
    ]
   },
   {
-   "zh": "刷新",
-   "count": 15,
-   "group": "tasks",
-   "m1": "m2",
-   "locations": [
-    "components/tasks/CronEditor.vue:218",
-    "components/torrents/DuplicateTorrentsDialog.vue:94",
-    "views/downloader/index.vue:64",
-    "views/orphan-files/index.vue:14",
-    "views/orphan-files/index.vue:567",
-    "views/query-templates/index.vue:14",
-    "views/settings/components/MoviePilotPanel.vue:42",
-    "views/tasks/index.vue:113",
-    "views/torrents/index.vue:80",
-    "views/torrents/TraditionalView.vue:93",
-    "views/torrents/TraditionalView.vue:95",
-    "views/torrents/components/TrackerDetailCard.vue:142"
-   ]
-  },
-  {
    "zh": "吗？",
    "count": 15,
    "group": "torrent",
@@ -416,9 +396,9 @@
     "views/query-templates/index.vue:281",
     "views/recycle-bin/index.vue:693",
     "views/recycle-bin/index.vue:704",
-    "views/torrents/index.vue:1803",
-    "views/torrents/index.vue:1844",
-    "views/torrents/TraditionalView.vue:1955",
+    "views/torrents/index.vue:1802",
+    "views/torrents/index.vue:1843",
+    "views/torrents/TraditionalView.vue:1954",
     "views/torrents/utils/torrentBatch.ts:1199",
     "views/torrents/utils/torrentBatch.ts:1203",
     "views/tracker/keywords-board.vue:453"
@@ -495,9 +475,9 @@
     "views/downloader/components/TagManagementTab.vue:323",
     "views/logs/audit.vue:92",
     "views/query-templates/index.vue:48",
-    "views/torrents/TraditionalView.vue:1294",
-    "views/torrents/TraditionalView.vue:1312",
-    "views/torrents/TraditionalView.vue:1324",
+    "views/torrents/TraditionalView.vue:1293",
+    "views/torrents/TraditionalView.vue:1311",
+    "views/torrents/TraditionalView.vue:1323",
     "views/torrents/utils/traditionalStatusFilter.ts:20",
     "views/tracker/keywords-search.vue:67",
     "views/tracker/keywords-search.vue:68",
@@ -522,6 +502,26 @@
     "views/torrents/FileManagement.vue:680",
     "views/tracker/keywords-board.vue:475",
     "views/tracker/keywords-search.vue:371"
+   ]
+  },
+  {
+   "zh": "刷新",
+   "count": 13,
+   "group": "tasks",
+   "m1": "m2",
+   "locations": [
+    "components/tasks/CronEditor.vue:218",
+    "components/torrents/DuplicateTorrentsDialog.vue:94",
+    "views/downloader/index.vue:64",
+    "views/orphan-files/index.vue:14",
+    "views/orphan-files/index.vue:567",
+    "views/query-templates/index.vue:14",
+    "views/tasks/index.vue:113",
+    "views/torrents/index.vue:80",
+    "views/torrents/TraditionalView.vue:93",
+    "views/torrents/TraditionalView.vue:95",
+    "views/torrents/components/TrackerDetailCard.vue:142",
+    "views/torrents/components/TrackerDetailCard.vue:219"
    ]
   },
   {
@@ -558,9 +558,9 @@
     "views/recycle-bin/index.vue:122",
     "views/recycle-bin/index.vue:248",
     "views/torrents/index.vue:357",
-    "views/torrents/index.vue:1103",
+    "views/torrents/index.vue:1102",
     "views/torrents/TraditionalView.vue:352",
-    "views/torrents/TraditionalView.vue:1182",
+    "views/torrents/TraditionalView.vue:1181",
     "views/torrents/components/TrackerDetailCard.vue:164"
    ]
   },
@@ -571,14 +571,14 @@
    "m1": "core",
    "locations": [
     "utils/error-normalize.ts:110",
-    "utils/formatters.ts:260",
+    "utils/formatters.ts:261",
     "utils/tracker.ts:131",
     "views/downloader/components/DownloaderPathManagement.vue:489",
     "views/downloader/components/DownloaderPathManagement.vue:495",
     "views/downloader/components/DownloaderPathManagement.vue:555",
     "views/downloader/components/DownloaderSettingsDialog.vue:1262",
     "views/downloader/components/TagManagementTab.vue:612",
-    "views/torrents/TraditionalView.vue:1929",
+    "views/torrents/TraditionalView.vue:1928",
     "views/torrents/utils/torrentBatch.ts:223",
     "views/tracker/components/KeywordQuickActionDialog.vue:209"
    ]
@@ -598,7 +598,7 @@
     "views/recycle-bin/index.vue:120",
     "views/recycle-bin/index.vue:247",
     "views/torrents/index.vue:309",
-    "views/torrents/index.vue:1100",
+    "views/torrents/index.vue:1099",
     "views/torrents/components/TorrentDetailDialog.vue:8"
    ]
   },
@@ -613,9 +613,9 @@
     "views/recycle-bin/index.vue:673",
     "views/recycle-bin/index.vue:780",
     "views/recycle-bin/index.vue:803",
-    "views/torrents/index.vue:1659",
-    "views/torrents/index.vue:2020",
-    "views/torrents/index.vue:2160",
+    "views/torrents/index.vue:1658",
+    "views/torrents/index.vue:2019",
+    "views/torrents/index.vue:2159",
     "views/torrents/components/TorrentAddDialog.vue:494",
     "views/torrents/utils/torrentBatch.ts:1273"
    ]
@@ -666,9 +666,9 @@
     "components/torrents/DuplicateTorrentsDialog.vue:47",
     "types/scheduled-tasks.ts:150",
     "views/torrents/index.vue:469",
-    "views/torrents/index.vue:1110",
+    "views/torrents/index.vue:1109",
     "views/torrents/TraditionalView.vue:489",
-    "views/torrents/TraditionalView.vue:1191",
+    "views/torrents/TraditionalView.vue:1190",
     "views/torrents/components/TorrentAddDialog.vue:90",
     "views/torrents/components/TorrentDetailDialog.vue:41"
    ]
@@ -702,9 +702,9 @@
     "views/query-templates/index.vue:92",
     "views/query-templates/components/QueryTemplateDialog.vue:25",
     "views/torrents/index.vue:61",
-    "views/torrents/index.vue:831",
+    "views/torrents/index.vue:830",
     "views/torrents/TraditionalView.vue:103",
-    "views/torrents/TraditionalView.vue:854"
+    "views/torrents/TraditionalView.vue:853"
    ]
   },
   {
@@ -751,8 +751,8 @@
     "views/downloader/components/TagManagementTab.vue:536",
     "views/recycle-bin/index.vue:811",
     "views/torrents/FileManagement.vue:686",
-    "views/torrents/index.vue:1818",
-    "views/torrents/index.vue:2226"
+    "views/torrents/index.vue:1817",
+    "views/torrents/index.vue:2225"
    ]
   },
   {
@@ -769,22 +769,6 @@
     "components/tasks/CronEditor.vue:372",
     "components/tasks/CronEditor.vue:776",
     "components/tasks/CronEditor.vue:1232"
-   ]
-  },
-  {
-   "zh": "已启用",
-   "count": 8,
-   "group": "downloader",
-   "m1": "core",
-   "locations": [
-    "views/downloader/index.vue:827",
-    "views/downloader/components/DownloaderPathManagement.vue:56",
-    "views/downloader/components/DownloaderPathManagement.vue:484",
-    "views/downloader/components/DownloaderSettingsDialog.vue:142",
-    "views/settings/index.vue:13",
-    "views/settings/components/MoviePilotPanel.vue:58",
-    "views/tasks/index.vue:155",
-    "views/tracker/reannounce-config.vue:33"
    ]
   },
   {
@@ -857,10 +841,10 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:201",
+    "utils/formatters.ts:202",
     "views/orphan-files/index.vue:1592",
     "views/orphan-files/index.vue:1830",
-    "views/torrents/index.vue:2017",
+    "views/torrents/index.vue:2016",
     "views/torrents/components/BatchTransferDialog.vue:124",
     "views/torrents/components/TorrentAddDialog.vue:482",
     "views/torrents/components/TorrentAddDialog.vue:490",
@@ -878,8 +862,8 @@
     "views/recycle-bin/index.vue:38",
     "views/tasks/index.vue:63",
     "views/torrents/FileManagement.vue:65",
-    "views/torrents/index.vue:766",
-    "views/torrents/TraditionalView.vue:891",
+    "views/torrents/index.vue:765",
+    "views/torrents/TraditionalView.vue:890",
     "views/tracker/reannounce-config.vue:54"
    ]
   },
@@ -954,9 +938,24 @@
     "views/tasks/index.vue:904",
     "views/tasks/index.vue:919",
     "views/torrents/TraditionalView.vue:334",
-    "views/torrents/TraditionalView.vue:1181",
+    "views/torrents/TraditionalView.vue:1180",
     "views/torrents/components/TorrentDetailDialog.vue:57",
     "views/torrents/components/TrackerDetailCard.vue:56"
+   ]
+  },
+  {
+   "zh": "回收站",
+   "count": 7,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:92",
+    "router.ts:327",
+    "i18n/locales/zh-CN/navigation.ts:42",
+    "layout/mobile/index.vue:267",
+    "types/torrent.ts:351",
+    "types/torrent.ts:419",
+    "views/recycle-bin/index.vue:6"
    ]
   },
   {
@@ -990,18 +989,18 @@
    ]
   },
   {
-   "zh": "已禁用",
+   "zh": "已启用",
    "count": 7,
    "group": "downloader",
-   "m1": "m2",
+   "m1": "core",
    "locations": [
-    "views/downloader/components/DownloaderPathManagement.vue:57",
+    "views/downloader/index.vue:827",
+    "views/downloader/components/DownloaderPathManagement.vue:56",
     "views/downloader/components/DownloaderPathManagement.vue:484",
     "views/downloader/components/DownloaderSettingsDialog.vue:142",
-    "views/settings/components/MoviePilotPanel.vue:58",
+    "views/settings/index.vue:13",
     "views/tasks/index.vue:155",
-    "views/torrents/utils/torrentBatch.ts:830",
-    "views/tracker/reannounce-config.vue:34"
+    "views/tracker/reannounce-config.vue:33"
    ]
   },
   {
@@ -1043,7 +1042,7 @@
     "components/torrents/QuickDeleteDuplicatesDialog.vue:156",
     "views/orphan-files/index.vue:1125",
     "views/orphan-files/index.vue:1372",
-    "views/torrents/index.vue:1806",
+    "views/torrents/index.vue:1805",
     "views/torrents/components/TransferDialog.vue:110",
     "views/torrents/mixins/torrentBatch.ts:152",
     "views/tracker/reannounce-config.vue:564"
@@ -1086,9 +1085,9 @@
    "m1": "core",
    "locations": [
     "views/torrents/index.vue:383",
-    "views/torrents/index.vue:1105",
+    "views/torrents/index.vue:1104",
     "views/torrents/TraditionalView.vue:383",
-    "views/torrents/TraditionalView.vue:1184",
+    "views/torrents/TraditionalView.vue:1183",
     "views/torrents/components/TorrentDetailDialog.vue:17",
     "views/torrents/components/TrackerDetailCard.vue:171",
     "views/torrents/components/TrackerDetailCard.vue:228"
@@ -1100,13 +1099,13 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1218",
-    "views/torrents/index.vue:2565",
-    "views/torrents/index.vue:2612",
-    "views/torrents/index.vue:2639",
-    "views/torrents/TraditionalView.vue:1577",
-    "views/torrents/TraditionalView.vue:1627",
-    "views/torrents/TraditionalView.vue:1655"
+    "views/torrents/index.vue:1217",
+    "views/torrents/index.vue:2564",
+    "views/torrents/index.vue:2611",
+    "views/torrents/index.vue:2638",
+    "views/torrents/TraditionalView.vue:1576",
+    "views/torrents/TraditionalView.vue:1626",
+    "views/torrents/TraditionalView.vue:1654"
    ]
   },
   {
@@ -1146,10 +1145,10 @@
    "locations": [
     "views/orphan-files/index.vue:386",
     "views/torrents/components/TorrentAddDialog.vue:41",
-    "views/torrents/components/TrackerDetailCard.vue:423",
-    "views/torrents/components/TrackerDetailCard.vue:425",
-    "views/torrents/components/TrackerDetailCard.vue:431",
-    "views/torrents/components/TrackerDetailCard.vue:431"
+    "views/torrents/components/TrackerDetailCard.vue:358",
+    "views/torrents/components/TrackerDetailCard.vue:360",
+    "views/torrents/components/TrackerDetailCard.vue:366",
+    "views/torrents/components/TrackerDetailCard.vue:366"
    ]
   },
   {
@@ -1232,8 +1231,8 @@
     "views/downloader/components/DownloaderPathManagement.vue:421",
     "views/downloader/components/PathMappingTab.vue:420",
     "views/downloader/components/TagManagementTab.vue:499",
-    "views/torrents/index.vue:1764",
-    "views/torrents/TraditionalView.vue:1955"
+    "views/torrents/index.vue:1763",
+    "views/torrents/TraditionalView.vue:1954"
    ]
   },
   {
@@ -1265,20 +1264,6 @@
    ]
   },
   {
-   "zh": "回收站",
-   "count": 6,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:92",
-    "router.ts:312",
-    "layout/mobile/index.vue:267",
-    "types/torrent.ts:351",
-    "types/torrent.ts:419",
-    "views/recycle-bin/index.vue:6"
-   ]
-  },
-  {
    "zh": "失败池",
    "count": 6,
    "group": "tracker",
@@ -1293,6 +1278,34 @@
    ]
   },
   {
+   "zh": "孤儿文件",
+   "count": 6,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:128",
+    "router.ts:345",
+    "i18n/locales/zh-CN/navigation.ts:43",
+    "layout/mobile/index.vue:271",
+    "views/orphan-files/index.vue:5",
+    "views/orphan-files/index.vue:29"
+   ]
+  },
+  {
+   "zh": "定时任务",
+   "count": 6,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:122",
+    "router.ts:233",
+    "i18n/locales/zh-CN/navigation.ts:34",
+    "layout/mobile/index.vue:270",
+    "views/dashboard/index.vue:70",
+    "views/logs/audit.vue:58"
+   ]
+  },
+  {
    "zh": "已暂停",
    "count": 6,
    "group": "torrent",
@@ -1304,6 +1317,20 @@
     "views/query-templates/components/QueryTemplateDialog.vue:35",
     "views/tasks/index.vue:1191",
     "views/tasks/index.vue:1633"
+   ]
+  },
+  {
+   "zh": "已禁用",
+   "count": 6,
+   "group": "downloader",
+   "m1": "m2",
+   "locations": [
+    "views/downloader/components/DownloaderPathManagement.vue:57",
+    "views/downloader/components/DownloaderPathManagement.vue:484",
+    "views/downloader/components/DownloaderSettingsDialog.vue:142",
+    "views/tasks/index.vue:155",
+    "views/torrents/utils/torrentBatch.ts:830",
+    "views/tracker/reannounce-config.vue:34"
    ]
   },
   {
@@ -1354,10 +1381,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2351",
-    "views/torrents/index.vue:2433",
-    "views/torrents/TraditionalView.vue:2317",
-    "views/torrents/TraditionalView.vue:2323",
+    "views/torrents/index.vue:2350",
+    "views/torrents/index.vue:2432",
+    "views/torrents/TraditionalView.vue:2316",
+    "views/torrents/TraditionalView.vue:2322",
     "views/tracker/keywords-search.vue:299",
     "views/tracker/keywords-search.vue:306"
    ]
@@ -1399,9 +1426,9 @@
     "components/torrents/advancedSearchFields.ts:103",
     "components/torrents/CompactTable.vue:53",
     "views/torrents/index.vue:443",
-    "views/torrents/index.vue:1108",
+    "views/torrents/index.vue:1107",
     "views/torrents/TraditionalView.vue:444",
-    "views/torrents/TraditionalView.vue:1188"
+    "views/torrents/TraditionalView.vue:1187"
    ]
   },
   {
@@ -1425,8 +1452,8 @@
    "m1": "core",
    "locations": [
     "components/torrents/AdvancedMultiSelect.vue:453",
-    "views/torrents/index.vue:2039",
-    "views/torrents/index.vue:2073",
+    "views/torrents/index.vue:2038",
+    "views/torrents/index.vue:2072",
     "views/torrents/utils/torrentBatch.ts:1266",
     "views/torrents/utils/torrentBatch.ts:1303",
     "views/torrents/utils/torrentBatch.ts:1340"
@@ -1510,8 +1537,8 @@
    "locations": [
     "views/dashboard/index.vue:142",
     "views/torrents/index.vue:335",
-    "views/torrents/index.vue:1102",
-    "views/torrents/TraditionalView.vue:1187",
+    "views/torrents/index.vue:1101",
+    "views/torrents/TraditionalView.vue:1186",
     "views/torrents/components/TorrentDetailDialog.vue:25"
    ]
   },
@@ -1523,8 +1550,8 @@
    "locations": [
     "views/dashboard/index.vue:138",
     "views/torrents/index.vue:325",
-    "views/torrents/index.vue:1101",
-    "views/torrents/TraditionalView.vue:1186",
+    "views/torrents/index.vue:1100",
+    "views/torrents/TraditionalView.vue:1185",
     "views/torrents/components/TorrentDetailDialog.vue:21"
    ]
   },
@@ -1711,29 +1738,16 @@
    ]
   },
   {
-   "zh": "孤儿文件",
+   "zh": "天前",
    "count": 5,
-   "group": "navigation",
-   "m1": "core",
+   "group": "other",
+   "m1": "m2",
    "locations": [
-    "router.ts:128",
-    "router.ts:329",
-    "layout/mobile/index.vue:271",
-    "views/orphan-files/index.vue:5",
-    "views/orphan-files/index.vue:29"
-   ]
-  },
-  {
-   "zh": "定时任务",
-   "count": 5,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:122",
-    "router.ts:226",
-    "layout/mobile/index.vue:270",
-    "views/dashboard/index.vue:70",
-    "views/logs/audit.vue:58"
+    "i18n/locales/zh-CN/time.ts:27",
+    "i18n/locales/zh-CN/time.ts:27",
+    "layout/components/NotificationDrawer/NotificationItem.vue:82",
+    "views/downloader/components/DownloaderPathManagement.vue:603",
+    "views/downloader/components/TagManagementTab.vue:641"
    ]
   },
   {
@@ -1771,8 +1785,8 @@
     "store/modules/downloaderSettings.ts:332",
     "store/modules/downloaderSettings.ts:335",
     "views/downloader/components/TemplateSelectionDialog.vue:228",
-    "views/torrents/index.vue:1202",
-    "views/torrents/TraditionalView.vue:2420"
+    "views/torrents/index.vue:1201",
+    "views/torrents/TraditionalView.vue:2419"
    ]
   },
   {
@@ -1810,8 +1824,8 @@
     "views/downloader/components/TagManagementTab.vue:568",
     "views/tasks/index.vue:1512",
     "views/tasks/index.vue:2074",
-    "views/torrents/index.vue:1655",
-    "views/torrents/index.vue:2123"
+    "views/torrents/index.vue:1654",
+    "views/torrents/index.vue:2122"
    ]
   },
   {
@@ -1822,7 +1836,7 @@
    "locations": [
     "views/downloader/components/TagManagementTab.vue:574",
     "views/tasks/index.vue:1518",
-    "views/torrents/index.vue:1857",
+    "views/torrents/index.vue:1856",
     "views/torrents/mixins/torrentBatch.ts:182",
     "views/tracker/components/KeywordListModal.vue:438"
    ]
@@ -1834,8 +1848,8 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/TagManagementTab.vue:180",
-    "views/torrents/index.vue:1627",
-    "views/torrents/index.vue:1847",
+    "views/torrents/index.vue:1626",
+    "views/torrents/index.vue:1846",
     "views/torrents/components/BatchOperationDialog.vue:60",
     "views/torrents/mixins/torrentBatch.ts:174"
    ]
@@ -1846,10 +1860,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2333",
-    "views/torrents/index.vue:2420",
-    "views/torrents/TraditionalView.vue:2265",
-    "views/torrents/TraditionalView.vue:2387",
+    "views/torrents/index.vue:2332",
+    "views/torrents/index.vue:2419",
+    "views/torrents/TraditionalView.vue:2264",
+    "views/torrents/TraditionalView.vue:2386",
     "views/torrents/utils/torrentBatch.ts:1082"
    ]
   },
@@ -1914,7 +1928,7 @@
     "views/downloader/components/TagManagementTab.vue:185",
     "views/tasks/index.vue:1501",
     "views/tasks/index.vue:2060",
-    "views/torrents/index.vue:1627",
+    "views/torrents/index.vue:1626",
     "views/tracker/components/KeywordListModal.vue:426"
    ]
   },
@@ -2118,7 +2132,7 @@
     "views/recycle-bin/index.vue:509",
     "views/recycle-bin/index.vue:520",
     "views/recycle-bin/index.vue:560",
-    "views/torrents/index.vue:1627"
+    "views/torrents/index.vue:1626"
    ]
   },
   {
@@ -2127,8 +2141,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1613",
-    "views/torrents/TraditionalView.vue:2142",
+    "views/torrents/index.vue:1612",
+    "views/torrents/TraditionalView.vue:2141",
     "views/torrents/components/SetLocationDialog.vue:5",
     "views/torrents/mixins/torrentBatch.ts:69"
    ]
@@ -2151,8 +2165,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2033",
-    "views/torrents/index.vue:2039",
+    "views/torrents/index.vue:2032",
+    "views/torrents/index.vue:2038",
     "views/torrents/utils/torrentBatch.ts:1265",
     "views/torrents/utils/torrentBatch.ts:1266"
    ]
@@ -2163,8 +2177,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2065",
-    "views/torrents/index.vue:2073",
+    "views/torrents/index.vue:2064",
+    "views/torrents/index.vue:2072",
     "views/torrents/utils/torrentBatch.ts:1339",
     "views/torrents/utils/torrentBatch.ts:1340"
    ]
@@ -2212,9 +2226,21 @@
    "m1": "core",
    "locations": [
     "views/torrents/index.vue:459",
-    "views/torrents/index.vue:1109",
+    "views/torrents/index.vue:1108",
     "views/torrents/TraditionalView.vue:475",
-    "views/torrents/TraditionalView.vue:1190"
+    "views/torrents/TraditionalView.vue:1189"
+   ]
+  },
+  {
+   "zh": "分钟前",
+   "count": 4,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/time.ts:25",
+    "i18n/locales/zh-CN/time.ts:25",
+    "layout/components/NotificationDrawer/NotificationItem.vue:78",
+    "views/downloader/components/DownloaderPathManagement.vue:591"
    ]
   },
   {
@@ -2224,9 +2250,9 @@
    "m1": "core",
    "locations": [
     "views/torrents/index.vue:248",
-    "views/torrents/index.vue:743",
+    "views/torrents/index.vue:742",
     "views/torrents/TraditionalView.vue:135",
-    "views/torrents/TraditionalView.vue:877"
+    "views/torrents/TraditionalView.vue:876"
    ]
   },
   {
@@ -2248,8 +2274,8 @@
    "m1": "m2",
    "locations": [
     "views/tasks/index.vue:2083",
-    "views/torrents/index.vue:1880",
-    "views/torrents/index.vue:2227",
+    "views/torrents/index.vue:1879",
+    "views/torrents/index.vue:2226",
     "views/torrents/mixins/torrentBatch.ts:230"
    ]
   },
@@ -2259,8 +2285,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2099",
-    "views/torrents/index.vue:2106",
+    "views/torrents/index.vue:2098",
+    "views/torrents/index.vue:2105",
     "views/torrents/utils/torrentBatch.ts:1378",
     "views/torrents/utils/torrentBatch.ts:1383"
    ]
@@ -2326,25 +2352,13 @@
    ]
   },
   {
-   "zh": "天前",
-   "count": 4,
-   "group": "notifications",
-   "m1": "core",
-   "locations": [
-    "layout/components/NotificationDrawer/NotificationItem.vue:82",
-    "utils/formatters.ts:581",
-    "views/downloader/components/DownloaderPathManagement.vue:603",
-    "views/downloader/components/TagManagementTab.vue:641"
-   ]
-  },
-  {
    "zh": "失败:",
    "count": 4,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2639",
-    "views/torrents/TraditionalView.vue:1655",
+    "views/torrents/index.vue:2638",
+    "views/torrents/TraditionalView.vue:1654",
     "views/torrents/components/BatchTransferDialog.vue:116",
     "views/tracker/components/ImportKeywordsDialog.vue:307"
    ]
@@ -2355,10 +2369,22 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:264",
+    "utils/formatters.ts:265",
     "views/orphan-files/index.vue:1987",
     "views/orphan-files/index.vue:1989",
     "views/orphan-files/index.vue:2002"
+   ]
+  },
+  {
+   "zh": "小时前",
+   "count": 4,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/time.ts:26",
+    "i18n/locales/zh-CN/time.ts:26",
+    "layout/components/NotificationDrawer/NotificationItem.vue:80",
+    "views/downloader/components/DownloaderPathManagement.vue:597"
    ]
   },
   {
@@ -2381,7 +2407,7 @@
    "locations": [
     "api/tasks.ts:207",
     "components/torrents/QuickDeleteDuplicatesDialog.vue:103",
-    "views/torrents/index.vue:1926",
+    "views/torrents/index.vue:1925",
     "views/torrents/mixins/torrentBatch.ts:209"
    ]
   },
@@ -2392,8 +2418,8 @@
    "m1": "core",
    "locations": [
     "components/torrents/AdvancedMultiSelect.vue:251",
-    "views/torrents/index.vue:771",
-    "views/torrents/TraditionalView.vue:894",
+    "views/torrents/index.vue:770",
+    "views/torrents/TraditionalView.vue:893",
     "views/torrents/components/SearchTemplateDialog.vue:15"
    ]
   },
@@ -2403,10 +2429,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1205",
-    "views/torrents/index.vue:2439",
-    "views/torrents/TraditionalView.vue:2402",
-    "views/torrents/TraditionalView.vue:2423"
+    "views/torrents/index.vue:1204",
+    "views/torrents/index.vue:2438",
+    "views/torrents/TraditionalView.vue:2401",
+    "views/torrents/TraditionalView.vue:2422"
    ]
   },
   {
@@ -2430,7 +2456,7 @@
     "components/torrents/CompactTable.vue:43",
     "views/recycle-bin/index.vue:124",
     "views/torrents/index.vue:421",
-    "views/torrents/index.vue:1107"
+    "views/torrents/index.vue:1106"
    ]
   },
   {
@@ -2441,8 +2467,8 @@
    "locations": [
     "views/downloader/components/TagManagementTab.vue:573",
     "views/tasks/index.vue:1517",
-    "views/torrents/index.vue:1859",
-    "views/torrents/index.vue:2142"
+    "views/torrents/index.vue:1858",
+    "views/torrents/index.vue:2141"
    ]
   },
   {
@@ -2451,10 +2477,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1420",
-    "views/torrents/index.vue:1428",
-    "views/torrents/TraditionalView.vue:2054",
-    "views/torrents/TraditionalView.vue:2064"
+    "views/torrents/index.vue:1419",
+    "views/torrents/index.vue:1427",
+    "views/torrents/TraditionalView.vue:2053",
+    "views/torrents/TraditionalView.vue:2063"
    ]
   },
   {
@@ -2549,7 +2575,7 @@
    "locations": [
     "views/tasks/index.vue:229",
     "views/tasks/index.vue:486",
-    "views/torrents/index.vue:704",
+    "views/torrents/index.vue:703",
     "views/torrents/TraditionalView.vue:718"
    ]
   },
@@ -2595,10 +2621,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1573",
-    "views/torrents/index.vue:1577",
-    "views/torrents/TraditionalView.vue:2112",
-    "views/torrents/TraditionalView.vue:2117"
+    "views/torrents/index.vue:1572",
+    "views/torrents/index.vue:1576",
+    "views/torrents/TraditionalView.vue:2111",
+    "views/torrents/TraditionalView.vue:2116"
    ]
   },
   {
@@ -2607,10 +2633,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1576",
-    "views/torrents/index.vue:1620",
-    "views/torrents/TraditionalView.vue:2116",
-    "views/torrents/TraditionalView.vue:2148"
+    "views/torrents/index.vue:1575",
+    "views/torrents/index.vue:1619",
+    "views/torrents/TraditionalView.vue:2115",
+    "views/torrents/TraditionalView.vue:2147"
    ]
   },
   {
@@ -2655,10 +2681,10 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:554",
-    "views/settings/index.vue:619",
-    "views/settings/index.vue:706",
-    "views/settings/index.vue:796"
+    "views/settings/index.vue:546",
+    "views/settings/index.vue:611",
+    "views/settings/index.vue:698",
+    "views/settings/index.vue:788"
    ]
   },
   {
@@ -2671,6 +2697,18 @@
     "components/torrents/CompactTable.vue:178",
     "layout/mobile/index.vue:190",
     "views/torrents/components/TrackerOperationDialog.vue:243"
+   ]
+  },
+  {
+   "zh": "种子详情",
+   "count": 4,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:73",
+    "router.ts:219",
+    "i18n/locales/zh-CN/navigation.ts:33",
+    "views/torrents/components/TorrentDetailDialog.vue:3"
    ]
   },
   {
@@ -2734,6 +2772,18 @@
    ]
   },
   {
+   "zh": "系统设置",
+   "count": 4,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:139",
+    "router.ts:364",
+    "i18n/locales/zh-CN/navigation.ts:44",
+    "layout/mobile/index.vue:272"
+   ]
+  },
+  {
    "zh": "编辑",
    "count": 4,
    "group": "downloader",
@@ -2753,8 +2803,8 @@
    "locations": [
     "views/downloader/index.vue:327",
     "views/torrents/FileManagement.vue:377",
-    "views/torrents/index.vue:1327",
-    "views/torrents/TraditionalView.vue:1479"
+    "views/torrents/index.vue:1326",
+    "views/torrents/TraditionalView.vue:1478"
    ]
   },
   {
@@ -2787,10 +2837,10 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2612",
-    "views/torrents/index.vue:2639",
-    "views/torrents/TraditionalView.vue:1627",
-    "views/torrents/TraditionalView.vue:1655"
+    "views/torrents/index.vue:2611",
+    "views/torrents/index.vue:2638",
+    "views/torrents/TraditionalView.vue:1626",
+    "views/torrents/TraditionalView.vue:1654"
    ]
   },
   {
@@ -2826,7 +2876,7 @@
     "views/downloader/components/BasicSettingsTab.vue:147",
     "views/downloader/components/DownloaderSettingsDialog.vue:186",
     "views/downloader/components/DownloaderSettingsDialog.vue:770",
-    "views/settings/index.vue:549"
+    "views/settings/index.vue:541"
    ]
   },
   {
@@ -2872,9 +2922,9 @@
    "m1": "core",
    "locations": [
     "views/torrents/index.vue:373",
-    "views/torrents/index.vue:1104",
+    "views/torrents/index.vue:1103",
     "views/torrents/TraditionalView.vue:369",
-    "views/torrents/TraditionalView.vue:1183"
+    "views/torrents/TraditionalView.vue:1182"
    ]
   },
   {
@@ -2921,8 +2971,19 @@
    "locations": [
     "views/tasks/index.vue:229",
     "views/tasks/index.vue:486",
-    "views/torrents/index.vue:704",
+    "views/torrents/index.vue:703",
     "views/torrents/TraditionalView.vue:718"
+   ]
+  },
+  {
+   "zh": "下载器管理",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:167",
+    "i18n/locales/zh-CN/navigation.ts:28",
+    "views/downloader/index.vue:4"
    ]
   },
   {
@@ -2934,6 +2995,17 @@
     "utils/tracker.ts:184",
     "views/torrents/FileManagement.vue:647",
     "views/torrents/FileManagement.vue:658"
+   ]
+  },
+  {
+   "zh": "不支持",
+   "count": 3,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:108",
+    "components/torrents/advancedSearchFields.ts:429",
+    "components/torrents/ConditionValueInput.vue:394"
    ]
   },
   {
@@ -2953,8 +3025,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1615",
-    "views/torrents/TraditionalView.vue:2144",
+    "views/torrents/index.vue:1614",
+    "views/torrents/TraditionalView.vue:2143",
     "views/torrents/mixins/torrentBatch.ts:72"
    ]
   },
@@ -2964,8 +3036,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1613",
-    "views/torrents/TraditionalView.vue:2142",
+    "views/torrents/index.vue:1612",
+    "views/torrents/TraditionalView.vue:2141",
     "views/torrents/mixins/torrentBatch.ts:69"
    ]
   },
@@ -2975,8 +3047,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1613",
-    "views/torrents/TraditionalView.vue:2142",
+    "views/torrents/index.vue:1612",
+    "views/torrents/TraditionalView.vue:2141",
     "views/torrents/mixins/torrentBatch.ts:69"
    ]
   },
@@ -2986,8 +3058,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1615",
-    "views/torrents/TraditionalView.vue:2144",
+    "views/torrents/index.vue:1614",
+    "views/torrents/TraditionalView.vue:2143",
     "views/torrents/mixins/torrentBatch.ts:72"
    ]
   },
@@ -3008,9 +3080,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1634",
-    "views/torrents/index.vue:1771",
-    "views/torrents/TraditionalView.vue:1962"
+    "views/torrents/index.vue:1633",
+    "views/torrents/index.vue:1770",
+    "views/torrents/TraditionalView.vue:1961"
    ]
   },
   {
@@ -3052,9 +3124,20 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2256",
-    "views/torrents/TraditionalView.vue:2218",
+    "views/torrents/index.vue:2255",
+    "views/torrents/TraditionalView.vue:2217",
     "views/torrents/components/GlobalReplaceTrackerDialog.vue:198"
+   ]
+  },
+  {
+   "zh": "关键词搜索",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:116",
+    "router.ts:264",
+    "i18n/locales/zh-CN/navigation.ts:37"
    ]
   },
   {
@@ -3069,35 +3152,24 @@
    ]
   },
   {
-   "zh": "分钟前",
-   "count": 3,
-   "group": "notifications",
-   "m1": "core",
-   "locations": [
-    "layout/components/NotificationDrawer/NotificationItem.vue:78",
-    "utils/formatters.ts:577",
-    "views/downloader/components/DownloaderPathManagement.vue:591"
-   ]
-  },
-  {
    "zh": "分钟后",
    "count": 3,
    "group": "tasks",
    "m1": "m2",
    "locations": [
     "components/tasks/CronEditor.vue:765",
-    "views/settings/index.vue:596",
-    "views/settings/index.vue:760"
+    "views/settings/index.vue:588",
+    "views/settings/index.vue:752"
    ]
   },
   {
    "zh": "刚刚",
    "count": 3,
-   "group": "notifications",
-   "m1": "core",
+   "group": "other",
+   "m1": "m2",
    "locations": [
+    "i18n/locales/zh-CN/time.ts:24",
     "layout/components/NotificationDrawer/NotificationItem.vue:77",
-    "utils/formatters.ts:575",
     "views/downloader/components/DownloaderPathManagement.vue:591"
    ]
   },
@@ -3140,8 +3212,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1796",
-    "views/torrents/index.vue:1839",
+    "views/torrents/index.vue:1795",
+    "views/torrents/index.vue:1838",
     "views/torrents/utils/torrentBatch.ts:1171"
    ]
   },
@@ -3151,8 +3223,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2032",
-    "views/torrents/index.vue:2038",
+    "views/torrents/index.vue:2031",
+    "views/torrents/index.vue:2037",
     "views/torrents/mixins/torrentBatch.ts:269"
    ]
   },
@@ -3168,24 +3240,13 @@
    ]
   },
   {
-   "zh": "删除实例",
-   "count": 3,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:69",
-    "views/settings/components/MoviePilotPanel.vue:391",
-    "views/settings/components/MoviePilotPanel.vue:392"
-   ]
-  },
-  {
    "zh": "删除异常]",
    "count": 3,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1884",
-    "views/torrents/index.vue:1891",
+    "views/torrents/index.vue:1883",
+    "views/torrents/index.vue:1890",
     "views/torrents/mixins/torrentBatch.ts:231"
    ]
   },
@@ -3195,9 +3256,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1632",
-    "views/torrents/index.vue:1769",
-    "views/torrents/TraditionalView.vue:1960"
+    "views/torrents/index.vue:1631",
+    "views/torrents/index.vue:1768",
+    "views/torrents/TraditionalView.vue:1959"
    ]
   },
   {
@@ -3217,9 +3278,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1633",
-    "views/torrents/index.vue:1770",
-    "views/torrents/TraditionalView.vue:1961"
+    "views/torrents/index.vue:1632",
+    "views/torrents/index.vue:1769",
+    "views/torrents/TraditionalView.vue:1960"
    ]
   },
   {
@@ -3242,6 +3303,17 @@
     "views/downloader/components/DownloaderCard.vue:81",
     "views/tasks/index.vue:152",
     "views/tracker/reannounce-config.vue:28"
+   ]
+  },
+  {
+   "zh": "周前",
+   "count": 3,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/time.ts:28",
+    "i18n/locales/zh-CN/time.ts:28",
+    "views/downloader/components/TagManagementTab.vue:642"
    ]
   },
   {
@@ -3272,8 +3344,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1797",
-    "views/torrents/index.vue:1840",
+    "views/torrents/index.vue:1796",
+    "views/torrents/index.vue:1839",
     "views/torrents/utils/torrentBatch.ts:1172"
    ]
   },
@@ -3296,7 +3368,7 @@
    "locations": [
     "views/downloader/components/BasicSettingsTab.vue:37",
     "views/downloader/components/DownloaderSettingsDialog.vue:181",
-    "views/login/index.vue:55"
+    "views/login/index.vue:69"
    ]
   },
   {
@@ -3311,36 +3383,14 @@
    ]
   },
   {
-   "zh": "小时前",
-   "count": 3,
-   "group": "notifications",
-   "m1": "core",
-   "locations": [
-    "layout/components/NotificationDrawer/NotificationItem.vue:80",
-    "utils/formatters.ts:579",
-    "views/downloader/components/DownloaderPathManagement.vue:597"
-   ]
-  },
-  {
    "zh": "已保留数据文件）",
    "count": 3,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1653",
-    "views/torrents/index.vue:2118",
-    "views/torrents/TraditionalView.vue:1993"
-   ]
-  },
-  {
-   "zh": "已关闭",
-   "count": 3,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/index.vue:855",
-    "views/settings/components/McpSettingsPanel.vue:32",
-    "views/settings/components/MoviePilotPanel.vue:22"
+    "views/torrents/index.vue:1652",
+    "views/torrents/index.vue:2117",
+    "views/torrents/TraditionalView.vue:1992"
    ]
   },
   {
@@ -3349,9 +3399,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1653",
-    "views/torrents/index.vue:2118",
-    "views/torrents/TraditionalView.vue:1993"
+    "views/torrents/index.vue:1652",
+    "views/torrents/index.vue:2117",
+    "views/torrents/TraditionalView.vue:1992"
    ]
   },
   {
@@ -3360,7 +3410,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2058",
+    "views/torrents/index.vue:2057",
     "views/torrents/utils/torrentBatch.ts:1359",
     "views/tracker/components/KeywordListModal.vue:414"
    ]
@@ -3385,6 +3435,17 @@
     "views/orphan-files/index.vue:218",
     "views/orphan-files/index.vue:546",
     "views/torrents/components/TorrentAddDialog.vue:41"
+   ]
+  },
+  {
+   "zh": "年前",
+   "count": 3,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/time.ts:30",
+    "i18n/locales/zh-CN/time.ts:30",
+    "views/downloader/components/TagManagementTab.vue:644"
    ]
   },
   {
@@ -3514,7 +3575,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2014",
+    "views/torrents/index.vue:2013",
     "views/torrents/utils/torrentBatch.ts:1239",
     "views/torrents/utils/torrentBatch.ts:1240"
    ]
@@ -3537,7 +3598,7 @@
    "m1": "partial",
    "locations": [
     "components/torrents/QuickDeleteDuplicatesDialog.vue:339",
-    "views/torrents/index.vue:1915",
+    "views/torrents/index.vue:1914",
     "views/torrents/mixins/torrentBatch.ts:199"
    ]
   },
@@ -3570,8 +3631,19 @@
    "m1": "m2",
    "locations": [
     "views/torrents/FileManagement.vue:480",
-    "views/torrents/index.vue:2251",
-    "views/torrents/TraditionalView.vue:2212"
+    "views/torrents/index.vue:2250",
+    "views/torrents/TraditionalView.vue:2211"
+   ]
+  },
+  {
+   "zh": "操作日志",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:311",
+    "i18n/locales/zh-CN/navigation.ts:41",
+    "views/logs/audit.vue:5"
    ]
   },
   {
@@ -3635,20 +3707,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1802",
+    "views/torrents/index.vue:1801",
     "views/torrents/components/BatchTransferDialog.vue:323",
     "views/torrents/utils/torrentBatch.ts:1202"
-   ]
-  },
-  {
-   "zh": "更新失败，显示上次数据",
-   "count": 3,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:145",
-    "views/torrents/components/TrackerDetailCard.vue:221",
-    "views/torrents/components/TrackerDetailCard.vue:273"
    ]
   },
   {
@@ -3751,13 +3812,24 @@
    ]
   },
   {
+   "zh": "查询模板",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:380",
+    "i18n/locales/zh-CN/navigation.ts:45",
+    "views/query-templates/index.vue:5"
+   ]
+  },
+  {
    "zh": "标记为待删除",
    "count": 3,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1794",
-    "views/torrents/index.vue:1837",
+    "views/torrents/index.vue:1793",
+    "views/torrents/index.vue:1836",
     "views/torrents/utils/torrentBatch.ts:1169"
    ]
   },
@@ -3781,6 +3853,17 @@
     "views/torrents/index.vue:182",
     "views/torrents/TraditionalView.vue:176",
     "views/torrents/components/TrackerDetailCard.vue:110"
+   ]
+  },
+  {
+   "zh": "汇报配置",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:273",
+    "i18n/locales/zh-CN/navigation.ts:38",
+    "views/tracker/reannounce-config.vue:6"
    ]
   },
   {
@@ -3814,17 +3897,6 @@
     "views/torrents/components/TrackerOperationDialog.vue:390",
     "views/torrents/components/TrackerOperationDialog.vue:428",
     "views/torrents/components/TrackerOperationDialog.vue:434"
-   ]
-  },
-  {
-   "zh": "添加映射",
-   "count": 3,
-   "group": "downloader",
-   "m1": "m2",
-   "locations": [
-    "views/downloader/components/PathMappingTab.vue:19",
-    "views/downloader/components/PathMappingTab.vue:140",
-    "views/settings/components/MoviePilotPanel.vue:126"
    ]
   },
   {
@@ -3868,7 +3940,7 @@
    "locations": [
     "views/downloader/components/BasicSettingsTab.vue:28",
     "views/downloader/components/DownloaderSettingsDialog.vue:168",
-    "views/login/index.vue:39"
+    "views/login/index.vue:53"
    ]
   },
   {
@@ -3960,25 +4032,36 @@
    ]
   },
   {
+   "zh": "种子文件管理",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:208",
+    "i18n/locales/zh-CN/navigation.ts:32",
+    "views/torrents/FileManagement.vue:6"
+   ]
+  },
+  {
+   "zh": "种子管理",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:179",
+    "i18n/locales/zh-CN/navigation.ts:30",
+    "views/logs/audit.vue:43"
+   ]
+  },
+  {
    "zh": "种子缺少下载器信息",
    "count": 3,
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1914",
-    "views/torrents/TraditionalView.vue:1938",
-    "views/torrents/TraditionalView.vue:1981"
-   ]
-  },
-  {
-   "zh": "种子详情",
-   "count": 3,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:73",
-    "router.ts:213",
-    "views/torrents/components/TorrentDetailDialog.vue:3"
+    "views/torrents/TraditionalView.vue:1913",
+    "views/torrents/TraditionalView.vue:1937",
+    "views/torrents/TraditionalView.vue:1980"
    ]
   },
   {
@@ -3998,8 +4081,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1795",
-    "views/torrents/index.vue:1838",
+    "views/torrents/index.vue:1794",
+    "views/torrents/index.vue:1837",
     "views/torrents/utils/torrentBatch.ts:1170"
    ]
   },
@@ -4031,7 +4114,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2098",
+    "views/torrents/index.vue:2097",
     "views/torrents/utils/torrentBatch.ts:1377",
     "views/torrents/utils/torrentBatch.ts:1378"
    ]
@@ -4048,6 +4131,17 @@
    ]
   },
   {
+   "zh": "管理",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:245",
+    "i18n/locales/zh-CN/navigation.ts:35",
+    "views/dashboard/index.vue:104"
+   ]
+  },
+  {
    "zh": "系统",
    "count": 3,
    "group": "torrent",
@@ -4056,17 +4150,6 @@
     "components/torrents/AdvancedSearchWorkspace.vue:60",
     "layout/components/NotificationDrawer/index.vue:143",
     "views/query-templates/index.vue:98"
-   ]
-  },
-  {
-   "zh": "系统设置",
-   "count": 3,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:139",
-    "router.ts:347",
-    "layout/mobile/index.vue:272"
    ]
   },
   {
@@ -4087,8 +4170,8 @@
    "m1": "core",
    "locations": [
     "views/query-templates/components/QueryTemplateDialog.vue:231",
-    "views/torrents/index.vue:1338",
-    "views/torrents/TraditionalView.vue:1490"
+    "views/torrents/index.vue:1337",
+    "views/torrents/TraditionalView.vue:1489"
    ]
   },
   {
@@ -4120,7 +4203,7 @@
    "m1": "core",
    "locations": [
     "components/torrents/CompactTable.vue:559",
-    "views/torrents/index.vue:1829",
+    "views/torrents/index.vue:1828",
     "views/torrents/mixins/torrentBatch.ts:168"
    ]
   },
@@ -4131,8 +4214,8 @@
    "m1": "core",
    "locations": [
     "components/torrents/CompactTable.vue:581",
-    "views/torrents/index.vue:1667",
-    "views/torrents/TraditionalView.vue:2202"
+    "views/torrents/index.vue:1666",
+    "views/torrents/TraditionalView.vue:2201"
    ]
   },
   {
@@ -4262,8 +4345,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1682",
-    "views/torrents/index.vue:1713",
+    "views/torrents/index.vue:1681",
+    "views/torrents/index.vue:1712",
     "views/torrents/utils/torrentBatch.ts:905"
    ]
   },
@@ -4279,25 +4362,25 @@
    ]
   },
   {
-   "zh": "重试",
-   "count": 3,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "components/torrents/CompactTable.vue:107",
-    "views/settings/components/McpSettingsPanel.vue:14",
-    "views/settings/components/MoviePilotPanel.vue:15"
-   ]
-  },
-  {
    "zh": "降级详情",
    "count": 3,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2064",
-    "views/torrents/index.vue:2072",
+    "views/torrents/index.vue:2063",
+    "views/torrents/index.vue:2071",
     "views/torrents/mixins/torrentBatch.ts:222"
+   ]
+  },
+  {
+   "zh": "首页",
+   "count": 3,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:152",
+    "i18n/locales/zh-CN/navigation.ts:27",
+    "i18n/locales/zh-CN/navigation.ts:48"
    ]
   },
   {
@@ -4306,9 +4389,9 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:580",
-    "views/settings/index.vue:744",
-    "views/settings/index.vue:755"
+    "views/settings/index.vue:572",
+    "views/settings/index.vue:736",
+    "views/settings/index.vue:747"
    ]
   },
   {
@@ -4317,9 +4400,9 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2354",
-    "views/torrents/TraditionalView.vue:2279",
-    "views/torrents/TraditionalView.vue:2322"
+    "views/torrents/index.vue:2353",
+    "views/torrents/TraditionalView.vue:2278",
+    "views/torrents/TraditionalView.vue:2321"
    ]
   },
   {
@@ -4373,16 +4456,6 @@
    ]
   },
   {
-   "zh": "下载器管理",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:166",
-    "views/downloader/index.vue:4"
-   ]
-  },
-  {
    "zh": "下载器类型",
    "count": 2,
    "group": "downloader",
@@ -4433,23 +4506,13 @@
    ]
   },
   {
-   "zh": "不支持",
-   "count": 2,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "components/torrents/advancedSearchFields.ts:429",
-    "components/torrents/ConditionValueInput.vue:394"
-   ]
-  },
-  {
    "zh": "不支持的模板类型",
    "count": 2,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2436",
-    "views/torrents/TraditionalView.vue:2399"
+    "views/torrents/index.vue:2435",
+    "views/torrents/TraditionalView.vue:2398"
    ]
   },
   {
@@ -4483,6 +4546,16 @@
    ]
   },
   {
+   "zh": "个月前",
+   "count": 2,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/time.ts:29",
+    "i18n/locales/zh-CN/time.ts:29"
+   ]
+  },
+  {
    "zh": "个未找到文件，已跳过文件操作）",
    "count": 2,
    "group": "torrent",
@@ -4498,7 +4571,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1926",
+    "views/torrents/index.vue:1925",
     "views/torrents/mixins/torrentBatch.ts:209"
    ]
   },
@@ -4508,8 +4581,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2612",
-    "views/torrents/TraditionalView.vue:1627"
+    "views/torrents/index.vue:2611",
+    "views/torrents/TraditionalView.vue:1626"
    ]
   },
   {
@@ -4518,8 +4591,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1657",
-    "views/torrents/index.vue:2135"
+    "views/torrents/index.vue:1656",
+    "views/torrents/index.vue:2134"
    ]
   },
   {
@@ -4528,7 +4601,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2058",
+    "views/torrents/index.vue:2057",
     "views/torrents/utils/torrentBatch.ts:1359"
    ]
   },
@@ -4540,6 +4613,16 @@
    "locations": [
     "views/orphan-files/index.vue:1992",
     "views/orphan-files/index.vue:2165"
+   ]
+  },
+  {
+   "zh": "中文",
+   "count": 2,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/types.ts:59",
+    "utils/tracker.ts:9"
    ]
   },
   {
@@ -4558,7 +4641,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "permission.ts:227",
+    "permission.ts:228",
     "store/modules/user.ts:245"
    ]
   },
@@ -4583,6 +4666,16 @@
    ]
   },
   {
+   "zh": "主机能力",
+   "count": 2,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:4",
+    "views/settings/index.vue:301"
+   ]
+  },
+  {
    "zh": "主要",
    "count": 2,
    "group": "tasks",
@@ -4598,8 +4691,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1093",
-    "views/torrents/TraditionalView.vue:1169"
+    "views/torrents/index.vue:1092",
+    "views/torrents/TraditionalView.vue:1168"
    ]
   },
   {
@@ -4730,16 +4823,6 @@
    "locations": [
     "components/torrents/AdvancedSearchWorkspace.vue:349",
     "components/torrents/AdvancedSearchWorkspace.vue:355"
-   ]
-  },
-  {
-   "zh": "保存配置",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:57",
-    "views/settings/components/MoviePilotPanel.vue:32"
    ]
   },
   {
@@ -4913,13 +4996,13 @@
    ]
   },
   {
-   "zh": "关键词搜索",
+   "zh": "关键词看板",
    "count": 2,
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "router.ts:116",
-    "router.ts:254"
+    "router.ts:254",
+    "i18n/locales/zh-CN/navigation.ts:36"
    ]
   },
   {
@@ -4968,8 +5051,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2278",
-    "views/torrents/TraditionalView.vue:2514"
+    "views/torrents/index.vue:2277",
+    "views/torrents/TraditionalView.vue:2513"
    ]
   },
   {
@@ -4988,8 +5071,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2285",
-    "views/torrents/TraditionalView.vue:2520"
+    "views/torrents/index.vue:2284",
+    "views/torrents/TraditionalView.vue:2519"
    ]
   },
   {
@@ -5058,7 +5141,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2081",
+    "views/torrents/index.vue:2080",
     "views/torrents/utils/torrentBatch.ts:1367"
    ]
   },
@@ -5183,23 +5266,13 @@
    ]
   },
   {
-   "zh": "加载中…",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:11",
-    "views/settings/components/MoviePilotPanel.vue:12"
-   ]
-  },
-  {
    "zh": "加载列设置失败:",
    "count": 2,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2464",
-    "views/torrents/TraditionalView.vue:2543"
+    "views/torrents/index.vue:2463",
+    "views/torrents/TraditionalView.vue:2542"
    ]
   },
   {
@@ -5359,7 +5432,7 @@
    "m1": "partial",
    "locations": [
     "views/settings/index.vue:231",
-    "views/settings/index.vue:637"
+    "views/settings/index.vue:629"
    ]
   },
   {
@@ -5368,8 +5441,8 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:177",
-    "views/settings/index.vue:686"
+    "views/login/index.vue:215",
+    "views/settings/index.vue:678"
    ]
   },
   {
@@ -5433,16 +5506,6 @@
    ]
   },
   {
-   "zh": "周前",
-   "count": 2,
-   "group": "common",
-   "m1": "core",
-   "locations": [
-    "utils/formatters.ts:583",
-    "views/downloader/components/TagManagementTab.vue:642"
-   ]
-  },
-  {
    "zh": "周日",
    "count": 2,
    "group": "downloader",
@@ -5458,8 +5521,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:423",
-    "views/torrents/components/TrackerDetailCard.vue:431"
+    "views/torrents/components/TrackerDetailCard.vue:358",
+    "views/torrents/components/TrackerDetailCard.vue:366"
    ]
   },
   {
@@ -5468,8 +5531,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1305",
-    "views/torrents/TraditionalView.vue:1458"
+    "views/torrents/index.vue:1304",
+    "views/torrents/TraditionalView.vue:1457"
    ]
   },
   {
@@ -5478,8 +5541,8 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:134",
-    "utils/formatters.ts:311"
+    "utils/formatters.ts:135",
+    "utils/formatters.ts:312"
    ]
   },
   {
@@ -5500,16 +5563,6 @@
    "locations": [
     "views/tracker/reannounce-config.vue:153",
     "views/tracker/reannounce-config.vue:247"
-   ]
-  },
-  {
-   "zh": "复制",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:507",
-    "views/torrents/components/TrackerDetailCard.vue:533"
    ]
   },
   {
@@ -5573,26 +5626,6 @@
    ]
   },
   {
-   "zh": "媒体库路径",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:178",
-    "views/torrents/components/TrackerDetailCard.vue:281"
-   ]
-  },
-  {
-   "zh": "媒体标题",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:175",
-    "views/torrents/components/TrackerDetailCard.vue:278"
-   ]
-  },
-  {
    "zh": "字段",
    "count": 2,
    "group": "torrent",
@@ -5600,16 +5633,6 @@
    "locations": [
     "components/torrents/AdvancedSearchBuilder.vue:104",
     "components/torrents/advancedSearchState.ts:678"
-   ]
-  },
-  {
-   "zh": "季 / 集",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:176",
-    "views/torrents/components/TrackerDetailCard.vue:279"
    ]
   },
   {
@@ -5628,18 +5651,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2612",
-    "views/torrents/TraditionalView.vue:1627"
-   ]
-  },
-  {
-   "zh": "实例",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:73",
-    "views/torrents/components/TrackerDetailCard.vue:283"
+    "views/torrents/index.vue:2611",
+    "views/torrents/TraditionalView.vue:1626"
    ]
   },
   {
@@ -5713,16 +5726,6 @@
    ]
   },
   {
-   "zh": "尚未保存过配置",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:119",
-    "views/settings/components/MoviePilotPanel.vue:276"
-   ]
-  },
-  {
    "zh": "展开",
    "count": 2,
    "group": "tasks",
@@ -5788,8 +5791,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2395",
-    "views/torrents/TraditionalView.vue:2366"
+    "views/torrents/index.vue:2394",
+    "views/torrents/TraditionalView.vue:2365"
    ]
   },
   {
@@ -5798,18 +5801,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2430",
-    "views/torrents/TraditionalView.vue:2313"
-   ]
-  },
-  {
-   "zh": "已开启",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:32",
-    "views/settings/components/MoviePilotPanel.vue:22"
+    "views/torrents/index.vue:2429",
+    "views/torrents/TraditionalView.vue:2312"
    ]
   },
   {
@@ -5843,16 +5836,6 @@
    ]
   },
   {
-   "zh": "年前",
-   "count": 2,
-   "group": "common",
-   "m1": "core",
-   "locations": [
-    "utils/formatters.ts:587",
-    "views/downloader/components/TagManagementTab.vue:644"
-   ]
-  },
-  {
    "zh": "开始下载失败",
    "count": 2,
    "group": "torrent",
@@ -5869,7 +5852,7 @@
    "m1": "core",
    "locations": [
     "components/torrents/CompactTable.vue:481",
-    "views/torrents/index.vue:1737"
+    "views/torrents/index.vue:1736"
    ]
   },
   {
@@ -5890,16 +5873,6 @@
    "locations": [
     "views/torrents/index.vue:541",
     "views/torrents/TraditionalView.vue:554"
-   ]
-  },
-  {
-   "zh": "当前 revision",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:123",
-    "views/settings/components/MoviePilotPanel.vue:280"
    ]
   },
   {
@@ -6038,7 +6011,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1920",
+    "views/torrents/index.vue:1919",
     "views/torrents/mixins/torrentBatch.ts:203"
    ]
   },
@@ -6118,7 +6091,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1981",
+    "views/torrents/index.vue:1980",
     "views/torrents/mixins/torrentBatch.ts:262"
    ]
   },
@@ -6128,7 +6101,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1963",
+    "views/torrents/index.vue:1962",
     "views/torrents/mixins/torrentBatch.ts:247"
    ]
   },
@@ -6138,7 +6111,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1997",
+    "views/torrents/index.vue:1996",
     "views/torrents/mixins/torrentBatch.ts:282"
    ]
   },
@@ -6148,7 +6121,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2017",
+    "views/torrents/index.vue:2016",
     "views/torrents/utils/torrentBatch.ts:1251"
    ]
   },
@@ -6158,7 +6131,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2020",
+    "views/torrents/index.vue:2019",
     "views/torrents/utils/torrentBatch.ts:1273"
    ]
   },
@@ -6188,8 +6161,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1695",
-    "views/torrents/TraditionalView.vue:2196"
+    "views/torrents/index.vue:1694",
+    "views/torrents/TraditionalView.vue:2195"
    ]
   },
   {
@@ -6213,23 +6186,13 @@
    ]
   },
   {
-   "zh": "提交反馈",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "layout/components/Navbar/index.vue:15",
-    "layout/components/Navbar/index.vue:16"
-   ]
-  },
-  {
    "zh": "搜索条件已重置",
    "count": 2,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2307",
-    "views/torrents/TraditionalView.vue:2240"
+    "views/torrents/index.vue:2306",
+    "views/torrents/TraditionalView.vue:2239"
    ]
   },
   {
@@ -6250,16 +6213,6 @@
    "locations": [
     "views/logs/audit.vue:73",
     "views/logs/audit.vue:203"
-   ]
-  },
-  {
-   "zh": "操作日志",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:297",
-    "views/logs/audit.vue:5"
    ]
   },
   {
@@ -6318,8 +6271,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1090",
-    "views/torrents/index.vue:1091"
+    "views/torrents/index.vue:1089",
+    "views/torrents/index.vue:1090"
    ]
   },
   {
@@ -6343,16 +6296,6 @@
    ]
   },
   {
-   "zh": "放弃更改",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:55",
-    "views/settings/components/MoviePilotPanel.vue:30"
-   ]
-  },
-  {
    "zh": "数值",
    "count": 2,
    "group": "torrent",
@@ -6360,26 +6303,6 @@
    "locations": [
     "components/torrents/advancedSearchState.ts:607",
     "types/components.ts:78"
-   ]
-  },
-  {
-   "zh": "整理失败",
-   "count": 2,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:293",
-    "views/torrents/components/TrackerDetailCard.vue:294"
-   ]
-  },
-  {
-   "zh": "整理方式",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:177",
-    "views/torrents/components/TrackerDetailCard.vue:280"
    ]
   },
   {
@@ -6503,6 +6426,16 @@
    ]
   },
   {
+   "zh": "日志管理",
+   "count": 2,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:302",
+    "i18n/locales/zh-CN/navigation.ts:40"
+   ]
+  },
+  {
    "zh": "日期",
    "count": 2,
    "group": "tasks",
@@ -6593,6 +6526,16 @@
    ]
   },
   {
+   "zh": "更新失败，显示上次数据",
+   "count": 2,
+   "group": "torrent",
+   "m1": "core",
+   "locations": [
+    "views/torrents/components/TrackerDetailCard.vue:145",
+    "views/torrents/components/TrackerDetailCard.vue:221"
+   ]
+  },
+  {
    "zh": "更新模板失败",
    "count": 2,
    "group": "common",
@@ -6663,16 +6606,6 @@
    ]
   },
   {
-   "zh": "服务",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/index.vue:301",
-    "views/settings/components/McpSettingsPanel.vue:4"
-   ]
-  },
-  {
    "zh": "未获取到种子ID，请重新选择种子",
    "count": 2,
    "group": "torrent",
@@ -6688,8 +6621,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1305",
-    "views/torrents/TraditionalView.vue:1458"
+    "views/torrents/index.vue:1304",
+    "views/torrents/TraditionalView.vue:1457"
    ]
   },
   {
@@ -6708,8 +6641,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1420",
-    "views/torrents/TraditionalView.vue:2054"
+    "views/torrents/index.vue:1419",
+    "views/torrents/TraditionalView.vue:2053"
    ]
   },
   {
@@ -6728,8 +6661,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2349",
-    "views/torrents/TraditionalView.vue:2311"
+    "views/torrents/index.vue:2348",
+    "views/torrents/TraditionalView.vue:2310"
    ]
   },
   {
@@ -6738,8 +6671,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2732",
-    "views/torrents/TraditionalView.vue:2488"
+    "views/torrents/index.vue:2731",
+    "views/torrents/TraditionalView.vue:2487"
    ]
   },
   {
@@ -6748,8 +6681,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1428",
-    "views/torrents/TraditionalView.vue:2064"
+    "views/torrents/index.vue:1427",
+    "views/torrents/TraditionalView.vue:2063"
    ]
   },
   {
@@ -6758,8 +6691,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2732",
-    "views/torrents/TraditionalView.vue:2488"
+    "views/torrents/index.vue:2731",
+    "views/torrents/TraditionalView.vue:2487"
    ]
   },
   {
@@ -6773,33 +6706,13 @@
    ]
   },
   {
-   "zh": "查询",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:167",
-    "views/tasks/index.vue:60"
-   ]
-  },
-  {
    "zh": "查询任务状态失败",
    "count": 2,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1973",
+    "views/torrents/index.vue:1972",
     "views/torrents/mixins/torrentBatch.ts:256"
-   ]
-  },
-  {
-   "zh": "查询模板",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:362",
-    "views/query-templates/index.vue:5"
    ]
   },
   {
@@ -6848,8 +6761,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2368",
-    "views/torrents/TraditionalView.vue:2339"
+    "views/torrents/index.vue:2367",
+    "views/torrents/TraditionalView.vue:2338"
    ]
   },
   {
@@ -6868,8 +6781,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2133",
-    "views/torrents/index.vue:2155"
+    "views/torrents/index.vue:2132",
+    "views/torrents/index.vue:2154"
    ]
   },
   {
@@ -6948,8 +6861,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1621",
-    "views/torrents/TraditionalView.vue:2149"
+    "views/torrents/index.vue:1620",
+    "views/torrents/TraditionalView.vue:2148"
    ]
   },
   {
@@ -6958,8 +6871,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1569",
-    "views/torrents/TraditionalView.vue:2109"
+    "views/torrents/index.vue:1568",
+    "views/torrents/TraditionalView.vue:2108"
    ]
   },
   {
@@ -6968,8 +6881,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1615",
-    "views/torrents/TraditionalView.vue:2144"
+    "views/torrents/index.vue:1614",
+    "views/torrents/TraditionalView.vue:2143"
    ]
   },
   {
@@ -6978,18 +6891,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1613",
-    "views/torrents/TraditionalView.vue:2142"
-   ]
-  },
-  {
-   "zh": "汇报配置",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:262",
-    "views/tracker/reannounce-config.vue:6"
+    "views/torrents/index.vue:1612",
+    "views/torrents/TraditionalView.vue:2141"
    ]
   },
   {
@@ -7040,6 +6943,16 @@
    "locations": [
     "views/downloader/components/BasicSettingsTab.vue:100",
     "views/downloader/components/DownloaderSettingsDialog.vue:274"
+   ]
+  },
+  {
+   "zh": "测试工具",
+   "count": 2,
+   "group": "navigation",
+   "m1": "core",
+   "locations": [
+    "router.ts:282",
+    "i18n/locales/zh-CN/navigation.ts:39"
    ]
   },
   {
@@ -7163,6 +7076,16 @@
    ]
   },
   {
+   "zh": "添加映射",
+   "count": 2,
+   "group": "downloader",
+   "m1": "m2",
+   "locations": [
+    "views/downloader/components/PathMappingTab.vue:19",
+    "views/downloader/components/PathMappingTab.vue:140"
+   ]
+  },
+  {
    "zh": "添加种子",
    "count": 2,
    "group": "torrent",
@@ -7218,8 +7141,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1382",
-    "views/torrents/index.vue:1383"
+    "views/torrents/index.vue:1381",
+    "views/torrents/index.vue:1382"
    ]
   },
   {
@@ -7240,16 +7163,6 @@
    "locations": [
     "views/downloader/index.vue:40",
     "views/downloader/components/TagManagementTab.vue:23"
-   ]
-  },
-  {
-   "zh": "源文件路径",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:179",
-    "views/torrents/components/TrackerDetailCard.vue:282"
    ]
   },
   {
@@ -7293,6 +7206,16 @@
    ]
   },
   {
+   "zh": "登录",
+   "count": 2,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/navigation.ts:25",
+    "views/login/index.vue:114"
+   ]
+  },
+  {
    "zh": "目标下载器:",
    "count": 2,
    "group": "torrent",
@@ -7323,22 +7246,12 @@
    ]
   },
   {
-   "zh": "硬链接",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:510",
-    "views/torrents/components/TrackerDetailCard.vue:536"
-   ]
-  },
-  {
    "zh": "确定要将种子",
    "count": 2,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1803",
+    "views/torrents/index.vue:1802",
     "views/torrents/utils/torrentBatch.ts:1203"
    ]
   },
@@ -7348,7 +7261,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1844",
+    "views/torrents/index.vue:1843",
     "views/torrents/utils/torrentBatch.ts:1199"
    ]
   },
@@ -7368,8 +7281,8 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:833",
-    "views/settings/index.vue:834"
+    "views/settings/index.vue:825",
+    "views/settings/index.vue:826"
    ]
   },
   {
@@ -7418,28 +7331,28 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1553",
-    "views/torrents/TraditionalView.vue:2098"
+    "views/torrents/index.vue:1552",
+    "views/torrents/TraditionalView.vue:2097"
    ]
   },
   {
-   "zh": "种子文件管理",
+   "zh": "种子列表",
    "count": 2,
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "router.ts:203",
-    "views/torrents/FileManagement.vue:6"
+    "router.ts:188",
+    "i18n/locales/zh-CN/navigation.ts:29"
    ]
   },
   {
-   "zh": "种子管理",
+   "zh": "种子列表（传统模式）",
    "count": 2,
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "router.ts:177",
-    "views/logs/audit.vue:43"
+    "router.ts:198",
+    "i18n/locales/zh-CN/navigation.ts:31"
    ]
   },
   {
@@ -7493,16 +7406,6 @@
    ]
   },
   {
-   "zh": "移动",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:508",
-    "views/torrents/components/TrackerDetailCard.vue:534"
-   ]
-  },
-  {
    "zh": "移动关键词失败:",
    "count": 2,
    "group": "tracker",
@@ -7550,16 +7453,6 @@
    "locations": [
     "views/torrents/components/TrackerOperationDialog.vue:400",
     "views/torrents/components/TrackerOperationDialog.vue:476"
-   ]
-  },
-  {
-   "zh": "管理",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:237",
-    "views/dashboard/index.vue:104"
    ]
   },
   {
@@ -7618,8 +7511,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2565",
-    "views/torrents/TraditionalView.vue:1577"
+    "views/torrents/index.vue:2564",
+    "views/torrents/TraditionalView.vue:1576"
    ]
   },
   {
@@ -7768,8 +7661,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1313",
-    "views/torrents/TraditionalView.vue:1466"
+    "views/torrents/index.vue:1312",
+    "views/torrents/TraditionalView.vue:1465"
    ]
   },
   {
@@ -7778,8 +7671,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1312",
-    "views/torrents/TraditionalView.vue:1465"
+    "views/torrents/index.vue:1311",
+    "views/torrents/TraditionalView.vue:1464"
    ]
   },
   {
@@ -7858,7 +7751,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1802",
+    "views/torrents/index.vue:1801",
     "views/torrents/utils/torrentBatch.ts:1202"
    ]
   },
@@ -7880,6 +7773,16 @@
    "locations": [
     "views/tasks/index.vue:624",
     "views/tasks/index.vue:1762"
+   ]
+  },
+  {
+   "zh": "说明",
+   "count": 2,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:33",
+    "components/tasks/PythonClassSelector.vue:268"
    ]
   },
   {
@@ -7918,8 +7821,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1706",
-    "views/torrents/TraditionalView.vue:2161"
+    "views/torrents/index.vue:1705",
+    "views/torrents/TraditionalView.vue:2160"
    ]
   },
   {
@@ -7928,8 +7831,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1676",
-    "views/torrents/TraditionalView.vue:2182"
+    "views/torrents/index.vue:1675",
+    "views/torrents/TraditionalView.vue:2181"
    ]
   },
   {
@@ -7949,7 +7852,7 @@
    "m1": "partial",
    "locations": [
     "views/settings/index.vue:183",
-    "views/settings/index.vue:614"
+    "views/settings/index.vue:606"
    ]
   },
   {
@@ -8123,16 +8026,6 @@
    ]
   },
   {
-   "zh": "软链接",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:509",
-    "views/torrents/components/TrackerDetailCard.vue:535"
-   ]
-  },
-  {
    "zh": "辅种异常排查",
    "count": 2,
    "group": "torrent",
@@ -8178,7 +8071,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1717",
+    "views/torrents/index.vue:1716",
     "views/torrents/utils/torrentBatch.ts:908"
    ]
   },
@@ -8235,10 +8128,10 @@
   {
    "zh": "通知中心",
    "count": 2,
-   "group": "navigation",
-   "m1": "core",
+   "group": "other",
+   "m1": "m2",
    "locations": [
-    "layout/components/Navbar/index.vue:28",
+    "i18n/locales/zh-CN/navigation.ts:51",
     "layout/components/NotificationDrawer/index.vue:16"
    ]
   },
@@ -8278,8 +8171,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1659",
-    "views/torrents/index.vue:2160"
+    "views/torrents/index.vue:1658",
+    "views/torrents/index.vue:2159"
    ]
   },
   {
@@ -8320,16 +8213,6 @@
    "locations": [
     "views/tracker/reannounce-config.vue:574",
     "views/tracker/reannounce-config.vue:578"
-   ]
-  },
-  {
-   "zh": "配置已被其他会话修改，已重新加载最新配置，请确认后重试",
-   "count": 2,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:174",
-    "views/settings/components/MoviePilotPanel.vue:348"
    ]
   },
   {
@@ -8378,8 +8261,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:767",
-    "views/torrents/TraditionalView.vue:892"
+    "views/torrents/index.vue:766",
+    "views/torrents/TraditionalView.vue:891"
    ]
   },
   {
@@ -8493,16 +8376,6 @@
    ]
   },
   {
-   "zh": "首页",
-   "count": 2,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:152",
-    "layout/components/Navbar/index.vue:55"
-   ]
-  },
-  {
    "zh": "驼形命名兼容",
    "count": 2,
    "group": "errors",
@@ -8538,8 +8411,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2355",
-    "views/torrents/TraditionalView.vue:2280"
+    "views/torrents/index.vue:2354",
+    "views/torrents/TraditionalView.vue:2279"
    ]
   },
   {
@@ -8548,8 +8421,8 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2349",
-    "views/torrents/TraditionalView.vue:2311"
+    "views/torrents/index.vue:2348",
+    "views/torrents/TraditionalView.vue:2310"
    ]
   },
   {
@@ -8587,7 +8460,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:320"
+    "views/settings/index.vue:313"
    ]
   },
   {
@@ -8888,15 +8761,6 @@
    ]
   },
   {
-   "zh": "下载器」",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:45"
-   ]
-  },
-  {
    "zh": "下载器信息",
    "count": 1,
    "group": "downloader",
@@ -8915,15 +8779,6 @@
    ]
   },
   {
-   "zh": "下载器名",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:101"
-   ]
-  },
-  {
    "zh": "下载器名称：",
    "count": 1,
    "group": "logs",
@@ -8939,15 +8794,6 @@
    "m1": "m2",
    "locations": [
     "views/logs/audit.vue:52"
-   ]
-  },
-  {
-   "zh": "下载器映射",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:82"
    ]
   },
   {
@@ -8974,7 +8820,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:322"
+    "views/settings/index.vue:315"
    ]
   },
   {
@@ -9194,15 +9040,6 @@
    ]
   },
   {
-   "zh": "不可发现，缓存旧定义直调也会被服务端拒绝",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:8"
-   ]
-  },
-  {
    "zh": "不可用",
    "count": 1,
    "group": "tasks",
@@ -9334,7 +9171,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:786"
+    "views/settings/index.vue:778"
    ]
   },
   {
@@ -9361,7 +9198,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:496"
+    "views/torrents/components/TrackerDetailCard.vue:431"
    ]
   },
   {
@@ -9550,7 +9387,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2207"
+    "views/torrents/index.vue:2206"
    ]
   },
   {
@@ -9578,15 +9415,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:1300"
-   ]
-  },
-  {
-   "zh": "个月前",
-   "count": 1,
-   "group": "common",
-   "m1": "core",
-   "locations": [
-    "utils/formatters.ts:585"
    ]
   },
   {
@@ -9779,15 +9607,6 @@
    ]
   },
   {
-   "zh": "中文",
-   "count": 1,
-   "group": "common",
-   "m1": "m2",
-   "locations": [
-    "utils/tracker.ts:9"
-   ]
-  },
-  {
    "zh": "中文件 (100MB-1GB)",
    "count": 1,
    "group": "torrent",
@@ -9883,7 +9702,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1384"
+    "views/torrents/index.vue:1383"
    ]
   },
   {
@@ -9892,7 +9711,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1092"
+    "views/torrents/index.vue:1091"
    ]
   },
   {
@@ -10004,15 +9823,6 @@
    ]
   },
   {
-   "zh": "仅媒体库",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:165"
-   ]
-  },
-  {
    "zh": "仅对 qBittorrent 生效",
    "count": 1,
    "group": "torrent",
@@ -10054,7 +9864,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:432"
+    "views/torrents/components/TrackerDetailCard.vue:367"
    ]
   },
   {
@@ -10100,15 +9910,6 @@
    "m1": "partial",
    "locations": [
     "api/torrents.ts:205"
-   ]
-  },
-  {
-   "zh": "仅源文件",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:164"
    ]
   },
   {
@@ -10238,15 +10039,6 @@
    ]
   },
   {
-   "zh": "以下配置暂不生效；保存会保留配置意图，待紧急处置解除后按存储值恢复",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:26"
-   ]
-  },
-  {
    "zh": "以此开头的",
    "count": 1,
    "group": "orphanFiles",
@@ -10280,15 +10072,6 @@
    "m1": "partial",
    "locations": [
     "types/task-logs.ts:26"
-   ]
-  },
-  {
-   "zh": "任务」",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:8"
    ]
   },
   {
@@ -10639,7 +10422,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1380"
+    "views/torrents/index.vue:1379"
    ]
   },
   {
@@ -10778,15 +10561,6 @@
    ]
   },
   {
-   "zh": "侧下载器名称一致",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:47"
-   ]
-  },
-  {
    "zh": "侧边栏容器 - 任务14重构",
    "count": 1,
    "group": "navigation",
@@ -10801,7 +10575,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "layout/components/Sidebar/SidebarItem.vue:140"
+    "layout/components/Sidebar/SidebarItem.vue:146"
    ]
   },
   {
@@ -10811,33 +10585,6 @@
    "m1": "m2",
    "locations": [
     "utils/tracker.ts:11"
-   ]
-  },
-  {
-   "zh": "保存 MCP 配置失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:177"
-   ]
-  },
-  {
-   "zh": "保存 MCP 配置失败，请稍后重试",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:178"
-   ]
-  },
-  {
-   "zh": "保存 MoviePilot 集成配置失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:351"
    ]
   },
   {
@@ -10895,30 +10642,12 @@
    ]
   },
   {
-   "zh": "保存后该实例全部历史会立即按新映射重新解析关联状态",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:128"
-   ]
-  },
-  {
    "zh": "保存失败",
    "count": 1,
    "group": "downloader",
    "m1": "m2",
    "locations": [
     "views/downloader/components/DownloaderPathManagement.vue:550"
-   ]
-  },
-  {
-   "zh": "保存失败，请稍后重试",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:352"
    ]
   },
   {
@@ -10973,33 +10702,6 @@
    "m1": "core",
    "locations": [
     "components/torrents/AdvancedSearchBuilder.vue:328"
-   ]
-  },
-  {
-   "zh": "保存映射",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:91"
-   ]
-  },
-  {
-   "zh": "保存映射失败",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:458"
-   ]
-  },
-  {
-   "zh": "保存映射失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:457"
    ]
   },
   {
@@ -11116,7 +10818,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1554"
+    "views/torrents/index.vue:1553"
    ]
   },
   {
@@ -11125,7 +10827,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "layout/components/Navbar/index.vue:123"
+    "layout/components/Navbar/index.vue:182"
    ]
   },
   {
@@ -11143,7 +10845,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "layout/components/Sidebar/SidebarItem.vue:179"
+    "layout/components/Sidebar/SidebarItem.vue:185"
    ]
   },
   {
@@ -11305,7 +11007,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:691"
+    "views/settings/index.vue:683"
    ]
   },
   {
@@ -11323,7 +11025,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:379"
+    "views/settings/index.vue:371"
    ]
   },
   {
@@ -11332,7 +11034,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:378"
+    "views/settings/index.vue:370"
    ]
   },
   {
@@ -11342,15 +11044,6 @@
    "m1": "m2",
    "locations": [
     "components/tasks/PythonClassSelector.vue:581"
-   ]
-  },
-  {
-   "zh": "允许同步",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:62"
    ]
   },
   {
@@ -11378,15 +11071,6 @@
    "m1": "partial",
    "locations": [
     "views/downloader/components/DownloaderSettingsDialog.vue:396"
-   ]
-  },
-  {
-   "zh": "全局开关",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:30"
    ]
   },
   {
@@ -11498,15 +11182,6 @@
    ]
   },
   {
-   "zh": "全部路径",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:163"
-   ]
-  },
-  {
    "zh": "公开搜索配置仅创建者可修改",
    "count": 1,
    "group": "torrent",
@@ -11552,39 +11227,12 @@
    ]
   },
   {
-   "zh": "关联",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:8"
-   ]
-  },
-  {
-   "zh": "关联任务",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:180"
-   ]
-  },
-  {
    "zh": "关联任务ID",
    "count": 1,
    "group": "tasks",
    "m1": "partial",
    "locations": [
     "types/task-logs.ts:12"
-   ]
-  },
-  {
-   "zh": "关联反查",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:148"
    ]
   },
   {
@@ -11651,15 +11299,6 @@
    ]
   },
   {
-   "zh": "关键词看板",
-   "count": 1,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:245"
-   ]
-  },
-  {
    "zh": "关键词管理",
    "count": 1,
    "group": "tracker",
@@ -11719,16 +11358,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:833"
-   ]
-  },
-  {
-   "zh": "关闭后插件握手与同步会被拒绝（403）；已同步的镜像数据保留",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:25"
+    "views/settings/index.vue:825"
    ]
   },
   {
@@ -11809,7 +11439,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:321"
+    "views/settings/index.vue:314"
    ]
   },
   {
@@ -11855,24 +11485,6 @@
    "m1": "m2",
    "locations": [
     "views/downloader/types.ts:318"
-   ]
-  },
-  {
-   "zh": "写入",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:187"
-   ]
-  },
-  {
-   "zh": "写操作：调用需要显式确认与幂等键，并记录审计日志",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:201"
    ]
   },
   {
@@ -12007,7 +11619,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1928"
+    "views/torrents/TraditionalView.vue:1927"
    ]
   },
   {
@@ -12017,6 +11629,15 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/DownloaderPathManagement.vue:494"
+   ]
+  },
+  {
+   "zh": "切换语言",
+   "count": 1,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/navigation.ts:53"
    ]
   },
   {
@@ -12160,7 +11781,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1088"
+    "views/torrents/index.vue:1087"
    ]
   },
   {
@@ -12272,24 +11893,6 @@
    ]
   },
   {
-   "zh": "删除实例失败",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:402"
-   ]
-  },
-  {
-   "zh": "删除实例失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:401"
-   ]
-  },
-  {
    "zh": "删除已选择的搜索配置",
    "count": 1,
    "group": "torrent",
@@ -12304,7 +11907,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2220"
+    "views/torrents/index.vue:2219"
    ]
   },
   {
@@ -12313,7 +11916,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2220"
+    "views/torrents/index.vue:2219"
    ]
   },
   {
@@ -12403,7 +12006,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:2003"
+    "views/torrents/TraditionalView.vue:2002"
    ]
   },
   {
@@ -12412,7 +12015,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:2002"
+    "views/torrents/TraditionalView.vue:2001"
    ]
   },
   {
@@ -12421,7 +12024,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1994"
+    "views/torrents/TraditionalView.vue:1993"
    ]
   },
   {
@@ -12448,7 +12051,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2188"
+    "views/torrents/index.vue:2187"
    ]
   },
   {
@@ -12601,7 +12204,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1170"
+    "views/torrents/TraditionalView.vue:1169"
    ]
   },
   {
@@ -12668,24 +12271,6 @@
    ]
   },
   {
-   "zh": "加载 MCP 配置失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:138"
-   ]
-  },
-  {
-   "zh": "加载 MoviePilot 集成配置失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:294"
-   ]
-  },
-  {
    "zh": "加载下载器设置失败:",
    "count": 1,
    "group": "downloader",
@@ -12695,12 +12280,21 @@
    ]
   },
   {
+   "zh": "加载中…",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:13"
+   ]
+  },
+  {
    "zh": "加载列显隐偏好",
    "count": 1,
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1337"
+    "views/torrents/TraditionalView.vue:1336"
    ]
   },
   {
@@ -12889,7 +12483,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1170"
+    "views/torrents/TraditionalView.vue:1169"
    ]
   },
   {
@@ -13159,7 +12753,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:737"
+    "views/settings/index.vue:729"
    ]
   },
   {
@@ -13177,25 +12771,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:76"
-   ]
-  },
-  {
-   "zh": "反查失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:490"
-   ]
-  },
-  {
-   "zh": "反查失败，请稍后重试",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:489"
+    "views/login/index.vue:90"
    ]
   },
   {
@@ -13271,6 +12847,15 @@
    ]
   },
   {
+   "zh": "受限",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:109"
+   ]
+  },
+  {
    "zh": "只支持 .torrent 文件，提交后将在后台异步处理",
    "count": 1,
    "group": "torrent",
@@ -13304,15 +12889,6 @@
    "m1": "core",
    "locations": [
     "views/torrents/components/TorrentAddDialog.vue:362"
-   ]
-  },
-  {
-   "zh": "只读",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:188"
    ]
   },
   {
@@ -13933,7 +13509,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:165"
+    "utils/formatters.ts:166"
    ]
   },
   {
@@ -13982,15 +13558,6 @@
    ]
   },
   {
-   "zh": "在 MoviePilot 中安装 BtDeckBridge 插件并完成握手后，此处会出现实例",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:51"
-   ]
-  },
-  {
    "zh": "在 watch 钩子里被 appendChild 到 document.body，避免父级 overflow 裁剪",
    "count": 1,
    "group": "torrent",
@@ -14014,7 +13581,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "router.ts:281"
+    "router.ts:294"
    ]
   },
   {
@@ -14042,15 +13609,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:455"
-   ]
-  },
-  {
-   "zh": "地址与专用集成账号（建议单独创建账号，勿开启两步验证）",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:26"
    ]
   },
   {
@@ -14194,7 +13752,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:674"
+    "views/settings/index.vue:666"
    ]
   },
   {
@@ -14464,7 +14022,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2154"
+    "views/torrents/index.vue:2153"
    ]
   },
   {
@@ -14513,15 +14071,6 @@
    ]
   },
   {
-   "zh": "如 /data/media/电影 或 /data/downloads/xxx.mkv",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:157"
-   ]
-  },
-  {
    "zh": "如:",
    "count": 1,
    "group": "torrent",
@@ -14564,42 +14113,6 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/AdvancedSettingsTab.vue:35"
-   ]
-  },
-  {
-   "zh": "媒体库",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:349"
-   ]
-  },
-  {
-   "zh": "媒体库关联加载中...",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:255"
-   ]
-  },
-  {
-   "zh": "媒体库关联加载失败",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:259"
-   ]
-  },
-  {
-   "zh": "媒体库文件",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:8"
    ]
   },
   {
@@ -14654,15 +14167,6 @@
    "m1": "m2",
    "locations": [
     "components/tasks/MonacoEditor.vue:318"
-   ]
-  },
-  {
-   "zh": "存在重复的 MoviePilot 下载器名",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:443"
    ]
   },
   {
@@ -14798,33 +14302,6 @@
    "m1": "partial",
    "locations": [
     "views/settings/index.vue:264"
-   ]
-  },
-  {
-   "zh": "实例已删除",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:398"
-   ]
-  },
-  {
-   "zh": "实例已启用",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:381"
-   ]
-  },
-  {
-   "zh": "实例已禁用（握手/同步将被拒绝）",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:381"
    ]
   },
   {
@@ -14968,7 +14445,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:825"
+    "views/settings/index.vue:817"
    ]
   },
   {
@@ -14977,7 +14454,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:811"
+    "views/settings/index.vue:803"
    ]
   },
   {
@@ -14986,7 +14463,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:591"
+    "views/settings/index.vue:583"
    ]
   },
   {
@@ -14995,7 +14472,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:601"
+    "views/settings/index.vue:593"
    ]
   },
   {
@@ -15004,7 +14481,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:193"
+    "views/login/index.vue:231"
    ]
   },
   {
@@ -15022,7 +14499,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:577"
+    "views/settings/index.vue:569"
    ]
   },
   {
@@ -15049,7 +14526,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:672"
+    "views/settings/index.vue:664"
    ]
   },
   {
@@ -15265,7 +14742,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:462"
+    "views/settings/index.vue:454"
    ]
   },
   {
@@ -15274,7 +14751,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:463"
+    "views/settings/index.vue:455"
    ]
   },
   {
@@ -15283,7 +14760,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "layout/components/Navbar/index.vue:118"
+    "layout/components/Navbar/index.vue:177"
    ]
   },
   {
@@ -15350,15 +14827,6 @@
    ]
   },
   {
-   "zh": "将连带删除其",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:391"
-   ]
-  },
-  {
    "zh": "小于",
    "count": 1,
    "group": "other",
@@ -15419,24 +14887,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:79"
-   ]
-  },
-  {
-   "zh": "尚未同步",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:373"
-   ]
-  },
-  {
-   "zh": "尚未配置映射（历史将标记为未映射）",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:133"
    ]
   },
   {
@@ -15575,12 +15025,12 @@
    ]
   },
   {
-   "zh": "已关联",
+   "zh": "已关闭",
    "count": 1,
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/components/MoviePilotPanel.vue:517"
+    "views/settings/index.vue:847"
    ]
   },
   {
@@ -15635,15 +15085,6 @@
    "m1": "m2",
    "locations": [
     "views/tasks/index.vue:2066"
-   ]
-  },
-  {
-   "zh": "已同步",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:374"
    ]
   },
   {
@@ -15743,15 +15184,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:1791"
-   ]
-  },
-  {
-   "zh": "已注册实例",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:41"
    ]
   },
   {
@@ -15859,7 +15291,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:250"
+    "views/login/index.vue:288"
    ]
   },
   {
@@ -15868,7 +15300,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:769"
+    "views/torrents/TraditionalView.vue:768"
    ]
   },
   {
@@ -16052,15 +15484,6 @@
    ]
   },
   {
-   "zh": "开启全局开关后还需单独启用所需能力；未启用任何能力时工具列表为空",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:36"
-   ]
-  },
-  {
    "zh": "开启后同目录下多个文件折叠为文件夹一行（仅影响展示，删除仍按文件）",
    "count": 1,
    "group": "orphanFiles",
@@ -16102,7 +15525,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1921"
+    "views/torrents/TraditionalView.vue:1920"
    ]
   },
   {
@@ -16309,7 +15732,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "permission.ts:147"
+    "permission.ts:148"
    ]
   },
   {
@@ -16430,15 +15853,6 @@
    ]
   },
   {
-   "zh": "当前实际生效：关闭）",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:33"
-   ]
-  },
-  {
    "zh": "当前尚无可展示的成功扫描结果",
    "count": 1,
    "group": "orphanFiles",
@@ -16481,6 +15895,15 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:2049"
+   ]
+  },
+  {
+   "zh": "当前服务端主机形态：",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:6"
    ]
   },
   {
@@ -16741,7 +16164,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:89"
+    "views/login/index.vue:103"
    ]
   },
   {
@@ -17141,15 +16564,6 @@
    ]
   },
   {
-   "zh": "或 MoviePilot 侧的写操作；MoviePilot 历史消失不会触发本地清理",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:9"
-   ]
-  },
-  {
    "zh": "或手动输入关键词",
    "count": 1,
    "group": "tracker",
@@ -17350,10 +16764,10 @@
   {
    "zh": "打开通知中心",
    "count": 1,
-   "group": "navigation",
-   "m1": "core",
+   "group": "other",
+   "m1": "m2",
    "locations": [
-    "layout/components/Navbar/index.vue:27"
+    "i18n/locales/zh-CN/navigation.ts:52"
    ]
   },
   {
@@ -17650,7 +17064,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2137"
+    "views/torrents/index.vue:2136"
    ]
   },
   {
@@ -17659,7 +17073,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1657"
+    "views/torrents/index.vue:1656"
    ]
   },
   {
@@ -17938,7 +17352,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1686"
+    "views/torrents/index.vue:1685"
    ]
   },
   {
@@ -18419,30 +17833,12 @@
    ]
   },
   {
-   "zh": "插件",
+   "zh": "提交反馈",
    "count": 1,
-   "group": "settings",
-   "m1": "partial",
+   "group": "other",
+   "m1": "m2",
    "locations": [
-    "views/settings/components/MoviePilotPanel.vue:75"
-   ]
-  },
-  {
-   "zh": "插件侧需配置",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:25"
-   ]
-  },
-  {
-   "zh": "插件首次握手后自动注册",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:45"
+    "i18n/locales/zh-CN/navigation.ts:50"
    ]
   },
   {
@@ -18640,7 +18036,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1745"
+    "views/torrents/index.vue:1744"
    ]
   },
   {
@@ -18658,7 +18054,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1746"
+    "views/torrents/index.vue:1745"
    ]
   },
   {
@@ -18725,6 +18121,15 @@
    ]
   },
   {
+   "zh": "支持",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:110"
+   ]
+  },
+  {
    "zh": "支持使用 % 作为通配符匹配多个子域名",
    "count": 1,
    "group": "tracker",
@@ -18779,6 +18184,15 @@
    ]
   },
   {
+   "zh": "支持级别",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:26"
+   ]
+  },
+  {
    "zh": "收起分页大小选项",
    "count": 1,
    "group": "torrent",
@@ -18802,7 +18216,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:318"
+    "views/settings/index.vue:311"
    ]
   },
   {
@@ -19000,16 +18414,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:224"
-   ]
-  },
-  {
-   "zh": "整理源文件",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:8"
+    "utils/formatters.ts:225"
    ]
   },
   {
@@ -19018,7 +18423,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:347"
+    "views/torrents/components/TrackerDetailCard.vue:284"
    ]
   },
   {
@@ -19297,7 +18702,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:222"
+    "utils/formatters.ts:223"
    ]
   },
   {
@@ -19315,7 +18720,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "permission.ts:146"
+    "permission.ts:147"
    ]
   },
   {
@@ -19436,15 +18841,6 @@
    ]
   },
   {
-   "zh": "日志管理",
-   "count": 1,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:289"
-   ]
-  },
-  {
    "zh": "日志统计",
    "count": 1,
    "group": "tasks",
@@ -19459,7 +18855,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1891"
+    "views/torrents/index.vue:1890"
    ]
   },
   {
@@ -19504,7 +18900,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:432"
+    "utils/formatters.ts:433"
    ]
   },
   {
@@ -19706,39 +19102,12 @@
    ]
   },
   {
-   "zh": "映射后，同步的历史才能按 (下载器, Hash) 关联到任务；映射名须与 MoviePilot",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:46"
-   ]
-  },
-  {
-   "zh": "映射已保存，历史关联状态已重新解析",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:455"
-   ]
-  },
-  {
    "zh": "映射描述",
    "count": 1,
    "group": "downloader",
    "m1": "m2",
    "locations": [
     "views/downloader/types.ts:320"
-   ]
-  },
-  {
-   "zh": "映射行的 MoviePilot 下载器名与 BtDeck 下载器均不能为空",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:438"
    ]
   },
   {
@@ -19864,7 +19233,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1769"
+    "views/torrents/index.vue:1768"
    ]
   },
   {
@@ -19873,7 +19242,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1960"
+    "views/torrents/TraditionalView.vue:1959"
    ]
   },
   {
@@ -19882,7 +19251,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1632"
+    "views/torrents/index.vue:1631"
    ]
   },
   {
@@ -19936,7 +19305,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:362"
+    "views/settings/index.vue:354"
    ]
   },
   {
@@ -20044,7 +19413,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:691"
+    "views/settings/index.vue:683"
    ]
   },
   {
@@ -20098,7 +19467,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1740"
+    "views/torrents/index.vue:1739"
    ]
   },
   {
@@ -20116,7 +19485,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1924"
+    "views/torrents/TraditionalView.vue:1923"
    ]
   },
   {
@@ -20189,15 +19558,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:303"
-   ]
-  },
-  {
-   "zh": "暂无实例",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:51"
    ]
   },
   {
@@ -20390,24 +19750,6 @@
    ]
   },
   {
-   "zh": "更新实例失败",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:384"
-   ]
-  },
-  {
-   "zh": "更新实例失败:",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:383"
-   ]
-  },
-  {
    "zh": "更新时间",
    "count": 1,
    "group": "tasks",
@@ -20440,7 +19782,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:728"
+    "views/settings/index.vue:720"
    ]
   },
   {
@@ -20548,7 +19890,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1957"
+    "views/torrents/index.vue:1956"
    ]
   },
   {
@@ -20741,15 +20083,6 @@
    ]
   },
   {
-   "zh": "最近错误：",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:77"
-   ]
-  },
-  {
    "zh": "月",
    "count": 1,
    "group": "tasks",
@@ -20800,16 +20133,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:227"
-   ]
-  },
-  {
-   "zh": "服务与全部能力默认关闭；关闭的能力对客户端",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:7"
+    "utils/formatters.ts:228"
    ]
   },
   {
@@ -20831,21 +20155,12 @@
    ]
   },
   {
-   "zh": "服务允许外部 AI 客户端在通过认证后调用受控的",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:6"
-   ]
-  },
-  {
    "zh": "服务器内部错误",
    "count": 1,
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:225"
+    "utils/formatters.ts:226"
    ]
   },
   {
@@ -20863,16 +20178,16 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "permission.ts:105"
+    "permission.ts:106"
    ]
   },
   {
-   "zh": "未关联",
+   "zh": "服务端",
    "count": 1,
-   "group": "settings",
-   "m1": "partial",
+   "group": "common",
+   "m1": "m2",
    "locations": [
-    "views/settings/components/MoviePilotPanel.vue:519"
+    "components/settings/PlatformCapabilityPanel.vue:88"
    ]
   },
   {
@@ -20939,30 +20254,12 @@
    ]
   },
   {
-   "zh": "未找到 MoviePilot 整理记录（需已同步且配置下载器映射）",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:266"
-   ]
-  },
-  {
    "zh": "未找到匹配",
    "count": 1,
    "group": "torrent",
    "m1": "core",
    "locations": [
     "views/torrents/components/TrackerDetailCard.vue:146"
-   ]
-  },
-  {
-   "zh": "未找到匹配的整理历史",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:171"
    ]
   },
   {
@@ -20980,7 +20277,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:221"
+    "utils/formatters.ts:222"
    ]
   },
   {
@@ -20990,15 +20287,6 @@
    "m1": "core",
    "locations": [
     "views/downloader/components/DownloaderCard.vue:69"
-   ]
-  },
-  {
-   "zh": "未映射",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:518"
    ]
   },
   {
@@ -21038,15 +20326,6 @@
    ]
   },
   {
-   "zh": "未知标题",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:519"
-   ]
-  },
-  {
    "zh": "未知状态",
    "count": 1,
    "group": "tasks",
@@ -21071,6 +20350,15 @@
    "m1": "m2",
    "locations": [
     "utils/notification-markdown.ts:98"
+   ]
+  },
+  {
+   "zh": "未知（待确认）",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:87"
    ]
   },
   {
@@ -21128,21 +20416,12 @@
    ]
   },
   {
-   "zh": "本功能不产生任何对生产任务",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:8"
-   ]
-  },
-  {
    "zh": "本地列表更新]",
    "count": 1,
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2207"
+    "views/torrents/index.vue:2206"
    ]
   },
   {
@@ -21173,39 +20452,12 @@
    ]
   },
   {
-   "zh": "条 ·",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:374"
-   ]
-  },
-  {
    "zh": "条件值不能为空",
    "count": 1,
    "group": "torrent",
    "m1": "core",
    "locations": [
     "components/torrents/advancedSearchState.ts:633"
-   ]
-  },
-  {
-   "zh": "条同步历史，且不可恢复",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:391"
-   ]
-  },
-  {
-   "zh": "条整理记录",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/components/TrackerDetailCard.vue:270"
    ]
   },
   {
@@ -21259,7 +20511,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2735"
+    "views/torrents/index.vue:2734"
    ]
   },
   {
@@ -21268,7 +20520,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2737"
+    "views/torrents/index.vue:2736"
    ]
   },
   {
@@ -21277,7 +20529,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2736"
+    "views/torrents/index.vue:2735"
    ]
   },
   {
@@ -21286,7 +20538,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:2494"
+    "views/torrents/TraditionalView.vue:2493"
    ]
   },
   {
@@ -21295,7 +20547,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:2493"
+    "views/torrents/TraditionalView.vue:2492"
    ]
   },
   {
@@ -21359,6 +20611,15 @@
    "m1": "m2",
    "locations": [
     "components/tasks/PythonClassSelector.vue:50"
+   ]
+  },
+  {
+   "zh": "查询",
+   "count": 1,
+   "group": "tasks",
+   "m1": "m2",
+   "locations": [
+    "views/tasks/index.vue:60"
    ]
   },
   {
@@ -21629,6 +20890,15 @@
    "m1": "m2",
    "locations": [
     "components/tasks/PythonClassSelector.vue:115"
+   ]
+  },
+  {
+   "zh": "桌面 / 服务器",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:88"
    ]
   },
   {
@@ -22078,7 +21348,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:330"
+    "views/settings/index.vue:323"
    ]
   },
   {
@@ -22231,7 +21501,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1956"
+    "views/torrents/index.vue:1955"
    ]
   },
   {
@@ -22546,7 +21816,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:784"
+    "views/torrents/TraditionalView.vue:783"
    ]
   },
   {
@@ -22564,7 +21834,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1385"
+    "views/torrents/index.vue:1384"
    ]
   },
   {
@@ -22637,15 +21907,6 @@
    "m1": "m2",
    "locations": [
     "views/tracker/test.vue:369"
-   ]
-  },
-  {
-   "zh": "测试工具",
-   "count": 1,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:270"
    ]
   },
   {
@@ -22906,7 +22167,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1218"
+    "views/torrents/index.vue:1217"
    ]
   },
   {
@@ -23311,7 +22572,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:315"
+    "views/settings/index.vue:308"
    ]
   },
   {
@@ -23333,15 +22594,6 @@
    ]
   },
   {
-   "zh": "环境紧急开关已强制关闭 MCP 服务（BTDECK",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:25"
-   ]
-  },
-  {
    "zh": "生成二维码中...",
    "count": 1,
    "group": "settings",
@@ -23356,7 +22608,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:330"
+    "views/settings/index.vue:323"
    ]
   },
   {
@@ -23414,21 +22666,12 @@
    ]
   },
   {
-   "zh": "登录",
-   "count": 1,
-   "group": "auth",
-   "m1": "core",
-   "locations": [
-    "views/login/index.vue:100"
-   ]
-  },
-  {
    "zh": "登录中...",
    "count": 1,
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:100"
+    "views/login/index.vue:114"
    ]
   },
   {
@@ -23437,7 +22680,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:236"
+    "views/login/index.vue:274"
    ]
   },
   {
@@ -23446,7 +22689,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:232"
+    "views/login/index.vue:270"
    ]
   },
   {
@@ -23473,7 +22716,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:225"
+    "views/login/index.vue:263"
    ]
   },
   {
@@ -23585,15 +22828,6 @@
    ]
   },
   {
-   "zh": "目录会按前缀匹配其下文件；无 Hash 的历史标记为未关联",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:151"
-   ]
-  },
-  {
    "zh": "目标下载器",
    "count": 1,
    "group": "torrent",
@@ -23698,7 +22932,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:590"
+    "utils/formatters.ts:594"
    ]
   },
   {
@@ -23734,7 +22968,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:805"
+    "views/settings/index.vue:797"
    ]
   },
   {
@@ -23762,15 +22996,6 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/TagManagementTab.vue:192"
-   ]
-  },
-  {
-   "zh": "确定删除？",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:391"
    ]
   },
   {
@@ -23824,7 +23049,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1955"
+    "views/torrents/TraditionalView.vue:1954"
    ]
   },
   {
@@ -23842,7 +23067,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1764"
+    "views/torrents/index.vue:1763"
    ]
   },
   {
@@ -23959,7 +23184,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:692"
+    "views/settings/index.vue:684"
    ]
   },
   {
@@ -23968,7 +23193,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:691"
+    "views/settings/index.vue:683"
    ]
   },
   {
@@ -24251,24 +23476,6 @@
    ]
   },
   {
-   "zh": "种子列表",
-   "count": 1,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:185"
-   ]
-  },
-  {
-   "zh": "种子列表（传统模式）",
-   "count": 1,
-   "group": "navigation",
-   "m1": "core",
-   "locations": [
-    "router.ts:194"
-   ]
-  },
-  {
    "zh": "种子同步",
    "count": 1,
    "group": "tasks",
@@ -24401,15 +23608,6 @@
    "m1": "m2",
    "locations": [
     "views/torrents/FileManagement.vue:186"
-   ]
-  },
-  {
-   "zh": "种子查询、标记与任务触发能力",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:7"
    ]
   },
   {
@@ -24562,7 +23760,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2207"
+    "views/torrents/index.vue:2206"
    ]
   },
   {
@@ -24607,7 +23805,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:117"
+    "views/login/index.vue:131"
    ]
   },
   {
@@ -24715,7 +23913,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2104"
+    "views/torrents/index.vue:2103"
    ]
   },
   {
@@ -24742,7 +23940,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:2102"
+    "views/torrents/index.vue:2101"
    ]
   },
   {
@@ -24958,7 +24156,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "layout/components/Navbar/index.vue:88"
+    "layout/components/Navbar/index.vue:118"
    ]
   },
   {
@@ -25219,7 +24417,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:168"
+    "views/login/index.vue:206"
    ]
   },
   {
@@ -25291,16 +24489,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:640"
-   ]
-  },
-  {
-   "zh": "绑定账号",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:73"
+    "views/settings/index.vue:632"
    ]
   },
   {
@@ -25372,7 +24561,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:22"
+    "views/login/index.vue:36"
    ]
   },
   {
@@ -25436,15 +24625,6 @@
    "m1": "m2",
    "locations": [
     "components/tasks/MonacoEditor.vue:9"
-   ]
-  },
-  {
-   "zh": "编辑映射",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:87"
    ]
   },
   {
@@ -25520,12 +24700,21 @@
    ]
   },
   {
+   "zh": "缺少翻译键:",
+   "count": 1,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/index.ts:130"
+   ]
+  },
+  {
    "zh": "网关错误",
    "count": 1,
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:226"
+    "utils/formatters.ts:227"
    ]
   },
   {
@@ -25570,7 +24759,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:235"
+    "utils/formatters.ts:236"
    ]
   },
   {
@@ -25607,6 +24796,33 @@
    "m1": "core",
    "locations": [
     "views/404.vue:50"
+   ]
+  },
+  {
+   "zh": "能力",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:25"
+   ]
+  },
+  {
+   "zh": "能力信息暂不可用；需要下载器主机文件系统的入口将暂时关闭，请检查连接后重试",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:15"
+   ]
+  },
+  {
+   "zh": "能力级别由服务端统一下发，各页面展示保持一致",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:10"
    ]
   },
   {
@@ -25840,7 +25056,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/mixins/detailTabsData.ts:257"
+    "views/torrents/mixins/detailTabsData.ts:203"
    ]
   },
   {
@@ -25912,7 +25128,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1510"
+    "views/torrents/TraditionalView.vue:1509"
    ]
   },
   {
@@ -25943,15 +25159,6 @@
    ]
   },
   {
-   "zh": "获取媒体库关联失败",
-   "count": 1,
-   "group": "torrent",
-   "m1": "core",
-   "locations": [
-    "views/torrents/mixins/detailTabsData.ts:202"
-   ]
-  },
-  {
    "zh": "获取孤儿文件列表失败：",
    "count": 1,
    "group": "orphanFiles",
@@ -25975,7 +25182,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/mixins/detailTabsData.ts:163"
+    "views/torrents/mixins/detailTabsData.ts:148"
    ]
   },
   {
@@ -26524,7 +25731,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:88"
+    "views/login/index.vue:102"
    ]
   },
   {
@@ -26560,7 +25767,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:460"
+    "views/settings/index.vue:452"
    ]
   },
   {
@@ -26699,15 +25906,6 @@
    ]
   },
   {
-   "zh": "说明",
-   "count": 1,
-   "group": "tasks",
-   "m1": "m2",
-   "locations": [
-    "components/tasks/PythonClassSelector.vue:268"
-   ]
-  },
-  {
    "zh": "说明:",
    "count": 1,
    "group": "tracker",
@@ -26731,7 +25929,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "permission.ts:81"
+    "permission.ts:82"
    ]
   },
   {
@@ -26794,7 +25992,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:2126"
+    "views/torrents/TraditionalView.vue:2125"
    ]
   },
   {
@@ -26848,7 +26046,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:681"
+    "views/settings/index.vue:673"
    ]
   },
   {
@@ -26884,7 +26082,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:220"
+    "utils/formatters.ts:221"
    ]
   },
   {
@@ -26893,7 +26091,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:229"
+    "utils/formatters.ts:230"
    ]
   },
   {
@@ -26929,7 +26127,7 @@
    "group": "common",
    "m1": "core",
    "locations": [
-    "utils/formatters.ts:223"
+    "utils/formatters.ts:224"
    ]
   },
   {
@@ -27100,7 +26298,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:185"
+    "views/login/index.vue:223"
    ]
   },
   {
@@ -27155,15 +26353,6 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/DownloaderPathManagement.vue:202"
-   ]
-  },
-  {
-   "zh": "请输入要反查的路径",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:477"
    ]
   },
   {
@@ -27689,15 +26878,6 @@
    ]
   },
   {
-   "zh": "输入媒体库文件/目录或源文件路径，反查关联的整理历史与 BT 任务",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:150"
-   ]
-  },
-  {
    "zh": "输入应用中显示的6位验证码",
    "count": 1,
    "group": "settings",
@@ -27829,7 +27009,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1093"
+    "views/torrents/index.vue:1092"
    ]
   },
   {
@@ -27838,7 +27018,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1169"
+    "views/torrents/TraditionalView.vue:1168"
    ]
   },
   {
@@ -28000,7 +27180,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:116"
+    "views/login/index.vue:130"
    ]
   },
   {
@@ -28054,7 +27234,7 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:110"
+    "views/login/index.vue:124"
    ]
   },
   {
@@ -28132,10 +27312,10 @@
   {
    "zh": "退出登录",
    "count": 1,
-   "group": "navigation",
-   "m1": "core",
+   "group": "other",
+   "m1": "m2",
    "locations": [
-    "layout/components/Navbar/index.vue:60"
+    "i18n/locales/zh-CN/navigation.ts:49"
    ]
   },
   {
@@ -28409,15 +27589,6 @@
    ]
   },
   {
-   "zh": "通过 MoviePilot 插件 BtDeckBridge 将其整理历史同步为只读镜像，建立",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:7"
-   ]
-  },
-  {
    "zh": "速度设置",
    "count": 1,
    "group": "downloader",
@@ -28481,15 +27652,6 @@
    ]
   },
   {
-   "zh": "配置",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:45"
-   ]
-  },
-  {
    "zh": "配置下载器内部路径到主机实际路径的映射关系，适用于 Docker、NAS 等场景",
    "count": 1,
    "group": "downloader",
@@ -28541,24 +27703,6 @@
    "m1": "m2",
    "locations": [
     "views/downloader/components/PathMappingTab.vue:353"
-   ]
-  },
-  {
-   "zh": "配置加载失败",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:13"
-   ]
-  },
-  {
-   "zh": "配置已保存",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:171"
    ]
   },
   {
@@ -28720,7 +27864,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1944"
+    "views/torrents/TraditionalView.vue:1943"
    ]
   },
   {
@@ -28729,7 +27873,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1758"
+    "views/torrents/index.vue:1757"
    ]
   },
   {
@@ -28738,7 +27882,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1759"
+    "views/torrents/index.vue:1758"
    ]
   },
   {
@@ -28747,7 +27891,7 @@
    "group": "torrent",
    "m1": "core",
    "locations": [
-    "views/torrents/index.vue:1754"
+    "views/torrents/index.vue:1753"
    ]
   },
   {
@@ -28765,7 +27909,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1948"
+    "views/torrents/TraditionalView.vue:1947"
    ]
   },
   {
@@ -28774,7 +27918,7 @@
    "group": "torrent",
    "m1": "m2",
    "locations": [
-    "views/torrents/TraditionalView.vue:1947"
+    "views/torrents/TraditionalView.vue:1946"
    ]
   },
   {
@@ -28811,6 +27955,15 @@
    "m1": "core",
    "locations": [
     "components/torrents/AdvancedSearchBuilder.vue:298"
+   ]
+  },
+  {
+   "zh": "重试",
+   "count": 1,
+   "group": "torrent",
+   "m1": "core",
+   "locations": [
+    "components/torrents/CompactTable.vue:107"
    ]
   },
   {
@@ -28954,7 +28107,16 @@
    "group": "auth",
    "m1": "core",
    "locations": [
-    "views/login/index.vue:167"
+    "views/login/index.vue:205"
+   ]
+  },
+  {
+   "zh": "降级",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:8"
    ]
   },
   {
@@ -29039,42 +28201,6 @@
    ]
   },
   {
-   "zh": "集成",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:5"
-   ]
-  },
-  {
-   "zh": "集成开关",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:20"
-   ]
-  },
-  {
-   "zh": "集成配置加载失败",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:14"
-   ]
-  },
-  {
-   "zh": "集成配置已保存",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/MoviePilotPanel.vue:345"
-   ]
-  },
-  {
    "zh": "需要在运行时验证类的存在性",
    "count": 1,
    "group": "tasks",
@@ -29093,6 +28219,15 @@
    ]
   },
   {
+   "zh": "页面不存在",
+   "count": 1,
+   "group": "other",
+   "m1": "m2",
+   "locations": [
+    "i18n/locales/zh-CN/navigation.ts:26"
+   ]
+  },
+  {
    "zh": "页面未找到",
    "count": 1,
    "group": "navigation",
@@ -29107,7 +28242,7 @@
    "group": "navigation",
    "m1": "core",
    "locations": [
-    "router.ts:450"
+    "router.ts:469"
    ]
   },
   {
@@ -29126,6 +28261,15 @@
    "m1": "core",
    "locations": [
     "views/query-templates/components/QueryTemplateDialog.vue:77"
+   ]
+  },
+  {
+   "zh": "项 · 不支持",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:8"
    ]
   },
   {
@@ -29189,6 +28333,15 @@
    "m1": "core",
    "locations": [
     "views/torrents/utils/torrentBatch.ts:989"
+   ]
+  },
+  {
+   "zh": "项）",
+   "count": 1,
+   "group": "common",
+   "m1": "m2",
+   "locations": [
+    "components/settings/PlatformCapabilityPanel.vue:8"
    ]
   },
   {
@@ -29287,7 +28440,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:765"
+    "views/settings/index.vue:757"
    ]
   },
   {
@@ -29323,7 +28476,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:361"
+    "views/settings/index.vue:353"
    ]
   },
   {
@@ -29368,7 +28521,7 @@
    "group": "settings",
    "m1": "partial",
    "locations": [
-    "views/settings/index.vue:648"
+    "views/settings/index.vue:640"
    ]
   },
   {
@@ -29477,24 +28630,6 @@
    "m1": "m2",
    "locations": [
     "views/orphan-files/index.vue:1506"
-   ]
-  },
-  {
-   "zh": "高风险",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:186"
-   ]
-  },
-  {
-   "zh": "高风险能力：外部副作用或任务执行，调用需要显式确认与幂等键并强制审计，启用前请确认信任调用方",
-   "count": 1,
-   "group": "settings",
-   "m1": "partial",
-   "locations": [
-    "views/settings/components/McpSettingsPanel.vue:199"
    ]
   },
   {

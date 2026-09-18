@@ -1,7 +1,7 @@
 <template>
   <main
     class="downloader-control-room"
-    aria-label="下载器管理"
+    :aria-label="$t('downloader.page.management')"
     @pointermove="handlePointerMove"
     @pointerleave="resetPointerGlow"
   >
@@ -13,12 +13,12 @@
       <div class="control-orbit control-orbit--two" />
     </div>
 
-    <section class="command-deck" aria-label="下载器筛选与操作">
+    <section class="command-deck" :aria-label="$t('downloader.page.filters')">
       <div class="command-deck__signal">
         <span class="signal-beacon" aria-hidden="true" />
         <div>
-          <strong>状态链路已建立</strong>
-          <span>每 5 秒同步一次节点遥测</span>
+          <strong>{{ $t('downloader.page.statusEstablished') }}</strong>
+          <span>{{ $t('downloader.page.syncTelemetry') }}</span>
         </div>
       </div>
 
@@ -26,8 +26,8 @@
         <el-input
           v-model="searchKeyword"
           class="control-search"
-          placeholder="按别名筛选节点"
-          aria-label="按下载器别名筛选"
+          :placeholder="$t('downloader.page.filterPlaceholder')"
+          :aria-label="$t('downloader.page.filterLabel')"
           @input="handleSearchInput"
         >
           <template slot="prefix">
@@ -37,7 +37,7 @@
             <button
               type="button"
               class="control-search__clear"
-              aria-label="清空搜索"
+              :aria-label="$t('downloader.page.clearSearch')"
               @mousedown.prevent
               @click="handleSearchClear"
             >
@@ -47,7 +47,7 @@
         </el-input>
 
         <span v-if="isSearching" class="search-result-tip" aria-live="polite">
-          {{ filteredDownloaderList.length }} / {{ downloaderList.length }} 节点
+          {{ $t('downloader.page.nodeCount', {shown: filteredDownloaderList.length, total: downloaderList.length}) }}
         </span>
 
         <el-button
@@ -61,11 +61,11 @@
             :stroke-width="1.8"
             :class="{'is-spinning': listLoading}"
           />
-          <span>刷新</span>
+          <span>{{ $t('common.refresh') }}</span>
         </el-button>
         <el-button class="control-action control-action--primary" type="primary" @click="handleAdd">
           <LucideIcon name="plus" :size="17" :stroke-width="2" />
-          <span>接入节点</span>
+          <span>{{ $t('downloader.page.connectNode') }}</span>
         </el-button>
       </div>
     </section>
@@ -74,16 +74,16 @@
       <div class="nodes-section__header">
         <div>
           <div class="section-index">01 / NODE MATRIX</div>
-          <h2 id="downloader-node-heading">下载器节点</h2>
+          <h2 id="downloader-node-heading">{{ $t('downloader.page.heading') }}</h2>
         </div>
-        <div class="nodes-section__legend" aria-label="状态图例">
-          <span><i class="legend-dot legend-dot--online" />在线 {{ onlineDownloaderCount }}</span>
-          <span><i class="legend-dot legend-dot--offline" />离线 {{ offlineDownloaderCount }}</span>
-          <span><i class="legend-dot legend-dot--pending" />待响应 {{ pendingDownloaderCount }}</span>
+        <div class="nodes-section__legend" :aria-label="$t('downloader.page.legend')">
+          <span><i class="legend-dot legend-dot--online" />{{ $t('downloader.page.online', {count: onlineDownloaderCount}) }}</span>
+          <span><i class="legend-dot legend-dot--offline" />{{ $t('downloader.page.offline', {count: offlineDownloaderCount}) }}</span>
+          <span><i class="legend-dot legend-dot--pending" />{{ $t('downloader.page.pending', {count: pendingDownloaderCount}) }}</span>
         </div>
       </div>
 
-      <div v-if="listLoading && downloaderList.length === 0" class="node-skeleton-grid" aria-label="正在加载下载器">
+      <div v-if="listLoading && downloaderList.length === 0" class="node-skeleton-grid" :aria-label="$t('downloader.page.loadingSkeleton')">
         <div v-for="index in 3" :key="index" class="node-skeleton" aria-hidden="true">
           <span />
           <span />
@@ -100,11 +100,11 @@
           <LucideIcon name="search-x" :size="30" :stroke-width="1.5" />
         </div>
         <div>
-          <strong>没有匹配的节点</strong>
-          <span>更换关键词，或清空筛选查看全部下载器。</span>
+          <strong>{{ $t('downloader.page.noMatchTitle') }}</strong>
+          <span>{{ $t('downloader.page.noMatchDesc') }}</span>
         </div>
         <button type="button" @click="handleSearchClear">
-          清空筛选
+          {{ $t('downloader.page.clearFilter') }}
           <LucideIcon name="x" :size="14" :stroke-width="2" />
         </button>
       </div>
@@ -130,10 +130,10 @@
           <span class="downloader-card-add__icon">
             <LucideIcon name="plus" :size="24" :stroke-width="1.7" />
           </span>
-          <span class="downloader-card-add__title">接入新的下载器</span>
-          <span class="downloader-card-add__copy">配置连接、认证、路径与速率策略</span>
+          <span class="downloader-card-add__title">{{ $t('downloader.page.addTitle') }}</span>
+          <span class="downloader-card-add__copy">{{ $t('downloader.page.addDesc') }}</span>
           <span class="downloader-card-add__action">
-            开始配置
+            {{ $t('downloader.page.startConfig') }}
             <LucideIcon name="chevron-right" :size="15" :stroke-width="2" />
           </span>
         </button>
@@ -325,7 +325,7 @@ export default class DownloaderManager extends Vue {
       // 只处理最新的请求错误
       if (currentSeq === this.requestSequence) {
         console.error('获取下载器列表失败:', error)
-        Message.error('获取下载器列表失败')
+        Message.error(this.$t('downloader.page.getListFailed'))
       }
       // 失败后不重启轮询，保持清理状态
     } finally {
@@ -409,7 +409,7 @@ export default class DownloaderManager extends Vue {
       downloading_count: apiStatus.downloadingCount,
       seeding_count: apiStatus.seedingCount,
       connection_status: apiStatus.connectStatus === 'connected' ? 'success' : 'error',
-      connection_msg: apiStatus.connectStatus === 'connected' ? '连接成功' : '连接失败',
+      connection_msg: apiStatus.connectStatus === 'connected' ? this.$t('downloader.card.connected') : this.$t('downloader.card.disconnected'),
       last_online: undefined
     }
   }
@@ -535,7 +535,7 @@ export default class DownloaderManager extends Vue {
             ...mappedStatus,
             online: apiStatus.connectStatus === 'connected',
             connection_status: apiStatus.connectStatus === 'connected' ? 'success' : 'error',
-            connection_msg: apiStatus.connectStatus === 'connected' ? '连接成功' : '连接失败',
+            connection_msg: apiStatus.connectStatus === 'connected' ? this.$t('downloader.card.connected') : this.$t('downloader.card.disconnected'),
             // 保留其他可能未定义的字段
             last_online: downloader.status.last_online
           }
@@ -589,7 +589,7 @@ export default class DownloaderManager extends Vue {
             ...downloader.status,
             online: false,
             connection_status: 'offline',
-            connection_msg: '离线',
+            connection_msg: this.$t('downloader.card.offline'),
             delay: undefined
           }
         }
@@ -617,7 +617,7 @@ export default class DownloaderManager extends Vue {
           ...downloader.status,
           online: false,
           connection_status: 'offline',
-          connection_msg: '离线',
+          connection_msg: this.$t('downloader.card.offline'),
           delay: undefined
         }
       }

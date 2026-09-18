@@ -11,6 +11,8 @@
 
 import Vue, { CreateElement, VNode } from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import Settings from '@/views/settings/index.vue'
 import { exportDiagnosisFile } from '@/api/health'
@@ -61,6 +63,7 @@ const TrueStub = createLocalVue().extend({
 })
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 // jsdom 无 blob URL 实现，注入桩并捕获 download 文件名
 let createObjectUrlCalls: string[] = []
@@ -99,6 +102,7 @@ const mountSettings = (): {
   const messageMock = { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
   const wrapper = shallowMount(Settings, {
     localVue,
+    i18n,
     stubs: {
       'el-tabs': TrueStub,
       'el-tab-pane': TrueStub,

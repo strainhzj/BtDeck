@@ -12,6 +12,8 @@
 
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import fs from 'fs'
 import path from 'path'
 
@@ -56,11 +58,13 @@ interface SettingsVm extends Vue {
 }
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 const mountSettings = (): { wrapper: Wrapper<Vue>, vm: SettingsVm, messageMock: jest.Mock } => {
   const messageMock = jest.fn()
   const wrapper = shallowMount(Settings, {
     localVue,
+    i18n,
     mocks: {
       $route: { query: {}, path: '/settings/index' },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -191,9 +195,9 @@ describe('设置页 2FA 手动录入降级（Pillow 缺失）', () => {
     expect(source).toContain("this.qrCodeData = response.data.qr_code_base64 || ''")
     // 复制必须复用共享 util（禁组件内私有实现）
     expect(source).toContain("import { copyTextToClipboard } from '@/utils/clipboard'")
-    // 使用步骤按二维码可用性分流
-    expect(source).toContain('<li v-if="qrCodeData">扫描上方二维码</li>')
-    expect(source).toContain('<li v-else>手动输入上方密钥完成添加</li>')
+    // 使用步骤按二维码可用性分流（双语 P2：文案走 i18n 键）
+    expect(source).toContain("<li v-if=\"qrCodeData\">{{ $t('settings.twofa.stepScan') }}</li>")
+    expect(source).toContain("<li v-else>{{ $t('settings.twofa.stepManual') }}</li>")
     // 手动录入块以 qrCodeData 空且非加载中为条件（禁仅凭 qr_available 字段）
     expect(source).toContain("'qr-code-manual': !qrCodeData && !qrLoading")
   })

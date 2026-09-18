@@ -115,16 +115,23 @@ def change_password(
     # ——历史实现按 body userId 查询，任何已认证用户可改任意人密码
     user_id = getattr(user_info, "user_id", None)
     if user_id is None:
-        return CommonResponse(status="error", msg="token 缺少用户标识", code="401")
+        return CommonResponse(
+            status="error", msg="token 缺少用户标识", code="401", data={"reasonCode": "USER_IDENTITY_MISSING"}
+        )
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        return CommonResponse(status="error", msg="用户不存在", code="400")
+        return CommonResponse(status="error", msg="用户不存在", code="400", data={"reasonCode": "USER_NOT_FOUND"})
 
     # 旧密码校验：走 verify_password 双读（bcrypt 或旧 AES-ECB 格式）——
     # 历史实现直调 sm4_decrypt，bcrypt 化后会直接 500 且新密码回写旧格式。
     # 输入按契约先做 base64 兼容解码（前端 btoa）。
     if not security.verify_password(_decode_password(str(user_request.oldPassword)), str(user.password)):
-        return CommonResponse(status="error", msg="密码错误", code="400")
+        return CommonResponse(
+            status="error",
+            msg="密码错误",
+            code="400",
+            data={"reasonCode": "USER_ORIG_PASSWORD_INVALID"},
+        )
 
     new_password = security.get_password_hash(_decode_password(str(user_request.newPassword)))
     sql = """update users set password=:password, must_change_password=0 where id=:user_id"""
@@ -136,8 +143,15 @@ def change_password(
             models.RefreshToken.revoked_at.is_(None),
         ).update({models.RefreshToken.revoked_at: datetime.utcnow()})
         db.commit()
-    except Exception as e:
-        return CommonResponse(status="error", msg="失败原因：" + str(e), code="400")
+    except Exception:
+        # 错误契约（双语 P2）：str(e) 拼接不可翻译且有泄露面，原始异常只进日志
+        logger.exception("修改密码数据库操作失败 userId=%s", user_id)
+        return CommonResponse(
+            status="error",
+            msg="密码修改失败",
+            code="400",
+            data={"reasonCode": "USER_PASSWORD_UPDATE_FAILED"},
+        )
     return CommonResponse(status="success", msg="修改成功", code="200")
 
 
@@ -234,37 +248,69 @@ def update_twofa_flag(
     db: Session = Depends(get_db),
 ):
     if not _is_self(user_id, user_info):
-        return CommonResponse(status="error", msg="无权操作其他用户的2FA设置", code="403")
+        return CommonResponse(
+            status="error",
+            msg="无权操作其他用户的2FA设置",
+            code="403",
+            data={"reasonCode": "2FA_FORBIDDEN"},
+        )
     # 兜底：twofaFlag 非法时返回统一错误信封（原返回裸字符串破坏响应契约）
-    response: CommonResponse = CommonResponse(status="error", msg="无效的2FA操作", code="400")
+    response: CommonResponse = CommonResponse(
+        status="error", msg="无效的2FA操作", code="400", data={"reasonCode": "2FA_INVALID_OPERATION"}
+    )
     user = db.query(models.User).filter(models.User.id == user_id).first()
     # 查找不到用户则抛出异常
     if not user:
-        return CommonResponse(status="error", msg="用户id错误", code="400")
+        return CommonResponse(status="error", msg="用户id错误", code="400", data={"reasonCode": "USER_NOT_FOUND"})
     sql = """update users set two_factor_flag=case when :two_factor_flag is not null then :two_factor_flag else two_factor_flag end,two_factor_secret=case when :two_factor_secret is not null then :two_factor_secret else two_factor_secret end where id=:user_id"""
     if user_request.twofaFlag == "1" and user.two_factor_flag == "1":
-        response = CommonResponse(status="error", msg="用户已经启用2fa验证", code="400")
+        response = CommonResponse(
+            status="error",
+            msg="用户已经启用2fa验证",
+            code="400",
+            data={"reasonCode": "2FA_ALREADY_ENABLED"},
+        )
     if user_request.twofaFlag == "0" and user.two_factor_flag == "1":
         # 停用2FA：需要同时验证密码和2FA验证码
 
         # 1. 验证密码（输入错误用 400：业务 401 会触发前端认证失败链路误登出）
         if not user_request.password or len(user_request.password) == 0:
-            return CommonResponse(status="error", msg="停用2fa验证需要提供当前密码", code="400")
+            return CommonResponse(
+                status="error",
+                msg="停用2fa验证需要提供当前密码",
+                code="400",
+                data={"reasonCode": "2FA_PASSWORD_REQUIRED"},
+            )
 
         logger.info(f"[停用2FA] 开始验证密码，userId={user.id}, username={user.username}")
         if not security.verify_password(user_request.password, user.password or ""):
             logger.warning(f"[停用2FA] 密码验证失败，userId={user.id}, username={user.username}")
-            return CommonResponse(status="error", msg="密码错误", code="400")
+            return CommonResponse(
+                status="error",
+                msg="密码错误",
+                code="400",
+                data={"reasonCode": "2FA_PASSWORD_INVALID"},
+            )
         logger.info(f"[停用2FA] 密码验证成功，userId={user.id}, username={user.username}")
 
         # 2. 验证2FA验证码
         if not user_request.twoFactorCode or len(user_request.twoFactorCode) == 0:
-            return CommonResponse(status="error", msg="停用2fa验证需要提供2fa验证码", code="400")
+            return CommonResponse(
+                status="error",
+                msg="停用2fa验证需要提供2fa验证码",
+                code="400",
+                data={"reasonCode": "2FA_TOTP_REQUIRED"},
+            )
 
         logger.info(f"[停用2FA] 开始验证2FA码，userId={user.id}")
         if not utils.verify_totp(str(user.two_factor_secret), user_request.twoFactorCode):
             logger.warning(f"[停用2FA] 2FA验证码错误，userId={user.id}, username={user.username}")
-            return CommonResponse(status="error", msg="双因素验证码错误", code="400")
+            return CommonResponse(
+                status="error",
+                msg="双因素验证码错误",
+                code="400",
+                data={"reasonCode": "2FA_TOTP_INVALID"},
+            )
         logger.info(f"[停用2FA] 2FA验证码正确，userId={user.id}, username={user.username}")
 
         # 3. 停用2FA：清空secret，设置flag为0
@@ -277,27 +323,48 @@ def update_twofa_flag(
             response = CommonResponse(status="success", msg="双因素认证已停用", code="200")
         except Exception as e:
             logger.error(f"[停用2FA] 停用失败，userId={user.id}, error={str(e)}")
-            response = CommonResponse(status="error", msg=str(e), code="400")
+            response = CommonResponse(
+                status="error",
+                msg="停用双因素认证失败",
+                code="400",
+                data={"reasonCode": "2FA_DISABLE_FAILED"},
+            )
     if user_request.twofaFlag == "0" and user.two_factor_flag == "0":
         # 用户已经是停用状态，视为成功
         response = CommonResponse(status="success", msg="用户已经停用2fa验证", code="200")
     if user_request.twofaFlag == "1" and user.two_factor_flag == "0":
         # 启用2FA时必须验证TOTP码
         if not user_request.twoFactorCode or len(user_request.twoFactorCode) == 0:
-            return CommonResponse(status="error", msg="启用2fa验证需要提供验证码", code="400")
+            return CommonResponse(
+                status="error",
+                msg="启用2fa验证需要提供验证码",
+                code="400",
+                data={"reasonCode": "2FA_TOTP_REQUIRED"},
+            )
 
         # 添加调试日志（脱敏：不打印 secret 片段与验证码明文）
         logger.info(f"开始验证TOTP: user_id={user.id}, secret存在={bool(user.two_factor_secret)}")
         if not utils.verify_totp(str(user.two_factor_secret), user_request.twoFactorCode):
             logger.warning(f"TOTP验证失败: user_id={user.id}")
-            return CommonResponse(status="error", msg="验证码错误，请检查认证器应用中的6位数字", code="400")
+            return CommonResponse(
+                status="error",
+                msg="验证码错误，请检查认证器应用中的6位数字",
+                code="400",
+                data={"reasonCode": "2FA_TOTP_INVALID"},
+            )
 
         try:
             db.execute(text(sql), {"two_factor_flag": "1", "two_factor_secret": None, "user_id": user.id})
             db.commit()
             response = CommonResponse(status="success", msg="启用双因素认证成功", code="200")
-        except Exception as e:
-            response = CommonResponse(status="error", msg=str(e), code="400")
+        except Exception:
+            logger.exception("启用2FA数据库操作失败 userId=%s", user_id)
+            response = CommonResponse(
+                status="error",
+                msg="启用双因素认证失败",
+                code="400",
+                data={"reasonCode": "2FA_ENABLE_FAILED"},
+            )
     return response
 
 
@@ -324,23 +391,38 @@ def verify_password_for_2fa(
     """
     try:
         if not _is_self(str(user_request.userId), user_info):
-            return CommonResponse(status="error", msg="无权操作其他用户的2FA设置", code="403")
+            return CommonResponse(
+                status="error",
+                msg="无权操作其他用户的2FA设置",
+                code="403",
+                data={"reasonCode": "2FA_FORBIDDEN"},
+            )
 
         # 1. 查询用户
         user = db.query(models.User).filter(models.User.id == user_request.userId).first()
         if not user:
-            return CommonResponse(status="error", msg="用户不存在", code="404")
+            return CommonResponse(status="error", msg="用户不存在", code="404", data={"reasonCode": "USER_NOT_FOUND"})
 
         # 3. 检查是否已启用2FA
         if user.two_factor_flag == "1":
-            return CommonResponse(status="error", msg="用户已启用双因素认证，无需重复绑定", code="400")
+            return CommonResponse(
+                status="error",
+                msg="用户已启用双因素认证，无需重复绑定",
+                code="400",
+                data={"reasonCode": "2FA_ALREADY_ENABLED"},
+            )
 
         # 4. 验证密码（使用与登录接口相同的验证逻辑）
         logger.info(f"[2FA密码验证] userId={user_request.userId}, username={user.username}")
 
         if not security.verify_password(user_request.password, user.password or ""):
             logger.warning(f"[2FA密码验证] 密码验证失败，username={user.username}")
-            return CommonResponse(status="error", msg="密码错误", code="400")
+            return CommonResponse(
+                status="error",
+                msg="密码错误",
+                code="400",
+                data={"reasonCode": "2FA_PASSWORD_INVALID"},
+            )
 
         logger.info(f"[2FA密码验证] 密码验证成功，username={user.username}")
 

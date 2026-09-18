@@ -149,7 +149,7 @@
           "id": "desktop-bilingual-20260918.p2",
           "name": "首次登录、账户安全与双下载器接入",
           "description": "详见 PLANS/desktop-bilingual.md P2；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "in_progress",
           "scope": "fullstack",
           "depends_on": [
             "desktop-bilingual-20260918.p1"
@@ -165,7 +165,7 @@
             "A01～A02/D01～D02 通过",
             "依赖 P4 核心错误契约后才可验收；qBittorrent/Transmission 成败流程均可英文独立完成"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "2026-09-18（P2 第一批，提取批次后续会话）：文案双语化——auth 组（登录表单/校验/守卫四提示/request 会话过期与网络 toast/Navbar 用户名回退/404）+ settings M1（2FA 全流程/改密/状态诊断页签）+ downloader M1（控制台页/卡片/设置弹窗 basic 页签全量含保存目录与路径转换，speed/advanced 留 M2）+ 通知壳层（抽屉标题/筛选/aria/NotificationItem 复用共享相对时间）。新增语言包模块 auth/common/settings/downloader/errors（zh-CN+en 成对，parity 门禁覆盖）。错误契约 M1 子集落地：后端 login/cuser/downloader 端点 data.reasonCode（信封不变仅新增字段）+ 动态 str(e) 消息收敛固定文案+日志（login 500/changePassword/update2faFlg/test_connection）；前端 i18n 新增 apiErrorMessage（reasonCode→errors.byCode 本地化，禁止中文匹配）；测试连接展示改由 success 布尔驱动。验证：前端 typecheck/lint 三项/全量 Jest 114 套件 1604 用例/build 全绿（新 setup 钉 zh-CN 基准语言，7 存量套件随迁）；后端 tests/api 全量 1172 passed + 新契约 spec test_reason_contract_p2 11 例（信封形状+reasonCode 逐路径）+ mypy（存量 stub 缺失外零新增）/black/flake8 绿。余量：真实下载器 D01/D02 与浏览器 A01/A02 人工验收待 P2 收口批执行。"
         },
         {
           "id": "desktop-bilingual-20260918.p3",

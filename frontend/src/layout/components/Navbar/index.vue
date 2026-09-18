@@ -115,7 +115,7 @@ export default class extends Vue {
   }
 
   get userName() {
-    return UserModule.name || '管理员'
+    return UserModule.name || this.$t('common.adminName')
   }
 
   get notificationCount() {

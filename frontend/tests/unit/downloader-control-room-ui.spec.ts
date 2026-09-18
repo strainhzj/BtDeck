@@ -47,7 +47,7 @@ describe('下载器控制台视觉骨架', () => {
     expect(downloaderPage).toContain('class="downloader-control-room"')
     expect(downloaderPage).toContain('class="command-deck"')
     expect(downloaderPage).toContain('class="downloader-grid"')
-    expect(downloaderPage).toContain('状态链路已建立')
+    expect(downloaderPage).toContain("$t('downloader.page.statusEstablished')")
     expect(downloaderPage).not.toContain('class="control-hero"')
     expect(downloaderPage).not.toContain('class="control-metrics"')
     expect(downloaderPage).toContain('@media (max-width: 680px)')

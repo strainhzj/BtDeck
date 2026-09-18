@@ -9,6 +9,8 @@ module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/tests/unit', '<rootDir>/src'],
   testMatch: ['**/*.spec.ts'],
+  // 双语 P2：钉扎 zh-CN 基准语言（见 setup 文件头注释）
+  setupFiles: ['<rootDir>/tests/unit/i18n-test-setup.ts'],
   // lucide 发 ESM，默认 preset 的 transformIgnorePatterns: ['/node_modules/'] 会拒转译，
   // 导致 SyntaxError: Unexpected token 'export'。显式豁免 lucide 子目录。
   transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide)'],

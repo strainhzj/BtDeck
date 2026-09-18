@@ -1,5 +1,13 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18（P2 第一批）：首次使用闭环双语化——文案全量 + 错误契约 M1 子集（全绿未提交）
+
+- **范围**（用户确认的三边界：DownloaderSettingsDialog basic 页签整页签 M1（含保存目录/路径转换，不拆半）；状态诊断页签 M1；仪表盘留 P3）：auth 组（登录表单/2FA 占位/记住我/忘记密码/演示入口/校验器/登录消息、permission 守卫四提示、request 会话过期与网络 toast/207 兑底、Navbar 用户名回退、404 页）、settings M1（2FA 全流程含手动录入降级与停用确认、改密、状态诊断）、downloader M1（控制台页骨架文案/图例/空态/计数、卡片全量含 aria 与状态徽标、设置弹窗 basic 页签全量含校验规则 computed 化与路径映射 placeholder 经 {sep} 插值槽绕开 vue-i18n 花括号语法）、通知壳层（抽屉标题/筛选页签 computed 化/加载更多/空态/aria；NotificationItem 相对时间改复用共享 formatter）。
+- **语言包**：新增 auth/common/settings/downloader/errors 五模块（zh-CN+en 成对注册），parity 门禁自动覆盖；新增键均为语义名，路径映射示例等含 `{#**#}` 字面量的文案经插值槽注入规避 v8 花括号解析。
+- **错误契约（P4 的 M1 子集，P2 验收依赖）**：后端 login/cuser/downloader 三文件按既有 data.reasonCode 先例补齐（AUTH_*4、USER_*3、2FA_*9、DOWNLOADER_*6，信封四字段不变仅 data 新增字段）；动态 str(e) 拼接消息全部收敛为固定文案+logger（login 500/changePassword/update2faFlg 停用与启用异常/test_connection 异常与 DB 查询）。前端 i18n 新增 apiErrorMessage（reasonCode→errors.byCode.camelCase 本地化；未登记 code 回退本地化兑底，无 reasonCode 保留原始信息透传）；登录/改密/2FA/测试连接错误展示全部改走该入口，禁止中文匹配；测试连接成功态改由 success 布尔（稳定契约）驱动本地化，不再透传后端中文 message。
+- **验证**：前端 typecheck 绿；lint 三项绿（顺带清理 Dialog 死代码 ApiErrorLike）；全量 Jest **114 套件 1604 用例全绿**（jest 新增 setupFiles 钉 zh-CN 基准语言——jsdom navigator 为 en 会致运行时翻译断言漂移；7 个存量套件随迁：4 挂载型装真 i18n 单例、源码契约换键、request/守卫断言靠语言钉扎保绿，改密失败用例改为无 reasonCode 透传语义）；build 绿。后端 tests/api 全量 **1172 passed**（含新 spec test_reason_contract_p2 11 例：信封形状+逐路径 reasonCode+路由前缀 /downloader 单数）；mypy（除存量 types-requests stub 缺失外零新增）/black/flake8 绿。
+- **待办**：真实下载器 D01/D02 与浏览器 A01/A02 人工验收留 P2 收口；P0 五项边界待定项中本批已拍板两项，余三项（去重双弹窗/转移/全局替换）留 P3。
+
 ## 2026-09-18（提取批）：双语化 P0/P1 成果自 dev1.0.7 提取至 dev 线（dev-i18n-extract 分支，待并回确认）
 
 - **提取集三提交 cherry-pick**：`42b81f9`（双语功能与执行计划登记）→ `788d657`（P1 vue-i18n@8.28.2 基础设施与双入口接线）→ `53119be`（P0 盘点五清单+选型治理回填）。源为合并后的 `origin/dev1.0.7`（merge-base 实测 = dev b067ba55，即 0e307ee 已把 dev 全量合入 1.0.7 线，代码提交 29 文件零冲突落地）。

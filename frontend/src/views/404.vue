@@ -13,12 +13,12 @@
       <div class="error-code">404</div>
 
       <!-- 错误标题 -->
-      <h1 class="error-title">页面未找到</h1>
+      <h1 class="error-title">{{ $t('common.notFound.title') }}</h1>
 
       <!-- 错误描述 -->
       <p class="error-description">
-        抱歉，您访问的页面不存在或已被删除。<br />
-        请检查URL或返回首页继续浏览。
+        {{ $t('common.notFound.desc') }}<br />
+        {{ $t('common.notFound.hint') }}
       </p>
 
       <!-- 操作按钮 -->
@@ -30,7 +30,7 @@
           @click="goBack"
         >
           <i class="el-icon-back"></i>
-          返回上一页
+          {{ $t('common.notFound.back') }}
         </el-button>
         <el-button
           size="large"
@@ -38,16 +38,16 @@
           @click="goHome"
         >
           <i class="el-icon-s-home"></i>
-          返回首页
+          {{ $t('common.notFound.home') }}
         </el-button>
       </div>
 
       <!-- 帮助信息 -->
       <div class="help-section">
-        <p class="help-text">需要帮助？</p>
+        <p class="help-text">{{ $t('common.notFound.helpTitle') }}</p>
         <el-link type="primary" :underline="false" @click="contactSupport">
           <i class="el-icon-service"></i>
-          联系支持团队
+          {{ $t('common.notFound.contactSupport') }}
         </el-link>
       </div>
     </div>

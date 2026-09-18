@@ -4989,6 +4989,13 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。
 
+## 2026-09-18：双语化 P2 第一批完成（文案+错误契约，未提交）
+
+- 首次使用闭环双语化已落地（auth/settings M1/downloader M1/通知壳层）+ 错误契约 M1 子集（后端 reasonCode + 前端 apiErrorMessage）；四项验证全绿（前端 114 套 1604 例 + 后端 api 1172 例）。
+- P2 剩余：A01/A02/D01/D02 人工验收（真下载器+浏览器）；P3 起步含仪表盘与种子页；roadmap 三层同步（frontend views login/settings/downloader 行 + entry 行）待下批补齐。
+
+---
+
 ## 2026-09-18：双语化提取批（dev1.0.7 → dev 线）
 
 - 双语化 P0/P1 三提交已 cherry-pick 至 `dev-i18n-extract`（基于 dev b067ba55）：基础设施/语言包/接线/测试全部落地，四项验证全绿（typecheck/lint/Jest 114 套 1604 例/build）。

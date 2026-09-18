@@ -139,7 +139,13 @@ async def add(
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        return CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
+        # 错误契约（双语 P2）：添加链路认证/连接失败的稳定标识，前端本地化展示
+        return CommonResponse(
+            status="error",
+            msg="用户名或密码错误",
+            code="400",
+            data={"reasonCode": "DOWNLOADER_AUTH_FAILED"},
+        )
 
 
 @router.post("/update/{downloader_id}", summary="更新下载器明细", response_model=CommonResponse)
@@ -170,7 +176,12 @@ async def update(
         ).fetchone()
 
         if not current_downloader:
-            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="下载器不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         current_username = current_downloader[0]
         current_password_encrypted = current_downloader[1]
@@ -186,20 +197,40 @@ async def update(
         if need_verify_old_password:
             # 必须提供原密码
             if not downloader_request.old_password or downloader_request.old_password.strip() == "":
-                return CommonResponse(status="error", msg="修改用户名或密码时必须提供原密码", code="400", data=None)
+                return CommonResponse(
+                    status="error",
+                    msg="修改用户名或密码时必须提供原密码",
+                    code="400",
+                    data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_REQUIRED"},
+                )
 
             # 验证原密码是否正确
             if current_password_encrypted:
                 try:
                     decrypted_password = decrypt_password(current_password_encrypted)
                     if decrypted_password != downloader_request.old_password:
-                        return CommonResponse(status="error", msg="原密码错误", code="400", data=None)
+                        return CommonResponse(
+                            status="error",
+                            msg="原密码错误",
+                            code="400",
+                            data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_INVALID"},
+                        )
                 except Exception as e:
                     logger.error(f"解密密码失败: {str(e)}")
-                    return CommonResponse(status="error", msg="验证原密码失败", code="500", data=None)
+                    return CommonResponse(
+                        status="error",
+                        msg="验证原密码失败",
+                        code="500",
+                        data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_UNVERIFIED"},
+                    )
             else:
                 # 数据库中没有密码记录（异常情况）
-                return CommonResponse(status="error", msg="无法验证原密码", code="500", data=None)
+                return CommonResponse(
+                    status="error",
+                    msg="无法验证原密码",
+                    code="500",
+                    data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_UNVERIFIED"},
+                )
         # ========== 原密码验证逻辑结束 ==========
 
         # 构建 SQL UPDATE 语句
@@ -562,7 +593,12 @@ async def get_status(
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="该下载器已被删除或不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         # 只取第一个下载器（单下载器查询）
         row = downloaders[0]
@@ -625,13 +661,23 @@ async def test_connection(
         # 查询下载器信息
         downloader_result = query_downloader_list(db, [downloader_id])
         if not downloader_result.success:
+            # 错误契约（双语 P2）：动态拼接只进日志，前端按 reasonCode 本地化
+            logger.error("测试连接数据库查询失败: %s", downloader_result.message)
             return CommonResponse(
-                status="error", msg=f"数据库查询失败: {downloader_result.message}", code="500", data=None
+                status="error",
+                msg="数据库查询失败",
+                code="500",
+                data={"reasonCode": "DOWNLOADER_DB_QUERY_FAILED"},
             )
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="该下载器已被删除或不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         # 获取下载器信息
         row = downloaders[0]
@@ -668,11 +714,12 @@ async def test_connection(
         )
     except Exception as e:
         logger.error(f"测试连接失败: {str(e)}")
+        # 错误契约（双语 P2）：str(e) 只进日志，msg 固定，前端按 reasonCode 本地化
         return CommonResponse(
             status="error",
-            msg=f"测试连接失败: {str(e)}",
+            msg="测试连接失败",
             code="500",
-            data={"success": False, "delay": None, "message": str(e)},
+            data={"reasonCode": "DOWNLOADER_TEST_FAILED", "success": False, "delay": None},
         )
 
 

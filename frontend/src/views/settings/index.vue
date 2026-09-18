@@ -2,34 +2,33 @@
   <div class="settings-container">
     <el-tabs v-model="activeTab" type="card" class="settings-tabs">
       <!-- 双因素认证标签页 -->
-      <el-tab-pane label="双因素认证" name="2fa">
+      <el-tab-pane :label="$t('settings.tabs.twofa')" name="2fa">
         <div class="settings-content">
           <div class="settings-card">
-            <h3 class="settings-card-title">双因素认证</h3>
+            <h3 class="settings-card-title">{{ $t('settings.twofa.title') }}</h3>
 
             <!-- 已启用2FA：显示停用界面 -->
             <div v-if="isEnabled2FA" class="step-container">
               <p class="settings-description">
-                您的双因素认证当前处于 <strong style="color: var(--color-success)">已启用</strong> 状态。
-                停用后账户安全性将降低，建议仅在必要时停用。
+                {{ $t('settings.twofa.enabledDesc', {status: $t('settings.twofa.statusEnabled')}) }}
               </p>
 
               <el-form :model="disable2FAForm" class="verify-form" label-position="top">
-                <el-form-item label="当前密码">
+                <el-form-item :label="$t('settings.twofa.currentPassword')">
                   <el-input
                     v-model="disable2FAForm.password"
                     type="password"
                     show-password
-                    placeholder="请输入当前密码"
+                    :placeholder="$t('settings.twofa.currentPasswordPlaceholder')"
                     :disabled="isLocked"
                   />
                 </el-form-item>
 
-                <el-form-item label="双因素验证码">
+                <el-form-item :label="$t('settings.twofa.twofaCode')">
                   <el-input
                     v-model="disable2FAForm.twoFactorCode"
                     maxlength="6"
-                    placeholder="请输入认证器中的6位验证码"
+                    :placeholder="$t('settings.twofa.twofaCodePlaceholder')"
                     :disabled="isLocked"
                   >
                     <template #prefix>
@@ -41,16 +40,16 @@
                 <!-- 锁定提示 -->
                 <el-alert
                   v-if="isLocked"
-                  title="已锁定"
+                  :title="$t('settings.twofa.locked')"
                   type="error"
                   :closable="false"
                   show-icon
                   class="lock-alert"
                 >
                   <template>
-                    验证失败次数过多，已被锁定。
+                    {{ $t('settings.twofa.lockedVerifyDesc') }}
                     <br />
-                    请在 <strong>{{ lockCountdown }}</strong> 秒后重试。
+                    {{ $t('settings.twofa.retryAfterSeconds', {seconds: lockCountdown}) }}
                   </template>
                 </el-alert>
 
@@ -67,7 +66,7 @@
                 <!-- 失败次数提示 -->
                 <div v-if="failedAttempts > 0 && !isLocked" class="attempts-warning">
                   <i class="el-icon-warning" />
-                  已失败 {{ failedAttempts }} 次，还剩 {{ 5 - failedAttempts }} 次机会
+                  {{ $t('settings.twofa.attemptsWarning', {failed: failedAttempts, remaining: 5 - failedAttempts}) }}
                 </div>
 
                 <div class="form-actions">
@@ -77,7 +76,7 @@
                     :disabled="isLocked || !disable2FAForm.password || !disable2FAForm.twoFactorCode"
                     @click="confirmDisable2FA"
                   >
-                    停用双因素认证
+                    {{ $t('settings.twofa.disable') }}
                   </el-button>
                 </div>
               </el-form>
@@ -88,16 +87,16 @@
               <!-- 步骤1：验证密码 -->
               <div v-if="currentStep === 1" class="step-container">
               <p class="settings-description">
-                为保护账户安全，开启双因素认证前需先验证当前密码。
+                {{ $t('settings.twofa.verifyPasswordStepDesc') }}
               </p>
 
               <el-form :model="passwordForm" class="verify-form" label-position="top">
-                <el-form-item label="当前密码">
+                <el-form-item :label="$t('settings.twofa.currentPassword')">
                   <el-input
                     v-model="passwordForm.password"
                     type="password"
                     show-password
-                    placeholder="请输入当前密码"
+                    :placeholder="$t('settings.twofa.currentPasswordPlaceholder')"
                     :disabled="isLocked"
                     @keyup.enter.native="verifyPassword"
                   />
@@ -106,16 +105,16 @@
                 <!-- 锁定提示 -->
                 <el-alert
                   v-if="isLocked"
-                  title="已锁定"
+                  :title="$t('settings.twofa.locked')"
                   type="error"
                   :closable="false"
                   show-icon
                   class="lock-alert"
                 >
                   <template>
-                    密码验证失败次数过多，已被锁定。
+                    {{ $t('settings.twofa.lockedPasswordDesc') }}
                     <br />
-                    请在 <strong>{{ lockCountdown }}</strong> 秒后重试。
+                    {{ $t('settings.twofa.retryAfterSeconds', {seconds: lockCountdown}) }}
                   </template>
                 </el-alert>
 
@@ -132,7 +131,7 @@
                 <!-- 失败次数提示 -->
                 <div v-if="failedAttempts > 0 && !isLocked" class="attempts-warning">
                   <i class="el-icon-warning" />
-                  已失败 {{ failedAttempts }} 次，还剩 {{ 5 - failedAttempts }} 次机会
+                  {{ $t('settings.twofa.attemptsWarning', {failed: failedAttempts, remaining: 5 - failedAttempts}) }}
                 </div>
 
                 <div class="form-actions">
@@ -142,7 +141,7 @@
                     :disabled="isLocked || !passwordForm.password"
                     @click="verifyPassword"
                   >
-                    验证密码
+                    {{ $t('settings.twofa.verifyPassword') }}
                   </el-button>
                 </div>
               </el-form>
@@ -151,7 +150,7 @@
             <!-- 步骤2：扫描二维码并验证 -->
             <div v-if="currentStep === 2" class="step-container">
               <p class="settings-description">
-                请使用认证器应用（如 Google Authenticator、Authy）扫描下方二维码，然后输入应用中显示的6位验证码以完成绑定。
+                {{ $t('settings.twofa.scanDesc') }}
               </p>
 
               <div
@@ -160,27 +159,27 @@
                 :class="{'qr-code-manual': !qrCodeData && !qrLoading}"
               >
                 <img v-if="qrCodeData" :src="qrCodeData" alt="2FA QR Code" />
-                <span v-else-if="qrLoading">生成二维码中...</span>
+                <span v-else-if="qrLoading">{{ $t('settings.twofa.qrGenerating') }}</span>
                 <div v-else class="manual-secret-entry">
                   <p class="manual-entry-hint">
-                    当前环境不支持生成二维码（缺少图像依赖），请在认证器应用中选择「手动输入密钥」并录入：
+                    {{ $t('settings.twofa.manualEntryHint') }}
                   </p>
                   <div class="manual-secret-row">
                     <el-input :value="manualEntrySecret" readonly class="manual-secret-input" />
-                    <el-button size="small" type="primary" plain @click="copyManualSecret">复制密钥</el-button>
+                    <el-button size="small" type="primary" plain @click="copyManualSecret">{{ $t('settings.twofa.copySecret') }}</el-button>
                   </div>
                   <p class="manual-entry-meta">
-                    账户名：{{ manualEntryAccount }} · 密钥类型：基于时间（TOTP）· 位数：6 位 · 更新周期：30 秒
+                    {{ $t('settings.twofa.manualEntryMeta', {account: manualEntryAccount}) }}
                   </p>
                 </div>
               </div>
 
               <el-form :model="totpForm" class="verify-form" label-position="top">
-                <el-form-item label="验证码">
+                <el-form-item :label="$t('settings.twofa.code')">
                   <el-input
                     v-model="totpForm.twoFactorCode"
                     maxlength="6"
-                    placeholder="请输入6位验证码"
+                    :placeholder="$t('settings.twofa.codePlaceholder')"
                     @keyup.enter.native="confirmBinding"
                   >
                     <template #prefix>
@@ -200,26 +199,26 @@
                 />
 
                 <div class="form-actions">
-                  <el-button @click="resetFlow">取消</el-button>
+                  <el-button @click="resetFlow">{{ $t('common.cancel') }}</el-button>
                   <el-button
                     type="primary"
                     :loading="bindingLoading"
                     :disabled="!totpForm.twoFactorCode || totpForm.twoFactorCode.length !== 6"
                     @click="confirmBinding"
                   >
-                    确认绑定
+                    {{ $t('settings.twofa.confirmBinding') }}
                   </el-button>
                 </div>
               </el-form>
 
               <div class="qr-instructions">
-                <p><strong>使用步骤：</strong></p>
+                <p><strong>{{ $t('settings.twofa.usageTitle') }}</strong></p>
                 <ol>
-                  <li>下载认证器应用（如 Google Authenticator、Authy）</li>
-                  <li v-if="qrCodeData">扫描上方二维码</li>
-                  <li v-else>手动输入上方密钥完成添加</li>
-                  <li>输入应用中显示的6位验证码</li>
-                  <li>点击"确认绑定"完成设置</li>
+                  <li>{{ $t('settings.twofa.stepDownload') }}</li>
+                  <li v-if="qrCodeData">{{ $t('settings.twofa.stepScan') }}</li>
+                  <li v-else>{{ $t('settings.twofa.stepManual') }}</li>
+                  <li>{{ $t('settings.twofa.stepInput') }}</li>
+                  <li>{{ $t('settings.twofa.stepConfirm') }}</li>
                 </ol>
               </div>
             </div>
@@ -228,12 +227,12 @@
             <div v-if="currentStep === 3" class="step-container success-step">
               <el-result
                 icon="success"
-                title="双因素认证启用成功"
-                sub-title="您的账户现在更安全了，下次登录时需要输入验证码。"
+                :title="$t('settings.twofa.bindSuccess')"
+                :sub-title="$t('settings.twofa.bindSuccessDesc')"
               >
                 <template #extra>
                   <div class="backup-secret">
-                    <p><strong>备份密钥（重要！）：</strong></p>
+                    <p><strong>{{ $t('settings.twofa.backupSecretTitle') }}</strong></p>
                     <el-input
                       :value="backupSecret"
                       readonly
@@ -241,11 +240,11 @@
                       :rows="2"
                     />
                     <p class="secret-warning">
-                      ⚠️ 密钥只会显示一次，请将此密钥保存在安全的地方，如果丢失认证器应用，可以使用此密钥恢复。
+                      {{ $t('settings.twofa.backupSecretWarning') }}
                     </p>
                   </div>
                   <el-button type="primary" @click="closeAndRefresh">
-                    关闭
+                    {{ $t('common.close') }}
                   </el-button>
                 </template>
               </el-result>
@@ -256,41 +255,41 @@
       </el-tab-pane>
 
       <!-- 修改密码标签页 -->
-      <el-tab-pane label="修改密码" name="password">
+      <el-tab-pane :label="$t('settings.tabs.password')" name="password">
         <div class="settings-content">
           <div class="settings-card">
-            <h3 class="settings-card-title">修改密码</h3>
+            <h3 class="settings-card-title">{{ $t('settings.password.title') }}</h3>
             <p class="settings-description">
-              定期修改密码可以保护账户安全，建议使用强密码。
+              {{ $t('settings.password.desc') }}
             </p>
             <el-form :model="passwordFormChange" class="change-password-form" label-position="top">
-              <el-form-item label="旧密码">
+              <el-form-item :label="$t('settings.password.oldPassword')">
                 <el-input
                   v-model="passwordFormChange.old_password"
                   type="password"
                   show-password
-                  placeholder="请输入旧密码"
+                  :placeholder="$t('settings.password.oldPasswordPlaceholder')"
                 />
               </el-form-item>
-              <el-form-item label="新密码">
+              <el-form-item :label="$t('settings.password.newPassword')">
                 <el-input
                   v-model="passwordFormChange.new_password"
                   type="password"
                   show-password
-                  placeholder="请输入新密码"
+                  :placeholder="$t('settings.password.newPasswordPlaceholder')"
                 />
               </el-form-item>
-              <el-form-item label="确认密码">
+              <el-form-item :label="$t('settings.password.confirmPassword')">
                 <el-input
                   v-model="confirmPass"
                   type="password"
                   show-password
-                  placeholder="请再次输入新密码"
+                  :placeholder="$t('settings.password.confirmPasswordPlaceholder')"
                 />
               </el-form-item>
               <div class="form-actions">
-                <el-button @click="cancelPasswordChange">取消</el-button>
-                <el-button type="primary" @click="changePassword">确认修改</el-button>
+                <el-button @click="cancelPasswordChange">{{ $t('common.cancel') }}</el-button>
+                <el-button type="primary" @click="changePassword">{{ $t('settings.password.confirm') }}</el-button>
               </div>
             </el-form>
           </div>
@@ -298,21 +297,19 @@
       </el-tab-pane>
 
       <!-- 主机能力（dual-mode-client Phase 4：一致降级单一来源，移动端经包装自动同源） -->
-      <el-tab-pane label="主机能力" name="platform">
+      <el-tab-pane :label="$t('settings.tabs.platform')" name="platform">
         <div class="settings-content">
           <platform-capability-panel />
         </div>
       </el-tab-pane>
 
       <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
-      <el-tab-pane label="状态诊断" name="diagnosis">
+      <el-tab-pane :label="$t('settings.tabs.diagnosis')" name="diagnosis">
         <div class="settings-content">
           <div class="settings-card">
-            <h3 class="settings-card-title">故障转储与状态分析</h3>
+            <h3 class="settings-card-title">{{ $t('settings.diagnosis.title') }}</h3>
             <p class="settings-description">
-              一键生成诊断快照并导出为 JSON 文件，用于故障排查或状态分析。
-              内容包含服务版本与构建身份、数据库/事件循环/同步任务健康检查、
-              下载器离线告警与进程内存采样；不包含任何凭据或令牌。
+              {{ $t('settings.diagnosis.desc') }}
             </p>
             <div class="form-actions">
               <el-button
@@ -320,7 +317,7 @@
                 :loading="diagnosisLoading"
                 @click="handleExportDiagnosis"
               >
-                {{ diagnosisLoading ? '正在生成…' : '生成并导出诊断文件' }}
+                {{ diagnosisLoading ? $t('settings.diagnosis.generating') : $t('settings.diagnosis.export') }}
               </el-button>
             </div>
           </div>
@@ -338,6 +335,7 @@ import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
+import { apiErrorMessage } from '@/i18n'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import request from '@/utils/request'
 
@@ -449,10 +447,10 @@ export default class extends Vue {
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-      this.$message.success('诊断文件已导出')
+      this.$message.success(this.$t('settings.diagnosis.exported'))
     } catch (error) {
       console.error('导出诊断文件失败:', error)
-      this.$message.error('导出诊断文件失败，请稍后重试')
+      this.$message.error(this.$t('settings.diagnosis.failed'))
     } finally {
       this.diagnosisLoading = false
     }
@@ -538,12 +536,12 @@ export default class extends Vue {
   // 验证密码
   private async verifyPassword() {
     if (!this.passwordForm.password) {
-      this.errorMessage = '请输入密码'
+      this.errorMessage = this.$t('settings.twofa.passwordRequired')
       return
     }
     // 检查 userId 是否存在
     if (!UserModule.userId) {
-      this.errorMessage = '用户信息获取失败，请重新登录'
+      this.errorMessage = this.$t('settings.twofa.userInfoFailed')
       return
     }
 
@@ -566,22 +564,16 @@ export default class extends Vue {
         this.currentStep = 2
         this.$message({
           type: 'success',
-          message: '密码验证成功'
+          message: this.$t('settings.twofa.verifySuccess')
         })
       } else {
-        throw new Error(response.msg || '验证失败')
+        throw new Error(response.msg || this.$t('settings.twofa.verifyFailed'))
       }
     } catch (error: any) {
-      // 验证失败
+      // 验证失败：reasonCode 命中错误契约时本地化，否则保留原始信息
       this.failedAttempts++
 
-      if (error.response?.data?.msg) {
-        this.errorMessage = error.response.data.msg
-      } else if (error.message) {
-        this.errorMessage = error.message
-      } else {
-        this.errorMessage = '密码错误'
-      }
+      this.errorMessage = apiErrorMessage(error, this.$t('settings.twofa.passwordWrong'))
 
       // 检查是否需要锁定
       if (this.failedAttempts >= 5) {
@@ -590,7 +582,7 @@ export default class extends Vue {
         this.startLockTimer()
         this.$message({
           type: 'error',
-          message: '密码错误次数过多，已被锁定5分钟'
+          message: this.$t('settings.twofa.lockedFiveMinutes')
         })
       } else {
         this.saveFailedAttempts()
@@ -603,12 +595,12 @@ export default class extends Vue {
   // 确认绑定
   private async confirmBinding() {
     if (!this.totpForm.twoFactorCode || this.totpForm.twoFactorCode.length !== 6) {
-      this.bindingError = '请输入6位验证码'
+      this.bindingError = this.$t('settings.twofa.codeRequired')
       return
     }
     // 检查 userId 是否存在
     if (!UserModule.userId) {
-      this.bindingError = '用户信息获取失败，请重新登录'
+      this.bindingError = this.$t('settings.twofa.userInfoFailed')
       return
     }
 
@@ -626,19 +618,13 @@ export default class extends Vue {
         this.currentStep = 3
         this.$message({
           type: 'success',
-          message: '双因素认证启用成功'
+          message: this.$t('settings.twofa.bindSuccess')
         })
       } else {
-        throw new Error(response.msg || '绑定失败')
+        throw new Error(response.msg || this.$t('settings.twofa.bindFailed'))
       }
     } catch (error: any) {
-      if (error.response?.data?.msg) {
-        this.bindingError = error.response.data.msg
-      } else if (error.message) {
-        this.bindingError = error.message
-      } else {
-        this.bindingError = '验证码错误，请重试'
-      }
+      this.bindingError = apiErrorMessage(error, this.$t('settings.twofa.codeInvalid'))
     } finally {
       this.bindingLoading = false
     }
@@ -661,28 +647,28 @@ export default class extends Vue {
   private async copyManualSecret() {
     try {
       await copyTextToClipboard(this.manualEntrySecret)
-      this.$message({ type: 'success', message: '密钥已复制' })
+      this.$message({ type: 'success', message: this.$t('settings.twofa.secretCopied') })
     } catch (error) {
-      this.$message({ type: 'error', message: '复制失败，请长按/选中密钥手动复制' })
+      this.$message({ type: 'error', message: this.$t('settings.twofa.copyFailed') })
     }
   }
 
   // 确认停用2FA（显示确认对话框）
   private confirmDisable2FA() {
     if (!this.disable2FAForm.password || !this.disable2FAForm.twoFactorCode) {
-      this.errorMessage = '请填写当前密码和双因素验证码'
+      this.errorMessage = this.$t('settings.twofa.fieldsRequired')
       return
     }
 
     if (this.disable2FAForm.twoFactorCode.length !== 6) {
-      this.errorMessage = '双因素验证码必须是6位数字'
+      this.errorMessage = this.$t('settings.twofa.codeMustBeSixDigits')
       return
     }
 
     // 显示确认对话框
-    this.$confirm('停用双因素认证后，账户安全性将降低。是否继续停用？', '确认停用双因素认证', {
-      confirmButtonText: '确认停用',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('settings.twofa.disableConfirm'), this.$t('settings.twofa.disableConfirmTitle'), {
+      confirmButtonText: this.$t('settings.twofa.confirmDisable'),
+      cancelButtonText: this.$t('common.cancel'),
       type: 'warning'
     }).then(() => {
       // 用户点击确认，执行停用
@@ -695,7 +681,7 @@ export default class extends Vue {
   // 停用2FA
   private async disable2FA() {
     if (!UserModule.userId) {
-      this.errorMessage = '用户信息获取失败，请重新登录'
+      this.errorMessage = this.$t('settings.twofa.userInfoFailed')
       return
     }
 
@@ -726,26 +712,20 @@ export default class extends Vue {
           // 在下一个tick调用$message，此时DOM已稳定
           this.$message({
             type: 'success',
-            message: '双因素认证已停用'
+            message: this.$t('settings.twofa.disableSuccess')
           })
 
           // 更新UserModule中的状态（通过 Action，不绕过 mutation）
           UserModule.SetTwoFactorFlag('0')
         })
       } else {
-        throw new Error(response.msg || '验证失败')
+        throw new Error(response.msg || this.$t('settings.twofa.verifyFailed'))
       }
     } catch (error: any) {
-      // 验证失败
+      // 验证失败：reasonCode 命中错误契约时本地化，否则保留原始信息
       this.failedAttempts++
 
-      if (error.response?.data?.msg) {
-        this.errorMessage = error.response.data.msg
-      } else if (error.message) {
-        this.errorMessage = error.message
-      } else {
-        this.errorMessage = '验证失败'
-      }
+      this.errorMessage = apiErrorMessage(error, this.$t('settings.twofa.verifyFailed'))
 
       // 检查是否需要锁定
       if (this.failedAttempts >= 5) {
@@ -754,7 +734,7 @@ export default class extends Vue {
         this.startLockTimer()
         this.$message({
           type: 'error',
-          message: '验证失败次数过多，已被锁定5分钟'
+          message: this.$t('settings.twofa.lockedAttemptsFiveMinutes')
         })
       } else {
         this.saveFailedAttempts()
@@ -775,7 +755,7 @@ export default class extends Vue {
   private async changePassword() {
     if (this.confirmPass !== this.passwordFormChange.new_password) {
       this.$message({
-        message: '两次输入的密码不一致',
+        message: this.$t('settings.password.mismatch'),
         type: 'warning',
         duration: 3000
       })
@@ -785,7 +765,7 @@ export default class extends Vue {
     // 检查 userId 是否存在
     if (!UserModule.userId) {
       this.$message({
-        message: '用户信息获取失败，请重新登录',
+        message: this.$t('settings.password.userInfoFailed'),
         type: 'error',
         duration: 3000
       })
@@ -800,7 +780,7 @@ export default class extends Vue {
       })
 
       this.$message({
-        message: '密码修改成功，请使用新密码重新登录',
+        message: this.$t('settings.password.success'),
         type: 'success',
         duration: 3000
       })
@@ -814,7 +794,8 @@ export default class extends Vue {
       this.$router.push(loginPathForMode()).catch(() => undefined)
     } catch (error) {
       this.$message({
-        message: '密码修改失败',
+        // 原密码错等失败路径经错误契约本地化（USER_ORIG_PASSWORD_INVALID 等）
+        message: apiErrorMessage(error, this.$t('settings.password.failed')),
         type: 'error',
         duration: 3000
       })
@@ -822,9 +803,9 @@ export default class extends Vue {
   }
   // 关闭绑定成功界面并切换到解绑界面
   private closeAndRefresh() {
-    this.$confirm('关闭后将无法再次查看此密钥，是否确认关闭？', '确认关闭', {
-      confirmButtonText: '确认关闭',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('settings.twofa.closeSecretConfirm'), this.$t('settings.twofa.closeSecretTitle'), {
+      confirmButtonText: this.$t('settings.twofa.closeSecretTitle'),
+      cancelButtonText: this.$t('common.cancel'),
       type: 'warning'
     }).then(() => {
       // 用户确认关闭
@@ -844,7 +825,7 @@ export default class extends Vue {
       this.bindingError = ''
       this.$message({
         type: 'success',
-        message: '已关闭'
+        message: this.$t('settings.twofa.closed')
       })
     }).catch(() => {
       // 用户取消

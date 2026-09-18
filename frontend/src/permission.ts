@@ -3,7 +3,7 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { Message } from 'element-ui'
 import { Route } from 'vue-router'
-import { resolvePageTitle } from '@/i18n'
+import { resolvePageTitle, translate } from '@/i18n'
 import { UserModule } from '@/store/modules/user'
 import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
@@ -79,7 +79,7 @@ const forceChangeRedirect = (next: any): void => {
   if (now - lastForceChangeHintAt >= FORCE_CHANGE_HINT_INTERVAL_MS) {
     lastForceChangeHintAt = now
     Message.warning({
-      message: '请先修改密码：完成修改前仅可访问系统设置页',
+      message: translate('common.forceChangeHint'),
       duration: 3000
     })
   }
@@ -103,7 +103,7 @@ const isTransientError = (err: unknown): boolean =>
  */
 const abortNavigation = (next: any): void => {
   Message.warning({
-    message: '服务暂时不可用，请稍后重试',
+    message: translate('common.serviceUnavailable'),
     duration: 3000
   })
   next(false)
@@ -144,8 +144,8 @@ const enforceRouteCapability = async(to: Route, next: any): Promise<boolean> => 
   if (isCapabilityAvailable(requiredCapability)) return false
 
   const message = isCapabilityUnknown(requiredCapability)
-    ? '无法确认当前服务端能力，已暂时禁用该功能，请检查连接后重试'
-    : '当前 Android 主服务端无法访问下载器主机文件系统，该功能不可用'
+    ? translate('common.capabilityUnknown')
+    : translate('common.capabilityBlocked')
   Message.warning({ message, duration: 4500 })
   next({ path: currentUiMode() === 'mobile' ? '/m/dashboard' : '/dashboard', replace: true })
   NProgress.done()
@@ -225,7 +225,7 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         try {
           // 🔧 防御性检查：确保 token 有效才调用 API
           if (!UserModule.token || UserModule.token.trim() === '') {
-            throw new Error('Token为空，请重新登录')
+            throw new Error(translate('auth.tokenMissing'))
           }
 
           // Get user info, including roles

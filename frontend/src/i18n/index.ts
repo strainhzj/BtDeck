@@ -220,6 +220,43 @@ export function resolvePageTitle(route: { meta?: unknown } | null | undefined): 
   return 'BtDeck'
 }
 
+/** reasonCode → camelCase 键（AUTH_RATE_LIMITED → authRateLimited） */
+function reasonCodeToMessageKey(reasonCode: string): string {
+  return reasonCode
+    .toLowerCase()
+    .split('_')
+    .map((part, idx) =>
+      idx === 0 || !part ? part : part.charAt(0).toUpperCase() + part.slice(1)
+    )
+    .join('')
+}
+
+/**
+ * 按错误对象解析本地化文案（错误契约，主计划 §3.3；禁止按中文 msg 匹配）：
+ * 1. rawResponse.data.data.reasonCode 命中 errors.byCode.* → 返回对应译文；
+ * 2. 有 reasonCode 但未登记 → 返回 fallback（避免英文界面透出中文 msg）；
+ * 3. 无 reasonCode → 返回 error.message || fallback（保留未契约化路径的原始信息）。
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  const body = (
+    error as { rawResponse?: { data?: { data?: unknown } } } | null | undefined
+  )?.rawResponse?.data
+  const d =
+    body && typeof body === 'object' ? (body.data as unknown) : undefined
+  const rc =
+    d && typeof d === 'object' && !Array.isArray(d)
+      ? (d as { reasonCode?: unknown }).reasonCode
+      : undefined
+  if (typeof rc === 'string' && rc) {
+    const key = `errors.byCode.${reasonCodeToMessageKey(rc)}`
+    if (i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)) {
+      return i18n.t(key) as string
+    }
+    return fallback
+  }
+  return (error instanceof Error && error.message) || fallback
+}
+
 // 模块加载即同步 <html lang>；document.title 由 permission.ts afterEach 首次驱动。
 applyDocumentLocale()
 

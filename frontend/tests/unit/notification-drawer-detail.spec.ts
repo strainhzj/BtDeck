@@ -10,6 +10,7 @@
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
+import i18n from '@/i18n'
 import fs from 'fs'
 import path from 'path'
 import NotificationDrawer from '@/layout/components/NotificationDrawer/index.vue'
@@ -49,6 +50,7 @@ const makeItem = (overrides: Partial<NotificationItem>): NotificationItem => ({
 
 const mountDrawer = (): Wrapper<Vue> =>
   shallowMount(NotificationDrawer, {
+    i18n,
     stubs: {
       // 透传默认插槽：详情内容/失败明细/外链均在 el-dialog 默认插槽内
       'el-drawer': { template: '<div class="drawer-stub"><slot /></div>' },
@@ -189,7 +191,7 @@ describe('layout/components/NotificationDrawer 详情渲染', () => {
 
 describe('NotificationItem 列表摘要纯文本化', () => {
   const mountItem = (notification: NotificationItem): Wrapper<Vue> =>
-    shallowMount(NotificationItemComp, { propsData: { notification } })
+    shallowMount(NotificationItemComp, { i18n, propsData: { notification } })
 
   it('摘要剥离 Markdown 记号：正文保留、##/**/` 不裸露、无 HTML 节点', () => {
     const wrapper = mountItem(makeItem({ id: 31 }))
