@@ -7630,3 +7630,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **加固**：build.gradle.kts 的 chaquopy.defaultConfig 显式 `pyc { src = true; pip = true; stdlib = true }`（DSL 实证：插件 jar PycExtension 三 Boolean 属性）——防未来插件升级默认翻转后「设备现场编译上千模块」回潮。契约测试 ServerPrewarmContractTest +1（pyc 三开关必须显式 true），6 例全绿 0 skipped。
 - **验证**：DSL 变更后 chaquopy 任务自动重跑（Gradle 正常追踪该属性为任务输入，不踩 requirements 文件不追踪的老坑）；:app:assembleDebug 重建产物仍 .py=0/.pyc=4261，与默认行为逐位一致。
 - **交付决定**：纯声明式钉死、产物零变化 → 不递增版本号、不重新出包（0.2.5 双 APK 本就正确）；本改动随下次交付生效。未执行 Git 提交（build.gradle.kts + 测试 + progress/session-handoff 待用户指示——随后同批提交）。
+## 2026-09-18：桌面 Web 中英双语 feature 与 plan 登记
+
+- 用户确认桌面双语优先并要求添加 feature / plan；本轮仅文档，不改业务、不安装依赖、不提交 Git。
+- 新增 `PLANS/desktop-bilingual.md`：M1 核心桌面试用、M2 全部桌面双语，P0～P7 依赖、技术边界、系统数据与错误方案、功能/视觉/高风险验收矩阵、证据门禁、估算与待确认事项。
+- 新增 feature `desktop-bilingual-20260918`，feature 与 8 项实现任务全部 pending；M1 23～36 人日，M2 累计 33～52 人日。更新 PLANS 索引及 session-handoff，版本号不变。
+- 校验：feature_list.json 解析成功；新 feature 唯一、8 项任务均 pending、任务依赖引用可解析；git diff --check 通过。未运行业务测试和浏览器验收。
+- 环境验证：系统 Bash 启动返回 `Bash/Service/CreateInstance/E_ACCESSDENIED` 后，改用现有 `C:/software/Git/bin/bash.exe ./init.sh --ci` 执行（总退出码 0）。后端检查完成，Alembic 显示 `053003337878 (head)`；脚本数据库版本简查显示“未初始化”，不能据此判定真实数据库状态。前端在 npm 版本检查处出现 ignored null byte 并提前退出，由根脚本捕获为警告，未完成前端检查；Node 实际为 24.14.0，与 package.json 要求 22.x 不一致。另有 jq 缺失、虚拟环境未激活。不能声称环境全绿；本轮未修环境、安装依赖或申请提权。
+- 后续：收到实施指示后从 P0 文案/路由/错误/系统内容清单开始；兼容库选型及维护风险、英文最终审校责任尚待落实；M1 默认内部验收节点，是否提前发布不阻塞计划准备。

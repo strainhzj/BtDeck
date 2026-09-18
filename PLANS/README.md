@@ -4,6 +4,7 @@
 
 | 计划 | 范围 | 状态 |
 |------|------|------|
+| [桌面 Web 中英双语](./desktop-bilingual.md) | M1 核心桌面英文闭环 → M2 全部桌面双语；语言基础、错误标识、系统预设、危险操作及视觉验收 | ⏳ 待实施；feature `desktop-bilingual-20260918`（本轮提取自 dev1.0.7，P1 基础设施已随行落地，其余 P0～P7 pending） |
 | [MCP 服务与可选能力开放](./mcp-service-capabilities.md) | 同进程 MCP、全局/逐能力开关、统一认证、Tracker/路径脱敏、六项首批工具与 G0～G11 实现门禁 | 📝 已规划，待实施 |
 | [v1.0.6 交付制品等价性与发布阻断门禁](./release-artifact-equivalence-gate.md) | EXE/Setup/DEB/RPM/Docker 同源构建、生命周期幂等、黑盒等价、安全与不可变晋级 | 📝 已规划，待实施 |
 | [同步任务数据库阻塞与接口超时修复](./sync-database-blocking-remediation.md) | Tracker/种子同步、SQLite 写锁、请求响应性、观测与演进 | 待实施 |
@@ -57,6 +58,7 @@ v1.0.8: ░░░░░░░░░░ 0%
 v1.0.9: ░░░░░░░░░░ 0%
 v1.1.0: ░░░░░░░░░░ 0%
 ```
+
 
 ---
 
