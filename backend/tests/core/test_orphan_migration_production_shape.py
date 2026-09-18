@@ -12,17 +12,22 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 PREVIOUS_HEAD = "4c1d8e7a2b90"
-EXPECTED_HEAD = "c1d2e3f4a5b6"
 
 
 def _config(db_path: Path) -> Config:
     cfg = Config(str(ALEMBIC_INI))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     return cfg
+
+
+def _current_head() -> str:
+    """迁移链真实 head（动态取，新增迁移后断言不过时）。"""
+    return ScriptDirectory.from_config(_config(Path("unused.db"))).get_current_head()
 
 
 def test_production_shape_upgrade_recovers_and_finishes_within_budget(
@@ -129,7 +134,7 @@ def test_production_shape_upgrade_recovers_and_finishes_within_budget(
 
     conn = sqlite3.connect(db_path)
     try:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (EXPECTED_HEAD,)
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (_current_head(),)
         assert conn.execute(
             "SELECT COUNT(*) FROM orphan_current_candidate " "WHERE current_detail_id IS NOT NULL"
         ).fetchone() == (candidate_count,)

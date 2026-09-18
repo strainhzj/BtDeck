@@ -77,6 +77,10 @@ ALLOWLIST: dict[str, set[str]] = {
         # 字符串，MCP 错误码映射用），非密钥；名称含 token/password 触发启发式
         "app/auth/principal.py",
         "app/auth/utils.py",
+        # mcp/errors.py: McpErrorCode 枚举成员值为跨版本承诺的稳定错误码
+        # （AUTH_TOKEN_INVALID/PASSWORD_CHANGE_REQUIRED 等，禁止重命名），
+        # 同为启发式误伤，非密钥
+        "app/mcp/errors.py",
     },
 }
 

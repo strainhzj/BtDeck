@@ -3,10 +3,20 @@
 import sqlite3
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 from app.core.migration import migrate_database, _read_db_version
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPAIR_PREVIOUS_HEAD = "975dad435c03"
-REPAIR_HEAD = "c1d2e3f4a5b6"
+
+
+def _current_head() -> str:
+    """迁移链真实 head（动态取，新增迁移后断言不过时）。"""
+    cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    return ScriptDirectory.from_config(cfg).get_current_head()
 
 
 def _build_head_marked_drift_db(db_path: Path) -> None:
@@ -95,7 +105,7 @@ def test_restart_migration_repairs_head_marked_missing_column(tmp_path, monkeypa
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
 
     assert migrate_database() is True
-    assert _read_db_version(str(db_path)) == REPAIR_HEAD
+    assert _read_db_version(str(db_path)) == _current_head()
 
     conn = sqlite3.connect(db_path)
     try:
@@ -135,4 +145,4 @@ def test_repair_revision_is_idempotent_for_existing_column(tmp_path, monkeypatch
 
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
     assert migrate_database() is True
-    assert _read_db_version(str(db_path)) == REPAIR_HEAD
+    assert _read_db_version(str(db_path)) == _current_head()

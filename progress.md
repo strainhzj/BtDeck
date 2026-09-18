@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18（第三批）：本地全量 CI 复刻——后端 9 项归因修复（迁移幂等守卫 + 动态 head + lint 放行 + parity 隔离）
+
+按 regression.yml 本地复刻全量 CI：前端三门全绿（typecheck / Jest+coverage 72.8% / build）；后端 9 项问题（架构检查 2 + pytest 7）。归因结论：全部仅存在于 dev1.0.7（CI 只在 dev/master/main 触发，moviepilot/mcp 线从未过 CI；origin/master、origin/dev 无 moviepilot 迁移与 app/mcp/，master worktree 实跑架构检查 0 / tests/core 490 全绿佐证）；其中 8 项为测试/配置过时，1 项为真实产品缺陷。修复：
+
+1. **真实缺陷——moviepilot 迁移缺幂等守卫**：`053003337878` 的 `op.create_table` 无条件执行，缺仓库惯例 `sa.inspect(bind).has_table(...)` 守卫（对照 c1d2e3f4a5b6），破坏"版本戳回退后重升级 no-op"崩溃恢复不变量（governance 测试正确拦截）。修复：upgrade 两张表各加 has_table 守卫（索引随表同建同跳过）。
+2. **5 个迁移测试硬编码旧 head**（rollback×2 / orphan repair×2 / production shape×1，期望 `c1d2e3f4a5b6` 实际 `053003337878`）：三文件新增 `_current_head()`（`ScriptDirectory.from_config(cfg).get_current_head()`，test_db_governance 先例），head 语义断言动态取；rollback 的 `REV_HEAD` 保留为旧代码模拟钉住版本（Level 1/3 刻意钉住，注释已澄清）。
+3. **架构检查 2×BTD103 误报**（`app/mcp/errors.py:32,35` 为 McpErrorCode 枚举稳定错误码，非密钥）：lint_btdeck.py BTD103 放行表补登，注释同 principal.py 先例。
+4. **MCP parity 测试隔离**（全量 2/2 复现、单跑绿、core 前缀绿）：二分定位污染源=先行 API 测试经 TestClient lifespan 退出调用全局单例 `downloader_api_runtime.shutdown()`，executor 永久关闭 → parity 真实走 runtime 链路时报 `cannot schedule new futures after shutdown`。修复：该用例 patch 单例为全新 `DownloaderApiRuntime()` 实例（保持真实链路，不弱化为 patch call_downloader_api——speed 回归测试文档化的既有取舍）。
+- **验证**：架构检查 exit 0；4 迁移测试文件 26/26 绿；parity 单跑绿 + `tests/api`+parity 组合 1218 全过（原污染组合复现路径归零）；flake8 改动文件 0 告警；**全量后端终验 5054 过 / 9 跳过 / 0 失败，覆盖率门禁 66.10%≥40%——后端 CI 等效全绿基线**。**存量未修（非本批范围）**：`black --check app/` 有 3 文件偏差（tracker_sync_task/torrent_sync/cron_executor，stash 对照确认存量）——regression CI 不含 black，留待独立批。
+- **坑**：①pytest 管道接 tail 时退出码是 tail 的 0，全量失败会被吞——判定看 "failed" 汇总行；②Edit 工具改 try/with 嵌套时旧 finally 残留会双份，改完必读尾部核对。
+
+---
+
 ## 2026-09-18（第二批）：存量 5 用例修复——media 页签断言补齐 + 源码契约 CRLF 归一化（全量首绿已提交）
 
 上批全量 Jest 中 4 套件 5 用例存量失败（git stash + worktree 双重对照确认与 282f494 无关），经两轮子代理独立验证根因后修复（改动仅 4 个规格文件，零生产代码变更；feature_list 证据回填 `moviepilot-integration-2026-09-09.2`）：

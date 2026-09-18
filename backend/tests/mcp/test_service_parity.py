@@ -702,8 +702,17 @@ class TestTorrentAddEquivalence:
             downloader_id="1", fail_time=0, client=client_stub, nickname="qbt-parity", downloader_type=0
         )
         stack = await _ParityStack.create(on=["torrent.add"], store=_StubStore([vo]))
+        # 全量套件中先行的 API 测试经 TestClient lifespan 退出调用全局单例
+        # downloader_api_runtime.shutdown()，executor 永久关闭；本用例必须真实走
+        # runtime 链路（等价性要点），故换一个全新实例隔离 lifespan 副作用，
+        # 而非 patch call_downloader_api 弱化链路（speed 回归测试的既有取舍）。
+        from app.services.downloader_api_runtime import DownloaderApiRuntime
+
         try:
-            with patch("app.services.torrent_add_service.AsyncSessionLocal", stack.async_factory):
+            with patch(
+                "app.services.downloader_api_runtime.downloader_api_runtime",
+                DownloaderApiRuntime(),
+            ), patch("app.services.torrent_add_service.AsyncSessionLocal", stack.async_factory):
                 # HTTP 路径：端点薄壳对 service 的同参直调（audit_context 由端点构造，
                 # 此处传 None=端点无请求对象时的等价形态）
                 db = stack.sync_factory()

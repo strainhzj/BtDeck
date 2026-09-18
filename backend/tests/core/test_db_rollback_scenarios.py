@@ -28,7 +28,16 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "c1d2e3f4a5b6"  # 当前 head（修复 orphan current_detail_id Schema 漂移）
+# 旧代码环境模拟的钉住版本（编写时的 head；Level 1/3 用作升级目标与 mock 身份，
+# 刻意不随链演进而变——真实 head 断言用 _current_head() 动态取）
+REV_HEAD = "c1d2e3f4a5b6"
+
+
+def _current_head() -> str:
+    """迁移链真实 head（动态取，新增迁移后断言不过时）。"""
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    return ScriptDirectory.from_config(cfg).get_current_head()
 
 
 def _make_cfg(db_path: str) -> Config:
@@ -165,7 +174,7 @@ class TestLevel2BackupRestore:
 
         # 2. 模拟升级（migrate_database 会先备份）
         migrate_database()
-        assert _get_all_versions(db_path) == REV_HEAD
+        assert _get_all_versions(db_path) == _current_head()
 
         # 确认备份生成了（版本是 95ef8bd8b47a）
         backups = list(tmp_path.glob("*.pre-migration-*"))
@@ -336,4 +345,4 @@ class TestRollbackSafetyInvariants:
         # 不变量：幽灵版本总是被救援到真实版本
         final = _get_all_versions(db_path)
         assert final != "9aea25308aff", "安全不变量：幽灵版本总是被救援（KNOWN_GHOST_VERSIONS）"
-        assert final == REV_HEAD, f"救援后应为 head，实际 {final}"
+        assert final == _current_head(), f"救援后应为 head，实际 {final}"

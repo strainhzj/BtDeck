@@ -6311,7 +6311,7 @@
             "backend/alembic/versions/053003337878_add_moviepilot_integration_tables.py",
             "backend/tests/api/test_moviepilot_integration.py"
           ],
-          "evidence": "2026-09-09：test_moviepilot_integration 28 项绿（设置 fail-closed/CAS/409；握手注册/禁用 403/绑定冒名 403/失效改绑；同步 insert-skip-update 三态/批内单条失败不中断/审计行；映射非法 400+变更重解析 unmapped→linked；正向查询同 hash 双下载器不串联；反查精确/目录前缀/mode 过滤/过短 400/未关联 task=null；认证矩阵 401/403；信封分页字段）。迁移链临时库 upgrade→downgrade→upgrade 对称、空库 35 表、单 head 053003337878（EXPECTED_HEAD+表数断言已更新）。路由鉴权登记 require_moviepilot_integration_user。相邻回归 tests/api+core/test_db_migration+架构约束 1225 passed/19 失败（回收站 a2cb083 存量基线，与本批无关）。black(24.10.0)/flake8/mypy 改动文件全绿。"
+          "evidence": "2026-09-09：test_moviepilot_integration 28 项绿（设置 fail-closed/CAS/409；握手注册/禁用 403/绑定冒名 403/失效改绑；同步 insert-skip-update 三态/批内单条失败不中断/审计行；映射非法 400+变更重解析 unmapped→linked；正向查询同 hash 双下载器不串联；反查精确/目录前缀/mode 过滤/过短 400/未关联 task=null；认证矩阵 401/403；信封分页字段）。迁移链临时库 upgrade→downgrade→upgrade 对称、空库 35 表、单 head 053003337878（EXPECTED_HEAD+表数断言已更新）。路由鉴权登记 require_moviepilot_integration_user。相邻回归 tests/api+core/test_db_migration+架构约束 1225 passed/19 失败（回收站 a2cb083 存量基线，与本批无关）。black(24.10.0)/flake8/mypy 改动文件全绿。 2026-09-18（第三批）：本地全量 CI 复刻发现并修复 moviepilot 迁移幂等缺陷——053003337878 upgrade 无条件 create_table 缺 has_table 守卫，破坏版本戳回退后重升级 no-op 不变量（governance 测试拦截），补齐守卫；同批 5 个迁移测试硬编码旧 head 改为 _current_head() 动态取、lint 放行表补登 mcp/errors.py 枚举误报 2 条、MCP parity 测试补 runtime 单例隔离（先行 TestClient lifespan shutdown 污染，换新实例保持真实链路）。全量后端 5054 用例 0 失败基线见 progress.md 第三批。"
         },
         {
           "id": "moviepilot-integration-2026-09-09.2",
