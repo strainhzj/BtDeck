@@ -8,14 +8,14 @@
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
 | 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |
-| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果 |
+| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控 |
-| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04） |
+| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-18 桌面双语 P2：2FA/改密/诊断页签文案全量 i18n 化 |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
-| 登录 login | `login/index.vue` | 登录页 |
+| 登录 login | `login/index.vue` | 登录页；✨2026-09-18 桌面双语 P2：表单/校验/消息 i18n 化 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
 | 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；桌面端保留稳定明细/硬链接/隔离流程，路由与移动页由 `orphan_files` 能力门控 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
@@ -70,7 +70,7 @@
 | `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效；`handleSync()` L772 只将 sync-single 返回视为“已受理”，由任务跟踪器在真实终态提示成功/部分/失败/取消并释放占用 |
 | `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L29 统一终态文案，`trackSyncTaskStatus()` L53 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
 | `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询；✨2026-09-10 新增/编辑弃用旧 6 字段弹窗，统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页承载全部页签） |
-| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列） |
+| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列）；✨2026-09-18 桌面双语 P2：basic 页签（连接/认证/测试/开关/存储/路径映射）i18n 化 |
 | `components/PathMappingTab.vue` | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
 | `components/TagManagementTab.vue` | 标签/分类检索、过滤、排序、同步与维护工作台 |
 | `components/DownloaderPathManagement.vue` | 下载器路径资产管理面板（筛选、状态、刷新、增删改） |
@@ -78,7 +78,7 @@
 | `components/AdvancedSettingsTab.vue` | 兼容保留的高级设置 Tab，应用图标已迁移 Lucide |
 | `components/TemplateSelectionDialog.vue` | 高密度模板选择对话框，含自定义标题、加载与空状态 |
 | `components/BasicSettingsTab.vue` | 兼容保留的基础设置 Tab，应用图标已迁移 Lucide |
-| `components/DownloaderCard.vue` | 单节点遥测卡片，集中展示连接、吞吐、任务、延迟与全部管理动作 |
+| `components/DownloaderCard.vue` | 单节点遥测卡片，集中展示连接、吞吐、任务、延迟与全部管理动作；✨2026-09-18 桌面双语 P2：卡片文案/aria i18n 化 |
 | ~~`components/DownloaderDialog.vue`~~ | 旧 6 字段新增/编辑对话框；2026-09-10 删除（桌面与移动均已统一走 DownloaderSettingsDialog） |
 | `components/PathManagementTab.vue` | 路径映射/路径资产双视图容器 |
 | `types.ts` | 下载器模块 TS 类型定义 |
