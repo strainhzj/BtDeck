@@ -27,7 +27,7 @@
 | Monaco 编辑器 monaco | `MonacoEditor.vue` | Monaco 代码编辑器通用封装（`MonacoEditor extends Vue`，L12） |
 | 批量按钮 batch-button | `BatchButton/index.vue` | 批量操作按钮（含下拉菜单） |
 | 批量按钮测试 batch-button-test | `BatchButton/__tests__/BatchButton.spec.ts` | BatchButton 回归测试：提供 `lucide-icon`/`lucide-size` props 时用 LucideIcon 渲染、未提供时回退 el-icon、disabled 抑制点击 |
-| 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航 |
+| 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航（标题经 `routeTitle()`：titleKey 双语键优先，双语 P1） |
 | 可折叠面板 collapsible-panel | `CollapsiblePanel.vue` | 通用可折叠面板（management-panel 风格标题区 + Lucide 折叠箭头，`aria-expanded`/`aria-controls` 无障碍）：折叠状态按 `storageKey` prop 经 getStorage/setStorage 持久化 |
 | 侧边栏折叠 hamburger | `Hamburger/index.vue` | 侧边栏折叠按钮 |
 | 分页 pagination | `Pagination/index.vue` | 分页组件封装 |
@@ -75,9 +75,9 @@
 |--------|------|-----------|
 | barrel 导出 layout-index | `index.ts` | barrel 导出 AppMain/Navbar/Sidebar |
 | 主内容区 app-main | `AppMain.vue` | 主内容区 `<router-view>` 容器 |
-| 顶栏 navbar | `Navbar/index.vue` | 顶栏（面包屑/反馈/通知/用户菜单）；品牌锚点由侧边栏统一承载，交互图标使用 Lucide |
+| 顶栏 navbar | `Navbar/index.vue` | 顶栏（面包屑/反馈/通知/语言切换/用户菜单，壳层文案走 `$t`）；语言下拉选项为语言自名常量（i18n/types `LOCALE_AUTONYMS`），切换走 AppModule.SetLanguage 并显式刷新 document.title；品牌锚点由侧边栏统一承载，交互图标使用 Lucide |
 | 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），展开态使用完整 Logo、折叠态使用 `mark` 图标，菜单/折叠控制使用 Lucide |
-| 菜单项 sidebar-item | `Sidebar/SidebarItem.vue` | 单个菜单项（递归子菜单）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染；桌面折叠态按 `.submenu-label`/`.submenu-chevron` 语义类隐藏文字与箭头，显式保留根节点为 `span` 的 `.menu-icon`，避免多子菜单父图标被误隐藏 |
+| 菜单项 sidebar-item | `Sidebar/SidebarItem.vue` | 单个菜单项（递归子菜单）；标题经 `routeTitle()` 双语键优先（双语 P1）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染；桌面折叠态按 `.submenu-label`/`.submenu-chevron` 语义类隐藏文字与箭头，显式保留根节点为 `span` 的 `.menu-icon`，避免多子菜单父图标被误隐藏 |
 | 菜单项链接 sidebar-item-link | `Sidebar/SidebarItemLink.vue` | 菜单项链接包装（外链/内链分流） |
 | 通知抽屉 notification-drawer | `NotificationDrawer/index.vue` | 通知抽屉容器 + 详情弹窗；内容 Markdown-lite 渲染抽至 `utils/notification-markdown.ts`（与移动通知详情 `views/mobile/notifications.vue` 共用，两端一致）；标题、筛选、加载、空状态与关闭动作统一使用 Lucide |
 | 通知项 notification-item | `NotificationDrawer/NotificationItem.vue` | 单条通知项；列表摘要经共享 `plainNotificationContent` 剥离 Markdown 记号（与移动列表同源，未打开详情不裸露记号），详情入口使用 Lucide |

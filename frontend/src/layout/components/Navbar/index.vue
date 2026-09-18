@@ -12,8 +12,8 @@
       <el-button
         class="icon-button feedback-button"
         circle
-        aria-label="提交反馈"
-        title="提交反馈"
+        :aria-label="$t('navbar.feedback')"
+        :title="$t('navbar.feedback')"
         @click="handleFeedback"
       >
         <LucideIcon name="message-circle" :size="19" :stroke-width="1.8" />
@@ -24,13 +24,40 @@
         <el-button
           class="icon-button"
           circle
-          aria-label="打开通知中心"
-          title="通知中心"
+          :aria-label="$t('navbar.openNotifications')"
+          :title="$t('navbar.notifications')"
           @click="handleNotification"
         >
           <LucideIcon name="bell" :size="19" :stroke-width="1.8" />
         </el-button>
       </el-badge>
+
+      <!-- 语言切换（选项用语言自名，不随界面语言翻译） -->
+      <el-dropdown
+        class="lang-switcher hover-effect"
+        trigger="click"
+        @command="handleLanguageCommand"
+      >
+        <div
+          class="lang-wrapper"
+          :aria-label="$t('navbar.language')"
+          :title="$t('navbar.language')"
+        >
+          <LucideIcon name="languages" :size="18" :stroke-width="1.8" />
+          <span class="lang-current">{{ currentLocaleLabel }}</span>
+          <LucideIcon name="chevron-down" :size="12" :stroke-width="1.8" class="lang-chevron" />
+        </div>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item
+            v-for="locale in supportedLocales"
+            :key="locale"
+            :command="locale"
+            :class="{'lang-active': locale === activeLocale}"
+          >
+            {{ localeLabels[locale] }}
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
 
       <!-- 主题切换器 -->
       <theme-switcher class="theme-switcher-wrapper" />
@@ -52,12 +79,12 @@
           <router-link to="/">
             <el-dropdown-item>
               <LucideIcon name="house" :size="16" :stroke-width="1.8" />
-              <span>首页</span>
+              <span>{{ $t('navbar.home') }}</span>
             </el-dropdown-item>
           </router-link>
           <el-dropdown-item divided command="logout">
             <LucideIcon name="log-out" :size="16" :stroke-width="1.8" />
-            <span>退出登录</span>
+            <span>{{ $t('navbar.logout') }}</span>
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -69,8 +96,11 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { NotificationModule } from '@/store/modules/notification'
+import { AppModule } from '@/store/modules/app'
 import Breadcrumb from '@/components/Breadcrumb/index.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
+import { LOCALE_AUTONYMS, Locale, SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/types'
+import { resolvePageTitle } from '@/i18n'
 
 @Component({
   name: 'Navbar',
@@ -90,6 +120,35 @@ export default class extends Vue {
 
   get notificationCount() {
     return NotificationModule.unreadCount
+  }
+
+  get activeLocale(): Locale {
+    return AppModule.language
+  }
+
+  get currentLocaleLabel(): string {
+    return LOCALE_AUTONYMS[this.activeLocale]
+  }
+
+  get supportedLocales(): readonly Locale[] {
+    return SUPPORTED_LOCALES
+  }
+
+  get localeLabels(): Record<Locale, string> {
+    return LOCALE_AUTONYMS
+  }
+
+  /**
+   * 语言切换：store 持久化 + i18n 响应后，显式刷新当前页标题
+   * （vue-i18n@8 无公开 locale 订阅 API，标题不随语言自动重算）。
+   */
+  private handleLanguageCommand(command: string) {
+    if (!isSupportedLocale(command) || command === this.activeLocale) {
+      return
+    }
+    AppModule.SetLanguage(command)
+    // 语言切换不触发路由导航，afterEach 不会重跑，这里手动同步标题
+    document.title = resolvePageTitle(this.$route)
   }
 
   private handleNotification() {
@@ -190,6 +249,38 @@ export default class extends Vue {
     color: var(--color-text-primary, #1F2937);
   }
 
+}
+
+/* 语言切换器（与 icon-button 同高度观感，选项用语言自名） */
+.lang-switcher {
+  margin: 0 4px;
+  cursor: pointer;
+}
+
+.lang-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 20px;
+  color: var(--color-text-secondary, #6B7280);
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    background: var(--color-bg-hover, #F3F4F6);
+    color: var(--color-text-primary, #1F2937);
+  }
+}
+
+.lang-current {
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lang-chevron {
+  color: var(--color-text-tertiary, #9CA3AF);
 }
 
 /* 通知徽章 */

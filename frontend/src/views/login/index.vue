@@ -12,6 +12,20 @@
       <theme-switcher />
     </div>
 
+    <!-- 语言切换（选项用语言自名，不随界面语言翻译；切换后刷新页面标题） -->
+    <div class="lang-selector">
+      <button
+        v-for="locale in supportedLocales"
+        :key="locale"
+        type="button"
+        class="lang-option"
+        :class="{'lang-option-active': locale === activeLocale}"
+        @click="handleLanguageSelect(locale)"
+      >
+        {{ localeLabels[locale] }}
+      </button>
+    </div>
+
     <!-- 登录卡片 -->
     <div class="login-card">
       <!-- Logo和标题 -->
@@ -132,10 +146,13 @@ import { Route } from 'vue-router'
 import { Dictionary } from 'vue-router/types/router'
 import { Form as ElForm, Input } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
+import { AppModule } from '@/store/modules/app'
 import { isValidUsername } from '@/utils/validate'
 import { isDemoMode } from '@/demo/config'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
+import { LOCALE_AUTONYMS, Locale, SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/types'
+import { resolvePageTitle } from '@/i18n'
 
 @Component({
   name: 'Login',
@@ -149,6 +166,27 @@ export default class extends Vue {
     username: '',
     password: '',
     twofa_code: ''
+  }
+
+  private get activeLocale(): Locale {
+    return AppModule.language
+  }
+
+  private get supportedLocales(): readonly Locale[] {
+    return SUPPORTED_LOCALES
+  }
+
+  private get localeLabels(): Record<Locale, string> {
+    return LOCALE_AUTONYMS
+  }
+
+  /** 登录页语言入口：与 Navbar 同一动作源（store SetLanguage），切换后同步页面标题 */
+  private handleLanguageSelect(locale: string) {
+    if (!isSupportedLocale(locale) || locale === this.activeLocale) {
+      return
+    }
+    AppModule.SetLanguage(locale)
+    document.title = resolvePageTitle(this.$route)
   }
 
   private loginRules = {
@@ -341,6 +379,38 @@ export default class extends Vue {
   top: var(--spacing-lg);
   right: var(--spacing-lg);
   z-index: 10;
+}
+
+// 语言切换器（与主题切换器同一顶栏带，紧邻其左侧）
+.lang-selector {
+  position: absolute;
+  top: var(--spacing-lg);
+  right: calc(var(--spacing-lg) + 52px);
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+}
+
+.lang-option {
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-text-secondary, #6B7280);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    color: var(--color-text-primary, #1F2937);
+    background: var(--color-bg-hover, #F3F4F6);
+  }
+}
+
+.lang-option-active {
+  color: var(--color-primary, #2563EB);
+  border-color: var(--color-primary, #2563EB);
 }
 
 // 登录卡片
