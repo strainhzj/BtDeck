@@ -1,9 +1,9 @@
 # 桌面 Web 中英双语执行计划
 
-> 状态：pending（方案已登记，尚未开始实现）
+> 状态：P0 完成（2026-09-18，产出见 [bilingual/](./bilingual/README.md)）；P1～P7 pending
 > Feature：`desktop-bilingual-20260918`
 > 创建 / 更新：2026-09-18
-> 授权边界：本轮仅新增 feature 与 plan，更新索引及会话记录；不改业务代码、不安装依赖、不提交 Git。
+> 授权边界：P0 仅文档与静态脚本产出，不改业务代码、不安装依赖、不提交 Git；P1 起的授权与依赖安装由用户另行确认。
 
 ## 1. 目标、范围与里程碑
 
@@ -94,15 +94,15 @@
 
 依赖：P0→P1；P0→P4 契约；P1→P2/P3；P3+P4→P5；P1+P4→P6；P2/P3/P4/P5 完成达到 M1；P6→P7 达到 M2。P2/P3 可先处理静态文案，但相关错误契约完成前不能验收通过。依赖不表示本轮启动实现或派生代理。
 
-### P0：范围、术语与契约清单
+### P0：范围、术语与契约清单（✅ 2026-09-18 完成，产出 [bilingual/](./bilingual/README.md)）
 
-- 逐桌面路由盘点页面、隐藏弹窗、图表、空态、加载、错误及能力受限状态；列出 M1 可达范围。
+- 逐桌面路由盘点页面、隐藏弹窗、图表、空态、加载、错误及能力受限状态；列出 M1 可达范围。→ [routes-inventory.md](./bilingual/routes-inventory.md)
 - 建立文案清单（键、中文、英文、参数、使用位置、审校状态）、错误清单（触发、原响应、reasonCode、恢复建议）、系统内容清单及术语表。
 - 术语重点：torrent/task/data files、recheck、reannounce、recycle bin、quarantine、purge，以及“辅种”的实际业务含义；不机械逐字翻译。
 - 核对生成契约源文件、历史时间约定、预设身份和迁移方案；确认英文审校责任与依赖策略。
 - 退出：清单覆盖所有桌面路由；核心失败路径有样例；独立文案去重后重估工作量。没有审校人时可继续开发，但不能通过危险操作最终门禁。
 
-### P1：语言基础设施
+### P1：语言基础设施（✅ 2026-09-18 完成，选型与风险记录 [bilingual/p1-i18n-decision.md](./bilingual/p1-i18n-decision.md)）
 
 - main.ts、app store、登录 / Navbar、router、Element UI、formatters 接线；建立语言键类型、缺译 / 插值检查。
 - 退出：L01～L05、F01 通过；语言切换响应式；不丢状态；不修改框架 / 构建主版本。
@@ -217,3 +217,5 @@ R01～R06 的业务语义与英文表达均须有审校记录。只使用隔离�
 ## 9. 当前记录
 
 - 2026-09-18：用户确认先做桌面双语并要求添加 feature 与 plan。本轮只登记规划，P0～P7 均未开始；没有实现 / 运行时验收证据。
+- 2026-09-18（P0 批）：用户确认启动 P0。产出 `PLANS/bilingual/`（路由/弹窗/状态清单、文案去重目录 copy-catalog.json+md、错误契约样例、系统内容与迁移方案、术语表、可重跑提取脚本）。关键结论：桌面唯一文案 3088（M1 core 987 + partial 588，插值重组后实际键约 1300～1450）；生成契约链 = 后端 json 源 → 前端 generated.ts（禁直改）；查询/设置预设身份现为中文名，提案 preset_key + Alembic 迁移；时间约定混用（naive-UTC 与本地写入并存）语义冻结不动；M1 边界 5 项待定（去重弹窗/转移/状态诊断页签等）待用户拍板。文案工作量重估见 copy-catalog.md §5（M1 22～36 人日，区间微调）。业务代码零改动，P1～P7 未开始；估算与待定项不构成门禁阻塞。
+- 2026-09-18（P1 批）：用户确认启动 P1。选型 vue-i18n@8.28.2 精确钉版（v8 终版已停维护，缓解：src/i18n 单封装层+最小 API 面+钉版，记录 bilingual/p1-i18n-decision.md）；新增 `frontend/src/i18n/` + zh-CN/en 消息树（navigation/time/el）；接线 main.ts（ElementLocale 挂接+根注入）/permission（标题 resolvePageTitle）/router（21 处 titleKey，移动不带）/app store（SetLanguage）/Navbar+登录页（切换入口，切换后显式刷新标题——v8 无 locale 订阅 API）/formatters（相对时间七档含复数）/SidebarItem+Breadcrumb；新测试 parity+locale+源码契约共 24 用例（parity 排除 el 子树：Element 官方包自身键漂移）。验证：typecheck/lint/build 绿、全量 Jest 115 套件 1622 用例零回归；roadmap 已同步（根+entry+components-layout+utils-types+store 五处）。P2～P7 未动。

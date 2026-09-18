@@ -1,3 +1,30 @@
+## 2026-09-18：双语化 P0 盘点 + P1 基础设施完成（p0/p1 done，P2 待授权）
+
+> 用户先后确认 P0（静态盘点）与 P1（i18n 基础设施）。P0 产出五清单；P1 已实现并全门禁绿（未提交 Git）。
+
+### 交接要点
+
+- **P0 产出**（PLANS/bilingual/）：routes-inventory / copy-catalog（唯一 3088，M1 键约 1300～1450）/ error-contract（18 样例）/ system-content（preset_key 迁移提案）/ terminology（辅种=cross-seed ✅）。
+- **P1 已落地**：vue-i18n@8.28.2 钉版 + `src/i18n/` 四文件 + zh-CN/en 消息树；桌面 21 条路由 titleKey/顶栏/相对时间可切换（移动零变化）；双入口 Navbar+登录页；app store SetLanguage；选型风险记录 p1-i18n-decision.md。验证：typecheck/lint/build 绿，全量 Jest 115 套件 1622 用例零回归；roadmap 五处已同步。
+- **下一步（P2 首次使用闭环，需用户确认启动）**：登录页/permission 守卫/账户密码+2FA 设置/下载器连接表单的双语化；依赖 P4 错误契约的 M1 子范围（登录/下载器失败路径 reasonCode）——**P2 与 P4 有交叉，建议 P2 动静态文案、P4 契约同期或先行**。
+- **待用户拍板（沿用 P0 批交接）**：①M1 边界 5 项；②M1 是否独立发布；③查询模板英文定名 saved search vs query template。
+- **P1 坑位（后续批次必读）**：①环境声明 .d.ts 不能含顶层 import（否则退化模块增强报 TS7016）；②v8 无 locale 订阅 API，语言切换后的 document.title 由切换入口显式刷新（Navbar/登录页两处已接，新增切换入口必须照做）；③块注释含 `zh-*/en-*` 类字样会提前终结注释；④i18n-message-parity 排除 el 子树（Element 官方包键漂移 vendor 数据）。
+
+---
+
+## 2026-09-18：双语化 P0 盘点完成（desktop-bilingual-20260918.p0 done），P1 待授权启动
+
+> 用户确认启动双语化，本轮完成 P0 五清单（全部在 `PLANS/bilingual/`，业务代码零改动、未提交 Git）。
+
+### 交接要点
+
+- **产出**：routes-inventory（桌面 19 路由+M1 划定）/ copy-catalog（唯一 3088，M1 键约 1300～1450，重估 22～36 人日）/ error-contract（18 样例+reasonCode 提案）/ system-content（preset_key 迁移提案+通知事件+时间约定冻结）/ terminology（辅种=cross-seed 已确认）。
+- **下一步（P1，需用户确认启动+授权安装依赖）**：vue-i18n@8 选型核验（官方已停维护，需记录维护/安全结论）→ main.ts/store/router/Element locale/formatters 接线 → 键落位从 core 高频组开始。
+- **待用户拍板（不阻塞 P1 启动）**：①M1 边界 5 项（去重双弹窗、转移类弹窗、全局替换 Tracker、状态诊断页签、DownloaderSettingsDialog 页签拆分清单）；②M1 是否独立发布；③查询模板英文定名 saved search vs query template。
+- **P4 必读坑**：error-contract.md §4（动态 str(e) 拼接 / success+200 错误语义 / 422 英文 pydantic msg 字典化双收益）；system-content.md §4（时间语义冻结）。
+
+---
+
 ## 2026-09-13：WebView 返回来源页双入口已交付（webview-return-navigation-2026-09-13），待真机验收
 
 > 用户反馈「无法主动返回选择模式/服务器选择页，请在仪表盘设返回按钮、左上角名称加点击事件」——本会话实施+构建完毕，装 0.2.4 包即可验收。

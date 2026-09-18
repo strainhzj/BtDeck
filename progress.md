@@ -1,5 +1,33 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18（第五批）：双语化 P1——vue-i18n@8.28.2 基础设施 + 双入口接线（全绿未提交）
+
+用户确认启动 P1（语言基础设施）。业务面：桌面 21 条路由标题/顶栏/相对时间可中英切换，移动路由零变化。
+
+1. **选型与安装**：vue-i18n@8.28.2 精确钉版（`--save-exact`；v8 终版，官方已停维护——风险缓解：src/i18n 单封装层、最小 API 面 t/tc/setLocale、钉版冻结供应链面；vue-i18n 9+ 仅 Vue 3 不可用；记录 PLANS/bilingual/p1-i18n-decision.md）。
+2. **新增 src/i18n/**：`types.ts`（Locale 枚举/btdeck-lang 存储键/MessageTree/语言自名常量）；`index.ts`（单例 + resolveSupportedLocale 纯函数：手动偏好>浏览器语言顺序匹配>默认中文；readStoredLocale 无效值清除；en 缺键回退 zh-CN，zh 缺键空串+warn 不渲染原始键；translate/translateChoice/routeTitle/resolvePageTitle 同源入口）；`element-locale.d.ts`（**必须全局脚本形态**，含顶层 import 会退化成模块增强报 TS7016）；`locales/{zh-CN,en}/`（navigation 路由+顶栏、time 相对时间七档「单|复」、el 挂 Element 官方包）。
+3. **接线**：main.ts L52 ElementLocale.i18n 先于 Vue.use(ElementUI)（内置文案响应式切换）+ 根实例注入 i18n；router.ts 21 处桌面 titleKey（文件 452→476 行；/torrents 父路由单独 torrentsGroup 键避免与子路由共键）；permission.ts L300 标题走 resolvePageTitle（无 titleKey 的移动路由回退中文原值）；app store `language` 状态 + `SetLanguage`（委托 i18n 层持久化）；Navbar 语言下拉 + 登录页语言按钮（**选项为语言自名常量不随界面翻译**；切换后显式刷新标题——v8.28.2 无公开 locale 订阅 API，实测 prototype 只有 watchI18nData/watchLocale）；formatters.ts 相对时间七档 i18n 化（复数 $tc 语义）；SidebarItem/Breadcrumb 标题 routeTitle()（Breadcrumb 硬编码 'Dashboard' 兜底记录补 titleKey）。
+4. **测试（+24 用例）**：i18n-message-parity.spec（键集合/插值参数/复数支数/zh 无空串四重门禁；**el 子树排除**——Element 官方两语言包自身键漂移实测 en 独有 el.datepicker.week，vendor 数据不修）；i18n-locale.spec（L01 解析矩阵/L02 持久化+Storage 注入不可用/L04 标题+document.lang/L05 缺译回退/F01 中英档位与 60s·60m·24h·7d·30d·365d 边界+复数 0/1/2）；navbar-language-switcher.spec（Navbar/登录页/main.ts/app store 源码契约 8 例：单一动作源/自名常量/标题显式刷新/防回流相对时间禁硬编码中文）；shared-utils.spec 钉 zh-CN（formatRelativeTime 接 i18n 后防浏览器语言漂移）。
+5. **roadmap 同步**（roadmap-maintain，行号全实测）：根 README（entry 路由树行补 i18n/、功能域速查新增「桌面双语 i18n」行、生成日期/本次新增前置）、entry/README（main/router/permission 行号重测 + i18n 新行 + 路由表 21 行号更新）、components-layout（Navbar/Breadcrumb/SidebarItem 职责更新）、utils-types（formatters 行）、store（app 行+SetLanguage）。
+- **验证**：typecheck 绿；lint 三项绿（contract:check+eslint --max-warnings 0+vuex-action）；全量 Jest **115 套件 1622 用例零回归**（基线 112/1598，存量全绿）；`npm run build` 绿（67.9s）。
+- **坑**：①块注释里 `zh-*/en-*` 的 `*/` 提前终结注释（TS1127 Invalid character，与 progress.md 记录的 Kotlin `*/*` 同款坑，注释措辞已改「zh 前缀与 en 前缀」）；②.d.ts 含顶层 import 即成模块文件，declare module 退化为模块增强不再声明新模块——环境声明文件必须无顶层 import/export；③v8 无公开 locale 订阅 API（`i18n.watch` 不存在），标题刷新改由切换入口显式调用；④TS4.2 对「node=node[seg] 循环变量」推断报 TS7022，需显式注解 `string | MessageTree | undefined`；⑤jest mock Date.now 不影响被测函数内部的 `new Date()`——边界测试改真实时钟+相对偏移；⑥`vue-i18n.t()` 返回 TranslateResult 联合类型，ElementLocale.i18n 回调需 `as string`。
+
+---
+
+## 2026-09-18（第四批）：双语化 P0 静态盘点——路由/文案/错误契约/系统内容/术语五清单（未提交）
+
+用户确认启动 `desktop-bilingual-20260918` 的 P0（范围、术语、错误与系统内容清单）。业务代码零改动，全部产出在 `PLANS/bilingual/`：
+
+1. **路由/弹窗/状态清单**（routes-inventory.md）：桌面 19 条路由全部登记（含能力门控与 M1/M2 批次）；M1 页面逐个盘点 el-dialog 块/$confirm/空态/加载态；壳层（Navbar/Sidebar/Breadcrumb/NotificationDrawer/Pagination 等）必译面确认；**四级删除桌面链路实锤**：无独立 DeleteLevelDialog，走 `mixins/torrentBatch.ts` el-dropdown command + `utils/torrentBatch.ts` buildDeleteConfirmMessage + $confirm（level 1 用 type:'error'）；settings 五页签拆分（2FA/改密=M1，MCP/MoviePilot=M2，状态诊断待定）；**M1 边界 5 项待定**（去重双弹窗/转移类/全局替换/状态诊断页签/DownloaderSettingsDialog 页签拆分）待用户拍板。
+2. **文案去重目录**（copy-catalog.json/md + p0_extract.py 可重跑）：桌面唯一文案 3088（原始命中 5138），M1 core 987 + partial 588 + m2 1491 + 生成文件 22；插值拆片段限制已文档化，重组后实际键约 1300～1450；分组 16 组对齐 P1 拟建 i18n 目录；键命名方案（语义点路径/keyof 推导类型/非组件层同源 t()）已落稿；**工作量重估：M1 22～36 人日**（原 23～36，区间微调）。
+3. **错误契约**（error-contract.md）：现有架构实测（HTTPException 归一化默认中文按 HTTP 码分派、422 保数组、500 生产不带栈）；reasonCode 既有面（PLATFORM_CAPABILITY_UNSUPPORTED 等 6 文件）；18 条 M1 失败路径样例附 reasonCode/参数/英文显示策略提案。**坑**：①`f"系统异常: {str(e)}"` 动态拼接不可翻译且有泄露面；②「该下载器已被删除或不存在」一处 success+200 一处 error+404（E02 兼容测试）；③「缓存服务未初始化」成功信封携带失败语义。
+4. **系统内容**（system-content.md）：查询/设置预设身份 = 中文名（4+5 个），提案 `preset_key` + Alembic 加列 + 一次性中文回填（歧义不猜）；orphan_scan_completed 通知 extra_data 已结构化（展示层翻译可行），批量添加完成通知无 event 键需 P4 补；**时间约定核对结论：naive-UTC（模型默认）与本地 now()（预设初始化/审计写入）混用，属既有行为，双语语义冻结不动**；高级搜索契约链核实：后端 json 源（39 处中文）→ generate-advanced-search-contract.js → generated.ts（禁直改），翻译必须走源+再生成。
+5. **术语表**（terminology.md）：核心域名词+动词规范（remove vs delete vs purge 红线）；「辅种 = cross-seed」经用户确认 ✅；qB/TR 官方英文 UI 优先原则确立。
+- **验证**：纯静态盘点+文档，无运行时验收；feature_list p0 → done（含验收标准逐条对应 evidence），feature → in_progress；P1～P7 仍 pending。估算重估与 5 项待定项**不构成门禁阻塞**，待用户拍板后随 P1/P2 处理。
+- **坑**：①本机 shell 无 node（/mnt/c/nvm4w 路径未入 PATH），批量提取用 python3；②行内尾注释无法与代码剥离，copy-catalog.json 保留原始数据不删，落键时人工剔除；③同形异义字符串（如各危险等级的「删除」）在字面去重后同键，落键时必须按语义拆键。
+
+---
+
 ## 2026-09-12（第六批）：两遗留修复回归测试保护补强（mobile-ux-pending-fixes.4，真机验证通过后）
 
 - **安卓侧（源码契约模式移植）**：真机验证过的行为无法 JVM 端到端（Intent/ClipData 是 not-mocked stub、无 Robolectric），新 `WebViewActivityContractTest` 4 用例直读实现文件钉死结构——onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处 + launcher 回调「先取引用再清空再投递」序列正则）、FileChooser 禁回退 `createIntent`（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、**APK 版本纪律锚点**（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源——曾脱钩 0.1.0-mvp vs 0.2.0-server）；FileChooserTest 补 mode 显式 opt-in（OPEN/SAVE/未知值均单选；MODE_OPEN_FOLDER 常量实际不存在，勿臆造）。
