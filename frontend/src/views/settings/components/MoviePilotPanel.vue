@@ -9,38 +9,34 @@
         或 MoviePilot 侧的写操作；MoviePilot 历史消失不会触发本地清理。
       </p>
 
-      <div v-if="isDemo" class="mp-hint">演示模式不支持修改 MoviePilot 集成配置。</div>
+      <div v-if="loading" class="mp-hint">加载中…</div>
+      <div v-else-if="!loaded" class="mp-hint">
+        MoviePilot 集成配置加载失败。
+        <el-button size="mini" @click="loadAll">重试</el-button>
+      </div>
 
       <template v-else>
-        <div v-if="loading" class="mp-hint">加载中…</div>
-        <div v-else-if="!loaded" class="mp-hint">
-          MoviePilot 集成配置加载失败。
-          <el-button size="mini" @click="loadAll">重试</el-button>
+        <div class="mp-global-row">
+          <span class="mp-global-label">集成开关</span>
+          <el-switch v-model="draftEnabled" />
+          <span class="mp-global-state">{{ draftEnabled ? '已开启' : '已关闭' }}</span>
         </div>
-
-        <template v-else>
-          <div class="mp-global-row">
-            <span class="mp-global-label">集成开关</span>
-            <el-switch v-model="draftEnabled" />
-            <span class="mp-global-state">{{ draftEnabled ? '已开启' : '已关闭' }}</span>
-          </div>
-          <p class="mp-description">
-            关闭后插件握手与同步会被拒绝（403）；已同步的镜像数据保留。插件侧需配置
-            BtDeck 地址与专用集成账号（建议单独创建账号，勿开启两步验证）。
-          </p>
-          <div class="mp-actions">
-            <span v-if="lastUpdatedText" class="mp-updated">{{ lastUpdatedText }}</span>
-            <el-button size="small" :disabled="!dirty || saving" @click="resetDraft">放弃更改</el-button>
-            <el-button type="primary" size="small" :loading="saving" :disabled="!dirty" @click="save">
-              保存配置
-            </el-button>
-          </div>
-        </template>
+        <p class="mp-description">
+          关闭后插件握手与同步会被拒绝（403）；已同步的镜像数据保留。插件侧需配置
+          BtDeck 地址与专用集成账号（建议单独创建账号，勿开启两步验证）。
+        </p>
+        <div class="mp-actions">
+          <span v-if="lastUpdatedText" class="mp-updated">{{ lastUpdatedText }}</span>
+          <el-button size="small" :disabled="!dirty || saving" @click="resetDraft">放弃更改</el-button>
+          <el-button type="primary" size="small" :loading="saving" :disabled="!dirty" @click="save">
+            保存配置
+          </el-button>
+        </div>
       </template>
     </div>
 
     <!-- 实例与下载器映射 -->
-    <div v-if="!isDemo && loaded" class="mp-card">
+    <div v-if="loaded" class="mp-card">
       <div class="mp-card-head">
         <h3 class="mp-card-title">已注册实例</h3>
         <el-button size="mini" :loading="instancesLoading" @click="loadInstances">刷新</el-button>
@@ -148,7 +144,7 @@
     </div>
 
     <!-- 路径反查 -->
-    <div v-if="!isDemo && loaded" class="mp-card">
+    <div v-if="loaded" class="mp-card">
       <h3 class="mp-card-title">关联反查</h3>
       <p class="mp-description">
         输入媒体库文件/目录或源文件路径，反查关联的整理历史与 BT 任务。
@@ -225,7 +221,6 @@ import {
   updateMoviePilotSettings
 } from '@/api/moviepilot'
 import { getDownloaderList, type DownloaderSimple } from '@/api/torrents'
-import { isDemoMode } from '@/demo/config'
 import { ApiError } from '@/types/api'
 
 /** 映射编辑行（草稿态） */
@@ -240,11 +235,11 @@ interface MappingDraftRow {
  * - 全局开关：revision CAS 保存，409 冲突自动重载；
  * - 实例：启用开关即时生效；下载器映射单实例内联编辑，保存后后端重解析；
  * - 反查卡：路径精确/目录前缀 → 整理历史 + 任务快照（v1 简版，后续可独立页面）；
+ * - demo 模式经 @/demo 拦截层提供同形数据，无独立分支；
  * - 移动端经 views/mobile/settings.vue 包装桌面设置页自动同源。
  */
 @Component({ name: 'MoviePilotPanel' })
 export default class MoviePilotPanel extends Vue {
-  private isDemo = isDemoMode()
   private loading = false
   private loaded = false
 
@@ -286,9 +281,7 @@ export default class MoviePilotPanel extends Vue {
   }
 
   mounted(): void {
-    if (!this.isDemo) {
-      this.loadAll()
-    }
+    this.loadAll()
   }
 
   private async loadAll(): Promise<void> {

@@ -297,13 +297,6 @@
         </div>
       </el-tab-pane>
 
-      <!-- 主机能力（dual-mode-client Phase 4：一致降级单一来源，移动端经包装自动同源） -->
-      <el-tab-pane label="主机能力" name="platform">
-        <div class="settings-content">
-          <platform-capability-panel />
-        </div>
-      </el-tab-pane>
-
       <!-- MCP 服务（mcp-service-capabilities W1：全局/能力开关 + 风险说明；移动端经包装自动同源） -->
       <el-tab-pane label="MCP 服务" name="mcp">
         <div class="settings-content">
@@ -350,7 +343,6 @@ import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
 import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
-import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
 import McpSettingsPanel from './components/McpSettingsPanel.vue'
 import MoviePilotPanel from './components/MoviePilotPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
@@ -359,7 +351,7 @@ import request from '@/utils/request'
 
 @Component({
   name: 'Settings',
-  components: { PlatformCapabilityPanel, McpSettingsPanel, MoviePilotPanel }
+  components: { McpSettingsPanel, MoviePilotPanel }
 })
 export default class extends Vue {
   // 当前激活的标签页

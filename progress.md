@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18：设置页热点修改——移除主机能力页签 + Demo 展示 MCP/MoviePilot 配置页（全绿未提交）
+
+用户需求两点（feature_list 证据回填 `frontend-static-showcase-demo-2026-08-23.7` 与 `moviepilot-integration-2026-09-09.2`）：
+
+1. **移除设置页「主机能力」页签**：`views/settings/index.vue` 删 platform tab-pane 与组件注册；删除 `components/settings/PlatformCapabilityPanel.vue`（唯一引用即该页签）及其 `tests/unit/platform-capability-panel.spec.ts`、`tests/e2e/mobile/settings-capability.spec.ts`。**能力矩阵 API（`api/platform-capabilities.ts`）与 demo 层 `/platform/capabilities` 处理器保留**——下载器设置弹窗路径管理页签/回收站/孤儿文件等入口的 fail-closed 门控仍依赖它；tasks 页等处「主机能力」文案同为门控提示，不动。移动端设置页整页包装桌面页，自动同源收敛。
+2. **Demo 模式展示 MCP 服务与 MoviePilot 配置页**：两面板原 isDemo 分支只渲染「演示模式不支持修改」占位、不请求——现移除该分支，demo 与真实模式同一渲染路径，由 `@/demo` 拦截层供数：
+   - fixtures：新增 `mcpSettings`（全局开 + advanced_search/dashboard.read 两能力开，revision 2）+ `DEMO_MCP_CATALOG`（镜像后端 `contracts.py` 六能力目录，只读元数据）；`moviepilotSettings` + 2 实例（一启用带映射、一禁用无映射示错态）+ 3 条关联（linked 按种子 hash 挂 demo-info-002 / unmapped / unassociated，路径全 `/demo/*`）；抽 `demoTorrentHash` 助手统一 hash 推导。
+   - demo-store：MCP/MoviePilot 设置 revision CAS 读写（冲突返回 null 由请求层转 ApiError 409，与真实端点语义一致）；实例更新/删除（映射变更后 linked/unmapped 状态重解析，删除连带镜像历史）；正向 `(downloaderId, hash)` 与反向（路径前缀 + src/dest/both 模式）关联查询，linked 项附带任务快照。
+   - demo-request：新增 `/mcp/settings`（GET/PUT）、`/moviepilot/settings`（GET/PUT）、`/moviepilot/instances`（GET/PUT/DELETE）、`/moviepilot/associations`、`/moviepilot/associations/reverse` 处理器；种子详情「媒体库」页签（detailTabsData 正向查询）在 demo 下随之有数据。
+- **验证**：`npm run lint`（contract:check + ESLint + Vuex 检查）/ `npm run typecheck` 绿；demo-request.spec 新增 MCP 2 + MoviePilot 5 用例全绿，mcp-settings / moviepilot-panel spec 移除 demo 占位断言（demo 行为改由 demo-request 层回归）；全量 Jest 112 套件 1593 用例过——traditional-view / torrent-list-view / tracker-detail-card / downloader-settings-dialog-init 4 套件 5 用例为**改动前基线即红的存量失败**（git stash 对照确认，非本批引入）；`npm run build:demo` 通过。
+- **坑**：①demo-store 引用 fixtures 的 `DEMO_TIME` 需先 export（原为模块私有）；②demo 处理器 DELETE 分支返回裸对象漏包 `success()` 信封，测试即红——新处理器一律走 `success()` 包装。
+
+---
+
 ## 2026-09-12（第六批）：两遗留修复回归测试保护补强（mobile-ux-pending-fixes.4，真机验证通过后）
 
 - **安卓侧（源码契约模式移植）**：真机验证过的行为无法 JVM 端到端（Intent/ClipData 是 not-mocked stub、无 Robolectric），新 `WebViewActivityContractTest` 4 用例直读实现文件钉死结构——onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处 + launcher 回调「先取引用再清空再投递」序列正则）、FileChooser 禁回退 `createIntent`（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、**APK 版本纪律锚点**（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源——曾脱钩 0.1.0-mvp vs 0.2.0-server）；FileChooserTest 补 mode 显式 opt-in（OPEN/SAVE/未知值均单选；MODE_OPEN_FOLDER 常量实际不存在，勿臆造）。

@@ -6,8 +6,10 @@
  * 2. 409 冲突提示并自动重载最新配置；
  * 3. 实例卡片渲染（名称/同步统计/错误）与启用开关即时 PUT；
  * 4. 下载器映射编辑保存载荷（过滤空行 + 去重校验）；
- * 5. 路径反查：结果渲染任务快照标签与未关联标签；
- * 6. demo 模式不发起任何 API。
+ * 5. 路径反查：结果渲染任务快照标签与未关联标签。
+ *
+ * demo 模式下本面板经 @/demo 拦截层取数渲染（无独立分支），行为回归见
+ * demo-request.spec.ts 的 MoviePilot 用例组。
  */
 
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
@@ -23,7 +25,6 @@ import {
   MoviePilotInstance
 } from '@/api/moviepilot'
 import { getDownloaderList } from '@/api/torrents'
-import { isDemoMode } from '@/demo/config'
 import { ApiError } from '@/types/api'
 
 jest.mock('@/api/moviepilot', () => ({
@@ -39,17 +40,12 @@ jest.mock('@/api/torrents', () => ({
   getDownloaderList: jest.fn()
 }))
 
-jest.mock('@/demo/config', () => ({
-  isDemoMode: jest.fn(() => false)
-}))
-
 const mockGetSettings = getMoviePilotSettings as jest.MockedFunction<typeof getMoviePilotSettings>
 const mockUpdateSettings = updateMoviePilotSettings as jest.MockedFunction<typeof updateMoviePilotSettings>
 const mockGetInstances = getMoviePilotInstances as jest.MockedFunction<typeof getMoviePilotInstances>
 const mockUpdateInstance = updateMoviePilotInstance as jest.MockedFunction<typeof updateMoviePilotInstance>
 const mockReverse = reverseMoviePilotAssociations as jest.MockedFunction<typeof reverseMoviePilotAssociations>
 const mockGetDownloaders = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
-const mockIsDemoMode = isDemoMode as jest.MockedFunction<typeof isDemoMode>
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
@@ -231,7 +227,6 @@ async function mountPanel(): Promise<Wrapper<Vue>> {
 beforeEach(() => {
   jest.clearAllMocks()
   jest.restoreAllMocks()
-  mockIsDemoMode.mockReturnValue(false)
 })
 
 describe('MoviePilotPanel', () => {
@@ -348,14 +343,5 @@ describe('MoviePilotPanel', () => {
     await vm.runReverse()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('反查失败，请稍后重试')
-  })
-
-  it('demo 模式不发起任何 API', async() => {
-    mockIsDemoMode.mockReturnValue(true)
-    const wrapper = mount(MoviePilotPanel, { localVue })
-    await flushPromises()
-    expect(mockGetSettings).not.toHaveBeenCalled()
-    expect(mockGetInstances).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('演示模式不支持修改 MoviePilot 集成配置')
   })
 })

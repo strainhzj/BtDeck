@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-13",
+  "last_updated": "2026-09-18",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -5833,7 +5833,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "2026-09-05 自动化回归复跑：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 99 suites / 1339 tests 全部通过。制品：npm run build:demo 生成 dist 175 文件 / 34.71 MiB（index.html 标题 BtDeck Demo、绝对 /assets 路径），打包 frontend/BtDeck-demo-dist-20260905.zip（5.68 MiB，未跟踪交付物）。人工验收环境：本机静态服务（stdlib SPA fallback，等效 nginx.demo.conf try_files）127.0.0.1:8080 已起，冒烟 index/SPA fallback(/torrents、/query-templates)/asset 均 200；待用户按清单完成首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击人工复验后回填结果并收口。已知限制（沿承 2026-09-02）：根 ./init.sh --ci 卡 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用（Nginx 容器交付路径未本地复现，Dockerfile.demo 已静态审查）。"
+          "evidence": "2026-09-05 自动化回归复跑：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 99 suites / 1339 tests 全部通过。制品：npm run build:demo 生成 dist 175 文件 / 34.71 MiB（index.html 标题 BtDeck Demo、绝对 /assets 路径），打包 frontend/BtDeck-demo-dist-20260905.zip（5.68 MiB，未跟踪交付物）。人工验收环境：本机静态服务（stdlib SPA fallback，等效 nginx.demo.conf try_files）127.0.0.1:8080 已起，冒烟 index/SPA fallback(/torrents、/query-templates)/asset 均 200；待用户按清单完成首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击人工复验后回填结果并收口。已知限制（沿承 2026-09-02）：根 ./init.sh --ci 卡 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用（Nginx 容器交付路径未本地复现，Dockerfile.demo 已静态审查）。 2026-09-18 设置页 demo 覆盖扩展（用户需求：demo 展示 MCP 服务与 MoviePilot 配置页）：McpSettingsPanel/MoviePilotPanel 移除 isDemo 只读占位分支，改由 @/demo 拦截层供数（fixtures 新增 mcpSettings + DEMO_MCP_CATALOG 镜像后端 contracts.py 六能力、moviepilotSettings/Instances/Associations，demo-store 提供 revision CAS 与映射重解析，demo-request 新增 /mcp/settings、/moviepilot/settings|instances|associations|associations/reverse 处理器）；同步移除设置页主机能力页签（PlatformCapabilityPanel 组件与 unit/e2e 规格删除，能力矩阵 API 保留供其他入口门控）。回归：npm run lint / typecheck 通过，demo-request.spec 新增 MCP 2 用例 + MoviePilot 5 用例全过，mcp-settings / moviepilot-panel spec 更新 demo 分支断言，全量 Jest 1593 过（traditional-view/torrent-list-view/tracker-detail-card/downloader-settings-dialog-init 4 套件 5 用例为改动前基线即红的存量失败，git stash 对照确认），npm run build:demo 通过。"
         }
       ]
     },
@@ -6330,7 +6330,7 @@
             "frontend/tests/unit/moviepilot-panel.spec.ts",
             "frontend/tests/unit/detail-tabs-data.spec.ts"
           ],
-          "evidence": "2026-09-09：moviepilot-panel.spec 8 项（渲染/CAS 保存收敛/409 重载/实例开关/映射空行校验与载荷/反查渲染任务快照与未关联标签/失败提示/demo 零请求）+ detail-tabs-data 扩展 4 项（media 懒加载键控缓存/空列表不重拉/换种子失效/错误保留旧数据）全绿；npm run typecheck 绿；npm run lint 绿（contract:check+eslint --max-warnings 0+vuex 检查）。npm run build 有意未跑（保护 20260907 demo dist）。"
+          "evidence": "2026-09-09：moviepilot-panel.spec 8 项（渲染/CAS 保存收敛/409 重载/实例开关/映射空行校验与载荷/反查渲染任务快照与未关联标签/失败提示/demo 零请求）+ detail-tabs-data 扩展 4 项（media 懒加载键控缓存/空列表不重拉/换种子失效/错误保留旧数据）全绿；npm run typecheck 绿；npm run lint 绿（contract:check+eslint --max-warnings 0+vuex 检查）。npm run build 有意未跑（保护 20260907 demo dist）。 2026-09-18 demo 展示与页签收敛（用户需求）：设置页移除主机能力页签（frontend/src/views/settings/index.vue；删除 components/settings/PlatformCapabilityPanel.vue 及 tests/unit/platform-capability-panel.spec.ts、tests/e2e/mobile/settings-capability.spec.ts）；MoviePilotPanel 移除 isDemo 占位、demo 模式经拦截层渲染完整配置页（全局开关 CAS/实例映射编辑/关联反查，映射变更后 linked/unmapped 状态重解析），回证据见 frontend-static-showcase-demo-2026-08-23.7。回归 lint/typecheck/Jest/build:demo 通过（存量失败套件同基线）。"
         },
         {
           "id": "moviepilot-integration-2026-09-09.3",

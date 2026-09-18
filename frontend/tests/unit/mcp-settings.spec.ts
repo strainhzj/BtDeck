@@ -6,8 +6,10 @@
  * 2. 保存载荷携带全部能力码与 expectedRevision（CAS），成功后以服务端返回态收敛；
  * 3. 409 冲突提示并自动重载最新配置（不清空草稿之外的本地状态机）；
  * 4. kill switch（forceDisabled）只读横幅展示，保存入口不受其禁用（保留意图语义）；
- * 5. demo 模式不发起任何 API，显示只读占位；
- * 6. dirty 跟踪：未改动时保存/放弃按钮禁用。
+ * 5. dirty 跟踪：未改动时保存/放弃按钮禁用。
+ *
+ * demo 模式下本面板经 @/demo 拦截层取数渲染（无独立分支），行为回归见
+ * demo-request.spec.ts 的 MCP 用例组。
  */
 
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
@@ -15,7 +17,6 @@ import ElementUI from 'element-ui'
 
 import McpSettingsPanel from '@/views/settings/components/McpSettingsPanel.vue'
 import { getMcpSettings, updateMcpSettings, McpCapabilityMeta } from '@/api/mcp-settings'
-import { isDemoMode } from '@/demo/config'
 import { ApiError } from '@/types/api'
 
 jest.mock('@/api/mcp-settings', () => ({
@@ -23,13 +24,8 @@ jest.mock('@/api/mcp-settings', () => ({
   updateMcpSettings: jest.fn()
 }))
 
-jest.mock('@/demo/config', () => ({
-  isDemoMode: jest.fn(() => false)
-}))
-
 const mockGet = getMcpSettings as jest.MockedFunction<typeof getMcpSettings>
 const mockUpdate = updateMcpSettings as jest.MockedFunction<typeof updateMcpSettings>
-const mockIsDemoMode = isDemoMode as jest.MockedFunction<typeof isDemoMode>
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
@@ -109,7 +105,6 @@ async function mountPanel(): Promise<Wrapper<Vue>> {
 beforeEach(() => {
   jest.clearAllMocks()
   jest.restoreAllMocks()
-  mockIsDemoMode.mockReturnValue(false)
 })
 
 describe('McpSettingsPanel', () => {
@@ -206,13 +201,6 @@ describe('McpSettingsPanel', () => {
     const switches = wrapper.findAllComponents({ name: 'ElSwitch' })
     await switches.at(1).vm.$emit('input', true)
     expect(saveButton.attributes('disabled')).toBeUndefined()
-  })
-
-  it('demo 模式不发起 API，显示只读占位', async() => {
-    mockIsDemoMode.mockReturnValue(true)
-    const wrapper = await mountPanel()
-    expect(mockGet).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('演示模式不支持修改 MCP 服务配置')
   })
 
   it('加载失败显示占位与重试，重试成功恢复', async() => {

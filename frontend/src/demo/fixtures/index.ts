@@ -4,6 +4,9 @@ import {
   DemoBackup,
   DemoDownloader,
   DemoFixtureBundle,
+  DemoMcpCapabilityMeta,
+  DemoMoviePilotAssociation,
+  DemoMoviePilotInstance,
   DemoNotification,
   DemoOrphanFile,
   DemoQueryTemplate,
@@ -18,8 +21,12 @@ import {
   DemoUser
 } from '@/demo/types'
 
-const DEMO_TIME = '2026-09-02T10:00:00+08:00'
+export const DEMO_TIME = '2026-09-02T10:00:00+08:00'
 const DEMO_YESTERDAY = '2026-09-01T18:30:00+08:00'
+
+/** 与 makeTorrent 同一规则推导 demo 种子 hash，供 MoviePilot 关联镜像引用 */
+const demoTorrentHash = (infoId: string): string =>
+  infoId.replace(/[^a-z0-9]/gi, '').padEnd(40, '0').slice(0, 40)
 
 export const DEMO_USER: DemoUser = {
   userId: 'demo-user-001',
@@ -67,7 +74,7 @@ const makeTorrent = (input: Partial<DemoTorrent> & Pick<DemoTorrent, 'infoId' | 
   downloaderId: input.downloaderId || 'demo-downloader-001',
   downloaderName: input.downloaderName || '实验室节点 A',
   torrentId: input.torrentId || `torrent-${input.infoId}`,
-  hash: input.hash || `${input.infoId.replace(/[^a-z0-9]/gi, '').padEnd(40, '0').slice(0, 40)}`,
+  hash: input.hash || demoTorrentHash(input.infoId),
   name: input.name,
   savePath: input.savePath || '/demo/library',
   size: input.size || 0,
@@ -760,6 +767,209 @@ export const DEMO_BACKUPS: DemoBackup[] = [
   }
 ]
 
+/** MCP 能力目录（镜像后端 contracts.py CAPABILITY_CATALOG 六项，只读元数据） */
+export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
+  {
+    code: 'torrent.advanced_search',
+    tool: 'torrent_advanced_search',
+    risk: 'read',
+    description: '按字段白名单条件高级查询种子（脱敏摘要，默认省略种子 hash）。',
+    defaultEnabled: false,
+    requiresConfirm: false,
+    requiresIdempotencyKey: false
+  },
+  {
+    code: 'torrent.mark_pending_delete',
+    tool: 'torrent_mark_pending_delete',
+    risk: 'write',
+    description: '为下载器与数据库中的种子添加 pending_delete 标签；仅添加标签，不删除任务或文件。',
+    defaultEnabled: false,
+    requiresConfirm: true,
+    requiresIdempotencyKey: true
+  },
+  {
+    code: 'torrent.add',
+    tool: 'torrent_add_file',
+    risk: 'high',
+    description: '添加 .torrent 种子文件（仅二进制内容，不接受磁力/URL/服务器路径）。',
+    defaultEnabled: false,
+    requiresConfirm: true,
+    requiresIdempotencyKey: true
+  },
+  {
+    code: 'search_template.create',
+    tool: 'advanced_search_template_create',
+    risk: 'write',
+    description: '创建高级查询组合/查询模板（模板归属认证主体）。',
+    defaultEnabled: false,
+    requiresConfirm: true,
+    requiresIdempotencyKey: true
+  },
+  {
+    code: 'dashboard.read',
+    tool: 'dashboard_get',
+    risk: 'read',
+    description: '读取仪表盘聚合数据（脱敏聚合，无下载器地址与审计敏感字段）。',
+    defaultEnabled: false,
+    requiresConfirm: false,
+    requiresIdempotencyKey: false
+  },
+  {
+    code: 'cron.trigger',
+    tool: 'cron_task_trigger',
+    risk: 'high',
+    description: '立即触发一个内置定时任务（仅白名单 task_code）。',
+    defaultEnabled: false,
+    requiresConfirm: true,
+    requiresIdempotencyKey: true
+  }
+]
+
+export const DEMO_MCP_SETTINGS: DemoFixtureBundle['mcpSettings'] = {
+  schemaVersion: 1,
+  enabled: true,
+  capabilities: {
+    'torrent.advanced_search': true,
+    'torrent.mark_pending_delete': false,
+    'torrent.add': false,
+    'search_template.create': false,
+    'dashboard.read': true,
+    'cron.trigger': false
+  },
+  revision: 2,
+  updatedAt: DEMO_YESTERDAY,
+  updatedBy: '演示管理员',
+  forceDisabled: false
+}
+
+export const DEMO_MOVIEPILOT_SETTINGS: DemoFixtureBundle['moviepilotSettings'] = {
+  schemaVersion: 1,
+  enabled: true,
+  revision: 1,
+  updatedAt: '2026-08-30T09:00:00+08:00',
+  updatedBy: '演示管理员'
+}
+
+export const DEMO_MOVIEPILOT_INSTANCES: DemoMoviePilotInstance[] = [
+  {
+    id: 1,
+    instanceId: 'demo-mp-instance-001',
+    name: '家庭媒体库',
+    enabled: true,
+    protocolVersion: 1,
+    pluginVersion: '1.2.0',
+    moviepilotVersion: 'v2.4.0',
+    downloaderMapping: {
+      '家庭 qBittorrent': 'demo-downloader-001',
+      '家庭 Transmission': 'demo-downloader-002'
+    },
+    boundUsername: 'mp_demo_bot',
+    lastHandshakeAt: DEMO_YESTERDAY,
+    lastSyncAt: DEMO_TIME,
+    lastSyncStats: { inserted: 1, updated: 2, skipped: 0, failed: 0 },
+    syncedHistoryCount: 3,
+    lastError: null,
+    createdAt: '2026-08-20T09:00:00+08:00',
+    updatedAt: DEMO_TIME
+  },
+  {
+    id: 2,
+    instanceId: 'demo-mp-instance-002',
+    name: '实验同步节点',
+    enabled: false,
+    protocolVersion: 1,
+    pluginVersion: '1.1.3',
+    moviepilotVersion: 'v2.3.8',
+    downloaderMapping: {},
+    boundUsername: 'mp_lab_bot',
+    lastHandshakeAt: '2026-08-28T15:00:00+08:00',
+    lastSyncAt: null,
+    lastSyncStats: {},
+    syncedHistoryCount: 0,
+    lastError: '演示数据：实例已禁用，插件握手被拒绝（403）',
+    createdAt: '2026-08-28T15:00:00+08:00',
+    updatedAt: '2026-08-29T10:00:00+08:00'
+  }
+]
+
+export const DEMO_MOVIEPILOT_ASSOCIATIONS: DemoMoviePilotAssociation[] = [
+  {
+    id: 1,
+    instanceId: 'demo-mp-instance-001',
+    instanceName: '家庭媒体库',
+    historyId: 101,
+    srcStorage: '本地下载',
+    srcPath: '/demo/downloads/晨雾中的城市.mkv',
+    destStorage: '媒体库',
+    destPath: '/demo/media/电影/晨雾中的城市 (2025)/晨雾中的城市.mkv',
+    transferMode: 'link',
+    mediaType: '电影',
+    title: '晨雾中的城市',
+    year: '2025',
+    seasons: null,
+    episodes: null,
+    tmdbId: 100001,
+    doubanId: null,
+    mpDownloader: '家庭 Transmission',
+    downloadHash: demoTorrentHash('demo-info-002'),
+    btDownloaderId: 'demo-downloader-002',
+    associationStatus: 'linked',
+    status: true,
+    errmsg: null,
+    recordedAt: DEMO_YESTERDAY
+  },
+  {
+    id: 2,
+    instanceId: 'demo-mp-instance-001',
+    instanceName: '家庭媒体库',
+    historyId: 102,
+    srcStorage: '归档下载',
+    srcPath: '/demo/archive/蓝色星球S01E01.mkv',
+    destStorage: '媒体库',
+    destPath: '/demo/media/剧集/蓝色星球/Season 1/蓝色星球S01E01.mkv',
+    transferMode: 'copy',
+    mediaType: '电视剧',
+    title: '蓝色星球',
+    year: null,
+    seasons: 'S01',
+    episodes: 'E01',
+    tmdbId: null,
+    doubanId: '352001',
+    mpDownloader: '归档 qBittorrent',
+    downloadHash: demoTorrentHash('demo-info-001'),
+    btDownloaderId: null,
+    associationStatus: 'unmapped',
+    status: true,
+    errmsg: null,
+    recordedAt: '2026-08-31T20:10:00+08:00'
+  },
+  {
+    id: 3,
+    instanceId: 'demo-mp-instance-001',
+    instanceName: '家庭媒体库',
+    historyId: 103,
+    srcStorage: '本地下载',
+    srcPath: null,
+    destStorage: '媒体库',
+    destPath: '/demo/media/电影/远方来信/远方来信.mkv',
+    transferMode: 'move',
+    mediaType: '电影',
+    title: '远方来信',
+    year: '2024',
+    seasons: null,
+    episodes: null,
+    tmdbId: null,
+    doubanId: null,
+    mpDownloader: null,
+    downloadHash: null,
+    btDownloaderId: null,
+    associationStatus: 'unassociated',
+    status: true,
+    errmsg: null,
+    recordedAt: '2026-08-30T11:40:00+08:00'
+  }
+]
+
 export const DEMO_ACTIVITIES: DemoActivity[] = [
   { time: '刚刚', source: '种子', action: '演示纪录片：蓝色星球正在下载', type: 'torrent' },
   { time: '10 分钟前', source: '下载器', action: '实验室节点 A 状态正常', type: 'downloader' },
@@ -782,6 +992,10 @@ export const DEMO_FIXTURE_BUNDLE: DemoFixtureBundle = {
   trackerMessages: DEMO_TRACKER_MESSAGES,
   trackerReannounceConfigs: DEMO_TRACKER_REANNOUNCE_CONFIGS,
   backups: DEMO_BACKUPS,
+  mcpSettings: DEMO_MCP_SETTINGS,
+  moviepilotSettings: DEMO_MOVIEPILOT_SETTINGS,
+  moviepilotInstances: DEMO_MOVIEPILOT_INSTANCES,
+  moviepilotAssociations: DEMO_MOVIEPILOT_ASSOCIATIONS,
   categories: ['纪录片', '电影', '音乐', '软件', '课程', '动画', '影像', '剧集', '素材'],
   tags: ['演示', '高清', '音乐', '待处理', '学习', '检查中', '队列', '连续剧', '摄影'],
   trackerDomains: ['tracker-alpha.example.invalid', 'tracker-beta.example.invalid']

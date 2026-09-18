@@ -8,60 +8,55 @@
         不可发现，缓存旧定义直调也会被服务端拒绝。
       </p>
 
-      <!-- demo 模式：只读占位，不发起请求 -->
-      <div v-if="isDemo" class="mcp-hint">演示模式不支持修改 MCP 服务配置。</div>
+      <div v-if="loading" class="mcp-hint">加载中…</div>
+      <div v-else-if="!loaded" class="mcp-hint">
+        MCP 配置加载失败。
+        <el-button size="mini" @click="load">重试</el-button>
+      </div>
 
       <template v-else>
-        <div v-if="loading" class="mcp-hint">加载中…</div>
-        <div v-else-if="!loaded" class="mcp-hint">
-          MCP 配置加载失败。
-          <el-button size="mini" @click="load">重试</el-button>
+        <!-- 环境紧急开关：只读提示，UI 不可覆盖（§4.2） -->
+        <el-alert
+          v-if="forceDisabled"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="mcp-alert"
+          title="环境紧急开关已强制关闭 MCP 服务（BTDECK_MCP_FORCE_DISABLED=True）"
+          description="以下配置暂不生效；保存会保留配置意图，待紧急处置解除后按存储值恢复。"
+        />
+
+        <div class="mcp-global-row">
+          <span class="mcp-global-label">全局开关</span>
+          <el-switch v-model="draftEnabled" />
+          <span class="mcp-global-state">{{ draftEnabled ? '已开启' : '已关闭' }}</span>
+          <span v-if="forceDisabled" class="mcp-muted">（当前实际生效：关闭）</span>
+        </div>
+        <p class="mcp-description">
+          开启全局开关后还需单独启用所需能力；未启用任何能力时工具列表为空。
+        </p>
+
+        <div class="mcp-capability-list">
+          <div v-for="cap in catalog" :key="cap.code" class="mcp-capability">
+            <div class="mcp-capability-main">
+              <el-switch v-model="draftCapabilities[cap.code]" />
+              <span class="mcp-capability-name">{{ cap.tool }}</span>
+              <el-tag :type="riskTagType(cap.risk)" size="mini" :effect="cap.risk === 'read' ? 'light' : 'plain'">
+                {{ riskLabel(cap.risk) }}
+              </el-tag>
+            </div>
+            <div class="mcp-capability-desc">{{ cap.description }}</div>
+            <div v-if="cap.risk !== 'read'" class="mcp-capability-note">{{ riskNote(cap.risk) }}</div>
+          </div>
         </div>
 
-        <template v-else>
-          <!-- 环境紧急开关：只读提示，UI 不可覆盖（§4.2） -->
-          <el-alert
-            v-if="forceDisabled"
-            type="warning"
-            :closable="false"
-            show-icon
-            class="mcp-alert"
-            title="环境紧急开关已强制关闭 MCP 服务（BTDECK_MCP_FORCE_DISABLED=True）"
-            description="以下配置暂不生效；保存会保留配置意图，待紧急处置解除后按存储值恢复。"
-          />
-
-          <div class="mcp-global-row">
-            <span class="mcp-global-label">全局开关</span>
-            <el-switch v-model="draftEnabled" />
-            <span class="mcp-global-state">{{ draftEnabled ? '已开启' : '已关闭' }}</span>
-            <span v-if="forceDisabled" class="mcp-muted">（当前实际生效：关闭）</span>
-          </div>
-          <p class="mcp-description">
-            开启全局开关后还需单独启用所需能力；未启用任何能力时工具列表为空。
-          </p>
-
-          <div class="mcp-capability-list">
-            <div v-for="cap in catalog" :key="cap.code" class="mcp-capability">
-              <div class="mcp-capability-main">
-                <el-switch v-model="draftCapabilities[cap.code]" />
-                <span class="mcp-capability-name">{{ cap.tool }}</span>
-                <el-tag :type="riskTagType(cap.risk)" size="mini" :effect="cap.risk === 'read' ? 'light' : 'plain'">
-                  {{ riskLabel(cap.risk) }}
-                </el-tag>
-              </div>
-              <div class="mcp-capability-desc">{{ cap.description }}</div>
-              <div v-if="cap.risk !== 'read'" class="mcp-capability-note">{{ riskNote(cap.risk) }}</div>
-            </div>
-          </div>
-
-          <div class="mcp-actions">
-            <span v-if="lastUpdatedText" class="mcp-updated">{{ lastUpdatedText }}</span>
-            <el-button size="small" @click="resetDraft" :disabled="!dirty || saving">放弃更改</el-button>
-            <el-button type="primary" size="small" :loading="saving" :disabled="!dirty" @click="save">
-              保存配置
-            </el-button>
-          </div>
-        </template>
+        <div class="mcp-actions">
+          <span v-if="lastUpdatedText" class="mcp-updated">{{ lastUpdatedText }}</span>
+          <el-button size="small" @click="resetDraft" :disabled="!dirty || saving">放弃更改</el-button>
+          <el-button type="primary" size="small" :loading="saving" :disabled="!dirty" @click="save">
+            保存配置
+          </el-button>
+        </div>
       </template>
     </div>
   </div>
@@ -76,7 +71,6 @@ import {
   getMcpSettings,
   updateMcpSettings
 } from '@/api/mcp-settings'
-import { isDemoMode } from '@/demo/config'
 import { ApiError } from '@/types/api'
 
 /** 能力开关键值对（键为后端目录能力码，全集由 GET catalog 下发） */
@@ -89,14 +83,14 @@ type CapabilityDraftMap = Record<string, boolean>
  *   前端不维护能力清单副本；
  * - 保存携带 expectedRevision 做 CAS，409 冲突提示后自动重载最新配置；
  * - kill switch（forceDisabled）只读展示，保存仍允许（保留意图）；
+ * - demo 模式经 @/demo 拦截层提供同形数据，无独立分支；
  * - 移动端经 views/mobile/settings.vue 包装桌面设置页自动同源，无独立实现。
  */
 @Component({ name: 'McpSettingsPanel' })
-export default class McpSettingsPanel extends Vue {
+export default class extends Vue {
   private loading = false
   private saving = false
   private loaded = false
-  private isDemo = isDemoMode()
 
   // 已保存态（服务端真相，dirty 比对基准）
   private settingsEnabled = false
@@ -130,9 +124,7 @@ export default class McpSettingsPanel extends Vue {
   }
 
   mounted(): void {
-    if (!this.isDemo) {
-      this.load()
-    }
+    this.load()
   }
 
   private async load(): Promise<void> {
