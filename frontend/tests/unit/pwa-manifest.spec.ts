@@ -58,7 +58,9 @@ describe('pwa brand contract', () => {
     expect(fullLogoSvg).not.toContain('EXPERIMENTAL')
     expect(fullLogoSvg).not.toContain('甲板连接')
 
+    // 行尾归一化：Windows autocrlf 检出为 CRLF 时多行 toContain 断言不受影响
     const iconGenerator = readFileSync(resolve(__dirname, '../../scripts/generate-pwa-icons.py'), 'utf8')
+      .replace(/\r\n/g, '\n')
     expect(iconGenerator).toContain('app_mark = load_mark(MICRO_INVERSE_MARK_PATH)')
     expect(iconGenerator).toContain('write_icon(\n            app_mark,')
     expect(iconGenerator).not.toContain('size <= 32')

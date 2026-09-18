@@ -1,5 +1,16 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-18（第二批）：存量 5 用例修复——media 页签断言补齐 + 源码契约 CRLF 归一化（全量首绿已提交）
+
+上批全量 Jest 中 4 套件 5 用例存量失败（git stash + worktree 双重对照确认与 282f494 无关），经两轮子代理独立验证根因后修复（改动仅 4 个规格文件，零生产代码变更；feature_list 证据回填 `moviepilot-integration-2026-09-09.2`）：
+
+1. **#1–#4 media 页签断言过时**：`9442d5c`（2026-09-10 dev）给 `TrackerDetailCard.vue` 的 `DEFAULT_TRACKER_DETAIL_TABS` 无条件加第 4 项 `{ label: '媒体库', value: 'media' }`，经 `0e307ee`（2026-09-17）合入 dev1.0.7，三个视图规格仍断言三页签/3 按钮。修复：traditional-view L690、L1941 与 torrent-list L1568 断言数组补 `'media'`（用例标题「三个页签」→「四个页签」同步改）；torrent-list 补 `mediaState` 空态透传断言（与 files/peers 同款）；tracker-detail-card L177 `toHaveLength(3)`→`4` 并补第 4 按钮文案「媒体库」断言。
+2. **#5 CRLF 假警报 + 1 处预防加固**：downloader-settings-dialog-init L44 正则尾部 `\}\n\}` 对行尾敏感——本机 autocrlf=true、磁盘纯 CRLF（2400 处）、仓库 blob 纯 LF，仅 Windows 检出红。修复：`readSource()` 加 `.replace(/\r\n/g, '\n')`（沿用 tasks-sync-freshness 先例与注释）；pwa-manifest L63 `write_icon(\n` 同模式（当前因目标 .py 恰好 LF 而绿）同款预防性归一化。**机制修正**：CR 在 LF 之前，失配模式是"非 `\s` 字面量紧跟 `\n` 之前"（`X\n` 危、`\nX` 安，`\s` 可吞 CR、`.` 不能）——此前会话中方向说反了，排查时勿照旧口径。
+- **验证**：5 目标套件 114 用例绿；**全量 112 套件 / 1598 用例 0 失败（本会话首个全绿基线）**；typecheck / lint 绿。
+- **坑**：两个 spec 文件含同名 describe「详情卡片文件/Peers 页签数据接线」，报错栈行号易误判文件归属（L1941 在 traditional-view 不在 torrent-list）。
+
+---
+
 ## 2026-09-18：设置页热点修改——移除主机能力页签 + Demo 展示 MCP/MoviePilot 配置页（全绿未提交）
 
 用户需求两点（feature_list 证据回填 `frontend-static-showcase-demo-2026-08-23.7` 与 `moviepilot-integration-2026-09-09.2`）：
