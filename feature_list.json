@@ -51,6 +51,250 @@
   },
   "features": [
     {
+      "id": "desktop-bilingual-20260918",
+      "name": "桌面 Web 中英双语（核心试用 M1 → 全部桌面 M2）",
+      "description": "保留中文，增加可切换英文，覆盖英语用户首次登录/强制改密、qBittorrent 与 Transmission 接入和日常管理，最终覆盖全部现有桌面页面。不含移动 Web 专项英文化、Android 原生界面、README/部署文档、静态 Demo fixtures、跨设备语言同步及历史日志全文翻译；共享组件仍须回归移动中文。保持 Vue 2 Options API，不升级框架，不改变统一 API 和业务语义。",
+      "status": "pending",
+      "plan": "PLANS/desktop-bilingual.md",
+      "planning_evidence": "2026-09-18 用户确认桌面优先，要求详细计划后明确要求添加 feature 与 plan。本轮仅文档登记，未授权启动实现/安装依赖/提交 Git。静态调研、范围、依赖、P0～P7、验收矩阵、风险与估算已落计划；所有实现任务 pending。",
+      "estimates": {
+        "unit": "person-days",
+        "m1": {
+          "code": [
+            13,
+            20
+          ],
+          "translation": [
+            4,
+            6
+          ],
+          "verification": [
+            6,
+            10
+          ],
+          "total": [
+            23,
+            36
+          ]
+        },
+        "m2_cumulative": {
+          "code": [
+            18,
+            28
+          ],
+          "translation": [
+            6,
+            10
+          ],
+          "verification": [
+            9,
+            14
+          ],
+          "total": [
+            33,
+            52
+          ]
+        },
+        "confidence": "M1 中等，M2 中等偏低；模块抽样推算，P0 文案去重后重估，非实际工时。"
+      },
+      "implementation_gates": [
+        "M1：核心闭环无系统中文阻断，四级删除/回收站语义与英文人工审校通过，中文无回归",
+        "M2：所有桌面路由/弹窗/状态全覆盖，孤儿文件高风险验收通过；移动/Android/文档不计入完成",
+        "统一响应/分页与 202/206/207/认证语义不变；禁止中文字符串匹配翻译",
+        "系统预设稳定身份+Alembic迁移与幂等；用户内容和历史原文不覆盖",
+        "双语缺译/插值检查、相关自动化、两种下载器与真实浏览器视觉验收，证据写回各任务"
+      ],
+      "tasks": [
+        {
+          "id": "desktop-bilingual-20260918.p0",
+          "name": "范围、术语、错误与系统内容清单",
+          "description": "详见 PLANS/desktop-bilingual.md P0；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [],
+          "files": [
+            "PLANS/desktop-bilingual.md",
+            "frontend/src/router.ts",
+            "backend/app/data/default_search_templates.py"
+          ],
+          "acceptance_criteria": [
+            "全部桌面路由/弹窗/状态有清单，明确 M1 可达范围",
+            "独立文案去重、错误契约、预设身份与时间约定核对完成，更新估算"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p1",
+          "name": "Vue 2 双语基础与 Element UI 接线",
+          "description": "详见 PLANS/desktop-bilingual.md P1；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "frontend",
+          "depends_on": [
+            "desktop-bilingual-20260918.p0"
+          ],
+          "files": [
+            "frontend/src/main.ts",
+            "frontend/src/store/modules/app.ts",
+            "frontend/src/router.ts",
+            "frontend/src/utils/formatters.ts",
+            "frontend/src/layout/components/Navbar/index.vue"
+          ],
+          "acceptance_criteria": [
+            "L01～L05/F01 通过，选型与维护风险有记录",
+            "登录前后可切换并持久化，状态不丢失，中英文键及插值参数一致"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p2",
+          "name": "首次登录、账户安全与双下载器接入",
+          "description": "详见 PLANS/desktop-bilingual.md P2；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [
+            "desktop-bilingual-20260918.p1"
+          ],
+          "files": [
+            "frontend/src/views/login/index.vue",
+            "frontend/src/permission.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/src/views/downloader/index.vue",
+            "backend/app/api/endpoints/downloader.py"
+          ],
+          "acceptance_criteria": [
+            "A01～A02/D01～D02 通过",
+            "依赖 P4 核心错误契约后才可验收；qBittorrent/Transmission 成败流程均可英文独立完成"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p3",
+          "name": "默认种子视图、搜索与查询模板",
+          "description": "详见 PLANS/desktop-bilingual.md P3；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "frontend",
+          "depends_on": [
+            "desktop-bilingual-20260918.p1"
+          ],
+          "files": [
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/components/torrents/advancedSearchFields.ts",
+            "frontend/src/views/query-templates/index.vue",
+            "backend/app/contracts/advanced_search_contract.json"
+          ],
+          "acceptance_criteria": [
+            "T01～T03/Q01～Q02 通过；依赖 P4 系统预设与错误子范围",
+            "查询值/排序/生成契约不变，用户内容保留原文"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p4",
+          "name": "错误原因标识、通知事件与系统预设迁移",
+          "description": "详见 PLANS/desktop-bilingual.md P4；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [
+            "desktop-bilingual-20260918.p0"
+          ],
+          "files": [
+            "frontend/src/utils/error-normalize.ts",
+            "frontend/src/utils/request.ts",
+            "backend/app/exception_handlers.py",
+            "backend/app/data/default_search_templates.py",
+            "backend/app/data/default_templates.py",
+            "backend/app/models/search_template.py",
+            "backend/app/services/torrent_batch_add_service.py",
+            "backend/app/services/orphan_notification.py"
+          ],
+          "acceptance_criteria": [
+            "E01～E03/B01～B03 通过；前端接线依赖 P1",
+            "信封/分页/202/206/207/认证语义不变，不匹配中文翻译",
+            "新旧库幂等、用户同名保护、歧义保留；M1 子范围与 M2 扩展分开记录，全部完成才标 done"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p5",
+          "name": "四级删除、回收站及 M1 验收",
+          "description": "详见 PLANS/desktop-bilingual.md P5；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [
+            "desktop-bilingual-20260918.p2",
+            "desktop-bilingual-20260918.p3",
+            "desktop-bilingual-20260918.p4"
+          ],
+          "files": [
+            "frontend/src/views/torrents/mixins/torrentBatch.ts",
+            "frontend/src/views/recycle-bin/index.vue",
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/app/api/endpoints/recycle_bin.py"
+          ],
+          "acceptance_criteria": [
+            "R01～R05/V02 通过，业务语义及英文人工审校记录完整",
+            "依赖 P4 的 M1 子范围而非低频扩展；隔离测试数据验证降级/部分失败/取消",
+            "M1 核心无中文阻断，中文无回归，未完成入口有英文范围说明"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p6",
+          "name": "全部剩余桌面页面双语",
+          "description": "详见 PLANS/desktop-bilingual.md P6；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [
+            "desktop-bilingual-20260918.p1",
+            "desktop-bilingual-20260918.p4"
+          ],
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/FileManagement.vue",
+            "frontend/src/views/downloader/components",
+            "frontend/src/views/tracker",
+            "frontend/src/views/tasks/index.vue",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/views/settings"
+          ],
+          "acceptance_criteria": [
+            "全部桌面路由/弹窗/权限及异常状态完成，R06/E03 通过",
+            "传统视图、转移、路径/限速/模板、Tracker、任务、日志、孤儿文件与现有集成设置覆盖"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        },
+        {
+          "id": "desktop-bilingual-20260918.p7",
+          "name": "双语回归、视觉验收与 M2 交接",
+          "description": "详见 PLANS/desktop-bilingual.md P7；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
+          "status": "pending",
+          "scope": "fullstack",
+          "depends_on": [
+            "desktop-bilingual-20260918.p2",
+            "desktop-bilingual-20260918.p3",
+            "desktop-bilingual-20260918.p4",
+            "desktop-bilingual-20260918.p5",
+            "desktop-bilingual-20260918.p6"
+          ],
+          "files": [
+            "frontend/tests",
+            "backend/tests",
+            "docs/roadmap",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "acceptance_criteria": [
+            "计划全部适用验收矩阵和 M2 门禁通过，两种下载器/新旧库/当前主题有证据",
+            "前端 lint/typecheck/测试/build；后端相关 pytest/mypy/black/flake8；init --ci 实际输出检查",
+            "V01～V02/C01 通过，缺译零遗漏（允许原始内容白名单），人工审校及真实浏览器验收完成"
+          ],
+          "evidence": "尚未实施，未执行实现验收。"
+        }
+      ]
+    },
+    {
       "id": "torrent-add-skip-check-mobile-20260912",
       "name": "添加种子跳过校验选项（CheckingDL 规避）+ 添加弹窗移动端适配",
       "description": "用户验收反馈两项：①新添加的种子进入 CheckingDL——根因实锤为 qBittorrent 对保存路径已有数据的种子强制本地校验，而 TorrentAddDialog 硬编码 skip_hash_check:false（后端 /torrents/add·add-batch 的 skip_hash_check→qB is_skip_checking 链路本就通，只差弹窗不传）；修复为新增「跳过校验」复选框（默认关，经用户三选一确认安全默认）：勾选时数据已完整（辅种/续种）直接做种不进 CheckingDL，表单提示注明全新下载勿勾（会被当作 100% 完成）与仅 qB 生效（TR add_args 无校验跳过参数），关闭弹窗重置回默认。②TorrentAddDialog 为自定义 modal 非 el-dialog（此前 m-reuse-dialog 宽度覆盖不适用、移动页死 attr 已移除）：≤768 scoped 媒体块适配——overlay 顶铆+overflow-y auto 接管滚动（弹窗 85vh 上限让位）、dialog 全宽 max-width calc(100vw-24px) !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控目标。",

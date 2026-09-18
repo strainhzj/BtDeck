@@ -5154,3 +5154,14 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 ### 待办
 
 - 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。
+
+## 2026-09-18：桌面 Web 中英双语已登记，待实施
+
+- 用户要求添加 feature 与 plan；本轮只修改规划文档，不实施业务、不安装依赖、不提交 Git。
+- Feature：`desktop-bilingual-20260918`（pending）；计划：[PLANS/desktop-bilingual.md](PLANS/desktop-bilingual.md)，P0～P7 八项任务全部 pending。
+- M1 核心桌面试用 23～36 人日；M2 全部桌面累计 33～52 人日。移动 Web 专项、Android 原生、README/部署文档、Demo fixtures 不在本次范围；共享组件移动中文需回归。
+- 下一步在获得实施指示后从 P0 清单开始；本轮登记不等同于实现授权。Vue 2 兼容库选型/维护风险及英文审校责任尚待落实，M1 是否单独发布默认不阻塞开发。
+- 注意预设按中文名称去重且 UUID 随机、强制改密入口、后端 msg 与 202/206/207/历史 error+200、四级删除降级、移动路由分流等约束，见计划。
+- 本轮验证结果见 progress.md 同日记录；未执行运行时双语验收。
+
+---

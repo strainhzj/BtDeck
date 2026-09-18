@@ -1,12 +1,13 @@
 # BtDeck 版本计划
 
 > **维护约定**: PLANS/ 只保留有后续开发价值的活跃计划；已完成或整体过时的计划移入 [archive/](./archive/)，最终状态与遗留事项见 [archive/README.md](./archive/)。
-> **最后更新**: 2026-09-09
+> **最后更新**: 2026-09-18
 
 ## 活跃计划
 
 | 计划 | 范围 | 状态 |
 |------|------|------|
+| [桌面 Web 中英双语](./desktop-bilingual.md) | M1 核心桌面英文闭环 → M2 全部桌面双语；语言基础、错误标识、系统预设、危险操作及视觉验收 | ⏳ 待实施；feature `desktop-bilingual-20260918`，P0～P7 全部 pending；仅完成规划登记，M1 23～36 / M2 累计 33～52 人日 |
 | [MoviePilot 整理联动](./moviepilot-integration.md) | BtDeckBridge 插件（V2）、整理历史只读镜像同步、下载器映射与任务关联查询、设置页/种子详情媒体库页签 | 🚧 第一版闭环落地（2026-09-09 后端/前端/插件代码+自动化测试全绿，66+38 项）；真实宿主联调待部署信息；feature `moviepilot-integration-2026-09-09` |
 | [MCP 服务与可选能力开放](./mcp-service-capabilities.md) | 同进程 MCP、全局/逐能力开关、统一认证、Tracker/路径脱敏、六项首批工具与 G0～G11 实现门禁 | 🚧 实施中（2026-09-08 W0 契约/选型 + W1 配置控制面（fail-closed/CAS/kill switch/设置 UI）落地；下一步 W2 挂载与认证接线；工具 0/6、Gate 0/12 PASS）；feature `mcp-service-capabilities-2026-08-28` |
 | [双模式客户端](./dual-mode-client.md) | 服务端模式/伴侣客户端模式、安卓壳工程、移动 UI 与发布验收 | 🔶 进行中；feature `v1.0.6-dual-mode-client`（9 task 完成 8，剩 Play/侧载/跨模式发布验收） |
