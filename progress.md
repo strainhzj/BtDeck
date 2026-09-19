@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（推送 + CI 现状核查）：P4 尾～P6-2 共 12 提交推送 origin/dev；远端后端 CI 存量红定位
+
+- **推送**：`6e862c5..dbfd115` 共 12 提交推送至 origin/dev（P4 尾 2 + 工具/文档 2 + P5 2 + 遗留清扫 2 + P6-1 2 + P6-2 2）。HTTPS 凭据缺失（GitHub 已停用密码认证、gh CLI 内 token 失效），改用仓库属主的既有 SSH 密钥 `/home/huangzj/.ssh/id_ed25519` 认证为 `strainhzj` 推送成功；**remote URL 保持 HTTPS 未改**。
+- **CI run #290（head dbfd115）**：Frontend job **全绿**（TypeScript gate / regression+coverage / production build）；Backend job 在 `Backend regression suite`（`pytest --cov=app --cov-fail-under=40`）失败。
+- **存量定位（干净克隆对照实验，非本批引入）**：
+  - 新提交 `dbfd115` 干净克隆全量：**6 failed / 4741 passed**；
+  - 推送前提交 `6e862c5` 干净克隆全量：**完全相同的 6 failed** / 4680 passed → 远端 CI 后端红早于本次推送（run #289 同一步已红）。
+  - 失败清单：`test_db_rollback_scenarios`（Level2 备份恢复 / ghost version 救援）2 例、`test_orphan_migration_production_shape`（生产形态升级预算）1 例、`test_orphan_schema_repair_migration`（head 标记缺列修复 / 修复幂等）2 例、`test_orphan_scanner::TestBatchCommit::test_reconcile_candidates_batch_commits` 1 例（后者单独运行通过、全量时失败 → 顺序/隔离敏感）。集中在本机已具备的孤儿/回滚迁移与预算断言，与本批（locale/preset_key）无交集。
+- **复现命令**：`git clone <repo> && cd backend && pytest -q`（干净检出即可复现 6 例；本机脏工作区另加 release/build-info.json 相关的 build 身份失败）。
+- **待办（独立任务）**：修复这 6 例存量失败（孤儿迁移预算/回滚场景假定的是旧迁移链形态与更宽松的墙钟预算；需逐例定位是断言过期还是环境差异），修复后远端 CI 才能恢复双 job 全绿。建议与 P6-4 并列登记为下一个候选批次。
+
+---
+
+
 ## 2026-09-19（P6-2 下载器域收尾）：设置弹窗各页签全量双语 + 设置模板 preset_key 迁移（全绿未提交）
 
 - **范围**：8 个下载器组件（设置弹窗页签骨架 + Speed/Advanced/PathManagement/PathMapping/PathMaintenance/Tag/Template）+ 后端设置模板 preset_key（P4 遗留）+ 系统预设名称/描述本地化展示。

@@ -1,5 +1,30 @@
 ## 2026-09-19（P6-2 下载器域收尾）：8 组件全量双语 + 设置模板 preset_key 迁移（全绿未提交）
 
+## 2026-09-19（推送与远端 CI 现状）：12 提交已推送；远端后端 CI 存量 6 红已定位（非本批）
+
+> 用户指示「提交并推送」后执行。**下次会话优先看这里**：远端 CI 后端 job 仍是红的（存量）。
+
+### 已推送
+
+- `6e862c5..dbfd115`（12 提交）已推送 origin/dev（P4 尾/P5/遗留清扫/P6-1/P6-2）。
+- 推送方式：HTTPS 凭据缺失 → 用既有 SSH 密钥 `/home/huangzj/.ssh/id_ed25519`（认证为属主 strainhzj）推 `git@github.com:strainhzj/BtDeck.git`；remote URL 仍为 HTTPS（下次推送需同样处理，或按需改为 SSH）。
+
+### 远端 CI 现状（run #290 / dbfd115）
+
+- Frontend job 全绿；Backend job 在 `Backend regression suite` 红。
+- **干净克隆对照**：`dbfd115` 与推送前 `6e862c5` 产生**完全相同的 6 个失败** → 存量测试债，非本批引入。
+- 6 例：`test_db_rollback_scenarios`×2、`test_orphan_migration_production_shape`×1、`test_orphan_schema_repair_migration`×2、`test_orphan_scanner::TestBatchCommit::test_reconcile_candidates_batch_commits`×1（单独跑通、全量时红 → 顺序/隔离敏感）。
+- 复现：干净克隆 → `cd backend && pytest -q`。
+
+### 下一步候选（优先级）
+
+1. **存量 6 红修复批**（无业务功能风险、直接改善 CI 可信度）：逐例定位是断言过期（旧迁移链形态/墙钟预算）还是环境差异；修完远端 CI 可恢复双 job 全绿。
+2. P6-3 Tracker 管理域 → P6-4 任务/日志 + 低频通知事件 → P6-5 孤儿文件 + settings MCP/MoviePilot。
+3. P5 收口：`PLANS/bilingual/delete-level-review.md` 审校签认 + R01～R05/V02 浏览器人工验收（可与存量修复批并行）。
+
+---
+
+
 > P6-1 提交（f9eb432 + c98420e）后按用户「继续」执行。
 
 ### 交付
