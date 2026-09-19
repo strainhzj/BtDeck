@@ -36,6 +36,21 @@ export const torrent = {
   },
   list: {
     searchPlaceholder: '搜索种子名称...',
+    /** 传统视图专属（P6-1）：过滤面板 / 选中计数 / 状态栏 */
+    filters: {
+      toggle: '切换过滤面板',
+      title: '过滤器',
+      collapse: '收起',
+      all: '全部',
+      downloader: '下载器',
+      trackerDomain: 'Tracker主域名',
+      category: '分类',
+      tags: '标签'
+    },
+    selectedPrefix: '已选',
+    selectedSuffix: '个',
+    connected: '已连接',
+    activeLabel: '活动:',
     downloaderPlaceholder: '请选择下载器',
     statusPlaceholder: '请选择种子状态',
     trackerPlaceholder: '请选择tracker',
@@ -62,6 +77,7 @@ export const torrent = {
       setLocation: '修改路径',
       quickActions: '快捷操作',
       add: '添加种子',
+      addShort: '添加',
       columns: '列设置'
     },
     deleteMenu: {
@@ -77,6 +93,10 @@ export const torrent = {
     },
     column: {
       name: '种子名称',
+      nameShort: '名称',
+      downloaderShort: '下载器',
+      downloadShort: '↓ 下载',
+      uploadShort: '↑ 上传',
       downloadSpeed: '下载速度',
       uploadSpeed: '上传速度',
       size: '大小',
@@ -110,7 +130,11 @@ export const torrent = {
       traditional: '传统模式'
     },
     pagination: {
-      summary: '共 {total} 条，第 {page}/{pages} 页'
+      summary: '共 {total} 条，第 {page}/{pages} 页',
+      /** 传统视图分页文案分片（保留数字 <strong> 标记） */
+      prefix: '共',
+      middle: '条，第',
+      suffix: '页'
     },
     columnSettings: {
       title: '列设置',
@@ -156,6 +180,12 @@ export const torrent = {
     selectFirstTransfer: '请先选择要转移的种子',
     selectFirst: '请先选择种子',
     missingDownloader: '选中种子缺少下载器信息，请刷新后重试',
+    missingDownloaderShort: '种子缺少下载器信息',
+    startTaskSuccess: '开始任务成功',
+    pauseTaskSuccess: '暂停任务成功',
+    recheckSubmitted: '重新检查任务已提交',
+    selectFirstReannounce: '请先选择要汇报的种子',
+    globalReplaceFailed: '全局替换Tracker失败',
     transferSingleDownloaderOnly: '批量转移只支持同一下载器的种子，请重新选择',
     setLocationSingleDownloaderOnly: '选中的种子必须属于同一下载器',
     transferDone: '批量转移操作完成'

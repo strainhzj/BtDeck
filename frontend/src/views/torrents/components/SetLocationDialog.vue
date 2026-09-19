@@ -2,7 +2,7 @@
   <!-- 根节点即 el-dialog（曾用 div 包裹：调用方透传的 custom-class 经 $attrs
        落到外层 div，移动端收窄从未生效——勿回退为 div 包裹） -->
   <el-dialog
-    :title="`修改保存路径（已选择${torrents.length}个种子）`"
+    :title="$t('transfer.setLocation.title', {count: torrents.length})"
     :visible.sync="dialogVisible"
     width="650px"
     custom-class="set-location-dialog"
@@ -11,7 +11,7 @@
   >
       <!-- 当前路径信息 -->
       <div class="current-path-section">
-        <div class="section-title">当前路径：</div>
+        <div class="section-title">{{ $t('transfer.currentPaths') }}</div>
         <div class="path-info">
           <el-tag type="info" size="medium">
             <i class="el-icon-folder" />
@@ -30,19 +30,19 @@
         @submit.native.prevent
       >
         <!-- 目标路径输入/选择 -->
-        <el-form-item label="目标路径:" prop="target_path">
+        <el-form-item :label="$t('transfer.targetPath')" prop="target_path">
           <el-autocomplete
             v-model="formData.target_path"
             :fetch-suggestions="queryPathSuggestions"
-            placeholder="请输入或选择目标路径"
+            :placeholder="$t('transfer.targetPathPlaceholder')"
             style="width: 100%"
             @select="handlePathSelect"
           >
             <template slot-scope="{item}">
               <div class="path-suggestion">
                 <span class="path-value">{{ item.value }}</span>
-                <span v-if="item.path_type === 'default'" class="path-type">默认路径</span>
-                <span class="torrent-count">({{ item.torrent_count }}个种子)</span>
+                <span v-if="item.path_type === 'default'" class="path-type">{{ $t('transfer.pathTypeDefault') }}</span>
+                <span class="torrent-count">{{ $t('transfer.torrentCount', {count: item.torrent_count}) }}</span>
               </div>
             </template>
           </el-autocomplete>
@@ -51,9 +51,9 @@
         <!-- 是否移动文件选项 -->
         <el-form-item>
           <el-checkbox v-model="formData.move_files">
-            移动已下载的文件
+            {{ $t('transfer.setLocation.moveFiles') }}
             <el-tooltip
-              content="勾选后会将已下载的文件移动到新路径，否则仅修改保存路径不影响现有文件"
+              :content="$t('transfer.setLocation.moveFilesHint')"
               placement="top"
             >
               <i class="el-icon-question" />
@@ -63,9 +63,9 @@
       </el-form>
 
       <span slot="footer" class="dialog-footer">
-        <el-button @click="handleClose">取消</el-button>
+        <el-button @click="handleClose">{{ $t('transfer.cancel') }}</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          {{ submitting ? '提交中...' : '确定' }}
+          {{ submitting ? $t('transfer.setLocation.submitting') : $t('transfer.submit') }}
         </el-button>
       </span>
     </el-dialog>
@@ -100,7 +100,7 @@ export default class SetLocationDialog extends Vue {
   // 表单验证规则
   formRules = {
     target_path: [
-      { required: true, message: '请输入目标路径', trigger: 'blur' }
+      { required: true, message: this.$t('transfer.validate.targetPathRequired').toString(), trigger: 'blur' }
     ]
   }
 
@@ -216,13 +216,13 @@ export default class SetLocationDialog extends Vue {
 
     // 二次确认
     const confirmMsg = this.formData.move_files
-      ? `确认将 ${this.torrents.length} 个种子移动到新路径？\n这将移动已下载的文件到: ${this.formData.target_path}`
-      : `确认修改 ${this.torrents.length} 个种子的保存路径？\n仅修改路径，不移动文件。`
+      ? this.$t('transfer.setLocation.confirmMove', { count: this.torrents.length, path: this.formData.target_path }).toString()
+      : this.$t('transfer.setLocation.confirmChange', { count: this.torrents.length }).toString()
 
     try {
-      await this.$confirm(confirmMsg, '确认操作', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(confirmMsg, this.$t('transfer.confirmActionTitle').toString(), {
+        confirmButtonText: this.$t('transfer.submit').toString(),
+        cancelButtonText: this.$t('transfer.cancel').toString(),
         type: 'warning'
       })
 
@@ -251,7 +251,7 @@ export default class SetLocationDialog extends Vue {
         // 显示提示消息（不阻塞）
         if (success) {
           this.$message.success({
-            message: `成功提交${moved_count}个种子路径修改请求，正在后台处理...`,
+            message: this.$t('transfer.setLocation.submitted', { moved: moved_count }).toString(),
             duration: 3000
           })
 
@@ -263,13 +263,13 @@ export default class SetLocationDialog extends Vue {
           this.$emit('success')
         } else {
           this.$message.error({
-            message: res.data.error_message || '修改路径失败',
+            message: res.data.error_message || this.$t('transfer.setLocation.failed').toString(),
             duration: 5000
           })
         }
       } else {
         this.$message.error({
-          message: res.msg || '修改路径失败',
+          message: res.msg || this.$t('transfer.setLocation.failed').toString(),
           duration: 5000
         })
       }

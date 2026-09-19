@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（P6-1 种子域收尾）：传统视图 + 转移/改路径/全局替换 + 文件管理全量双语（全绿未提交）
+
+- **范围**（用户确认启动 P6-1）：TraditionalView（传统视图全量，136 条非注释中文）、TransferDialog、BatchTransferDialog、SetLocationDialog、GlobalReplaceTrackerDialog、FileManagement（6 文件、共 ~340 条文案）。
+- **语言包**：新增 `transfer`（转移/批量转移/改路径三个弹窗）与 `fileManagement` 两模块（zh+en 成对注册，parity 门禁覆盖）；tracker 扩 `replace` 子树（全局替换弹窗，危险语义含不可撤销明示）；torrent 扩传统视图专属键（filters 8 键/selectedPrefix·Suffix/connected/activeLabel/toolbar.addShort/column 短名 4 键/pagination 分片 3 键/msg 5 键），其余大量复用 P3 既有 `torrent.list.*` 与 `torrent.msg.*`。
+- **关键取舍**：①状态筛选由静态 `STATUS_OPTIONS` 改 `localizedStatusOptions()`（与列表模式同源，语言切换响应式）；②列设置数据 `label → labelKey`（12 列模板按 `$t` 渲染，P3-1 index.vue 同款）；③四级删除菜单改用 `list.deleteMenu.*` 同键——**修掩 P5 遗留的「中文菜单 → 英文确认」割裂**；④分页/已选计数保留数字 `<strong>`/`<span>` 标记，采用前缀/中缀/后缀分片键（en 后缀允许空串以保语序）；⑤错误展示接 `apiResponseMessage`（禁中文 msg 直读）。
+- **🛡️ 键可达性门禁（新增，高价值）**：`i18n-leftover-guard.spec` 新增「全仓 $t/translate 键在 zh 与 en 均可达」测试（扫 1280 键，动态拼接键跳过）——zh 缺键行为是「空串+warn」**静默失效**，单测极易漏网。该门禁当场抓出 **2 个真实产品缺陷**（非本批引入）：
+  1. **Navbar 全片文案空串**：模板用 `$t('navbar.home')` 等 8 处，而键实际位于 `navigation.navbar.*` → 反馈/通知/语言/首页/退出登录的 aria 与可见文案全为空；同步修正 `navbar-language-switcher.spec` 中**锁死错键**的源码契约（旧断言写的就是错前缀）并补可达性断言。
+  2. **SizeRangeFilter 单位占位空串**：引用 `search.sizeRange.unitPlaceholder`，实际键在 `search.valueInput.unitPlaceholder`。
+- **测试**：新增 `tests/unit/p6-torrent-domain-i18n.spec.ts` 16 例（zh 逐字节/en 插值/危险语义/菜单与确认框同键/状态筛选同源/列设置 labelKey/源码契约）；两弹窗套件随迁挂 i18n；6 文件纳入审计集（35 面）。
+- **验证**：全量 Jest **119 套 1704 例全绿**；typecheck 零错误；lint（含 contract:check/vuex）；生产 build；根 `./init.sh` 全过。
+- **顺带修正（状态追踪）**：feature_list 中 p5 自 P5 代码批起漏更新（pending→已交付状态漏改）、p6 残留「尚未实施」前缀——均已修正为 in_progress（p5 待审校签认+人工验收，p6 分批交付中）。
+- **坑**：①批量替换后用 `str.replace` 默认替全部，导致后续重复条目 assert 失败并**中断脚本（写入前）**——已改为容错式 batched（记录未命中、继续、最后写出）→ 后来发现“没报错但没写入”的空转，靠残留扫描兼底；②`<el-form-item label="...">` 改 `:label` 时漏写开标签前缀，模板断链——**单测未报错，靠 eslint `vue/no-parsing-error` 与 build 拦住**（教训：单测绿不等于模板合法）；③分页/计数类带标记文案用分片键而非 `<i18n>` 组件（与 P2/P3 已建立的 `platformLabel` 先例一致，避开 vue-jest/buble 与 shallowMount stub 不确定性）。
+
+---
 ## 2026-09-19（P5 后·遗留清扫批）：已译面漏译机器审计 + 审计门禁（全绿未提交）
 
 - **背景**：用户指示「先处理遗留项，避免后续未发现」。对 P1～P5 已声明完成的桌面面做**逐行机器审计**（去注释/去 console/去 style 段），发现 8 处**用户可见漏译**（分批验收均未覆盖，属静默漏译）。

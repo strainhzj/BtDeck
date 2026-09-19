@@ -13,8 +13,8 @@
  *    尚未翻译，不属漏译。
  * B. 行为契约：锁定本批补译的共享层（错误提取、请求校验、同源校验）中英双语输出。
  */
-import { readFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
+import { join, resolve } from 'path'
 import {
   extractErrorMessage,
   showErrorToast
@@ -24,7 +24,7 @@ import {
   buildAdvancedSearchRequestFromTemplateGroups,
   assertSameDownloader
 } from '@/views/torrents/utils/torrentBatch'
-import { setLocale, translate } from '@/i18n'
+import i18n, { setLocale, translate } from '@/i18n'
 
 // ====================================================================
 // A. 审计门禁：已声明完成的桌面面不得残留用户可见中文
@@ -60,7 +60,14 @@ const AUDITED_FILES = [
   'src/store/modules/user.ts',
   'src/store/modules/app.ts',
   'src/views/torrents/utils/torrentBatch.ts',
-  'src/views/torrents/mixins/torrentBatch.ts'
+  'src/views/torrents/mixins/torrentBatch.ts',
+  // P6-1（种子域收尾）新增扫描面
+  'src/views/torrents/TraditionalView.vue',
+  'src/views/torrents/components/TransferDialog.vue',
+  'src/views/torrents/components/BatchTransferDialog.vue',
+  'src/views/torrents/components/SetLocationDialog.vue',
+  'src/views/torrents/FileManagement.vue',
+  'src/views/torrents/components/GlobalReplaceTrackerDialog.vue'
 ]
 
 /**
@@ -158,6 +165,46 @@ describe('双语遗留审计门禁（已声明完成的桌面面零漏译）', (
   it('扫描集中无未列入白名单的用户可见中文', () => {
     const violations = AUDITED_FILES.flatMap(findChineseViolations)
     expect(violations).toEqual([])
+  })
+
+  it('全仓 $t/translate 键在 zh 与 en 均可达（防键名笔误静默空串）', () => {
+    // zh 缺键的行为是「返回空串 + warn 不渲染原始键」——静默失效，单测极易漏网：
+    //  · P6-1 曾把 requestValidation 子树误嵌进 presets（parity 仍绿而键不可达）；
+    //  · Navbar 曾用错前缀 `navbar.*`（实际 navigation.navbar.*）→ 壳层文案整片空串；
+    //  · SizeRangeFilter 曾引用 search.sizeRange.unitPlaceholder（实际在 valueInput.*）。
+    // 本门禁扫描全仓（不止审计集），键必须同时存在于 zh-CN 与 en；
+    // 动态拼接键（`${` 或以 `.` 结尾的前缀）跳过——无法静态枚举。
+    const root = resolve(__dirname, '../../src')
+    const files: string[] = []
+    const walk = (dir: string): void => {
+      readdirSync(dir).forEach(name => {
+        const p = join(dir, name)
+        if (statSync(p).isDirectory()) walk(p)
+        else if (/\.(vue|ts)$/.test(p)) files.push(p)
+      })
+    }
+    walk(root)
+
+    const keyPattern = /(?:\$t|translate|translateChoice)\(\s*'([^']+)'/g
+    const missing: string[] = []
+    const checked = new Set<string>()
+
+    files.forEach(file => {
+      const text = readFileSync(file, 'utf-8')
+      let match: RegExpExecArray | null
+      while ((match = keyPattern.exec(text)) !== null) {
+        const key = match[1]
+        if (key.includes('${') || key.endsWith('.') || checked.has(key)) continue
+        checked.add(key)
+        if (!i18n.te(key) || !i18n.te(key, 'en')) {
+          missing.push(`${file.replace(root, 'src')} :: ${key}`)
+        }
+      }
+    })
+
+    expect(missing).toEqual([])
+    // 防空转：确认确实扫到了键（当前约 1280 个）
+    expect(checked.size).toBeGreaterThan(1000)
   })
 
   it('白名单条目均仍命中（防白名单腐化掩盖新漏译）', () => {

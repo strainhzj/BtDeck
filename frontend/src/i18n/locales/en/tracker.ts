@@ -113,6 +113,30 @@ export const tracker = {
     modifyFailed: 'Failed to modify trackers',
     noTorrentId: 'No torrent ID obtained, please reselect torrents'
   },
+  /** Global tracker replacement dialog (P6-1; hazardous action: irreversibility stated) */
+  replace: {
+    title: 'Global Tracker Replacement',
+    helpTitle: 'Instructions',
+    warning: 'This replaces the matching tracker URL in all torrents globally. This cannot be undone!',
+    warningHint: 'Make sure the tracker URL you entered is correct.',
+    oldLabel: 'Tracker to replace',
+    oldPlaceholder: 'Enter the tracker URL to replace, e.g. https://tracker.old.com/announce',
+    oldHint: 'The tracker URL to be replaced with an exact match',
+    newLabel: 'New tracker URL',
+    newPlaceholder: 'Enter the new tracker URL, e.g. https://tracker.new.com/announce',
+    newHint: 'The new tracker URL used for replacement',
+    submit: 'Replace',
+    exampleTitle: 'Example',
+    exampleStep1: 'Enter old tracker',
+    exampleStep2: 'Enter new tracker',
+    exampleStep3: 'Global replace',
+    exampleStep3Desc: 'All torrents updated automatically',
+    validate: {
+      oldRequired: 'Enter the tracker URL to replace',
+      newRequired: 'Enter the new tracker URL',
+      invalidUrl: 'Enter a valid tracker URL'
+    }
+  },
   errorReason: {
     withMessage: 'Tracker announce failed: {message}',
     fallback: 'Tracker announce failed, see the Tracker tab for details'

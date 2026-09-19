@@ -1,3 +1,27 @@
+## 2026-09-19（P6-1 种子域收尾）：传统视图 + 转移/改路径/全局替换 + 文件管理全量双语（全绿未提交）
+
+> 遗留清扫批之后、按用户确认启动 P6-1。本批另附带发现并修复 2 个真实产品缺陷（键前缀错导致文案空串）。
+
+### 交付
+
+- **6 文件全量双语**（~340 条）：TraditionalView / TransferDialog / BatchTransferDialog / SetLocationDialog / GlobalReplaceTrackerDialog / FileManagement。
+- **语言包**：新增 `transfer`、`fileManagement` 模块；tracker 扩 `replace` 子树；torrent 扩传统视图键（其余复用 P3 既有键）；4 个模块均 zh+en 成对（parity 门禁）。
+- **新增键可达性门禁**（全仓 1280 键，动态键跳过）——抓出并修复 **Navbar 8 处错前缀（壳层文案/aria 全空）** 与 **SizeRangeFilter 单位占位错路径**；同时修正 navbar 契约测试中锁死错键的断言。
+- 新增 `tests/unit/p6-torrent-domain-i18n.spec.ts`（16 例）；两弹窗套件随迁挂 i18n；审计集扩至 35 面。
+- 验证：Jest 119 套 1704 例 + typecheck + lint + build + `./init.sh` 全绿。
+
+### 下一步（P6 余批）
+
+1. **P6-2 下载器域收尾**：DownloaderSettingsDialog speed/advanced/tag/path 页签 + PathMappingTab + 路径维护/限速/模板选择 + downloader/index 残留 + **后端设置模板 preset_key 迁移**（P4 遗留）；
+2. P6-3 Tracker 管理域；P6-4 任务与日志 + 低频通知事件；P6-5 孤儿文件页（R06 审校）+ settings MCP/MoviePilot 页签。
+
+### 本批教训（后续必读）
+
+- **单测绿 ≠ 模板合法**：P6-1 曾漏写 `<el-form-item` 开标签，jest/typecheck 均过，靠 eslint `vue/no-parsing-error` + 生产 build 拦住 → 每批必须跑 lint+build。
+- 批量替换脚本必须容错式（记录未命中并继续），否则中途 assert 会静默丢掉整个批次的写入。
+
+---
+
 ## 2026-09-19（遗留清扫批）：已译面漏译机器审计 + 审计门禁（全绿未提交）
 
 > P5 提交（21c1022 + eb0c784）后按用户指示「先处理遗留项，避免后续未发现」执行的清扫批。

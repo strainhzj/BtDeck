@@ -29,6 +29,21 @@ export const torrent = {
   },
   list: {
     searchPlaceholder: 'Search torrent name...',
+    /** Traditional view only (P6-1): filter panel / selection counter / status bar */
+    filters: {
+      toggle: 'Toggle filter panel',
+      title: 'Filters',
+      collapse: 'Collapse',
+      all: 'All',
+      downloader: 'Downloader',
+      trackerDomain: 'Tracker domain',
+      category: 'Category',
+      tags: 'Tags'
+    },
+    selectedPrefix: 'Selected',
+    selectedSuffix: '',
+    connected: 'Connected',
+    activeLabel: 'Active:',
     downloaderPlaceholder: 'Select downloaders',
     statusPlaceholder: 'Select torrent status',
     trackerPlaceholder: 'Select trackers',
@@ -55,7 +70,8 @@ export const torrent = {
       setLocation: 'Set location',
       quickActions: 'Quick actions',
       add: 'Add torrents',
-      columns: 'Column settings'
+      columns: 'Column settings',
+      addShort: 'Add'
     },
     deleteMenu: {
       level4: 'Level 4: Mark for deletion (recommended)',
@@ -70,6 +86,10 @@ export const torrent = {
     },
     column: {
       name: 'Name',
+      nameShort: 'Name',
+      downloaderShort: 'Downloader',
+      downloadShort: '↓ Download',
+      uploadShort: '↑ Upload',
       downloadSpeed: 'Down speed',
       uploadSpeed: 'Up speed',
       size: 'Size',
@@ -103,7 +123,11 @@ export const torrent = {
       traditional: 'Traditional view'
     },
     pagination: {
-      summary: '{total} items, page {page} of {pages}'
+      summary: '{total} items, page {page} of {pages}',
+      /** Traditional view pagination fragments (keeps the numeric <strong> markup) */
+      prefix: 'Total',
+      middle: 'items, page',
+      suffix: ''
     },
     columnSettings: {
       title: 'Column settings',
@@ -149,6 +173,12 @@ export const torrent = {
     selectFirstTransfer: 'Select torrents to transfer first',
     selectFirst: 'Select torrents first',
     missingDownloader: 'Selected torrents are missing downloader information, please refresh and retry',
+    missingDownloaderShort: 'The torrent is missing downloader information',
+    startTaskSuccess: 'Task started',
+    pauseTaskSuccess: 'Task paused',
+    recheckSubmitted: 'Recheck task submitted',
+    selectFirstReannounce: 'Select torrents to reannounce first',
+    globalReplaceFailed: 'Global tracker replacement failed',
     transferSingleDownloaderOnly: 'Batch transfer only supports torrents on the same downloader, please reselect',
     setLocationSingleDownloaderOnly: 'Selected torrents must belong to the same downloader',
     transferDone: 'Batch transfer completed'

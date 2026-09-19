@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-dialog
-    :title="`批量转移种子（已选择${torrents.length}个）`"
+    :title="$t('transfer.batchTitle', {count: torrents.length})"
     :visible.sync="dialogVisible"
     width="700px"
     :before-close="handleClose"
@@ -9,7 +9,7 @@
   >
     <!-- 选中的种子列表 -->
     <div class="selected-torrents-section">
-      <div class="section-title">已选择的种子：</div>
+      <div class="section-title">{{ $t('transfer.selectedTorrents') }}</div>
       <div class="torrents-list">
         <div
           v-for="torrent in torrents"
@@ -44,10 +44,10 @@
       @submit.native.prevent
     >
       <!-- 目标下载器选择 -->
-      <el-form-item label="目标下载器:" prop="target_downloader_id">
+      <el-form-item :label="$t('transfer.targetDownloader')" prop="target_downloader_id">
         <el-select
           v-model="formData.target_downloader_id"
-          placeholder="请选择目标下载器"
+          :placeholder="$t('transfer.targetDownloaderPlaceholder')"
           filterable
           style="width: 100%"
           @change="handleTargetDownloaderChange"
@@ -62,19 +62,19 @@
       </el-form-item>
 
       <!-- 目标路径输入/选择 -->
-      <el-form-item label="目标路径:" prop="target_path">
+      <el-form-item :label="$t('transfer.targetPath')" prop="target_path">
         <el-autocomplete
           v-model="formData.target_path"
           :fetch-suggestions="queryPathSuggestions"
-          placeholder="请输入或选择目标路径"
+          :placeholder="$t('transfer.targetPathPlaceholder')"
           style="width: 100%"
           @select="handlePathSelect"
         >
           <template slot-scope="{item}">
             <div class="path-suggestion">
               <span class="path-value">{{ item.value }}</span>
-              <span v-if="item.path_type === 'default'" class="path-type">默认路径</span>
-              <span class="torrent-count">({{ item.torrent_count }}个种子)</span>
+              <span v-if="item.path_type === 'default'" class="path-type">{{ $t('transfer.pathTypeDefault') }}</span>
+              <span class="torrent-count">{{ $t('transfer.torrentCount', {count: item.torrent_count}) }}</span>
             </div>
           </template>
         </el-autocomplete>
@@ -83,8 +83,8 @@
       <!-- 删除原种子选项 -->
       <el-form-item>
         <el-checkbox v-model="formData.delete_source">
-          删除原种子
-          <el-tooltip content="勾选后，转移成功会删除原下载器中的种子（需二次确认）" placement="top">
+          {{ $t('transfer.deleteSource') }}
+          <el-tooltip :content="$t('transfer.deleteSourceHint')" placement="top">
             <i class="el-icon-question" />
           </el-tooltip>
         </el-checkbox>
@@ -92,43 +92,43 @@
     </el-form>
 
     <span slot="footer" class="dialog-footer">
-      <el-button @click="handleClose">取消</el-button>
+      <el-button @click="handleClose">{{ $t('transfer.cancel') }}</el-button>
       <el-button
         type="primary"
         :loading="submitting"
         @click="handleSubmit"
       >
-        {{ submitting ? '转移中...' : '确定' }}
+        {{ submitting ? $t('transfer.submitting') : $t('transfer.submit') }}
       </el-button>
     </span>
     </el-dialog>
 
     <!-- 批量转移结果对话框（安全渲染，避免XSS） -->
     <el-dialog
-    title="批量转移完成"
+    :title="$t('transfer.resultTitle')"
     :visible.sync="resultDialogVisible"
     width="600px"
     :close-on-click-modal="false"
   >
     <div class="result-summary">
-      <div>总数: {{ resultTotal }}个</div>
-      <div class="success-count">成功: {{ resultSuccess }}个</div>
-      <div class="failed-count">失败: {{ resultFailed }}个</div>
+      <div>{{ $t('transfer.resultTotal', {count: resultTotal}) }}</div>
+      <div class="success-count">{{ $t('transfer.resultSuccess', {count: resultSuccess}) }}</div>
+      <div class="failed-count">{{ $t('transfer.resultFailed', {count: resultFailed}) }}</div>
     </div>
 
     <div v-if="resultFailed > 0" class="failed-list">
-      <div class="failed-title">失败列表：</div>
+      <div class="failed-title">{{ $t('transfer.resultFailedList') }}</div>
       <div class="failed-items">
         <div v-for="item in resultFailedItems" :key="itemKey(item)" class="failed-item">
           <div class="failed-name">{{ item.torrent_name || item.info_hash || '-' }}</div>
-          <div class="failed-reason">{{ item.error_message || '未知错误' }}</div>
+          <div class="failed-reason">{{ item.error_message || $t('transfer.unknownError') }}</div>
         </div>
       </div>
     </div>
 
     <span slot="footer" class="dialog-footer">
-      <el-button @click="handleResultClose">关闭</el-button>
-      <el-button type="primary" @click="handleResultConfirm">确定</el-button>
+      <el-button @click="handleResultClose">{{ $t('transfer.close') }}</el-button>
+      <el-button type="primary" @click="handleResultConfirm">{{ $t('transfer.submit') }}</el-button>
     </span>
     </el-dialog>
   </div>
@@ -169,7 +169,7 @@ export default class BatchTransferDialog extends Vue {
   // 表单验证规则
   formRules = {
     target_downloader_id: [
-      { required: true, message: '请选择目标下载器', trigger: 'change' },
+      { required: true, message: this.$t('transfer.validate.selectTargetDownloader').toString(), trigger: 'change' },
       {
         validator: (rule: any, value: string, callback: Function) => {
           // 防御性检查：确保 torrents 不为 undefined
@@ -181,7 +181,7 @@ export default class BatchTransferDialog extends Vue {
           // 检查是否与所有选中种子的下载器都不同
           const downloaderIds = new Set(this.torrents.map(t => t.downloaderId))
           if (downloaderIds.has(value)) {
-            callback(new Error('目标下载器不能与选中种子的下载器相同'))
+            callback(new Error(this.$t('transfer.validate.sameAsSelectedDownloader').toString()))
           } else {
             callback()
           }
@@ -190,7 +190,7 @@ export default class BatchTransferDialog extends Vue {
       }
     ],
     target_path: [
-      { required: true, message: '请输入目标路径', trigger: 'blur' }
+      { required: true, message: this.$t('transfer.validate.targetPathRequired').toString(), trigger: 'blur' }
     ]
   }
 
@@ -248,7 +248,7 @@ export default class BatchTransferDialog extends Vue {
         )
       }
     } catch (error) {
-      this.$message.error('加载下载器列表失败')
+      this.$message.error(this.$t('transfer.msg.loadDownloadersFailed').toString())
       console.error('加载下载器列表失败:', error)
     }
   }
@@ -320,11 +320,11 @@ export default class BatchTransferDialog extends Vue {
     // 如果勾选了删除原种子，先确认
     if (this.formData.delete_source) {
       this.$confirm(
-        '勾选"删除原种子"后，转移成功会自动删除原下载器种子，请谨慎操作。是否继续？',
-        '确认操作',
+        this.$t('transfer.batchContinueConfirm').toString(),
+        this.$t('transfer.confirmActionTitle').toString(),
         {
-          confirmButtonText: '继续',
-          cancelButtonText: '取消',
+          confirmButtonText: this.$t('transfer.continueButton').toString(),
+          cancelButtonText: this.$t('transfer.cancel').toString(),
           type: 'warning'
         }
       ).then(() => {
@@ -342,14 +342,14 @@ export default class BatchTransferDialog extends Vue {
 
     // 获取所有选中种子的源下载器ID（假设都在同一下载器）
     if (!this.torrents || this.torrents.length === 0) {
-      this.$message.error('未选择任何种子')
+      this.$message.error(this.$t('transfer.msg.noTorrents').toString())
       this.submitting = false
       return
     }
 
     const sourceDownloaderId = this.getTorrentDownloaderId(this.torrents[0])
     if (!sourceDownloaderId) {
-      this.$message.error('无法获取源下载器信息')
+      this.$message.error(this.$t('transfer.msg.missingSourceDownloader').toString())
       this.submitting = false
       return
     }
@@ -376,9 +376,9 @@ export default class BatchTransferDialog extends Vue {
         this.resultDialogVisible = true
       } else {
         // 转移失败，显示错误信息
-        const errorMsg = res.msg || '批量转移失败'
+        const errorMsg = res.msg || this.$t('transfer.msg.batchFailed').toString()
         this.$message.error({
-          message: `批量转移失败: ${errorMsg}`,
+          message: this.$t('transfer.msg.batchFailedWith', { message: errorMsg }).toString(),
           duration: 5000
         })
       }
@@ -396,7 +396,7 @@ export default class BatchTransferDialog extends Vue {
       console.error('批量转移异常:', error)
       const errorMsg = error.response?.data?.msg || error.message || '批量转移失败，请稍后重试'
       this.$message.error({
-        message: `批量转移失败: ${errorMsg}`,
+        message: this.$t('transfer.msg.batchFailedWith', { message: errorMsg }).toString(),
         duration: 5000
       })
     } finally {
@@ -446,7 +446,7 @@ export default class BatchTransferDialog extends Vue {
   async batchDeleteSourceTorrents() {
     const loading = this.$loading({
       lock: true,
-      text: '正在删除原种子...',
+      text: this.$t('transfer.msg.deletingSource').toString(),
       spinner: 'el-icon-loading',
       background: 'rgba(0, 0, 0, 0.7)'
     })
@@ -464,7 +464,7 @@ export default class BatchTransferDialog extends Vue {
 
       await Promise.all(promises)
 
-      this.$message.success(`批量转移完成，已成功删除 ${this.resultSuccess} 个原种子`)
+      this.$message.success(this.$t('transfer.msg.batchSuccessDeleted', { count: this.resultSuccess }).toString())
       this.$emit('success')
     } catch (error: any) {
       console.error('批量删除原种子异常:', error)

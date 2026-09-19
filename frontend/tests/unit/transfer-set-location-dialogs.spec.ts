@@ -1,6 +1,8 @@
 import fs from 'fs'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import SetLocationDialog from '@/views/torrents/components/SetLocationDialog.vue'
 import TransferDialog from '@/views/torrents/components/TransferDialog.vue'
@@ -27,6 +29,8 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-1 后模板/校验文案走 $t（transfer.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 
 // 测试环境未安装 Element：注册可断言的 ElDialog 占位组件（声明被测 props，
 // 渲染 slot 让嵌套结构可枚举）。custom-class 经 Vue 的 attrs→prop 提取，
@@ -171,6 +175,7 @@ describe('TransferDialog/SetLocationDialog 挂载行为（custom-class 到达 + 
   const mountWith = (component: typeof SetLocationDialog | typeof TransferDialog, propsData: Record<string, unknown>): Wrapper<Vue> =>
     shallowMount(component as never, {
       localVue,
+      i18n,
       propsData,
       mocks: {
         $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }

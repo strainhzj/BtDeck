@@ -119,6 +119,30 @@ export const tracker = {
     modifyFailed: '修改Tracker失败',
     noTorrentId: '未获取到种子ID，请重新选择种子'
   },
+  /** 全局替换 Tracker 弹窗（P6-1；R06 相邻的危险操作语义：不可撤销明示） */
+  replace: {
+    title: '全局替换Tracker',
+    helpTitle: '操作说明',
+    warning: '此功能将全局替换所有种子中匹配的tracker地址，操作不可撤销！',
+    warningHint: '请确保您输入的tracker地址正确无误。',
+    oldLabel: '被替换的Tracker',
+    oldPlaceholder: '输入要被替换的tracker地址，例如: https://tracker.old.com/announce',
+    oldHint: '将被完全匹配替换的tracker地址',
+    newLabel: '新Tracker地址',
+    newPlaceholder: '输入新的tracker地址，例如: https://tracker.new.com/announce',
+    newHint: '将用于替换的新tracker地址',
+    submit: '执行替换',
+    exampleTitle: '操作示例',
+    exampleStep1: '输入旧tracker',
+    exampleStep2: '输入新tracker',
+    exampleStep3: '全局替换',
+    exampleStep3Desc: '所有种子自动更新',
+    validate: {
+      oldRequired: '请输入被替换的tracker地址',
+      newRequired: '请输入新的tracker地址',
+      invalidUrl: '请输入有效的tracker地址格式'
+    }
+  },
   errorReason: {
     withMessage: 'Tracker 宣告失败：{message}',
     fallback: 'Tracker 宣告失败，详见 Tracker 标签页'

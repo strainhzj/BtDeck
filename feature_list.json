@@ -218,7 +218,7 @@
           "id": "desktop-bilingual-20260918.p5",
           "name": "四级删除、回收站及 M1 验收",
           "description": "详见 PLANS/desktop-bilingual.md P5；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "in_progress",
           "scope": "fullstack",
           "depends_on": [
             "desktop-bilingual-20260918.p2",
@@ -242,7 +242,7 @@
           "id": "desktop-bilingual-20260918.p6",
           "name": "全部剩余桌面页面双语",
           "description": "详见 PLANS/desktop-bilingual.md P6；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "in_progress",
           "scope": "fullstack",
           "depends_on": [
             "desktop-bilingual-20260918.p1",
@@ -262,7 +262,7 @@
             "全部桌面路由/弹窗/权限及异常状态完成，R06/E03 通过",
             "传统视图、转移、路径/限速/模板、Tracker、任务、日志、孤儿文件与现有集成设置覆盖"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "（P6 分批交付中：P6-1 已完成，P6-2～P6-5 待实施。）（2026-09-19 P6-1 批次已实施种子域收尾——见下方追加） 2026-09-19（P6-1 种子域收尾批，用户确认启动）：传统视图全量双语 + 转移/批量转移/修改路径弹窗 + 全局替换 Tracker 弹窗 + 文件管理页全量双语；新增 transfer/fileManagement 两个语言包模块与 tracker.replace 子树，torrent 扩传统视图专属键（filters/selectedPrefix·Suffix/connected/activeLabel/addShort/column 短名/pagination 分片/msg 5 键）。关键取舍：①传统视图状态筛选由静态 STATUS_OPTIONS 改 localizedStatusOptions（与列表模式同源，语言切换响应式）；②列设置数据 label→labelKey（12 列模板按 $t 渲染）；③四级删除菜单复用 list.deleteMenu.* 同键——修掉 P5 遗留的「中文菜单 → 英文确认」割裂；④分页/已选计数保留数字 <strong>/<span> 标记，采用前缀/中缀/后缀分片键（en 后缀允许空串）。⑤错误展示接 apiResponseMessage（禁中文 msg 直读）。验证：全量 Jest 119 套 1703 例 → 补键门禁后再跑 1704 例全绿；typecheck/lint（含 contract:check）/build/根 ./init.sh 全过；新增 tests/unit/p6-torrent-domain-i18n.spec.ts（16 例：行为契约 zh 逐字节 + en 插值 + 源码契约）；6 文件纳入 i18n-leftover-guard 审计集（35 面）；4 套件随迁挂 i18n（transfer-set-location-dialogs/batch-transfer-dialog 等）。遗留：传统视图/弹窗的英文审校与浏览器视觉验收随 P7 收口。"
         },
         {
           "id": "desktop-bilingual-20260918.p7",

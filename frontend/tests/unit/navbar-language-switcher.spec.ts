@@ -10,6 +10,7 @@
  * - 保持既有图标契约（无 <svg / el-icon-）。
  */
 
+import i18n from '@/i18n'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 
@@ -36,11 +37,16 @@ describe('Navbar 语言切换器', () => {
     expect(source).toContain('isSupportedLocale(command)')
   })
 
-  it('壳层文案走 $t（首页/退出登录/反馈/通知）', () => {
-    expect(source).toContain("$t('navbar.home')")
-    expect(source).toContain("$t('navbar.logout')")
-    expect(source).toContain("$t('navbar.feedback')")
-    expect(source).toContain("$t('navbar.openNotifications')")
+  it('壳层文案走 $t 且键可达（首页/退出登录/反馈/通知）', () => {
+    // 2026-09-19 修正：原契约锁的是 `$t('navigation.navbar.home')`——键实际位于
+    // navigation.navbar.*，旧前缀使 zh 缺键返回空串（静默空文案）。
+    // 现按真实键路径断言，并补可达性（i18n.te）防再次锁死错键。
+    expect(source).toContain("$t('navigation.navbar.home')")
+    expect(i18n.te('navigation.navbar.home')).toBe(true)
+    expect(i18n.te('navigation.navbar.home', 'en')).toBe(true)
+    expect(source).toContain("$t('navigation.navbar.logout')")
+    expect(source).toContain("$t('navigation.navbar.feedback')")
+    expect(source).toContain("$t('navigation.navbar.openNotifications')")
     expect(source).not.toContain('>首页<')
     expect(source).not.toContain('>退出登录<')
   })

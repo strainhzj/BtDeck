@@ -14,7 +14,7 @@
       />
       <el-select
         :value="sizeMinUnit"
-        :placeholder="$t('search.sizeRange.unitPlaceholder')"
+        :placeholder="$t('search.valueInput.unitPlaceholder')"
         class="size-unit-select"
         @change="handleSizeMinUnitChange"
       >
@@ -43,7 +43,7 @@
       />
       <el-select
         :value="sizeMaxUnit"
-        :placeholder="$t('search.sizeRange.unitPlaceholder')"
+        :placeholder="$t('search.valueInput.unitPlaceholder')"
         class="size-unit-select"
         @change="handleSizeMaxUnitChange"
       >

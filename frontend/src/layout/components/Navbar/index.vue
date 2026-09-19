@@ -12,8 +12,8 @@
       <el-button
         class="icon-button feedback-button"
         circle
-        :aria-label="$t('navbar.feedback')"
-        :title="$t('navbar.feedback')"
+        :aria-label="$t('navigation.navbar.feedback')"
+        :title="$t('navigation.navbar.feedback')"
         @click="handleFeedback"
       >
         <LucideIcon name="message-circle" :size="19" :stroke-width="1.8" />
@@ -24,8 +24,8 @@
         <el-button
           class="icon-button"
           circle
-          :aria-label="$t('navbar.openNotifications')"
-          :title="$t('navbar.notifications')"
+          :aria-label="$t('navigation.navbar.openNotifications')"
+          :title="$t('navigation.navbar.notifications')"
           @click="handleNotification"
         >
           <LucideIcon name="bell" :size="19" :stroke-width="1.8" />
@@ -40,8 +40,8 @@
       >
         <div
           class="lang-wrapper"
-          :aria-label="$t('navbar.language')"
-          :title="$t('navbar.language')"
+          :aria-label="$t('navigation.navbar.language')"
+          :title="$t('navigation.navbar.language')"
         >
           <LucideIcon name="languages" :size="18" :stroke-width="1.8" />
           <span class="lang-current">{{ currentLocaleLabel }}</span>
@@ -79,12 +79,12 @@
           <router-link to="/">
             <el-dropdown-item>
               <LucideIcon name="house" :size="16" :stroke-width="1.8" />
-              <span>{{ $t('navbar.home') }}</span>
+              <span>{{ $t('navigation.navbar.home') }}</span>
             </el-dropdown-item>
           </router-link>
           <el-dropdown-item divided command="logout">
             <LucideIcon name="log-out" :size="16" :stroke-width="1.8" />
-            <span>{{ $t('navbar.logout') }}</span>
+            <span>{{ $t('navigation.navbar.logout') }}</span>
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>

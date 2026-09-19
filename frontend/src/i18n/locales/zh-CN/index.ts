@@ -27,12 +27,14 @@ import { common } from './common'
 import { dashboard } from './dashboard'
 import { downloader } from './downloader'
 import { errors } from './errors'
+import { fileManagement } from './fileManagement'
 import { navigation } from './navigation'
 import { queryTemplate } from './queryTemplate'
 import { recycleBin } from './recycleBin'
 import { search } from './search'
 import { settings } from './settings'
 import { time } from './time'
+import { transfer } from './transfer'
 import { torrent } from './torrent'
 import { tracker } from './tracker'
 
@@ -42,6 +44,7 @@ const messages: MessageTree = {
   dashboard,
   downloader,
   errors,
+  fileManagement,
   navigation,
   queryTemplate,
   recycleBin,
@@ -49,6 +52,7 @@ const messages: MessageTree = {
   settings,
   time,
   torrent,
+  transfer,
   tracker,
   el: elementZhCN.el
 }
