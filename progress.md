@@ -9,6 +9,7 @@
 - **防漂移门禁（新增 3 例，杜绝复发）**：`test_constraint_doc_head_matches_chain`（`backend/docs/constraints/database-migration.md` 的 HEAD 声明与 revision 计数必须等于真实链路，且「← 当前 HEAD」唯一）、`test_pinned_expected_head_matches_chain`（唯一写死点与链路一致）、`test_legacy_hardcoded_heads_removed_from_tests`（三个既有测试必须使用 `current_head()`，防回流）。
 - **文档同步**：约束文档迁移链补 `c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 ← 当前 HEAD`；roadmap（backend README / infra 两处 + 新增 d1e2f3a4b5c6 行 / risks）revision 计数 29→31、head 更新。
 - **验证**：`pytest -q --cov=app --cov-fail-under=40`（CI 同参数）**4750 passed / 17 skipped / 0 failed**，覆盖率 64.81%（≥40%）；原 6 红所在 4 个文件定向 82 passed。本批**零 app 代码改动**（纯测试与文档），无生产风险。
+- **远端 CI 复核（收口）**：干净克隆（baaa696）全量 4750 passed / 0 failed；推送后 **run #292（head baaa696）双 job 全绿**（Frontend type+Jest+build ✅ / Backend pytest ✅）——远端后端自 P3-2 起的长期红已终结。
 
 ---
 

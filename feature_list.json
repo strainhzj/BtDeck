@@ -6865,7 +6865,7 @@
             "CI 同参数全量（pytest --cov-fail-under=40）零失败",
             "新增迁移后「当前 head」不再需要在多处同步（防漂移门禁）"
           ],
-          "evidence": "2026-09-19：①head 硬编码漂移（4 例）——新增 tests/core/alembic_head.py（current_head/revision_count 动态读链路），test_db_rollback_scenarios.REV_HEAD / test_orphan_migration_production_shape.EXPECTED_HEAD / test_orphan_schema_repair_migration.REPAIR_HEAD 改动态；test_db_migration.EXPECTED_HEAD 保留为唯一写死点。②漂移库 fixture 保真不足（2 例）——_build_head_marked_drift_db 补 search_templates + setting_templates 表（后续迁移加列依赖），修复 migrate_database() 返回 False。③跨用例泄漏（1 例）——进程级共享测试库下 TestBatchCommit 两用例固定 /tmp 作扫描根会误收其它用例残留候选，改每次唯一 uuid 专属根，断言语义不变。④新增防漂移门禁 3 例（约束文档 HEAD/计数一致、唯一写死点一致、三测试必须用 current_head 防回流）。验证：CI 同参数 pytest -q --cov=app --cov-fail-under=40 → 4750 passed/17 skipped/0 failed，覆盖率 64.81%；定向（rollback+orphan 四文件）82 passed；零 app 代码改动。"
+          "evidence": "2026-09-19：①head 硬编码漂移（4 例）——新增 tests/core/alembic_head.py（current_head/revision_count 动态读链路），test_db_rollback_scenarios.REV_HEAD / test_orphan_migration_production_shape.EXPECTED_HEAD / test_orphan_schema_repair_migration.REPAIR_HEAD 改动态；test_db_migration.EXPECTED_HEAD 保留为唯一写死点。②漂移库 fixture 保真不足（2 例）——_build_head_marked_drift_db 补 search_templates + setting_templates 表（后续迁移加列依赖），修复 migrate_database() 返回 False。③跨用例泄漏（1 例）——进程级共享测试库下 TestBatchCommit 两用例固定 /tmp 作扫描根会误收其它用例残留候选，改每次唯一 uuid 专属根，断言语义不变。④新增防漂移门禁 3 例（约束文档 HEAD/计数一致、唯一写死点一致、三测试必须用 current_head 防回流）。验证：CI 同参数 pytest -q --cov=app --cov-fail-under=40 → 4750 passed/17 skipped/0 failed，覆盖率 64.81%；定向（rollback+orphan 四文件）82 passed；零 app 代码改动。 ⑤远端复核：干净克隆 baaa696 全量 4750 passed/0 failed；推送后 CI run #292 双 job 全绿（Frontend type+Jest+build ✅ / Backend pytest ✅），远端后端长期红终结。"
         }
       ]
     }

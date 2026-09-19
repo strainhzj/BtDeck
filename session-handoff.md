@@ -20,9 +20,14 @@
 - 定向（rollback + orphan 四文件）82 passed
 - 已同步：`backend/docs/constraints/database-migration.md` 迁移链与 HEAD、roadmap（revision 29→31、head、新增迁移行）
 
+### 远端 CI 复核（已完成）
+
+- 干净克隆（baaa696）全量 4750 passed / 0 failed；
+- 已推送并复核：**run #292（head baaa696）双 job 全绿**（Frontend ✅ / Backend ✅）。
+
 ### 下一步
 
-1. 推送并复核远端 CI（run 应双 job 全绿）；
+1. ~~推送并复核远端 CI~~ ✅ 已完成（双 job 全绿）；
 2. 之后回到双语主线：P6-3 Tracker 管理域 → P6-4 任务/日志+低频通知 → P6-5 孤儿文件+settings 尾页；
 3. P5 收口（审校签认 + R01～R05 人工验收）仍待办。
 
