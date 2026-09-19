@@ -17,11 +17,11 @@
 
 /**
  * 种子域文案（torrent 组，P3-1：列表骨架 + 操作反馈 + 添加弹窗 + 批量弹窗 + 删重两弹窗；
- * P3-2 增 detail 子树：种子详情弹窗）。
+ * P3-2 增 detail 子树：种子详情弹窗；P5 增 deleteLevel 子树：四级删除确认/结果链路）。
  *
- * 注意：四级删除确认/结果链路（utils/torrentBatch.ts 的 DELETE_LEVEL_NAMES、
- * buildDeleteConfirmMessage、parseDeleteTaskResult、parseSyncDeleteResponse 及
- * index.vue 同名遗留路径）属 P5 高风险审校范围，本批不翻译。
+ * deleteLevel 子树 zh 值与原内联中文逐字节一致（零回归）；en 按等级独立成键
+ * （R01～R04 三要素：等级号 + 影响对象 + 不可恢复性），审校清单见
+ * PLANS/bilingual/delete-level-review.md。
  */
 export const torrent = {
   status: {
@@ -240,6 +240,73 @@ export const torrent = {
       start: '批量开始失败，请查看控制台',
       pause: '批量暂停失败，请查看控制台',
       recheck: '批量重检失败，请查看控制台'
+    }
+  },
+  /** 四级删除链路（P5：确认/提交/轮询/降级/文件缺失/结果，zh 与原内联文案逐字节一致） */
+  deleteLevel: {
+    confirm: {
+      titleSingle: '确认删除',
+      titleBatch: '批量删除确认',
+      confirmButton: '确定',
+      cancelButton: '取消',
+      level1: {
+        single: '警告：此操作将完全删除，是否继续？',
+        batch: '确定要将选中的 {count} 个种子完全删除吗？'
+      },
+      level2: {
+        single: '确定要将种子删除任务（保留数据）吗？',
+        batch: '确定要将选中的 {count} 个种子删除任务（保留数据）吗？'
+      },
+      level3: {
+        single: '警告：此操作将移至回收站，是否继续？',
+        batch: '确定要将选中的 {count} 个种子移至回收站吗？'
+      },
+      level4: {
+        single: '确定要将种子标记为待删除吗？',
+        batch: '确定要将选中的 {count} 个种子标记为待删除吗？'
+      },
+      generic: {
+        single: '确定要将种子删除吗？',
+        batch: '确定要将选中的 {count} 个种子删除吗？'
+      }
+    },
+    msg: {
+      selectFirst: '请先选择要删除的种子',
+      submitFailed: '提交删除任务失败',
+      alreadyProcessed: '所选种子均已在删除任务中处理',
+      skipped: '已跳过 {count} 个正在处理的种子',
+      deleteFailed: '删除失败',
+      batchDeleteFailed: '批量删除失败',
+      statusQueryFailed: '查询任务状态失败',
+      retryLater: '删除失败，请稍后重试'
+    },
+    progress: {
+      loading: '批量删除中，请稍候...',
+      running: '批量删除中... ({done}/{total})',
+      timeout: '批量删除任务执行时间过长，请稍后查看任务状态'
+    },
+    notify: {
+      downgradeTitle: '降级详情',
+      fileMissingTitle: '文件缺失提醒',
+      failedTitle: '删除失败详情'
+    },
+    result: {
+      taskCompleted: '批量删除完成，成功删除 {count} 个种子',
+      taskCompletedWithMissing: '批量删除完成，成功删除 {count} 个种子（其中 {missing} 个未找到文件，已跳过文件操作）',
+      taskFailed: '批量删除失败：{error}',
+      taskPartial: '批量删除部分完成：成功 {success} 个，失败 {failed} 个',
+      failedDetail: '以下种子删除失败：{names}',
+      failedDetailMore: '以下种子删除失败：{names} 等{count}个',
+      fileMissingDetail: '以下种子未找到文件，已跳过文件操作直接移入回收站：{names}',
+      fileMissingDetailMore: '以下种子未找到文件，已跳过文件操作直接移入回收站：{names} 等{count}个',
+      downgraded: '已将 {count} 个种子降级为等级4删除（备份失败）',
+      downgradeDetail: '以下种子备份失败，已降级为等级4：{names}',
+      downgradeDetailMore: '以下种子备份失败，已降级为等级4：{names} 等{count}个',
+      syncPartialFailed: '删除完成：失败 {count} 个',
+      level3Success: '等级3删除成功 {count} 个',
+      level3SuccessWithMissing: '等级3删除成功 {count} 个（其中 {missing} 个未找到文件，已跳过文件操作）',
+      levelDone: '等级{level}删除完成，成功 {count} 个',
+      deleteDone: '删除完成，成功 {count} 个'
     }
   },
   /** 种子详情弹窗（TorrentDetailDialog，P3-2；转移弹窗本体属 P6 不译） */

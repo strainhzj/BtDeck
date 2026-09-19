@@ -923,7 +923,6 @@ import TrackerDetailDataMixin from './mixins/detailTabsData'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
-  deleteTorrents,
   pauseTorrents,
   resumeTorrents,
   recheckTorrents,
@@ -950,8 +949,6 @@ import {
   normalizeTorrent,
   normalizeTorrentStatus,
   normalizePaginatedResponse,
-  getTorrentId,
-  getDownloaderId,
   extractErrorMessage,
   debounce
 } from '@/utils/formatters'
@@ -1896,7 +1893,7 @@ export default class extends mixins(
   }
 
   // ====== 辅助方法 ======
-  // groupTorrentsByDownloader / deleteTorrentsInternal / 批量开始/暂停/重检
+  // groupTorrentsByDownloader / 批量开始/暂停/重检 / 四级删除
   // 已由 TorrentBatchMixin 提供（mixins/torrentBatch.ts + utils/torrentBatch.ts），
   // 此处不再重复实现，消除「改一处忘一处」的回归风险。
 
@@ -1945,61 +1942,6 @@ export default class extends mixins(
     } catch (error) {
       console.error('重检种子失败:', error)
       this.$message.error('重检失败')
-    }
-  }
-
-  private async handleDelete(torrent: any) {
-    if (!torrent) return
-
-    this.$confirm(`确定要删除种子"${torrent.name}"吗？`, '删除确认', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(async() => {
-      this.$confirm('是否同时删除数据文件？', '删除数据文件', {
-        confirmButtonText: '同时删除种子和数据',
-        cancelButtonText: '仅删除种子，保留数据',
-        distinguishCancelAndClose: true,
-        type: 'warning'
-      }).then(async() => {
-        await this.performSingleDelete(torrent, 1)
-      }).catch((action) => {
-        if (action === 'cancel') {
-          this.performSingleDelete(torrent, 0)
-        }
-      })
-    }).catch(() => undefined)
-  }
-
-  private async performSingleDelete(torrent: any, deleteData: number) {
-    // 修复 Bug#4：deleteTorrents 后端只接受 info_id / delete_data / id_recycle，
-    // 不识别 hashes / deleteData。对齐列表模式 index.vue:1808-1821。
-    const infoId = getTorrentId(torrent)
-    const downloaderId = getDownloaderId(torrent)
-    if (!downloaderId) {
-      this.$message.error('种子缺少下载器信息')
-      return
-    }
-
-    try {
-      await deleteTorrents({
-        info_id: infoId,
-        downloader_id: downloaderId,
-        delete_data: deleteData,
-        id_recycle: 1
-      })
-
-      const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
-      this.$message.success(`删除种子成功 ${dataFileText}`)
-      this.getList()
-      // 如果删除的是当前详情面板的种子，关闭详情面板
-      if (this.isCurrentRow(torrent)) {
-        this.currentRow = null
-      }
-    } catch (error) {
-      const errorMessage = extractErrorMessage(error)
-      console.error('删除种子失败:', error)
-      this.$message.error(errorMessage || '删除种子失败')
     }
   }
 

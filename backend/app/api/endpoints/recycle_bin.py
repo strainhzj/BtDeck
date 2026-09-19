@@ -103,7 +103,13 @@ async def get_recycle_bin_list(
 
     except Exception as e:
         logger.error(f"查询回收站列表失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg（诊断只进日志），前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="回收站查询失败",
+            code="500",
+            data={"reasonCode": "RECYCLE_BIN_QUERY_FAILED"},
+        )
 
 
 @router.post("/restore", response_model=CommonResponse)
@@ -169,7 +175,13 @@ async def restore_torrents(
 
     except Exception as e:
         logger.error(f"还原种子失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg=f"还原失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="还原种子失败",
+            code="500",
+            data={"reasonCode": "RECYCLE_RESTORE_FAILED"},
+        )
 
 
 @router.post("/restore-manual", response_model=CommonResponse)
@@ -201,11 +213,19 @@ async def restore_torrents_with_file(
         # 2. 调用restore_torrents逻辑
         # 3. 更新backup_file_path字段
 
-        return CommonResponse(status="error", msg="功能开发中，请稍后再试", code="501", data=None)
+        # 双语 P5（E16）：明示未开放而非失败；前端按 reasonCode 本地化提示
+        return CommonResponse(
+            status="error", msg="功能开发中，请稍后再试", code="501", data={"reasonCode": "NOT_IMPLEMENTED"}
+        )
 
     except Exception as e:
         logger.error(f"手动还原失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg=f"手动还原失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error",
+            msg="手动还原失败",
+            code="500",
+            data={"reasonCode": "RECYCLE_RESTORE_FAILED"},
+        )
 
 
 @router.post("/cleanup-preview", response_model=CommonResponse)
@@ -252,7 +272,13 @@ async def cleanup_preview(
 
     except Exception as e:
         logger.error(f"清理预览失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg=f"预览失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="清理预览失败",
+            code="500",
+            data={"reasonCode": "RECYCLE_PREVIEW_FAILED"},
+        )
 
 
 @router.post("/cleanup", response_model=CommonResponse)
@@ -316,4 +342,10 @@ async def manual_cleanup(
 
     except Exception as e:
         logger.error(f"清理回收站失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg=f"清理失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="清理回收站失败",
+            code="500",
+            data={"reasonCode": "RECYCLE_CLEANUP_FAILED"},
+        )

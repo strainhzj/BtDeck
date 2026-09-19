@@ -146,7 +146,7 @@ interface TorrentListViewVm extends Vue {
   handleManualRefresh(): void
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
   applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
-  callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
+  executeDeleteByLevel(torrents: Torrent[], level: number): Promise<void>
   loadActiveSpeed(): Promise<boolean>
   applySpeedUpdates(updates: Array<Record<string, unknown>>): boolean
   handleBatchAddCompleted(): Promise<void>
@@ -744,13 +744,15 @@ describe('torrent list view pagination and sorting', () => {
       hash: 'hash-2'
     }
 
-    await (wrapper.vm as unknown as TorrentListViewVm).callDeleteWithLevelAPI(
+    await (wrapper.vm as unknown as TorrentListViewVm).executeDeleteByLevel(
       [torrentFixture(), second],
       2
     )
 
     expect(message.warning).toHaveBeenCalledWith('已跳过 1 个正在处理的种子')
-    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    // 双语 P5 收敛后直调 mixin 全链路 executeDeleteByLevel：提交后刷新一次 +
+    // 任务完成后兜底刷新一次（与收敛前两视图走 mixin 的行为一致）
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(2)
     expect(mockGetBatchDeleteStatus).toHaveBeenCalledWith('delete-task-1')
     expect(mockGetTorrentList.mock.invocationCallOrder[0])
       .toBeLessThan(mockGetBatchDeleteStatus.mock.invocationCallOrder[0])
@@ -781,7 +783,7 @@ describe('torrent list view pagination and sorting', () => {
       hash: 'hash-2'
     }
 
-    await (wrapper.vm as unknown as TorrentListViewVm).callDeleteWithLevelAPI(
+    await (wrapper.vm as unknown as TorrentListViewVm).executeDeleteByLevel(
       [torrentFixture(), second],
       2
     )

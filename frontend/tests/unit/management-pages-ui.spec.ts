@@ -161,3 +161,30 @@ describe('共享管理页样式', () => {
     expect(sharedStyles).toContain('grid-template-columns: 1fr;')
   })
 })
+
+// ============ 双语 P5：回收站页 i18n 源码契约 ============
+
+describe('回收站页双语（P5）', () => {
+  it('模板文案全部走 recycleBin.* 键，无硬编码中文残留', () => {
+    // 模板段（<template> 到 </template>）不允许出现中文字符（注释除外）
+    const templateStart = recycleBinSource.indexOf('<template>')
+    const templateEnd = recycleBinSource.indexOf('</template>')
+    const templateSource = recycleBinSource.slice(templateStart, templateEnd)
+    const withoutComments = templateSource.replace(/<!--[\s\S]*?-->/g, '')
+    const chineseMatches = withoutComments.match(/[\u4e00-\u9fff]/g)
+    expect(chineseMatches).toBeNull()
+  })
+
+  it('错误展示走 apiErrorMessage/apiResponseMessage，禁中文 msg 直读', () => {
+    expect(recycleBinSource).toContain("import { apiErrorMessage, apiResponseMessage } from '@/i18n'")
+    expect(recycleBinSource).not.toContain("response.msg || '")
+    expect(recycleBinSource).not.toContain('extractErrorMessage')
+  })
+
+  it('危险确认链路（批量删除/单条删除/清空）走 confirmDialog 键并携带计数/名称插值', () => {
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.batchDeleteMessage', { count: count })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.deleteMessage', { name: item.name })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.clearAllDetail', { count: count })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.cleanupDetail', { size:")
+  })
+})

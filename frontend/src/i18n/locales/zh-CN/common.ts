@@ -19,6 +19,8 @@
 export const common = {
   adminName: '管理员',
   cancel: '取消',
+  /** 名称列表拼接分隔符（删除失败/降级/文件缺失详情等） */
+  listSeparator: '、',
   close: '关闭',
   confirm: '确认',
   refresh: '刷新',

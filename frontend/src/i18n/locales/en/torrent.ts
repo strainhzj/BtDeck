@@ -235,6 +235,73 @@ export const torrent = {
       recheck: 'Batch recheck failed, see console for details'
     }
   },
+  /** Four-level deletion chain (P5; per-level keys per R01-R04 red line: level number + affected object + irreversibility) */
+  deleteLevel: {
+    confirm: {
+      titleSingle: 'Confirm Deletion',
+      titleBatch: 'Confirm Batch Deletion',
+      confirmButton: 'Confirm',
+      cancelButton: 'Cancel',
+      level1: {
+        single: 'Level 1 - Permanently delete this torrent and its data files? This cannot be undone.',
+        batch: 'Level 1 - Permanently delete {count} selected torrents and their data files? This cannot be undone.'
+      },
+      level2: {
+        single: 'Level 2 - Remove this torrent from the downloader? Its data files will be kept.',
+        batch: 'Level 2 - Remove {count} selected torrents from the downloader? Their data files will be kept.'
+      },
+      level3: {
+        single: 'Level 3 - Move this torrent to the recycle bin? It can be restored from there later.',
+        batch: 'Level 3 - Move {count} selected torrents to the recycle bin? They can be restored from there later.'
+      },
+      level4: {
+        single: 'Level 4 - Mark this torrent as pending deletion? Nothing is removed yet.',
+        batch: 'Level 4 - Mark {count} selected torrents as pending deletion? Nothing is removed yet.'
+      },
+      generic: {
+        single: 'Are you sure you want to delete this torrent?',
+        batch: 'Are you sure you want to delete {count} selected torrents?'
+      }
+    },
+    msg: {
+      selectFirst: 'Select torrents to delete first',
+      submitFailed: 'Failed to submit the deletion task',
+      alreadyProcessed: 'All selected torrents are already being handled by a deletion task',
+      skipped: 'Skipped {count} torrents that are already being processed',
+      deleteFailed: 'Deletion failed',
+      batchDeleteFailed: 'Batch deletion failed',
+      statusQueryFailed: 'Failed to query the task status',
+      retryLater: 'Deletion failed, please try again later'
+    },
+    progress: {
+      loading: 'Deleting torrents, please wait...',
+      running: 'Deleting... ({done}/{total})',
+      timeout: 'The deletion task is taking unusually long; check its status later'
+    },
+    notify: {
+      downgradeTitle: 'Downgrade details',
+      fileMissingTitle: 'Missing files notice',
+      failedTitle: 'Deletion failure details'
+    },
+    result: {
+      taskCompleted: 'Batch deletion finished: {count} torrents deleted',
+      taskCompletedWithMissing: 'Batch deletion finished: {count} torrents deleted ({missing} had no files on disk; file operations were skipped)',
+      taskFailed: 'Batch deletion failed: {error}',
+      taskPartial: 'Batch deletion partially finished: {success} succeeded, {failed} failed',
+      failedDetail: 'The following torrents failed to delete: {names}',
+      failedDetailMore: 'The following torrents failed to delete: {names} and {count} more',
+      fileMissingDetail: 'No files were found for the following torrents; file operations were skipped and they were moved to the recycle bin directly: {names}',
+      fileMissingDetailMore: 'No files were found for the following torrents; file operations were skipped and they were moved to the recycle bin directly: {names} and {count} more',
+      downgraded: '{count} torrents were downgraded to Level 4 deletion (backup failed)',
+      downgradeDetail: 'Backup failed for the following torrents; they were downgraded to Level 4: {names}',
+      downgradeDetailMore: 'Backup failed for the following torrents; they were downgraded to Level 4: {names} and {count} more',
+      syncPartialFailed: 'Deletion finished: {count} failed',
+      level3Success: 'Level 3 deletion succeeded for {count} torrents',
+      level3SuccessWithMissing: 'Level 3 deletion succeeded for {count} torrents ({missing} had no files on disk; file operations were skipped)',
+      levelDone: 'Level {level} deletion finished: {count} torrents succeeded',
+      deleteDone: 'Deletion finished: {count} torrents succeeded'
+    }
+  },
   /** Torrent detail dialog (TorrentDetailDialog, P3-2; transfer dialog body is P6, not translated) */
   detail: {
     title: 'Torrent Details',

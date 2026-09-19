@@ -19,6 +19,8 @@
 export const common = {
   adminName: 'Administrator',
   cancel: 'Cancel',
+  /** Name list join separator (deletion failure / downgrade / missing-file details) */
+  listSeparator: ', ',
   close: 'Close',
   confirm: 'Confirm',
   refresh: 'Refresh',

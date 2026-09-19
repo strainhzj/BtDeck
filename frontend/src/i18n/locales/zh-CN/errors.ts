@@ -93,6 +93,21 @@ export const errors = {
     searchTemplateDeleteFailed: '删除模板失败，请稍后重试',
     searchTemplateApplyFailed: '应用模板失败，请稍后重试',
     internalError: '服务器内部错误，请稍后重试',
-    dbOperationFailed: '数据库操作失败，请稍后重试'
+    dbOperationFailed: '数据库操作失败，请稍后重试',
+    /* ↓ 双语 P5 扩展：删除链路 / 回收站 */
+    torrentDeleteAccepted: '批量删除任务已提交，正在后台执行',
+    torrentDeleteAlreadyProcessed: '所选种子均已在删除任务中处理',
+    torrentDeleteTaskNotFound: '删除任务不存在或已失效',
+    torrentDeleteSubmitFailed: '提交删除任务失败，请稍后重试',
+    torrentDeleteStatusQueryFailed: '查询删除任务状态失败，请稍后重试',
+    torrentDeleteFailed: '删除种子失败，请稍后重试',
+    torrentDeleteInvalidParams: '请求参数有误，请检查后重试',
+    downloaderUnsupportedType: '不支持的下载器类型',
+    downloaderAdapterInitFailed: '下载器适配器初始化失败，请稍后重试',
+    recycleBinQueryFailed: '回收站查询失败，请稍后重试',
+    recycleRestoreFailed: '还原种子失败，请稍后重试',
+    recyclePreviewFailed: '清理预览失败，请稍后重试',
+    recycleCleanupFailed: '清理回收站失败，请稍后重试',
+    notImplemented: '该功能尚未开放，敬请期待'
   }
 }

@@ -5,7 +5,7 @@
  * 逐行重复的批量逻辑抽成可单测的纯函数，消除「改一处忘一处」的回归风险。
  *
  * 对应 bug：
- *   - groupTorrentsByDownloader / deleteTorrentsBatch → Bug#1（计数）、Bug#4（删除参数）
+ *   - groupTorrentsByDownloader → Bug#1（计数）
  *   - runBatchAction → Bug#2（文案语义：区分种子数与下载器组数）
  *   - sortByActive → Bug#7（排序键：速度 > 0 而非「在 map 中」）
  *   - resetSelection → Bug#8（选中状态重置）
@@ -58,13 +58,6 @@ interface SelectionState {
   isIndeterminate: boolean
 }
 
-export interface BatchDeleteResult {
-  successCount: number
-  failCount: number
-  errors: string[]
-  deletedTorrents: any[]
-}
-
 export interface BatchActionResult {
   /** 成功的下载器组数（不是种子数） */
   succeeded: number
@@ -79,14 +72,6 @@ export interface BatchActionResult {
 }
 
 type BatchApiFn = (params: { downloader_id: string, hashes: string[] }) => Promise<ApiResponse<any>>
-
-/** 单种子删除 API 签名（deleteTorrents） */
-type DeleteApiFn = (params: {
-  info_id: string
-  downloader_id: string
-  delete_data: number
-  id_recycle: number
-}) => Promise<ApiResponse<any>>
 
 // ============ 内联工具函数（不依赖 formatters，避免 ts-jest 编译牵连） ============
 
@@ -131,63 +116,6 @@ export function groupTorrentsByDownloader(torrents: any[]): Record<string, any[]
     groups[downloaderId].push(torrent)
   })
   return groups
-}
-
-/**
- * 批量删除种子内部逻辑（对齐 index.vue:1829 / TraditionalView.vue:1024）
- * 逐种子按 info_id 调用 deleteFn，使用 Promise.all 并行。
- * 防回归 Bug#1（计数按种子数而非字符串长度）、Bug#4（参数用 info_id/delete_data/id_recycle）。
- * @param torrents 要删除的种子列表
- * @param deleteData 是否删除数据文件 (0: 仅删种子, 1: 同时删数据)
- * @param deleteFn 删除 API（注入，便于单测 mock；生产传 deleteTorrents）
- * @returns 成功数 / 失败数 / 错误信息列表 / 成功删除的种子列表
- */
-export async function deleteTorrentsBatch(
-  torrents: any[],
-  deleteData: number,
-  deleteFn: DeleteApiFn
-): Promise<BatchDeleteResult> {
-  let successCount = 0
-  let failCount = 0
-  const errors: string[] = []
-  const deletedTorrents: any[] = []
-
-  const deletePromises = torrents.map(async(torrent) => {
-    try {
-      const infoId = getTorrentId(torrent)
-      const downloaderId = getDownloaderId(torrent)
-
-      await deleteFn({
-        info_id: infoId,
-        downloader_id: downloaderId,
-        delete_data: deleteData,
-        id_recycle: 1
-      })
-      return { success: true, torrent }
-    } catch (error: any) {
-      const errorMsg = error?.response?.data?.msg ??
-                       error?.message ??
-                       '删除失败'
-      return { success: false, error: errorMsg }
-    }
-  })
-
-  const results = await Promise.all(deletePromises)
-  results.forEach((result) => {
-    if (result.success) {
-      successCount++
-      if (result.torrent) {
-        deletedTorrents.push(result.torrent)
-      }
-    } else {
-      failCount++
-      if (result.error) {
-        errors.push(result.error)
-      }
-    }
-  })
-
-  return { successCount, failCount, errors, deletedTorrents }
 }
 
 /**
@@ -1167,13 +1095,10 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
 // 防回归 P2-I：列表模式 4 等级删除 ~250 行含 API/轮询/loading/UI 提示耦合，
 // 此处把无副作用的「构造请求」与「解析结果」抽为纯函数。
 // API 调用 + $loading 遮罩 + 轮询（带 Vue 实例依赖）留在 mixin 入口层。
+// 双语 P5：文案全部走 torrent.deleteLevel.* 键（zh 值与原内联中文逐字节一致）。
 
-export const DELETE_LEVEL_NAMES: Record<number, string> = {
-  4: '标记为待删除',
-  3: '移至回收站',
-  2: '删除任务（保留数据）',
-  1: '完全删除'
-}
+/** 4 等级删除合法等级值 */
+const VALID_DELETE_LEVELS = new Set([1, 2, 3, 4])
 
 /**
  * 构造 4 等级删除请求参数（异步批量接口 + 同步接口共用结构）
@@ -1194,16 +1119,18 @@ export function buildDeleteLevelRequest(
 }
 
 /**
- * 根据等级生成二次确认提示文案
+ * 根据等级生成二次确认提示文案（双语 P5：按等级独立成键，R01～R04 三要素）
+ * - zh 值与原内联拼接逐字节一致（零回归）；
+ * - en 按等级完整句式（等级号 + 影响对象 + 不可恢复性），不共用模糊文案；
+ * - 未知等级回退 generic 键（防御，理论不可达：入口 level ∈ 1-4）。
  */
 export function buildDeleteConfirmMessage(level: number, count: number): string {
-  const levelName = DELETE_LEVEL_NAMES[level] || '删除'
-  if (count > 1) {
-    return `确定要将选中的 ${count} 个种子${levelName}吗？`
+  const known = VALID_DELETE_LEVELS.has(level)
+  const scope = count > 1 ? 'batch' : 'single'
+  if (known) {
+    return translate(`torrent.deleteLevel.confirm.level${level}.${scope}`, { count })
   }
-  return (level === 1 || level === 3)
-    ? `警告：此操作将${levelName}，是否继续？`
-    : `确定要将种子${levelName}吗？`
+  return translate(`torrent.deleteLevel.confirm.generic.${scope}`, { count })
 }
 
 /** 解析异步批量删除任务结果，返回结构化的提示信息（供调用方 $message/$notify） */
@@ -1220,6 +1147,11 @@ export interface ParsedDeleteTaskResult {
   failedDetail: string | null
   /** 文件缺失详情（等级3未找到种子文件，跳过文件操作直接入回收站），供 $notify；无则 null */
   fileMissingDetail: string | null
+}
+
+/** 多个名称的本地化拼接（zh 顿号 / en 逗号） */
+function joinNames(names: string[]): string {
+  return names.join(translate('common.listSeparator'))
 }
 
 /**
@@ -1239,8 +1171,10 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
       failedCount: 0,
       type: 'success',
       message: missing.length > 0
-        ? `批量删除完成，成功删除 ${success_count} 个种子（其中 ${missing.length} 个未找到文件，已跳过文件操作）`
-        : `批量删除完成，成功删除 ${success_count} 个种子`,
+        ? translate('torrent.deleteLevel.result.taskCompletedWithMissing', {
+          count: success_count, missing: missing.length
+        })
+        : translate('torrent.deleteLevel.result.taskCompleted', { count: success_count }),
       failedDetail: null,
       fileMissingDetail
     }
@@ -1251,7 +1185,9 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
       successCount: 0,
       failedCount: failed_count,
       type: 'error',
-      message: `批量删除失败：${error_message || '未知错误'}`,
+      message: translate('torrent.deleteLevel.result.taskFailed', {
+        error: error_message || translate('torrent.addDialog.msg.unknownError')
+      }),
       failedDetail: null,
       fileMissingDetail: null
     }
@@ -1263,17 +1199,21 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
     const failedNames = failed_items.slice(0, 5).map((item: any) => {
       const torrent = list.find((t: any) => getTorrentId(t) === item.info_id)
       return torrent?.name || item.info_id
-    }).join('、')
+    })
     failedDetail = failed_items.length <= 5
-      ? `以下种子删除失败：${failedNames}`
-      : `以下种子删除失败：${failedNames} 等${failed_items.length}个`
+      ? translate('torrent.deleteLevel.result.failedDetail', { names: joinNames(failedNames) })
+      : translate('torrent.deleteLevel.result.failedDetailMore', {
+        names: joinNames(failedNames), count: failed_items.length
+      })
   }
 
   return {
     successCount: success_count,
     failedCount: failed_count,
     type: 'warning',
-    message: `批量删除部分完成：成功 ${success_count} 个，失败 ${failed_count} 个`,
+    message: translate('torrent.deleteLevel.result.taskPartial', {
+      success: success_count, failed: failed_count
+    }),
     failedDetail,
     fileMissingDetail
   }
@@ -1300,11 +1240,15 @@ interface FileMissingItem {
  * @param missing 文件缺失条目列表
  */
 function buildFileMissingDetail(missing: FileMissingItem[]): string {
-  const names = (missing.length <= 5 ? missing : missing.slice(0, 5))
-    .map(item => item.torrent_name || item.torrent_id)
-    .join('、')
-  const suffix = missing.length <= 5 ? '' : ` 等${missing.length}个`
-  return `以下种子未找到文件，已跳过文件操作直接移入回收站：${names}${suffix}`
+  const names = joinNames(
+    (missing.length <= 5 ? missing : missing.slice(0, 5))
+      .map(item => item.torrent_name || item.torrent_id)
+  )
+  return missing.length <= 5
+    ? translate('torrent.deleteLevel.result.fileMissingDetail', { names })
+    : translate('torrent.deleteLevel.result.fileMissingDetailMore', {
+      names, count: missing.length
+    })
 }
 
 /**
@@ -1336,11 +1280,15 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
   // 等级3降级处理
   if (level === 3 && data?.level4_downgraded && data.level4_downgraded.length > 0) {
     const downgraded = data.level4_downgraded
-    const names = (downgraded.length <= 5 ? downgraded : downgraded.slice(0, 5))
-      .map((d: any) => d.torrent_name).join('、')
+    const names = joinNames(
+      (downgraded.length <= 5 ? downgraded : downgraded.slice(0, 5))
+        .map((d: any) => d.torrent_name)
+    )
     downgradeDetail = downgraded.length <= 5
-      ? `以下种子备份失败，已降级为等级4：${names}`
-      : `以下种子备份失败，已降级为等级4：${names} 等${downgraded.length}个`
+      ? translate('torrent.deleteLevel.result.downgradeDetail', { names })
+      : translate('torrent.deleteLevel.result.downgradeDetailMore', {
+        names, count: downgraded.length
+      })
   }
 
   // 等级3文件缺失：未找到种子文件，已跳过文件操作直接移入回收站
@@ -1359,7 +1307,9 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
   if (downgradeDetail) {
     return {
       type: 'warning',
-      message: `已将 ${data.level4_downgraded.length} 个种子降级为等级4删除（备份失败）`,
+      message: translate('torrent.deleteLevel.result.downgraded', {
+        count: data.level4_downgraded.length
+      }),
       downgradeDetail,
       fileMissingDetail
     }
@@ -1367,7 +1317,12 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
 
   // 部分失败
   if (data?.failed && data.failed.length > 0) {
-    return { type: 'warning', message: `删除完成：失败 ${data.failed.length} 个`, downgradeDetail: null, fileMissingDetail }
+    return {
+      type: 'warning',
+      message: translate('torrent.deleteLevel.result.syncPartialFailed', { count: data.failed.length }),
+      downgradeDetail: null,
+      fileMissingDetail
+    }
   }
 
   // 完全成功
@@ -1377,13 +1332,22 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
     return {
       type: 'success',
       message: missingCount > 0
-        ? `等级3删除成功 ${level3Count} 个（其中 ${missingCount} 个未找到文件，已跳过文件操作）`
-        : (level3Count > 0 ? `等级3删除成功 ${level3Count} 个` : `删除完成，成功 ${successCount} 个`),
+        ? translate('torrent.deleteLevel.result.level3SuccessWithMissing', {
+          count: level3Count, missing: missingCount
+        })
+        : (level3Count > 0
+          ? translate('torrent.deleteLevel.result.level3Success', { count: level3Count })
+          : translate('torrent.deleteLevel.result.deleteDone', { count: successCount })),
       downgradeDetail: null,
       fileMissingDetail
     }
   }
-  return { type: 'success', message: `等级${level}删除完成，成功 ${successCount} 个`, downgradeDetail: null, fileMissingDetail }
+  return {
+    type: 'success',
+    message: translate('torrent.deleteLevel.result.levelDone', { level, count: successCount }),
+    downgradeDetail: null,
+    fileMissingDetail
+  }
 }
 
 

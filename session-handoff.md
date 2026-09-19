@@ -1,3 +1,29 @@
+## 2026-09-19：双语化 P5 代码批完成（链路收敛+回收站+错误契约全绿未提交），待审校签认与人工验收
+
+> 用户确认启动 P5 并拍板三决策：链路收敛到 mixin/删除死代码/移动端不动。本批完成代码+自动化+审校清单；R01～R05/V02 人工验收与英文审校签认留收口批。P5 保持 in_progress。
+
+### 本批交付
+
+- **后端**：E13～E16 全落地（torrent_deletion + recycle_bin reasonCode 14 新键 + 动态 msg 收敛 11 处 + E14 双形态 code=200 冻结 + E16 501）；test_reason_contract_p5.py 18 例；tests/api 全量 1220 passed。
+- **前端**：删除链路收敛 mixin 单点（index.vue 本地 ~340 行删除+模板改挂，列表模式获得文件缺失提醒增强）；deleteLevel 子树 45 键（按等级独立成键，en 三要素/zh 冻结）；回收站页全量双语（recycleBin 模块 78 键）；死代码 ~570 行清理；Jest 117 套 1668 例全绿 + typecheck/lint/build 绿。
+- **审校清单**：PLANS/bilingual/delete-level-review.md（28 条文案 + 9 条议题）**待用户签认**——重点：等级2 "Remove from the downloader" 措辞、等级3 可恢复承诺 vs 备份失败降级、是否需要更强危险警告词。
+
+### 下一步（P5 收口批）
+
+1. 用户签认审校清单（或提修改意见重走 parity+单测）；
+2. 浏览器人工验收 R01～R05（四等级确认/结果/降级/文件缺失/回收站三态，**仅隔离测试数据**）+ V02（危险确认可访问性）；
+3. M1 范围提示（未完成入口英文范围说明——M1 独立发布决策待拍板）；
+4. P5 收口后 M1 里程碑复核（P2/P3 人工验收 A/D/T/Q 系列可与本批同批浏览器验收）。
+
+### 坎位提醒
+
+- 收敛后两视图删除命令统一走 mixin `handleDeleteByLevelCommand`/`handleBatchDeleteByLevelCommand`，新增删除入口不要复制本地链路；
+- buildDeleteConfirmMessage 按等级独立成键，新增等级需同时补 zh/en 两端 confirm.levelN.single/batch + parity 门禁；
+- 名称拼接统一 common.listSeparator（勿硬编码顿号）；
+- 后端新增错误分支必须带 data.reasonCode（源码级清单测试会拦无 reasonCode 的删除链路错误分支）。
+
+---
+
 ## 2026-09-18：双语化 P0 盘点 + P1 基础设施完成（p0/p1 done，P2 待授权）
 
 > 用户先后确认 P0（静态盘点）与 P1（i18n 基础设施）。P0 产出五清单；P1 已实现并全门禁绿（未提交 Git）。

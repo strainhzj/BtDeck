@@ -93,6 +93,21 @@ export const errors = {
     searchTemplateDeleteFailed: 'Failed to delete the template. Please try again later.',
     searchTemplateApplyFailed: 'Failed to apply the template. Please try again later.',
     internalError: 'Internal server error. Please try again later.',
-    dbOperationFailed: 'Database operation failed. Please try again later.'
+    dbOperationFailed: 'Database operation failed. Please try again later.',
+    /* Bilingual P5: deletion chain / recycle bin */
+    torrentDeleteAccepted: 'Batch deletion task submitted and running in the background',
+    torrentDeleteAlreadyProcessed: 'All selected torrents are already being handled by a deletion task',
+    torrentDeleteTaskNotFound: 'The deletion task does not exist or has expired',
+    torrentDeleteSubmitFailed: 'Failed to submit the deletion task. Please try again later.',
+    torrentDeleteStatusQueryFailed: 'Failed to query the deletion task status. Please try again later.',
+    torrentDeleteFailed: 'Failed to delete the torrents. Please try again later.',
+    torrentDeleteInvalidParams: 'Invalid request parameters. Please check and retry.',
+    downloaderUnsupportedType: 'Unsupported downloader type',
+    downloaderAdapterInitFailed: 'Failed to initialize the downloader adapter. Please try again later.',
+    recycleBinQueryFailed: 'Failed to query the recycle bin. Please try again later.',
+    recycleRestoreFailed: 'Failed to restore the torrents. Please try again later.',
+    recyclePreviewFailed: 'Failed to preview the cleanup. Please try again later.',
+    recycleCleanupFailed: 'Failed to clean up the recycle bin. Please try again later.',
+    notImplemented: 'This feature is not available yet'
   }
 }

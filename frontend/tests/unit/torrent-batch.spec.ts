@@ -8,7 +8,6 @@
  */
 import {
   groupTorrentsByDownloader,
-  deleteTorrentsBatch,
   runBatchAction,
   sortByActive,
   deriveVisibleTorrentList,
@@ -35,6 +34,7 @@ import {
   isTorrentRowEffectivelyComplete
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
+import { setLocale } from '@/i18n'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 
@@ -63,60 +63,6 @@ describe('Bug#1/Bug#4 - groupTorrentsByDownloader', () => {
     const groups = groupTorrentsByDownloader(torrents as any)
     expect(Object.keys(groups)).toEqual(['dl1'])
     expect(groups.dl1.length).toBe(1)
-  })
-})
-
-describe('Bug#1 - deleteTorrentsBatch 计数契约', () => {
-  it('逐种子统计成功/失败数（而非下载器ID字符串长度）', async() => {
-    // 防回归 Bug#1：原 bug 是 Object.keys(groups)[index].length（ID 字符串长度），
-    // 这里 mock 让全部成功，断言 successCount 等于种子数而非 ID 长度。
-    const deleteFn = jest.fn().mockResolvedValue({ code: '200' })
-
-    // 用长 ID（dl_long_001）确保计数不是字符串长度
-    const torrents = [
-      { info_id: 'i1', downloader_id: 'dl_long_001', hash: 'h1' },
-      { info_id: 'i2', downloader_id: 'dl_long_001', hash: 'h2' },
-      { info_id: 'i3', downloader_id: 'dl_long_002', hash: 'h3' }
-    ]
-    const result = await deleteTorrentsBatch(torrents, 1, deleteFn)
-
-    expect(result.successCount).toBe(3) // 种子数，不是 ID 长度
-    expect(result.failCount).toBe(0)
-    expect(result.deletedTorrents.length).toBe(3)
-  })
-
-  it('部分失败时收集错误信息', async() => {
-    const deleteFn = jest.fn()
-      .mockResolvedValueOnce({ code: '200' })
-      .mockRejectedValueOnce({ response: { data: { msg: '下载器离线' } } })
-
-    const torrents = [
-      { info_id: 'i1', downloader_id: 'dl1', hash: 'h1' },
-      { info_id: 'i2', downloader_id: 'dl2', hash: 'h2' }
-    ]
-    const result = await deleteTorrentsBatch(torrents, 0, deleteFn)
-
-    expect(result.successCount).toBe(1)
-    expect(result.failCount).toBe(1)
-    expect(result.errors).toContain('下载器离线')
-    expect(result.deletedTorrents.length).toBe(1)
-  })
-
-  it('防回归 Bug#4：调用参数为 info_id/delete_data/id_recycle（非 hashes/deleteData）', async() => {
-    // 后端 delete_torrent 只接受 info_id / delete_data / id_recycle，
-    // 不识别 hashes / deleteData。锁定调用契约。
-    const deleteFn = jest.fn().mockResolvedValue({ code: '200' })
-    const torrents = [{ info_id: 'i1', downloader_id: 'dl1', hash: 'h1' }]
-    await deleteTorrentsBatch(torrents, 1, deleteFn)
-
-    const callArg = deleteFn.mock.calls[0][0]
-    expect(callArg).toHaveProperty('info_id', 'i1')
-    expect(callArg).toHaveProperty('downloader_id', 'dl1')
-    expect(callArg).toHaveProperty('delete_data', 1)
-    expect(callArg).toHaveProperty('id_recycle', 1)
-    // 确保没有错误的参数名
-    expect(callArg).not.toHaveProperty('hashes')
-    expect(callArg).not.toHaveProperty('deleteData')
   })
 })
 
@@ -951,6 +897,88 @@ describe('P2 - parseSyncDeleteResponse', () => {
   })
 })
 
+// ============ 双语 P5：四级删除文案按等级独立成键（R01～R04 三要素） ============
+
+describe('P5 - buildDeleteConfirmMessage 双语契约', () => {
+  afterEach(() => {
+    setLocale('zh-CN')
+  })
+
+  it('zh 值与原内联文案逐字节一致（零回归）', () => {
+    setLocale('zh-CN')
+    expect(buildDeleteConfirmMessage(1, 1)).toBe('警告：此操作将完全删除，是否继续？')
+    expect(buildDeleteConfirmMessage(2, 1)).toBe('确定要将种子删除任务（保留数据）吗？')
+    expect(buildDeleteConfirmMessage(3, 1)).toBe('警告：此操作将移至回收站，是否继续？')
+    expect(buildDeleteConfirmMessage(4, 1)).toBe('确定要将种子标记为待删除吗？')
+    expect(buildDeleteConfirmMessage(1, 5)).toBe('确定要将选中的 5 个种子完全删除吗？')
+    expect(buildDeleteConfirmMessage(3, 3)).toBe('确定要将选中的 3 个种子移至回收站吗？')
+  })
+
+  it('en 按等级完整句式（等级号 + 对象 + 不可恢复性）', () => {
+    setLocale('en')
+    const l1 = buildDeleteConfirmMessage(1, 1)
+    expect(l1).toContain('Level 1')
+    expect(l1).toContain('cannot be undone')
+    expect(l1.toLowerCase()).toContain('data files')
+
+    const l2 = buildDeleteConfirmMessage(2, 1)
+    expect(l2).toContain('Level 2')
+    expect(l2.toLowerCase()).toContain('data files will be kept')
+
+    const l3 = buildDeleteConfirmMessage(3, 2)
+    expect(l3).toContain('Level 3')
+    expect(l3).toContain('2')
+    expect(l3.toLowerCase()).toContain('recycle bin')
+
+    const l4 = buildDeleteConfirmMessage(4, 2)
+    expect(l4).toContain('Level 4')
+    expect(l4.toLowerCase()).toContain('pending deletion')
+    expect(l4.toLowerCase()).toContain('nothing is removed')
+  })
+
+  it('未知等级回退 generic 键（防御分支）', () => {
+    expect(buildDeleteConfirmMessage(9, 1)).toBe('确定要将种子删除吗？')
+    setLocale('en')
+    expect(buildDeleteConfirmMessage(9, 2)).toContain('Are you sure')
+  })
+})
+
+describe('P5 - 删除结果文案名称拼接随语言切换', () => {
+  afterEach(() => {
+    setLocale('zh-CN')
+  })
+
+  it('zh 用顿号拼接失败项名称，en 用逗号', () => {
+    setLocale('zh-CN')
+    const zh = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 2,
+      failed_items: [{ info_id: 'i1' }, { info_id: 'i2' }]
+    }, [{ info_id: 'i1', name: '甲' }, { info_id: 'i2', name: '乙' }])
+    expect(zh.failedDetail).toContain('甲、乙')
+
+    setLocale('en')
+    const en = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 2,
+      failed_items: [{ info_id: 'i1' }, { info_id: 'i2' }]
+    }, [{ info_id: 'i1', name: '甲' }, { info_id: 'i2', name: '乙' }])
+    expect(en.failedDetail).toContain('甲, 乙')
+    expect(en.failedDetail).not.toContain('、')
+  })
+
+  it('taskFailed 未知错误复用 addDialog.msg.unknownError 键', () => {
+    setLocale('zh-CN')
+    const r = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 1, error_message: ''
+    }, [])
+    expect(r.message).toBe('批量删除失败：未知错误')
+    setLocale('en')
+    const r2 = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 1, error_message: ''
+    }, [])
+    expect(r2.message).toBe('Batch deletion failed: Unknown error')
+  })
+})
+
 // ============ 等级3文件缺失提醒：未找到种子文件时跳过文件操作直接入回收站 ============
 // 后端契约：level3 删除成功但文件缺失时 data.level3_file_missing 携带
 // [{torrent_id, torrent_name}]；异步任务 results 每项 {info_id, result} 中
@@ -1095,9 +1123,49 @@ describe('等级3文件缺失提醒 - 源码接线契约', () => {
     expect(utilsSource.match(/fileMissingDetail: string \| null/g)?.length).toBe(3)
   })
 
-  it('mixin 单删与批量轮询两处都发文件缺失提醒通知', () => {
+  it('mixin 单删与批量轮询两处都发文件缺失提醒通知（双语 P5：标题走 i18n 键）', () => {
     expect(mixinSource.match(/if \(parsed\.fileMissingDetail\)/g)?.length).toBe(2)
-    expect(mixinSource.match(/title: '文件缺失提醒'/g)?.length).toBe(2)
+    // 双语 P5：标题由硬编码中文改为 translate 键，禁止中文硬编码回流
+    expect(mixinSource.match(/translate\('torrent\.deleteLevel\.notify\.fileMissingTitle'\)/g)?.length).toBe(2)
+    expect(mixinSource).not.toContain("title: '文件缺失提醒'")
+  })
+})
+
+// ============ 双语 P5：删除链路收敛与死代码清理源码契约 ============
+
+describe('P5 - 删除链路收敛源码契约', () => {
+  const mixinSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/mixins/torrentBatch.ts'),
+    'utf-8'
+  )
+  const indexSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/index.vue'),
+    'utf-8'
+  )
+  const traditionalSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/TraditionalView.vue'),
+    'utf-8'
+  )
+
+  it('两视图删除命令均挂载 mixin 方法（本地重复链路已删）', () => {
+    expect(indexSource).toContain('@command="handleBatchDeleteByLevelCommand"')
+    expect(indexSource).toContain('@command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"')
+    expect(traditionalSource).toContain('@command="handleBatchDeleteByLevelCommand"')
+    expect(traditionalSource).toContain('@command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"')
+  })
+
+  it('legacy 双问删除死代码不回流（两视图）', () => {
+    for (const src of [indexSource, traditionalSource]) {
+      expect(src).not.toContain('是否同时删除')
+      expect(src).not.toContain('仅删除种子，保留数据')
+      expect(src).not.toContain('callDeleteLegacyAPI')
+      expect(src).not.toContain('deleteTorrentsInternal')
+    }
+  })
+
+  it('mixin 错误提示优先 reasonCode 本地化（apiResponseMessage），禁中文 msg 直读', () => {
+    expect(mixinSource.match(/apiResponseMessage\(/g)?.length).toBeGreaterThanOrEqual(4)
+    expect(mixinSource).not.toContain("response.msg || '")
   })
 })
 

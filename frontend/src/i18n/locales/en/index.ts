@@ -28,6 +28,7 @@ import { downloader } from './downloader'
 import { errors } from './errors'
 import { navigation } from './navigation'
 import { queryTemplate } from './queryTemplate'
+import { recycleBin } from './recycleBin'
 import { search } from './search'
 import { settings } from './settings'
 import { time } from './time'
@@ -42,6 +43,7 @@ const messages: MessageTree = {
   errors,
   navigation,
   queryTemplate,
+  recycleBin,
   search,
   settings,
   time,

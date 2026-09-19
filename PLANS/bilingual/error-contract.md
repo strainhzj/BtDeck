@@ -35,9 +35,9 @@
 | E11 | 缓存未初始化 | 200+`缓存服务未初始化`（getList 空列表）⚠️成功信封携带错误语义 | `DOWNLOADER_CACHE_UNAVAILABLE` ✅P4 批定稿：**双形态冻结**（ getList 空列表保留 success+200+data=[] 历史形状不改协议，B03；测试 test_reason_contract_p4 钉住；写路径 500 错误码形态已带 reasonCode） | — | fail-closed 提示「服务暂不可用」；写路径按 reasonCode 分流而非 msg |
 | E12 | 下载器离线 | 200 `下载器离线`（列表查询路径） | `DOWNLOADER_OFFLINE` | downloaderId | 非错误提示，状态语义，进卡片徽标文案 |
 | E13 | 删除时缓存/连接缺失 | 500 `下载器缓存未初始化` / `下载器客户端连接不存在` | `DOWNLOADER_CACHE_UNAVAILABLE` / `DOWNLOADER_CONNECTION_MISSING` | — | 「连接不可用，请稍后重试」，不误导为密码错误（D02） |
-| E14 | 批量删除已提交【留 P5：与 R01-R05 危险操作审校同批】 | 200 `批量删除任务已提交，正在后台执行`；`所选种子均已在删除任务中处理` | `TORRENT_DELETE_ACCEPTED` / `TORRENT_DELETE_ALREADY_PROCESSED` | counts | **202 语义：不报「已完成」**（R05）；部分失败计数进参数 |
-| E15 | 删除后端异常 | 500 `服务器内部错误`/`系统内部错误`/`数据库操作失败` | `INTERNAL_ERROR` / `DB_OPERATION_FAILED` ✅P4 批（torrent sync/通用键已落；删除链路本体随 P5） | — | 固定兜底 + 「稍后重试」 |
-| E16 | 回收站功能未开放【留 P5】 | 501 `功能开发中，请稍后再试` | `NOT_IMPLEMENTED` | feature | 明示未开放而非失败 |
+| E14 | 批量删除已提交【✅ P5 批落地：双形态 code=200 不变 + reasonCode，见 §3.2】 | 200 `批量删除任务已提交，正在后台执行`；`所选种子均已在删除任务中处理` | `TORRENT_DELETE_ACCEPTED` / `TORRENT_DELETE_ALREADY_PROCESSED` | counts | **202 语义：不报「已完成」**（R05）；部分失败计数进参数 |
+| E15 | 删除后端异常 | 500 `服务器内部错误`/`系统内部错误`/`数据库操作失败` | `INTERNAL_ERROR` / `DB_OPERATION_FAILED` ✅P5 批（删除链路本体：delete-with-level/preview/bulk/旧接口全部落地，见 §3.2） | — | 固定兜底 + 「稍后重试」 |
+| E16 | 回收站功能未开放【✅ P5 批落地：501 + NOT_IMPLEMENTED】 | 501 `功能开发中，请稍后再试` | `NOT_IMPLEMENTED` | feature | 明示未开放而非失败 |
 | E17 | 字段校验（422） | `data.errors[].{loc,type,msg}`（msg 英文 pydantic 原文） | 前端按 `type` 映射本地文案 ✅P4 批（errors.validation 10 键 + apiErrorMessage 422 分支） | field/loc | 不逐条翻译 pydantic msg；按 type 字典化 |
 | E18 | 平台能力拒绝 | 403 `PLATFORM_CAPABILITY_UNSUPPORTED`（已有） | 复用 ✅既有 | capability/operation | 前端已有能力门控文案，核对不重复提示 |
 | E19 | 网络错误（前端本地） | axios 层 `网络错误`（errors 组 14 处高频） | 前端本地键 `errors.network` ✅P2 批已落 | — | 不依赖后端 |
@@ -48,8 +48,15 @@
 
 - **已落地契约码（累计）**：P2 批 25 键（AUTH_*5/USER_*3/2FA_*9/DOWNLOADER_*7）+ P4 批 33 键 = `errors.byCode` 共 58 键（zh/en 成对，parity 门禁覆盖）。P4 批分布：种子操作 8（TORRENT_HASHES_REQUIRED/RECORDS_NOT_FOUND/OPERATION_FAILED/OPERATION_INTERNAL/FILE_REQUIRED/FILE_INVALID/INFO_TIMEOUT/INFO_UNAVAILABLE）、添加链路 4（TORRENT_ADD_FAILED/FILES_REQUIRED/STAGE_FAILED/BATCH_SUBMIT_FAILED）、同步 2（TORRENT_SYNC_FAILED/DB_OPERATION_FAILED）、下载器 4（CACHE_UNAVAILABLE/OFFLINE/CONNECTION_MISSING/NO_TORRENTS）、Tracker 3（URL_REQUIRED/NOT_FOUND/OPERATION_INTERNAL）、查询模板 9（NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS + CREATE/LIST/UPDATE/DELETE/APPLY_FAILED）、通用 1（INTERNAL_ERROR）。
 - **动态 msg 收敛**：outer `操作异常：{error_detail}`（6 处）、添加兜底 `添加种子失败: {type}: {e}`（2 处）、暂存/后台任务提交 `{str(exc)}`（2 处）、模板 CRUD 500 `{str(e)}`（6 处）→ 固定文案 + logger；**保留**：inner 操作失败 msg（含异常类名，测试钉住语义）与受控 RPC 错误文本（TransmissionError/APIError/calculate_info_hash）。
-- **E14/E16 删除链路**：留 P5（与 R01-R05 危险操作英文审校同批收口），本批不动删除链路。
+- **E14/E16 删除链路**：留 P5（已由 P5 批收口，见 §3.2）。
 - **pytest 契约锚**：`tests/api/test_reason_contract_p4.py` 30 例（含 E02 双形态钉住、E17 data.errors 形态、E03 事件键）；`tests/api/test_reason_contract_p2.py` 11 例（P2 批）。
+
+## 3.2 P5 批落地汇总（2026-09-19，删除链路 + 回收站，E13～E16）
+
+- **已落地契约码（累计）**：P5 批 14 键，`errors.byCode` 共 72 键。分布：删除链路 7（TORRENT_DELETE_ACCEPTED/ALREADY_PROCESSED/TASK_NOT_FOUND/SUBMIT_FAILED/STATUS_QUERY_FAILED/FAILED/INVALID_PARAMS）、下载器扩展 2（UNSUPPORTED_TYPE/ADAPTER_INIT_FAILED，/torrents/delete 旧接口分支）、回收站 4（RECYCLE_BIN_QUERY_FAILED/RESTORE_FAILED/PREVIEW_FAILED/CLEANUP_FAILED）、通用 1（NOT_IMPLEMENTED，E16）。复用既有：DOWNLOADER_CACHE_UNAVAILABLE/NOT_FOUND/OFFLINE/CONNECTION_MISSING（/torrents/delete 四分支）、DB_OPERATION_FAILED/INTERNAL_ERROR（delete-with-level 与 preview/bulk 的 500）。
+- **E14 双形态冻结**：code=200 不变（B03），有 task_id 分支 data 加 reasonCode=TORRENT_DELETE_ACCEPTED，task_id=None 分支加 TORRENT_DELETE_ALREADY_PROCESSED；前端 info 提示改走 apiResponseMessage（reasonCode 优先，回退固定文案）。
+- **动态 msg 收敛（本批 11 处）**：`提交任务失败: {str(e)}`、`查询失败: {str(e)}`、`参数错误: {str(e)}` ×5、`任务不存在: {task_id}`、`下载器适配器初始化失败: {str(e)}`、回收站 5 端点的 `X失败: {str(e)}` → 固定文案 + logger；成功分支计数 msg（还原成功：共N个种子等）保留——前端自行本地化构造，不消费后端 msg。
+- **pytest 契约锚**：`tests/api/test_reason_contract_p5.py` 18 例（E14 双形态/提交失败/状态查询 404+500/delete-with-level 400+500/旧接口缓存缺失+适配器失败+删除失败计数/E16 501/回收站四端点 500/源码级 msg 无 str(e) 与 reasonCode 清单无遗漏）。
 
 ## 4. 已识别的坑（P4 必读）
 

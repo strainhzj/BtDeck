@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（P5 代码批）：双语化 P5——四级删除链路收敛 + 回收站全量 + 错误契约 E13～E16（全绿未提交）
+
+- **范围（用户三决策拍板）**：①删除链路收敛到 mixin 单点；②死代码删除；③移动端零改动（独立实现不受影响）。人工验收 R01～R05/V02 与英文审校签认留收口批。
+- **后端（错误契约，信封四字段不变仅 data 新增）**：torrent_deletion.py 全端点 + recycle_bin.py 五端点补 reasonCode 14 新键（TORRENT_DELETE_*×7、DOWNLOADER_UNSUPPORTED_TYPE/ADAPTER_INIT_FAILED、RECYCLE_BIN_*×4、NOT_IMPLEMENTED），复用既有 DOWNLOADER_*/DB_OPERATION_FAILED/INTERNAL_ERROR；E14 双形态 code=200 冻结（B03）+ reasonCode 标识受理/已在处理；动态 str(e)/task_id 拼接 msg 收敛 11 处（诊断只进日志防泄露）；E16 手动还原 501 stub 明示未开放。新 test_reason_contract_p5.py 18 例（含源码级 msg 无 str(e) 与 reasonCode 清单无遗漏）；tests/api 全量 1220 passed，mypy/black/flake8 绿。
+- **前端（链路收敛 + 双语）**：①index.vue 本地四级删除链路 ~340 行删除，模板两处改挂 mixin 方法（与 TraditionalView 同源；列表模式顺带获得等级3 文件缺失提醒——行为增强）；②utils 纯函数 + mixin 提示全量 i18n：torrent.deleteLevel 子树 45 键，确认文案按等级独立成键（en 含等级号+对象+不可恢复性三要素，zh 冻结零回归），名称拼接 common.listSeparator 随语言切换；mixin 错误提示改 apiResponseMessage（reasonCode 优先）；③回收站页全量双语：recycleBin 模块 78 键（含危险确认插值链路/三态结果/清理预览/手动上传弹窗），错误展示改 apiErrorMessage/apiResponseMessage 禁中文 msg 直读；errors.byCode 扩 14 键（累计 72）；④死代码清理 ~570 行（两视图 legacy 双问删除 + mixin deleteTorrentsInternal + utils deleteTorrentsBatch 纯函数及死用例随迁删除）。
+- **测试**：torrent-batch.spec 删 3 死用例 + 新增 P5 双语契约（zh 逐字节/en 三要素/未知等级回退/名称拼接切换/unknownError 复用）与收敛源码契约（两视图挂 mixin/死代码不回流/apiResponseMessage 接线）共 8 例；torrent-list-view 两用例改直调 mixin 全链路（getList 双刷新计数修正——提交后刷+完成后再刷为 mixin 既有设计）；management-pages-ui 补回收站 i18n 源码契约 3 例。全量 Jest 117 套 1668 例全绿；typecheck/lint 三项/build 绿；parity 门禁自动覆盖新键。
+- **审校清单**：PLANS/bilingual/delete-level-review.md（R01～R04 确认框 8 条/结果链路 12 条/回收站 8 条 + 9 条议题）待用户逐条签认（M1 门禁要求）。
+- **坑**：①deleteTorrentsBatch 纯函数删除时同步删除其 Bug#1 计数用例（零生产消费方，避免死代码进语言包）；②收敛后 index.vue 直调内层方法的旧测试语义变化（单次刷新→全链路双刷新），按 mixin 既有设计修正断言并注释依据；③eslint 对删除后遗留的未用 import（getTorrentId/getDownloaderId/deleteTorrents）逐一清理。
+
+---
 ## 2026-09-18（P2 第一批）：首次使用闭环双语化——文案全量 + 错误契约 M1 子集（全绿未提交）
 
 - **范围**（用户确认的三边界：DownloaderSettingsDialog basic 页签整页签 M1（含保存目录/路径转换，不拆半）；状态诊断页签 M1；仪表盘留 P3）：auth 组（登录表单/2FA 占位/记住我/忘记密码/演示入口/校验器/登录消息、permission 守卫四提示、request 会话过期与网络 toast/207 兑底、Navbar 用户名回退、404 页）、settings M1（2FA 全流程含手动录入降级与停用确认、改密、状态诊断）、downloader M1（控制台页骨架文案/图例/空态/计数、卡片全量含 aria 与状态徽标、设置弹窗 basic 页签全量含校验规则 computed 化与路径映射 placeholder 经 {sep} 插值槽绕开 vue-i18n 花括号语法）、通知壳层（抽屉标题/筛选页签 computed 化/加载更多/空态/aria；NotificationItem 相对时间改复用共享 formatter）。
