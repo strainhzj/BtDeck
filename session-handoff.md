@@ -5061,7 +5061,7 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 迁移注意：新库/升级库首启自动执行 b3e5f7a9c1d2；Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
 - Git 已提交并推送 origin/dev：3f6fea5（feat：backend/frontend/feature_list/progress/session-handoff 共 42 文件）+ 128facc（docs(roadmap) 6 文件）；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。
 
-## 2026-09-21 交接：桌面双语 P4 剩余子范围完成（错误契约 M1 扩展 + E03 通知事件，未提交）
+## 2026-09-21 交接：桌面双语 P4 剩余子范围完成（错误契约 M1 扩展 + E03 通知事件，已提交 9206f82 + ef37db9）
 
 ### 已完成
 
@@ -5078,4 +5078,4 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 后端 5 例存量基线失败（rollback_scenarios×2 + orphan 迁移×3，stash 对照证实），全量跑红时注意甄别。
 - Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
 - 坑位：pytest fixture 须 register_exception_handlers(app) 才复刻生产 422 信封；Notification.extra_data 是 JSON 字符串需 json.loads；pause/resume/recheck 空 hashes 被 pydantic 拦截（业务 400 分支不可达）；Optional[UploadFile]=File(...) 表单必填。
-- 未执行 Git 提交；data/ 下 p32_*.py 未跟踪辅助脚本保持不动。
+- Git 已提交（未推送）：9206f82（feat，35 文件）+ ef37db9（docs(roadmap)，7 文件）；data/ 下未跟踪产物保持不动。
