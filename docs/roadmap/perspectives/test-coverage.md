@@ -143,6 +143,7 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
+| `tests/api/test_reason_contract_p5.py` ✨2026-09-19 | 删除链路/回收站 reasonCode 契约：E14 双形态（ACCEPTED/ALREADY_PROCESSED，code=200 冻结）、提交失败/状态查询 404+500、delete-with-level 400/500、旧 /delete 下载器分支（缓存缺失/适配器失败/删除失败计数）、E16 手动还原 501、回收站四端点 500 固定 msg 无 str(e)、源码级 reasonCode 清单与 msg 无动态拼接 |
 | `tests/api/test_reason_contract_p4.py` ✨2026-09-21 | 552 | 种子操作（pause/resume/recheck/reannounce×3）失败路径 reasonCode 矩阵、Tracker by-downloader/replace 错误分支、查询模板 CRUD（含 E17 422 data.errors 形态与服务层直调）、单添加/批量添加 fail-closed 链路（E13）、E02 历史双形态钉住（getList 缓存缺失 success+200+data=[]）、E03 通知事件键（orphan extra_data 含 orphan_count_warning、version_update event 键） |
 
 ## 前端测试分布
@@ -208,7 +209,7 @@
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
 | `torrent-add-dialog.spec.ts` ✨2026-08-30 | `views/torrents/components/TorrentAddDialog.vue`：202 响应 task_id 跟踪、完成通知精确匹配并发出 `batch-complete`、销毁清理轮询计时器 |
-| `torrent-batch.spec.ts`（1496 行）✨2026-08-30 | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限；运行态列表成员首次完整快照基线、206 增量、刷新重建基线及并发单飞） |
+| `torrent-batch.spec.ts` ✨2026-09-19（增 P5 双语契约：确认文案 zh 逐字节/en 三要素/未知等级回退/名称拼接随语言切换/收敛源码契约；删死封装 3 用例） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限；运行态列表成员首次完整快照基线、206 增量、刷新重建基线及并发单飞） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
 | `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
 | `torrent-loading-mask.spec.ts` ✨2026-08-27 | Element UI 2.15.13 真实 Loading 指令：fullscreen mask 挂 body、lock/unlock、隐藏状态与加载中销毁清理 |

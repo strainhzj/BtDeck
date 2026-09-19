@@ -32,14 +32,14 @@
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
 | 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务 |
-| 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
+| 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理；✨2026-09-19 双语 P5：五端点失败路径 data.reasonCode（RECYCLE_BIN_*/RECYCLE_RESTORE_FAILED/E16 NOT_IMPLEMENTED 501）+ 动态 str(e) msg 收敛 |
 | 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service`；审计写 torrent_audit_log 含 IP/user_agent |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |
 | 标签管理 tag | `tag_management.py` | 标签管理：标签 CRUD/种子标签分配/批量操作 |
 | 任务日志 task-log | `tasks.py` | 任务日志（`/logs`、`/statistics`） |
 | 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理；`get_backup_downloader_nicknames` L87 对当前页下载器做单次批量查询，列表直接返回当前 nickname |
 | 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；`get_torrents()` L597 支持 `tracker_domain` L611 和 `single_error_only` L628，并委托列表共享查询；✨2026-09-10 新增 `with_trackers` L331 查询参数（false 时 VO 免装 tracker_info，移动端列表瘦身）；`GET /tracker-domains` L423 返回定时 Tracker 同步已采集的主机域名，2026-09-10 起加 60s 进程内 TTL 缓存（`reset_tracker_domains_cache` 测试钩子）；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py`；✨2026-09-21 双语 P4 错误契约：add/add-batch/sync 失败路径 data.reasonCode（DOWNLOADER_*/TORRENT_*），暂存与后台任务提交的动态 str(exc) msg 固定化 ★ [详情](./endpoints/torrent_crud.md) |
-| 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
+| 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计；✨2026-09-19 双语 P5：全端点失败路径 data.reasonCode（TORRENT_DELETE_*×7 + DOWNLOADER_UNSUPPORTED_TYPE/ADAPTER_INIT_FAILED，E14 受理双形态 code=200 不变携带 TORRENT_DELETE_ACCEPTED/ALREADY_PROCESSED）+ 动态 msg 收敛 |
 | 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L49 复用普通筛选/排序/分页；`_apply_row_display_filters()` L173 收拢 tracker/tracker_domain/status 三类行级筛选——普通列表原位应用，`same_content_only` L292 延后到分组 join 后仅过滤组内显示行（v1.0.6.40）；`same_content_only` 从不含状态/Tracker 的候选集聚合同名同大小且不同规范化 Hash；`single_error_only` L324 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子；✨2026-08-20 展示对齐判定：`convert_to_vo_with_trackers` 接受可选 `tracker_keyword_map`（None 不覆写），announce/scrape 文本在消息命中失败池且非中性码时覆写"工作失败"（L569/L592），VO 透传 `has_tracker_error`（L466/L637），批量版 `convert_to_vos_with_trackers` 每次列表转换经 `load_active_keyword_map` 加载一次关键词池（L689）；✨2026-09-10 二者新增 `include_trackers` L109/L770（false 时跳过 tracker 批量预取与关键词池加载，VO tracker_info 为空数组） |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存）；`GET /active-torrents` 返回 status/downloadComplete 并区分 200/206 完整/部分快照，完成态进度强制 100；TTL 补查按下载器轮转退避，退避期以上次补查结果缓存填充保证快照成员不缺席（断速种子不触发前端整表刷新，2026-09-11），速度恢复即弃缓存；`POST /runtime-state/reconcile` 按 downloader_id+hash 低频核验消失任务并同步终态 |
