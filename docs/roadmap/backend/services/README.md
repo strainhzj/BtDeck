@@ -9,25 +9,25 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1471 行，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
+| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1544 行实测 2026-09-21，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；搜索模板 CRUD ✨2026-09-21 双语 P4 错误契约：失败路径 result.data 携带 reasonCode（SEARCH_TEMPLATE_NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS/各操作 _FAILED），500 动态 str(e) msg 固定化；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
 | 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数；✨2026-09-05 起注入 store+AuditContext，不再接收 FastAPI Request） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
-| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用 |
+| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
-| 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
+| 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查）；✨2026-09-21 双语 P4（E03）：版本更新通知 extra_data 补稳定 event=version_update 键（前端按事件本地化标题；历史通知无 event 原文展示） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L65 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L174 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
 | 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；列表/硬链接/清理链路由 `orphan_files` 能力统一门禁，Android 主服务端不访问下载器目录；桌面端保留原有分批生命周期与 fail-closed 文件操作 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿文件夹分组 orphan-folder-group | `orphan_folder_grouping.py` | SQLite 自定义函数 `bt_orphan_parent_dir`（直接父目录提取），供折叠列表在 SQL 层 GROUP BY 聚合同父目录孤儿行，避免万级行拉进内存；aiosqlite 下查询前穿透 wrapper 显式注册（幂等） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `reconcile_candidates` L76 按 200 条分批查询/更新/current_detail 复用/resolved keyset，每批整体进入 `db_write_scope`；可清理查询亦分页 |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
-| 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
+| 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key）；✨2026-09-21 双语 P4（E03）：extra_data 补 orphan_count_warning 结构化标志（前端事件本地化还原护栏提示语义） |
 | 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放；job 行持久化提交端 IP 供后台审计，迁移 ab68fe061d5b） |
 | 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量提醒/兼容复核记录 |
 | 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举；`collect_runtime_accessible_roots` L312 按目标 `st_dev` 收集当前进程可访问挂载根（硬链接不跨文件系统），仅 `os.rmdir` 回收空目录 |

@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### utils/（13 个 .ts 文件）
+### utils/（14 个 .ts 文件，实测 2026-09-21）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -24,6 +24,7 @@
 | 存储 cookies | `cookies.ts` | sidebar status / 双令牌 access+refresh token（cookie） / userId（localStorage） + 通用 `getStorage`/`setStorage` |
 | 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
+| 通知事件展示 notification-display | `notification-display.ts` ✨2026-09-21 | 双语 P4（E03）系统通知事件展示层：按 `extra_data.event`（torrent_batch_add_completed/orphan_scan_completed/version_update/welcome）+ 参数本地化 title/content（`notificationDisplayTitle/Content`，经 i18n translate + formatFileSize），未登记事件/无 extra_data 历史通知原文兜底（旧内容不改写） |
 
 #### request.ts 关键（axios/Demo 分流封装，L1-300）
 

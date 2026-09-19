@@ -139,9 +139,15 @@
 | `tests/api/test_active_torrents_endpoint.py`（632 行） | `app/api/endpoints/torrent_speed.py` | status/downloadComplete 契约；“下载中有速度→零速完成”两轮闭环强制 100%、响应前同步与 TTL 移除；206 仍交付健康下载器终态；核验 list/missing；断速振荡端点闭环（2026-09-12）：断速种子退避期连续多轮在场且零补查查询（不查但在场）、速度恢复弃缓存回归实时数据 |
 | `tests/endpoints/test_active_only_filter.py`（601 行） | `app/api/endpoints/torrent_speed.py` | 终态证据同步进度 100、状态与 completed_date；完成时间/完成状态/100% 三种数据库证据分别阻止异步旧快照回退 |
 
+### 2026-09-21 双语 P4 错误契约与通知事件（后端）
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/api/test_reason_contract_p4.py` ✨2026-09-21 | 552 | 种子操作（pause/resume/recheck/reannounce×3）失败路径 reasonCode 矩阵、Tracker by-downloader/replace 错误分支、查询模板 CRUD（含 E17 422 data.errors 形态与服务层直调）、单添加/批量添加 fail-closed 链路（E13）、E02 历史双形态钉住（getList 缓存缺失 success+200+data=[]）、E03 通知事件键（orphan extra_data 含 orphan_count_warning、version_update event 键） |
+
 ## 前端测试分布
 
-### `frontend/tests/unit/`（89 个 spec）
+### `frontend/tests/unit/`（105 个 spec，实测 2026-09-21）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -175,7 +181,9 @@
 | `mobile-torrents.spec.ts` ✨2026-08-30 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行；新活动复合键未展示时重载列表并立即应用同轮进度与速度；✨2026-09-05 四级删除（DeleteLevelDialog+deleteTorrentsWithLevel）、reload 原子替换、终态 reload hash 去重、WindowInfiniteScroll 接入与失控根修核心性质（高内容仅 1 页/多轮速度轮询零 getList/reload 不链式补页） |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
-| `notification-drawer-detail.spec.ts` ✨2026-08-27 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
+| `notification-drawer-detail.spec.ts` ✨2026-08-27，2026-09-21 扩 P4 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停；P4 扩展：事件本地化挂载（批量添加标题/正文按参数渲染、未知事件原文兜底）+ NotificationItem 事件接线源码契约（17 例） |
+| `notification-display.spec.ts` ✨2026-09-21 | 双语 P4（E03）事件展示层：四事件（批量添加/孤儿扫描含护栏标志/版本更新 title 参数化 Release 原文透传/欢迎）zh/en 双语参数插值、未登记 event/无 extra_data 原文兜底 |
+| `api-error-message-p4.spec.ts` ✨2026-09-21 | 双语 P4 错误契约前端入口：19 个新 reasonCode zh/en 本地化矩阵、未知码 fallback、E17 422 按 type/loc 字典化（missing/too_short/value_error/未知 type 回退/前 2 条拼接/reasonCode 优先）、apiResponseMessage resolved 响应分支 |
 | `notification-markdown.spec.ts` ✨2026-08-27 | `utils/notification-markdown.ts`：Markdown-lite 分块渲染（标题/列表/粗体/行内代码/分隔线/CRLF/转义防注入）、摘要纯文本化 plainNotificationContent（记号剥离/语法严格性/分隔线丢弃/跨行内联合并/不做 HTML 转义）与失败明细目标回退链，桌面/移动同源行为锁 |
 | `pwa-manifest.spec.ts` ✨2026-08-26 | 完整 `BtDeck` 字标、微型 mark 资源、favicon/PWA manifest 与图标生成源契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
