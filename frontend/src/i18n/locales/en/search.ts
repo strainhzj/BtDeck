@@ -268,6 +268,31 @@ export const search = {
     missingBetweenLogic: 'Condition group {index} is missing valid group logic'
   },
   /** Built-in presets display (mapped by preset_key, Q01) */
+  /** Request-building validation (utils/torrentBatch.ts buildAdvancedSearchRequest*, leftover fix) */
+  requestValidation: {
+    labelConditions: 'search conditions',
+    labelBetweenLogics: 'between-group logic',
+    jsonString: '{label} must be a JSON string',
+    notValidJson: '{label} is not valid JSON',
+    needOneGroup: 'At least one condition group is required',
+    groupStructureInvalid: 'Condition group {index} has an invalid structure',
+    groupLogicInvalid: 'Condition group {index} has invalid logic',
+    groupNeedCondition: 'Condition group {index} needs at least one condition',
+    condStructureInvalid: 'Item {cond} of condition group {group} has an invalid structure',
+    condContractInvalid: 'Item {cond} of condition group {group} has an invalid contract reference',
+    condMissingValue: 'Item {cond} of condition group {group} is missing a value',
+    condModeInvalid: 'Item {cond} of condition group {group} has an invalid mode',
+    betweenCount: 'The number of between-group logics must equal the number of condition groups minus one',
+    betweenLogicInvalid: 'Between-group logic {num} is invalid',
+    invalidPageSize: 'Invalid page size',
+    invalidSortOrder: 'Invalid sort order',
+    generic: 'Invalid search conditions',
+    tplGroupLogicInvalid: 'Template condition group {index} has invalid logic',
+    tplGroupNoConditions: 'Template condition group {index} has no conditions',
+    tplGroupMissingBetween: 'Template condition group {index} is missing between-group logic',
+    tplUnknownField: 'The template contains an unknown field: {field}',
+    tplGeneric: 'Invalid template search conditions'
+  },
   presets: {
     activeTorrents: {
       name: 'Active torrents',

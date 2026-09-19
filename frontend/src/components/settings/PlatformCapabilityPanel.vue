@@ -1,18 +1,18 @@
 <template>
   <div class="platform-capability-panel">
     <div class="settings-card">
-      <h3 class="settings-card-title">主机能力</h3>
+      <h3 class="settings-card-title">{{ $t('settings.capability.title') }}</h3>
       <p class="settings-description">
-        当前服务端主机形态：<strong>{{ platformLabel }}</strong>
+        {{ $t('settings.capability.platformLabel') }}<strong>{{ platformLabel }}</strong>
         <template v-if="data">
-          （降级 {{ data.degradedCount }} 项 · 不支持 {{ data.unsupportedCount }} 项）
+          {{ $t('settings.capability.degradedCount', {degraded: data.degradedCount, unsupported: data.unsupportedCount}) }}
         </template>
-        能力级别由服务端统一下发，各页面展示保持一致。
+        {{ $t('settings.capability.hint') }}
       </p>
 
-      <div v-if="loading" class="capability-hint">加载中…</div>
+      <div v-if="loading" class="capability-hint">{{ $t('settings.capability.loading') }}</div>
       <div v-else-if="!data" class="capability-hint">
-        能力信息暂不可用；需要下载器主机文件系统的入口将暂时关闭，请检查连接后重试。
+        {{ $t('settings.capability.unavailable') }}
       </div>
       <template v-else>
         <!-- 桌面 ≥768px：表格 -->
@@ -22,15 +22,15 @@
           size="small"
           class="capability-table"
         >
-          <el-table-column prop="label" label="能力" min-width="240" show-overflow-tooltip />
-          <el-table-column label="支持级别" width="120">
+          <el-table-column prop="label" :label="$t('settings.capability.colCapability')" min-width="240" show-overflow-tooltip />
+          <el-table-column :label="$t('settings.capability.colLevel')" width="120">
             <template slot-scope="{row}">
               <el-tag :type="levelTagType(row.level)" size="mini" :effect="row.level === 'supported' ? 'light' : 'plain'">
                 {{ levelText(row.level) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="说明" min-width="280">
+          <el-table-column :label="$t('settings.capability.colNote')" min-width="280">
             <template slot-scope="{row}">
               <span v-if="row.note">{{ row.note }}</span>
               <span v-else class="capability-muted">—</span>
@@ -84,8 +84,11 @@ export default class extends Vue {
   private isNarrow = typeof window !== 'undefined' && window.innerWidth < 768
 
   private get platformLabel(): string {
-    if (!this.data) return '未知（待确认）'
-    return this.data.platform === 'android-server' ? 'Android 服务端' : '桌面 / 服务器'
+    // 遗留补译：形态名走 i18n（row.label/row.note 为服务端原文，按契约透传 E03 语义）
+    if (!this.data) return this.$t('settings.capability.platformUnknown').toString()
+    return this.data.platform === 'android-server'
+      ? this.$t('settings.capability.platformAndroidServer').toString()
+      : this.$t('settings.capability.platformDesktop').toString()
   }
 
   private get rows(): CapabilityRow[] {
@@ -105,9 +108,9 @@ export default class extends Vue {
   }
 
   private levelText(level: PlatformCapabilityEntry['level']): string {
-    if (level === 'unsupported') return '不支持'
-    if (level === 'degraded') return '受限'
-    return '支持'
+    if (level === 'unsupported') return this.$t('settings.capability.levelUnsupported').toString()
+    if (level === 'degraded') return this.$t('settings.capability.levelDegraded').toString()
+    return this.$t('settings.capability.levelSupported').toString()
   }
 
   private mounted(): void {

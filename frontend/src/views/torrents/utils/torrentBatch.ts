@@ -833,10 +833,10 @@ export function assertSameDownloader(torrents: any[]): SameDownloaderResult {
   )
 
   if (downloaderIds.has('') || torrents.some(t => !getDownloaderId(t))) {
-    return { ok: false, reason: '选中种子缺少下载器信息，请刷新后重试' }
+    return { ok: false, reason: translate('torrent.msg.missingDownloader') }
   }
   if (downloaderIds.size > 1) {
-    return { ok: false, reason: '选中的种子必须属于同一下载器' }
+    return { ok: false, reason: translate('torrent.msg.setLocationSingleDownloaderOnly') }
   }
   return { ok: true, reason: '' }
 }
@@ -863,44 +863,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseJsonString(value: unknown, label: string): unknown {
   if (typeof value !== 'string') {
-    throw new AdvancedSearchValidationError(`${label}必须是JSON字符串`)
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.jsonString', { label }))
   }
   try {
     return JSON.parse(value) as unknown
   } catch (_error) {
-    throw new AdvancedSearchValidationError(`${label}不是有效JSON`)
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.notValidJson', { label }))
   }
 }
 
 function parseConditionGroups(value: unknown): NonNullable<
   AdvancedSearchRequest['condition_groups']
 > {
-  const parsed = parseJsonString(value, '搜索条件')
+  const parsed = parseJsonString(value, translate('search.requestValidation.labelConditions'))
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new AdvancedSearchValidationError('至少需要一个条件组')
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.needOneGroup'))
   }
   return parsed.map((rawGroup, groupIndex) => {
     if (!isRecord(rawGroup)) {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}结构无效`
+        translate('search.requestValidation.groupStructureInvalid', { index: groupIndex + 1 })
       )
     }
     const logic = String(rawGroup.logic).toUpperCase()
     if (logic !== 'AND' && logic !== 'OR') {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}逻辑无效`
+        translate('search.requestValidation.groupLogicInvalid', { index: groupIndex + 1 })
       )
     }
     if (!Array.isArray(rawGroup.conditions) || rawGroup.conditions.length === 0) {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}至少需要一个条件`
+        translate('search.requestValidation.groupNeedCondition', { index: groupIndex + 1 })
       )
     }
     const conditions = rawGroup.conditions.map(
       (rawCondition, conditionIndex) => {
         if (!isRecord(rawCondition)) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项结构无效`
+            translate('search.requestValidation.condStructureInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const field = rawCondition.field
@@ -912,12 +914,16 @@ function parseConditionGroups(value: unknown): NonNullable<
           !ADVANCED_SEARCH_FIELDS[field].operators.includes(operator)
         ) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项契约无效`
+            translate('search.requestValidation.condContractInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         if (!Object.prototype.hasOwnProperty.call(rawCondition, 'value')) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项缺少值`
+            translate('search.requestValidation.condMissingValue', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const rawMode = rawCondition.mode
@@ -927,7 +933,9 @@ function parseConditionGroups(value: unknown): NonNullable<
           rawMode !== 'exclude'
         ) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项模式无效`
+            translate('search.requestValidation.condModeInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const mode: 'include' | 'exclude' = rawMode === 'exclude'
@@ -945,17 +953,17 @@ function parseBetweenGroupLogics(
   value: unknown,
   groupCount: number
 ): Array<'AND' | 'OR'> {
-  const parsed = parseJsonString(value, '组间逻辑')
+  const parsed = parseJsonString(value, translate('search.requestValidation.labelBetweenLogics'))
   if (!Array.isArray(parsed) || parsed.length !== groupCount - 1) {
     throw new AdvancedSearchValidationError(
-      '组间逻辑数量必须等于条件组数量减一'
+      translate('search.requestValidation.betweenCount')
     )
   }
   return parsed.map((item, index) => {
     const logic = typeof item === 'string' ? item.toUpperCase() : ''
     if (logic !== 'AND' && logic !== 'OR') {
       throw new AdvancedSearchValidationError(
-        `第${index + 1}个组间逻辑无效`
+        translate('search.requestValidation.betweenLogicInvalid', { num: index + 1 })
       )
     }
     return logic
@@ -979,7 +987,7 @@ export function buildAdvancedSearchRequest(
 ): AdvancedSearchRequestResult {
   try {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100000) {
-      throw new AdvancedSearchValidationError('分页大小无效')
+      throw new AdvancedSearchValidationError(translate('search.requestValidation.invalidPageSize'))
     }
     const conditionGroups = parseConditionGroups(searchParams.groups)
     const betweenGroupLogics = parseBetweenGroupLogics(
@@ -994,7 +1002,7 @@ export function buildAdvancedSearchRequest(
       ? 'desc'
       : searchParams.sort_order
     if (sortOrder !== 'asc' && sortOrder !== 'desc') {
-      throw new AdvancedSearchValidationError('排序方向无效')
+      throw new AdvancedSearchValidationError(translate('search.requestValidation.invalidSortOrder'))
     }
     return {
       request: {
@@ -1010,7 +1018,7 @@ export function buildAdvancedSearchRequest(
   } catch (error) {
     const message = error instanceof AdvancedSearchValidationError
       ? error.message
-      : '搜索条件格式错误'
+      : translate('search.requestValidation.generic')
     return { request: null, error: message }
   }
 }
@@ -1027,12 +1035,12 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
         const logic = String(group.logic).toLowerCase()
         if (logic !== 'and' && logic !== 'or') {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}逻辑无效`
+            translate('search.requestValidation.tplGroupLogicInvalid', { index: groupIndex + 1 })
           )
         }
         if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}没有条件`
+            translate('search.requestValidation.tplGroupNoConditions', { index: groupIndex + 1 })
           )
         }
         const betweenGroupLogic = group.betweenGroupLogic
@@ -1042,7 +1050,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
           betweenGroupLogic !== 'or'
         ) {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}缺少组间逻辑`
+            translate('search.requestValidation.tplGroupMissingBetween', { index: groupIndex + 1 })
           )
         }
         return {
@@ -1054,7 +1062,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
             const field = ADVANCED_SEARCH_FIELDS[condition.field]
             if (!field) {
               throw new AdvancedSearchValidationError(
-                `模板包含未知字段：${condition.field}`
+                translate('search.requestValidation.tplUnknownField', { field: condition.field })
               )
             }
             const operator = normalizeLoadedOperator(
@@ -1086,7 +1094,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
   } catch (error) {
     const message = error instanceof AdvancedSearchValidationError
       ? error.message
-      : '模板搜索条件格式错误'
+      : translate('search.requestValidation.tplGeneric')
     return { request: null, error: message }
   }
 }

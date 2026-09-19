@@ -1,5 +1,7 @@
 import { TorrentStatus } from '@/types/torrent'
 import { translate, translateChoice } from '@/i18n'
+import i18n from '@/i18n'
+import { DEFAULT_LOCALE } from '@/i18n/types'
 
 export function normalizeTorrent(torrent: any): any {
   if (!torrent) {
@@ -199,41 +201,36 @@ export function debounce<T extends(...args: any[]) => any>(
  * @returns 用户友好的错误消息
  */
 export function extractErrorMessage(error: any): string {
-  if (!error) return '未知错误'
+  // 双语遗留补译：HTTP 兜底/网络/未知文案走 i18n（zh 与原内联逐字节一致）；
+  // 后端 msg/message 原文透传（契约化路径由 apiErrorMessage 按 reasonCode 本地化）
+  if (!error) return translate('errors.unknown')
 
   // Axios错误响应
   if (error.response) {
     const { data, status } = error.response
-    
+
     // 后端返回的标准错误格式
     if (data && data.msg) {
       return data.msg
     }
-    
+
     // 其他格式
     if (data && data.message) {
       return data.message
     }
-    
+
     // HTTP状态码
     if (status) {
-      const statusMessages: Record<number, string> = {
-        400: '请求参数错误',
-        401: '未授权，请重新登录',
-        403: '无权限访问',
-        404: '请求的资源不存在',
-        422: '数据验证失败',
-        500: '服务器内部错误',
-        502: '网关错误',
-        503: '服务不可用'
-      }
-      return statusMessages[status] || `请求失败 (${status})`
+      const key = `errors.http.${status}`
+      return i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)
+        ? (i18n.t(key) as string)
+        : translate('errors.httpFallback', { status })
     }
   }
-  
+
   // 网络错误
   if (error.request) {
-    return '网络连接失败，请检查网络设置'
+    return translate('errors.network.checkSettings')
   }
   
   // 错误消息字符串
@@ -258,15 +255,18 @@ export function extractErrorMessage(error: any): string {
  */
 export function showErrorToast(
   error: any,
-  defaultMessage = '操作失败',
+  defaultMessage?: string,
   context?: string
 ): string {
+  // 双语遗留补译：上下文拼接模式走 i18n（zh 保持「{context}失败：{message}」原样）
   const errorMessage = extractErrorMessage(error)
-  const fullMessage = context ? `${context}失败：${errorMessage}` : errorMessage
-  
+  const fullMessage = context
+    ? translate('errors.contextFailed', { context, message: errorMessage })
+    : errorMessage
+
   // Element UI的Message组件需要通过Vue实例调用
   // 这里返回消息文本，由调用方显示
-  return fullMessage || defaultMessage
+  return fullMessage || defaultMessage || translate('errors.generic')
 }
 
 /**

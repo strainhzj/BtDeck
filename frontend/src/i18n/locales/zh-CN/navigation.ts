@@ -44,6 +44,13 @@ export const navigation = {
     settings: '系统设置',
     queryTemplates: '查询模板'
   },
+  sidebar: {
+    /** 侧栏底部双按钮（P1 壳层遗留补译：移动版入口 + 折叠开关） */
+    switchToMobile: '切换到移动版',
+    mobileEntry: '移动版',
+    expand: '展开侧边栏',
+    collapse: '收起侧边栏'
+  },
   navbar: {
     home: '首页',
     logout: '退出登录',

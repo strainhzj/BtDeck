@@ -17,6 +17,24 @@
 
 /** Settings M1 scope (2FA / change password / diagnosis; host capability tab is M2). */
 export const settings = {
+  /** Host capability panel (capability-batch component, leftover fix; server note text passes through) */
+  capability: {
+    title: 'Host Capabilities',
+    platformLabel: 'Current server host profile: ',
+    degradedCount: ' ({degraded} degraded, {unsupported} unsupported)',
+    hint: 'Capability levels are provided by the server so every page stays consistent.',
+    loading: 'Loading...',
+    unavailable: 'Capability information is unavailable; entries that need the downloader host file system are temporarily closed. Check the connection and try again.',
+    colCapability: 'Capability',
+    colLevel: 'Support level',
+    colNote: 'Notes',
+    platformUnknown: 'Unknown (pending)',
+    platformAndroidServer: 'Android server',
+    platformDesktop: 'Desktop / server',
+    levelUnsupported: 'Unsupported',
+    levelDegraded: 'Degraded',
+    levelSupported: 'Supported'
+  },
   tabs: {
     twofa: 'Two-Factor Authentication',
     password: 'Change Password',

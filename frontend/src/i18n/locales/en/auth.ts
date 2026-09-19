@@ -32,6 +32,11 @@ export const auth = {
   noAccount: "Don't have an account?",
   registerNow: 'Register now',
   tokenMissing: 'Your session is missing. Please sign in again.',
+  /* Bilingual leftover fix: user store Login/GetUserInfo thrown messages */
+  noAccessToken: 'Login failed: no access token was received',
+  tokenEmpty: 'The token is empty. Please sign in again.',
+  getUserInfoFailed: 'Failed to load user information',
+  getUserInfoFailedRelogin: 'Failed to load user information. Please sign in again.',
   validation: {
     username: 'Enter a valid username',
     passwordMin: 'Password must be at least 5 characters',

@@ -32,6 +32,11 @@ export const auth = {
   noAccount: '还没有账号？',
   registerNow: '立即注册',
   tokenMissing: '令牌为空，请重新登录',
+  /* ↓ 双语遗留补译：user store Login/GetUserInfo 抛出文案 */
+  noAccessToken: '登录失败：未获取到访问令牌',
+  tokenEmpty: 'Token为空，请重新登录',
+  getUserInfoFailed: '获取用户信息失败',
+  getUserInfoFailedRelogin: '获取用户信息失败，请重新登录',
   validation: {
     username: '请输入正确的用户名',
     passwordMin: '密码长度不能少于5位',

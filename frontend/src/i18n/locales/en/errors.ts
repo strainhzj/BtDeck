@@ -22,10 +22,26 @@
  */
 export const errors = {
   generic: 'Operation failed',
+  unknown: 'Unknown error',
+  /** Operation context composition (formatters.showErrorToast) */
+  contextFailed: '{context} failed: {message}',
   network: {
     unavailable: 'Network connection failed. Please check your network.',
+    checkSettings: 'Network connection failed. Please check your network settings.',
     generic: 'Network error'
   },
+  /** HTTP status fallbacks (formatters.extractErrorMessage, leftover fix) */
+  http: {
+    '400': 'Bad request',
+    '401': 'Unauthorized. Please sign in again.',
+    '403': 'Access denied',
+    '404': 'The requested resource does not exist',
+    '422': 'Validation failed',
+    '500': 'Internal server error',
+    '502': 'Bad gateway',
+    '503': 'Service unavailable'
+  },
+  httpFallback: 'Request failed ({status})',
   /** E17: 422 field validation mapped by pydantic type (field is the last loc segment identifier) */
   validation: {
     missing: 'Missing required field: {field}',

@@ -44,6 +44,13 @@ export const navigation = {
     settings: 'Settings',
     queryTemplates: 'Query templates'
   },
+  sidebar: {
+    /** Sidebar footer buttons (P1 shell leftover fix: mobile entry + collapse toggle) */
+    switchToMobile: 'Switch to the mobile version',
+    mobileEntry: 'Mobile',
+    expand: 'Expand sidebar',
+    collapse: 'Collapse sidebar'
+  },
   navbar: {
     home: 'Home',
     logout: 'Sign out',

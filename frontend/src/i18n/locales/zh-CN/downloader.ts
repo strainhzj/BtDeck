@@ -17,6 +17,27 @@
 
 /** 下载器管理 M1 范围（列表/卡片/基础连接页签；速度与高级页签 M2）。 */
 export const downloader = {
+  /** 控制台页操作反馈（P2 遗留补译：测试连接/同步/启停/删除链路） */
+  msg: {
+    responseInvalid: '响应数据格式异常',
+    connectionOk: '连接成功，延迟 {delay}ms',
+    connectionFailed: '连接失败',
+    testFailed: '测试连接失败',
+    syncStillRunning: '{name} 同步任务仍在后台执行，可稍后重新查看',
+    syncStatusQueryFailed: '同步状态查询失败：{error}',
+    invalidId: '下载器ID无效',
+    syncStarted: '{name} 同步任务已启动',
+    syncResponseInvalid: '同步任务响应缺少 task_id',
+    syncFailed: '同步失败',
+    enabled: '已启用',
+    disabled: '已停用',
+    toggleFailedRolledBack: '操作失败，已恢复原状态',
+    deleteConfirm: '确定要删除下载器"{name}"吗？',
+    deleteTitle: '删除确认',
+    confirmButton: '确定',
+    deleteSuccess: '删除成功',
+    deleteFailed: '删除失败'
+  },
   page: {
     management: '下载器管理',
     filters: '下载器筛选与操作',

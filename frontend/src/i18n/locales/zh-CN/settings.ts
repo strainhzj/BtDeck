@@ -17,6 +17,24 @@
 
 /** 系统设置 M1 范围（2FA / 修改密码 / 状态诊断；主机能力页签 M2）。 */
 export const settings = {
+  /** 主机能力面板（capability 批新增组件，遗留补译；服务端 note 原文透传） */
+  capability: {
+    title: '主机能力',
+    platformLabel: '当前服务端主机形态：',
+    degradedCount: '（降级 {degraded} 项 · 不支持 {unsupported} 项）',
+    hint: '能力级别由服务端统一下发，各页面展示保持一致。',
+    loading: '加载中…',
+    unavailable: '能力信息暂不可用；需要下载器主机文件系统的入口将暂时关闭，请检查连接后重试。',
+    colCapability: '能力',
+    colLevel: '支持级别',
+    colNote: '说明',
+    platformUnknown: '未知（待确认）',
+    platformAndroidServer: 'Android 服务端',
+    platformDesktop: '桌面 / 服务器',
+    levelUnsupported: '不支持',
+    levelDegraded: '受限',
+    levelSupported: '支持'
+  },
   tabs: {
     twofa: '双因素认证',
     password: '修改密码',

@@ -79,7 +79,14 @@ export const common = {
     }
   },
   /** AdvancedMultiSelect shared multi-select (list filters / advanced search / mobile, same source) */
+  /** PWA update prompt bar (added 2026-08-25, leftover fix) */
+  pwa: {
+    found: 'New version available',
+    refresh: 'Refresh now',
+    dismiss: 'Dismiss for now'
+  },
   multiSelect: {
+    placeholder: 'Select',
     searchPlaceholder: 'Search options...',
     createOption: 'Create "{keyword}"',
     include: 'Include',

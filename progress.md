@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（P5 后·遗留清扫批）：已译面漏译机器审计 + 审计门禁（全绿未提交）
+
+- **背景**：用户指示「先处理遗留项，避免后续未发现」。对 P1～P5 已声明完成的桌面面做**逐行机器审计**（去注释/去 console/去 style 段），发现 8 处**用户可见漏译**（分批验收均未覆盖，属静默漏译）。
+- **修复清单**：①壳层 Sidebar：「移动版」按钮文本 + 展开/收起/切换到移动版 aria 4 条 → navigation.sidebar.*；②PWA RefreshPrompt（2026-08-25 批新增，晚于 P1 未接入 i18n）：发现新版本/立即刷新/暂不刷新 → common.pwa.*；③AdvancedMultiSelect `@Prop default '请选择'` → 默认空串 + triggerLabel 走 common.multiSelect.placeholder（显式传入优先，语言切换响应式）；④PlatformCapabilityPanel 整面板（主机能力/形态/级别/列头/兑底 14 条）→ settings.capability.*（服务端 label/note 原文透传 E03 语义）；⑤downloader 控制台操作反馈 17 条（测试连接三态/同步链路 5 条/启停 3 条/删除确认 6 条）→ downloader.msg.*；⑥formatters.extractErrorMessage（HTTP 状态表 8 条 + 网络 + 未知 + `请求失败 ({status})`）+ showErrorToast 上下文拼接 → errors.http/httpFallback/network.checkSettings/unknown/contextFailed；⑦utils/torrentBatch 高级搜索请求构造校验 22 条（JSON 解析/条件组/组间逻辑/分页/排序/模板分支）+ assertSameDownloader 2 条 → search.requestValidation.*（新建子树）与 torrent.msg.* 既有键；⑧user store Login/GetUserInfo 抛出 4 条 → auth.*。均保持 zh 逐字节一致（零回归）。
+- **审计门禁（新增 tests/unit/i18n-leftover-guard.spec.ts，19 例）**：A 扫描集 = 29 个已声明完成的桌面面（P6 计划内文件有意排除并在头注释声明）；规则 = 去 `<style>` 段/注释/console 后含中文即违规；**白名单仅 6 条**（内置页签默认 label 常量/分隔符示例按 locale 直出/刷新编排内部错误/批量操作 errors 数组兑底/后端状态数据值匹配×2）逐条注明理由；**白名单腐化守卫**（白名单条目必须仍在源码命中，防旧白名单掩盖新漏译）。B 遗留补译行为契约：extractErrorMessage 与 showErrorToast 中英切换、请求校验 zh 逐字节 + en 编号插值、assertSameDownloader 双语、T01 成功路径参数不变性、壳层/控制台/store/formatters 源码契约。
+- **变异验证（双向被拦）**：注入中文漏译到 RefreshPrompt → 审计门禁红 + 源码契约红（2 例）；移除白名单命中的 TrackDetailCard 常量 → 腐化守卫红（1 例）；均字节级还原。
+- **坑位**：①插入语言包子树时锚点 `presets: {` 导致新块**嵌进 presets 作用域**（键不可达但 parity 仍绿——parity 只比键集合不比层级可达性），靠 translate 返回空串定位；后改为固定锚点插入并复验键可达；②脚本中途 assert 失败会静默丢掉后续补丁（zh auth 键首次漏加），parity 门禁当场拦住；③挂载型 spec 未装 i18n 时 `$t` 取 `_t` of undefined 抛错——4 套件按 P2 先例挂 `localVue.use(VueI18n)+i18n` 单例；④行首 `/**` JSDoc 行需在扫描器中当注释处理（首版误报 40+ 行）。
+- **验证**：全量 Jest **118 套 1687 例全绿**（+1 套 19 例）；typecheck 零错误；lint（含 contract:check/vuex）通过（PlatformCapabilityPanel 插值空格自动修复已复核为纯样式）；生产 build 通过。
+
+---
 ## 2026-09-19（P5 代码批）：双语化 P5——四级删除链路收敛 + 回收站全量 + 错误契约 E13～E16（全绿未提交）
 
 - **范围（用户三决策拍板）**：①删除链路收敛到 mixin 单点；②死代码删除；③移动端零改动（独立实现不受影响）。人工验收 R01～R05/V02 与英文审校签认留收口批。

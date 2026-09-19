@@ -278,6 +278,31 @@ export const search = {
     missingBetweenLogic: '条件组{index}缺少有效的组间逻辑'
   },
   /** 系统预设展示（按 preset_key 映射，Q01；zh 与后端存储值逐字节一致） */
+  /** 请求构造校验（utils/torrentBatch.ts buildAdvancedSearchRequest*，遗留补译；zh 与原内联逐字节一致） */
+  requestValidation: {
+    labelConditions: '搜索条件',
+    labelBetweenLogics: '组间逻辑',
+    jsonString: '{label}必须是JSON字符串',
+    notValidJson: '{label}不是有效JSON',
+    needOneGroup: '至少需要一个条件组',
+    groupStructureInvalid: '条件组{index}结构无效',
+    groupLogicInvalid: '条件组{index}逻辑无效',
+    groupNeedCondition: '条件组{index}至少需要一个条件',
+    condStructureInvalid: '条件组{group}第{cond}项结构无效',
+    condContractInvalid: '条件组{group}第{cond}项契约无效',
+    condMissingValue: '条件组{group}第{cond}项缺少值',
+    condModeInvalid: '条件组{group}第{cond}项模式无效',
+    betweenCount: '组间逻辑数量必须等于条件组数量减一',
+    betweenLogicInvalid: '第{num}个组间逻辑无效',
+    invalidPageSize: '分页大小无效',
+    invalidSortOrder: '排序方向无效',
+    generic: '搜索条件格式错误',
+    tplGroupLogicInvalid: '模板条件组{index}逻辑无效',
+    tplGroupNoConditions: '模板条件组{index}没有条件',
+    tplGroupMissingBetween: '模板条件组{index}缺少组间逻辑',
+    tplUnknownField: '模板包含未知字段：{field}',
+    tplGeneric: '模板搜索条件格式错误'
+  },
   presets: {
     activeTorrents: {
       name: '活跃种子',

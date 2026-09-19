@@ -691,7 +691,7 @@ export default class DownloaderManager extends Vue {
 
       // 验证响应数据结构
       if (!response?.data) {
-        throw new Error('响应数据格式异常')
+        throw new Error(this.$t('downloader.msg.responseInvalid').toString())
       }
 
       const { data } = response
@@ -706,24 +706,24 @@ export default class DownloaderManager extends Vue {
             online: true,
             delay: data.delay,
             connection_status: 'success',
-            connection_msg: '连接成功'
+            connection_msg: this.$t('downloader.card.connected').toString()
           }
-          Message.success(`连接成功，延迟 ${data.delay || 0}ms`)
+          Message.success(this.$t('downloader.msg.connectionOk', { delay: data.delay || 0 }).toString())
         } else {
           downloader.status = {
             ...downloader.status,
             online: false,
             connection_status: 'error',
-            connection_msg: data.message || '连接失败'
+            connection_msg: data.message || this.$t('downloader.card.disconnected').toString()
           }
-          Message.error(data.message || '连接失败')
+          Message.error(data.message || this.$t('downloader.card.disconnected').toString())
         }
       }
     } catch (error: any) {
       console.error('测试连接失败:', error)
 
       // 提供更详细的错误信息
-      const errorMsg = error?.response?.data?.msg || error?.message || '测试连接失败'
+      const errorMsg = error?.response?.data?.msg || error?.message || this.$t('downloader.msg.testFailed').toString()
       Message.error(errorMsg)
     } finally {
       // 从测试列表移除
@@ -758,11 +758,11 @@ export default class DownloaderManager extends Vue {
       },
       onTimeout: () => {
         this.stopSyncTaskTracking(downloaderId)
-        Message.info(`${nickname} 同步任务仍在后台执行，可稍后重新查看`)
+        Message.info(this.$t('downloader.msg.syncStillRunning', { name: nickname }).toString())
       },
       onError: (error) => {
         this.stopSyncTaskTracking(downloaderId)
-        Message.error(`同步状态查询失败：${extractErrorMessage(error)}`)
+        Message.error(this.$t('downloader.msg.syncStatusQueryFailed', { error: extractErrorMessage(error) }).toString())
       }
     })
     this.syncTaskTrackers.set(downloaderId, tracker)
@@ -772,7 +772,7 @@ export default class DownloaderManager extends Vue {
   private async handleSync(id: string) {
     // 参数验证
     if (!id || typeof id !== "string" || id.trim() === "") {
-      Message.error("下载器ID无效")
+      Message.error(this.$t('downloader.msg.invalidId').toString())
       return
     }
 
@@ -795,14 +795,14 @@ export default class DownloaderManager extends Vue {
     try {
       const response = await syncDownloader(validId)
       const taskId = response.data?.task_id
-      if (!taskId) throw new Error('同步任务响应缺少 task_id')
+      if (!taskId) throw new Error(this.$t('downloader.msg.syncResponseInvalid').toString())
 
-      Message.success(response.msg || `${nickname} 同步任务已启动`)
+      Message.success(response.msg || this.$t('downloader.msg.syncStarted', { name: nickname }).toString())
       startTracking(validId, taskId, nickname)
       trackingStarted = true
     } catch (error: unknown) {
       console.error('同步下载器失败:', error)
-      Message.error(extractErrorMessage(error) || '同步失败')
+      Message.error(extractErrorMessage(error) || this.$t('downloader.msg.syncFailed').toString())
     } finally {
       // 请求提交失败时立即释放；受理成功后由真实后台任务终态释放。
       if (!trackingStarted) stopTracking(validId)
@@ -824,35 +824,37 @@ export default class DownloaderManager extends Vue {
       // 只传 id+enabled 的最小部分更新：列表行是 camelCase 且不含 SSL 字段，
       // 整行展开会缺 is_search/is_ssl 触发 422（后端缺省字段保持原值）
       await upDownloader({ id: downloader.id, enabled: newEnabled })
-      Message.success(newEnabled === '1' ? '已启用' : '已停用')
+      Message.success(newEnabled === '1'
+        ? this.$t('downloader.msg.enabled').toString()
+        : this.$t('downloader.msg.disabled').toString())
     } catch (error) {
       console.error('更新状态失败:', error)
       // 失败回滚
       downloader.enabled = originalEnabled
-      Message.error('操作失败，已恢复原状态')
+      Message.error(this.$t('downloader.msg.toggleFailedRolledBack').toString())
     }
   }
 
   // 删除下载器
   private handleDelete(downloader: Downloader) {
     MessageBox.confirm(
-      `确定要删除下载器"${downloader.nickname}"吗？`,
-      '删除确认',
+      this.$t('downloader.msg.deleteConfirm', { name: downloader.nickname }).toString(),
+      this.$t('downloader.msg.deleteTitle').toString(),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: this.$t('downloader.msg.confirmButton').toString(),
+        cancelButtonText: this.$t('common.cancel').toString(),
         type: 'warning'
       }
     ).then(async() => {
       try {
         await deleteDownloader(downloader.id)
-        Message.success('删除成功')
+        Message.success(this.$t('downloader.msg.deleteSuccess').toString())
 
         // getList 会重新初始化轮询，无需手动清理
         await this.getList()
       } catch (error) {
         console.error('删除失败:', error)
-        Message.error('删除失败')
+        Message.error(this.$t('downloader.msg.deleteFailed').toString())
       }
     }).catch(() => {
       // 取消删除

@@ -372,7 +372,7 @@ export default class AdvancedMultiSelect extends Vue {
   @Prop({ default: true }) showModeToggle!: boolean
   @Prop({ default: 10000 }) virtualScrollThreshold!: number
   @Prop({ default: 200 }) listHeight!: number
-  @Prop({ default: '请选择' }) placeholder!: string
+  @Prop({ default: '' }) placeholder!: string
 
   // Data
   // 不在字段初始化阶段读取 props；vue-class-component 尚未完成 props 代理，
@@ -452,7 +452,8 @@ export default class AdvancedMultiSelect extends Vue {
 
   get triggerLabel(): string {
     if (this.selectedItems.length === 0) {
-      return this.placeholder
+      // 遗留补译：默认占位走 i18n 键（显式传入的 placeholder 优先）
+      return this.placeholder || this.$t('common.multiSelect.placeholder').toString()
     }
 
     const firstLabel = this.getSelectedLabel(this.selectedItems[0])

@@ -22,10 +22,26 @@
  */
 export const errors = {
   generic: '操作失败',
+  unknown: '未知错误',
+  /** 操作上下文拼接（formatters.showErrorToast）：'{context}失败：{message}' */
+  contextFailed: '{context}失败：{message}',
   network: {
     unavailable: '网络连接失败，请检查网络连接',
+    checkSettings: '网络连接失败，请检查网络设置',
     generic: '网络错误'
   },
+  /** HTTP 状态码兜底（formatters.extractErrorMessage，遗留补译） */
+  http: {
+    '400': '请求参数错误',
+    '401': '未授权，请重新登录',
+    '403': '无权限访问',
+    '404': '请求的资源不存在',
+    '422': '数据验证失败',
+    '500': '服务器内部错误',
+    '502': '网关错误',
+    '503': '服务不可用'
+  },
+  httpFallback: '请求失败 ({status})',
   /** E17：422 字段校验按 pydantic type 字典化（field 为 loc 末段标识符） */
   validation: {
     missing: '必填参数缺失：{field}',

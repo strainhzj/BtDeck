@@ -37,7 +37,7 @@
     <div class="sidebar-footer">
       <el-button
         class="collapse-button"
-        aria-label="切换到移动版"
+        :aria-label="$t('navigation.sidebar.switchToMobile')"
         @click="switchToMobile"
       >
         <LucideIcon
@@ -45,11 +45,11 @@
           :size="17"
           :stroke-width="1.8"
         />
-        <span v-show="!isCollapse">移动版</span>
+        <span v-show="!isCollapse">{{ $t('navigation.sidebar.mobileEntry') }}</span>
       </el-button>
       <el-button
         class="collapse-button"
-        :aria-label="isCollapse ? '展开侧边栏' : '收起侧边栏'"
+        :aria-label="isCollapse ? $t('navigation.sidebar.expand') : $t('navigation.sidebar.collapse')"
         @click="toggleSidebar"
       >
         <LucideIcon
@@ -57,7 +57,7 @@
           :size="17"
           :stroke-width="1.8"
         />
-        <span v-show="!isCollapse">收起侧边栏</span>
+        <span v-show="!isCollapse">{{ $t('navigation.sidebar.collapse') }}</span>
       </el-button>
     </div>
   </div>

@@ -79,7 +79,14 @@ export const common = {
     }
   },
   /** AdvancedMultiSelect 共享多选下拉（列表筛选/高级搜索/移动端同源消费） */
+  /** PWA 更新提示条（2026-08-25 批新增组件，遗留补译） */
+  pwa: {
+    found: '发现新版本',
+    refresh: '立即刷新',
+    dismiss: '暂不刷新'
+  },
   multiSelect: {
+    placeholder: '请选择',
     searchPlaceholder: '搜索选项...',
     createOption: '创建 "{keyword}"',
     include: '包含',

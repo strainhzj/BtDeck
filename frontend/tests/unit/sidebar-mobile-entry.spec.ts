@@ -6,9 +6,15 @@
  * 注：el-button 用透传 click 的 stub（默认 stub 不转发事件）。
  */
 
-import { shallowMount, Wrapper } from '@vue/test-utils'
+import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
 import SideBar from '@/layout/components/Sidebar/index.vue'
 import { AppModule } from '@/store/modules/app'
+import i18n from '@/i18n'
+
+// 双语 P1 后模板使用 $t（导航/侧栏统一 i18n 源），挂载必须安装 i18n 单例
+const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 jest.mock('@/store/modules/app', () => ({
   AppModule: {
@@ -19,6 +25,8 @@ jest.mock('@/store/modules/app', () => ({
 
 const mountSidebar = (): Wrapper<Vue> =>
   shallowMount(SideBar, {
+    localVue,
+    i18n,
     stubs: {
       SidebarItem: true,
       LucideIcon: true,

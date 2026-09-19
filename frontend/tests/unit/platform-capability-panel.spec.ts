@@ -10,7 +10,9 @@
  */
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
 import ElementUI from 'element-ui'
+import VueI18n from 'vue-i18n'
 import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
+import i18n from '@/i18n'
 import {
   PlatformCapabilitiesData,
   resetPlatformCapabilityCache
@@ -28,6 +30,8 @@ const { loadPlatformCapabilities } = jest.requireMock('@/api/platform-capabiliti
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
+// 双语遗留补译后面板文案走 $t（settings.capability.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 
 function androidServerData(): PlatformCapabilitiesData {
   const capabilities: PlatformCapabilitiesData['capabilities'] = {}
@@ -62,6 +66,7 @@ function desktopData(): PlatformCapabilitiesData {
 function mountPanel(): Wrapper<Vue> {
   return mount(PlatformCapabilityPanel, {
     localVue,
+    i18n,
     stubs: { transition: false }
   })
 }

@@ -17,6 +17,27 @@
 
 /** Downloader management M1 scope (list/cards/basic connection tab; speed and advanced tabs are M2). */
 export const downloader = {
+  /** Console page action feedback (P2 leftover fix: test connection / sync / enable toggle / delete chain) */
+  msg: {
+    responseInvalid: 'Unexpected response format',
+    connectionOk: 'Connected, latency {delay}ms',
+    connectionFailed: 'Connection failed',
+    testFailed: 'Connection test failed',
+    syncStillRunning: 'The sync task for {name} is still running in the background; check again later',
+    syncStatusQueryFailed: 'Failed to query the sync status: {error}',
+    invalidId: 'Invalid downloader ID',
+    syncStarted: 'The sync task for {name} has been started',
+    syncResponseInvalid: 'Sync response is missing task_id',
+    syncFailed: 'Sync failed',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    toggleFailedRolledBack: 'Operation failed; the previous state has been restored',
+    deleteConfirm: 'Delete the downloader "{name}"?',
+    deleteTitle: 'Confirm Deletion',
+    confirmButton: 'Confirm',
+    deleteSuccess: 'Deleted successfully',
+    deleteFailed: 'Delete failed'
+  },
   page: {
     management: 'Downloader Management',
     filters: 'Downloader filters and actions',

@@ -1,11 +1,11 @@
 <template>
   <transition name="btdeck-refresh-fade">
     <div v-if="visible" class="btdeck-refresh-prompt" role="status">
-      <span class="btdeck-refresh-text">发现新版本</span>
+      <span class="btdeck-refresh-text">{{ $t('common.pwa.found') }}</span>
       <button type="button" class="btdeck-refresh-apply" @click="applyUpdate">
-        立即刷新
+        {{ $t('common.pwa.refresh') }}
       </button>
-      <button type="button" class="btdeck-refresh-dismiss" aria-label="暂不刷新" @click="dismiss">
+      <button type="button" class="btdeck-refresh-dismiss" :aria-label="$t('common.pwa.dismiss')" @click="dismiss">
         ✕
       </button>
     </div>

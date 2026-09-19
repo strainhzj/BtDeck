@@ -14,6 +14,7 @@ import {
   removeUserId
 } from '@/utils/cookies'
 import store from '@/store'
+import { translate } from '@/i18n'
 
 export interface IUserState {
   token: string
@@ -155,7 +156,7 @@ class User extends VuexModule implements IUserState {
       // 强制改密标志（安全修复 W9）：路由守卫据此拦截非改密页面
       this.SET_MUST_CHANGE_PASSWORD(Boolean(must_change_password))
     } else {
-      throw Error('登录失败：未获取到访问令牌')
+      throw Error(translate('auth.noAccessToken'))
     }
   }
 
@@ -242,7 +243,7 @@ class User extends VuexModule implements IUserState {
 
     // 🔧 防御性检查：更详细的 token 验证
     if (!this.token || this.token.trim() === '') {
-      throw Error('Token为空，请重新登录')
+      throw Error(translate('auth.tokenEmpty'))
     }
 
     try {
@@ -251,7 +252,7 @@ class User extends VuexModule implements IUserState {
 
       // 🔧 防御性检查：验证响应状态
       if (response.code !== '200') {
-        throw Error(response.msg || '获取用户信息失败')
+        throw Error(response.msg || translate('auth.getUserInfoFailed'))
       }
 
       if (!response || !response.data) {
@@ -316,7 +317,7 @@ class User extends VuexModule implements IUserState {
       if (error instanceof ApiError && (error.code === '0' || /^5/.test(error.code))) {
         throw error
       }
-      throw Error('获取用户信息失败，请重新登录')
+      throw Error(translate('auth.getUserInfoFailedRelogin'))
     }
   }
 

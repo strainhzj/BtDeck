@@ -7,9 +7,15 @@
  * jsdom 无 SW 实现，serviceWorkerContainer 通过 defineProperty 注入替身。
  */
 
-import { shallowMount, Wrapper } from '@vue/test-utils'
+import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
 import RefreshPrompt from '@/components/common/RefreshPrompt.vue'
 import { SW_UPDATED_EVENT } from '@/registerServiceWorker'
+import i18n from '@/i18n'
+
+// 双语遗留补译后模板使用 $t（PWA 提示条），挂载安装 i18n 单例
+const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 // register-service-worker 为纯 ESM 包（Jest 不转换 node_modules），mock 掉
 // register；测试环境 NODE_ENV=test，registerServiceWorker 本身也不会执行注册。
@@ -51,7 +57,7 @@ describe('components/common/RefreshPrompt', () => {
   let doReload: jest.Mock<void, []>
 
   const mountPrompt = (): Wrapper<Vue> => {
-    wrapper = shallowMount(RefreshPrompt)
+    wrapper = shallowMount(RefreshPrompt, { localVue, i18n })
     doReload = jest.fn<void, []>()
     ;(wrapper.vm as unknown as { doReload: jest.Mock<void, []> }).doReload = doReload
     return wrapper
@@ -70,7 +76,8 @@ describe('components/common/RefreshPrompt', () => {
     dispatchUpdate({ waiting: { postMessage: jest.fn() } })
     await w.vm.$nextTick()
     expect(w.find('.btdeck-refresh-prompt').exists()).toBe(true)
-    expect(w.find('.btdeck-refresh-text').text()).toBe('发现新版本')
+    // 遗留补译：文案走 common.pwa 键（zh 基准语言下与原文一致）
+    expect(w.find('.btdeck-refresh-text').text()).toBe(i18n.t('common.pwa.found').toString())
   })
 
   it('关闭按钮隐藏弹条（下轮 updated 事件可再次弹出）', async() => {
