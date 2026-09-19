@@ -10,7 +10,7 @@
 | 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、**Element Locale 挂接 vue-i18n（L52）**、Demo 会话旁路、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue({ router, store, i18n, ... })`） |
 | 路由表 router | `router.ts` | 路由表（default export）+ `requiredCapability` 元数据（回收站/孤儿/种子备份）+ **桌面路由 `titleKey` 双语键（21 处，移动路由不带保持中文）** + `router.push` 修补 + 部署后旧 chunk 一次恢复 |
 | 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流；加载 `/platform/capabilities` 后对受限文件系统能力 fail-closed，Android 不支持入口重定向并提示；保留 GetUserInfo 瞬时错误分流、白名单、NProgress、**页面标题（L300 走 `resolvePageTitle`：titleKey 双语键优先）** |
-| 双语 i18n | `i18n/` | 双语基础设施（P1 基础 + P2 首次使用闭环）：vue-i18n@8.28.2 单例 + zh-CN/en 消息树（P1 navigation/time/el；P2 新增 auth/common/settings/downloader/errors）+ 语言解析（手动偏好>浏览器语言>默认中文，localStorage `btdeck-lang`）+ 缺译回退 + `translate/translateChoice/routeTitle/resolvePageTitle` 同源入口 + `apiErrorMessage`（P2 错误契约：reasonCode→errors.byCode 本地化，禁中文匹配）；选型与风险见 PLANS/bilingual/p1-i18n-decision.md |
+| 双语 i18n | `i18n/` | 双语基础设施（P1 基础 + P2 首次使用闭环）：vue-i18n@8.28.2 单例 + zh-CN/en 消息树（P1 navigation/time/el；P2 新增 auth/common/settings/downloader/errors）+ 语言解析（手动偏好>浏览器语言>默认中文，localStorage `btdeck-lang`）+ 缺译回退 + `translate/translateChoice/routeTitle/resolvePageTitle` 同源入口 + `apiErrorMessage`（P2 错误契约：reasonCode→errors.byCode 本地化，禁中文匹配）；选型与风险见 PLANS/bilingual/p1-i18n-decision.md |；2026-09-21 P3-1：新增 search/torrent/dashboard 模块与 common.multiSelect/pageSize，契约链 labelEn（38 操作符，生成器+契约守卫同步）
 | 根组件 app | `App.vue` | 根组件（class-component），在 `<router-view />` 外挂载 Demo 模式提示条 |
 | PWA 注册 service-worker | `registerServiceWorker.ts` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
 | TS 声明 shims-vue | `shims-vue.d.ts` | 为 .vue 文件提供 TS 模块声明（`declare module '*.vue'`） |

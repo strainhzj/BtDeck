@@ -7,14 +7,14 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |；2026-09-21 P3-1 双语：筛选/排查条/工具栏/列头/分页/列设置/视图切换与操作反馈（删除确认与结果链路留 P5），columnSettings 去 label 改键渲染
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控 |
 | 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-18 桌面双语 P2：2FA/改密/诊断页签文案全量 i18n 化 |
-| 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
+| 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |；2026-09-21 P3-1 双语（卡片/状态/快捷操作/aria + 本地化日期）
 | 登录 login | `login/index.vue` | 登录页；✨2026-09-18 桌面双语 P2：表单/校验/消息 i18n 化 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
 | 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；桌面端保留稳定明细/硬链接/隔离流程，路由与移动页由 `orphan_files` 能力门控 |
@@ -39,7 +39,7 @@
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件备份管理（`FileManagement` L310）；路由由 `torrent_backup` 能力门控，Android 主服务端隐藏入口 |
-| `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器；✨2026-09-12 新增「跳过校验」复选框（默认关，`form.skip_hash_check` 透传 addTorrentsBatch——qB 对保存路径已有数据的种子强制 CheckingDL 校验，勾选跳过直接做种；关闭弹窗重置回安全默认；仅 qB 生效，TR 的 add_args 无校验跳过参数）；同批 ≤768 移动端适配（自定义 modal 非 el-dialog，m-reuse-dialog 覆盖不适用——overlay 顶铆+自身可滚接管 85vh、dialog 全宽 !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控） |
+| `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器；✨2026-09-12 新增「跳过校验」复选框（默认关，`form.skip_hash_check` 透传 addTorrentsBatch——qB 对保存路径已有数据的种子强制 CheckingDL 校验，勾选跳过直接做种；关闭弹窗重置回安全默认；仅 qB 生效，TR 的 add_args 无校验跳过参数）；同批 ≤768 移动端适配（自定义 modal 非 el-dialog，m-reuse-dialog 覆盖不适用——overlay 顶铆+自身可滚接管 85vh、dialog 全宽 !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控） |；2026-09-21 P3-1 双语（含跳过校验策略提示与校验消息）
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
 | `components/TrackerOperationDialog.vue` | Tracker 操作对话框；✨2026-08-20 修复 announce 状态判断（原 `=== 'True'` 字面量对中文状态文本恒显“异常”，改用共享 `isTrackerAnnounceSuccess`）；✨2026-09-12 新增可选 `scopeDownloader` prop（`{id,name,total?}`，默认 null 保持桌面行为）——传入时切换为按下载器触发模式：范围行/标题/提交按钮文案换口径（含 total 计数），添加/修改提交走 `addTrackerByDownloader`/`modifyTrackerByDownloader`（服务端解析种子范围，成功提示带成功/失败计数）；模板 `?.` 改 buble 兼容写法（组件首次可被 jest 挂载） |
 | `components/TransferDialog.vue` | 转移对话框；桌面两种种子视图与详情页按 `seed_transfer` 能力隐藏入口；✨2026-09-12 组件内自治 ≤768 移动适配——自有 `custom-class="transfer-dialog"` + 非 scoped 媒体块（94vw !important 压内联 600px、体 64vh 内滚；嵌套删除确认 `transfer-delete-confirm` 88vw，append-to-body 脱离组件树故须非 scoped）+ scoped 块（label-width 120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控）；复验批扩 UI 移动化（头部/关闭钮 36px 触控/圆角/padding/间距收敛、复选框触控行、长路径折行、删除确认 icon 收敛） |
@@ -47,7 +47,7 @@
 | `components/SetLocationDialog.vue` | 设置保存位置对话框；✨2026-09-12 根节点 div 包裹根修（透传的 custom-class 经 $attrs 落到外层 div，650px 恒怼手机屏）——el-dialog 升为模板根 + 自有 `custom-class="set-location-dialog"`；同批 ≤768 自治适配（非 scoped 媒体块 94vw/64vh 内滚 + scoped 标签上堆/44px 按钮/路径建议触控，契约 spec 钉死 el-dialog 落位防回退）；复验批扩 UI 移动化（头部/关闭钮 36px 触控/圆角/padding/间距收敛、复选框触控行、当前路径 tag 折行） |
 | `components/GlobalReplaceTrackerDialog.vue` | 全局替换 Tracker 对话框 |
 | `components/TorrentDetailDialog.vue` | 种子详情对话框 |
-| `components/BatchOperationDialog.vue` | 批量操作对话框 |
+| `components/BatchOperationDialog.vue` | 批量操作对话框 |；2026-09-21 P3-1 双语
 | `components/SearchTemplateDialog.vue` | 搜索模板选择对话框 |
 | `mixins/torrentBatch.ts` | 批量操作薄封装层；异步删除处理占用跳过统计、提交即刷新与无任务短路 |
 | `mixins/columnResize.ts` | 列宽拖拽 mixin（列表/传统两视图共用）：th 右缘手柄拖拽调宽、mouseup 一次性写入 localStorage（key 由子类覆写 `columnWidthStorageKey`，默认宽度覆写 `defaultColumnWidths`）；双击恢复单列默认、`resetColumnWidths` 供列设置菜单整体重置；拖拽中 body 加 `column-resizing` 全局光标，beforeDestroy 成对解绑 |

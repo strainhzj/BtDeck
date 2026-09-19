@@ -47,16 +47,16 @@
 |--------|------|-----------|
 | 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue`（1272 行） | 高级搜索条件构建器（`AdvancedSearchBuilder` L412）；“添加条件”居中、组间 AND/OR 位于卡片外；下载器显示 nickname/提交稳定 ID、超级做种三态、`getTemplateGroupsSnapshot()` 提供校验后快照；✨2026-09-06 字段分组/操作符过滤/值摘要/预览文本/动态候选加载/模板归一化下沉共享层 `advancedSearchFields.ts`（方法保留为同签名代理，行为不变），768px 断点保留（桌面窄窗口；`/m/search` 已改用移动专用组件），预览与保存模板对话框经 `advanced-search-dialog` 窄屏压宽 |
 | 高级搜索工作区 saved-search | `AdvancedSearchWorkspace.vue` | 两种种子视图共用的高级搜索工作区（`AdvancedSearchWorkspace` L156）：左侧加载高级模板并支持选择回填、搜索、新建、覆盖更新与删除（L232–385），右侧复用 Builder；✨2026-09-06 起 `/m/search` 不再整页复用（移动端改用 `views/mobile/components/MobileAdvancedSearch.vue`，仅桌面两视图使用） |
-| 高级搜索共享层 advanced-search-fields | `advancedSearchFields.ts`（444 行）✨2026-09-06 | 桌面 Builder 与移动端构建器共享的字段配置与展示层：字段五分组常量、`getOperatorGroupsForField()` L132 按契约+matchMode 过滤操作符、`describeCondition()` L214 摘要卡文案、`normalizeLoadedGroups()` L274 模板归一化（原 Builder 私有逻辑下沉）、`loadAdvancedSearchDynamicOptions()` L346 分类/标签/下载器并发拉取（allSettled 部分失败静默降级） |
+| 高级搜索共享层 advanced-search-fields | `advancedSearchFields.ts`（444 行）✨2026-09-06 | 桌面 Builder 与移动端构建器共享的字段配置与展示层：字段五分组常量、`getOperatorGroupsForField()` L132 按契约+matchMode 过滤操作符、`describeCondition()` L214 摘要卡文案、`normalizeLoadedGroups()` L274 模板归一化（原 Builder 私有逻辑下沉）、`loadAdvancedSearchDynamicOptions()` L346 分类/标签/下载器并发拉取（allSettled 部分失败静默降级） |；2026-09-21 P3-1 双语：searchFieldLabel/searchOperatorLabel 按稳定字段 code/操作符 value 取键（操作符展示名单源=契约 labelEn），分组标题/摘要/预览/归一化错误 i18n，FIELD_SECTIONS 改 labelKey
 | 条件值输入 condition-value | `ConditionValueInput.vue`（878 行） | 搜索条件值输入（`ConditionValueInput` L351）；状态/下载器使用不可创建多选，空值操作符显示“无需填写”，`currentFieldOptions` L494 为超级做种提供是/否/不支持三态下拉；日期范围定宽类化（桌面 180px 不变），768px 下两个时间选择器弹性对分整行（窄屏防溢出）；✨2026-09-06 起被移动端条件编辑弹层（ConditionEditSheet）同源复用 |
-| 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应；2026-08-15 新增 `placeholder` prop 定制未选提示语（种子页筛选下拉：下载器/种子状态/tracker） |
+| 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应；2026-08-15 新增 `placeholder` prop 定制未选提示语（种子页筛选下拉：下载器/种子状态/tracker） |；2026-09-21 P3-1 双语（common.multiSelect，分隔符示例绕开 vue-i18n 竖线按 locale 常量直出）
 | 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（728 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；L284/L403 兼容旧模板的多选、标签 token 与超级做种布尔值；L638 构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反 |
 | 紧凑表格视图 compact-table | `CompactTable.vue` | ⚠ **Options API**（L301 `export default {`，`CompactTable`）：紧凑表格视图 |
-| 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |
+| 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |；2026-09-21 P3-1 双语
 | 大小过滤 size-range | `SizeRangeFilter.vue` | 种子大小范围过滤器（`SizeRangeFilter` class） |
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
-| 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |
+| 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |；2026-09-21 P3-1 双语（common.pageSize）
 | 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 578）/ AdvancedSearchBuilder（686）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（245）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2637 行 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。

@@ -61,7 +61,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子状态配置 status-config | `status-config.ts` ✨2026-08-16 | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates）；`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 含 completed/unknown 文案与图标兜底 |
+| 种子状态配置 status-config | `status-config.ts` ✨2026-08-16 | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates）；`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 含 completed/unknown 文案与图标兜底 |；2026-09-21 P3-1：getStatusText 走 torrent.status.* 键（回退原映射）+ localizedStatusOptions()
 | 状态配置测试 status-config-test | `__tests__/status-config.spec.ts` | status-config 回归测试：守住 emoji→Lucide 改造契约——`StatusOption.icon` 必填 Lucide 图标名、label 纯文本无 emoji 前缀、`STATUS_ICON_MAP`/`getStatusIcon` 返回图标名并以 `help-circle` 兜底 |
 
 ### directive/waves/

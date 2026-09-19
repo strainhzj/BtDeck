@@ -8,7 +8,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 契约加载器 contract-loader | `advanced_search.py`（38 行） | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等）；`allowed_operators_for_field(field)` 严格返回该字段声明的白名单，不再把全局空值操作符注入所有字段 |
-| 机器可读契约 contract-json | `advanced_search_contract.json`（100 行，v3） | **机器可读契约**：20 字段 → kind/operators/negated 映射、nullOperators、正则上限及 operatorGroups；完成时间/比率/比率限制/标签/分类声明“未设置/已设置”，`status`/下载器为精确多选，超级做种为是/否/不支持三态 `select` |
+| 机器可读契约 contract-json | `advanced_search_contract.json`（100 行，v3） | **机器可读契约**：20 字段 → kind/operators/negated 映射、nullOperators、正则上限及 operatorGroups；完成时间/比率/比率限制/标签/分类声明“未设置/已设置”，`status`/下载器为精确多选，超级做种为是/否/不支持三态 `select` |；2026-09-21 P3-1：38 操作符补 labelEn（中文 label 逐字节不变），前端生成器与后端契约守卫同步校验（label/labelEn 成对）
 
 ## 设计动机
 
