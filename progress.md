@@ -7694,7 +7694,7 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 验证：前端 typecheck / lint 三项（含 contract:check）/ build / Jest 115 套 1617 例全绿（基线 114 套 1604 例）；后端 advanced_search 回归 147 例 + 契约守卫 2 例绿，black/flake8 净，mypy 存量 17 错误零新增。中途教训：PowerShell Get-Content 按 GBK 误读 UTF-8 spec 造成 mojibake，已回滚重做（后续批量改文件一律 Python 显式 UTF-8）；CRLF 插入曾产生 \\r\\r\\n 双 CR 致 git 全文件 diff，已修复。
 - 余量：P3-2（详情/Tracker 卡片与操作/汇报文案/查询模板页与 4 预设展示）；浏览器 T01 人工验收与英文审校；删除菜单已译但确认/结果链路待 P5 收口。未执行 Git 提交。
 
-## 2026-09-21（续）：桌面双语 P3-2 第二批（详情/Tracker/高级搜索外壳/查询模板页 + preset_key 迁移提前，未提交）
+## 2026-09-21（续）：桌面双语 P3-2 第二批（详情/Tracker/高级搜索外壳/查询模板页 + preset_key 迁移提前）
 
 - 范围即用户确认的 P3-2 批次划分；预设展示经用户拍板选方案 b（提前实施 preset_key 迁移，P0 提案 system-content.md §1 落地），buildAdvancedSearchParams 校验消息按批次边界不顺带（留后续）。
 - 后端（P4 子范围提前）：search_templates 加 preset_key 稳定身份列——Alembic b3e5f7a9c1d2（head c1d2e3f4a5b6→b3e5f7a9c1d2，加列+索引+一次性按旧中文名回填：仅 is_default=1 恰一行回填，用户同名（is_default=0）与歧义同名多行保持 NULL 不猜，B02；downgrade drop 索引与列可回滚）；init_default_search_templates 幂等身份改按 preset_key（与名称解耦；旧库中文名恰一行自愈回填首启兼容）；SearchTemplateModel._row_to_dict/模型 to_dict 透出 preset_key；前端 SearchTemplate 接口加可选 preset_key。
@@ -7706,4 +7706,4 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 验证：前端 typecheck / lint 三项（含 contract:check）/ build / 全量 Jest 115 套 1620 例全绿（基线 1617）；后端 preset_key 12 例 + 迁移链 25 例 + db governance 33 例 + edge cases 10 例 + api templates/permissions/pagination 34 例全绿，black/flake8 净，mypy 本批文件零错误（rollback_scenarios 2 例失败为存量基线，git stash 对照证实）。
 - 文档：feature_list.json p3 evidence 追加本批；roadmap 七处同步（根 README 功能域+元信息+本次新增、entry i18n 行、views 八行、components-layout 六行、backend infra 迁移行+versions 计数、backend data-models 两行）。
 - 坑：①Python 替换脚本里显式写 \r\n 再经 replace('\n','\r\n') 会产生 \r\r\n——统一写 \n 交由转换；②批量 import 插入脚本末尾必须带换行，否则与下一行 import 粘连（两个 spec 编译失败）；③roadmap/tools 的中文 mark 经 bash 传输偶发不匹配，锚定式 patch 失败时用独立脚本验证 startswith 再补。
-- 未执行 Git 提交（data/ 下 p32_*.py 为未跟踪辅助脚本，保持不动）。
+- Git 提交：3f6fea5（feat，42 文件）+ 128facc（docs(roadmap)，6 文件），已推送 origin/dev；data/ 下 p32_*.py 为未跟踪辅助脚本，保持不动。

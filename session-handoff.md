@@ -5043,7 +5043,7 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 批量改文件教训：PowerShell 文本管道按 GBK 读 UTF-8 会损坏文件；CRLF 文件插入换行须防 \r\r\n。本批全部用 Python 显式 UTF-8 完成。
 - 未执行 Git 提交；data/ 下三个辅助脚本（p3_add_label_en.py / p3_spec_i18n_fix*.py）为未跟踪产物，保持不动。
 
-## 2026-09-21 交接：桌面双语 P3-2 第二批完成（未提交）
+## 2026-09-21 交接：桌面双语 P3-2 第二批完成（已提交推送 3f6fea5 + 128facc）
 
 ### 已完成
 
@@ -5059,4 +5059,4 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - P3 剩余：浏览器 T01/T03/Q01 人工验收与英文审校（自动化绿≠人工视觉通过）；utils/torrentBatch.ts 的 buildAdvancedSearchParams 校验消息（~20 条，与 advancedSearchState 同构）未在本批清单，留后续批次。
 - 后端 rollback_scenarios 有 2 例存量基线失败（stash 对照证实非本批引入），后续如遇全量跑红注意甄别。
 - 迁移注意：新库/升级库首启自动执行 b3e5f7a9c1d2；Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
-- 未执行 Git 提交；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。
+- Git 已提交并推送 origin/dev：3f6fea5（feat：backend/frontend/feature_list/progress/session-handoff 共 42 文件）+ 128facc（docs(roadmap) 6 文件）；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。
