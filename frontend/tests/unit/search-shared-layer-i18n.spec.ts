@@ -21,6 +21,9 @@ import {
   getSearchFieldInfo,
   getSearchFieldOptions,
   normalizeLoadedGroups,
+  presetDisplayDescription,
+  presetDisplayName,
+  presetGroupName,
   searchFieldLabel
 } from '@/components/torrents/advancedSearchFields'
 import i18n, { setLocale } from '@/i18n'
@@ -84,10 +87,11 @@ describe('字段与摘要文本两语言输出', () => {
   it('字段展示名按稳定字段 code 取键', () => {
     const tags = getSearchFieldInfo('tags')
     expect(tags).toBeDefined()
+    if (!tags) throw new Error('tags field must exist in shared field registry')
     setLocale('zh-CN')
-    expect(searchFieldLabel(tags!)).toBe('标签')
+    expect(searchFieldLabel(tags)).toBe('标签')
     setLocale('en')
-    expect(searchFieldLabel(tags!)).toBe('Tags')
+    expect(searchFieldLabel(tags)).toBe('Tags')
   })
 
   it('条件摘要包含字段名/操作符/值与排除后缀', () => {
@@ -169,6 +173,45 @@ describe('字段与摘要文本两语言输出', () => {
     expect(() => normalizeLoadedGroups([{ id: 'g1', logic: 'and', conditions: [] }])).toThrow(
       'Template group 1 has no valid conditions'
     )
+  })
+})
+
+describe('系统预设展示映射（Q01/Q02：按 preset_key 稳定身份，禁中文名匹配）', () => {
+  it('preset_key 命中已知预设时名称/描述随语言输出，与后端存储名解耦', () => {
+    const preset = { preset_key: 'active_torrents', name: '活跃种子', description: '正在下载或做种的种子' }
+    setLocale('zh-CN')
+    expect(presetDisplayName(preset)).toBe('活跃种子')
+    expect(presetDisplayDescription(preset)).toBe('正在下载或做种的种子')
+    setLocale('en')
+    expect(presetDisplayName(preset)).toBe('Active torrents')
+    expect(presetDisplayDescription(preset)).toBe('Torrents being downloaded or seeded')
+  })
+
+  it('未知 preset_key / 无 preset_key（用户模板）保留原文，不猜测翻译（Q02）', () => {
+    const userTemplate = { preset_key: null, name: '我的周末追剧', description: '个人模板' }
+    setLocale('en')
+    expect(presetDisplayName(userTemplate)).toBe('我的周末追剧')
+    expect(presetDisplayDescription(userTemplate)).toBe('个人模板')
+
+    // 用户手工改成与预设同名的模板也无 preset_key，不受预设展示影响
+    const sameNameNoKey = { preset_key: null, name: '活跃种子', description: null }
+    expect(presetDisplayName(sameNameNoKey)).toBe('活跃种子')
+
+    // 歧义预设行（回填保持 NULL）同样保留原文
+    const unknownKey = { preset_key: 'something_new', name: '未知预设', description: null }
+    expect(presetDisplayName(unknownKey)).toBe('未知预设')
+    setLocale('zh-CN')
+  })
+
+  it('预设内置组名按稳定组 id 翻译（应用模板入口），非预设组保留原文', () => {
+    setLocale('zh-CN')
+    expect(presetGroupName({ id: 'preset_large_files', name: '大文件' })).toBe('大文件')
+    setLocale('en')
+    expect(presetGroupName({ id: 'preset_large_files', name: '大文件' })).toBe('Large files')
+    // 用户组（随机 UUID id）保持原文
+    expect(presetGroupName({ id: 'g-1', name: 'my group' })).toBe('my group')
+    expect(presetGroupName({ id: undefined, name: '' })).toBe('')
+    setLocale('zh-CN')
   })
 })
 

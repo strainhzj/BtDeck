@@ -1,55 +1,55 @@
 <template>
   <el-dialog
     :visible.sync="dialogVisible"
-    :title="isEdit ? '编辑查询模板' : '新建查询模板'"
+    :title="isEdit ? $t('queryTemplate.dialog.editTitle') : $t('queryTemplate.dialog.createTitle')"
     width="560px"
     :before-close="handleClose"
   >
     <el-form ref="templateFormRef" :model="form" :rules="rules" label-width="100px">
-      <el-form-item label="模板名称" prop="name">
-        <el-input v-model="form.name" placeholder="请输入模板名称" maxlength="100" show-word-limit />
+      <el-form-item :label="$t('queryTemplate.dialog.nameLabel')" prop="name">
+        <el-input v-model="form.name" :placeholder="$t('queryTemplate.dialog.namePlaceholder')" maxlength="100" show-word-limit />
       </el-form-item>
-      <el-form-item label="模板描述" prop="description">
+      <el-form-item :label="$t('queryTemplate.dialog.descLabel')" prop="description">
         <el-input
           v-model="form.description"
           type="textarea"
           :rows="2"
-          placeholder="可选，简要描述模板用途"
+          :placeholder="$t('queryTemplate.dialog.descPlaceholder')"
           maxlength="500"
           show-word-limit
         />
       </el-form-item>
-      <el-form-item label="模板类型" prop="source">
+      <el-form-item :label="$t('queryTemplate.dialog.typeLabel')" prop="source">
         <el-radio-group v-model="form.source" :disabled="isEdit">
-          <el-radio label="simple">简单查询</el-radio>
-          <el-radio label="advanced">高级搜索</el-radio>
+          <el-radio label="simple">{{ $t('queryTemplate.dialog.simple') }}</el-radio>
+          <el-radio label="advanced">{{ $t('queryTemplate.dialog.advanced') }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
       <!-- 简单查询条件 -->
       <div v-if="form.source === 'simple'">
-        <el-form-item label="状态筛选">
-          <el-select v-model="simpleForm.status" multiple placeholder="选择种子状态（可多选）" style="width: 100%">
-            <el-option label="做种中" value="seeding" />
-            <el-option label="下载中" value="downloading" />
-            <el-option label="已暂停" value="paused" />
-            <el-option label="错误" value="error" />
-            <el-option label="检查中" value="checking" />
+        <el-form-item :label="$t('queryTemplate.dialog.statusFilter')">
+          <el-select v-model="simpleForm.status" multiple :placeholder="$t('queryTemplate.dialog.statusPlaceholder')" style="width: 100%">
+            <el-option :label="$t('torrent.status.seeding')" value="seeding" />
+            <el-option :label="$t('torrent.status.downloading')" value="downloading" />
+            <el-option :label="$t('torrent.status.paused')" value="paused" />
+            <el-option :label="$t('torrent.status.error')" value="error" />
+            <el-option :label="$t('torrent.status.checking')" value="checking" />
           </el-select>
         </el-form-item>
-        <el-form-item label="名称关键词">
-          <el-input v-model="simpleForm.name_like" placeholder="种子名称模糊匹配（可选）" />
+        <el-form-item :label="$t('queryTemplate.dialog.nameLike')">
+          <el-input v-model="simpleForm.name_like" :placeholder="$t('queryTemplate.dialog.nameLikePlaceholder')" />
         </el-form-item>
-        <el-form-item label="分类关键词">
-          <el-input v-model="simpleForm.category_like" placeholder="分类模糊匹配（可选）" />
+        <el-form-item :label="$t('queryTemplate.dialog.categoryLike')">
+          <el-input v-model="simpleForm.category_like" :placeholder="$t('queryTemplate.dialog.categoryLikePlaceholder')" />
         </el-form-item>
-        <el-form-item label="标签关键词">
-          <el-input v-model="simpleForm.tags_like" placeholder="标签模糊匹配（可选）" />
+        <el-form-item :label="$t('queryTemplate.dialog.tagsLike')">
+          <el-input v-model="simpleForm.tags_like" :placeholder="$t('queryTemplate.dialog.tagsLikePlaceholder')" />
         </el-form-item>
-        <el-form-item label="Tracker域名">
+        <el-form-item :label="$t('queryTemplate.dialog.trackerDomain')">
           <AdvancedMultiSelect
             v-model="simpleForm.tracker_domain"
-            placeholder="选择tracker域名（可多选）"
+            :placeholder="$t('queryTemplate.dialog.trackerDomainPlaceholder')"
             :options="trackerDomainOptions"
             :allow-create="false"
             :show-mode-toggle="false"
@@ -58,15 +58,15 @@
             style="width: 100%;"
           />
         </el-form-item>
-        <el-form-item label="排序字段">
+        <el-form-item :label="$t('queryTemplate.dialog.sortBy')">
           <el-select v-model="simpleForm.sort_by" style="width: 60%">
-            <el-option label="添加时间" value="added_date" />
-            <el-option label="名称" value="name" />
-            <el-option label="大小" value="size" />
+            <el-option :label="$t('queryTemplate.dialog.sortAddedDate')" value="added_date" />
+            <el-option :label="$t('queryTemplate.dialog.sortName')" value="name" />
+            <el-option :label="$t('queryTemplate.dialog.sortSize')" value="size" />
           </el-select>
           <el-select v-model="simpleForm.sort_order" style="width: 35%; margin-left: 5%">
-            <el-option label="降序" value="desc" />
-            <el-option label="升序" value="asc" />
+            <el-option :label="$t('queryTemplate.dialog.sortDesc')" value="desc" />
+            <el-option :label="$t('queryTemplate.dialog.sortAsc')" value="asc" />
           </el-select>
         </el-form-item>
       </div>
@@ -74,25 +74,25 @@
       <!-- 高级搜索提示 -->
       <el-form-item v-else label="">
         <el-alert
-          title="高级搜索模板请在「种子管理」页面通过高级搜索面板配置条件后保存"
+          :title="$t('queryTemplate.dialog.advancedHint')"
           type="info"
           :closable="false"
           show-icon
         />
       </el-form-item>
 
-      <el-form-item label="是否公开">
+      <el-form-item :label="$t('queryTemplate.dialog.isPublic')">
         <el-switch v-model="form.is_public" />
         <span style="margin-left: 10px; color: #909399; font-size: 12px">
-          公开模板所有用户可见
+          {{ $t('queryTemplate.dialog.publicHint') }}
         </span>
       </el-form-item>
     </el-form>
 
     <span slot="footer">
-      <el-button @click="handleClose">取消</el-button>
+      <el-button @click="handleClose">{{ $t('common.cancel') }}</el-button>
       <el-button type="primary" :loading="submitting" @click="handleSubmit">
-        {{ isEdit ? '保存' : '创建' }}
+        {{ isEdit ? $t('queryTemplate.dialog.saveBtn') : $t('queryTemplate.dialog.createBtn') }}
       </el-button>
     </span>
   </el-dialog>
@@ -151,8 +151,8 @@ export default class QueryTemplateDialog extends Vue {
   get rules() {
     return {
       name: [
-        { required: true, message: '请输入模板名称', trigger: 'blur' },
-        { min: 1, max: 100, message: '长度在 1 到 100 个字符', trigger: 'blur' }
+        { required: true, message: this.$t('queryTemplate.dialog.rules.nameRequired'), trigger: 'blur' },
+        { min: 1, max: 100, message: this.$t('queryTemplate.dialog.rules.lengthRange'), trigger: 'blur' }
       ]
     }
   }
@@ -274,7 +274,7 @@ export default class QueryTemplateDialog extends Vue {
 
     // 高级搜索新建不允许（需从种子页保存）
     if (!this.isEdit && this.form.source === 'advanced') {
-      this.$message.warning('高级搜索模板请在「种子管理」页面通过高级搜索面板保存')
+      this.$message.warning(this.$t('queryTemplate.dialog.advancedFromTorrents'))
       return
     }
 
@@ -289,10 +289,10 @@ export default class QueryTemplateDialog extends Vue {
           is_public: this.form.is_public
         })
         if (response.code === '200') {
-          this.$message.success('更新成功')
+          this.$message.success(this.$t('queryTemplate.dialog.updated'))
           this.$emit('success')
         } else {
-          this.$message.error(response.msg || '更新失败')
+          this.$message.error(response.msg || this.$t('queryTemplate.dialog.updateFailed'))
         }
       } else {
         const response = await createSearchTemplate({
@@ -302,14 +302,16 @@ export default class QueryTemplateDialog extends Vue {
           is_public: this.form.is_public
         })
         if (response.code === '200') {
-          this.$message.success('创建成功')
+          this.$message.success(this.$t('queryTemplate.dialog.created'))
           this.$emit('success')
         } else {
-          this.$message.error(response.msg || '创建失败')
+          this.$message.error(response.msg || this.$t('queryTemplate.dialog.createFailed'))
         }
       }
     } catch (error) {
-      this.$message.error('保存失败：' + (error as Error).message)
+      this.$message.error(
+        this.$t('queryTemplate.dialog.saveFailedWith', { message: (error as Error).message })
+      )
     } finally {
       this.submitting = false
     }

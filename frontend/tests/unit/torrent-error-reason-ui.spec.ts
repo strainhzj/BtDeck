@@ -23,6 +23,11 @@ const batchSource = readFileSync(
   resolve(__dirname, '../../src/views/torrents/utils/torrentBatch.ts'),
   'utf8'
 )
+// 双语化（P3-2）：回退链文案与错误标题已迁入语言包，锚定键引用 + zh-CN 值（防丢文案）
+const trackerLocaleZhSource = readFileSync(
+  resolve(__dirname, '../../src/i18n/locales/zh-CN/tracker.ts'),
+  'utf8'
+)
 const tooltipDismissSource = readFileSync(
   resolve(__dirname, '../../src/views/torrents/mixins/errorTooltipDismiss.ts'),
   'utf8'
@@ -58,7 +63,11 @@ describe('种子错误原因展示契约', () => {
     expect(batchSource).toContain('export function hasTrackerError')
     expect(batchSource).toContain('export function showTrackerErrorTag')
     expect(batchSource).toContain('torrent.status !== \'error\'')
-    expect(batchSource).toContain('Tracker 宣告失败')
+    // 双语化（P3-2）：兑底文案按 tracker.errorReason.* 键本地化，中文值与历史内联一致
+    expect(batchSource).toContain("tracker.errorReason.withMessage")
+    expect(batchSource).toContain("tracker.errorReason.fallback")
+    expect(trackerLocaleZhSource).toContain("withMessage: 'Tracker 宣告失败：{message}'")
+    expect(trackerLocaleZhSource).toContain("fallback: 'Tracker 宣告失败，详见 Tracker 标签页'")
   })
 
   it.each([
@@ -88,7 +97,9 @@ describe('种子错误原因展示契约', () => {
 
   it('Tracker 详情卡以统一标题展示错误原因', () => {
     expect(trackerCardSource).toContain('@Prop({ type: String, default: \'\' }) errorReason!: string')
-    expect(trackerCardSource).toContain('title="种子错误原因"')
+    // 双语化（P3-2）：标题走 tracker.detail.errorTitle 键，中文值与历史内联一致
+    expect(trackerCardSource).toContain(":title=\"$t('tracker.detail.errorTitle')\"")
     expect(trackerCardSource).toContain(':description="errorReason"')
+    expect(trackerLocaleZhSource).toContain("errorTitle: '种子错误原因'")
   })
 })

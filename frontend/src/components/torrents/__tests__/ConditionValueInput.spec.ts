@@ -1,4 +1,6 @@
 import { createLocalVue, shallowMount } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import fs from 'fs'
@@ -29,6 +31,7 @@ interface ConditionValueInputVm extends Vue {
 }
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.use(ElementUI)
 
 const categoryOptions: FieldOption[] = [
@@ -68,6 +71,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   ] as const)('multiSelect 分支：field=%s 把 fieldOptions 透传给 AdvancedMultiSelect', (field, options) => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field,
         operator: field === 'tags' ? 'contains_any' : 'in',
@@ -102,6 +106,7 @@ describe('ConditionValueInput 字段选项透传', () => {
       // 改用 v-model 后，子组件 input 载荷会自动回写 inputValue，链条修复。
       const wrapper = shallowMount(ConditionValueInput, {
         localVue,
+    i18n,
         propsData: {
           field,
           operator,
@@ -136,6 +141,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('状态 multiSelect 在空 fieldOptions 时不崩溃且禁止创建自定义状态', () => {
     const multiWrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -153,6 +159,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('handleChange 触发后向父级 emit input 与 change 事件', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -186,6 +193,7 @@ describe('ConditionValueInput 字段选项透传', () => {
     ]
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -205,6 +213,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('未设置操作符隐藏值输入并显示无需填写提示', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'ratio_limit',
         operator: 'is_null',
@@ -223,6 +232,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('超级做种渲染是、否、不支持三态单选', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'super_seeding',
         operator: 'equals',

@@ -27,10 +27,12 @@ import { dashboard } from './dashboard'
 import { downloader } from './downloader'
 import { errors } from './errors'
 import { navigation } from './navigation'
+import { queryTemplate } from './queryTemplate'
 import { search } from './search'
 import { settings } from './settings'
 import { time } from './time'
 import { torrent } from './torrent'
+import { tracker } from './tracker'
 
 const messages: MessageTree = {
   auth,
@@ -39,10 +41,12 @@ const messages: MessageTree = {
   downloader,
   errors,
   navigation,
+  queryTemplate,
   search,
   settings,
   time,
   torrent,
+  tracker,
   el: elementEn.el
 }
 

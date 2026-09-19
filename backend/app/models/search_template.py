@@ -35,6 +35,10 @@ class SearchTemplate(Base):
         name: 模板名称
         description: 模板描述
         conditions: 查询条件（JSON 字符串，应用层序列化）
+        preset_key: 系统预设稳定身份键（如 active_torrents；用户自定义恒为 NULL）。
+            双语展示按该键本地化名称/描述（desktop-bilingual P4 子范围提前，P0 提案
+            见 PLANS/bilingual/system-content.md §1）；中文名称仅作一次性回填的
+            迁移辅助证据，不作为运行时翻译索引。
         is_default: 是否系统预设（1=预设，0=用户自定义）
         is_public: 是否公开可见
         usage_count: 使用次数
@@ -49,6 +53,12 @@ class SearchTemplate(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False, comment="模板名称")
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="模板描述")
     conditions: Mapped[str] = mapped_column(Text, nullable=False, comment="查询条件（JSON 字符串）")
+    preset_key: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="系统预设稳定身份键（用户自定义恒为 NULL，不做唯一约束——幂等由 init 逻辑保证）",
+    )
     is_default: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义"
     )
@@ -94,6 +104,7 @@ class SearchTemplate(Base):
             "name": self.name,
             "description": self.description,
             "conditions": self.conditions,
+            "preset_key": self.preset_key,
             "is_default": self.is_default,
             "is_public": self.is_public,
             "usage_count": self.usage_count,

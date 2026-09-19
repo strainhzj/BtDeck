@@ -28,6 +28,7 @@ import {
   type TorrentPeerInfo
 } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
+import { translate } from '@/i18n'
 
 // ts-jest/tsc 无法从 .vue 解析命名类型导出（TS2614，.vue→.vue 可过是因为
 // vue-jest 不做类型检查）。此处内联同款定义解除阻塞；类型源头统一请后续
@@ -145,7 +146,7 @@ export default class TrackerDetailDataMixin extends Vue {
         this.detailFilesState = {
           ...this.detailFilesState,
           loading: false,
-          error: res.msg || '获取文件列表失败'
+          error: res.msg || translate('tracker.detail.files.loadFailed')
         }
       }
     } catch (error) {
@@ -200,7 +201,7 @@ export default class TrackerDetailDataMixin extends Vue {
         this.detailPeersState = {
           ...this.detailPeersState,
           loading: false,
-          error: res.msg || '获取Peer列表失败'
+          error: res.msg || translate('tracker.detail.peers.loadFailed')
         }
         // 种子/下载器已不存在：轮询无意义，自动停止（列表模式删除当前种子后
         // 未清 currentRow 的场景由该分支兜住）

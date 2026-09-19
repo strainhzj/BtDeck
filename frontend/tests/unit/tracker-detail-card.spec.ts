@@ -1,12 +1,14 @@
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
-
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import type { TrackerInfo } from '@/api/torrents'
 import TrackerDetailCard from '@/views/torrents/components/TrackerDetailCard.vue'
 
 type TrackerRow = TrackerInfo & { reannouncing?: boolean }
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 const AlertStub = localVue.extend({
   name: 'ElAlertStub',
@@ -64,6 +66,7 @@ function mountCard(
 ): Wrapper<Vue> {
   return shallowMount(TrackerDetailCard, {
     localVue,
+    i18n,
     propsData: {
       trackerInfo,
       errorReason,

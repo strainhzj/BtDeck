@@ -23,6 +23,7 @@ import type {
   QueryTemplateConditionGroup,
   Torrent
 } from '@/api/torrents'
+import { translate } from '@/i18n'
 import {
   AdvancedSearchConditionValue,
   AdvancedSearchGroupState,
@@ -879,7 +880,9 @@ export function getTorrentErrorReason(torrent: Torrent | null | undefined): stri
   if (errorReason) return errorReason
   if (!hasTrackerError(torrent)) return ''
   const announceMsg = torrent.lastAnnounceMsg || torrent.last_announce_msg || ''
-  return announceMsg ? `Tracker 宣告失败：${announceMsg}` : 'Tracker 宣告失败，详见 Tracker 标签页'
+  return announceMsg
+    ? translate('tracker.errorReason.withMessage', { message: announceMsg })
+    : translate('tracker.errorReason.fallback')
 }
 
 // ============ 下载器同源校验（消除转移/改路径的重复校验） ============

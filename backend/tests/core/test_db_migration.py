@@ -56,8 +56,10 @@ def _clean_database_path_env():
 #       → ab68fe061d5b(orphan purge job submit-time ip address)
 #       → 975dad435c03(torrent auxiliary seed count)
 #       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
-EXPECTED_HEAD = "c1d2e3f4a5b6"
+#       → b3e5f7a9c1d2(search_templates preset_key, bilingual system preset identity)
+EXPECTED_HEAD = "b3e5f7a9c1d2"
 PREV_HEAD = "e6d8a20c41f3"
+PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
 HARDLINK_COPY_RESULTS_PREV = "b6e1c4d9a2f7"

@@ -16,7 +16,8 @@
  */
 
 /**
- * 种子域文案（torrent 组，P3-1：列表骨架 + 操作反馈 + 添加弹窗 + 批量弹窗 + 删重两弹窗）。
+ * 种子域文案（torrent 组，P3-1：列表骨架 + 操作反馈 + 添加弹窗 + 批量弹窗 + 删重两弹窗；
+ * P3-2 增 detail 子树：种子详情弹窗）。
  *
  * 注意：四级删除确认/结果链路（utils/torrentBatch.ts 的 DELETE_LEVEL_NAMES、
  * buildDeleteConfirmMessage、parseDeleteTaskResult、parseSyncDeleteResponse 及
@@ -240,6 +241,28 @@ export const torrent = {
       pause: '批量暂停失败，请查看控制台',
       recheck: '批量重检失败，请查看控制台'
     }
+  },
+  /** 种子详情弹窗（TorrentDetailDialog，P3-2；转移弹窗本体属 P6 不译） */
+  detail: {
+    title: '种子详情',
+    nameLabel: '种子名称',
+    status: '状态',
+    size: '文件大小',
+    progress: '进度',
+    downloadSpeed: '下载速度',
+    uploadSpeed: '上传速度',
+    addedDate: '添加时间',
+    completedDate: '完成时间',
+    ratio: '分享比率',
+    savePath: '保存路径',
+    tags: '标签',
+    notCompleted: '未完成',
+    trackerSection: 'Tracker信息',
+    trackerColName: '名称',
+    trackerColStatus: '状态',
+    statusNormal: '正常',
+    statusAbnormal: '异常',
+    transfer: '转移'
   },
   duplicates: {
     quick: {

@@ -9,9 +9,9 @@
     <el-tabs v-model="activeTab" type="border-card" @tab-click="handleTabChange">
 
       <!-- Tab 1: 添加Tracker -->
-      <el-tab-pane label="添加Tracker" name="add">
+      <el-tab-pane :label="$t('tracker.operation.addTab')" name="add">
         <el-form :model="addForm" :rules="addRules" ref="addForm" label-width="120px">
-          <el-form-item :label="scoped ? '操作范围' : '选中的种子'">
+          <el-form-item :label="scoped ? $t('tracker.operation.scopeLabel') : $t('tracker.operation.selectedTorrents')">
             <el-tag v-if="scoped" type="warning">{{ scopeLabel }}{{ scopeTotalSuffix }}</el-tag>
             <div v-else-if="isBatchOperation" class="torrent-list">
               <el-tag
@@ -27,16 +27,16 @@
             <el-tag v-else type="info">{{ (selectedTorrents[0] && selectedTorrents[0].name) || '-' }}</el-tag>
           </el-form-item>
 
-          <el-form-item label="Tracker地址" prop="trackers">
+          <el-form-item :label="$t('tracker.operation.trackerUrls')" prop="trackers">
             <el-input
               type="textarea"
               :rows="5"
               v-model="addForm.trackers"
-              placeholder="多个tracker地址用分号;分隔&#10;例如:&#10;https://tracker1.com/announce&#10;https://tracker2.com/announce"
+              :placeholder="$t('tracker.operation.addPlaceholder')"
             />
             <div class="form-tip">
               <i class="el-icon-info"></i>
-              支持添加多个tracker地址，每个地址一行或用分号分隔
+              {{ $t('tracker.operation.addHint') }}
             </div>
           </el-form-item>
 
@@ -49,9 +49,9 @@
       </el-tab-pane>
 
       <!-- Tab 2: 修改Tracker -->
-      <el-tab-pane label="修改Tracker" name="modify">
+      <el-tab-pane :label="$t('tracker.operation.modifyTab')" name="modify">
         <el-form :model="modifyForm" :rules="modifyRules" ref="modifyForm" label-width="120px">
-          <el-form-item :label="scoped ? '操作范围' : '选中的种子'">
+          <el-form-item :label="scoped ? $t('tracker.operation.scopeLabel') : $t('tracker.operation.selectedTorrents')">
             <el-tag v-if="scoped" type="warning">{{ scopeLabel }}{{ scopeTotalSuffix }}</el-tag>
             <div v-else-if="isBatchOperation" class="torrent-list">
               <el-tag
@@ -67,29 +67,29 @@
             <el-tag v-else type="info">{{ (selectedTorrents[0] && selectedTorrents[0].name) || '-' }}</el-tag>
           </el-form-item>
 
-          <el-form-item label="当前Tracker列表" v-if="currentTrackers.length > 0">
+          <el-form-item :label="$t('tracker.operation.currentList')" v-if="currentTrackers.length > 0">
             <el-table :data="currentTrackers" size="small" max-height="200" border>
               <el-table-column prop="tracker_url" label="URL" show-overflow-tooltip min-width="300" />
-              <el-table-column label="状态" width="80" align="center">
+              <el-table-column :label="$t('tracker.operation.status')" width="80" align="center">
                 <template slot-scope="scope">
                   <el-tag :type="trackerAnnounceSuccess(scope.row.last_announce_succeeded) ? 'success' : 'danger'" size="mini">
-                    {{ trackerAnnounceSuccess(scope.row.last_announce_succeeded) ? '正常' : '异常' }}
+                    {{ trackerAnnounceSuccess(scope.row.last_announce_succeeded) ? $t('tracker.operation.normal') : $t('tracker.operation.abnormal') }}
                   </el-tag>
                 </template>
               </el-table-column>
             </el-table>
           </el-form-item>
 
-          <el-form-item label="新Tracker列表" prop="trackers">
+          <el-form-item :label="$t('tracker.operation.newList')" prop="trackers">
             <el-input
               type="textarea"
               :rows="5"
               v-model="modifyForm.trackers"
-              placeholder="多个tracker地址用分号;分隔，将完全替换当前的tracker列表&#10;例如:&#10;https://tracker1.com/announce;https://tracker2.com/announce"
+              :placeholder="$t('tracker.operation.modifyPlaceholder')"
             />
             <div class="form-tip">
               <i class="el-icon-warning"></i>
-              <strong>注意：</strong>修改操作将完全替换当前tracker列表，请谨慎操作
+              <strong>{{ $t('tracker.operation.noticeLabel') }}</strong>{{ $t('tracker.operation.noticeReplace') }}
             </div>
           </el-form-item>
 
@@ -104,7 +104,7 @@
     </el-tabs>
 
     <span slot="footer" class="dialog-footer">
-      <el-button @click="handleClose">关闭</el-button>
+      <el-button @click="handleClose">{{ $t('common.close') }}</el-button>
     </span>
   </el-dialog>
 </template>
@@ -170,7 +170,7 @@ export default class TrackerOperationDialog extends Vue {
   private get addRules() {
     return {
       trackers: [
-        { required: true, message: '请输入tracker地址', trigger: 'blur' },
+        { required: true, message: this.$t('tracker.operation.rules.requiredUrl'), trigger: 'blur' },
         {
           validator: this.validateTrackerUrls,
           trigger: 'blur'
@@ -185,7 +185,7 @@ export default class TrackerOperationDialog extends Vue {
   private get modifyRules() {
     return {
       trackers: [
-        { required: true, message: '请输入新的tracker列表', trigger: 'blur' },
+        { required: true, message: this.$t('tracker.operation.rules.requiredNewList'), trigger: 'blur' },
         {
           validator: this.validateTrackerUrls,
           trigger: 'blur'
@@ -210,24 +210,30 @@ export default class TrackerOperationDialog extends Vue {
 
   /** 操作范围文案（scoped 模式） */
   get scopeLabel(): string {
-    return this.scopeDownloader ? `下载器「${this.scopeDownloader.name}」全部种子` : ''
+    return this.scopeDownloader
+      ? this.$t('tracker.operation.scopeAllTorrents', { name: this.scopeDownloader.name }).toString()
+      : ''
   }
 
   /** 范围计数后缀（total 未知时省略） */
   get scopeTotalSuffix(): string {
     return this.scopeDownloader && typeof this.scopeDownloader.total === 'number'
-      ? `（共 ${this.scopeDownloader.total} 个）`
+      ? this.$t('tracker.operation.scopeTotalSuffix', { total: this.scopeDownloader.total }).toString()
       : ''
   }
 
   get addSubmitLabel(): string {
-    if (this.scoped) return '添加到该下载器全部种子'
-    return this.isBatchOperation ? `批量添加 (${this.selectedTorrents.length}个种子)` : '添加Tracker'
+    if (this.scoped) return this.$t('tracker.operation.addSubmitScoped').toString()
+    return this.isBatchOperation
+      ? this.$t('tracker.operation.addSubmitBatch', { count: this.selectedTorrents.length }).toString()
+      : this.$t('tracker.operation.addSubmitSingle').toString()
   }
 
   get modifySubmitLabel(): string {
-    if (this.scoped) return '替换该下载器全部种子Tracker'
-    return this.isBatchOperation ? `批量修改 (${this.selectedTorrents.length}个种子)` : '修改Tracker'
+    if (this.scoped) return this.$t('tracker.operation.modifySubmitScoped').toString()
+    return this.isBatchOperation
+      ? this.$t('tracker.operation.modifySubmitBatch', { count: this.selectedTorrents.length }).toString()
+      : this.$t('tracker.operation.modifySubmitSingle').toString()
   }
 
   /**
@@ -235,13 +241,13 @@ export default class TrackerOperationDialog extends Vue {
    */
   get dialogTitle(): string {
     if (this.scoped) {
-      return `Tracker操作（按下载器） - ${this.scopeDownloader?.name ?? ''}`
+      return this.$t('tracker.operation.titleScoped', { name: this.scopeDownloader?.name ?? '' }).toString()
     }
     if (this.isBatchOperation) {
-      return `批量Tracker操作 - 已选${this.selectedTorrents.length}个种子`
+      return this.$t('tracker.operation.titleBatch', { count: this.selectedTorrents.length }).toString()
     } else {
-      const torrentName = this.selectedTorrents[0]?.name || '种子'
-      return `Tracker操作 - ${torrentName}`
+      const torrentName = this.selectedTorrents[0]?.name || this.$t('tracker.operation.torrentFallbackName')
+      return this.$t('tracker.operation.titleSingle', { name: torrentName }).toString()
     }
   }
 
@@ -250,7 +256,9 @@ export default class TrackerOperationDialog extends Vue {
     const ok = data?.success_count
     const fail = data?.failed_count
     if (typeof ok !== 'number') return ''
-    return `（成功 ${ok}${typeof fail === 'number' && fail > 0 ? `，失败 ${fail}` : ''}）`
+    return typeof fail === 'number' && fail > 0
+      ? this.$t('tracker.operation.resultSuffixWithFail', { ok, fail }).toString()
+      : this.$t('tracker.operation.resultSuffix', { ok }).toString()
   }
 
   /**
@@ -337,7 +345,7 @@ export default class TrackerOperationDialog extends Vue {
    */
   private validateTrackerUrls(rule: any, value: string, callback: Function) {
     if (!value || value.trim() === '') {
-      callback(new Error('请输入tracker地址'))
+      callback(new Error(this.$t('tracker.operation.rules.requiredUrl')))
       return
     }
 
@@ -348,14 +356,14 @@ export default class TrackerOperationDialog extends Vue {
       .filter(u => u.length > 0)
 
     if (urls.length === 0) {
-      callback(new Error('请输入有效的tracker地址'))
+      callback(new Error(this.$t('tracker.operation.validate.invalidUrl')))
       return
     }
 
     // 验证每个URL格式
     const invalidUrls = urls.filter(url => !this.TRACKER_URL_PATTERN.test(url))
     if (invalidUrls.length > 0) {
-      callback(new Error(`以下tracker地址格式不正确: ${invalidUrls.join(', ')}`))
+      callback(new Error(this.$t('tracker.operation.validate.badUrls', { urls: invalidUrls.join(', ') })))
       return
     }
 
@@ -368,7 +376,7 @@ export default class TrackerOperationDialog extends Vue {
   private async handleAddSubmit() {
     const form = this.$refs.addForm as any
     if (!form) {
-      this.$message.error('表单未初始化，请稍后重试')
+      this.$message.error(this.$t('tracker.operation.formNotReady'))
       return
     }
     
@@ -383,11 +391,11 @@ export default class TrackerOperationDialog extends Vue {
           trackers: this.addForm.trackers
         })
         if (response.code === '200') {
-          this.$message.success(`添加Tracker成功${this.scopedResultSuffix(response.data)}`)
+          this.$message.success(this.$t('tracker.operation.addSuccess') + this.scopedResultSuffix(response.data))
           this.$emit('success')
           this.handleClose()
         } else {
-          this.$message.error(response.msg || '添加Tracker失败')
+          this.$message.error(response.msg || this.$t('tracker.operation.addFailed'))
         }
         return
       }
@@ -411,7 +419,7 @@ export default class TrackerOperationDialog extends Vue {
       console.log("最终torrentInfoIds:", torrentInfoIds)
       
       if (!torrentInfoIds) {
-        this.$message.error("未获取到种子ID，请重新选择种子")
+        this.$message.error(this.$t('tracker.operation.noTorrentId'))
         this.submitting = false
         return
       }
@@ -421,17 +429,17 @@ export default class TrackerOperationDialog extends Vue {
       })
 
       if (response.code === '200') {
-        this.$message.success('添加Tracker成功')
+        this.$message.success(this.$t('tracker.operation.addSuccess'))
         this.$emit('success')
         this.handleClose()
       } else {
-        this.$message.error(response.msg || '添加Tracker失败')
+        this.$message.error(response.msg || this.$t('tracker.operation.addFailed'))
       }
     } catch (error: any) {
       console.error('添加Tracker失败:', error)
       if (error !== 'cancel') {
         // 修复：显示实际的错误消息，而不是硬编码
-        this.$message.error(error.message || '添加Tracker失败')
+        this.$message.error(error.message || this.$t('tracker.operation.addFailed'))
       }
     } finally {
       this.submitting = false
@@ -444,7 +452,7 @@ export default class TrackerOperationDialog extends Vue {
   private async handleModifySubmit() {
     const form = this.$refs.modifyForm as any
     if (!form) {
-      this.$message.error('表单未初始化，请稍后重试')
+      this.$message.error(this.$t('tracker.operation.formNotReady'))
       return
     }
     
@@ -459,11 +467,11 @@ export default class TrackerOperationDialog extends Vue {
           trackers: this.modifyForm.trackers
         })
         if (response.code === '200') {
-          this.$message.success(`修改Tracker成功${this.scopedResultSuffix(response.data)}`)
+          this.$message.success(this.$t('tracker.operation.modifySuccess') + this.scopedResultSuffix(response.data))
           this.$emit('success')
           this.handleClose()
         } else {
-          this.$message.error(response.msg || '修改Tracker失败')
+          this.$message.error(response.msg || this.$t('tracker.operation.modifyFailed'))
         }
         return
       }
@@ -487,7 +495,7 @@ export default class TrackerOperationDialog extends Vue {
       console.log("最终torrentInfoIds:", torrentInfoIds)
       
       if (!torrentInfoIds) {
-        this.$message.error("未获取到种子ID，请重新选择种子")
+        this.$message.error(this.$t('tracker.operation.noTorrentId'))
         this.submitting = false
         return
       }
@@ -497,17 +505,17 @@ export default class TrackerOperationDialog extends Vue {
       })
 
       if (response.code === '200') {
-        this.$message.success('修改Tracker成功')
+        this.$message.success(this.$t('tracker.operation.modifySuccess'))
         this.$emit('success')
         this.handleClose()
       } else {
-        this.$message.error(response.msg || '修改Tracker失败')
+        this.$message.error(response.msg || this.$t('tracker.operation.modifyFailed'))
       }
     } catch (error: any) {
       console.error('修改Tracker失败:', error)
       if (error !== 'cancel') {
         // 修复：显示实际的错误消息，而不是硬编码
-        this.$message.error(error.message || '修改Tracker失败')
+        this.$message.error(error.message || this.$t('tracker.operation.modifyFailed'))
       }
     } finally {
       this.submitting = false

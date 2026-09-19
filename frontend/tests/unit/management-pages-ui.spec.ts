@@ -56,19 +56,20 @@ describe('查询模板管理页操作分组', () => {
     const header = queryTemplatesSource.match(/<header[\s\S]*?<\/header>/)?.[0] || ''
     const filterPanel = queryTemplatesSource.match(/<!-- 筛选条件 -->[\s\S]*?<\/section>/)?.[0] || ''
 
-    expect(header).toContain('刷新')
-    expect(header).toContain('新建模板')
-    expect(filterPanel).toContain('搜索')
-    expect(filterPanel).not.toContain('新建模板')
+    // 双语化（P3-2）：页头/筛选文案走 i18n 键，锚定键引用而非中文字面量
+    expect(header).toContain("$t('common.refresh')")
+    expect(header).toContain("$t('queryTemplate.list.create')")
+    expect(filterPanel).toContain("$t('queryTemplate.list.search')")
+    expect(filterPanel).not.toContain("$t('queryTemplate.list.create')")
   })
 
   it('表格右侧操作列使用可访问的简约 Lucide 图标并保护系统模板', () => {
-    expect(queryTemplatesSource).toContain('<el-table-column label="操作" width="138"')
+    expect(queryTemplatesSource).toContain('<el-table-column :label="$t(\'queryTemplate.list.colActions\')" width="138"')
     expect(queryTemplatesSource).toContain('class="template-row-actions"')
     expect(queryTemplatesSource).toContain('<LucideIcon name="play" :size="15" />')
     expect(queryTemplatesSource).toContain('<LucideIcon name="pencil" :size="15" />')
     expect(queryTemplatesSource).toContain('<LucideIcon name="trash" :size="15" />')
-    expect(queryTemplatesSource).toContain('aria-label="应用模板"')
+    expect(queryTemplatesSource).toContain(':aria-label="$t(\'queryTemplate.list.applyTip\')"')
     expect(queryTemplatesSource.match(/:disabled="scope\.row\.is_default"/g)).toHaveLength(2)
     expect(queryTemplatesSource).not.toContain('icon="el-icon-video-play"')
     expect(queryTemplatesSource).not.toContain('icon="el-icon-edit"')

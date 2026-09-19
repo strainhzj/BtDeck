@@ -2,19 +2,19 @@
   <div class="size-range-filter">
     <!-- 最小值输入 -->
     <div class="size-input-group">
-      <label class="size-label">最小值:</label>
+      <label class="size-label">{{ $t('search.sizeRange.minLabel') }}</label>
       <el-input-number
         :value="sizeMinValue"
         :min="0"
         :precision="2"
         :controls="true"
-        placeholder="输入数字"
+        :placeholder="$t('search.sizeRange.numberPlaceholder')"
         class="size-input"
         @change="handleSizeMinChange"
       />
       <el-select
         :value="sizeMinUnit"
-        placeholder="单位"
+        :placeholder="$t('search.sizeRange.unitPlaceholder')"
         class="size-unit-select"
         @change="handleSizeMinUnitChange"
       >
@@ -31,19 +31,19 @@
 
     <!-- 最大值输入 -->
     <div class="size-input-group">
-      <label class="size-label">最大值:</label>
+      <label class="size-label">{{ $t('search.sizeRange.maxLabel') }}</label>
       <el-input-number
         :value="sizeMaxValue"
         :min="0"
         :precision="2"
         :controls="true"
-        placeholder="输入数字"
+        :placeholder="$t('search.sizeRange.numberPlaceholder')"
         class="size-input"
         @change="handleSizeMaxChange"
       />
       <el-select
         :value="sizeMaxUnit"
-        placeholder="单位"
+        :placeholder="$t('search.sizeRange.unitPlaceholder')"
         class="size-unit-select"
         @change="handleSizeMaxUnitChange"
       >
@@ -60,14 +60,14 @@
 
     <!-- 快捷预设 -->
     <div class="size-presets">
-      <span class="preset-label">快捷选择:</span>
+      <span class="preset-label">{{ $t('search.sizeRange.presetsLabel') }}</span>
       <el-button
         v-for="preset in sizePresets"
-        :key="preset.label"
+        :key="preset.key"
         size="small"
         @click="applyPreset(preset)"
       >
-        {{ preset.label }}
+        {{ presetLabel(preset) }}
       </el-button>
     </div>
   </div>
@@ -77,7 +77,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 
 interface SizePreset {
-  label: string
+  key: 'small' | 'medium' | 'large' | 'xlarge' | 'movie'
   min: number | null
   minUnit: string
   max: number | null
@@ -103,14 +103,18 @@ export default class SizeRangeFilter extends Vue {
   private sizeMaxValue: number | null = null
   private sizeMaxUnit = 'GB'
 
-  // 快捷预设
+  // 快捷预设（label 按语言生成，见 presetLabel）
   private sizePresets: SizePreset[] = [
-    { label: '小文件 (<100MB)', min: 0, minUnit: 'MB', max: 100, maxUnit: 'MB' },
-    { label: '中文件 (100MB-1GB)', min: 100, minUnit: 'MB', max: 1, maxUnit: 'GB' },
-    { label: '大文件 (1GB-10GB)', min: 1, minUnit: 'GB', max: 10, maxUnit: 'GB' },
-    { label: '超大文件 (>10GB)', min: 10, minUnit: 'GB', max: null, maxUnit: null },
-    { label: '高清电影 (4GB-20GB)', min: 4, minUnit: 'GB', max: 20, maxUnit: 'GB' }
+    { key: 'small', min: 0, minUnit: 'MB', max: 100, maxUnit: 'MB' },
+    { key: 'medium', min: 100, minUnit: 'MB', max: 1, maxUnit: 'GB' },
+    { key: 'large', min: 1, minUnit: 'GB', max: 10, maxUnit: 'GB' },
+    { key: 'xlarge', min: 10, minUnit: 'GB', max: null, maxUnit: null },
+    { key: 'movie', min: 4, minUnit: 'GB', max: 20, maxUnit: 'GB' }
   ]
+
+  private presetLabel(preset: SizePreset): string {
+    return this.$t('search.sizeRange.preset.' + preset.key).toString()
+  }
 
   // Lifecycle
   mounted() {
@@ -243,7 +247,7 @@ export default class SizeRangeFilter extends Vue {
     }
 
     this.emitChange()
-    this.$message.success(`已应用: ${preset.label}`)
+    this.$message.success(this.$t('search.sizeRange.applied', { label: this.presetLabel(preset) }).toString())
   }
 }
 </script>

@@ -7693,3 +7693,17 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 测试：新增 search-shared-layer-i18n.spec 13 例（契约双标签完整、稳定值映射、两语言输出、搜索参数不变性 T01：两语言 buildAdvancedSearchParams groups 完全一致）；11 个存量套件迁移 i18n 挂载（localVue.use(VueI18n)+i18n 单例，全程行为断言不变）。
 - 验证：前端 typecheck / lint 三项（含 contract:check）/ build / Jest 115 套 1617 例全绿（基线 114 套 1604 例）；后端 advanced_search 回归 147 例 + 契约守卫 2 例绿，black/flake8 净，mypy 存量 17 错误零新增。中途教训：PowerShell Get-Content 按 GBK 误读 UTF-8 spec 造成 mojibake，已回滚重做（后续批量改文件一律 Python 显式 UTF-8）；CRLF 插入曾产生 \\r\\r\\n 双 CR 致 git 全文件 diff，已修复。
 - 余量：P3-2（详情/Tracker 卡片与操作/汇报文案/查询模板页与 4 预设展示）；浏览器 T01 人工验收与英文审校；删除菜单已译但确认/结果链路待 P5 收口。未执行 Git 提交。
+
+## 2026-09-21（续）：桌面双语 P3-2 第二批（详情/Tracker/高级搜索外壳/查询模板页 + preset_key 迁移提前，未提交）
+
+- 范围即用户确认的 P3-2 批次划分；预设展示经用户拍板选方案 b（提前实施 preset_key 迁移，P0 提案 system-content.md §1 落地），buildAdvancedSearchParams 校验消息按批次边界不顺带（留后续）。
+- 后端（P4 子范围提前）：search_templates 加 preset_key 稳定身份列——Alembic b3e5f7a9c1d2（head c1d2e3f4a5b6→b3e5f7a9c1d2，加列+索引+一次性按旧中文名回填：仅 is_default=1 恰一行回填，用户同名（is_default=0）与歧义同名多行保持 NULL 不猜，B02；downgrade drop 索引与列可回滚）；init_default_search_templates 幂等身份改按 preset_key（与名称解耦；旧库中文名恰一行自愈回填首启兼容）；SearchTemplateModel._row_to_dict/模型 to_dict 透出 preset_key；前端 SearchTemplate 接口加可选 preset_key。
+- 前端语言包：新增 tracker 模块（详情卡三页签/Tracker 操作弹窗/errorReason 兜底）与 queryTemplate 模块（列表+弹窗），search 扩 builder/workspace/valueInput/sizeRange/templateDialog/validation/presents 六子树（zh-CN+en 成对，parity 门禁覆盖），torrent 扩 detail；zh 值与原内联中文逐字节一致（存量断言零改动）。
+- 组件落地：TorrentDetailDialog（转移入口按钮译，TransferDialog 本体 P6 不动）、TrackerDetailCard（页签 label 按内置 value 映射；后端 announce/scrape 原始诊断保留原文 T03）、TrackerOperationDialog（校验规则 getter 化）、detailTabsData 兜底、utils/torrentBatch.ts 仅 Tracker 异常展示段（同源校验/高级搜索解析/删除链路按边界未动）、AdvancedSearchBuilder 外壳、AdvancedSearchWorkspace（预设名按 preset_key 本地化 + 应用模板预设组名按稳定组 id preset_large_files 入口翻译，仅写 Builder 内存态不改库）、ConditionValueInput（兜底选项 getter 化与共享层同源）、SizeRangeFilter（预设 key 化）、SearchTemplateDialog、advancedSearchState 校验消息 52 处 translate 化、查询模板页两件（状态选项复用 torrent.status.*，formatTime 按 getLocale 本地化）。共享层新增 presetDisplayName/presetDisplayDescription/presetGroupName（未识别行保留原文 Q02）。
+- 关键取舍：buildAdvancedSearchParams 回退组名保持内联中文——属 API groups 载荷非展示文案（search-shared-layer-i18n.spec T01 断言两语言 groups JSON 完全一致，首跑曾红，修复后钉住）。
+- 测试：新增 search-shared-layer-i18n 预设映射回归 3 例；5 套件迁移 i18n 挂载（tracker-detail-card/tracker-operation-dialog[补 localVue+createLocalVue]/traditional-view-component[修脚本重复插入]/AdvancedSearchWorkspace/ConditionValueInput）；torrent-error-reason-ui/management-pages-ui/traditional-view 三套件源码契约断言语义化（中文字面量锚改键引用+语言包 zh 值双锚）；顺手修 search-shared-layer-i18n 两处 non-null 断言（lint max-warnings 0 门禁）。
+- 后端新增 tests/core/test_search_template_preset_key.py 12 例（迁移回填/幂等/B02 同名与歧义/API 透出/降级回环）+ test_db_migration EXPECTED_HEAD 同步。
+- 验证：前端 typecheck / lint 三项（含 contract:check）/ build / 全量 Jest 115 套 1620 例全绿（基线 1617）；后端 preset_key 12 例 + 迁移链 25 例 + db governance 33 例 + edge cases 10 例 + api templates/permissions/pagination 34 例全绿，black/flake8 净，mypy 本批文件零错误（rollback_scenarios 2 例失败为存量基线，git stash 对照证实）。
+- 文档：feature_list.json p3 evidence 追加本批；roadmap 七处同步（根 README 功能域+元信息+本次新增、entry i18n 行、views 八行、components-layout 六行、backend infra 迁移行+versions 计数、backend data-models 两行）。
+- 坑：①Python 替换脚本里显式写 \r\n 再经 replace('\n','\r\n') 会产生 \r\r\n——统一写 \n 交由转换；②批量 import 插入脚本末尾必须带换行，否则与下一行 import 粘连（两个 spec 编译失败）；③roadmap/tools 的中文 mark 经 bash 传输偶发不匹配，锚定式 patch 失败时用独立脚本验证 startswith 再补。
+- 未执行 Git 提交（data/ 下 p32_*.py 为未跟踪辅助脚本，保持不动）。

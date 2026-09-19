@@ -235,6 +235,28 @@ export const torrent = {
       recheck: 'Batch recheck failed, see console for details'
     }
   },
+  /** Torrent detail dialog (TorrentDetailDialog, P3-2; transfer dialog body is P6, not translated) */
+  detail: {
+    title: 'Torrent Details',
+    nameLabel: 'Torrent name',
+    status: 'Status',
+    size: 'Size',
+    progress: 'Progress',
+    downloadSpeed: 'Download speed',
+    uploadSpeed: 'Upload speed',
+    addedDate: 'Added at',
+    completedDate: 'Completed at',
+    ratio: 'Share ratio',
+    savePath: 'Save path',
+    tags: 'Tags',
+    notCompleted: 'Not completed',
+    trackerSection: 'Tracker Info',
+    trackerColName: 'Name',
+    trackerColStatus: 'Status',
+    statusNormal: 'Normal',
+    statusAbnormal: 'Error',
+    transfer: 'Transfer'
+  },
   duplicates: {
     quick: {
       title: 'Quick Delete Duplicates',

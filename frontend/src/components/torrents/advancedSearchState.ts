@@ -7,6 +7,7 @@ import {
   ADVANCED_SEARCH_REVERSE_OPERATOR_MAPPING,
   AdvancedSearchFieldKind
 } from '@/contracts/advancedSearch.generated'
+import { translate } from '@/i18n'
 
 export interface NumberRangeValue {
   min: number | null
@@ -144,7 +145,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function finiteNonNegative(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new AdvancedSearchValidationError(`${label}必须是有限的非负数`)
+    throw new AdvancedSearchValidationError(translate('search.validation.mustBeFinite', { label }))
   }
   return value
 }
@@ -162,18 +163,18 @@ function nullableFiniteNonNegative(
 function sizeInBytes(value: number, unit: string, label: string): number {
   const multiplier = SIZE_MULTIPLIERS[unit]
   if (!multiplier) {
-    throw new AdvancedSearchValidationError(`${label}的单位无效`)
+    throw new AdvancedSearchValidationError(translate('search.validation.invalidUnit', { label }))
   }
   return value * multiplier
 }
 
 function validLocalDate(value: unknown, label: string): string {
   if (typeof value !== 'string') {
-    throw new AdvancedSearchValidationError(`${label}必须是本地日期字符串`)
+    throw new AdvancedSearchValidationError(translate('search.validation.mustBeLocalDate', { label }))
   }
   const match = LOCAL_DATE_PATTERN.exec(value)
   if (!match) {
-    throw new AdvancedSearchValidationError(`${label}格式无效`)
+    throw new AdvancedSearchValidationError(translate('search.validation.invalidFormat', { label }))
   }
   const [, year, month, day, hour = '00', minute = '00', second = '00'] =
     match
@@ -193,7 +194,7 @@ function validLocalDate(value: unknown, label: string): string {
     parsed.getMinutes() !== Number(minute) ||
     parsed.getSeconds() !== Number(second)
   ) {
-    throw new AdvancedSearchValidationError(`${label}不是有效日期`)
+    throw new AdvancedSearchValidationError(translate('search.validation.invalidDate', { label }))
   }
   return value
 }
@@ -268,7 +269,7 @@ function parseStructuredValue(value: unknown): Record<string, unknown> {
       // Report one stable validation error below.
     }
   }
-  throw new AdvancedSearchValidationError('模板中的条件值结构无效')
+  throw new AdvancedSearchValidationError(translate('search.validation.tplValueStructure'))
 }
 
 function legacyNumber(value: unknown): number | null {
@@ -278,7 +279,7 @@ function legacyNumber(value: unknown): number | null {
     const parsed = Number(value)
     if (Number.isFinite(parsed)) return parsed
   }
-  throw new AdvancedSearchValidationError('模板中的数值无效')
+  throw new AdvancedSearchValidationError(translate('search.validation.tplNumber'))
 }
 
 export function normalizeLoadedConditionValue(
@@ -298,7 +299,7 @@ export function normalizeLoadedConditionValue(
     if (typeof value === 'string') {
       return value.split(',').map(item => item.trim()).filter(Boolean)
     }
-    throw new AdvancedSearchValidationError('模板中的多选值无效')
+    throw new AdvancedSearchValidationError(translate('search.validation.tplMultiSelect'))
   }
   if (field === 'size') {
     if (operator === 'between') {
@@ -375,7 +376,7 @@ export function normalizeLoadedConditionValue(
     if (value === 'unsupported' || value === 'unknown') {
       return 'unsupported'
     }
-    throw new AdvancedSearchValidationError('模板中的超级做种状态无效')
+    throw new AdvancedSearchValidationError(translate('search.validation.tplSuperSeeding'))
   }
   if (fieldKind === 'number') {
     return legacyNumber(value)
@@ -392,10 +393,10 @@ export function normalizeLoadedConditionValue(
     ) {
       return false
     }
-    throw new AdvancedSearchValidationError('模板中的布尔值无效')
+    throw new AdvancedSearchValidationError(translate('search.validation.tplBoolean'))
   }
   if (typeof value !== 'string') {
-    throw new AdvancedSearchValidationError('模板中的文本值无效')
+    throw new AdvancedSearchValidationError(translate('search.validation.tplText'))
   }
   return value
 }
@@ -409,7 +410,9 @@ export function normalizeLoadedOperator(
     : ADVANCED_SEARCH_REVERSE_OPERATOR_MAPPING[operator]
   if (!frontendOperator) {
     throw new AdvancedSearchValidationError(
-      `模板包含未知操作符：${operator || '未选择'}`
+      translate('search.validation.tplUnknownOperator', {
+        operator: operator || translate('search.validation.notSelected')
+      })
     )
   }
   if (field === 'tags') {
@@ -453,14 +456,16 @@ export function resolveBackendOperator(
   const backendOperator = ADVANCED_SEARCH_OPERATOR_MAPPING[frontendOperator]
   if (!backendOperator) {
     throw new AdvancedSearchValidationError(
-      `未知搜索操作符：${frontendOperator || '未选择'}`
+      translate('search.validation.unknownOperator', {
+        operator: frontendOperator || translate('search.validation.notSelected')
+      })
     )
   }
   if (mode === 'include') return backendOperator
   const negated = ADVANCED_SEARCH_NEGATED_OPERATORS[backendOperator]
   if (!negated) {
     throw new AdvancedSearchValidationError(
-      `操作符“${frontendOperator}”不支持排除模式`
+      translate('search.validation.operatorNoExclude', { operator: frontendOperator })
     )
   }
   return negated
@@ -483,22 +488,22 @@ export function formatConditionValue(
 
   if (field === 'size' && operator === 'between') {
     if (!isRecord(value)) {
-      throw new AdvancedSearchValidationError('种子大小范围结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.sizeRangeStructure'))
     }
-    const min = nullableFiniteNonNegative(value.min, '最小大小')
-    const max = nullableFiniteNonNegative(value.max, '最大大小')
+    const min = nullableFiniteNonNegative(value.min, translate('search.validation.labelMinSize'))
+    const max = nullableFiniteNonNegative(value.max, translate('search.validation.labelMaxSize'))
     if (min === null && max === null) {
-      throw new AdvancedSearchValidationError('大小范围至少填写一个边界')
+      throw new AdvancedSearchValidationError(translate('search.validation.sizeRangeOneBound'))
     }
     const minUnit = typeof value.minUnit === 'string' ? value.minUnit : 'GB'
     const maxUnit = typeof value.maxUnit === 'string' ? value.maxUnit : 'GB'
     if (
       min !== null &&
       max !== null &&
-      sizeInBytes(min, minUnit, '最小大小') >
-        sizeInBytes(max, maxUnit, '最大大小')
+      sizeInBytes(min, minUnit, translate('search.validation.labelMinSize')) >
+        sizeInBytes(max, maxUnit, translate('search.validation.labelMaxSize'))
     ) {
-      throw new AdvancedSearchValidationError('大小范围最小值不能大于最大值')
+      throw new AdvancedSearchValidationError(translate('search.validation.sizeRangeMinMax'))
     }
     return {
       min: min === null ? null : `${min} ${minUnit}`,
@@ -508,11 +513,11 @@ export function formatConditionValue(
 
   if (field === 'size') {
     if (!isRecord(value)) {
-      throw new AdvancedSearchValidationError('种子大小结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.sizeStructure'))
     }
-    const numeric = finiteNonNegative(value.value, '种子大小')
+    const numeric = finiteNonNegative(value.value, translate('search.validation.labelTorrentSize'))
     const unit = typeof value.unit === 'string' ? value.unit : 'GB'
-    sizeInBytes(numeric, unit, '种子大小')
+    sizeInBytes(numeric, unit, translate('search.validation.labelTorrentSize'))
     return `${numeric} ${unit}`
   }
 
@@ -522,21 +527,21 @@ export function formatConditionValue(
       typeof value.pattern !== 'string' ||
       typeof value.caseSensitive !== 'boolean'
     ) {
-      throw new AdvancedSearchValidationError('正则条件结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.regexStructure'))
     }
     if (!value.pattern) {
-      throw new AdvancedSearchValidationError('正则表达式不能为空')
+      throw new AdvancedSearchValidationError(translate('search.validation.regexEmpty'))
     }
     if (value.pattern.length > ADVANCED_SEARCH_MAX_REGEX_PATTERN_LENGTH) {
       throw new AdvancedSearchValidationError(
-        `正则表达式不能超过${ADVANCED_SEARCH_MAX_REGEX_PATTERN_LENGTH}个字符`
+        translate('search.validation.regexTooLong', { max: ADVANCED_SEARCH_MAX_REGEX_PATTERN_LENGTH })
       )
     }
     try {
       // Browser-side syntax feedback; backend remains authoritative.
       new RegExp(value.pattern)
     } catch (_error) {
-      throw new AdvancedSearchValidationError('正则表达式语法无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.regexSyntax'))
     }
     return {
       pattern: value.pattern,
@@ -546,7 +551,7 @@ export function formatConditionValue(
 
   if (operator === 'last_days') {
     if (!isRecord(value)) {
-      throw new AdvancedSearchValidationError('最近天数结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.lastDaysStructure'))
     }
     const days = value.days
     if (
@@ -555,7 +560,7 @@ export function formatConditionValue(
       days < 1 ||
       days > 36500
     ) {
-      throw new AdvancedSearchValidationError('最近天数必须是1到36500的整数')
+      throw new AdvancedSearchValidationError(translate('search.validation.lastDaysRange'))
     }
     return { days }
   }
@@ -565,50 +570,50 @@ export function formatConditionValue(
     (operator === 'between' && fieldKind === 'date')
   ) {
     if (!isRecord(value)) {
-      throw new AdvancedSearchValidationError('日期范围结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.dateRangeStructure'))
     }
     const start =
       value.start === null || value.start === ''
         ? null
-        : validLocalDate(value.start, '开始日期')
+        : validLocalDate(value.start, translate('search.validation.labelStartDate'))
     const end =
       value.end === null || value.end === ''
         ? null
-        : validLocalDate(value.end, '结束日期')
+        : validLocalDate(value.end, translate('search.validation.labelEndDate'))
     if (start === null && end === null) {
-      throw new AdvancedSearchValidationError('日期范围至少填写一个边界')
+      throw new AdvancedSearchValidationError(translate('search.validation.dateRangeOneBound'))
     }
     if (
       start !== null &&
       end !== null &&
       localDateTimestamp(start, false) > localDateTimestamp(end, true)
     ) {
-      throw new AdvancedSearchValidationError('开始日期不能晚于结束日期')
+      throw new AdvancedSearchValidationError(translate('search.validation.dateRangeOrder'))
     }
     return { start, end }
   }
 
   if (operator === 'between') {
     if (!isRecord(value)) {
-      throw new AdvancedSearchValidationError('数值范围结构无效')
+      throw new AdvancedSearchValidationError(translate('search.validation.numberRangeStructure'))
     }
-    const min = nullableFiniteNonNegative(value.min, '最小值')
-    const max = nullableFiniteNonNegative(value.max, '最大值')
+    const min = nullableFiniteNonNegative(value.min, translate('search.validation.labelMinValue'))
+    const max = nullableFiniteNonNegative(value.max, translate('search.validation.labelMaxValue'))
     if (min === null && max === null) {
-      throw new AdvancedSearchValidationError('数值范围至少填写一个边界')
+      throw new AdvancedSearchValidationError(translate('search.validation.numberRangeOneBound'))
     }
     if (min !== null && max !== null && min > max) {
-      throw new AdvancedSearchValidationError('最小值不能大于最大值')
+      throw new AdvancedSearchValidationError(translate('search.validation.numberRangeMinMax'))
     }
     return { min, max }
   }
 
   if (fieldKind === 'number') {
-    return finiteNonNegative(value, '数值')
+    return finiteNonNegative(value, translate('search.validation.labelNumber'))
   }
 
   if (fieldKind === 'date') {
-    return validLocalDate(value, '日期')
+    return validLocalDate(value, translate('search.validation.labelDate'))
   }
 
   if (fieldKind === 'multiSelect') {
@@ -617,20 +622,20 @@ export function formatConditionValue(
       value.length === 0 ||
       value.some(item => typeof item !== 'string' || !item.trim())
     ) {
-      throw new AdvancedSearchValidationError('多选条件至少选择一个有效值')
+      throw new AdvancedSearchValidationError(translate('search.validation.multiSelectOneValue'))
     }
     return value.map(item => item.trim())
   }
 
   if (fieldKind === 'boolean') {
     if (typeof value !== 'boolean') {
-      throw new AdvancedSearchValidationError('布尔条件必须明确选择是或否')
+      throw new AdvancedSearchValidationError(translate('search.validation.boolRequired'))
     }
     return value ? '1' : '0'
   }
 
   if (typeof value !== 'string' || !value.trim()) {
-    throw new AdvancedSearchValidationError('条件值不能为空')
+    throw new AdvancedSearchValidationError(translate('search.validation.valueRequired'))
   }
   return value
 }
@@ -639,26 +644,29 @@ export function buildAdvancedSearchParams(
   groups: AdvancedSearchGroupState[]
 ): AdvancedSearchBuilderParams {
   if (!Array.isArray(groups) || groups.length === 0) {
-    throw new AdvancedSearchValidationError('至少需要一个条件组')
+    throw new AdvancedSearchValidationError(translate('search.validation.groupsRequired'))
   }
 
   let regexCount = 0
   const groupsData: SearchGroupPayload[] = groups.map((group, groupIndex) => {
     if (group.logic !== 'and' && group.logic !== 'or') {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}的组内逻辑无效`
+        translate('search.validation.groupLogicInvalid', { index: groupIndex + 1 })
       )
     }
     if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}至少需要一个条件`
+        translate('search.validation.groupNoConditions', { index: groupIndex + 1 })
       )
     }
     const conditions = group.conditions.map((condition, conditionIndex) => {
       const field = ADVANCED_SEARCH_FIELDS[condition.field]
       if (!field) {
         throw new AdvancedSearchValidationError(
-          `条件组${groupIndex + 1}第${conditionIndex + 1}项未选择有效字段`
+          translate('search.validation.condNoField', {
+            group: groupIndex + 1,
+            cond: conditionIndex + 1
+          })
         )
       }
       if (
@@ -666,7 +674,7 @@ export function buildAdvancedSearchParams(
         !operatorSupportsExclude(condition.operator)
       ) {
         throw new AdvancedSearchValidationError(
-          `操作符“${condition.operator}”不支持排除模式`
+          translate('search.validation.condNoExclude', { operator: condition.operator })
         )
       }
       const backendOperator = resolveBackendOperator(
@@ -675,7 +683,10 @@ export function buildAdvancedSearchParams(
       )
       if (!field.operators.includes(backendOperator)) {
         throw new AdvancedSearchValidationError(
-          `字段“${condition.field}”不支持操作符“${condition.operator}”`
+          translate('search.validation.fieldNoOperator', {
+            field: condition.field,
+            operator: condition.operator
+          })
         )
       }
       const payload: SearchConditionPayload = {
@@ -695,6 +706,8 @@ export function buildAdvancedSearchParams(
     })
     return {
       id: group.id,
+      // 回退组名进入 API 载荷（groups[].name），属业务参数而非展示文案：
+      // 保持内联中文与后端预设组名同一语义层（T01 两语言 groups 完全一致）。
       name: group.name || `条件组${groupIndex + 1}`,
       logic: group.logic,
       conditions,
@@ -704,7 +717,7 @@ export function buildAdvancedSearchParams(
 
   if (regexCount > ADVANCED_SEARCH_MAX_REGEX_CONDITIONS) {
     throw new AdvancedSearchValidationError(
-      `正则条件最多允许${ADVANCED_SEARCH_MAX_REGEX_CONDITIONS}个`
+      translate('search.validation.regexTooMany', { max: ADVANCED_SEARCH_MAX_REGEX_CONDITIONS })
     )
   }
 
@@ -713,7 +726,7 @@ export function buildAdvancedSearchParams(
     const betweenLogic = groups[index].betweenGroupLogic
     if (betweenLogic !== 'and' && betweenLogic !== 'or') {
       throw new AdvancedSearchValidationError(
-        `条件组${index + 1}缺少有效的组间逻辑`
+        translate('search.validation.missingBetweenLogic', { index: index + 1 })
       )
     }
     betweenGroupLogics.push(betweenLogic)

@@ -466,3 +466,44 @@ export function getSearchFieldOptions(
       return []
   }
 }
+
+
+// ============ 系统预设展示映射（desktop-bilingual Q01，按 preset_key 稳定身份） ============
+
+/** 系统预设 preset_key → 名称/描述键前缀（与后端 DEFAULT_SEARCH_TEMPLATE_KEYS 同源） */
+const PRESET_KEY_I18N_PREFIXES: Record<string, string> = {
+  active_torrents: 'search.presets.activeTorrents',
+  error_status: 'search.presets.errorStatus',
+  paused: 'search.presets.paused',
+  large_files: 'search.presets.largeFiles'
+}
+
+/** 预设内置条件组 id → 组名键（后端硬编码稳定 id，旧库已入库 JSON 不改写） */
+const PRESET_GROUP_NAME_KEYS: Record<string, string> = {
+  preset_large_files: 'search.presets.largeFiles.groupName'
+}
+
+/** 最小模板形状（查询模板页与 Workspace 共用，只读 preset_key/name/description） */
+interface PresetDisplaySource {
+  preset_key?: string | null
+  name?: string | null
+  description?: string | null
+}
+
+/** 系统预设名称：按 preset_key 取本地化值；未识别（用户模板/歧义行）保留原文（Q02） */
+export function presetDisplayName(template: PresetDisplaySource): string {
+  const prefix = template.preset_key ? PRESET_KEY_I18N_PREFIXES[template.preset_key] : undefined
+  return prefix ? translate(prefix + '.name') : (template.name || '')
+}
+
+/** 系统预设描述：按 preset_key 取本地化值；未识别保留原文（无描述回退空串） */
+export function presetDisplayDescription(template: PresetDisplaySource): string {
+  const prefix = template.preset_key ? PRESET_KEY_I18N_PREFIXES[template.preset_key] : undefined
+  return prefix ? translate(prefix + '.description') : (template.description || '')
+}
+
+/** 预设内置条件组名：按稳定组 id 取本地化值；非预设组保持原文（应用模板入口处调用） */
+export function presetGroupName(group: { id?: string, name?: string | null }): string {
+  const key = group.id ? PRESET_GROUP_NAME_KEYS[group.id] : undefined
+  return key ? translate(key) : (group.name || '')
+}

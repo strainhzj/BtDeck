@@ -9,8 +9,8 @@
     <button
       class="tracker-collapse-bar"
       type="button"
-      title="收起详情"
-      aria-label="收起详情"
+      :title="$t('tracker.detail.collapse')"
+      :aria-label="$t('tracker.detail.collapse')"
       @click="handleClose"
     >
       <LucideIcon :name="collapseIconName" :size="14" />
@@ -19,7 +19,7 @@
     <div class="tracker-detail-header">
       <h3 class="tracker-title">
         <LucideIcon name="bar-chart-3" :size="14" />
-        Tracker详情 - {{ torrentName }}
+        {{ $t('tracker.detail.title', {name: torrentName}) }}
       </h3>
       <button class="tracker-close" @click="handleClose">
         <LucideIcon name="x" :size="16" />
@@ -34,7 +34,7 @@
         :class="{active: activeTab === tab.value}"
         @click="handleTabChange(tab.value)"
       >
-        {{ tab.label }}
+        {{ trackerTabLabel(tab) }}
       </button>
     </div>
 
@@ -43,7 +43,7 @@
         <el-alert
           v-if="errorReason"
           class="torrent-error-alert"
-          title="种子错误原因"
+          :title="$t('tracker.detail.errorTitle')"
           :description="errorReason"
           type="error"
           show-icon
@@ -53,11 +53,11 @@
           <table class="tracker-table tracker-table-detail">
             <thead>
               <tr>
-                <th>Tracker名称</th>
+                <th>{{ $t('tracker.detail.table.name') }}</th>
                 <th style="width: 80px;">Announce</th>
-                <th>Announce信息</th>
+                <th>{{ $t('tracker.detail.table.announce') }}</th>
                 <th style="width: 80px;">Scrape</th>
-                <th style="width: 60px;" class="tracker-sticky-col">操作</th>
+                <th style="width: 60px;" class="tracker-sticky-col">{{ $t('tracker.detail.table.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -68,12 +68,12 @@
               >
                 <td>
                   <div class="tracker-name-cell">
-                    <span>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</span>
+                    <span>{{ tracker.tracker_name || tracker.trackerName || $t('tracker.detail.unknownTracker') }}</span>
                     <span
                       v-if="matchedDomainOf(tracker)"
                       class="tracker-matched-tag"
-                      :title="`命中当前 Tracker 域名筛选：${matchedDomainOf(tracker)}`"
-                    >命中筛选</span>
+                      :title="$t('tracker.detail.matchedTitle', {domain: matchedDomainOf(tracker)})"
+                    >{{ $t('tracker.detail.matched') }}</span>
                   </div>
                   <div
                     class="tracker-url-mini"
@@ -83,10 +83,10 @@
                 <td>
                   <span :class="trackerStatusClass(getAnnounceStatus(tracker))">
                     <template v-if="trackerAnnounceSuccess(getAnnounceStatus(tracker))">
-                      ✓ 工作
+                      {{ $t('tracker.detail.status.working') }}
                     </template>
                     <template v-else>
-                      ✗ {{ getAnnounceStatus(tracker) || '失败' }}
+                      {{ $t('tracker.detail.status.failedPrefix', {reason: getAnnounceStatus(tracker) || $t('tracker.detail.status.failedFallback')}) }}
                     </template>
                   </span>
                 </td>
@@ -94,10 +94,10 @@
                 <td>
                   <span :class="trackerStatusClass(getScrapeStatus(tracker))">
                     <template v-if="trackerAnnounceSuccess(getScrapeStatus(tracker))">
-                      ✓ 工作
+                      {{ $t('tracker.detail.status.working') }}
                     </template>
                     <template v-else>
-                      ✗ {{ getScrapeStatus(tracker) || '失败' }}
+                      {{ $t('tracker.detail.status.failedPrefix', {reason: getScrapeStatus(tracker) || $t('tracker.detail.status.failedFallback')}) }}
                     </template>
                   </span>
                 </td>
@@ -107,7 +107,7 @@
                     size="mini"
                     :loading="tracker.reannouncing"
                     @click="handleTrackerReannounce(tracker, index)"
-                  >汇报</el-button>
+                  >{{ $t('tracker.detail.reannounce') }}</el-button>
                 </td>
               </tr>
             </tbody>
@@ -116,17 +116,17 @@
       </template>
 
       <template v-else-if="activeTab === 'files'">
-        <div v-if="filesEmptyState === 'loading'" class="tracker-placeholder">文件列表加载中...</div>
+        <div v-if="filesEmptyState === 'loading'" class="tracker-placeholder">{{ $t('tracker.detail.files.loading') }}</div>
         <el-alert
           v-else-if="filesEmptyState === 'error'"
           class="torrent-error-alert"
-          title="文件列表加载失败"
+          :title="$t('tracker.detail.files.loadFailed')"
           :description="filesState.error"
           type="error"
           show-icon
           :closable="false"
         />
-        <div v-else-if="filesEmptyState === 'empty'" class="tracker-placeholder">暂无文件数据</div>
+        <div v-else-if="filesEmptyState === 'empty'" class="tracker-placeholder">{{ $t('tracker.detail.files.empty') }}</div>
         <template v-else>
           <div class="tracker-detail-toolbar">
             <span class="tracker-detail-count">{{ filesCountText }}</span>
@@ -135,15 +135,15 @@
                 v-model="filesSearchQuery"
                 class="tracker-files-search"
                 size="mini"
-                placeholder="搜索文件名"
+                :placeholder="$t('tracker.detail.files.searchPlaceholder')"
                 clearable
                 prefix-icon="el-icon-search"
               />
-              <el-button type="text" size="mini" @click="handleRefresh">刷新</el-button>
+              <el-button type="text" size="mini" @click="handleRefresh">{{ $t('common.refresh') }}</el-button>
             </div>
           </div>
-          <div v-if="filesState.error" class="tracker-stale-note" :title="filesState.error">更新失败，显示上次数据</div>
-          <div v-if="filesNoMatch" class="tracker-placeholder">未找到匹配 "{{ filesSearchEcho }}" 的文件</div>
+          <div v-if="filesState.error" class="tracker-stale-note" :title="filesState.error">{{ $t('tracker.detail.files.stale') }}</div>
+          <div v-if="filesNoMatch" class="tracker-placeholder">{{ $t('tracker.detail.files.noMatch', {keyword: filesSearchEcho}) }}</div>
           <template v-else>
             <div class="tracker-table-wrapper">
               <table class="tracker-table tracker-table-detail tracker-fixed-table">
@@ -154,21 +154,21 @@
                         class="tracker-sort-btn"
                         :class="{active: filesSortKey === 'name'}"
                         @click="toggleFilesSort('name')"
-                      >文件名 <span class="tracker-sort-indicator">{{ filesSortIndicator('name') }}</span></button>
+                      >{{ $t('tracker.detail.files.colName') }} <span class="tracker-sort-indicator">{{ filesSortIndicator('name') }}</span></button>
                     </th>
                     <th style="width: 90px;">
                       <button
                         class="tracker-sort-btn"
                         :class="{active: filesSortKey === 'size'}"
                         @click="toggleFilesSort('size')"
-                      >大小 <span class="tracker-sort-indicator">{{ filesSortIndicator('size') }}</span></button>
+                      >{{ $t('tracker.detail.files.colSize') }} <span class="tracker-sort-indicator">{{ filesSortIndicator('size') }}</span></button>
                     </th>
                     <th style="width: 150px;">
                       <button
                         class="tracker-sort-btn"
                         :class="{active: filesSortKey === 'progress'}"
                         @click="toggleFilesSort('progress')"
-                      >进度 <span class="tracker-sort-indicator">{{ filesSortIndicator('progress') }}</span></button>
+                      >{{ $t('tracker.detail.files.colProgress') }} <span class="tracker-sort-indicator">{{ filesSortIndicator('progress') }}</span></button>
                     </th>
                   </tr>
                 </thead>
@@ -202,32 +202,32 @@
         </template>
 
         <template v-else-if="activeTab === 'peers'">
-          <div v-if="peersEmptyState === 'loading'" class="tracker-placeholder">Peers 列表加载中...</div>
+          <div v-if="peersEmptyState === 'loading'" class="tracker-placeholder">{{ $t('tracker.detail.peers.loading') }}</div>
           <el-alert
             v-else-if="peersEmptyState === 'error'"
             class="torrent-error-alert"
-            title="Peers 列表加载失败"
+            :title="$t('tracker.detail.peers.loadFailed')"
             :description="peersState.error"
             type="error"
             show-icon
             :closable="false"
           />
-          <div v-else-if="peersEmptyState === 'empty'" class="tracker-placeholder">暂无 Peers 数据</div>
+          <div v-else-if="peersEmptyState === 'empty'" class="tracker-placeholder">{{ $t('tracker.detail.peers.empty') }}</div>
           <template v-else>
             <div class="tracker-detail-toolbar">
-              <span class="tracker-detail-count">共 {{ peersState.list.length }} 个 Peers（每 5 秒自动刷新）</span>
-              <el-button type="text" size="mini" @click="handleRefresh">刷新</el-button>
+              <span class="tracker-detail-count">{{ $t('tracker.detail.peers.countWithRefresh', {total: peersState.list.length}) }}</span>
+              <el-button type="text" size="mini" @click="handleRefresh">{{ $t('common.refresh') }}</el-button>
             </div>
-            <div v-if="peersState.error" class="tracker-stale-note" :title="peersState.error">更新失败，显示上次数据</div>
+            <div v-if="peersState.error" class="tracker-stale-note" :title="peersState.error">{{ $t('tracker.detail.files.stale') }}</div>
             <div class="tracker-table-wrapper">
               <table class="tracker-table tracker-table-detail tracker-fixed-table">
                 <thead>
                   <tr>
-                    <th>地址</th>
-                    <th style="width: 150px;">客户端</th>
-                    <th style="width: 70px;">进度</th>
-                    <th style="width: 85px;">↓速度</th>
-                    <th style="width: 85px;">↑速度</th>
+                    <th>{{ $t('tracker.detail.peers.colAddress') }}</th>
+                    <th style="width: 150px;">{{ $t('tracker.detail.peers.colClient') }}</th>
+                    <th style="width: 70px;">{{ $t('tracker.detail.peers.colProgress') }}</th>
+                    <th style="width: 85px;">{{ $t('tracker.detail.peers.colDownSpeed') }}</th>
+                    <th style="width: 85px;">{{ $t('tracker.detail.peers.colUpSpeed') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -355,16 +355,18 @@
     private get filesCountText(): string {
       const total = this.filesState.list.length
       if (this.filesKeyword) {
-        return `命中 ${this.searchedFiles.length} / ${total} 个文件`
+        return this.$t('tracker.detail.files.countMatched', { matched: this.searchedFiles.length, total }).toString()
       }
-      return `共 ${total} 个文件`
+      return this.$t('tracker.detail.files.countTotal', { total }).toString()
     }
 
     private get filesTruncateNote(): string {
       const total = this.searchedFiles.length
       if (total <= DETAIL_MAX_VISIBLE_ROWS) return ''
-      const prefix = this.filesKeyword ? `命中 ${total} 个文件` : `共 ${total} 个文件`
-      return `${prefix}，仅显示前 ${DETAIL_MAX_VISIBLE_ROWS} 个`
+      const prefix = this.filesKeyword
+        ? this.$t('tracker.detail.files.countTruncatedPrefixMatched', { total }).toString()
+        : this.$t('tracker.detail.files.countTotal', { total }).toString()
+      return prefix + this.$t('tracker.detail.files.truncateSuffix', { max: DETAIL_MAX_VISIBLE_ROWS }).toString()
     }
 
     /** 无数据时的占位状态：'loading' | 'error' | 'empty' | ''（有数据） */
@@ -428,7 +430,8 @@
 
     private get peersTruncateNote(): string {
       if (this.peersState.list.length <= DETAIL_MAX_VISIBLE_ROWS) return ''
-      return `共 ${this.peersState.list.length} 个 Peers，仅显示前 ${DETAIL_MAX_VISIBLE_ROWS} 个`
+      return this.$t('tracker.detail.peers.countTotal', { total: this.peersState.list.length }).toString()
+        + this.$t('tracker.detail.files.truncateSuffix', { max: DETAIL_MAX_VISIBLE_ROWS }).toString()
     }
 
     private get peersEmptyState(): 'loading' | 'error' | 'empty' | '' {
@@ -440,6 +443,14 @@
     }
 
     // ====== Tracker 页签辅助 ======
+
+    /** 页签展示名：仅内置 files 页签本地化（Tracker/Peers 本身英文）；自定义 tabs 保留原 label */
+    private trackerTabLabel(tab: TrackerDetailTab): string {
+      if (tab.value === 'files') {
+        return this.$t('tracker.detail.files.tab').toString()
+      }
+      return tab.label
+    }
 
     private getAnnounceStatus(tracker: TrackerDetailRow): string | undefined {
       return tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded

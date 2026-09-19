@@ -7,7 +7,9 @@
  *   成功提示带成功/失败计数。
  */
 
-import { shallowMount, Wrapper } from '@vue/test-utils'
+import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import Vue from 'vue'
 import TrackerOperationDialog from '@/views/torrents/components/TrackerOperationDialog.vue'
 import {
@@ -37,8 +39,13 @@ const singleTorrent = {
   downloaderId: 'd1'
 } as Torrent
 
+const localVue = createLocalVue()
+localVue.use(VueI18n)
+
 const mountDialog = (propsData: Record<string, unknown>): Wrapper<Vue> =>
   shallowMount(TrackerOperationDialog, {
+    localVue,
+    i18n,
     propsData,
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }

@@ -1633,7 +1633,8 @@ describe('TraditionalView layout contracts', () => {
     expect(source).toContain('layout="traditional"')
     expect(trackerDetailCardSource).toContain('<table class="tracker-table tracker-table-detail">')
     expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Announce</th>')
-    expect(trackerDetailCardSource).toContain('<th>Announce信息</th>')
+    // 双语化（P3-2）：表头文案走 tracker.detail.table.* 键（中文值与历史内联一致）
+    expect(trackerDetailCardSource).toContain("<th>{{ $t('tracker.detail.table.announce') }}</th>")
     expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Scrape</th>')
     expect(trackerDetailCardSource).toContain('trackerAnnounceSuccess(')
     expect(trackerDetailCardSource).toContain('trackerStatusClass(')

@@ -747,6 +747,8 @@ export interface SearchTemplate {
   name: string
   description: string | null
   conditions: QueryTemplateConditions
+  /** 系统预设稳定身份键（backend b3e5f7a9c1d2；用户模板为 null，展示层按键本地化） */
+  preset_key?: string | null
   is_default: boolean
   is_public: boolean
   usage_count: number

@@ -827,6 +827,7 @@ class SearchTemplateModel:
             "name": template.name,
             "description": template.description,
             "conditions": safe_json_parse(template.conditions, {}),
+            "preset_key": template.preset_key,
             "is_default": bool(template.is_default),
             "is_public": bool(template.is_public),
             "usage_count": template.usage_count,

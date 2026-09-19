@@ -5042,3 +5042,21 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 浏览器 T01 人工验收与英文审校未做（自动化绿不等于人工视觉通过）。
 - 批量改文件教训：PowerShell 文本管道按 GBK 读 UTF-8 会损坏文件；CRLF 文件插入换行须防 \r\r\n。本批全部用 Python 显式 UTF-8 完成。
 - 未执行 Git 提交；data/ 下三个辅助脚本（p3_add_label_en.py / p3_spec_i18n_fix*.py）为未跟踪产物，保持不动。
+
+## 2026-09-21 交接：桌面双语 P3-2 第二批完成（未提交）
+
+### 已完成
+
+- 预设方案 b 落地（用户拍板）：后端 search_templates.preset_key 稳定身份列——Alembic 迁移 b3e5f7a9c1d2（head 已推进；一次性按旧中文名回填，仅 is_default=1 恰一行；用户同名/歧义保持 NULL，B02）+ init 按 preset_key 幂等（旧库自愈回填）+ API 透出 preset_key（SearchTemplate 接口已加字段）。
+- 前端文案：详情弹窗/TrackerDetailCard 三页签/TrackerOperationDialog/汇报兜底/torrentBatch Tracker 段/高级搜索五件外壳（Builder/Workspace/ConditionValueInput/SizeRangeFilter/SearchTemplateDialog）/advancedSearchState 校验消息 52 处/查询模板页两件；语言包新增 tracker/queryTemplate 模块 + search/torrent 扩展（两语言成对）。
+- 预设展示（Q01）：共享层 presetDisplayName/presetDisplayDescription/presetGroupName；查询模板页与 Workspace 侧栏按 preset_key 本地化；应用模板时内置组名按稳定组 id（preset_large_files）入口翻译（仅 Builder 内存态）。
+- 关键取舍：buildAdvancedSearchParams 回退组名保持内联中文（API 载荷非展示文案，T01 两语言 groups 一致由 spec 钉住）。
+- 验证全绿：前端 typecheck/lint 三项/build/全量 Jest 115 套 1620 例（基线 1617）；后端 preset_key 12 新例 + 迁移链/governance/api 存量回归，black/flake8 净、mypy 本批文件零错误。
+- 文档回填：feature_list.json p3 evidence、progress.md、roadmap 七处（根/entry/views/components-layout/backend infra·data-models）。
+
+### 待办/注意
+
+- P3 剩余：浏览器 T01/T03/Q01 人工验收与英文审校（自动化绿≠人工视觉通过）；utils/torrentBatch.ts 的 buildAdvancedSearchParams 校验消息（~20 条，与 advancedSearchState 同构）未在本批清单，留后续批次。
+- 后端 rollback_scenarios 有 2 例存量基线失败（stash 对照证实非本批引入），后续如遇全量跑红注意甄别。
+- 迁移注意：新库/升级库首启自动执行 b3e5f7a9c1d2；Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
+- 未执行 Git 提交；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。

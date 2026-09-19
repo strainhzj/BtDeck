@@ -17,15 +17,15 @@
                 class="group-name-input"
                 @blur="finishEditingGroup(group)"
                 @keyup.enter.native="finishEditingGroup(group)"
-                placeholder="组名称"
+                :placeholder="$t('search.builder.groupNamePlaceholder')"
               />
               <span
                 v-else
                 @dblclick="startEditingGroup(group)"
                 class="group-name"
-                :title="group.name || `条件组 ${groupIndex + 1}`"
+                :title="group.name || $t('search.builder.groupFallbackName', {index: groupIndex + 1})"
               >
-                {{ group.name || `条件组 ${groupIndex + 1}` }}
+                {{ group.name || $t('search.builder.groupFallbackName', {index: groupIndex + 1}) }}
               </span>
               <el-tag
                 :type="getLogicTagType(group.logic)"
@@ -40,21 +40,21 @@
                 size="mini"
                 icon="el-icon-edit"
                 @click="startEditingGroup(group)"
-                title="重命名条件组"
+                :title="$t('search.builder.renameGroup')"
               />
               <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
                 <el-button size="mini" type="danger">
-                  更多<i class="el-icon-arrow-down el-icon--right"></i>
+                  {{ $t('search.builder.more') }}<i class="el-icon-arrow-down el-icon--right"></i>
                 </el-button>
                 <el-dropdown-menu slot="dropdown">
                   <el-dropdown-item :command="{action: 'delete', index: groupIndex}">
-                    <i class="el-icon-delete"></i> 删除组
+                    <i class="el-icon-delete"></i> {{ $t('search.builder.deleteGroup') }}
                   </el-dropdown-item>
                   <el-dropdown-item :command="{action: 'duplicate', index: groupIndex}">
-                    <i class="el-icon-copy-document"></i> 复制组
+                    <i class="el-icon-copy-document"></i> {{ $t('search.builder.copyGroup') }}
                   </el-dropdown-item>
                   <el-dropdown-item :command="{action: 'clear', index: groupIndex}">
-                    <i class="el-icon-refresh-left"></i> 清空条件
+                    <i class="el-icon-refresh-left"></i> {{ $t('search.builder.clearConditions') }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </el-dropdown>
@@ -69,8 +69,8 @@
               class="group-logic-select"
               @change="onGroupLogicChange(group)"
             >
-              <el-option label="AND (并且)" value="and" />
-              <el-option label="OR (或者)" value="or" />
+              <el-option :label="$t('search.builder.logicAnd')" value="and" />
+              <el-option :label="$t('search.builder.logicOr')" value="or" />
             </el-select>
             <span class="logic-desc">{{ getGroupLogicDescription(group.logic) }}</span>
           </div>
@@ -101,10 +101,10 @@
                 <!-- 字段选择器 -->
                 <div class="condition-field">
                   <!-- 行标签仅移动端堆叠布局显示（桌面横排自明，见底部媒体查询） -->
-                  <span class="condition-row-label">字段</span>
+                  <span class="condition-row-label">{{ $t('search.builder.rowLabelField') }}</span>
                   <el-select
                     v-model="condition.field"
-                    placeholder="选择字段"
+                    :placeholder="$t('search.builder.selectFieldPlaceholder')"
                     size="small"
                     class="condition-field-select"
                     @change="onFieldChange(condition)"
@@ -154,10 +154,10 @@
 
                 <!-- 操作符选择器 -->
                 <div class="condition-operator">
-                  <span class="condition-row-label">操作</span>
+                  <span class="condition-row-label">{{ $t('search.builder.rowLabelOperator') }}</span>
                   <el-select
                     v-model="condition.operator"
-                    placeholder="选择操作"
+                    :placeholder="$t('search.builder.selectOperatorPlaceholder')"
                     size="small"
                     class="condition-operator-select"
                     @change="onOperatorChange(condition)"
@@ -180,7 +180,7 @@
 
                 <!-- 条件值输入 -->
                 <div class="condition-value">
-                  <span class="condition-row-label condition-row-label--value">内容</span>
+                  <span class="condition-row-label condition-row-label--value">{{ $t('search.builder.rowLabelValue') }}</span>
                   <ConditionValueInput
                     :field="condition.field"
                     :operator="condition.operator"
@@ -194,19 +194,19 @@
 
                 <!-- 排除/包含切换 -->
                 <div class="condition-mode">
-                  <span class="condition-row-label">方式</span>
+                  <span class="condition-row-label">{{ $t('search.builder.rowLabelMode') }}</span>
                   <el-radio-group
                     v-model="condition.mode"
                     size="small"
                     @change="onConditionModeChange(condition)"
                     :disabled="!conditionSupportsExclude(condition)"
                   >
-                    <el-radio-button label="include">包含</el-radio-button>
+                    <el-radio-button label="include">{{ $t('search.builder.include') }}</el-radio-button>
                     <el-radio-button
                       label="exclude"
                       :disabled="!conditionSupportsExclude(condition)"
                     >
-                      排除
+                      {{ $t('search.builder.exclude') }}
                     </el-radio-button>
                   </el-radio-group>
                 </div>
@@ -234,7 +234,7 @@
               icon="el-icon-plus"
               @click="addCondition(group)"
             >
-              添加条件
+              {{ $t('search.builder.addCondition') }}
             </el-button>
           </div>
         </div>
@@ -268,7 +268,7 @@
         icon="el-icon-plus"
         @click="addConditionGroup"
       >
-        添加条件组
+        {{ $t('search.builder.addGroup') }}
       </el-button>
     </div>
 
@@ -281,34 +281,34 @@
         @click="onSearch"
         :loading="searching"
       >
-        执行搜索
+        {{ $t('search.builder.executeSearch') }}
       </el-button>
       <el-button
         size="small"
         icon="el-icon-document"
         @click="saveSearchTemplate"
       >
-        保存为模板
+        {{ $t('search.builder.saveAsTemplate') }}
       </el-button>
       <el-button
         size="small"
         icon="el-icon-refresh-left"
         @click="resetConditions"
       >
-        重置条件
+        {{ $t('search.builder.resetConditions') }}
       </el-button>
       <el-button
         size="small"
         icon="el-icon-view"
         @click="previewSearchQuery"
       >
-        预览查询
+        {{ $t('search.builder.previewQuery') }}
       </el-button>
     </div>
 
     <!-- 搜索预览对话框 -->
     <el-dialog
-      title="搜索条件预览"
+      :title="$t('search.builder.previewTitle')"
       :visible.sync="previewVisible"
       width="600px"
       custom-class="advanced-search-dialog"
@@ -318,14 +318,14 @@
     >
       <pre class="query-preview">{{ formattedQuery }}</pre>
       <div slot="footer">
-        <el-button @click="previewVisible = false">关闭</el-button>
-        <el-button type="primary" @click="copyQueryToClipboard">复制查询</el-button>
+        <el-button @click="previewVisible = false">{{ $t('common.close') }}</el-button>
+        <el-button type="primary" @click="copyQueryToClipboard">{{ $t('search.builder.copyQuery') }}</el-button>
       </div>
     </el-dialog>
 
     <!-- 保存模板对话框 -->
     <el-dialog
-      title="保存搜索模板"
+      :title="$t('search.builder.saveTemplateTitle')"
       :visible.sync="saveTemplateVisible"
       width="400px"
       custom-class="advanced-search-dialog"
@@ -334,24 +334,24 @@
       :close-on-click-modal="false"
     >
       <el-form ref="templateForm" :model="templateForm" label-width="80px">
-        <el-form-item label="模板名称" required>
-          <el-input v-model="templateForm.name" placeholder="输入模板名称" />
+        <el-form-item :label="$t('search.builder.templateNameLabel')" required>
+          <el-input v-model="templateForm.name" :placeholder="$t('search.builder.templateNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item :label="$t('search.builder.setAsDefault')">
           <el-switch v-model="templateForm.isDefault" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="$t('search.builder.descriptionLabel')">
           <el-input
             v-model="templateForm.description"
             type="textarea"
-            placeholder="可选：描述此模板的用途"
+            :placeholder="$t('search.builder.descriptionPlaceholder')"
             :rows="3"
           />
         </el-form-item>
       </el-form>
       <div slot="footer">
-        <el-button @click="saveTemplateVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSaveTemplate">保存</el-button>
+        <el-button @click="saveTemplateVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmSaveTemplate">{{ $t('search.builder.save') }}</el-button>
       </div>
     </el-dialog>
   </div>
@@ -502,7 +502,7 @@ export default class AdvancedSearchBuilder extends Vue {
 
     // 全部失败才告警；部分失败保持已成功项的填充，静默降级
     if (options.failedCount === 3) {
-      this.$message.error(extractErrorMessage(options.firstError) || '加载搜索字段选项失败')
+      this.$message.error(extractErrorMessage(options.firstError) || this.$t('search.builder.loadOptionsFailed'))
     }
 
     this.fieldOptionsLoading = false
@@ -542,7 +542,9 @@ export default class AdvancedSearchBuilder extends Vue {
   startEditingGroup(group: ConditionGroup) {
     // 先保存当前名称作为默认值
     if (!group.name) {
-      group.name = `条件组 ${this.conditionGroups.indexOf(group) + 1}`
+      group.name = this.$t('search.builder.groupFallbackName', {
+        index: this.conditionGroups.indexOf(group) + 1
+      }).toString()
     }
     group.editing = true
   }
@@ -581,7 +583,7 @@ export default class AdvancedSearchBuilder extends Vue {
   duplicateConditionGroup(sourceGroup: ConditionGroup) {
     const newGroup: ConditionGroup = {
       id: this.generateId(),
-      name: sourceGroup.name ? `${sourceGroup.name} (副本)` : '',
+      name: sourceGroup.name ? `${sourceGroup.name}${this.$t('search.builder.copySuffix')}` : '',
       logic: sourceGroup.logic,
       betweenGroupLogic: sourceGroup.betweenGroupLogic || 'and',
       editing: false,
@@ -711,12 +713,14 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 获取组逻辑描述
   getGroupLogicDescription(logic: string): string {
-    return logic === 'and' ? '所有条件都必须满足' : '任意一个条件满足即可'
+    return this.$t(logic === 'and' ? 'search.builder.groupLogicAndDesc' : 'search.builder.groupLogicOrDesc').toString()
   }
 
   // 获取组间逻辑描述
   getBetweenGroupLogicDescription(logic: string): string {
-    return logic === 'and' ? '并且与下一个条件组' : '或者与下一个条件组'
+    return this.$t(
+      logic === 'and' ? 'search.builder.betweenLogicAndDesc' : 'search.builder.betweenLogicOrDesc'
+    ).toString()
   }
 
   // 组逻辑变更处理
@@ -805,9 +809,9 @@ export default class AdvancedSearchBuilder extends Vue {
   async copyQueryToClipboard() {
     try {
       await navigator.clipboard.writeText(this.formattedQuery)
-      this.$message.success('查询已复制到剪贴板')
+      this.$message.success(this.$t('search.builder.copied'))
     } catch (error) {
-      this.$message.error('复制失败')
+      this.$message.error(this.$t('search.builder.copyFailed'))
     }
   }
 
@@ -848,7 +852,7 @@ export default class AdvancedSearchBuilder extends Vue {
   // 确认保存模板
   confirmSaveTemplate() {
     if (!this.templateForm.name.trim()) {
-      this.$message.warning('请输入模板名称')
+      this.$message.warning(this.$t('search.builder.nameRequired'))
       return
     }
     try {

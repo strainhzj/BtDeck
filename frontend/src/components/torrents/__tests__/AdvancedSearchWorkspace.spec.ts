@@ -1,6 +1,7 @@
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
-
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import AdvancedSearchWorkspace from '../AdvancedSearchWorkspace.vue'
 import {
   createSearchTemplate,
@@ -26,6 +27,7 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.directive('loading', {})
 
 const mockGetSearchTemplates = getSearchTemplates as jest.MockedFunction<typeof getSearchTemplates>
@@ -171,6 +173,7 @@ describe('AdvancedSearchWorkspace 已保存搜索侧栏', () => {
   function mountWorkspace(): Wrapper<Vue> {
     return shallowMount(AdvancedSearchWorkspace, {
       localVue,
+    i18n,
       propsData: { sortBy: 'added_date', sortOrder: 'desc' },
       mocks: {
         $message: message,
