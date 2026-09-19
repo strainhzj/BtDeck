@@ -7682,3 +7682,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 校验：feature_list.json 解析成功；新 feature 唯一、8 项任务均 pending、任务依赖引用可解析；git diff --check 通过。未运行业务测试和浏览器验收。
 - 环境验证：系统 Bash 启动返回 `Bash/Service/CreateInstance/E_ACCESSDENIED` 后，改用现有 `C:/software/Git/bin/bash.exe ./init.sh --ci` 执行（总退出码 0）。后端检查完成，Alembic 显示 `053003337878 (head)`；脚本数据库版本简查显示“未初始化”，不能据此判定真实数据库状态。前端在 npm 版本检查处出现 ignored null byte 并提前退出，由根脚本捕获为警告，未完成前端检查；Node 实际为 24.14.0，与 package.json 要求 22.x 不一致。另有 jq 缺失、虚拟环境未激活。不能声称环境全绿；本轮未修环境、安装依赖或申请提权。
 - 后续：收到实施指示后从 P0 文案/路由/错误/系统内容清单开始；兼容库选型及维护风险、英文最终审校责任尚待落实；M1 默认内部验收节点，是否提前发布不阻塞计划准备。
+
+## 2026-09-21：桌面双语 P3-1 第一批（契约链 + 列表骨架 + 添加弹窗 + 批量/删重反馈 + 仪表盘，未提交）
+
+- 范围即 2026-09-18 会话用户确认的 P3-1：仪表盘（卡片/状态/快捷操作/aria）+ 种子列表骨架（筛选/排查提示/工具栏/列头/空态/分页/视图切换）+ TorrentAddDialog（含跳过校验策略）+ 开始/暂停/重检单条与批量反馈 + BatchOperationDialog + Q1 删重两弹窗；Q2/Q3 弹窗与四级删除确认/结果链路按既定边界留 P5/P6。
+- 契约链（最高风险先行）：advanced_search_contract.json 38 个操作符全部补 labelEn（中文 label 逐字节不变，脚本 data/p3_add_label_en.py 外科手术式单行替换）；生成器校验 labelEn 非空并写入 AdvancedSearchOperatorConfig；contract:generate 重跑 + contract:check 通过；后端 TestOperatorContractGuard 新增 label/labelEn 成对守卫（2 例）。操作符展示名唯一来源仍是契约 json，未在语言包复制。
+- 共享层双语：advancedSearchFields.ts 新增 searchFieldLabel（按稳定字段 code 取 search.field.*，回退内联中文）与 searchOperatorLabel（按 locale 取 label/labelEn）；分组标题/摘要/预览/归一化错误全部接同源翻译；FIELD_SECTIONS 改 labelKey；AdvancedSearchBuilder 与移动 ConditionEditSheet 消费方同步接线（中文移动流程输出不变，C01）。status-config getStatusText 走 torrent.status.*（回退原映射）+ 新增 localizedStatusOptions。
+- 组件落地：index.vue 骨架与操作反馈双语（columnSettings 去 label 字段改键渲染；删除链路文案不动）；torrentBatch mixin 批量反馈三键化；TorrentAddDialog/BatchOperationDialog/QuickDeleteDuplicatesDialog/DuplicateTorrentsDialog/dashboard 全量双语（含本地化日期与 aria）；AdvancedMultiSelect/PageSizeCombobox 共享组件双语（分隔符示例含 | 字符，绕开 vue-i18n 复数分隔符按 locale 常量直出）。
+- 语言包：新增 search/torrent/dashboard 三模块（zh-CN+en 成对），common 扩展 multiSelect/pageSize；术语遵循 PLANS/bilingual/terminology.md（cross-seed/recheck/reannounce/recycle bin 等）。parity 门禁（键集/插值参数/复数支数）随全量 Jest 通过。
+- 测试：新增 search-shared-layer-i18n.spec 13 例（契约双标签完整、稳定值映射、两语言输出、搜索参数不变性 T01：两语言 buildAdvancedSearchParams groups 完全一致）；11 个存量套件迁移 i18n 挂载（localVue.use(VueI18n)+i18n 单例，全程行为断言不变）。
+- 验证：前端 typecheck / lint 三项（含 contract:check）/ build / Jest 115 套 1617 例全绿（基线 114 套 1604 例）；后端 advanced_search 回归 147 例 + 契约守卫 2 例绿，black/flake8 净，mypy 存量 17 错误零新增。中途教训：PowerShell Get-Content 按 GBK 误读 UTF-8 spec 造成 mojibake，已回滚重做（后续批量改文件一律 Python 显式 UTF-8）；CRLF 插入曾产生 \\r\\r\\n 双 CR 致 git 全文件 diff，已修复。
+- 余量：P3-2（详情/Tracker 卡片与操作/汇报文案/查询模板页与 4 预设展示）；浏览器 T01 人工验收与英文审校；删除菜单已译但确认/结果链路待 P5 收口。未执行 Git 提交。

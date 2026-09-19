@@ -13,6 +13,7 @@
  */
 import Component from 'vue-class-component'
 import { Vue } from 'vue-property-decorator'
+import { translate } from '@/i18n'
 import {
   deleteTorrents,
   resumeTorrents,
@@ -54,22 +55,34 @@ export default class TorrentBatchMixin extends Vue {
 
   /**
    * 批量开始/暂停/重检 的通用入口
-   * @param actionLabel 操作名（'开始' / '暂停' / '重检'），用于提示文案
+   * @param actionKey 操作键（'start' / 'pause' / 'recheck'，映射 torrent.batch.action.* 文案）
    * @returns 批量操作结果（调用方可据此做额外处理）
    */
   protected async runTorrentBatchAction(
     apiFn: (p: { downloader_id: string, hashes: string[] }) => Promise<ApiResponse<any>>,
-    actionLabel: string
+    actionKey: 'start' | 'pause' | 'recheck'
   ): Promise<BatchActionResult> {
     const result = await runBatchAction(this.multipleSelection, apiFn)
+    const actionLabel = translate(`torrent.batch.action.${actionKey}`)
 
     // 统一文案（对齐列表模式 index.vue），消除两视图漂移
     if (result.failed > 0) {
       this.$message.warning(
-        `批量${actionLabel}部分完成：成功${result.succeeded}个下载器，失败${result.failed}个下载器（共${result.total}个种子）`
+        translate('torrent.batch.partial', {
+          action: actionLabel,
+          succeeded: result.succeeded,
+          failed: result.failed,
+          total: result.total
+        })
       )
     } else {
-      this.$message.success(`批量${actionLabel}成功(${result.total}个种子, ${result.downloaderCount}个下载器)`)
+      this.$message.success(
+        translate('torrent.batch.success', {
+          action: actionLabel,
+          total: result.total,
+          downloaderCount: result.downloaderCount
+        })
+      )
     }
 
     await this.getList()
@@ -80,10 +93,10 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchStart(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(resumeTorrents, '开始')
+      await this.runTorrentBatchAction(resumeTorrents, 'start')
     } catch (error) {
       console.error('批量开始失败:', error)
-      this.$message.error('批量开始失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.start'))
     }
   }
 
@@ -91,10 +104,10 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchPause(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(pauseTorrents, '暂停')
+      await this.runTorrentBatchAction(pauseTorrents, 'pause')
     } catch (error) {
       console.error('批量暂停失败:', error)
-      this.$message.error('批量暂停失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.pause'))
     }
   }
 
@@ -102,10 +115,10 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchRecheck(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(recheckTorrents, '重检')
+      await this.runTorrentBatchAction(recheckTorrents, 'recheck')
     } catch (error) {
       console.error('批量重检失败:', error)
-      this.$message.error('批量重检失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.recheck'))
     }
   }
 

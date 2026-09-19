@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** Cross-page shared copy (common group, P2 first-use loop). */
+/** Cross-page shared copy (common group, P2 first-use loop; P3-1 adds multiSelect/pageSize shared components). */
 export const common = {
   adminName: 'Administrator',
   cancel: 'Cancel',
@@ -53,5 +53,41 @@ export const common = {
     filterUnread: 'Unread',
     filterUpdate: 'Updates',
     filterSystem: 'System'
+  },
+  /** AdvancedMultiSelect shared multi-select (list filters / advanced search / mobile, same source) */
+  multiSelect: {
+    searchPlaceholder: 'Search options...',
+    createOption: 'Create "{keyword}"',
+    include: 'Include',
+    exclude: 'Exclude',
+    selectedLabel: 'selected',
+    clear: 'Clear',
+    removeItem: 'Remove {label}',
+    emptyHint: 'Pick from the options below, or search to create',
+    noMatch: 'No matching options',
+    selectVisible: 'Select visible',
+    deselectVisible: 'Deselect visible',
+    selectAll: 'Select all options',
+    clearAll: 'Clear all selections',
+    pasteTitle: 'Bulk paste',
+    parsedCount: 'Parsed {count} items',
+    apply: 'Apply',
+    virtualScroll: 'Virtual scrolling',
+    showCount: 'Visible option limit',
+    customSeparators: 'Custom separators',
+    useSeparators: 'Separate multiple values with {separators}',
+    separatorJoin: ', ',
+    spaceSeparator: 'space',
+    multiSelected: '{first} + {count} more',
+    ariaSelect: 'Select multiple values',
+    ariaClear: 'Clear selected values'
+  },
+  /** PageSizeCombobox */
+  pageSize: {
+    ariaLabel: 'Items per page',
+    inputHint: 'Choose a preset or type 1-100000; press Enter or click away to apply',
+    expand: 'Expand page size options',
+    collapse: 'Collapse page size options',
+    options: 'Page size presets'
   }
 }

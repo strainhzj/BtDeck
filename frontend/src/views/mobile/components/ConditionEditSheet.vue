@@ -34,7 +34,7 @@
             <el-option
               v-for="field in section.fields"
               :key="field.key"
-              :label="field.label"
+              :label="fieldLabel(field)"
               :value="field.key"
             />
           </el-option-group>
@@ -60,7 +60,7 @@
             <el-option
               v-for="op in group.operators"
               :key="op.value"
-              :label="op.label"
+              :label="operatorLabel(op)"
               :value="op.value"
             />
           </el-option-group>
@@ -102,6 +102,7 @@
 <script lang="ts">
 import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
 import ConditionValueInput from '@/components/torrents/ConditionValueInput.vue'
+import type { AdvancedSearchOperatorConfig } from '@/contracts/advancedSearch.generated'
 import {
   AdvancedSearchConditionState,
   AdvancedSearchConditionValue,
@@ -116,7 +117,9 @@ import {
   generateConditionId,
   getOperatorGroupsForField,
   getSearchFieldInfo,
-  getSearchFieldOptions
+  getSearchFieldOptions,
+  searchFieldLabel,
+  searchOperatorLabel
 } from '@/components/torrents/advancedSearchFields'
 
 interface FieldSection {
@@ -169,9 +172,18 @@ export default class ConditionEditSheet extends Vue {
   // 模板禁直调模块级函数：以下均为实例包装
   private get fieldSections(): FieldSection[] {
     return ADVANCED_SEARCH_FIELD_SECTIONS.map(section => ({
-      label: section.label,
+      label: this.$t(section.labelKey) as string,
       fields: section.fields
     }))
+  }
+
+  // 字段/操作符展示名（共享层按当前语言解析，中文移动流程输出不变）
+  private fieldLabel(field: SearchField): string {
+    return searchFieldLabel(field)
+  }
+
+  private operatorLabel(op: AdvancedSearchOperatorConfig): string {
+    return searchOperatorLabel(op)
   }
 
   private get operatorGroups(): OperatorDisplayGroup[] {

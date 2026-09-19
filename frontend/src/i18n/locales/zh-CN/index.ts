@@ -24,20 +24,26 @@ import elementZhCN from 'element-ui/lib/locale/lang/zh-CN'
 import { MessageTree } from '../../types'
 import { auth } from './auth'
 import { common } from './common'
+import { dashboard } from './dashboard'
 import { downloader } from './downloader'
 import { errors } from './errors'
 import { navigation } from './navigation'
+import { search } from './search'
 import { settings } from './settings'
 import { time } from './time'
+import { torrent } from './torrent'
 
 const messages: MessageTree = {
   auth,
   common,
+  dashboard,
   downloader,
   errors,
   navigation,
+  search,
   settings,
   time,
+  torrent,
   el: elementZhCN.el
 }
 

@@ -2,6 +2,8 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
 import TrackerDetailCard from '@/views/torrents/components/TrackerDetailCard.vue'
@@ -94,6 +96,7 @@ jest.mock('@/components/torrents/FilterGroup.vue', () => ({
 }))
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 installLoadingDirectiveProbe(localVue)
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
@@ -328,6 +331,7 @@ async function flushLifecycle(): Promise<void> {
 function mountTraditionalView(): Wrapper<Vue> {
   return shallowMount(TraditionalView, {
     localVue,
+    i18n,
     methods: {
       startSpeedPolling: jest.fn()
     },

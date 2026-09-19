@@ -1,5 +1,6 @@
 import { shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
+import i18n from '@/i18n'
 
 import TorrentAddDialog from '@/views/torrents/components/TorrentAddDialog.vue'
 import { addTorrentsBatch, getDownloaderPaths } from '@/api/torrents'
@@ -72,6 +73,7 @@ describe('TorrentAddDialog 后台完成刷新信号', () => {
     })
 
     wrapper = shallowMount(TorrentAddDialog, {
+      i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
         $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
@@ -106,6 +108,7 @@ describe('TorrentAddDialog 后台完成刷新信号', () => {
     })
 
     wrapper = shallowMount(TorrentAddDialog, {
+      i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
         $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
@@ -129,6 +132,7 @@ describe('TorrentAddDialog 跳过校验（CheckingDL 规避）', () => {
 
   const mountDialog = (): Wrapper<Vue> =>
     shallowMount(TorrentAddDialog, {
+      i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
         $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }

@@ -33,7 +33,7 @@ function buildGeneratedContent(contract) {
   }
 
   const operatorMapping = {}
-  for (const [groupName, operators] of Object.entries(operatorGroups)) {
+    for (const [groupName, operators] of Object.entries(operatorGroups)) {
     if (!Array.isArray(operators)) {
       throw new Error(`operatorGroups.${groupName} must be an array`)
     }
@@ -42,6 +42,8 @@ function buildGeneratedContent(contract) {
         !operator ||
         typeof operator.value !== 'string' ||
         typeof operator.label !== 'string' ||
+        typeof operator.labelEn !== 'string' ||
+        operator.labelEn.length === 0 ||
         typeof operator.backendValue !== 'string'
       ) {
         throw new Error(`operatorGroups.${groupName} contains an incomplete operator`)
@@ -74,7 +76,11 @@ export type AdvancedSearchFieldKind =
 
 export interface AdvancedSearchOperatorConfig {
   value: string
+  /** 中文展示名（契约源，运行时按 locale 二选一展示） */
   label: string
+  /** 英文展示名（契约源，桌面双语 P3-1 起与 label 成对出现） */
+  labelEn: string
+  /** 后端稳定操作符标识 */
   backendValue: string
 }
 

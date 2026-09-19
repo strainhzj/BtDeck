@@ -1745,6 +1745,38 @@ class TestOperatorContractGuard:
                 if operator in field["operators"]:
                     assert negated in field["operators"]
 
+    def test_operator_labels_have_paired_english(self):
+        """桌面双语 P3-1：每个操作符必须携带非空中文 label 与英文 labelEn。
+
+        契约源（advanced_search_contract.json）是操作符展示名的唯一来源，
+        前端 generated.ts 直接携带 label/labelEn；缺任一侧都会导致英文界面
+        透出中文或空标签。后端运行时只用 backendValue，不受展示名影响。
+        """
+        import re
+
+        from app.contracts.advanced_search import ADVANCED_SEARCH_CONTRACT
+
+        operator_count = 0
+        for group_name, operators in ADVANCED_SEARCH_CONTRACT["operatorGroups"].items():
+            values = []
+            for item in operators:
+                label = item.get("label")
+                label_en = item.get("labelEn")
+                assert (
+                    isinstance(label, str) and label.strip()
+                ), f"operatorGroups.{group_name}[{item.get('value')}] label 缺失"
+                assert (
+                    isinstance(label_en, str) and label_en.strip()
+                ), f"operatorGroups.{group_name}[{item.get('value')}] labelEn 缺失"
+                # labelEn 必须是 ASCII 英文，防止英文键直接复制中文
+                assert re.fullmatch(
+                    r"[\x20-\x7E]+", label_en
+                ), f"operatorGroups.{group_name}[{item.get('value')}] labelEn 含非英文字符: {label_en}"
+                values.append(item["value"])
+                operator_count += 1
+            assert len(values) == len(set(values)), f"operatorGroups.{group_name} 内 value 重复"
+        assert operator_count >= 20, "操作符总数异常偏少，契约可能被截断"
+
 
 class TestAdvancedSearchSemanticDefectRegressions:
     """Root-cause regressions for the cross-field audit completed in 2026-08."""

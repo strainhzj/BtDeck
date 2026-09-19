@@ -8,6 +8,8 @@
  */
 
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import Vue from 'vue'
 import ConditionEditSheet from '@/views/mobile/components/ConditionEditSheet.vue'
 import type {
@@ -28,6 +30,7 @@ jest.mock('@/api/tag-management', () => ({
 }))
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 interface SheetVm extends Vue {
   draft: AdvancedSearchConditionState
@@ -58,6 +61,7 @@ const dynamicOptions: AdvancedSearchDynamicOptionSet = {
 const mountSheet = (visible = false): Wrapper<Vue> =>
   shallowMount(ConditionEditSheet, {
     localVue,
+    i18n,
     propsData: {
       visible,
       condition: sampleCondition,
@@ -92,6 +96,7 @@ describe('views/mobile/components/ConditionEditSheet', () => {
   it('condition 为空时打开：给一条全新空草稿', async() => {
     const wrapper = shallowMount(ConditionEditSheet, {
       localVue,
+      i18n,
       propsData: { visible: false, condition: null, dynamicOptions }
     })
     const vm = wrapper.vm as SheetVm
@@ -265,6 +270,7 @@ describe('views/mobile/components/ConditionEditSheet', () => {
   it('加固：dynamicOptions 未注入（默认空）——值候选不抛错返回空数组', async() => {
     const wrapper = shallowMount(ConditionEditSheet, {
       localVue,
+      i18n,
       propsData: { visible: true, condition: sampleCondition }
     })
     const vm = wrapper.vm as SheetVm

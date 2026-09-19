@@ -2,6 +2,8 @@ import Vue from 'vue'
 import fs from 'fs'
 import path from 'path'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import AdvancedSearchBuilder from '../AdvancedSearchBuilder.vue'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { getDownloaderList } from '@/api/torrents'
@@ -100,6 +102,7 @@ async function flushLifecycle(): Promise<void> {
 
 describe('AdvancedSearchBuilder 关键查询链路', () => {
   const localVue = createLocalVue()
+localVue.use(VueI18n)
   const message = {
     success: jest.fn(),
     warning: jest.fn(),
@@ -140,6 +143,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
     wrapper = shallowMount(AdvancedSearchBuilder, {
       localVue,
+      i18n,
       mocks: { $message: message },
       stubs: {
         'condition-value-input': true,

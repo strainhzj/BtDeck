@@ -13,7 +13,8 @@ import {
   AdvancedSearchFieldKind,
   AdvancedSearchOperatorConfig
 } from '@/contracts/advancedSearch.generated'
-import { STATUS_OPTIONS } from '@/constants/status-config'
+import { STATUS_OPTIONS, getStatusText } from '@/constants/status-config'
+import { getLocale, translate } from '@/i18n'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { ApiResponse } from '@/types/api'
@@ -104,16 +105,17 @@ export const ADVANCED_SEARCH_RATIO_FIELDS: readonly SearchField[] = [
   { key: 'ratio_limit', label: '比率限制', type: 'number', supportsExclude: true }
 ]
 
-/** 字段下拉分组（移动端条件编辑弹层复用同一分组顺序与标题） */
+/** 字段下拉分组（移动端条件编辑弹层复用同一分组顺序与标题）；
+ * 分组标题按 labelKey 取 search.section.*，不在模块加载时固定译文 */
 export const ADVANCED_SEARCH_FIELD_SECTIONS: ReadonlyArray<{
-  label: string
+  labelKey: string
   fields: readonly SearchField[]
 }> = [
-  { label: '高级信息', fields: ADVANCED_SEARCH_ADVANCED_FIELDS },
-  { label: '基本信息', fields: ADVANCED_SEARCH_BASIC_FIELDS },
-  { label: '状态信息', fields: ADVANCED_SEARCH_STATUS_FIELDS },
-  { label: '时间信息', fields: ADVANCED_SEARCH_TIME_FIELDS },
-  { label: '比率信息', fields: ADVANCED_SEARCH_RATIO_FIELDS }
+  { labelKey: 'search.section.advanced', fields: ADVANCED_SEARCH_ADVANCED_FIELDS },
+  { labelKey: 'search.section.basic', fields: ADVANCED_SEARCH_BASIC_FIELDS },
+  { labelKey: 'search.section.status', fields: ADVANCED_SEARCH_STATUS_FIELDS },
+  { labelKey: 'search.section.time', fields: ADVANCED_SEARCH_TIME_FIELDS },
+  { labelKey: 'search.section.ratio', fields: ADVANCED_SEARCH_RATIO_FIELDS }
 ]
 
 export function getAllSearchFields(): readonly SearchField[] {
@@ -123,6 +125,23 @@ export function getAllSearchFields(): readonly SearchField[] {
 export function getSearchFieldInfo(fieldKey: string): SearchField | undefined {
   if (!fieldKey) return undefined
   return getAllSearchFields().find(field => field.key === fieldKey)
+}
+
+/**
+ * 字段展示名（双语）：按稳定字段 code 取 search.field.* 键，
+ * 键未登记时回退配置内中文 label（防新增字段漏登清单时渲染空）。
+ */
+export function searchFieldLabel(field: SearchField): string {
+  const localized = translate(`search.field.${field.key}`)
+  return localized || field.label
+}
+
+/**
+ * 操作符展示名（双语）：操作符唯一来源是后端契约（label/labelEn 经 generated.ts），
+ * 按当前语言二选一，映射始终用稳定 value/backendValue，不用展示名。
+ */
+export function searchOperatorLabel(operator: AdvancedSearchOperatorConfig): string {
+  return getLocale() === 'en' ? operator.labelEn || operator.label : operator.label
 }
 
 /**
@@ -155,7 +174,7 @@ export function getOperatorGroupsForField(fieldKey: string): OperatorDisplayGrou
     }
     groups.push({
       type: 'basic',
-      label: '基本操作',
+      label: translate('search.operatorGroup.basic'),
       operators
     })
   }
@@ -168,7 +187,7 @@ const ALL_OPERATORS: readonly AdvancedSearchOperatorConfig[] =
 
 export function getOperatorLabel(operator: string): string {
   const op = ALL_OPERATORS.find(o => o.value === operator)
-  return op ? op.label : operator
+  return op ? searchOperatorLabel(op) : operator
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
@@ -179,13 +198,13 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
 export function describeConditionValue(condition: AdvancedSearchConditionState): string {
   const { field, operator, value } = condition
   if (value === null || value === undefined) {
-    return '未设置'
+    return translate('search.value.notSet')
   }
 
   // 特殊处理种子大小范围
   if (field === 'size' && operator === 'between' && isRecordValue(value)) {
-    const min = value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : '无限制'
-    const max = value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : '无限制'
+    const min = value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : translate('search.value.unlimited')
+    const max = value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : translate('search.value.unlimited')
     return `${min} ~ ${max}`
   }
 
@@ -216,14 +235,14 @@ export function describeCondition(condition: AdvancedSearchConditionState): stri
   if (!field) return ''
   const operatorLabel = getOperatorLabel(condition.operator)
   const valueLabel = describeConditionValue(condition)
-  const modeSuffix = condition.mode === 'exclude' ? '（排除）' : ''
-  return `${field.label} ${operatorLabel} ${valueLabel}${modeSuffix}`
+  const modeSuffix = condition.mode === 'exclude' ? translate('search.condition.excludeSuffix') : ''
+  return `${searchFieldLabel(field)} ${operatorLabel} ${valueLabel}${modeSuffix}`
 }
 
 /** 构建查询预览文本（桌面预览对话框与移动端共用） */
 export function buildGroupsQueryText(groups: AdvancedSearchGroupState[]): string {
   if (groups.length === 0) {
-    return '暂无搜索条件'
+    return translate('search.preview.empty')
   }
 
   const groupQueries = groups.map((group, groupIndex) => {
@@ -231,21 +250,23 @@ export function buildGroupsQueryText(groups: AdvancedSearchGroupState[]): string
       const field = getSearchFieldInfo(condition.field)
       if (!field) return ''
 
-      const modeLabel = condition.mode === 'exclude' ? '排除' : '包含'
+      const modeLabel = condition.mode === 'exclude'
+        ? translate('search.preview.exclude')
+        : translate('search.preview.include')
 
-      return `${modeLabel}: ${field.label} ${getOperatorLabel(condition.operator)} ${describeConditionValue(condition)}`
+      return `${modeLabel}: ${searchFieldLabel(field)} ${getOperatorLabel(condition.operator)} ${describeConditionValue(condition)}`
     }).filter(query => query)
 
     if (conditionQueries.length === 0) return ''
 
-    const groupName = group.name || `条件组${groupIndex + 1}`
+    const groupName = group.name || translate('search.preview.groupFallback', { index: groupIndex + 1 })
     const groupLogic = group.logic.toUpperCase()
     const conditionsStr = conditionQueries.join(` ${groupLogic} `)
 
     return `【${groupName}】(${conditionsStr})`
   }).filter(query => query)
 
-  if (groupQueries.length === 0) return '暂无有效搜索条件'
+  if (groupQueries.length === 0) return translate('search.preview.emptyValid')
 
   if (groupQueries.length === 1) {
     return groupQueries[0]
@@ -281,14 +302,14 @@ export function normalizeLoadedGroups(groups: AdvancedSearchGroupState[]): Advan
     group.editing = false
     if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
       throw new AdvancedSearchValidationError(
-        `模板条件组${groupIndex + 1}没有有效条件`
+        translate('search.error.groupNoConditions', { index: groupIndex + 1 })
       )
     }
     for (const condition of group.conditions) {
       const field = getSearchFieldInfo(condition.field)
       if (!field) {
         throw new AdvancedSearchValidationError(
-          `模板包含未知字段：${condition.field}`
+          translate('search.error.unknownField', { field: condition.field })
         )
       }
       condition.id = condition.id || generateConditionId()
@@ -298,7 +319,7 @@ export function normalizeLoadedGroups(groups: AdvancedSearchGroupState[]): Advan
         field.type
       )) {
         throw new AdvancedSearchValidationError(
-          `模板字段类型无效：${field.type}`
+          translate('search.error.invalidFieldType', { type: field.type })
         )
       }
       condition.operator = normalizeLoadedOperator(
@@ -316,7 +337,7 @@ export function normalizeLoadedGroups(groups: AdvancedSearchGroupState[]): Advan
         !operatorSupportsExclude(condition.operator)
       ) {
         throw new AdvancedSearchValidationError(
-          `模板操作符“${condition.operator}”不支持排除模式`
+          translate('search.error.operatorNoExclude', { operator: condition.operator })
         )
       }
     }
@@ -408,7 +429,7 @@ export async function loadAdvancedSearchDynamicOptions(): Promise<AdvancedSearch
 
 /**
  * 字段值候选：静态（status/super_seeding）优先，动态（分类/标签/下载器）
- * 由调用方注入当次拉取结果。
+ * 由调用方注入当次拉取结果；展示名按当前语言解析（status 走共享状态文本）。
  */
 export function getSearchFieldOptions(
   fieldKey: string,
@@ -416,17 +437,20 @@ export function getSearchFieldOptions(
 ): Array<{ label: string, value: string }> {
   const field = getSearchFieldInfo(fieldKey)
 
-  // 如果字段本身有选项定义，直接返回
+  // 如果字段本身有选项定义，直接返回（status 选项展示名按状态值本地化）
   if (field?.options && field.options.length > 0) {
-    return field.options.map(option => ({ label: option.label, value: option.value }))
+    return field.options.map(option => ({
+      label: field.key === 'status' ? getStatusText(option.value) : option.label,
+      value: option.value
+    }))
   }
 
   switch (fieldKey) {
     case 'super_seeding':
       return [
-        { label: '是', value: '1' },
-        { label: '否', value: '0' },
-        { label: '不支持', value: 'unsupported' }
+        { label: translate('search.superSeeding.yes'), value: '1' },
+        { label: translate('search.superSeeding.no'), value: '0' },
+        { label: translate('search.superSeeding.unsupported'), value: 'unsupported' }
       ]
 
     case 'category':

@@ -171,8 +171,8 @@
           "id": "desktop-bilingual-20260918.p3",
           "name": "默认种子视图、搜索与查询模板",
           "description": "详见 PLANS/desktop-bilingual.md P3；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
-          "scope": "frontend",
+          "status": "in_progress",
+          "scope": "fullstack",
           "depends_on": [
             "desktop-bilingual-20260918.p1"
           ],
@@ -186,7 +186,7 @@
             "T01～T03/Q01～Q02 通过；依赖 P4 系统预设与错误子范围",
             "查询值/排序/生成契约不变，用户内容保留原文"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "2026-09-21（P3-1 第一批，范围经用户确认）：契约链——后端 advanced_search_contract.json 全部 38 操作符补 labelEn（中文 label 保持不变，外科手术式单行替换），生成器校验 labelEn 非空并写入 generated.ts 接口，contract:check 门禁同步；后端 TestOperatorContractGuard 新增 test_operator_labels_have_paired_english（label/labelEn 成对、ASCII 英文、组内 value 唯一）。共享层——advancedSearchFields.ts 字段展示名按稳定字段 code 取 search.field.*（searchFieldLabel），操作符按 locale 取契约 label/labelEn（searchOperatorLabel，禁中文匹配），分组标题/摘要/预览/归一化错误消息接入同源翻译，FIELD_SECTIONS 改 labelKey；AdvancedSearchBuilder 与移动 ConditionEditSheet 消费方同步接线（C01：中文流程输出不变）。status-config getStatusText 走 torrent.status.* 键 + localizedStatusOptions。列表骨架——index.vue 筛选/排查提示条/工具栏（含四级删除菜单项文案）/列头/排序 title/列宽提示/空 loading/Tracker异常标签/分页汇总/列设置弹窗/视图切换 + 操作反馈（开始/暂停/重检/汇报/模板应用/重复查找等，删除确认与结果链路留 P5）；mixin torrentBatch 批量反馈三件套双语（translate 入口）；TorrentAddDialog 含跳过校验策略；BatchOperationDialog；Q1 两弹窗 QuickDeleteDuplicatesDialog + DuplicateTorrentsDialog；仪表盘 dashboard/index.vue 卡片/状态/快捷操作/aria + 本地化日期。新增语言包 search/torrent/dashboard（zh-CN+en 成对，parity 门禁覆盖）+ common 扩展 multiSelect/pageSize；AdvancedMultiSelect/PageSizeCombobox 共享组件双语。新增 search-shared-layer-i18n.spec 13 例（契约双标签完整/稳定值映射/两语言输出/搜索参数不变性 T01）。11 个存量套件迁移 i18n 挂载（localVue.use(VueI18n)+i18n 单例）。验证：typecheck/lint 三项/build 绿；Jest 115 套 1617 例全绿（基线 114/1604）；后端回归套件 147 例 + 契约守卫 2 例绿、black/flake8 净（mypy 存量 17 错误零新增）。余量：P3-2（详情/Tracker 卡片与操作/汇报文案/查询模板页与 4 预设展示）、浏览器 T01 人工验收与英文审校待后续批次。"
         },
         {
           "id": "desktop-bilingual-20260918.p4",

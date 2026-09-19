@@ -1,5 +1,7 @@
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import TorrentsManagement from '@/views/torrents/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
@@ -68,6 +70,7 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
@@ -180,6 +183,7 @@ async function flushLifecycle(): Promise<void> {
 function mountListView(): Wrapper<Vue> {
   return shallowMount(TorrentsManagement, {
     localVue,
+    i18n,
     mocks: {
       $route: { query: {} },
       $router: { replace: jest.fn() },
@@ -1020,6 +1024,7 @@ describe('详情死路由不启动轮询（W1-1）', () => {
   function mountWithRoute(path: string): Wrapper<Vue> {
     return shallowMount(TorrentsManagement, {
       localVue,
+      i18n,
       mocks: {
         $route: { path, query: {} },
         $router: { replace: jest.fn() },

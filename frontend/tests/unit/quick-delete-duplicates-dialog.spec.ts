@@ -1,5 +1,7 @@
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import fs from 'fs'
 import path from 'path'
 
@@ -20,6 +22,7 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockQuickDeleteDuplicates = quickDeleteDuplicates as jest.MockedFunction<typeof quickDeleteDuplicates>
 
@@ -59,6 +62,7 @@ const waitAutoPreview = async(): Promise<void> => {
 function mountDialog(): Wrapper<Vue> {
   return shallowMount(QuickDeleteDuplicatesDialog, {
     localVue,
+    i18n,
     propsData: { visible: false },
     mocks: { $message: message }
   })

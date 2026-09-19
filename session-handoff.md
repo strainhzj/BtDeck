@@ -5023,3 +5023,22 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 本轮验证结果见 progress.md 同日记录；未执行运行时双语验收。
 
 ---
+
+## 2026-09-21 交接：桌面双语 P3-1 第一批完成（未提交）
+
+### 已完成
+
+- 契约链：契约 json 38 操作符补 labelEn（中文逐字节不变）→ 生成器校验/接口更新 → generated.ts 重跑；后端契约守卫 +1 用例（label/labelEn 成对）。字段/操作符映射全部按稳定 code/value，操作符展示名单源在契约（语言包不复制）。
+- 共享层：searchFieldLabel/searchOperatorLabel（locale 感知）+ 分组标题/摘要/预览/归一化错误 i18n；Builder 与移动 ConditionEditSheet 已接线（中文输出不变）；getStatusText 走 torrent.status.*。
+- 页面/组件：index.vue 列表骨架与操作反馈（删除确认/结果链路留 P5）、torrentBatch mixin、TorrentAddDialog（跳过校验）、BatchOperationDialog、QuickDeleteDuplicatesDialog、DuplicateTorrentsDialog、dashboard、AdvancedMultiSelect、PageSizeCombobox。
+- 语言包新增 search/torrent/dashboard + common.multiSelect/pageSize；zh 输出与原内联逐字一致（存量断言零改动通过）。
+- 新测试 search-shared-layer-i18n.spec（13 例，含 T01 搜索参数不变性：两语言 groups JSON 完全一致）；11 套件迁移 i18n 挂载。
+- 四项验证全绿：typecheck / lint / Jest 115 套 1617 例（基线 1604）/ build；后端 advanced_search 回归 147+2 例、black/flake8 净、mypy 存量零新增。
+
+### 待办/注意
+
+- P3-2 另批：详情弹窗、TrackerDetailCard/TrackerOperationDialog/汇报文案、查询模板页与 4 预设展示（预设名称/描述翻译依赖 P4 preset_key 方案）。
+- 删除菜单项已译（工具栏骨架），其后的 /结果消息仍中文——P5 高风险批统一收口并逐条审校（R01-R05）。
+- 浏览器 T01 人工验收与英文审校未做（自动化绿不等于人工视觉通过）。
+- 批量改文件教训：PowerShell 文本管道按 GBK 读 UTF-8 会损坏文件；CRLF 文件插入换行须防 \r\r\n。本批全部用 Python 显式 UTF-8 完成。
+- 未执行 Git 提交；data/ 下三个辅助脚本（p3_add_label_en.py / p3_spec_i18n_fix*.py）为未跟踪产物，保持不动。

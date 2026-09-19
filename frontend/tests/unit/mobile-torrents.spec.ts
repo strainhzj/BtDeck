@@ -13,6 +13,7 @@
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
+import i18n from '@/i18n'
 import MobileTorrents from '@/views/mobile/torrents.vue'
 import {
   getTorrentList,
@@ -75,6 +76,7 @@ const listTorrent = {
 
 const mountPage = (): Wrapper<Vue> =>
   shallowMount(MobileTorrents, {
+    i18n,
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
       $confirm: jest.fn().mockResolvedValue('confirm'),

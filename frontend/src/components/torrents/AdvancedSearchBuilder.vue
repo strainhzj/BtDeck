@@ -109,43 +109,43 @@
                     class="condition-field-select"
                     @change="onFieldChange(condition)"
                   >
-                    <el-option-group label="高级信息">
+                    <el-option-group :label="$t('search.section.advanced')">
                       <el-option
                         v-for="field in advancedFields"
                         :key="field.key"
-                        :label="field.label"
+                        :label="fieldLabel(field)"
                         :value="field.key"
                       />
                     </el-option-group>
-                    <el-option-group label="基本信息">
+                    <el-option-group :label="$t('search.section.basic')">
                       <el-option
                         v-for="field in basicFields"
                         :key="field.key"
-                        :label="field.label"
+                        :label="fieldLabel(field)"
                         :value="field.key"
                       />
                     </el-option-group>
-                    <el-option-group label="状态信息">
+                    <el-option-group :label="$t('search.section.status')">
                       <el-option
                         v-for="field in statusFields"
                         :key="field.key"
-                        :label="field.label"
+                        :label="fieldLabel(field)"
                         :value="field.key"
                       />
                     </el-option-group>
-                    <el-option-group label="时间信息">
+                    <el-option-group :label="$t('search.section.time')">
                       <el-option
                         v-for="field in timeFields"
                         :key="field.key"
-                        :label="field.label"
+                        :label="fieldLabel(field)"
                         :value="field.key"
                       />
                     </el-option-group>
-                    <el-option-group label="比率信息">
+                    <el-option-group :label="$t('search.section.ratio')">
                       <el-option
                         v-for="field in ratioFields"
                         :key="field.key"
-                        :label="field.label"
+                        :label="fieldLabel(field)"
                         :value="field.key"
                       />
                     </el-option-group>
@@ -171,7 +171,7 @@
                       <el-option
                         v-for="op in operatorGroup.operators"
                         :key="op.value"
-                        :label="op.label"
+                        :label="operatorLabel(op)"
                         :value="op.value"
                       />
                     </el-option-group>
@@ -361,6 +361,7 @@
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import ConditionValueInput from './ConditionValueInput.vue'
 import { extractErrorMessage } from '@/utils/formatters'
+import type { AdvancedSearchOperatorConfig } from '@/contracts/advancedSearch.generated'
 import {
   AdvancedSearchConditionValue,
   AdvancedSearchConditionState,
@@ -387,7 +388,9 @@ import {
   getSearchFieldInfo,
   getSearchFieldOptions,
   loadAdvancedSearchDynamicOptions,
-  normalizeLoadedGroups
+  normalizeLoadedGroups,
+  searchFieldLabel,
+  searchOperatorLabel
 } from './advancedSearchFields'
 
 // 搜索条件接口
@@ -742,6 +745,16 @@ export default class AdvancedSearchBuilder extends Vue {
   // 获取操作符标签
   private getOperatorLabel(operator: string): string {
     return sharedGetOperatorLabel(operator)
+  }
+
+  // 字段展示名（共享层按稳定字段 code 本地化，禁直接读中文 label）
+  private fieldLabel(field: SearchField): string {
+    return searchFieldLabel(field)
+  }
+
+  // 操作符展示名（共享层按契约 label/labelEn 本地化）
+  private operatorLabel(op: AdvancedSearchOperatorConfig): string {
+    return searchOperatorLabel(op)
   }
 
   // 获取值标签
