@@ -19,7 +19,7 @@
 | 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result`（后台状态、增量统计、超量提醒与兼容复核字段）/ `orphan_file`（稳定明细）/ `orphan_current_candidate`（`current_detail_id` 指针）/ `orphan_operation_lease` |
 | 孤儿清理任务 model orphan-purge | `orphan_purge_job.py` | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
 | 副本预扫描结果 model orphan-hardlink-copy ✨2026-08-15 | `orphan_hardlink_copy.py` | `orphan_hardlink_copy_result`（按 `(device_id, inode_id)` 唯一，device_id 字符串适配 Windows 无符号卷号）/ `orphan_hardlink_scan_state`（单行 keyset 游标） |
-| 搜索模板 model search-template | `search_template.py` | `search_templates`：搜索模板 |
+| 搜索模板 model search-template | `search_template.py` | `search_templates`：搜索模板；2026-09-21 新增 `preset_key` 稳定身份列（系统预设双语展示按此映射，用户模板恒 NULL） |
 | 种子转移审计 model seed-transfer-audit | `seed_transfer_audit_log.py` | `seed_transfer_audit_log`：种子转移审计日志 |
 | 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |
 | 模板 VO template-vo | `setting_templates_vo.py` | 配置模板响应 VO |
@@ -62,7 +62,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 13 个系统默认定时任务种子；Tracker 状态同步为 `10,40 * * * *`，独立状态判断为 `20,50 * * * *`（见下方清单） |
-| 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化 |
+| 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化；2026-09-21 幂等身份改按 `preset_key`（active_torrents/error_status/paused/large_files，与名称解耦），旧库中文名恰一行时自愈回填，歧义不猜（B02） |
 | 默认配置模板 default-templates | `default_templates.py` | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
 | 默认关键词 default-keywords | `default_tracker_keywords.py` | Tracker 关键词池默认数据（成功/失败/忽略池） |
 
