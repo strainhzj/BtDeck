@@ -192,7 +192,7 @@
           "id": "desktop-bilingual-20260918.p4",
           "name": "错误原因标识、通知事件与系统预设迁移",
           "description": "详见 PLANS/desktop-bilingual.md P4；files 为代表性文件/目录，P0 补齐精确清单。依赖按计划子范围执行，不表示本轮启动实现。",
-          "status": "pending",
+          "status": "in_progress",
           "scope": "fullstack",
           "depends_on": [
             "desktop-bilingual-20260918.p0"
@@ -212,7 +212,7 @@
             "信封/分页/202/206/207/认证语义不变，不匹配中文翻译",
             "新旧库幂等、用户同名保护、歧义保留；M1 子范围与 M2 扩展分开记录，全部完成才标 done"
           ],
-          "evidence": "尚未实施，未执行实现验收。"
+          "evidence": "2026-09-21 P4 剩余子范围批（错误契约 M1 扩展 + E03 通知事件）：\n1. 后端 reasonCode 契约（信封四字段不变，仅 data 新增字段）：torrent_status（pause/resume/recheck/reannounce×3：TORRENT_HASHES_REQUIRED/TORRENT_RECORDS_NOT_FOUND/TORRENT_OPERATION_FAILED/TORRENT_OPERATION_INTERNAL/DOWNLOADER_CACHE_UNAVAILABLE·NOT_FOUND·OFFLINE·CONNECTION_MISSING·NO_TORRENTS）、tracker（_DownloaderUnavailableError 携带 reason_code 四态透传 + TRACKER_URL_REQUIRED/TRACKER_NOT_FOUND）、advanced_search 模板 CRUD（SEARCH_TEMPLATE_NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS/CREATE·LIST·UPDATE·DELETE·APPLY_FAILED）、torrent_add_service（TorrentAddResult.reason_code：TORRENT_FILE_INVALID/REQUIRED/INFO_TIMEOUT/INFO_UNAVAILABLE/ADD_FAILED + 端点映射 data.reasonCode）、torrent_crud add/add-batch/sync（TORRENT_FILES_REQUIRED/TORRENT_STAGE_FAILED/TORRENT_BATCH_SUBMIT_FAILED/TORRENT_SYNC_FAILED/DB_OPERATION_FAILED/INTERNAL_ERROR）。\n2. 动态 msg 收敛：outer 操作异常/添加兜底/暂存/后台任务提交的 str(e)·type(e) msg 固定化（诊断只进日志，防泄露）；inner 语义 msg（含异常类名，被 status_migration/add_fallback 测试钉住）保留并按行为语义调整断言（fixed msg + reasonCode）。\n3. E17：前端 errors.validation 子树（pydantic type 字典化 10 键）+ apiErrorMessage 集成 422 分支（data.errors 按 type/loc 取前 2 条）；E02：/downloader/getList 缓存缺失 success+200+data=[] 历史双形态测试钉住冻结。\n4. E03 通知事件：后端 version_update 通知 extra_data 补 event 键 + 孤儿通知补 orphan_count_warning 标志 + 欢迎脚本两通知补 event；前端新 utils/notification-display.ts（四事件 title/content 参数化本地化，未登记事件/历史原文兜底）+ NotificationDrawer/NotificationItem 接线（含详情类型标签/全部已读/详情时间 locale 化）；batch add/orphan_scan 事件结构先前已就绪。\n5. 前端组件接线：index.vue 单条暂停/恢复/重检/单种汇报、TrackerOperationDialog 6 处、TorrentAddDialog 2 处、query-templates 页 + QueryTemplateDialog 4 处错误展示改走 apiErrorMessage/apiResponseMessage（禁中文 msg 直读）；errors.byCode 扩 33 键（zh/en 成对，parity 门禁覆盖）。\n6. 验证：后端新 test_reason_contract_p4.py 30 例（reasonCode 矩阵/E17 形态/E02 双形态/E03 事件键）+ tests/api+services+core 全量 3004 passed（5 例存量基线失败 stash 对照证实非本批：rollback_scenarios×2/orphan 迁移×3）；mypy 7 文件 0 错误、black/flake8 净（welcome 脚本 F401/格式为存量基线）。前端 typecheck/lint 三项（contract:check+eslint+vuex-action）/build 绿、全量 Jest 117 套 1660 例（基线 1620 + 新 40：notification-display 9 + api-error-message-p4 27 + drawer 详情扩 4）。\n7. 子范围完成情况（M1/M2 分开记录）：M1 依赖部分本批完成——错误契约（登录/下载器 P2 批 + 本批种子操作/Tracker/模板/添加链路）+ E03 壳层事件 + 查询预设 preset_key（P3-2 批）；**M2/后续批次**——删除链路契约（E14 TORRENT_DELETE_ACCEPTED/E16 NOT_IMPLEMENTED）归 P5 与 R01-R05 审校同批；设置模板 preset_key（default_templates 5 预设）与 cron 安全拦截通知等低频事件归 P6；P4 整体完成前不得标 done（当前 in_progress）。\n8. 浏览器 E01/E02/E03 人工验收与英文审校未做（自动化绿≠人工通过）；Android 嵌入服务未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。"
         },
         {
           "id": "desktop-bilingual-20260918.p5",

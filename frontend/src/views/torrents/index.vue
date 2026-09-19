@@ -905,6 +905,7 @@ import {
   normalizePaginatedResponse,
   debounce
 } from '@/utils/formatters'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
@@ -1569,7 +1570,8 @@ export default class extends mixins(
         // 刷新种子列表
         await this.getList()
       } else {
-        this.$message.error(response.msg || this.$t('torrent.msg.reannounceFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+        this.$message.error(apiResponseMessage(response, this.$t('torrent.msg.reannounceFailed') as string))
       }
     } catch (error) {
       console.error('Tracker汇报失败:', error)
@@ -1740,9 +1742,10 @@ export default class extends mixins(
       }
       this.getList()
     } catch (error) {
-      const errorMessage = extractErrorMessage(error)
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      const errorMessage = apiErrorMessage(error, this.$t('torrent.msg.opFailed') as string)
       console.error('操作失败:', error)
-      this.$message.error(errorMessage || this.$t('torrent.msg.opFailed'))
+      this.$message.error(errorMessage)
     }
   }
 
@@ -1753,9 +1756,10 @@ export default class extends mixins(
       this.$message.success(this.$t('torrent.msg.recheckSuccess'))
       this.getList()
     } catch (error) {
-      const errorMessage = extractErrorMessage(error)
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      const errorMessage = apiErrorMessage(error, this.$t('torrent.msg.recheckFailed') as string)
       console.error('重新检查失败:', error)
-      this.$message.error(errorMessage || this.$t('torrent.msg.recheckFailed'))
+      this.$message.error(errorMessage)
     }
   }
 

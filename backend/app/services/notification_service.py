@@ -212,6 +212,8 @@ class NotificationService:
                     content=release_body,
                     priority="info",
                     extra_data={
+                        # 双语 P4（E03）：稳定事件键，前端按事件本地化标题；历史通知无 event 键则原文展示
+                        "event": "version_update",
                         "version": latest_tag,
                         "current_version": current_version,
                         "release_url": release_url,

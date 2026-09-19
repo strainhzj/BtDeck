@@ -113,6 +113,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { addTracker, modifyTracker, addTrackerByDownloader, modifyTrackerByDownloader } from '@/api/torrents'
 import { Torrent, TrackerInfo } from '@/api/torrents'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 import { isTrackerAnnounceSuccess } from '../utils/torrentBatch'
 
 /** 按下载器触发模式的范围描述（移动端无多选的批量语义：服务端解析该下载器全部种子） */
@@ -395,7 +396,8 @@ export default class TrackerOperationDialog extends Vue {
           this.$emit('success')
           this.handleClose()
         } else {
-          this.$message.error(response.msg || this.$t('tracker.operation.addFailed'))
+          // 双语 P4 错误契约：优先 reasonCode 本地化
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.operation.addFailed') as string))
         }
         return
       }
@@ -433,13 +435,15 @@ export default class TrackerOperationDialog extends Vue {
         this.$emit('success')
         this.handleClose()
       } else {
-        this.$message.error(response.msg || this.$t('tracker.operation.addFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('tracker.operation.addFailed') as string))
       }
     } catch (error: any) {
       console.error('添加Tracker失败:', error)
       if (error !== 'cancel') {
         // 修复：显示实际的错误消息，而不是硬编码
-        this.$message.error(error.message || this.$t('tracker.operation.addFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiErrorMessage(error, this.$t('tracker.operation.addFailed') as string))
       }
     } finally {
       this.submitting = false
@@ -471,7 +475,8 @@ export default class TrackerOperationDialog extends Vue {
           this.$emit('success')
           this.handleClose()
         } else {
-          this.$message.error(response.msg || this.$t('tracker.operation.modifyFailed'))
+          // 双语 P4 错误契约：优先 reasonCode 本地化
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.operation.modifyFailed') as string))
         }
         return
       }
@@ -509,13 +514,15 @@ export default class TrackerOperationDialog extends Vue {
         this.$emit('success')
         this.handleClose()
       } else {
-        this.$message.error(response.msg || this.$t('tracker.operation.modifyFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('tracker.operation.modifyFailed') as string))
       }
     } catch (error: any) {
       console.error('修改Tracker失败:', error)
       if (error !== 'cancel') {
         // 修复：显示实际的错误消息，而不是硬编码
-        this.$message.error(error.message || this.$t('tracker.operation.modifyFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiErrorMessage(error, this.$t('tracker.operation.modifyFailed') as string))
       }
     } finally {
       this.submitting = false

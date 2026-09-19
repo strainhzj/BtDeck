@@ -46,13 +46,35 @@ export const common = {
     empty: '暂无通知',
     markUnread: '标记未读',
     markRead: '标记已读',
+    markAllRead: '全部已读',
     remove: '删除',
     failedDetail: '失败明细',
     viewRelease: '在 GitHub 上查看完整 Release',
     filterAll: '全部',
     filterUnread: '未读',
     filterUpdate: '更新',
-    filterSystem: '系统'
+    filterSystem: '系统',
+    typeVersionUpdate: '版本更新',
+    typeSystem: '系统通知',
+    /** 事件本地化（双语 P4 / E03）：按 extra_data.event 映射，未登记事件原文展示 */
+    events: {
+      batchAdd: {
+        title: '批量添加种子完成',
+        content: '批量添加种子任务完成：共 {total} 个，成功 {success} 个，失败 {failed} 个。'
+      },
+      orphanScan: {
+        title: '孤儿文件扫描完成',
+        content: '本次扫描发现 {count} 个孤儿文件，共 {size}，请前往孤儿文件管理页面查看。',
+        warning: '（注意：孤儿数量超过护栏阈值，可能是真实的大批量数据，也可能是路径映射失效导致的误判，请前往孤儿文件管理页面核查。）'
+      },
+      versionUpdate: {
+        title: 'BtDeck {version} 版本更新'
+      },
+      welcome: {
+        title: '欢迎使用 BtDeck',
+        content: '感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。'
+      }
+    }
   },
   /** AdvancedMultiSelect 共享多选下拉（列表筛选/高级搜索/移动端同源消费） */
   multiSelect: {

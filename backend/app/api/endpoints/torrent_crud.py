@@ -122,10 +122,14 @@ def torrent_list(
 
     except SQLAlchemyError as e:
         logger.error(f"数据库操作失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"数据库操作失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg="数据库操作失败", code="500", data={"reasonCode": "DB_OPERATION_FAILED"}
+        )
     except Exception as e:
         logger.error(f"同步过程中发生未知错误: {str(e)}")
-        return CommonResponse(status="error", msg=f"同步失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg="同步失败，请稍后重试", code="500", data={"reasonCode": "TORRENT_SYNC_FAILED"}
+        )
 
 
 @router.post("/add", response_model=CommonResponse)
@@ -167,7 +171,9 @@ async def create_torrent(
         torrent_content=file_content,
         audit_context=AuditContext.from_request(request),
     )
-    return CommonResponse(status=result.status, msg=result.msg, code=result.code, data=None)
+    # 双语 P4 错误契约：失败路径在 data 携带稳定 reasonCode（仅新增字段，信封不变）
+    error_data = {"reasonCode": result.reason_code} if result.reason_code else None
+    return CommonResponse(status=result.status, msg=result.msg, code=result.code, data=error_data)
 
 
 @router.post("/add-batch", response_model=CommonResponse)
@@ -190,33 +196,53 @@ async def create_torrents_batch(
     """提交后台批量添加任务，处理结果通过通知中心告知用户。"""
 
     if not torrent_files:
-        return CommonResponse(status="error", msg="请至少选择一个种子文件", code="400", data=None)
+        return CommonResponse(
+            status="error", msg="请至少选择一个种子文件", code="400", data={"reasonCode": "TORRENT_FILES_REQUIRED"}
+        )
     if request is None:
-        return CommonResponse(status="error", msg="请求上下文不可用", code="500", data=None)
+        return CommonResponse(status="error", msg="请求上下文不可用", code="500", data={"reasonCode": "INTERNAL_ERROR"})
 
     app = request.app
     if not hasattr(app.state, "store"):
-        return CommonResponse(status="error", msg="下载器缓存未初始化", code="500", data=None)
+        return CommonResponse(
+            status="error",
+            msg="下载器缓存未初始化",
+            code="500",
+            data={"reasonCode": "DOWNLOADER_CACHE_UNAVAILABLE"},
+        )
 
     cached_downloaders = await app.state.store.get_snapshot()
     downloader = next((item for item in cached_downloaders if item.downloader_id == downloader_id), None)
     if downloader is None:
         return CommonResponse(
-            status="error", msg=f"下载器不在缓存中 [downloader_id={downloader_id}]", code="404", data=None
+            status="error",
+            msg=f"下载器不在缓存中 [downloader_id={downloader_id}]",
+            code="404",
+            data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
         )
     if (getattr(downloader, "fail_time", 0) or 0) > 0:
-        return CommonResponse(status="error", msg="下载器已失效，无法提交批量任务", code="503", data=None)
+        return CommonResponse(
+            status="error", msg="下载器已失效，无法提交批量任务", code="503", data={"reasonCode": "DOWNLOADER_OFFLINE"}
+        )
     if not getattr(downloader, "client", None):
-        return CommonResponse(status="error", msg="下载器客户端连接不存在", code="500", data=None)
+        return CommonResponse(
+            status="error",
+            msg="下载器客户端连接不存在",
+            code="500",
+            data={"reasonCode": "DOWNLOADER_CONNECTION_MISSING"},
+        )
 
     staged_files = []
     try:
         for torrent_file in torrent_files:
             staged_files.append(await stage_torrent_file(torrent_file))
-    except Exception as exc:
+    except Exception:
         cleanup_staged_files(staged_files)
         logger.exception("批量种子上传暂存失败")
-        return CommonResponse(status="error", msg=f"种子文件暂存失败: {exc}", code="500", data=None)
+        # 双语 P4 错误契约：动态 str(exc) 只进日志，msg 固定防泄露
+        return CommonResponse(
+            status="error", msg="种子文件暂存失败", code="500", data={"reasonCode": "TORRENT_STAGE_FAILED"}
+        )
     finally:
         for torrent_file in torrent_files:
             try:
@@ -254,10 +280,13 @@ async def create_torrents_batch(
             name=f"torrent_batch_add:{task_id}",
         )
         register_torrent_batch_task(app, task)
-    except Exception as exc:
+    except Exception:
         cleanup_staged_files(staged_files)
         logger.exception("创建批量添加种子后台任务失败")
-        return CommonResponse(status="error", msg=f"创建后台任务失败: {exc}", code="500", data=None)
+        # 双语 P4 错误契约：动态 str(exc) 只进日志，msg 固定防泄露
+        return CommonResponse(
+            status="error", msg="创建后台任务失败", code="500", data={"reasonCode": "TORRENT_BATCH_SUBMIT_FAILED"}
+        )
 
     return CommonResponse(
         status="accepted",

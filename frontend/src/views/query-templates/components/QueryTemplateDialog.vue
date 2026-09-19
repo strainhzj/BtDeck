@@ -102,6 +102,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import {
   createSearchTemplate,
@@ -292,7 +293,8 @@ export default class QueryTemplateDialog extends Vue {
           this.$message.success(this.$t('queryTemplate.dialog.updated'))
           this.$emit('success')
         } else {
-          this.$message.error(response.msg || this.$t('queryTemplate.dialog.updateFailed'))
+          // 双语 P4 错误契约：优先 reasonCode 本地化
+          this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.dialog.updateFailed') as string))
         }
       } else {
         const response = await createSearchTemplate({
@@ -305,13 +307,13 @@ export default class QueryTemplateDialog extends Vue {
           this.$message.success(this.$t('queryTemplate.dialog.created'))
           this.$emit('success')
         } else {
-          this.$message.error(response.msg || this.$t('queryTemplate.dialog.createFailed'))
+          // 双语 P4 错误契约：优先 reasonCode 本地化
+          this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.dialog.createFailed') as string))
         }
       }
     } catch (error) {
-      this.$message.error(
-        this.$t('queryTemplate.dialog.saveFailedWith', { message: (error as Error).message })
-      )
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      this.$message.error(apiErrorMessage(error, this.$t('queryTemplate.dialog.saveFailed') as string))
     } finally {
       this.submitting = false
     }

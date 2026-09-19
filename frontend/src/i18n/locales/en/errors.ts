@@ -16,7 +16,7 @@
  */
 
 /**
- * Error contract copy (errors group, M1 subset in the P2 batch).
+ * Error contract copy (errors group: P2 M1 subset + P4 batch extension).
  * byCode keys are the camelCase form of backend data.reasonCode; unknown codes fall back to generic.
  * Matching by Chinese msg is forbidden (master plan §3.3).
  */
@@ -25,6 +25,19 @@ export const errors = {
   network: {
     unavailable: 'Network connection failed. Please check your network.',
     generic: 'Network error'
+  },
+  /** E17: 422 field validation mapped by pydantic type (field is the last loc segment identifier) */
+  validation: {
+    missing: 'Missing required field: {field}',
+    tooShort: 'Not enough items: {field}',
+    tooLong: 'Too many items: {field}',
+    stringType: 'Invalid type: {field} must be text',
+    intParsing: 'Invalid type: {field} must be an integer',
+    boolParsing: 'Invalid type: {field} must be a boolean',
+    greaterThan: 'Value too small: {field}',
+    lessThan: 'Value too large: {field}',
+    valueError: 'Invalid value: {field}',
+    generic: 'Request validation failed ({field})'
   },
   byCode: {
     authRateLimited: 'Too many attempts. Please try again later.',
@@ -49,6 +62,37 @@ export const errors = {
     downloaderOrigPasswordInvalid: 'The original password is incorrect.',
     downloaderOrigPasswordUnverified: 'Could not verify the original password. Please try again later.',
     downloaderTestFailed: 'Connection test failed.',
-    downloaderDbQueryFailed: 'Database query failed. Please try again later.'
+    downloaderDbQueryFailed: 'Database query failed. Please try again later.',
+    /* ↓ bilingual P4 extension: torrent ops / tracker / query templates / add chain */
+    downloaderCacheUnavailable: 'The downloader cache service is unavailable. Please try again later.',
+    downloaderOffline: 'The downloader is offline. Check its status and try again.',
+    downloaderConnectionMissing: 'The downloader connection is unavailable. Please try again later.',
+    downloaderNoTorrents: 'No torrents under this downloader.',
+    torrentHashesRequired: 'Select at least one torrent to operate on.',
+    torrentRecordsNotFound: 'No matching torrent records were found.',
+    torrentOperationFailed: 'The torrent operation failed. Please try again later.',
+    torrentOperationInternal: 'Something went wrong. Please try again later.',
+    torrentFileRequired: 'Choose a .torrent file.',
+    torrentFileInvalid: 'The torrent file is invalid or corrupted.',
+    torrentInfoTimeout: 'Timed out fetching torrent info. Check the downloader connection.',
+    torrentInfoUnavailable: 'The torrent was submitted, but its info is not yet available from the downloader.',
+    torrentAddFailed: 'Failed to add the torrent. Please try again later.',
+    torrentFilesRequired: 'Choose at least one .torrent file.',
+    torrentStageFailed: 'Failed to upload the torrent files. Please try again.',
+    torrentBatchSubmitFailed: 'Failed to submit the batch task. Please try again later.',
+    torrentSyncFailed: 'Sync failed. Please try again later.',
+    trackerUrlRequired: 'Enter at least one tracker URL.',
+    trackerNotFound: 'No tracker matched the replace request.',
+    trackerOperationInternal: 'The tracker operation failed. Please try again later.',
+    searchTemplateNotFound: 'This query template does not exist.',
+    searchTemplateForbidden: 'You are not allowed to modify this template.',
+    searchTemplateInvalidConditions: 'The query conditions are invalid. Please check and try again.',
+    searchTemplateCreateFailed: 'Failed to create the template. Please try again later.',
+    searchTemplateListFailed: 'Failed to load templates. Please try again later.',
+    searchTemplateUpdateFailed: 'Failed to update the template. Please try again later.',
+    searchTemplateDeleteFailed: 'Failed to delete the template. Please try again later.',
+    searchTemplateApplyFailed: 'Failed to apply the template. Please try again later.',
+    internalError: 'Internal server error. Please try again later.',
+    dbOperationFailed: 'Database operation failed. Please try again later.'
   }
 }

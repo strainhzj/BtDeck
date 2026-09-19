@@ -59,11 +59,16 @@ class TorrentAddParams:
 
 @dataclass
 class TorrentAddResult:
-    """领域结果：status/code/msg 与原 endpoint 各路径完全一致，由调用方映射协议响应。"""
+    """领域结果：status/code/msg 与原 endpoint 各路径完全一致，由调用方映射协议响应。
+
+    reason_code 为双语 P4 错误契约增量：失败路径携带稳定 reasonCode，由端点映射进
+    CommonResponse.data.reasonCode（信封四字段不变，仅 data 新增字段；成功路径 None）。
+    """
 
     status: str = "success"
     code: str = "200"
     msg: str = "种子添加成功"
+    reason_code: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -118,6 +123,7 @@ class TorrentAddService:
             result.code = "500"
             result.msg = "下载器缓存未初始化"
             result.status = "failed"
+            result.reason_code = "DOWNLOADER_CACHE_UNAVAILABLE"
             return result
 
         # 🔧 修复：使用异步版本 get_snapshot() 避免线程问题
@@ -128,12 +134,14 @@ class TorrentAddService:
             result.code = "404"
             result.msg = f"下载器不在缓存中 [downloader_id={downloader_id}]"
             result.status = "failed"
+            result.reason_code = "DOWNLOADER_NOT_FOUND"
             return result
 
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
             result.code = "503"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.status = "failed"
+            result.reason_code = "DOWNLOADER_OFFLINE"
             return result
 
         client = downloader_vo.client
@@ -141,6 +149,7 @@ class TorrentAddService:
             result.code = "500"
             result.msg = f"下载器客户端连接不存在 [downloader_id={downloader_id}]"
             result.status = "failed"
+            result.reason_code = "DOWNLOADER_CONNECTION_MISSING"
             return result
 
         # mypy 收窄：能通过下载器缓存匹配即证明 downloader_id 非空（参数类型为 Optional[str]），
@@ -181,6 +190,7 @@ class TorrentAddService:
                     os.unlink(tmp_path)
                 result.code = "500"
                 result.msg = str(e)
+                result.reason_code = "TORRENT_FILE_INVALID"
                 return result
 
         # 🔧 修复：使用 downloader_type 字段判断下载器类型
@@ -217,6 +227,7 @@ class TorrentAddService:
                 else:
                     result.code = "400"
                     result.msg = "Transmission需要种子文件"
+                    result.reason_code = "TORRENT_FILE_REQUIRED"
                     return result
 
                 # 等待Transmission处理种子（最多30秒）
@@ -231,6 +242,7 @@ class TorrentAddService:
                 if not tr_torrent:
                     result.code = "408"
                     result.msg = "获取种子信息超时，请检查Transmission连接"
+                    result.reason_code = "TORRENT_INFO_TIMEOUT"
                     return result
 
                 # 检查数据库中是否已存在该种子
@@ -258,8 +270,9 @@ class TorrentAddService:
             except TransmissionError as e:
                 result.code = "500"
                 result.msg = str(e)
+                result.reason_code = "TORRENT_ADD_FAILED"
                 return result
-            except Exception as e:
+            except Exception:
                 # 兜底：捕获非领域异常（ValueError/TypeError/requests 内部异常等）。
                 # 修复 prod-hotfix-2026-07-19：transmission_rpc→requests.post(json=query)
                 # 在 RPC 请求体序列化阶段会抛 TypeError("Object of type ValueError is not
@@ -272,7 +285,9 @@ class TorrentAddService:
                 )
                 result.status = "failed"
                 result.code = "500"
-                result.msg = f"添加种子失败: {type(e).__name__}: {e}"
+                # 双语 P4 错误契约：动态 type(e)/str(e) 只进日志，msg 固定防泄露
+                result.msg = "添加种子失败，请稍后重试"
+                result.reason_code = "TORRENT_ADD_FAILED"
                 return result
         # 🔧 修复：使用 downloader_type 字段判断下载器类型
         # downloader_type: 0=qBittorrent, 1=Transmission
@@ -330,6 +345,7 @@ class TorrentAddService:
                 if not torrents or len(torrents) == 0:
                     result.code = "500"
                     result.msg = "种子添加到qBittorrent后无法获取信息"
+                    result.reason_code = "TORRENT_INFO_UNAVAILABLE"
                     return result
 
                 qb_torrent = torrents[0]
@@ -358,8 +374,9 @@ class TorrentAddService:
             except APIError as e:
                 result.code = "500"
                 result.msg = str(e)
+                result.reason_code = "TORRENT_ADD_FAILED"
                 return result
-            except Exception as e:
+            except Exception:
                 # 兜底：捕获非 APIError 异常（ValueError/TypeError/SQLAlchemy StatementError/
                 # 网络层异常等），避免冒泡到调用方暴露内部堆栈。
                 #
@@ -378,7 +395,9 @@ class TorrentAddService:
                 )
                 result.status = "failed"
                 result.code = "500"
-                result.msg = f"添加种子失败: {type(e).__name__}: {e}"
+                # 双语 P4 错误契约：动态 type(e)/str(e) 只进日志，msg 固定防泄露
+                result.msg = "添加种子失败，请稍后重试"
+                result.reason_code = "TORRENT_ADD_FAILED"
                 return result
 
         # ========== 记录审计日志（异步） ==========

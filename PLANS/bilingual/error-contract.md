@@ -1,6 +1,6 @@
 # 错误契约清单（P0）
 
-> 生成：2026-09-18。目标：为 P4（`desktop-bilingual-20260918.p4`）提供 M1 核心失败路径的 reasonCode 提案与参数化翻译依据。
+> 生成：2026-09-18；**2026-09-21 P4 批回填落地状态**（§3 样例覆盖情况见各行 ✅ 标记与 §5 汇总）。目标：为 P4（`desktop-bilingual-20260918.p4`）提供 M1 核心失败路径的 reasonCode 提案与参数化翻译依据。
 > 原则（摘自主计划 §3.3）：信封/分页/202/206/207/认证语义不变；前端禁止按中文字符串匹配翻译；未知错误给本地化兜底说明，原始详情遵守脱敏。
 
 ## 1. 现有架构（实测）
@@ -32,17 +32,24 @@
 | E8 | 下载器不存在 | 404（一处 200+success ⚠️） | `DOWNLOADER_NOT_FOUND` | downloaderId | `Downloader no longer exists.` |
 | E9 | 修改凭据缺原密码 | 400 `修改用户名或密码时必须提供原密码` | `DOWNLOADER_ORIG_PASSWORD_REQUIRED` | — | 按字段提示 |
 | E10 | 原密码错 / 验证失败 | 400 `原密码错误`；500 `验证原密码失败`/`无法验证原密码` | `DOWNLOADER_ORIG_PASSWORD_INVALID` / `DOWNLOADER_ORIG_PASSWORD_UNVERIFIED` | — | 后者提示可重试（瞬时） |
-| E11 | 缓存未初始化 | 200+`缓存服务未初始化`（getList 空列表）⚠️成功信封携带错误语义 | `DOWNLOADER_CACHE_UNAVAILABLE` | — | fail-closed 提示「服务暂不可用」；前端按 reasonCode 分流而非 msg |
+| E11 | 缓存未初始化 | 200+`缓存服务未初始化`（getList 空列表）⚠️成功信封携带错误语义 | `DOWNLOADER_CACHE_UNAVAILABLE` ✅P4 批定稿：**双形态冻结**（ getList 空列表保留 success+200+data=[] 历史形状不改协议，B03；测试 test_reason_contract_p4 钉住；写路径 500 错误码形态已带 reasonCode） | — | fail-closed 提示「服务暂不可用」；写路径按 reasonCode 分流而非 msg |
 | E12 | 下载器离线 | 200 `下载器离线`（列表查询路径） | `DOWNLOADER_OFFLINE` | downloaderId | 非错误提示，状态语义，进卡片徽标文案 |
 | E13 | 删除时缓存/连接缺失 | 500 `下载器缓存未初始化` / `下载器客户端连接不存在` | `DOWNLOADER_CACHE_UNAVAILABLE` / `DOWNLOADER_CONNECTION_MISSING` | — | 「连接不可用，请稍后重试」，不误导为密码错误（D02） |
-| E14 | 批量删除已提交 | 200 `批量删除任务已提交，正在后台执行`；`所选种子均已在删除任务中处理` | `TORRENT_DELETE_ACCEPTED` / `TORRENT_DELETE_ALREADY_PROCESSED` | counts | **202 语义：不报「已完成」**（R05）；部分失败计数进参数 |
-| E15 | 删除后端异常 | 500 `服务器内部错误`/`系统内部错误`/`数据库操作失败` | `INTERNAL_ERROR` / `DB_OPERATION_FAILED` | — | 固定兜底 + 「稍后重试」 |
-| E16 | 回收站功能未开放 | 501 `功能开发中，请稍后再试` | `NOT_IMPLEMENTED` | feature | 明示未开放而非失败 |
-| E17 | 字段校验（422） | `data.errors[].{loc,type,msg}`（msg 英文 pydantic 原文） | 前端按 `type` 映射本地文案 | field/loc | 不逐条翻译 pydantic msg；按 type 字典化 |
-| E18 | 平台能力拒绝 | 403 `PLATFORM_CAPABILITY_UNSUPPORTED`（已有） | 复用 | capability/operation | 前端已有能力门控文案，核对不重复提示 |
-| E19 | 网络错误（前端本地） | axios 层 `网络错误`（errors 组 14 处高频） | 前端本地键 `errors.network` | — | 不依赖后端 |
+| E14 | 批量删除已提交【留 P5：与 R01-R05 危险操作审校同批】 | 200 `批量删除任务已提交，正在后台执行`；`所选种子均已在删除任务中处理` | `TORRENT_DELETE_ACCEPTED` / `TORRENT_DELETE_ALREADY_PROCESSED` | counts | **202 语义：不报「已完成」**（R05）；部分失败计数进参数 |
+| E15 | 删除后端异常 | 500 `服务器内部错误`/`系统内部错误`/`数据库操作失败` | `INTERNAL_ERROR` / `DB_OPERATION_FAILED` ✅P4 批（torrent sync/通用键已落；删除链路本体随 P5） | — | 固定兜底 + 「稍后重试」 |
+| E16 | 回收站功能未开放【留 P5】 | 501 `功能开发中，请稍后再试` | `NOT_IMPLEMENTED` | feature | 明示未开放而非失败 |
+| E17 | 字段校验（422） | `data.errors[].{loc,type,msg}`（msg 英文 pydantic 原文） | 前端按 `type` 映射本地文案 ✅P4 批（errors.validation 10 键 + apiErrorMessage 422 分支） | field/loc | 不逐条翻译 pydantic msg；按 type 字典化 |
+| E18 | 平台能力拒绝 | 403 `PLATFORM_CAPABILITY_UNSUPPORTED`（已有） | 复用 ✅既有 | capability/operation | 前端已有能力门控文案，核对不重复提示 |
+| E19 | 网络错误（前端本地） | axios 层 `网络错误`（errors 组 14 处高频） | 前端本地键 `errors.network` ✅P2 批已落 | — | 不依赖后端 |
 
 > 表格为「样例+提案」，P4 落地时逐接口补全 M1 全集（预计 40～60 条 reasonCode），并补 pytest 兼容断言（信封不变、data 形状不变、仅新增字段）。
+
+## 3.1 P4 批落地汇总（2026-09-21，M1 剩余子范围）
+
+- **已落地契约码（累计）**：P2 批 25 键（AUTH_*5/USER_*3/2FA_*9/DOWNLOADER_*7）+ P4 批 33 键 = `errors.byCode` 共 58 键（zh/en 成对，parity 门禁覆盖）。P4 批分布：种子操作 8（TORRENT_HASHES_REQUIRED/RECORDS_NOT_FOUND/OPERATION_FAILED/OPERATION_INTERNAL/FILE_REQUIRED/FILE_INVALID/INFO_TIMEOUT/INFO_UNAVAILABLE）、添加链路 4（TORRENT_ADD_FAILED/FILES_REQUIRED/STAGE_FAILED/BATCH_SUBMIT_FAILED）、同步 2（TORRENT_SYNC_FAILED/DB_OPERATION_FAILED）、下载器 4（CACHE_UNAVAILABLE/OFFLINE/CONNECTION_MISSING/NO_TORRENTS）、Tracker 3（URL_REQUIRED/NOT_FOUND/OPERATION_INTERNAL）、查询模板 9（NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS + CREATE/LIST/UPDATE/DELETE/APPLY_FAILED）、通用 1（INTERNAL_ERROR）。
+- **动态 msg 收敛**：outer `操作异常：{error_detail}`（6 处）、添加兜底 `添加种子失败: {type}: {e}`（2 处）、暂存/后台任务提交 `{str(exc)}`（2 处）、模板 CRUD 500 `{str(e)}`（6 处）→ 固定文案 + logger；**保留**：inner 操作失败 msg（含异常类名，测试钉住语义）与受控 RPC 错误文本（TransmissionError/APIError/calculate_info_hash）。
+- **E14/E16 删除链路**：留 P5（与 R01-R05 危险操作英文审校同批收口），本批不动删除链路。
+- **pytest 契约锚**：`tests/api/test_reason_contract_p4.py` 30 例（含 E02 双形态钉住、E17 data.errors 形态、E03 事件键）；`tests/api/test_reason_contract_p2.py` 11 例（P2 批）。
 
 ## 4. 已识别的坑（P4 必读）
 

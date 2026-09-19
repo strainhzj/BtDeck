@@ -5060,3 +5060,22 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 后端 rollback_scenarios 有 2 例存量基线失败（stash 对照证实非本批引入），后续如遇全量跑红注意甄别。
 - 迁移注意：新库/升级库首启自动执行 b3e5f7a9c1d2；Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
 - Git 已提交并推送 origin/dev：3f6fea5（feat：backend/frontend/feature_list/progress/session-handoff 共 42 文件）+ 128facc（docs(roadmap) 6 文件）；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。
+
+## 2026-09-21 交接：桌面双语 P4 剩余子范围完成（错误契约 M1 扩展 + E03 通知事件，未提交）
+
+### 已完成
+
+- 错误契约 M1 扩展（非删除链路）：后端 8 文件失败路径 data.reasonCode 共 33 新键（torrent_status 全操作分支/tracker _DownloaderUnavailableError 携带 reason_code/advanced_search 模板 CRUD/torrent_add_service reason_code 字段/torrent_crud add-batch+sync）；动态 str(e)·type(e) msg 固定化 17 处（诊断只进日志）。前端 errors.byCode 扩 33 键 + E17 errors.validation（apiErrorMessage 集成 422 分支）+ apiResponseMessage 新入口；6 个组件错误展示接线（index.vue/TrackerOperationDialog/TorrentAddDialog/query-templates×2）。
+- E03 通知事件双语：后端 version_update 补 event 键 + 孤儿通知补 orphan_count_warning + 欢迎脚本补 event；前端新 utils/notification-display.ts 四事件本地化 + NotificationDrawer/NotificationItem 接线（含"全部已读"/类型标签/详情时间 locale 化）。
+- E02 双形态钉住：/downloader/getList 缓存缺失 success+200+data=[] 冻结（B03 不改形状）。
+- 验证全绿：后端新 30 例契约测试 + tests/api+services+core 3004 passed（5 例存量基线失败 stash 对照）；前端 117 套 1660 例/typecheck/lint/build。
+- 文档回填：error-contract.md §3.1 落地汇总、feature_list p4 in_progress、roadmap 八处。
+
+### 待办/注意
+
+- P4 任务保持 in_progress：删除链路契约（E14 TORRENT_DELETE_ACCEPTED/E16）归 P5 与 R01-R05 审校同批；设置模板 preset_key（default_templates 5 预设）+ cron 安全拦截通知等低频事件归 P6。
+- 浏览器 E01/E02/E03 人工验收与英文审校未做（自动化绿≠人工视觉通过）。
+- 后端 5 例存量基线失败（rollback_scenarios×2 + orphan 迁移×3，stash 对照证实），全量跑红时注意甄别。
+- Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
+- 坑位：pytest fixture 须 register_exception_handlers(app) 才复刻生产 422 信封；Notification.extra_data 是 JSON 字符串需 json.loads；pause/resume/recheck 空 hashes 被 pydantic 拦截（业务 400 分支不可达）；Optional[UploadFile]=File(...) 表单必填。
+- 未执行 Git 提交；data/ 下 p32_*.py 未跟踪辅助脚本保持不动。

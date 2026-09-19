@@ -46,13 +46,35 @@ export const common = {
     empty: 'No notifications',
     markUnread: 'Mark as unread',
     markRead: 'Mark as read',
+    markAllRead: 'Mark all as read',
     remove: 'Delete',
     failedDetail: 'Failure details',
     viewRelease: 'View the full release on GitHub',
     filterAll: 'All',
     filterUnread: 'Unread',
     filterUpdate: 'Updates',
-    filterSystem: 'System'
+    filterSystem: 'System',
+    typeVersionUpdate: 'Version update',
+    typeSystem: 'System',
+    /** Event localization (bilingual P4 / E03): mapped by extra_data.event; unknown events fall back to raw text */
+    events: {
+      batchAdd: {
+        title: 'Batch torrent add completed',
+        content: 'Batch add finished: {total} total, {success} succeeded, {failed} failed.'
+      },
+      orphanScan: {
+        title: 'Orphan file scan completed',
+        content: 'This scan found {count} orphan files totaling {size}. Open the orphan file management page to review them.',
+        warning: ' (Note: the orphan count exceeds the guardrail threshold. This may be a genuinely large batch of data, or a false positive caused by a broken path mapping. Please verify on the orphan file management page.)'
+      },
+      versionUpdate: {
+        title: 'BtDeck {version} update available'
+      },
+      welcome: {
+        title: 'Welcome to BtDeck',
+        content: 'Thanks for using BtDeck! This is your first system notification. Version updates and system messages will appear here.'
+      }
+    }
   },
   /** AdvancedMultiSelect shared multi-select (list filters / advanced search / mobile, same source) */
   multiSelect: {

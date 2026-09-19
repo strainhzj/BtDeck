@@ -7707,3 +7707,26 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 文档：feature_list.json p3 evidence 追加本批；roadmap 七处同步（根 README 功能域+元信息+本次新增、entry i18n 行、views 八行、components-layout 六行、backend infra 迁移行+versions 计数、backend data-models 两行）。
 - 坑：①Python 替换脚本里显式写 \r\n 再经 replace('\n','\r\n') 会产生 \r\r\n——统一写 \n 交由转换；②批量 import 插入脚本末尾必须带换行，否则与下一行 import 粘连（两个 spec 编译失败）；③roadmap/tools 的中文 mark 经 bash 传输偶发不匹配，锚定式 patch 失败时用独立脚本验证 startswith 再补。
 - Git 提交：3f6fea5（feat，42 文件）+ 128facc（docs(roadmap)，6 文件），已推送 origin/dev；data/ 下 p32_*.py 为未跟踪辅助脚本，保持不动。
+
+## 2026-09-21（续二）：桌面双语 P4 剩余子范围（错误契约 M1 扩展 + E17 422 字典化 + E02 双形态钉住 + E03 通知事件双语）
+
+- 范围即用户确认的实施方案：A 通知事件双语（E03 壳层三事件 + 版本更新事件键）+ B 错误契约 M1 扩展（非删除链路）+ C P4 完成情况记录；删除链路（E14/E16）归 P5、设置模板 preset_key 归 P6、cron 拦截通知归 P6（用户确认边界）。
+- 后端 reasonCode（信封四字段不变仅 data 新增；8 文件）：
+  - torrent_status：pause/resume/recheck/reannounce×3 全失败分支（TORRENT_HASHES_REQUIRED/TORRENT_RECORDS_NOT_FOUND/TORRENT_OPERATION_FAILED/TORRENT_OPERATION_INTERNAL/DOWNLOADER_CACHE_UNAVAILABLE/NOT_FOUND/OFFLINE/CONNECTION_MISSING/NO_TORRENTS）；outer `操作异常：{error_detail}` 6 处 msg 固定化，inner 语义 msg（含异常类名，被 status_migration 测试钉住）保留原文。
+  - tracker：`_DownloaderUnavailableError` 增 reason_code 属性（缓存未初始化/不在缓存/已失效/无连接四态）4 处 catch 透传；by-downloader 共享体三分支（TRACKER_URL_REQUIRED/DOWNLOADER_NOT_FOUND/DOWNLOADER_NO_TORRENTS）+ replaceTracker 404（TRACKER_NOT_FOUND）。
+  - advanced_search 服务（模板 CRUD）：404/403/422/500 全分支 result.data 携带 SEARCH_TEMPLATE_*；6 处 500 动态 str(e) msg 固定化；list 失败 data 由 [] 改 reasonCode 对象（失败路径无消费者，成功路径列表形状不变）。
+  - torrent_add_service：TorrentAddResult 增 reason_code 字段（MCP 同享），10 个失败位点赋值；qb/tr 兜底 `添加种子失败: {type}: {e}` msg 固定化（诊断只进日志）；端点映射 data.reasonCode。
+  - torrent_crud：add-batch 提交链路（TORRENT_FILES_REQUIRED/STAGE_FAILED/BATCH_SUBMIT_FAILED + 下载器四态）与 sync 异常路径（DB_OPERATION_FAILED/TORRENT_SYNC_FAILED）动态 msg 收敛。
+  - 通知事件：notification_service 版本更新 extra_data 补 event=version_update；orphan_notification 补 orphan_count_warning 结构化标志；欢迎脚本两通知补 event 键（welcome/version_update）。
+- 前端（12 文件）：
+  - 语言包：errors.byCode 扩 33 键 + errors.validation 子树 10 键（E17 pydantic type 字典化：missing/too_short/too_long/string_type/int_parsing/bool_parsing/greater_than/less_than/value_error/generic，field 取 loc 末段原样展示）；common.notifications 扩 events 四事件（batchAdd/orphanScan 含 warning suffix/versionUpdate title 参数化/welcome）+ markAllRead/typeVersionUpdate/typeSystem；queryTemplate 补 saveFailed。
+  - i18n/index.ts：apiErrorMessage 集成 422 分支（data.errors 数组按 type/loc 取前 2 条字典化，reasonCode 优先）+ 新增 apiResponseMessage（resolved 业务错误响应同源入口）。
+  - 新 utils/notification-display.ts：四事件（torrent_batch_add_completed/orphan_scan_completed/version_update/welcome）title/content 参数化本地化（translate + formatFileSize），未登记 event/无 extra_data 历史通知原文兜底（E03 旧内容不改写）。
+  - NotificationDrawer/NotificationItem：详情标题/正文/列表标题/摘要经事件本地化；顺带清硬编码中文——"全部已读"、详情类型标签、详情时间 toLocaleString('zh-CN') 改随 getLocale；detailContent 字段重构为 detailNotification（含 null 守卫）。
+  - 组件错误展示接线（禁中文 msg 直读）：index.vue 单条暂停/恢复/重检/单种 Tracker 汇报、TrackerOperationDialog 6 处（by-downloader/add/modify 的 resolved+catch 双分支）、TorrentAddDialog 2 处、query-templates 页 3 处 + QueryTemplateDialog 3 处。
+- 测试：后端新 test_reason_contract_p4.py 30 例（六组：种子操作 reasonCode 矩阵/Tracker 分支/模板 CRUD 含 E17 422 形态与服务层直调/添加链路 fail-closed/E02 双形态钉住（getList 缓存缺失 success+200+data=[] 冻结）/E03 事件键含 httpx mock 版本检查）；存量语义迁移——torrent_crud_add_fallback 8 处 + status_migration 1 处断言从动态 msg 改 fixed msg + reasonCode（防冒泡语义不变）。
+- 验证：后端 tests/api+services+core 全量 **3004 passed**（5 例失败 stash 对照证实为存量基线：rollback_scenarios×2 + orphan 迁移×3）；mypy 7 文件 0 错误、black/flake8 净（welcome 脚本 F401/格式漂移为存量基线）。前端 typecheck / lint 三项（contract:check + eslint 0 warning + vuex-action）/ build / 全量 Jest **117 套 1660 例**（基线 1620 + 新 40：notification-display 9 + api-error-message-p4 27 + drawer 详情扩 4，drawer 17 例含 2 处既有断言随 detailNotification 重构语义化更新）。
+- 文档：feature_list p4 → in_progress + evidence（M1/M2 子范围完成情况分开记录）；error-contract.md 回填 §3.1 落地汇总（含 E11 双形态冻结定稿、E14/E16 留 P5 标记）；desktop-bilingual.md P4 小节状态 + §9 记录；roadmap 八处（根 README 元信息+本次新增、backend api 三行、backend services 四行、frontend entry i18n 行、utils-types 新文件行+计数、components-layout 两行、test-coverage 后端批次+前端 spec 三行+计数实测 105）。
+- 坑：①pytest 内存库 fixture 若不 register_exception_handlers(app)，422 走 FastAPI 默认 detail 数组而非生产归一化信封（test_exception_handlers 先例）；②NotificationExtraData 的 extra_data 在模型层是 JSON 字符串，断言前需 json.loads 判型；③pause/resume/recheck 的 hashes 空列表被 pydantic min_length=1 拦截（业务 400 分支 HTTP 不可达，只有 reannounce 的可选参数可达）——E17 形态测试取代业务分支断言；④TorrentAddResult 的 Optional[UploadFile]=File(...) 即使 Optional 也是表单必填，测试须带文件字段。
+- 子范围完成情况：M1 依赖部分完成（P2 批 + P3-2 批 + 本批）；E14/E16 归 P5、设置模板 preset_key/低频通知归 P6；P4 保持 in_progress。浏览器 E01-E03 人工验收与英文审校未做；Android 嵌入服务未同步本批后端变更（下次出 APK 前重跑 stage-server.py）。
+- 未执行 Git 提交。

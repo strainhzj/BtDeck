@@ -40,7 +40,14 @@ class _DownloaderUnavailableError(Exception):
 
     对应 create_torrent 的 app.state.store 样板语义（404/503/500），
     在端点循环内以既有"单条失败计数 + 失败审计日志"方式上报，不改变 HTTP 契约。
+
+    reason_code 为双语 P4 错误契约的稳定原因标识（msg 保持原文，前端按
+    data.reasonCode 本地化，禁止按中文 msg 匹配）。
     """
+
+    def __init__(self, message: str, reason_code: str = "DOWNLOADER_CACHE_UNAVAILABLE"):
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 async def _get_downloader_vo_map(req: Request) -> Dict[str, Any]:
@@ -52,7 +59,7 @@ async def _get_downloader_vo_map(req: Request) -> Dict[str, Any]:
     """
     app = req.app
     if not hasattr(app.state, "store"):
-        raise _DownloaderUnavailableError("下载器缓存未初始化")
+        raise _DownloaderUnavailableError("下载器缓存未初始化", "DOWNLOADER_CACHE_UNAVAILABLE")
     cached_downloaders = await app.state.store.get_snapshot()
     return {d.downloader_id: d for d in cached_downloaders if getattr(d, "downloader_id", None)}
 
@@ -65,13 +72,16 @@ def _require_downloader_vo(downloader_vo_map: Dict[str, Any], downloader_id: str
     """
     downloader_vo = downloader_vo_map.get(downloader_id)
     if not downloader_vo:
-        raise _DownloaderUnavailableError(f"下载器不在缓存中 [downloader_id={downloader_id}]")
+        raise _DownloaderUnavailableError(f"下载器不在缓存中 [downloader_id={downloader_id}]", "DOWNLOADER_NOT_FOUND")
     if getattr(downloader_vo, "fail_time", 0) > 0:
         raise _DownloaderUnavailableError(
-            f"下载器已失效 [downloader_id={downloader_id}, nickname={getattr(downloader_vo, 'nickname', '')}]"
+            f"下载器已失效 [downloader_id={downloader_id}, nickname={getattr(downloader_vo, 'nickname', '')}]",
+            "DOWNLOADER_OFFLINE",
         )
     if not getattr(downloader_vo, "client", None):
-        raise _DownloaderUnavailableError(f"下载器客户端连接不存在 [downloader_id={downloader_id}]")
+        raise _DownloaderUnavailableError(
+            f"下载器客户端连接不存在 [downloader_id={downloader_id}]", "DOWNLOADER_CONNECTION_MISSING"
+        )
     return downloader_vo
 
 
@@ -114,7 +124,7 @@ async def add_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"添加tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     for torrent_info_id in torrent_info_id_list:
         try:
@@ -240,7 +250,9 @@ async def replace_tracker(
     tracker_info_list = result.scalars().all()
 
     if not tracker_info_list:
-        return CommonResponse(status="error", msg="未找到要替换的tracker", code="404", data=None)
+        return CommonResponse(
+            status="error", msg="未找到要替换的tracker", code="404", data={"reasonCode": "TRACKER_NOT_FOUND"}
+        )
 
     affected_torrents = []
     for tracker_info in tracker_info_list:
@@ -285,7 +297,7 @@ async def replace_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"替换tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     # 成功/失败计数（与 modify_tracker:321-322 对齐）
     success_count = 0
@@ -434,7 +446,7 @@ async def modify_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"修改tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     for torrent_info_id in torrent_info_id_list:
         try:
@@ -557,7 +569,9 @@ async def _apply_tracker_op_by_downloader(
     审计采用单条汇总（同 reannounce-by-downloader），避免千级种子逐条刷审计日志。
     """
     if not tracker_list:
-        return CommonResponse(status="error", msg="tracker地址列表不能为空", code="400", data=None)
+        return CommonResponse(
+            status="error", msg="tracker地址列表不能为空", code="400", data={"reasonCode": "TRACKER_URL_REQUIRED"}
+        )
 
     # 下载器行存在性校验（类型判定依据；不存在即整体失败）
     dl_result = await db.execute(
@@ -565,7 +579,12 @@ async def _apply_tracker_op_by_downloader(
     )
     downloader_row = dl_result.scalars().first()
     if not downloader_row:
-        return CommonResponse(status="error", msg=f"下载器不存在: downloader_id={downloader_id}", code="404", data=None)
+        return CommonResponse(
+            status="error",
+            msg=f"下载器不存在: downloader_id={downloader_id}",
+            code="404",
+            data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+        )
 
     # 获取下载器缓存快照（禁止自建客户端连接；一次获取，循环内复用）
     try:
@@ -573,14 +592,16 @@ async def _apply_tracker_op_by_downloader(
         downloader_vo = _require_downloader_vo(downloader_vo_map, downloader_id)
     except _DownloaderUnavailableError as e:
         logging.error(f"按下载器{'添加' if operation == 'add' else '修改'}tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     ti_result = await db.execute(
         select(torrentInfoModel).where(torrentInfoModel.downloader_id == downloader_id, torrentInfoModel.dr == 0)
     )
     torrents = ti_result.scalars().all()
     if not torrents:
-        return CommonResponse(status="error", msg="该下载器下没有种子", code="404", data=None)
+        return CommonResponse(
+            status="error", msg="该下载器下没有种子", code="404", data={"reasonCode": "DOWNLOADER_NO_TORRENTS"}
+        )
 
     success_count = 0
     failed_count = 0

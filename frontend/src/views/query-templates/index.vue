@@ -184,7 +184,7 @@ import {
   deleteSearchTemplate,
   SearchTemplate
 } from '@/api/torrents'
-import { getLocale } from '@/i18n'
+import { apiErrorMessage, apiResponseMessage, getLocale } from '@/i18n'
 import { presetDisplayDescription, presetDisplayName } from '@/components/torrents/advancedSearchFields'
 
 @Component({
@@ -241,12 +241,12 @@ export default class QueryTemplates extends Vue {
         const data = response.data as any
         this.list = Array.isArray(data) ? data : (data?.list || [])
       } else {
-        this.$message.error(response.msg || this.$t('queryTemplate.list.loadFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.list.loadFailed') as string))
       }
     } catch (error) {
-      this.$message.error(
-        this.$t('queryTemplate.list.loadFailedWith', { message: (error as Error).message })
-      )
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      this.$message.error(apiErrorMessage(error, this.$t('queryTemplate.list.loadFailed') as string))
     } finally {
       this.listLoading = false
     }
@@ -310,13 +310,15 @@ export default class QueryTemplates extends Vue {
         this.$message.success(this.$t('queryTemplate.list.deleteOk'))
         this.getList()
       } else {
-        this.$message.error(response.msg || this.$t('queryTemplate.list.deleteFailed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.list.deleteFailed') as string))
       }
     } catch (error) {
       // 用户取消或删除失败
       if ((error as any)?.message) {
+        // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
         this.$message.error(
-          this.$t('queryTemplate.list.deleteFailedWith', { message: (error as Error).message })
+          apiErrorMessage(error, this.$t('queryTemplate.list.deleteFailed') as string)
         )
       }
     }

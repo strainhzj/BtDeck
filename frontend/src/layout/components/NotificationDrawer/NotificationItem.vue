@@ -8,7 +8,7 @@
     <!-- 内容区域 -->
     <div class="notification-content" @click.stop="$emit('view', notification)">
       <div class="notification-header">
-        <span class="notification-title">{{ notification.title }}</span>
+        <span class="notification-title">{{ displayTitle }}</span>
         <span class="notification-time">{{ formattedTime }}</span>
       </div>
       <div v-if="plainContent" class="notification-body">
@@ -41,15 +41,22 @@
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import { NotificationItem } from '@/api/notification'
 import { plainNotificationContent } from '@/utils/notification-markdown'
+import { notificationDisplayContent, notificationDisplayTitle } from '@/utils/notification-display'
 import { formatRelativeTime } from '@/utils/formatters'
 
 @Component({ name: 'NotificationItem' })
 export default class extends Vue {
   @Prop({ required: true }) private notification!: NotificationItem
 
-  // 列表摘要走共享纯文本化（与移动列表同源）：剥离 Markdown 记号，未打开详情前不裸露 ## 等字符
+  // 通知标题：已知事件按 extra_data.event 本地化，未知/历史通知原文（E03）
+  get displayTitle(): string {
+    return notificationDisplayTitle(this.notification)
+  }
+
+  // 列表摘要走共享纯文本化（与移动列表同源）：剥离 Markdown 记号，未打开详情前不裸露 ## 等字符；
+  // 正文先经事件本地化（双语 P4 / E03），未知事件回退原始 content
   get plainContent(): string {
-    return plainNotificationContent(this.notification.content)
+    return plainNotificationContent(notificationDisplayContent(this.notification))
   }
 
   get iconName(): string {

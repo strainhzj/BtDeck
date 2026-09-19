@@ -1163,11 +1163,17 @@ class AdvancedSearchService:
                 "status": "failed",
                 "msg": f"模板条件无效: {e}",
                 "code": "422",
-                "data": None,
+                "data": {"reasonCode": "SEARCH_TEMPLATE_INVALID_CONDITIONS"},
             }
         except Exception as e:
             logger.error(f"创建搜索模板失败: {str(e)}")
-            return {"status": "failed", "msg": f"创建模板失败: {str(e)}", "code": "500", "data": None}
+            # 双语 P4 错误契约：动态 str(e) 只进日志，msg 固定防泄露
+            return {
+                "status": "failed",
+                "msg": "创建模板失败",
+                "code": "500",
+                "data": {"reasonCode": "SEARCH_TEMPLATE_CREATE_FAILED"},
+            }
 
     def get_search_templates(self, user_id: str, is_public: bool = False) -> Dict[str, Any]:
         """
@@ -1193,7 +1199,15 @@ class AdvancedSearchService:
 
         except Exception as e:
             logger.error(f"获取搜索模板失败: {str(e)}")
-            return {"status": "failed", "msg": f"获取模板失败: {str(e)}", "code": "500", "data": [], "total": 0}
+            # 双语 P4 错误契约：动态 str(e) 只进日志（上文已记录），msg 固定；
+            # 失败路径 data 由 [] 改为 reasonCode 对象（失败无消费者读取列表，成功路径 data 列表形状不变）
+            return {
+                "status": "failed",
+                "msg": "获取模板失败",
+                "code": "500",
+                "data": {"reasonCode": "SEARCH_TEMPLATE_LIST_FAILED"},
+                "total": 0,
+            }
 
     def update_search_template(self, template_id: str, request: Dict[str, Any], user_id: str) -> Dict[str, Any]:
         """
@@ -1211,10 +1225,20 @@ class AdvancedSearchService:
             # 验证模板存在且属于当前用户
             template = self.template_model.get_by_id(template_id)
             if not template:
-                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "模板不存在",
+                    "code": "404",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_NOT_FOUND"},
+                }
 
             if template["user_id"] != user_id:
-                return {"status": "failed", "msg": "无权修改此模板", "code": "403", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "无权修改此模板",
+                    "code": "403",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_FORBIDDEN"},
+                }
 
             # 执行更新
             update_data = {}
@@ -1237,7 +1261,12 @@ class AdvancedSearchService:
                     "data": {"id": template_id, **update_data},
                 }
             else:
-                return {"status": "failed", "msg": "更新模板失败", "code": "500", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "更新模板失败",
+                    "code": "500",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_UPDATE_FAILED"},
+                }
 
         except ValueError as e:
             logger.warning("拒绝无效搜索模板更新: %s", e)
@@ -1245,11 +1274,17 @@ class AdvancedSearchService:
                 "status": "failed",
                 "msg": f"模板条件无效: {e}",
                 "code": "422",
-                "data": None,
+                "data": {"reasonCode": "SEARCH_TEMPLATE_INVALID_CONDITIONS"},
             }
         except Exception as e:
             logger.error(f"更新搜索模板失败: {str(e)}")
-            return {"status": "failed", "msg": f"更新模板失败: {str(e)}", "code": "500", "data": None}
+            # 双语 P4 错误契约：动态 str(e) 只进日志，msg 固定防泄露
+            return {
+                "status": "failed",
+                "msg": "更新模板失败",
+                "code": "500",
+                "data": {"reasonCode": "SEARCH_TEMPLATE_UPDATE_FAILED"},
+            }
 
     def delete_search_template(self, template_id: str, user_id: str) -> Dict[str, Any]:
         """
@@ -1266,10 +1301,20 @@ class AdvancedSearchService:
             # 验证模板存在且属于当前用户
             template = self.template_model.get_by_id(template_id)
             if not template:
-                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "模板不存在",
+                    "code": "404",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_NOT_FOUND"},
+                }
 
             if template["user_id"] != user_id:
-                return {"status": "failed", "msg": "无权删除此模板", "code": "403", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "无权删除此模板",
+                    "code": "403",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_FORBIDDEN"},
+                }
 
             # 执行删除
             success = self.template_model.delete(template_id)
@@ -1277,11 +1322,22 @@ class AdvancedSearchService:
             if success:
                 return {"status": "success", "msg": "删除模板成功", "code": "200", "data": {"id": template_id}}
             else:
-                return {"status": "failed", "msg": "删除模板失败", "code": "500", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "删除模板失败",
+                    "code": "500",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_DELETE_FAILED"},
+                }
 
         except Exception as e:
             logger.error(f"删除搜索模板失败: {str(e)}")
-            return {"status": "failed", "msg": f"删除模板失败: {str(e)}", "code": "500", "data": None}
+            # 双语 P4 错误契约：动态 str(e) 只进日志，msg 固定防泄露
+            return {
+                "status": "failed",
+                "msg": "删除模板失败",
+                "code": "500",
+                "data": {"reasonCode": "SEARCH_TEMPLATE_DELETE_FAILED"},
+            }
 
     def apply_search_template(self, template_id: str, user_id: str) -> Dict[str, Any]:
         """
@@ -1299,11 +1355,21 @@ class AdvancedSearchService:
             template = self.template_model.get_by_id(template_id)
 
             if not template:
-                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "模板不存在",
+                    "code": "404",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_NOT_FOUND"},
+                }
 
             # 检查权限（公开模板或自己的模板）
             if template["user_id"] != user_id and not template["is_public"]:
-                return {"status": "failed", "msg": "无权使用此模板", "code": "403", "data": None}
+                return {
+                    "status": "failed",
+                    "msg": "无权使用此模板",
+                    "code": "403",
+                    "data": {"reasonCode": "SEARCH_TEMPLATE_FORBIDDEN"},
+                }
 
             validate_template_conditions_payload(template["conditions"])
 
@@ -1330,11 +1396,17 @@ class AdvancedSearchService:
                 "status": "failed",
                 "msg": f"模板条件无效: {e}",
                 "code": "422",
-                "data": None,
+                "data": {"reasonCode": "SEARCH_TEMPLATE_INVALID_CONDITIONS"},
             }
         except Exception as e:
             logger.error(f"应用搜索模板失败: {str(e)}")
-            return {"status": "failed", "msg": f"应用模板失败: {str(e)}", "code": "500", "data": None}
+            # 双语 P4 错误契约：动态 str(e) 只进日志，msg 固定防泄露
+            return {
+                "status": "failed",
+                "msg": "应用模板失败",
+                "code": "500",
+                "data": {"reasonCode": "SEARCH_TEMPLATE_APPLY_FAILED"},
+            }
 
     async def delete_torrents_batch(self, request, user_id: str) -> Dict[str, Any]:
         """

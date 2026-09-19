@@ -119,9 +119,11 @@
 - 高级搜索字段、分组、操作符、摘要、模板管理及 4 个预设展示；按稳定值映射，不改生成产物而遗漏源契约。
 - 退出：T01～T03、Q01～Q02；语言切换前后相同输入产生相同业务参数与结果。
 
-### P4：错误、异步通知与系统预设
+### P4：错误、异步通知与系统预设（M1 子范围 ✅ 2026-09-21 本批 + P2/P3-2 批提前项；M2 子范围随 P5/P6，任务整体 in_progress 未 done）
 
 - 请求层、ApiError / 归一化、全局异常、相关端点；补 reasonCode / 参数及兼容测试。
+  - 已完成：登录/下载器 reasonCode（P2 批）+ 查询预设 preset_key 迁移幂等（P3-2 批）+ 本批种子操作/Tracker/查询模板/添加链路 reasonCode 33 键、E17 422 字典化、E02 双形态钉住、E03 通知事件双语（详见 PLANS/bilingual/error-contract.md §3.1 汇总）。
+  - 待办：删除链路契约（E14/E16）→ P5；设置模板 preset_key 与低频通知事件 → P6；浏览器人工验收 E01～E03。
 - 查询预设迁移与幂等、新系统事件、历史回退；设置预设及低频错误可随 P6 补齐，但 M1 所依赖部分必须先完成。
 - 退出：E01～E03、B01～B03；新库、升级库、重复启动、用户同名模板均通过；M1/M2 子范围完成情况单独记录，P4 整体完成前不得标 done。
 
@@ -216,6 +218,7 @@ R01～R06 的业务语义与英文表达均须有审校记录。只使用隔离�
 
 ## 9. 当前记录
 
+- 2026-09-21：P4 剩余子范围批完成（错误契约 M1 扩展 33 键 + E17 422 字典化 + E02 双形态钉住 + E03 通知事件双语四事件）；后端 30 例新契约测试、前端全量 Jest 117 套 1660 例全绿。P4 任务置 in_progress（删除链路归 P5、设置模板归 P6，全部完成才 done）。
 - 2026-09-18：用户确认先做桌面双语并要求添加 feature 与 plan。本轮只登记规划，P0～P7 均未开始；没有实现 / 运行时验收证据。
 - 2026-09-18（P0 批）：用户确认启动 P0。产出 `PLANS/bilingual/`（路由/弹窗/状态清单、文案去重目录 copy-catalog.json+md、错误契约样例、系统内容与迁移方案、术语表、可重跑提取脚本）。关键结论：桌面唯一文案 3088（M1 core 987 + partial 588，插值重组后实际键约 1300～1450）；生成契约链 = 后端 json 源 → 前端 generated.ts（禁直改）；查询/设置预设身份现为中文名，提案 preset_key + Alembic 迁移；时间约定混用（naive-UTC 与本地写入并存）语义冻结不动；M1 边界 5 项待定（去重弹窗/转移/状态诊断页签等）待用户拍板。文案工作量重估见 copy-catalog.md §5（M1 22～36 人日，区间微调）。业务代码零改动，P1～P7 未开始；估算与待定项不构成门禁阻塞。
 - 2026-09-18（P1 批）：用户确认启动 P1。选型 vue-i18n@8.28.2 精确钉版（v8 终版已停维护，缓解：src/i18n 单封装层+最小 API 面+钉版，记录 bilingual/p1-i18n-decision.md）；新增 `frontend/src/i18n/` + zh-CN/en 消息树（navigation/time/el）；接线 main.ts（ElementLocale 挂接+根注入）/permission（标题 resolvePageTitle）/router（21 处 titleKey，移动不带）/app store（SetLanguage）/Navbar+登录页（切换入口，切换后显式刷新标题——v8 无 locale 订阅 API）/formatters（相对时间七档含复数）/SidebarItem+Breadcrumb；新测试 parity+locale+源码契约共 24 用例（parity 排除 el 子树：Element 官方包自身键漂移）。验证：typecheck/lint/build 绿、全量 Jest 115 套件 1622 用例零回归；roadmap 已同步（根+entry+components-layout+utils-types+store 五处）。P2～P7 未动。

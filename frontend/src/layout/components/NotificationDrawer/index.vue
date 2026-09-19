@@ -21,7 +21,7 @@
             size="small"
             @click="handleReadAll"
           >
-            全部已读
+            {{ $t('common.notifications.markAllRead') }}
           </el-button>
           <button type="button" class="drawer-close" :aria-label="$t('common.notifications.closeLabel')" @click="handleClose">
             <LucideIcon name="x" :size="15" />
@@ -116,6 +116,8 @@ import { Component, Vue } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
 import { NotificationFailureItem, NotificationExtraData, NotificationItem } from '@/api/notification'
 import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
+import { notificationDisplayContent, notificationDisplayTitle } from '@/utils/notification-display'
+import { getLocale, translate } from '@/i18n'
 import NotificationItemComp from './NotificationItem.vue'
 
 @Component({
@@ -131,7 +133,7 @@ export default class extends Vue {
   // 详情弹窗状态
   private detailVisible = false
   private detailTitle = ''
-  private detailContent = ''
+  private detailNotification: NotificationItem | null = null
   private detailType = ''
   private detailCreatedAt = ''
   private detailExtraData: NotificationExtraData | null = null
@@ -229,7 +231,10 @@ export default class extends Vue {
   // --- 详情弹窗 ---
 
   private get detailTypeLabel(): string {
-    return this.detailType === 'version_update' ? '版本更新' : '系统通知'
+    // 详情弹窗类型标签：与筛选页签同源翻译（computed 内取值，语言切换后响应式更新）
+    return this.detailType === 'version_update'
+      ? translate('common.notifications.typeVersionUpdate')
+      : translate('common.notifications.typeSystem')
   }
 
   private get detailTypeTag(): string {
@@ -239,15 +244,19 @@ export default class extends Vue {
   private get detailTime(): string {
     if (!this.detailCreatedAt) return ''
     const date = new Date(this.detailCreatedAt)
-    return date.toLocaleString('zh-CN', {
+    // 集中日期格式化：随界面语言切换 locale（中英均 2 位数字形态，仅 locale 标签不同）
+    return date.toLocaleString(getLocale() === 'en' ? 'en-GB' : 'zh-CN', {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit'
     })
   }
 
   private get detailHtml(): string {
-    // 渲染逻辑抽至 utils/notification-markdown，与移动端通知详情共用
-    return renderNotificationContent(this.detailContent)
+    // 渲染逻辑抽至 utils/notification-markdown，与移动端通知详情共用；
+    // 正文先经事件本地化（双语 P4 / E03），未知事件回退原始 content；
+    // 详情未打开（detailNotification=null）时渲染空串（computed 首次求值即发生）
+    if (!this.detailNotification) return ''
+    return renderNotificationContent(notificationDisplayContent(this.detailNotification))
   }
 
   private get detailReleaseUrl(): string {
@@ -267,8 +276,8 @@ export default class extends Vue {
   }
 
   private handleView(notification: NotificationItem) {
-    this.detailTitle = notification.title
-    this.detailContent = notification.content || ''
+    this.detailNotification = notification
+    this.detailTitle = notificationDisplayTitle(notification)
     this.detailType = notification.type
     this.detailCreatedAt = notification.created_at
     this.detailExtraData = notification.extra_data
@@ -282,8 +291,7 @@ export default class extends Vue {
 
   private handleDetailClose() {
     this.detailVisible = false
-    this.detailTitle = ''
-    this.detailContent = ''
+    this.detailNotification = null
     this.detailType = ''
     this.detailCreatedAt = ''
     this.detailExtraData = null

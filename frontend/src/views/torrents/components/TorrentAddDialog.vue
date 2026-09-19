@@ -176,6 +176,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Ref, Watch } from 'vue-property-decorator'
 import { addTorrentsBatch, getDownloaderPaths, type DownloaderPath } from '@/api/torrents'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 import { getNotificationList } from '@/api/notification'
 import { getTagList, TorrentTag } from '@/api/tag-management'
 
@@ -515,11 +516,13 @@ export default class TorrentAddDialog extends Vue {
           component.handleClose()
         }
       } else {
-        component.$message.error(response.msg || component.$t('torrent.addDialog.msg.failed'))
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        component.$message.error(apiResponseMessage(response, component.$t('torrent.addDialog.msg.failed') as string))
       }
     } catch (error: unknown) {
       console.error('添加种子失败:', error)
-      component.$message.error(error instanceof Error ? error.message : component.$t('torrent.addDialog.msg.retry'))
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      component.$message.error(apiErrorMessage(error, component.$t('torrent.addDialog.msg.retry') as string))
     } finally {
       component.loading = false
     }

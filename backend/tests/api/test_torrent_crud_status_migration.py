@@ -386,7 +386,9 @@ async def test_create_torrent_qb_timeout_maps_500():
 
     assert result.code == "500"
     assert result.status == "failed"
-    assert "TimeoutError" in result.msg
+    # 双语 P4 错误契约：动态 type(e)/str(e) 不再进 msg，收敛为固定文案 + data.reasonCode（诊断只进日志）
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,10 @@ export interface NotificationExtraData {
   task_status?: string
   operation_type?: 'purge' | 'cleanup' | 'torrent_batch_add'
   scan_id?: string | null
+  scan_type?: string
+  orphan_count?: number
+  orphan_size?: number
+  orphan_count_warning?: boolean
   total_count?: number
   success_count?: number
   purged_count?: number

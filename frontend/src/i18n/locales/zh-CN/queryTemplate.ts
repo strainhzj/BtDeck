@@ -103,6 +103,7 @@ export const queryTemplate = {
     updateFailed: '更新失败',
     created: '创建成功',
     createFailed: '创建失败',
-    saveFailedWith: '保存失败：{message}'
+    saveFailedWith: '保存失败：{message}',
+    saveFailed: '保存失败，请稍后重试'
   }
 }

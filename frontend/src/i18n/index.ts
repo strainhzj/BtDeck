@@ -231,18 +231,59 @@ function reasonCodeToMessageKey(reasonCode: string): string {
     .join('')
 }
 
+/** pydantic 校验错误项（全局异常处理器归一化后的 data.errors 数组成员） */
+interface ValidationItem {
+  loc?: unknown
+  msg?: unknown
+  type?: unknown
+}
+
+/** 取 loc 末段作为字段标识（['body','hashes'] → 'hashes'；非数组原样转字符串） */
+function validationField(item: ValidationItem): string {
+  const loc = item.loc
+  if (Array.isArray(loc) && loc.length > 0) {
+    return String(loc[loc.length - 1])
+  }
+  return String(loc ?? '')
+}
+
+/** pydantic type → errors.validation.* 键（camelCase：too_short → tooShort） */
+function validationTypeKey(type: string): string {
+  return reasonCodeToMessageKey(type)
+}
+
+/**
+ * E17：按 pydantic type/loc 字典化单条校验错误文案。
+ * 未知 type 回退 generic；字段标识原样展示（API 字段名，不翻译）。
+ */
+function validationItemMessage(item: ValidationItem): string {
+  const field = validationField(item)
+  const type = typeof item.type === 'string' && item.type ? item.type : ''
+  const key = `errors.validation.${validationTypeKey(type || 'generic')}`
+  if (i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)) {
+    return i18n.t(key, { field }) as string
+  }
+  return i18n.t('errors.validation.generic', { field }) as string
+}
+
+/** 从归一化后的响应体提取 data 载荷（业务错误信封与 HTTP 错误信封同构） */
+function envelopeDataOf(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return undefined
+  return (body as { data?: unknown }).data
+}
+
 /**
  * 按错误对象解析本地化文案（错误契约，主计划 §3.3；禁止按中文 msg 匹配）：
  * 1. rawResponse.data.data.reasonCode 命中 errors.byCode.* → 返回对应译文；
- * 2. 有 reasonCode 但未登记 → 返回 fallback（避免英文界面透出中文 msg）；
- * 3. 无 reasonCode → 返回 error.message || fallback（保留未契约化路径的原始信息）。
+ * 2. 无 reasonCode 但为 422（data.errors 数组）→ 按 type/loc 字典化（E17，至多取首 2 条）；
+ * 3. 有 reasonCode 但未登记 → 返回 fallback（避免英文界面透出中文 msg）；
+ * 4. 无 reasonCode → 返回 error.message || fallback（保留未契约化路径的原始信息）。
  */
 export function apiErrorMessage(error: unknown, fallback: string): string {
   const body = (
-    error as { rawResponse?: { data?: { data?: unknown } } } | null | undefined
+    error as { rawResponse?: { data?: { code?: unknown, data?: unknown } } } | null | undefined
   )?.rawResponse?.data
-  const d =
-    body && typeof body === 'object' ? (body.data as unknown) : undefined
+  const d = envelopeDataOf(body)
   const rc =
     d && typeof d === 'object' && !Array.isArray(d)
       ? (d as { reasonCode?: unknown }).reasonCode
@@ -254,7 +295,42 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
     }
     return fallback
   }
+  // E17：422 校验错误数组（全局异常处理器归一化后的形态）
+  const code = (body as { code?: unknown } | undefined)?.code
+  if (
+    String(code) === '422' &&
+    d && typeof d === 'object' && Array.isArray((d as { errors?: unknown }).errors)
+  ) {
+    const items = (d as { errors: ValidationItem[] }).errors
+    if (items.length > 0) {
+      return items.slice(0, 2).map(validationItemMessage).join('；')
+    }
+  }
   return (error instanceof Error && error.message) || fallback
+}
+
+/**
+ * 已解析响应（非拋出形态）的业务错误文案：优先 data.reasonCode 本地化，
+ * 否则回退 fallback（供 response.code 非 2xx 但拦截器未拒绝的分支使用）。
+ */
+export function apiResponseMessage(
+  response: { code?: unknown, msg?: unknown, data?: unknown } | null | undefined,
+  fallback: string
+): string {
+  if (!response) return fallback
+  const d = envelopeDataOf(response)
+  const rc =
+    d && typeof d === 'object' && !Array.isArray(d)
+      ? (d as { reasonCode?: unknown }).reasonCode
+      : undefined
+  if (typeof rc === 'string' && rc) {
+    const key = `errors.byCode.${reasonCodeToMessageKey(rc)}`
+    if (i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)) {
+      return i18n.t(key) as string
+    }
+    return fallback
+  }
+  return (typeof response.msg === 'string' && response.msg) || fallback
 }
 
 // 模块加载即同步 <html lang>；document.title 由 permission.ts afterEach 首次驱动。

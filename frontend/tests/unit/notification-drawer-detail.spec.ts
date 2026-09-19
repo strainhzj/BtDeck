@@ -1,12 +1,14 @@
 /**
  * 桌面 NotificationDrawer 渲染契约（2026-08-26 渲染逻辑抽共享后回归锁；
- * 2026-08-27 列表摘要纳入同源纯文本化）：
+ * 2026-08-27 列表摘要纳入同源纯文本化；2026-09-21 双语 P4 事件本地化）：
  * - detailHtml 必须委托 utils/notification-markdown（与移动端同源），禁止内联
  *   Markdown 转换回归（本组件曾是渲染逻辑唯一持有者，抽取属行为零变化重构）；
  * - 列表 NotificationItem 摘要走共享 plainNotificationContent 剥离 Markdown 记号，
  *   未打开详情前不裸露 ## 等渲染字符（与移动列表同源）；
  * - handleView 打开详情：未读自动标记已读、已读不重复调用；失败明细目标回退链
- *   与 Release 外链同移动端。
+ *   与 Release 外链同移动端；
+ * - 双语 P4（E03）：标题/正文经 utils/notification-display 事件本地化，
+ *   未知事件/历史通知原文展示。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -148,7 +150,7 @@ describe('layout/components/NotificationDrawer 详情渲染', () => {
       handleView(n: NotificationItem): void
       handleDetailClose(): void
       detailVisible: boolean
-      detailContent: string
+      detailNotification: NotificationItem | null
     }
     vm.handleView(makeItem({ id: 27, is_read: true }))
     await flushLifecycle()
@@ -156,8 +158,80 @@ describe('layout/components/NotificationDrawer 详情渲染', () => {
     vm.handleDetailClose()
     await flushLifecycle()
     expect(vm.detailVisible).toBe(false)
-    expect(vm.detailContent).toBe('')
+    expect(vm.detailNotification).toBe(null)
     wrapper.destroy()
+  })
+
+  it('事件本地化（双语 P4/E03）：批量添加完成通知的标题与正文按事件参数渲染', async() => {
+    const wrapper = mountDrawer()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as { handleView(n: NotificationItem): void, detailTitle: string }
+    vm.handleView(makeItem({
+      id: 31,
+      type: 'system',
+      title: '批量添加种子完成',
+      content: '批量添加种子任务完成：共 3 个，成功 2 个，失败 1 个。\n\n失败明细：...',
+      extra_data: {
+        event: 'torrent_batch_add_completed',
+        total_count: 3,
+        success_count: 2,
+        failed_count: 1
+      }
+    }))
+    await flushLifecycle()
+    // 详情标题与正文均走事件本地化（正文由参数模板重建，失败明细由 failed_list 区域渲染）
+    expect(vm.detailTitle).toBe('批量添加种子完成')
+    expect(wrapper.find('.detail-content').text()).toBe(
+      '批量添加种子任务完成：共 3 个，成功 2 个，失败 1 个。'
+    )
+    wrapper.destroy()
+  })
+
+  it('事件本地化：未知 event 的历史通知原文展示（E03 旧内容不改写）', async() => {
+    const wrapper = mountDrawer()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as { handleView(n: NotificationItem): void, detailTitle: string }
+    vm.handleView(makeItem({
+      id: 32,
+      title: '历史自由文本标题',
+      content: '历史自由正文',
+      extra_data: { event: 'cron_blocked_by_policy' }
+    }))
+    await flushLifecycle()
+    expect(vm.detailTitle).toBe('历史自由文本标题')
+    expect(wrapper.find('.detail-content').text()).toBe('历史自由正文')
+    wrapper.destroy()
+  })
+
+  it('列表项：标题/摘要经事件本地化（NotificationItem 接线）', async() => {
+    const item = makeItem({
+      id: 33,
+      title: '批量添加种子完成',
+      content: '批量添加种子任务完成：共 2 个，成功 2 个，失败 0 个。',
+      extra_data: {
+        event: 'torrent_batch_add_completed',
+        total_count: 2,
+        success_count: 2,
+        failed_count: 0
+      }
+    })
+    const wrapper = shallowMount(NotificationItemComp, { i18n, propsData: { notification: item } })
+    expect(wrapper.find('.notification-title').text()).toBe('批量添加种子完成')
+    expect(wrapper.find('.notification-body').text()).toBe(
+      '批量添加种子任务完成：共 2 个，成功 2 个，失败 0 个。'
+    )
+    wrapper.destroy()
+  })
+
+  it('源码契约：NotificationItem 标题/摘要接线事件本地化，禁止回落原始 title/content', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../src/layout/components/NotificationDrawer/NotificationItem.vue'),
+      'utf-8'
+    )
+    expect(source).toContain("from '@/utils/notification-display'")
+    expect(source).toContain('notificationDisplayTitle(this.notification)')
+    expect(source).toContain('plainNotificationContent(notificationDisplayContent(this.notification))')
+    expect(source).not.toContain('plainNotificationContent(this.notification.content)')
   })
 
   it('源码契约：详情渲染必须委托共享 util，禁止内联转换逻辑回归', () => {
@@ -165,9 +239,10 @@ describe('layout/components/NotificationDrawer 详情渲染', () => {
       path.resolve(__dirname, '../../src/layout/components/NotificationDrawer/index.vue'),
       'utf-8'
     )
-    // 委托关系存在
+    // 委托关系存在（双语 P4：正文先经事件本地化再进 Markdown 渲染）
     expect(source).toContain("from '@/utils/notification-markdown'")
-    expect(source).toContain('renderNotificationContent(this.detailContent)')
+    expect(source).toContain("from '@/utils/notification-display'")
+    expect(source).toContain('renderNotificationContent(notificationDisplayContent(this.detailNotification))')
     expect(source).toContain('notificationFailureTarget(item)')
     // 内联实现回归守卫：抽取前的私有转换细节不得回流入组件
     expect(source).not.toContain("startsWith('### ')")
@@ -241,7 +316,9 @@ describe('NotificationItem 列表摘要纯文本化', () => {
       'utf-8'
     )
     expect(source).toContain("from '@/utils/notification-markdown'")
-    expect(source).toContain('plainNotificationContent(this.notification.content)')
+    // 双语 P4：摘要先经事件本地化再纯文本化（未知事件回退原始 content）
+    expect(source).toContain('plainNotificationContent(notificationDisplayContent(this.notification))')
     expect(source).not.toContain('{{ notification.content }}')
+    expect(source).not.toContain('plainNotificationContent(this.notification.content)')
   })
 })

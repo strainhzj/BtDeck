@@ -103,6 +103,7 @@ export const queryTemplate = {
     updateFailed: 'Update failed',
     created: 'Created successfully',
     createFailed: 'Create failed',
-    saveFailedWith: 'Save failed: {message}'
+    saveFailedWith: 'Save failed: {message}',
+    saveFailed: 'Save failed. Please try again later.'
   }
 }
