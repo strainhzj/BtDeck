@@ -57,7 +57,7 @@ def _clean_database_path_env():
 #       → 975dad435c03(torrent auxiliary seed count)
 #       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
 #       → b3e5f7a9c1d2(search_templates preset_key, bilingual system preset identity)
-EXPECTED_HEAD = "b3e5f7a9c1d2"
+EXPECTED_HEAD = "d1e2f3a4b5c6"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"

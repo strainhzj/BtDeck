@@ -67,7 +67,17 @@ const AUDITED_FILES = [
   'src/views/torrents/components/BatchTransferDialog.vue',
   'src/views/torrents/components/SetLocationDialog.vue',
   'src/views/torrents/FileManagement.vue',
-  'src/views/torrents/components/GlobalReplaceTrackerDialog.vue'
+  'src/views/torrents/components/GlobalReplaceTrackerDialog.vue',
+  // P6-2（下载器域收尾）新增扫描面
+  'src/views/downloader/components/DownloaderSettingsDialog.vue',
+  'src/views/downloader/components/SpeedSettingsTab.vue',
+  'src/views/downloader/components/AdvancedSettingsTab.vue',
+  'src/views/downloader/components/PathManagementTab.vue',
+  'src/views/downloader/components/PathMappingTab.vue',
+  'src/views/downloader/components/DownloaderPathManagement.vue',
+  'src/views/downloader/components/TagManagementTab.vue',
+  'src/views/downloader/components/TemplateSelectionDialog.vue',
+  'src/views/downloader/template-presets.ts'
 ]
 
 /**

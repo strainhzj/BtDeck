@@ -5,18 +5,18 @@
       <div class="header-info">
         <span class="header-icon"><LucideIcon name="route" :size="18" /></span>
         <div class="header-text">
-          <h3 class="header-title">路径映射配置</h3>
-          <p class="header-desc">配置下载器内部路径到主机实际路径的映射关系，适用于 Docker、NAS 等场景</p>
+          <h3 class="header-title">{{ $t('downloader.pathMapping.headerTitle') }}</h3>
+          <p class="header-desc">{{ $t('downloader.pathMapping.headerDesc') }}</p>
         </div>
       </div>
       <div class="header-actions">
         <el-button type="success" size="medium" :disabled="refreshing" @click="handleRefresh">
           <LucideIcon class="button-icon" name="refresh-cw" :size="14" :class="{'is-spinning': refreshing}" />
-          刷新配置
+          {{ $t('downloader.pathMapping.refresh') }}
         </el-button>
         <el-button type="primary" size="medium" @click="handleAddMapping">
           <LucideIcon class="button-icon" name="plus" :size="14" />
-          添加映射
+          {{ $t('downloader.pathMapping.add') }}
         </el-button>
       </div>
     </div>
@@ -29,12 +29,12 @@
         header-row-class-name="mapping-table-header"
       >
         <!-- 映射名称 -->
-        <el-table-column label="映射名称" min-width="150">
+        <el-table-column :label="$t('downloader.pathMapping.colName')" min-width="150">
           <template #default="{row, $index}">
             <div class="mapping-name-cell">
               <el-input
                 v-model="row.name"
-                placeholder="输入映射名称"
+                :placeholder="$t('downloader.pathMapping.namePlaceholder')"
                 size="small"
                 @blur="validateMappingName($index)"
               >
@@ -44,8 +44,8 @@
               </el-input>
               <!-- 自动发现标记 -->
               <el-tooltip
-                v-if="row.description?.includes('系统自动发现')"
-                content="系统自动发现的路径，请补充外部路径配置"
+                v-if="row.description?.includes($t('downloader.pathMapping.autoDiscovered').toString())"
+                :content="$t('downloader.pathMapping.autoDiscoveredHint')"
                 placement="top"
               >
                 <LucideIcon class="auto-discovered-icon" name="info" :size="14" />
@@ -55,18 +55,18 @@
         </el-table-column>
 
         <!-- 映射类型 -->
-        <el-table-column label="映射类型" min-width="130">
+        <el-table-column :label="$t('downloader.pathMapping.colType')" min-width="130">
           <template #default="{row}">
-            <el-select v-model="row.mapping_type" placeholder="选择类型" size="small">
+            <el-select v-model="row.mapping_type" :placeholder="$t('downloader.pathMapping.typePlaceholder')" size="small">
               <el-option
                 v-for="option in mappingTypeOptions"
                 :key="option.value"
-                :label="option.label"
+                :label="$t(option.labelKey)"
                 :value="option.value"
               >
                 <div class="mapping-type-option">
-                  <span class="option-label">{{ option.label }}</span>
-                  <span class="option-desc">{{ option.description }}</span>
+                  <span class="option-label">{{ $t(option.labelKey) }}</span>
+                  <span class="option-desc">{{ $t(option.descriptionKey) }}</span>
                 </div>
               </el-option>
             </el-select>
@@ -74,7 +74,7 @@
         </el-table-column>
 
         <!-- 内部路径 -->
-        <el-table-column label="内部路径" min-width="220">
+        <el-table-column :label="$t('downloader.pathMapping.colInternal')" min-width="220">
           <template #default="{row, $index}">
             <el-input
               v-model="row.internal"
@@ -91,7 +91,7 @@
         </el-table-column>
 
         <!-- 外部路径 -->
-        <el-table-column label="外部路径" min-width="220">
+        <el-table-column :label="$t('downloader.pathMapping.colExternal')" min-width="220">
           <template #default="{row, $index}">
             <el-input
               v-model="row.external"
@@ -108,18 +108,18 @@
         </el-table-column>
 
         <!-- 描述 -->
-        <el-table-column label="描述" min-width="180">
+        <el-table-column :label="$t('downloader.pathMapping.colDesc')" min-width="180">
           <template #default="{row}">
             <el-input
               v-model="row.description"
-              placeholder="可选，添加备注说明"
+              :placeholder="$t('downloader.pathMapping.descPlaceholder')"
               size="small"
             />
           </template>
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column :label="$t('downloader.pathMapping.colActions')" width="100" fixed="right">
           <template #default="{$index}">
             <el-button
               type="danger"
@@ -127,7 +127,7 @@
               @click="handleDeleteMapping($index)"
             >
               <LucideIcon name="trash-2" :size="13" />
-              删除
+              {{ $t('downloader.pathMapping.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -136,8 +136,8 @@
         <template #empty>
           <div class="empty-state">
             <LucideIcon class="empty-icon" name="route" :size="40" :stroke-width="1.35" />
-            <p class="empty-text">暂无路径映射配置</p>
-            <p class="empty-hint">点击上方"添加映射"按钮创建配置</p>
+            <p class="empty-text">{{ $t('downloader.pathMapping.emptyText') }}</p>
+            <p class="empty-hint">{{ $t('downloader.pathMapping.emptyHint') }}</p>
           </div>
         </template>
       </el-table>
@@ -146,7 +146,7 @@
     <!-- 测试区域 -->
     <div class="test-section">
       <div class="test-header">
-        <h4 class="test-title">配置验证</h4>
+        <h4 class="test-title">{{ $t('downloader.pathMapping.testTitle') }}</h4>
         <el-button
           type="success"
           size="small"
@@ -154,7 +154,7 @@
           @click="handleTestConfig"
         >
           <LucideIcon class="button-icon" name="test-tube-2" :size="14" :class="{'is-spinning': testing}" />
-          测试配置
+          {{ $t('downloader.pathMapping.testButton') }}
         </el-button>
       </div>
       <div v-if="testResult" :class="['test-result', testResult.valid ? 'success' : 'error']">
@@ -165,7 +165,7 @@
         />
         <span class="result-message">{{ testResult.message }}</span>
         <div v-if="!testResult.valid && testResult.backend_validation?.errors?.length" class="error-details">
-          <strong>错误详情：</strong>
+          <strong>{{ $t('downloader.pathMapping.errorDetail') }}</strong>
           <ul>
             <li v-for="(error, idx) in testResult.backend_validation.errors" :key="idx">
               {{ error }}
@@ -188,6 +188,7 @@ import {
   MappingTypeOption,
   PathMappingTestResponse
 } from '../types'
+import { apiErrorMessage, apiResponseMessage, translate } from '@/i18n'
 import { testPathMapping } from '@/api/downloader'
 import { generateExternalPathFromRules } from '../path-mapping-rules'
 
@@ -222,36 +223,37 @@ export default class PathMappingTab extends Vue {
   private refreshing = false
 
   // 映射类型选项
+  // 双语 P6-2：展示文案改 labelKey/descriptionKey/placeholderKey，按当前语言渲染
   private mappingTypeOptions: MappingTypeOption[] = [
     {
       value: 'local',
-      label: '本地路径',
-      description: '同一主机路径映射',
-      placeholder: '如: D:/Downloads/ 或 /mnt/data/'
+      labelKey: 'downloader.pathMapping.preset.local',
+      descriptionKey: 'downloader.pathMapping.preset.localDesc',
+      placeholderKey: 'downloader.pathMapping.preset.localExternalPlaceholder'
     },
     {
       value: 'docker',
-      label: 'Docker容器',
-      description: 'Docker容器内外路径映射',
-      placeholder: '主机挂载路径，如: D:/DockerData/Downloads/'
+      labelKey: 'downloader.pathMapping.preset.docker',
+      descriptionKey: 'downloader.pathMapping.preset.dockerDesc',
+      placeholderKey: 'downloader.pathMapping.preset.dockerExternalPlaceholder'
     },
     {
       value: 'nas',
-      label: 'NAS存储',
-      description: 'NAS网络存储映射',
-      placeholder: 'NAS实际路径，如: //192.168.1.100/volume1/'
+      labelKey: 'downloader.pathMapping.preset.nas',
+      descriptionKey: 'downloader.pathMapping.preset.nasDesc',
+      placeholderKey: 'downloader.pathMapping.preset.nasExternalPlaceholder'
     },
     {
       value: 'wsl',
-      label: 'WSL',
-      description: 'Windows Subsystem for Linux',
-      placeholder: 'Windows路径，如: C:\\Downloads\\'
+      labelKey: 'downloader.pathMapping.preset.local',
+      descriptionKey: 'downloader.pathMapping.preset.windowsInternalPlaceholder',
+      placeholderKey: 'downloader.pathMapping.preset.windowsExternalPlaceholder'
     },
     {
       value: 'network',
-      label: '网络路径',
-      description: 'SMB/NFS等网络共享',
-      placeholder: '建议使用 // 开头，如：//192.168.5.51/pt2/'
+      labelKey: 'downloader.pathMapping.preset.network',
+      descriptionKey: 'downloader.pathMapping.preset.networkDesc',
+      placeholderKey: 'downloader.pathMapping.preset.networkExternalPlaceholder'
     }
   ]
 
@@ -304,18 +306,18 @@ export default class PathMappingTab extends Vue {
   // 刷新路径映射配置
   private async handleRefresh() {
     if (!this.downloader) {
-      this.$message.error('下载器信息不存在')
+      this.$message.error(this.$t('downloader.pathMapping.msg.downloaderMissing').toString())
       return
     }
 
     // 提示用户确认
     try {
       await this.$confirm(
-        '当前编辑内容将丢失，确认重新加载路径映射配置？',
-        '刷新确认',
+        this.$t('downloader.pathMapping.msg.reloadConfirm').toString(),
+        this.$t('downloader.pathMapping.msg.reloadTitle').toString(),
         {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
+          confirmButtonText: this.$t('downloader.pathMapping.msg.confirm').toString(),
+          cancelButtonText: this.$t('downloader.pathMapping.msg.cancel').toString(),
           type: 'warning'
         }
       )
@@ -350,9 +352,9 @@ export default class PathMappingTab extends Vue {
           this.mappings = []
         }
 
-        this.$message.success('配置刷新成功')
+        this.$message.success(this.$t('downloader.pathMapping.msg.refreshSuccess').toString())
       } else {
-        this.$message.error(response.msg || '刷新失败')
+        this.$message.error(apiResponseMessage(response, this.$t('downloader.pathMapping.msg.refreshFailed')))
       }
     } catch (error: unknown) {
       // 再次检查组件状态
@@ -361,7 +363,7 @@ export default class PathMappingTab extends Vue {
       }
       console.error('刷新路径映射配置失败:', error)
       const apiError = error as ApiErrorLike
-      this.$message.error(apiError.response?.data?.msg || apiError.message || '刷新失败')
+      this.$message.error(apiErrorMessage(apiError, this.$t('downloader.pathMapping.msg.refreshFailed')))
     } finally {
       // 安全地更新状态
       if (!this.isComponentDestroyed) {
@@ -373,37 +375,40 @@ export default class PathMappingTab extends Vue {
   // 获取路径输入框占位符
   private getPathPlaceholder(mappingType: MappingType, _pathType: 'internal' | 'external'): string {
     const option = this.mappingTypeOptions.find(opt => opt.value === mappingType)
-    return option?.placeholder || '输入路径'
+    return option?.placeholderKey
+      ? translate(option.placeholderKey)
+      : translate('downloader.pathMapping.pathPlaceholder')
   }
 
   // 获取路径格式提示
   private getPathHint(mappingType: MappingType, pathType: 'internal' | 'external'): string {
     const hints: Record<MappingType, { internal: string, external: string }> = {
       local: {
-        internal: '下载器内路径，如: /downloads/',
-        external: '主机实际路径，如: D:/Downloads/'
+        internal: 'downloader.pathMapping.preset.localInternalPlaceholder',
+        external: 'downloader.pathMapping.preset.localExternalInputPlaceholder'
       },
       docker: {
-        internal: '容器内路径，如: /downloads/torrents/',
-        external: '主机挂载路径，如: D:/DockerData/Downloads/'
+        internal: 'downloader.pathMapping.preset.dockerInternalPlaceholder',
+        external: 'downloader.pathMapping.preset.dockerExternalInputPlaceholder'
       },
       nas: {
-        internal: '下载器访问路径，如: /mnt/nas/downloads/',
-        external: 'NAS实际路径，如: /volume1/downloads/'
+        internal: 'downloader.pathMapping.preset.nasInternalPlaceholder',
+        external: 'downloader.pathMapping.preset.nasExternalInputPlaceholder'
       },
       wsl: {
-        internal: 'WSL内路径，如: /mnt/c/downloads/',
-        external: 'Windows路径，如: C:\\Downloads\\'
+        internal: 'downloader.pathMapping.preset.windowsInternalPlaceholder',
+        external: 'downloader.pathMapping.preset.windowsExternalInputPlaceholder'
       },
       network: {
-        internal: '本地挂载点，如: /mnt/network-share/',
-        external: '网络共享地址，如: //192.168.1.100/downloads/'
+        internal: 'downloader.pathMapping.preset.networkInternalPlaceholder',
+        external: 'downloader.pathMapping.preset.networkExternalInputPlaceholder'
       }
     }
-    return hints[mappingType]?.[pathType] || ''
+    const key = hints[mappingType]?.[pathType]
+    return key ? translate(key) : ''
   }
 
-  // 添加映射
+  // {{ $t('downloader.pathMapping.add') }}
   private handleAddMapping() {
     const newMapping: PathMappingItem = {
       name: '',
@@ -417,13 +422,14 @@ export default class PathMappingTab extends Vue {
 
   // 删除映射
   private handleDeleteMapping(index: number) {
-    this.$confirm('确认删除此路径映射配置吗？', '删除确认', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('downloader.pathMapping.msg.deleteConfirm').toString(), this.$t('downloader.pathMapping.msg.deleteTitle').toString(), {
+      confirmButtonText: this.$t('downloader.pathMapping.msg.confirm').toString(),
+
+      cancelButtonText: this.$t('downloader.pathMapping.msg.cancel').toString(),
       type: 'warning'
     }).then(() => {
       this.mappings.splice(index, 1)
-      this.$message.success('删除成功')
+      this.$message.success(this.$t('downloader.pathMapping.msg.deleteSuccess').toString())
     }).catch(() => {
       // 用户取消
     })
@@ -439,7 +445,7 @@ export default class PathMappingTab extends Vue {
 
     const mapping = this.mappings[index]
     if (!mapping?.name?.trim()) {
-      this.$message.warning('映射名称不能为空')
+      this.$message.warning(this.$t('downloader.pathMapping.msg.nameRequired').toString())
       return false
     }
 
@@ -449,7 +455,7 @@ export default class PathMappingTab extends Vue {
     ).length
 
     if (duplicateCount > 0) {
-      this.$message.error('映射名称已存在，请使用不同的名称')
+      this.$message.error(this.$t('downloader.pathMapping.msg.nameDuplicate').toString())
       return false
     }
 
@@ -466,14 +472,14 @@ export default class PathMappingTab extends Vue {
 
     const mapping = this.mappings[index]
     if (!mapping?.internal?.trim()) {
-      this.$message.warning('内部路径不能为空')
+      this.$message.warning(this.$t('downloader.pathMapping.msg.internalRequired').toString())
       return false
     }
 
     // 路径格式基本验证
     const path = mapping.internal.trim()
     if (!path.startsWith('/') && !path.startsWith('//')) {
-      this.$message.warning('路径格式不正确，应以 / 或 // 开头')
+      this.$message.warning(this.$t('downloader.pathMapping.msg.internalFormat').toString())
       return false
     }
 
@@ -490,7 +496,7 @@ export default class PathMappingTab extends Vue {
 
     const mapping = this.mappings[index]
     if (!mapping?.external?.trim()) {
-      this.$message.warning('外部路径不能为空')
+      this.$message.warning(this.$t('downloader.pathMapping.msg.externalRequired').toString())
       return false
     }
 
@@ -500,21 +506,21 @@ export default class PathMappingTab extends Vue {
                    /^[A-Za-z]:/.test(path) || path.startsWith('\\')
 
     if (!isValid) {
-      this.$message.warning('外部路径格式不正确')
+      this.$message.warning(this.$t('downloader.pathMapping.msg.externalFormat').toString())
       return false
     }
 
     return true
   }
 
-  // 测试配置
+  // {{ $t('downloader.pathMapping.testButton') }}
   private async handleTestConfig() {
     // 在第一个 await 前保存快照
     const downloader = this.downloader
     const mappings = [...this.mappings]
 
     if (!downloader) {
-      this.$message.error('下载器信息不存在')
+      this.$message.error(this.$t('downloader.pathMapping.msg.downloaderMissing').toString())
       return
     }
 
@@ -522,15 +528,15 @@ export default class PathMappingTab extends Vue {
     for (let i = 0; i < mappings.length; i++) {
       const mapping = mappings[i]
       if (!mapping.name?.trim()) {
-        this.$message.error(`第 ${i + 1} 行：映射名称不能为空`)
+        this.$message.error(this.$t('downloader.pathMapping.msg.rowNameRequired', { index: i + 1 }).toString())
         return
       }
       if (!mapping.internal?.trim()) {
-        this.$message.error(`第 ${i + 1} 行：内部路径不能为空`)
+        this.$message.error(this.$t('downloader.pathMapping.msg.rowInternalRequired', { index: i + 1 }).toString())
         return
       }
       if (!mapping.external?.trim()) {
-        this.$message.error(`第 ${i + 1} 行：外部路径不能为空`)
+        this.$message.error(this.$t('downloader.pathMapping.msg.rowExternalRequired', { index: i + 1 }).toString())
         return
       }
     }
@@ -541,7 +547,7 @@ export default class PathMappingTab extends Vue {
     try {
       const formData = this.getFormData()
       if (!formData) {
-        this.$message.error('配置数据无效')
+        this.$message.error(this.$t('downloader.pathMapping.msg.invalidData').toString())
         return
       }
 
@@ -555,12 +561,12 @@ export default class PathMappingTab extends Vue {
       if (response.code === '200') {
         this.testResult = response.data
         if (this.testResult.valid) {
-          this.$message.success('配置验证通过')
+          this.$message.success(this.$t('downloader.pathMapping.msg.testSuccess').toString())
         } else {
-          this.$message.warning('配置验证失败，请查看错误详情')
+          this.$message.warning(this.$t('downloader.pathMapping.msg.testFailed').toString())
         }
       } else {
-        this.$message.error(response.msg || '测试失败')
+        this.$message.error(apiResponseMessage(response, this.$t('downloader.pathMapping.msg.testError')))
       }
     } catch (error: unknown) {
       // 再次检查组件状态
@@ -569,7 +575,7 @@ export default class PathMappingTab extends Vue {
       }
       console.error('测试路径映射失败:', error)
       const apiError = error as ApiErrorLike
-      this.$message.error(apiError.response?.data?.msg || apiError.message || '测试失败')
+      this.$message.error(apiErrorMessage(apiError, this.$t('downloader.pathMapping.msg.testError')))
     } finally {
       // 安全地更新状态
       if (!this.isComponentDestroyed) {
@@ -614,23 +620,23 @@ export default class PathMappingTab extends Vue {
     for (let i = 0; i < processedMappings.length; i++) {
       const mapping = processedMappings[i]
       if (!mapping.name?.trim() || !mapping.internal?.trim()) {
-        this.$message.error(`第 ${i + 1} 行：映射名称和内部路径不能为空`)
+        this.$message.error(this.$t('downloader.pathMapping.msg.rowNameAndInternalRequired', { index: i + 1 }).toString())
         return null
       }
 
       // 检查是否为自动发现的路径
-      const isAutoDiscovered = mapping.description?.includes('系统自动发现')
+      const isAutoDiscovered = mapping.description?.includes(this.$t('downloader.pathMapping.autoDiscovered').toString())
 
       // 自动发现的路径允许 external 为空，但需要提示
       if (!mapping.external?.trim()) {
         if (isAutoDiscovered) {
           this.$message.warning({
-            message: `第 ${i + 1} 行（${mapping.name}）为自动发现的路径，外部路径为空。请补充外部路径配置后再保存。`,
+            message: this.$t('downloader.pathMapping.msg.rowAutoDiscovered', { index: i + 1, name: mapping.name }).toString(),
             duration: 5000
           })
           return null
         } else {
-          this.$message.error(`第 ${i + 1} 行：外部路径不能为空（无法根据 path_mapping_rules 自动生成，请手动填写）`)
+          this.$message.error(this.$t('downloader.pathMapping.msg.rowExternalRequiredManual', { index: i + 1 }).toString())
           return null
         }
       }

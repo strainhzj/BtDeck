@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（P6-2 下载器域收尾）：设置弹窗各页签全量双语 + 设置模板 preset_key 迁移（全绿未提交）
+
+- **范围**：8 个下载器组件（设置弹窗页签骨架 + Speed/Advanced/PathManagement/PathMapping/PathMaintenance/Tag/Template）+ 后端设置模板 preset_key（P4 遗留）+ 系统预设名称/描述本地化展示。
+- **前端（~300 条文案）**：downloader 模块新增 `tabs/speed/advanced/pathMapping/pathMaintenance/pathManagement/tag/template` 八个子树（zh 逐字节 + en）；键化数据数组——星期 7 项改 labelKey、高级字段 6 项改 labelKey+hintKey、映射类型 5 项改 labelKey+descriptionKey+placeholderKey（`MappingTypeOption` 类型同步）；路径提示表/占位符改 `translate(key)`；标签页与路径维护页的相对时间、确认/危险删除链路全部接 i18n；错误展示接 apiErrorMessage/apiResponseMessage。
+- **死代码清理**：`BasicSettingsTab.vue`（零运行时消费方，仅被视觉契约枚举）删除 + 视觉契约列表同步；设置弹窗基础页表单早已内联由 P2 翻译。
+- **后端 preset_key（P0 冻结方案 system-content.md §2）**：`setting_templates` 新增 `preset_key` 列（迁移 `d1e2f3a4b5c6`，down_revision `b3e5f7a9c1d2`；加列+索引+一次性按旧中文名回填，恰一行才回填、歧义不猜 B02，downgrade 可回滚）；5 个预设键名按 P0 冻结（`qb_standard`/`qb_highperf`/`tr_standard`/`tr_highperf`/`night_unlimited`）；`init_default_templates` 改为按 key 幂等 + 旧中文名自愈；`to_dict` 透出 preset_key。
+- **关键发现（与搜索模板的约束差异）**：`setting_templates.name` 带 UNIQUE 约束（`uq_setting_templates_name`），同名只可能一行 → 不存在「同名多行歧义」，但**用户模板占用预设名时插入会 IntegrityError**。init 逻辑据此改为：名称已被占用时区分「系统行且回填遗漏→原地补 key」与「用户占名→跳过插入不写 key」（B02）；测试以「唯一约束阻断重复」正面钉住该不变量。
+- **前端预设展示**：新增 `views/downloader/template-presets.ts`（`templateDisplayName/Description`：按 preset_key 取下载器.template.presets.* 本地化，未登记 key/用户模板原文回退 Q02，兼容 camel/snake），TemplateSelectionDialog 四处展示位（卡片名/卡描述/页脚已选/确认框）接线；描述中的数值与后端 preset 配置保持同口径（未做参数化：从异构 template_config 抽取数值脆性高，已在语言包注释标明来源）。
+- **测试**：后端 `tests/core/test_setting_template_preset_key.py` 13 例（迁移回填/用户占名不写 key/唯一约束不变量/重复升级幂等/降级回环/init 五种幂等场景/API 透出/冻结键名）；前端 `tests/unit/p6-downloader-domain-i18n.spec.ts` 26 例（七个子树 zh 逐字节 + en 插值 + 键化数据数组 + 预设映射 Q02 + 源码契约）。审计集扩至 44 面。
+- **验证**：前端 Jest **120 套 1729 例全绿** + typecheck + lint（含 contract:check）+ build；后端 preset_key 13 例 + 模板服务/API 回归 91 passed + mypy/black/flake8 绿；`tests/core+services` 全量 1820 passed / 5 存量基线失败（`stash` 对照实验证实与本批无关：rollback_scenarios×2 + orphan 迁移×3，与 P4 批记录一致）。
+- **坑**：①`/*/` 写法在块注释中会提前终结注释（项目已知坑再次命中，`locales/*/downloader...`）；②正则/字符串全局替换再次误伤（“添加”→“添加路径”、“编辑”→“编辑标签”、`{{ column.label }}` 类同名字符串、`qbSection` 落入提示句），均靠残留扫描逐一修复；③新建迁移的 SQL 列名误用 `is_default`（本表为 `is_system_default`）导致迁移链测试报错，被 `tests/core/test_db_migration.py` 立即拦住。
+
+---
 ## 2026-09-19（P6-1 种子域收尾）：传统视图 + 转移/改路径/全局替换 + 文件管理全量双语（全绿未提交）
 
 - **范围**（用户确认启动 P6-1）：TraditionalView（传统视图全量，136 条非注释中文）、TransferDialog、BatchTransferDialog、SetLocationDialog、GlobalReplaceTrackerDialog、FileManagement（6 文件、共 ~340 条文案）。

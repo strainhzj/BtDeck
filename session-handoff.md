@@ -1,3 +1,28 @@
+## 2026-09-19（P6-2 下载器域收尾）：8 组件全量双语 + 设置模板 preset_key 迁移（全绿未提交）
+
+> P6-1 提交（f9eb432 + c98420e）后按用户「继续」执行。
+
+### 交付
+
+- **前端 8 组件 ~300 条**：设置弹窗页签骨架 + Speed/Advanced/PathManagement/PathMapping/PathMaintenance/Tag/Template；downloader 模块新增八个子树；键化数据数组（星期/高级字段/映射类型）；相对时间与危险确认链路接 i18n；死代码 BasicSettingsTab.vue 删除。
+- **后端 preset_key（P4 遗留）**：迁移 d1e2f3a4b5c6 + 5 个冻结键 + init 按 key 幂等（含旧中文名自愈）+ to_dict 透出；**关键约束差异**：本表 name 有 UNIQUE 约束 → 无同名多行歧义，但用户占名会阻塞插入（init 已按此分流）。
+- **前端预设展示**：新 `views/downloader/template-presets.ts`（preset_key → 本地化名称/描述，未识别原文回退 Q02）+ 模板选择弹窗四处接线。
+- 测试：后端 13 例 + 前端 26 例；审计集 44 面；门禁全绿（详见 progress.md）。
+
+### 下一步（P6 余批）
+
+1. **P6-3 Tracker 管理域**：keywords-board / keywords-search / reannounce-config / test 工具 + 4 个弹窗组件（~150 条）；
+2. P6-4 任务与日志（tasks/index 123 条 + CronEditor/Monaco/PythonClassSelector + audit 15 条）+ **低频通知事件**（cron 拦截通知后端 event 键）；
+3. P6-5 孤儿文件页（R06 语义审校清单）+ settings 的 MCP/MoviePilot 页签；
+4. P7 全量回归 + 视觉验收收口（含 P2/P3/P5 待做的浏览器人工验收）。
+
+### 本批教训
+
+- **同表约束差异必须先查**：search_templates 允许同名（需歧义保护），setting_templates 带 UNIQUE（需占名分流）——直接照搬参照实现会在 init 时抛 IntegrityError。
+- 块注释中 `/*/` 会提前终结注释（项目已知坑，本批再次命中）。
+
+---
+
 ## 2026-09-19（P6-1 种子域收尾）：传统视图 + 转移/改路径/全局替换 + 文件管理全量双语（全绿未提交）
 
 > 遗留清扫批之后、按用户确认启动 P6-1。本批另附带发现并修复 2 个真实产品缺陷（键前缀错导致文案空串）。

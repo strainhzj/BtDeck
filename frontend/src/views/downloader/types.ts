@@ -305,9 +305,10 @@ export type MappingType = 'local' | 'docker' | 'nas' | 'wsl' | 'network'
  */
 export interface MappingTypeOption {
   value: MappingType
-  label: string
-  description: string
-  placeholder: string
+  /** 双语 P6-2：展示文案改键（模板/取值按当前语言 translate） */
+  labelKey: string
+  descriptionKey: string
+  placeholderKey: string
 }
 
 /**

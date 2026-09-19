@@ -392,8 +392,8 @@
             <LucideIcon name="gauge" :size="17" :stroke-width="1.8" />
           </span>
           <span class="workspace-tab-label__copy">
-            <strong>速度设置</strong>
-            <small>全局与分时段限速</small>
+            <strong>{{ $t('downloader.tabs.speedTitle') }}</strong>
+            <small>{{ $t('downloader.tabs.speedDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -401,19 +401,19 @@
           <div class="panel-intro">
             <div>
               <span>02 / BANDWIDTH ENGINE</span>
-              <h3>速率与调度策略</h3>
-              <p>以紧凑时间规则控制全局带宽和上下行窗口。</p>
+              <h3>{{ $t('downloader.tabs.speedSectionTitle') }}</h3>
+              <p>{{ $t('downloader.tabs.speedSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="activity" :size="14" :stroke-width="1.8" />
-              实时应用
+              {{ $t('downloader.tabs.liveApply') }}
             </span>
           </div>
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>速度设置需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicSpeed') }}</p>
           </div>
           <!-- 编辑模式：显示设置组件 -->
           <speed-settings-tab
@@ -430,13 +430,13 @@
       <!-- 【已废弃】高级设置页签已隐藏，不再显示给用户 -->
       <!-- 原因: qBittorrent客户端支持不完整，部分字段无法生效 -->
       <!-- 未来版本将完全移除此功能 -->
-      <el-tab-pane v-if="false" label="高级设置" name="advanced">
+      <el-tab-pane v-if="false" :label="$t('downloader.tabs.advancedLabel')" name="advanced">
         <div class="tab-content">
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>高级设置需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicAdvanced') }}</p>
           </div>
           <!-- 编辑模式：显示设置组件 -->
           <advanced-settings-tab
@@ -455,8 +455,8 @@
             <LucideIcon name="route" :size="17" :stroke-width="1.8" />
           </span>
           <span class="workspace-tab-label__copy">
-            <strong>路径管理</strong>
-            <small>映射与可用目录</small>
+            <strong>{{ $t('downloader.tabs.pathTitle') }}</strong>
+            <small>{{ $t('downloader.tabs.pathDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -464,19 +464,19 @@
           <div class="panel-intro">
             <div>
               <span>03 / PATH TOPOLOGY</span>
-              <h3>存储路径拓扑</h3>
-              <p>校验下载器内部目录与 BtDeck 可访问路径之间的真实映射。</p>
+              <h3>{{ $t('downloader.tabs.pathSectionTitle') }}</h3>
+              <p>{{ $t('downloader.tabs.pathSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="folder-sync" :size="14" :stroke-width="1.8" />
-              双向映射
+              {{ $t('downloader.tabs.bidirectional') }}
             </span>
           </div>
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>路径管理需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicPath') }}</p>
           </div>
           <!-- 编辑模式：显示路径管理组件 -->
           <path-management-tab
@@ -497,7 +497,7 @@
           </span>
           <span class="workspace-tab-label__copy">
             <strong>{{ tabLabel }}</strong>
-            <small>组织下载任务</small>
+            <small>{{ $t('downloader.tabs.tagDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -506,11 +506,11 @@
             <div>
               <span>04 / TAXONOMY</span>
               <h3>{{ tabLabel }}</h3>
-              <p>集中维护节点上的分类与标签，使任务结构保持清晰。</p>
+              <p>{{ $t('downloader.tabs.tagSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="tags" :size="14" :stroke-width="1.8" />
-              结构同步
+              {{ $t('downloader.tabs.structureSync') }}
             </span>
           </div>
           <!-- 标签管理组件 -->

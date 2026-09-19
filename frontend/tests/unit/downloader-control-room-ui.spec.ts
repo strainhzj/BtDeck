@@ -26,7 +26,6 @@ const lucideOnlySurfaces = [
   'views/downloader/index.vue',
   'views/downloader/components/DownloaderCard.vue',
   'views/downloader/components/DownloaderSettingsDialog.vue',
-  'views/downloader/components/BasicSettingsTab.vue',
   'views/downloader/components/AdvancedSettingsTab.vue',
   'views/downloader/components/SpeedSettingsTab.vue',
   'views/downloader/components/PathManagementTab.vue',
@@ -132,7 +131,8 @@ describe('下载器设置工作台', () => {
     expect(pathMappingTab).toContain('generateExternalPathFromRules(internalPath, rulesText)')
     expect(pathMappingTab).toContain('const processedMappings = this.mappings.map(mapping => {')
     expect(pathMappingTab).toContain('external: generatedExternal')
-    expect(pathMappingTab).toContain('外部路径不能为空（无法根据 path_mapping_rules 自动生成，请手动填写）')
+    // 双语 P6-2：文案迁入语言包，源码契约改断言键（zh 值由 parity/键门禁守护）
+    expect(pathMappingTab).toContain("downloader.pathMapping.msg.rowExternalRequiredManual")
     expect(settingsDialog).toMatch(/const pathMappingData[\s\S]*basicData\['path_mapping'\] = pathMappingData/)
   })
 

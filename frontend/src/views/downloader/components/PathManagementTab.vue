@@ -5,7 +5,7 @@
       <!-- 子页签1: 路径映射配置 -->
       <el-tab-pane name="pathMapping">
         <template #label>
-          <span class="sub-tab-label"><LucideIcon name="route" :size="14" />路径映射</span>
+          <span class="sub-tab-label"><LucideIcon name="route" :size="14" />{{ $t('downloader.pathManagement.tabMapping') }}</span>
         </template>
         <div class="sub-tab-content">
           <!-- 原有的路径映射配置组件 -->
@@ -18,8 +18,8 @@
           />
           <div v-else class="empty-state">
             <LucideIcon class="empty-icon" name="lock-keyhole" :size="42" :stroke-width="1.4" />
-            <h3>请先保存下载器基本信息</h3>
-            <p>路径映射配置需要下载器创建后才能使用</p>
+            <h3>{{ $t('downloader.pathManagement.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.pathManagement.needBasicMapping') }}</p>
           </div>
         </div>
       </el-tab-pane>
@@ -27,7 +27,7 @@
       <!-- 子页签2: 下载器路径管理 -->
       <el-tab-pane name="downloaderPaths">
         <template #label>
-          <span class="sub-tab-label"><LucideIcon name="folder-cog" :size="14" />路径资产</span>
+          <span class="sub-tab-label"><LucideIcon name="folder-cog" :size="14" />{{ $t('downloader.pathManagement.tabAssets') }}</span>
         </template>
         <div class="sub-tab-content">
           <!-- 下载器路径管理组件 -->
@@ -38,8 +38,8 @@
           />
           <div v-else class="empty-state">
             <LucideIcon class="empty-icon" name="lock-keyhole" :size="42" :stroke-width="1.4" />
-            <h3>请先保存下载器基本信息</h3>
-            <p>下载器路径管理需要下载器创建后才能使用</p>
+            <h3>{{ $t('downloader.pathManagement.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.pathManagement.needBasicAssets') }}</p>
           </div>
         </div>
       </el-tab-pane>

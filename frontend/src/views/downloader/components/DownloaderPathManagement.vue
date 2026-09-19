@@ -5,8 +5,8 @@
       <div class="header-info">
         <span class="header-icon"><LucideIcon name="folder-cog" :size="18" /></span>
         <div class="header-text">
-          <h3 class="header-title">下载器路径管理</h3>
-          <p class="header-desc">管理下载器的默认路径和在用路径，用于种子转移时选择目标路径</p>
+          <h3 class="header-title">{{ $t('downloader.pathMaintenance.headerTitle') }}</h3>
+          <p class="header-desc">{{ $t('downloader.pathMaintenance.headerDesc') }}</p>
         </div>
       </div>
       <div class="header-actions">
@@ -17,7 +17,7 @@
           @click="handleRefresh"
         >
           <LucideIcon class="button-icon" name="refresh-cw" :size="14" :class="{'is-spinning': refreshing}" />
-          刷新路径
+          {{ $t('downloader.pathMaintenance.refresh') }}
         </el-button>
         <el-button
           type="primary"
@@ -25,7 +25,7 @@
           @click="handleAddPath"
         >
           <LucideIcon class="button-icon" name="plus" :size="14" />
-          添加路径
+          {{ $t('downloader.pathMaintenance.add') }}
         </el-button>
       </div>
     </div>
@@ -33,28 +33,28 @@
     <!-- 筛选区域 -->
     <div class="filter-section">
       <el-form :inline="true" size="small">
-        <el-form-item label="路径类型:">
+        <el-form-item :label="$t('downloader.pathMaintenance.filterType')">
           <el-select
             v-model="filterType"
-            placeholder="全部类型"
+            :placeholder="$t('downloader.pathMaintenance.typeAll')"
             clearable
             @change="handleFilterChange"
             style="width: 150px;"
           >
-            <el-option label="默认路径" value="default" />
-            <el-option label="在用路径" value="active" />
+            <el-option :label="$t('downloader.pathMaintenance.typeDefault')" value="default" />
+            <el-option :label="$t('downloader.pathMaintenance.typeActive')" value="active" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态:">
+        <el-form-item :label="$t('downloader.pathMaintenance.filterStatus')">
           <el-select
             v-model="filterEnabled"
-            placeholder="全部状态"
+            :placeholder="$t('downloader.pathMaintenance.statusAll')"
             clearable
             @change="handleFilterChange"
             style="width: 150px;"
           >
-            <el-option label="已启用" :value="true" />
-            <el-option label="已禁用" :value="false" />
+            <el-option :label="$t('downloader.pathMaintenance.enabled')" :value="true" />
+            <el-option :label="$t('downloader.pathMaintenance.disabled')" :value="false" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -70,19 +70,19 @@
         v-loading="loading"
       >
         <!-- 路径类型 -->
-        <el-table-column label="路径类型" width="120">
+        <el-table-column :label="$t('downloader.pathMaintenance.colType')" width="120">
           <template #default="{row}">
             <el-tag
               :type="row.path_type === 'default' ? 'primary' : 'success'"
               size="small"
             >
-              {{ row.path_type === 'default' ? '默认路径' : '在用路径' }}
+              {{ row.path_type === 'default' ? $t('downloader.pathMaintenance.typeDefault') : $t('downloader.pathMaintenance.typeActive') }}
             </el-tag>
           </template>
         </el-table-column>
 
         <!-- 路径值 -->
-        <el-table-column label="路径值" min-width="300">
+        <el-table-column :label="$t('downloader.pathMaintenance.colValue')" min-width="300">
           <template #default="{row}">
             <div class="path-value-cell">
               <LucideIcon class="path-icon" name="folder-open" :size="14" />
@@ -92,7 +92,7 @@
         </el-table-column>
 
         <!-- 种子数量 -->
-        <el-table-column label="种子数量" width="100" align="center">
+        <el-table-column :label="$t('downloader.pathMaintenance.colTorrentCount')" width="100" align="center">
           <template #default="{row}">
             <el-badge
               :value="row.torrent_count"
@@ -103,7 +103,7 @@
         </el-table-column>
 
         <!-- 状态 -->
-        <el-table-column label="状态" width="96" align="center">
+        <el-table-column :label="$t('downloader.pathMaintenance.colStatus')" width="96" align="center">
           <template #default="{row}">
             <div class="status-cell">
               <el-switch
@@ -118,20 +118,20 @@
                 v-if="!row.is_enabled"
                 class="disabled-source-tag"
                 :class="row.disabled_by === 'user' ? 'disabled-source-tag--user' : 'disabled-source-tag--auto'"
-              >{{ row.disabled_by === 'user' ? '手动禁用' : '历史路径' }}</span>
+              >{{ row.disabled_by === 'user' ? $t('downloader.pathMaintenance.disabledByUser') : $t('downloader.pathMaintenance.historyPath') }}</span>
             </div>
           </template>
         </el-table-column>
 
         <!-- 最后更新时间 -->
-        <el-table-column label="最后更新" width="160">
+        <el-table-column :label="$t('downloader.pathMaintenance.colUpdated')" width="160">
           <template #default="{row}">
             <span class="time-text">{{ formatTime(row.last_updated_time) }}</span>
           </template>
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column :label="$t('downloader.pathMaintenance.colActions')" width="120" fixed="right">
           <template #default="{row}">
             <el-button
               type="text"
@@ -140,7 +140,7 @@
               :disabled="updating"
             >
               <LucideIcon name="pencil" :size="13" />
-              编辑
+              {{ $t('downloader.pathMaintenance.edit') }}
             </el-button>
             <el-button
               type="text"
@@ -150,7 +150,7 @@
               :disabled="updating"
             >
               <LucideIcon name="trash-2" :size="13" />
-              删除
+              {{ $t('downloader.pathMaintenance.delete') }}
             </el-button>
           </template>
         </el-table-column>
@@ -159,8 +159,8 @@
         <template #empty>
           <div class="empty-state">
             <LucideIcon class="empty-icon" name="folder-search" :size="40" :stroke-width="1.35" />
-            <p class="empty-text">暂无路径数据</p>
-            <p class="empty-hint">点击"添加路径"按钮创建新路径</p>
+            <p class="empty-text">{{ $t('downloader.pathMaintenance.emptyText') }}</p>
+            <p class="empty-hint">{{ $t('downloader.pathMaintenance.emptyHint') }}</p>
           </div>
         </template>
       </el-table>
@@ -168,7 +168,7 @@
 
     <!-- 添加/编辑路径对话框 -->
     <el-dialog
-      :title="dialogMode === 'add' ? '添加路径' : '编辑路径'"
+      :title="dialogMode === 'add' ? $t('downloader.pathMaintenance.dialogAddTitle') : $t('downloader.pathMaintenance.dialogEditTitle')"
       :visible.sync="dialogVisible"
       width="500px" custom-class="path-mgmt-dialog"
       :before-close="handleDialogClose"
@@ -180,35 +180,35 @@
         :rules="formRules"
         label-width="100px"
       >
-        <el-form-item label="路径类型" prop="path_type">
+        <el-form-item :label="$t('downloader.pathMaintenance.typeLabel')" prop="path_type">
           <el-select
             v-model="formData.path_type"
-            placeholder="请选择路径类型"
+            :placeholder="$t('downloader.pathMaintenance.typePlaceholder')"
             :disabled="dialogMode === 'edit'"
             style="width: 100%;"
           >
-            <el-option label="默认路径" value="default" />
-            <el-option label="在用路径" value="active" />
+            <el-option :label="$t('downloader.pathMaintenance.typeDefault')" value="default" />
+            <el-option :label="$t('downloader.pathMaintenance.typeActive')" value="active" />
           </el-select>
           <div class="form-item-help">
             <LucideIcon class="help-icon" name="info" :size="13" />
-            <span>默认路径：下载器的默认保存路径；在用路径：种子任务使用的路径</span>
+            <span>{{ $t('downloader.pathMaintenance.typeHint') }}</span>
           </div>
         </el-form-item>
 
-        <el-form-item label="路径值" prop="path_value">
+        <el-form-item :label="$t('downloader.pathMaintenance.valueLabel')" prop="path_value">
           <el-input
             v-model="formData.path_value"
-            placeholder="请输入绝对路径，如: /downloads 或 D:\Downloads"
+            :placeholder="$t('downloader.pathMaintenance.valuePlaceholder')"
             clearable
           />
           <div class="form-item-help">
             <LucideIcon class="help-icon" name="info" :size="13" />
-            <span>请输入下载器可访问的绝对路径</span>
+            <span>{{ $t('downloader.pathMaintenance.valueHint') }}</span>
           </div>
         </el-form-item>
 
-        <el-form-item label="是否启用" prop="is_enabled">
+        <el-form-item :label="$t('downloader.pathMaintenance.enableLabel')" prop="is_enabled">
           <el-switch
             v-model="formData.is_enabled"
             active-color="#059669"
@@ -216,16 +216,16 @@
           />
           <div class="form-item-help">
             <LucideIcon class="help-icon" name="info" :size="13" />
-            <span>禁用后，该路径将不会在种子转移时显示</span>
+            <span>{{ $t('downloader.pathMaintenance.enableHint') }}</span>
           </div>
         </el-form-item>
       </el-form>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('downloader.pathMaintenance.cancel') }}</el-button>
         <el-button type="primary" :disabled="submitting" @click="handleSubmit">
           <LucideIcon :name="submitting ? 'refresh-cw' : 'save'" :size="14" :class="{'is-spinning': submitting}" />
-          {{ dialogMode === 'add' ? '添加' : '保存' }}
+          {{ dialogMode === 'add' ? $t('downloader.pathMaintenance.submitAdd') : $t('downloader.pathMaintenance.submitSave') }}
         </el-button>
       </div>
     </el-dialog>
@@ -236,6 +236,7 @@
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
 import { Downloader } from '../types'
+import { translate } from '@/i18n'
 import {
   getDownloaderPaths,
   addDownloaderPath,
@@ -290,11 +291,11 @@ export default class DownloaderPathManagement extends Vue {
   // 表单验证规则
   private formRules = {
     path_type: [
-      { required: true, message: '请选择路径类型', trigger: 'change' }
+      { required: true, message: this.$t('downloader.pathMaintenance.validate.typeRequired').toString(), trigger: 'change' }
     ],
     path_value: [
-      { required: true, message: '请输入路径值', trigger: 'blur' },
-      { min: 1, max: 500, message: '路径长度为1-500个字符', trigger: 'blur' }
+      { required: true, message: this.$t('downloader.pathMaintenance.validate.valueRequired').toString(), trigger: 'blur' },
+      { min: 1, max: 500, message: this.$t('downloader.pathMaintenance.validate.valueLength').toString(), trigger: 'blur' }
     ]
   }
 
@@ -317,7 +318,7 @@ export default class DownloaderPathManagement extends Vue {
     // 安全获取下载器ID
     const downloaderId = this.downloader?.id ?? this.downloader?.downloaderId
     if (!downloaderId) {
-      this.$message.error("下载器信息不完整")
+      this.$message.error(this.$t('downloader.pathMaintenance.msg.downloaderIncomplete').toString())
       this.paths = []
       return
     }
@@ -351,7 +352,7 @@ export default class DownloaderPathManagement extends Vue {
           item && typeof item.id === 'number' && typeof item.path_value === 'string'
         )
       } else {
-        this.$message.error(response.msg || '加载路径列表失败')
+        this.$message.error(response.msg || this.$t('downloader.pathMaintenance.msg.loadFailed').toString())
       }
     } catch (error: any) {
       console.error('加载路径列表失败:', error)
@@ -361,12 +362,12 @@ export default class DownloaderPathManagement extends Vue {
     }
   }
 
-  // 刷新路径列表
+  // {{ $t('downloader.pathMaintenance.refresh') }}列表
   private async handleRefresh() {
     this.refreshing = true
     try {
       await this.loadPaths()
-      this.$message.success('刷新成功')
+      this.$message.success(this.$t('downloader.pathMaintenance.msg.refreshSuccess').toString())
     } finally {
       this.refreshing = false
     }
@@ -417,11 +418,11 @@ export default class DownloaderPathManagement extends Vue {
   private async handleDeletePath(row: PathItem) {
     try {
       await this.$confirm(
-        `确认删除路径"${row.path_value}"吗？删除后该路径将被禁用。`,
-        '删除确认',
+        this.$t('downloader.pathMaintenance.msg.deleteConfirm', { path: row.path_value }).toString(),
+        this.$t('downloader.pathMaintenance.msg.deleteTitle').toString(),
         {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
+          confirmButtonText: this.$t('downloader.pathMaintenance.msg.confirm').toString(),
+          cancelButtonText: this.$t('downloader.pathMaintenance.msg.cancel').toString(),
           type: 'warning'
         }
       )
@@ -429,7 +430,7 @@ export default class DownloaderPathManagement extends Vue {
       // 安全获取下载器ID
       const downloaderId = this.downloader?.id ?? this.downloader?.downloaderId
       if (!downloaderId) {
-        this.$message.error('下载器信息不完整')
+        this.$message.error(this.$t('downloader.pathMaintenance.msg.downloaderIncomplete').toString())
         return
       }
 
@@ -441,10 +442,10 @@ export default class DownloaderPathManagement extends Vue {
       )
 
       if (response.code === '200') {
-        this.$message.success('删除成功')
+        this.$message.success(this.$t('downloader.pathMaintenance.msg.deleteSuccess').toString())
         await this.loadPaths()
       } else {
-        this.$message.error(response.msg || '删除失败')
+        this.$message.error(response.msg || this.$t('downloader.pathMaintenance.msg.deleteFailed').toString())
       }
     } catch (error: any) {
       if (error !== 'cancel') {
@@ -464,7 +465,7 @@ export default class DownloaderPathManagement extends Vue {
     // 安全获取下载器ID
     const downloaderId = this.downloader?.id ?? this.downloader?.downloaderId
     if (!downloaderId) {
-      this.$message.error('下载器信息不完整')
+      this.$message.error(this.$t('downloader.pathMaintenance.msg.downloaderIncomplete').toString())
       row.is_enabled = originalState
       return
     }
@@ -481,12 +482,14 @@ export default class DownloaderPathManagement extends Vue {
       )
 
       if (response.code === '200') {
-        this.$message.success(row.is_enabled ? '已启用' : '已禁用')
+        this.$message.success(row.is_enabled
+        ? this.$t('downloader.pathMaintenance.msg.toggleEnabled').toString()
+        : this.$t('downloader.pathMaintenance.msg.toggleDisabled').toString())
         await this.loadPaths()
       } else {
         // 恢复原状态
         row.is_enabled = originalState
-        this.$message.error(response.msg || '操作失败')
+        this.$message.error(response.msg || this.$t('downloader.pathMaintenance.msg.opFailed').toString())
       }
     } catch (error: any) {
       // 恢复原状态
@@ -506,7 +509,7 @@ export default class DownloaderPathManagement extends Vue {
       // 安全获取下载器ID
       const downloaderId = this.downloader?.id ?? this.downloader?.downloaderId
       if (!downloaderId) {
-        this.$message.error('下载器信息不完整')
+        this.$message.error(this.$t('downloader.pathMaintenance.msg.downloaderIncomplete').toString())
         return
       }
 
@@ -520,16 +523,16 @@ export default class DownloaderPathManagement extends Vue {
         )
 
         if (response.code === '200') {
-          this.$message.success('添加成功')
+          this.$message.success(this.$t('downloader.pathMaintenance.msg.addSuccess').toString())
           this.dialogVisible = false
           await this.loadPaths()
         } else {
-          this.$message.error(response.msg || '添加失败')
+          this.$message.error(response.msg || this.$t('downloader.pathMaintenance.msg.addFailed').toString())
         }
       } else {
         // 编辑路径
         if (!this.currentEditPath) {
-          this.$message.error('未选择要编辑的路径')
+          this.$message.error(this.$t('downloader.pathMaintenance.msg.noEditSelection').toString())
           return
         }
 
@@ -543,11 +546,11 @@ export default class DownloaderPathManagement extends Vue {
         )
 
         if (response.code === '200') {
-          this.$message.success('保存成功')
+          this.$message.success(this.$t('downloader.pathMaintenance.msg.saveSuccess').toString())
           this.dialogVisible = false
           await this.loadPaths()
         } else {
-          this.$message.error(response.msg || '保存失败')
+          this.$message.error(response.msg || this.$t('downloader.pathMaintenance.msg.saveFailed').toString())
         }
       }
     } catch (error: any) {
@@ -588,19 +591,21 @@ export default class DownloaderPathManagement extends Vue {
     // 小于1小时
     if (diff < 3600000) {
       const minutes = Math.floor(diff / 60000)
-      return minutes < 1 ? '刚刚' : `${minutes}分钟前`
+      return minutes < 1
+      ? translate('downloader.pathMaintenance.time.justNow')
+      : translate('downloader.pathMaintenance.time.minutesAgo', { n: minutes })
     }
 
     // 小于24小时
     if (diff < 86400000) {
       const hours = Math.floor(diff / 3600000)
-      return `${hours}小时前`
+      return translate('downloader.pathMaintenance.time.hoursAgo', { n: hours })
     }
 
     // 小于7天
     if (diff < 604800000) {
       const days = Math.floor(diff / 86400000)
-      return `${days}天前`
+      return translate('downloader.pathMaintenance.time.daysAgo', { n: days })
     }
 
     // 其他情况显示完整日期

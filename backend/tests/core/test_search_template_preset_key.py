@@ -33,7 +33,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
-EXPECTED_HEAD = "b3e5f7a9c1d2"
+EXPECTED_HEAD = "d1e2f3a4b5c6"
 
 # 中文名 → 稳定键（与迁移/初始化数据同源）
 PRESETS = {
