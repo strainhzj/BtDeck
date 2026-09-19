@@ -58,13 +58,21 @@ f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 → 7b2c9d4e6f10 → b6e1c4d9a2f7
     └─ 任务结果新鲜度、种子错误原因、Tracker 错峰、孤儿后台扫描、种子备份下载器
        UUID 类型修复，以及孤儿硬链接副本预扫描结果表
 
-c8d9e0f1a2b3 → d4e5f6a7b8c9 → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5 → ab68fe061d5b → 975dad435c03 → c1d2e3f4a5b6 ← 当前 HEAD
+c8d9e0f1a2b3 → d4e5f6a7b8c9 → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5 → ab68fe061d5b → 975dad435c03 → c1d2e3f4a5b6
     └─ 副本数快照列、路径维护 disabled_by、refresh_tokens、强制改密标志、
        orphan_purge_job 提交端 IP 列、孤儿 current_detail_id Schema 漂移修复
+
+c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 ← 当前 HEAD
+    └─ 双语系统预设稳定身份：search_templates.preset_key（P3-2）、
+       setting_templates.preset_key（P6-2）；均含按旧中文名一次性回填与
+       幂等 init，downgrade 仅 drop 列与索引
 ```
 
 - 单 head，无分叉
-- `alembic heads` 必须输出且只输出 `c1d2e3f4a5b6`
+- `alembic heads` 必须输出且只输出 `d1e2f3a4b5c6`
+
+> ⚠️ 本文件声明的 HEAD 与 revision 总数由 `tests/core/test_db_migration.py`
+> 校验（防文档漂移）；新增迁移后必须同步本文件，否则该测试会红。
 
 `6132` 与 follower 采用混合兼容策略：尚未执行 `6132` 的数据库直接获得修正后的
 严格迁移；已执行旧版 `6132` 的数据库由 `8f4c2d1a9b7e` 幂等补齐约束。旧版曾

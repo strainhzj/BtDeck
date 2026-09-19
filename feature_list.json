@@ -6838,6 +6838,36 @@
           "evidence": "WebViewActivityContractTest 7 用例 0 skipped 0 failures；变异验证（箭头开关置 false）契约即红后逐字节还原；deploy/build-android.bat 双变体构建+apksigner 验证通过，产物 btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk（badging versionCode='6'）。"
         }
       ]
+    },
+    {
+      "id": "ci-baseline-fix-20260919",
+      "name": "远端后端 CI 存量 6 红修复与 head 防漂移门禁",
+      "description": "推送 P6-2 后远端后端 job 红；干净克隆对照证实 6 例为存量债（head 硬编码漂移 4 + 漂移库 fixture 缺表 2 / 跨用例泄漏 1，实际为 3 类根因共 6 例）。本任务修复三类根因并加防漂移门禁。",
+      "status": "done",
+      "scope": "backend",
+      "plan": null,
+      "tasks": [
+        {
+          "id": "ci-baseline-fix-20260919.1",
+          "name": "根因诊断与三类修复 + 防漂移门禁",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/core/alembic_head.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/tests/core/test_orphan_schema_repair_migration.py",
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "acceptance_criteria": [
+            "CI 同参数全量（pytest --cov-fail-under=40）零失败",
+            "新增迁移后「当前 head」不再需要在多处同步（防漂移门禁）"
+          ],
+          "evidence": "2026-09-19：①head 硬编码漂移（4 例）——新增 tests/core/alembic_head.py（current_head/revision_count 动态读链路），test_db_rollback_scenarios.REV_HEAD / test_orphan_migration_production_shape.EXPECTED_HEAD / test_orphan_schema_repair_migration.REPAIR_HEAD 改动态；test_db_migration.EXPECTED_HEAD 保留为唯一写死点。②漂移库 fixture 保真不足（2 例）——_build_head_marked_drift_db 补 search_templates + setting_templates 表（后续迁移加列依赖），修复 migrate_database() 返回 False。③跨用例泄漏（1 例）——进程级共享测试库下 TestBatchCommit 两用例固定 /tmp 作扫描根会误收其它用例残留候选，改每次唯一 uuid 专属根，断言语义不变。④新增防漂移门禁 3 例（约束文档 HEAD/计数一致、唯一写死点一致、三测试必须用 current_head 防回流）。验证：CI 同参数 pytest -q --cov=app --cov-fail-under=40 → 4750 passed/17 skipped/0 failed，覆盖率 64.81%；定向（rollback+orphan 四文件）82 passed；零 app 代码改动。"
+        }
+      ]
     }
   ],
   "tasks": [

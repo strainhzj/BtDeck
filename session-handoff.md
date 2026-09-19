@@ -1,5 +1,34 @@
 ## 2026-09-19（P6-2 下载器域收尾）：8 组件全量双语 + 设置模板 preset_key 迁移（全绿未提交）
 
+## 2026-09-19（存量 CI 修复批）：远端后端 6 红已修（三类根因）+ head 防漂移门禁
+
+> 用户指示处理「1（存量 CI 修复）」。**下次推送后请复核 CI 是否双 job 全绿**。
+
+### 修复内容（零 app 代码改动，纯测试+文档）
+
+| 根因 | 影响用例 | 修复 |
+|---|---|---|
+| 「当前 head」硬编码 `c1d2e3f4a5b6`（P3-2 加 `b3e5f7a9c1d2` 后未同步） | 4 | 新增 `tests/core/alembic_head.py`（`current_head()` 动态读链），三处改动态取值；`test_db_migration.EXPECTED_HEAD` 保留为唯一写死点 |
+| 漂移库 fixture 缺 `search_templates`/`setting_templates`（后续迁移要加列） | 2 | fixture 补两表（列集与建表迁移一致） |
+| 进程级共享测试库 + 固定 `/tmp` 扫描根 → 误收其它用例残留候选 | 1 | `TestBatchCommit` 两用例改每次唯一 uuid 专属扫描根 |
+
+新增防漂移门禁 3 例：约束文档 HEAD/计数一致、唯一写死点一致、三既有测试必须用 `current_head()`（防回流）。
+
+### 验证
+
+- CI 同参数全量：`pytest -q --cov=app --cov-fail-under=40` → **4750 passed / 17 skipped / 0 failed**，覆盖率 64.81%
+- 定向（rollback + orphan 四文件）82 passed
+- 已同步：`backend/docs/constraints/database-migration.md` 迁移链与 HEAD、roadmap（revision 29→31、head、新增迁移行）
+
+### 下一步
+
+1. 推送并复核远端 CI（run 应双 job 全绿）；
+2. 之后回到双语主线：P6-3 Tracker 管理域 → P6-4 任务/日志+低频通知 → P6-5 孤儿文件+settings 尾页；
+3. P5 收口（审校签认 + R01～R05 人工验收）仍待办。
+
+---
+
+
 ## 2026-09-19（推送与远端 CI 现状）：12 提交已推送；远端后端 CI 存量 6 红已定位（非本批）
 
 > 用户指示「提交并推送」后执行。**下次会话优先看这里**：远端 CI 后端 job 仍是红的（存量）。

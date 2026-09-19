@@ -62,11 +62,11 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **30 个** revision 文件；当前 head 为 `b3e5f7a9c1d2`（见下表） |
+| Alembic revisions versions | `versions/` | **31 个** revision 文件；当前 head 为 `d1e2f3a4b5c6`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（29 个迁移文件）
+### alembic/versions/（31 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -99,6 +99,7 @@
 | 清理任务 IP purge-job-ip | `ab68fe061d5b_add_orphan_purge_job_ip_address.py` | 【可回滚】`orphan_purge_job` 新增 `ip_address`（nullable String(64)）：后台异步清理无 HTTP 上下文，任务提交时持久化提交端 IP、执行时透传审计；历史任务行保持 NULL |
 | 辅种数量 auxiliary-seed-count | `975dad435c03_add_auxiliary_seed_count.py` ✨2026-08-20 | 为 `torrent_info` 增加 NOT NULL Integer `auxiliary_seed_count`，历史行默认 1；upgrade/downgrade 仅增删该列，可回滚 |
 | 孤儿 Schema 漂移修复 orphan-schema-repair | `c1d2e3f4a5b6_repair_orphan_current_detail_id.py` ✨2026-08-23 | 针对版本号已到 `975dad435c03` 但 `orphan_current_candidate.current_detail_id` 实际缺失的存量库，重启时幂等补列、回填稳定明细指针与必要索引；健康库 no-op，受限回滚 |
+| 设置模板预设身份键 setting-template-preset-key | `d1e2f3a4b5c6_add_setting_template_preset_key.py` ✨2026-09-19 | setting_templates 加 `preset_key` 稳定身份列（可空+索引）+ 一次性按旧中文名回填（仅 is_system_default=1 恰一行时；歧义/用户同名保持 NULL 不猜，B02）；注意本表 `name` 带 UNIQUE 约束（uq_setting_templates_name）→ 无同名多行歧义，但用户占名时 init 必须跳过插入而不写 key；可回滚；桌面双语 P6-2 子范围，方案见 PLANS/bilingual/system-content.md §2 |
 | 预设身份键 preset-key | `b3e5f7a9c1d2_add_search_template_preset_key.py` ✨2026-09-21 | search_templates 加 `preset_key` 稳定身份列（可空+索引，不做唯一约束）+ 一次性按旧中文名回填（仅 is_default=1 恰一行时；歧义/用户同名保持 NULL 不猜，B02）；可回滚（drop 索引与列）；桌面双语 P4 子范围提前，方案见 PLANS/bilingual/system-content.md §1 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。

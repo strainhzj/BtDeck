@@ -5,8 +5,10 @@ from pathlib import Path
 
 from app.core.migration import migrate_database, _read_db_version
 
+from tests.core.alembic_head import current_head
+
 REPAIR_PREVIOUS_HEAD = "975dad435c03"
-REPAIR_HEAD = "c1d2e3f4a5b6"
+REPAIR_HEAD = current_head()  # 升级终点=当前 head；历史锚点见 REPAIR_PREVIOUS_HEAD
 
 
 def _build_head_marked_drift_db(db_path: Path) -> None:
@@ -37,6 +39,36 @@ def _build_head_marked_drift_db(db_path: Path) -> None:
                 operation_state VARCHAR(30) NOT NULL,
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL
+            );
+            -- 生产形态保真：该漂移库是真实历史库，后续迁移会向这两张表加列
+            -- （b3e5f7a9c1d2 → search_templates.preset_key；
+            --   d1e2f3a4b5c6 → setting_templates.preset_key）。
+            -- 缺表会让 upgrade 在此处抛 NoSuchTableError，restart 自愈随之失败——
+            -- 故 fixture 必须包含它们（列集与建表迁移一致）。
+            CREATE TABLE search_templates (
+                id VARCHAR(36) NOT NULL PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                description VARCHAR(500),
+                conditions TEXT NOT NULL,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                is_public INTEGER NOT NULL DEFAULT 0,
+                usage_count INTEGER NOT NULL DEFAULT 0,
+                created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_time DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE setting_templates (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL,
+                description VARCHAR(500),
+                downloader_type INTEGER NOT NULL,
+                template_config TEXT NOT NULL,
+                is_system_default BOOLEAN NOT NULL,
+                created_by INTEGER,
+                path_mapping TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                CONSTRAINT uq_setting_templates_name UNIQUE (name)
             );
             """
         )

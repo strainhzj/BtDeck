@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-19（存量 CI 修复批）：远端后端 6 红根因修复 + 防漂移门禁（全绿）
+
+- **背景**：推送后远端后端 job 红（`Backend regression suite`），干净克隆对照证实 6 例为存量债（推送前提交同样 6 例）。逐例定位后归为三类根因：
+- **根因①「当前 head」硬编码漂移（4 例）**：`c1d2e3f4a5b6` 在 4 个测试文件里被当作「当前 head」，P3-2 新增 `b3e5f7a9c1d2`（search 预设键）后未同步 → 断言 `version == c1d2e3f4a5b6` 与真实 head 不符。修复：新增 `tests/core/alembic_head.py`（`current_head()`/`revision_count()` 动态读迁移链），`test_db_rollback_scenarios.REV_HEAD`、`test_orphan_migration_production_shape.EXPECTED_HEAD`、`test_orphan_schema_repair_migration.REPAIR_HEAD` 三处改为动态取值；`test_db_migration.EXPECTED_HEAD` 保留为**唯一写死点**（故意的漂移检测器）。
+- **根因②漂移库 fixture 保真度不足（2 例）**：`_build_head_marked_drift_db` 只建孤儿表，而后续迁移会向 `search_templates`（b3e5f7a9c1d2）与 `setting_templates`（d1e2f3a4b5c6）加列 → 重启自愈在加列处抛 `NoSuchTableError`、`migrate_database()` 返回 False。修复：fixture 补这两张表（列集与建表迁移一致）并注释保真要求。
+- **根因③跨用例数据泄漏（1 例）**：`tests/conftest.py::isolated_application_database` 是**进程级共享库**，而 `resolved` 只统计「成功扫描根内本轮未见」的旧候选；`TestBatchCommit` 两用例固定以 `/tmp` 为根 → 全量跑时把其它用例遗留的 /tmp 候选计入 resolved（单跑通过、全量红）。修复：两用例改用每次唯一的专属扫描根（`uuid4`），断言语义不变且与执行顺序无关。
+- **防漂移门禁（新增 3 例，杜绝复发）**：`test_constraint_doc_head_matches_chain`（`backend/docs/constraints/database-migration.md` 的 HEAD 声明与 revision 计数必须等于真实链路，且「← 当前 HEAD」唯一）、`test_pinned_expected_head_matches_chain`（唯一写死点与链路一致）、`test_legacy_hardcoded_heads_removed_from_tests`（三个既有测试必须使用 `current_head()`，防回流）。
+- **文档同步**：约束文档迁移链补 `c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 ← 当前 HEAD`；roadmap（backend README / infra 两处 + 新增 d1e2f3a4b5c6 行 / risks）revision 计数 29→31、head 更新。
+- **验证**：`pytest -q --cov=app --cov-fail-under=40`（CI 同参数）**4750 passed / 17 skipped / 0 failed**，覆盖率 64.81%（≥40%）；原 6 红所在 4 个文件定向 82 passed。本批**零 app 代码改动**（纯测试与文档），无生产风险。
+
+---
+
+
 ## 2026-09-19（推送 + CI 现状核查）：P4 尾～P6-2 共 12 提交推送 origin/dev；远端后端 CI 存量红定位
 
 - **推送**：`6e862c5..dbfd115` 共 12 提交推送至 origin/dev（P4 尾 2 + 工具/文档 2 + P5 2 + 遗留清扫 2 + P6-1 2 + P6-2 2）。HTTPS 凭据缺失（GitHub 已停用密码认证、gh CLI 内 token 失效），改用仓库属主的既有 SSH 密钥 `/home/huangzj/.ssh/id_ed25519` 认证为 `strainhzj` 推送成功；**remote URL 保持 HTTPS 未改**。

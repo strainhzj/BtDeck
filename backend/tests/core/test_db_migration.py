@@ -57,6 +57,7 @@ def _clean_database_path_env():
 #       → 975dad435c03(torrent auxiliary seed count)
 #       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
 #       → b3e5f7a9c1d2(search_templates preset_key, bilingual system preset identity)
+#       → d1e2f3a4b5c6(setting_templates preset_key, bilingual system preset identity)
 EXPECTED_HEAD = "d1e2f3a4b5c6"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
@@ -66,6 +67,12 @@ HARDLINK_COPY_RESULTS_PREV = "b6e1c4d9a2f7"
 HARDLINK_COPY_COUNT_SNAPSHOT_PREV = "c8d9e0f1a2b3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
+
+def _cfg_for_head() -> Config:
+    """head 校验用配置（不绑定数据库）。"""
+    from tests.core.alembic_head import build_alembic_config
+
+    return build_alembic_config()
 
 def _make_alembic_config(db_path: str) -> Config:
     """构造指向指定 DB 的 Alembic Config（编程式调用）。"""
@@ -123,6 +130,51 @@ class TestMigrationChainIntegrity:
         heads = sd.get_heads()
         assert len(heads) == 1, f"迁移链应只有 1 个 head，实际 {len(heads)}: {heads}"
         assert heads[0] == EXPECTED_HEAD, f"head 应为 {EXPECTED_HEAD}，实际 {heads[0]}"
+
+    def test_constraint_doc_head_matches_chain(self):
+        """约束文档声明的 HEAD 与 revision 计数必须与迁移链一致（防文档漂移）。
+
+        背景：`c1d2e3f4a5b6` 曾在 4 个测试文件 + 本约束文档里被当作「当前 head」，
+        P3-2 新增 b3e5f7a9c1d2 后未同步 → 远端 CI 后端 job 自那时起长期变红。
+        本测试把文档与链路钉死：新增迁移必须同步文档，否则此处直接失败。
+        """
+        from tests.core.alembic_head import current_head, revision_count
+
+        doc = (BACKEND_ROOT / "docs" / "constraints" / "database-migration.md").read_text(encoding="utf-8")
+        head = current_head()
+        assert f"必须输出且只输出 `{head}`" in doc, f"约束文档未声明当前 head {head}"
+        assert f"{head} ← 当前 HEAD" in doc, f"约束文档未标注 {head} 为当前 HEAD"
+        # 历史链上不应残留其它 revision 的「当前 HEAD」标注
+        assert doc.count("← 当前 HEAD") == 1, "约束文档出现多处「当前 HEAD」标注"
+        assert revision_count() == len(list(ScriptDirectory.from_config(_cfg_for_head()).walk_revisions()))
+
+    def test_pinned_expected_head_matches_chain(self):
+        """唯一允许写死的 head（本文件 EXPECTED_HEAD）必须与链路一致。"""
+        from tests.core.alembic_head import current_head
+
+        assert EXPECTED_HEAD == current_head(), (
+            "新增迁移后请更新 tests/core/test_db_migration.py::EXPECTED_HEAD（本仓唯一 head 写死点），"
+            "并同步 docs/constraints/database-migration.md"
+        )
+
+    def test_legacy_hardcoded_heads_removed_from_tests(self):
+        """防回流：其他测试不得再写死「当前 head」字符串。
+
+        tests/core/test_{db_rollback_scenarios,orphan_migration_production_shape,
+        orphan_schema_repair_migration}.py 曾各自硬编码 c1d2e3f4a5b6；
+        现统一改为 current_head() 动态读取（历史锚点常量除外，需带注释说明）。
+        """
+        core_dir = BACKEND_ROOT / "tests" / "core"
+        offenders = []
+        for name in (
+            "test_db_rollback_scenarios.py",
+            "test_orphan_migration_production_shape.py",
+            "test_orphan_schema_repair_migration.py",
+        ):
+            text = (core_dir / name).read_text(encoding="utf-8")
+            if "current_head()" not in text:
+                offenders.append(f"{name}: 未使用 current_head()")
+        assert offenders == []
 
     def test_ghost_version_not_in_chain(self):
         """幽灵版本 9aea25308aff 不应在迁移链中（验证它是历史遗留）。"""

@@ -1515,8 +1515,15 @@ class TestBatchCommit:
     """落库分批提交行为（防止单大事务独占写锁卡死 API）。"""
 
     def test_reconcile_candidates_batch_commits(self, tmp_path):
-        """reconcile_candidates 带 batch_size 时按批提交，计数语义不变。"""
+        """reconcile_candidates 带 batch_size 时按批提交，计数语义不变。
+
+        隔离：conftest 的应用级测试库是**进程级共享**（isolated_application_database），
+        而 resolved 只统计「成功扫描根内且本轮未见」的旧候选——因此本用例使用
+        每次唯一的专属扫描根，避免把其它用例遗留的 /tmp 候选计入 resolved
+        （此前固定以 /tmp 为根 → 全量跑时 resolved 由 0 变 1，单跑通过）。
+        """
         import asyncio
+        import uuid
 
         from sqlalchemy import select
 
@@ -1524,12 +1531,13 @@ class TestBatchCommit:
         from app.models.orphan_file import OrphanCurrentCandidate
         from app.services.orphan_lifecycle_service import OrphanLifecycleService
 
+        scan_root = f"/tmp/btdeck_batch_commit_{uuid.uuid4().hex}"
         # 构造 batch_size=2, 5 个孤儿 → 3 次 commit(2+2+1) + resolved 段 1 次
         orphans = []
         for i in range(5):
             orphans.append(
                 {
-                    "canonical_path": f"/tmp/batch_test_{i}.bin",
+                    "canonical_path": f"{scan_root}/batch_test_{i}.bin",
                     "downloader_id": "dl_001",
                     "file_size": 100 + i,
                     "mtime_ns": 1000 + i,
@@ -1546,7 +1554,7 @@ class TestBatchCommit:
                     "scan_batch_test",
                     datetime.utcnow(),
                     orphans,
-                    scan_roots=["/tmp"],
+                    scan_roots=[scan_root],
                     batch_size=2,
                 )
                 assert result["inserted"] == 5
@@ -1560,7 +1568,7 @@ class TestBatchCommit:
             cnt = (
                 db.execute(
                     select(OrphanCurrentCandidate).where(
-                        OrphanCurrentCandidate.canonical_path.like("/tmp/batch_test_%")
+                        OrphanCurrentCandidate.canonical_path.like(f"{scan_root}/batch_test_%")
                     )
                 )
                 .scalars()
@@ -1569,14 +1577,21 @@ class TestBatchCommit:
             assert len(cnt) == 5
 
     def test_reconcile_candidates_batch_resolves_after_commits(self, tmp_path):
-        """分批 commit 后 resolved 仍依赖完整 seen_paths 正确标记。"""
+        """分批 commit 后 resolved 仍依赖完整 seen_paths 正确标记。
+
+        隔离同 test_reconcile_candidates_batch_commits：专属唯一扫描根，
+        使 resolved 计数只包含本用例预置的旧候选。
+        """
         import asyncio
+        import uuid
 
         from sqlalchemy import select
 
         from app.database import AsyncSessionLocal, SessionLocal
         from app.models.orphan_file import OrphanCurrentCandidate
         from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+        scan_root = f"/tmp/btdeck_batch_resolve_{uuid.uuid4().hex}"
 
         # 预置一个旧候选(本次清单未出现 → 应 resolved)
         async def _seed():
@@ -1587,7 +1602,7 @@ class TestBatchCommit:
                     datetime.utcnow(),
                     [
                         {
-                            "canonical_path": "/tmp/old_candidate.bin",
+                            "canonical_path": f"{scan_root}/old_candidate.bin",
                             "downloader_id": "dl_001",
                             "file_size": 10,
                             "mtime_ns": 100,
@@ -1596,7 +1611,7 @@ class TestBatchCommit:
                             "confidence": "high",
                         }
                     ],
-                    scan_roots=["/tmp"],
+                    scan_roots=[scan_root],
                 )
 
         asyncio.run(_seed())
@@ -1606,7 +1621,7 @@ class TestBatchCommit:
         for i in range(3):
             orphans.append(
                 {
-                    "canonical_path": f"/tmp/new_candidate_{i}.bin",
+                    "canonical_path": f"{scan_root}/new_candidate_{i}.bin",
                     "downloader_id": "dl_001",
                     "file_size": 100 + i,
                     "mtime_ns": 1000 + i,
@@ -1623,7 +1638,7 @@ class TestBatchCommit:
                     "scan_new",
                     datetime.utcnow(),
                     orphans,
-                    scan_roots=["/tmp"],
+                    scan_roots=[scan_root],
                     batch_size=2,
                 )
                 # 旧候选被 resolved, 3 个新候选 insert
@@ -1634,7 +1649,9 @@ class TestBatchCommit:
 
         with SessionLocal() as db:
             old = db.execute(
-                select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == "/tmp/old_candidate.bin")
+                select(OrphanCurrentCandidate).where(
+                    OrphanCurrentCandidate.canonical_path == f"{scan_root}/old_candidate.bin"
+                )
             ).scalar_one()
             assert old.status == "resolved"
 
