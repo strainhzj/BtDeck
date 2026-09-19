@@ -15,7 +15,7 @@
 | 品牌 Logo 单测 app-logo-test | `__tests__/AppLogo.spec.ts` | 覆盖完整、标准、微缩及反白资源选择契约 |
 | Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标 |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
-| PWA 更新提示 refresh-prompt | `RefreshPrompt.vue` | 监听 Service Worker 更新事件，提供用户确认后刷新提示（桌面/移动布局共用） |
+| PWA 更新提示 refresh-prompt | `RefreshPrompt.vue` | 监听 Service Worker 更新事件，提供用户确认后刷新提示（桌面/移动布局共用）；✨2026-09-19 遗留清扫：三条文案走 common.pwa.*（发现新版本/立即刷新/暂不刷新 aria） |
 | Demo 模式提示 demo-banner | `DemoModeBanner.vue` | Demo 构建固定顶部提示“数据为本地模拟”，提供本地 store 重置并刷新当前页面 |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
@@ -76,7 +76,7 @@
 | barrel 导出 layout-index | `index.ts` | barrel 导出 AppMain/Navbar/Sidebar |
 | 主内容区 app-main | `AppMain.vue` | 主内容区 `<router-view>` 容器 |
 | 顶栏 navbar | `Navbar/index.vue` | 顶栏（面包屑/反馈/通知/语言切换/用户菜单，壳层文案走 `$t`）；语言下拉选项为语言自名常量（i18n/types `LOCALE_AUTONYMS`），切换走 AppModule.SetLanguage 并显式刷新 document.title；品牌锚点由侧边栏统一承载，交互图标使用 Lucide |
-| 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），展开态使用完整 Logo、折叠态使用 `mark` 图标，菜单/折叠控制使用 Lucide |
+| 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），展开态使用完整 Logo、折叠态使用 `mark` 图标，菜单/折叠控制使用 Lucide；✨2026-09-19 遗留清扫：底部「移动版」入口与展开/收起按钮文案+aria 走 navigation.sidebar.* |
 | 菜单项 sidebar-item | `Sidebar/SidebarItem.vue` | 单个菜单项（递归子菜单）；标题经 `routeTitle()` 双语键优先（双语 P1）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染；桌面折叠态按 `.submenu-label`/`.submenu-chevron` 语义类隐藏文字与箭头，显式保留根节点为 `span` 的 `.menu-icon`，避免多子菜单父图标被误隐藏 |
 | 菜单项链接 sidebar-item-link | `Sidebar/SidebarItemLink.vue` | 菜单项链接包装（外链/内链分流） |
 | 通知抽屉 notification-drawer | `NotificationDrawer/index.vue` | 通知抽屉容器 + 详情弹窗；内容 Markdown-lite 渲染抽至 `utils/notification-markdown.ts`（与移动通知详情 `views/mobile/notifications.vue` 共用，两端一致）；标题、筛选、加载、空状态与关闭动作统一使用 Lucide；✨2026-09-21 双语 P4（E03）：详情标题/正文经 `utils/notification-display` 事件本地化（未知事件原文兜底），详情类型标签/全部已读/详情时间 locale 化 |
