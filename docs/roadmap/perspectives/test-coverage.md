@@ -143,6 +143,8 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
+| `p6-downloader-domain-i18n.spec.ts` ✨2026-09-19 | P6-2 下载器域收尾双语（26 例）：downloader.tabs/speed/advanced/pathMapping/pathMaintenance/tag/template 七子树 zh 逐字节 + en 插值、键化数据数组（星期 labelKey/高级字段 labelKey+hintKey/映射类型三键）、内置模板 preset_key 展示映射（zh 与后端存储值一致/en/Q02 原文回退/camel 兼容）、源码契约与死代码移除 |
+| `tests/core/test_setting_template_preset_key.py` ✨2026-09-19 | 设置模板 preset_key 迁移与幂等（13 例）：旧库按中文名回填、用户模板占名不写 key、name 唯一约束不变量（同名多行不可能）、重复升级幂等、downgrade 回环、init 五种幂等场景、to_dict 透出、P0 冻结键名一致性 |
 | `p6-torrent-domain-i18n.spec.ts` ✨2026-09-19 | P6-1 种子域收尾双语（16 例）：transfer/fileManagement/tracker.replace/torrent 传统视图键 zh 逐字节与 en 插值、危险语义（数据保留/不可逆）、四级删除菜单与 P5 确认框同键、状态筛选 localizedStatusOptions、列设置 labelKey 12 列、源码契约（6 文件键接线与旧中文不回流） |
 | `i18n-leftover-guard.spec.ts` ✨2026-09-19 | 双语遗留审计门禁与补译契约（19 例）：29 个已声明完成桌面面扫描（去注释/console/style 后含中文即违规，白名单 6 条逐条附理由 + 白名单腐化守卫），extractErrorMessage/showErrorToast 中英切换、高级搜索请求校验 zh 逐字节 + en 编号插值、assertSameDownloader 双语、T01 参数不变性、壳层/控制台/store/formatters 源码键契约 |
 | `tests/api/test_reason_contract_p5.py` ✨2026-09-19 | 删除链路/回收站 reasonCode 契约：E14 双形态（ACCEPTED/ALREADY_PROCESSED，code=200 冻结）、提交失败/状态查询 404+500、delete-with-level 400/500、旧 /delete 下载器分支（缓存缺失/适配器失败/删除失败计数）、E16 手动还原 501、回收站四端点 500 固定 msg 无 str(e)、源码级 reasonCode 清单与 msg 无动态拼接 |
