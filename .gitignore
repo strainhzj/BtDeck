@@ -90,9 +90,22 @@ import io;*/
 .claude/
 
 # ================================
-# 部署凭据（build-and-export-images.bat 从此未跟踪文件读取，严禁入库）
+# 部署凭据（build-and-export-images.sh 从此未跟踪文件读取，严禁入库；
+# .bat.example 为本地个人模板，2026-09-19 起一并移出仓库跟踪）
 # ================================
 .btdeck-deploy-credentials.bat
+.btdeck-deploy-credentials.sh
+.btdeck-deploy-credentials.bat.example
+
+# ================================
+# 个人构建/部署脚本（含私有部署目标默认值，勿入库；Linux/macOS 版
+# 替代已删除的 build-and-export-images.bat）
+# ================================
+build-and-export-images.sh
+
+# Windows→Linux 迁移包遗留（本地参考文件，勿入库；根目录锚定避免误伤同名子目录文件）
+/MIGRATE-README.txt
+/SHA256SUMS.txt
 
 # W2 发布构建生成物（由构建脚本生成进上下文/暂存区，不入库）
 backend/build-info.json

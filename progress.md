@@ -7730,3 +7730,20 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 坑：①pytest 内存库 fixture 若不 register_exception_handlers(app)，422 走 FastAPI 默认 detail 数组而非生产归一化信封（test_exception_handlers 先例）；②NotificationExtraData 的 extra_data 在模型层是 JSON 字符串，断言前需 json.loads 判型；③pause/resume/recheck 的 hashes 空列表被 pydantic min_length=1 拦截（业务 400 分支 HTTP 不可达，只有 reannounce 的可选参数可达）——E17 形态测试取代业务分支断言；④TorrentAddResult 的 Optional[UploadFile]=File(...) 即使 Optional 也是表单必填，测试须带文件字段。
 - 子范围完成情况：M1 依赖部分完成（P2 批 + P3-2 批 + 本批）；E14/E16 归 P5、设置模板 preset_key/低频通知归 P6；P4 保持 in_progress。浏览器 E01-E03 人工验收与英文审校未做；Android 嵌入服务未同步本批后端变更（下次出 APK 前重跑 stage-server.py）。
 - Git 提交：9206f82（feat，35 文件：backend 12/frontend 19/PLANS 2/feature_list/progress/session-handoff）+ ef37db9（docs(roadmap)，7 文件），未推送；data/ 下既有未跟踪产物与工作区两处既有检出异常（.btdeck-deploy-credentials.bat.example 行尾、build-and-export-images.bat 权限位）保持不动。
+
+## 2026-09-19：工具链——build-and-export-images.bat 转换为 shell 脚本
+
+- 新增 build-and-export-images.sh（gitignored，含私有部署目标默认值故不入库）：忠实转换 .bat 全部功能——3 档镜像源（aliyun/huawei/official）curl 探测 + 网络错误故障转移重试链（重试强制 --no-cache）、release 身份严格生成（generate_build_info.py --check-versions + docker-backend/frontend 双制品 + fail-closed 脏校验 + OCI label 三参数）、构建 + 原子导出 tar + 悬空镜像清理、tar-over-ssh 单会话远程部署（unraid/compose 模式）。
+- Linux/macOS 适配：plink -pw 密码登录 → sshpass（SSHPASS env 传密 + accept-new；无凭据回退交互式 ssh，与 .bat 回退语义一致）；Windows 杀软文件锁 5 次重试导出 → mktemp + mv -f 原子替换（POSIX rename 原子性，无需重试）；PAUSE_ON_EXIT 双击暂停移除；-NoCache 别名移除（仅保留 --no-cache）；凭据文件改读 .btdeck-deploy-credentials.sh（export SSH_PASSWORD=...）。
+- 删除 build-and-export-images.bat（git 状态 D，提交时机由用户决定）；.gitignore 新增两条规则：build-and-export-images.sh（个人部署脚本段）与 .btdeck-deploy-credentials.sh（并入既有部署凭据段，注释同步改指 .sh）。
+- 验证：bash -n 语法通过；--help/--bogus/--unraid 缺参/--deploy 缺参错误路径、--quick/--keep-proxy 代理保留实测；mock docker+ssh 端到端全绿——真实 curl 探测选 profile 2（HTTP 200）、脏工作区严格模式 fail-closed 拦截（提示语与 .bat 一致）、BTDECK_ALLOW_DIRTY_IDENTITY=1 逃生舱全链路（身份 v1.0.6@7e275c5cb8d2 → 双镜像构建 → 导出 → 清理 → 部署管道 → Done）；测试产物（mock tar、build-info.json、release/build/、/tmp/fakebin）已清理。
+- 注：.btdeck-deploy-credentials.bat.example（既有 M，属 .bat 工作流遗留示例，去留待用户定夺）与未跟踪 MIGRATE-README.txt / SHA256SUMS.txt / data/ 为存量工作区状态，未动。
+
+## 2026-09-19（续）：本机 Docker 安装 + build-and-export-images.sh 首次实跑
+
+- Docker 29.8.1 官方 apt 仓库安装（trixie），docker 组授权 piagent/codexagent 免 sudo；daemon 代理经 systemd drop-in（192.168.5.60:10808）配置，两用户 hello-world 实测通过。
+- 首跑失败根因：daemon pull 走代理正常，但 BuildKit 获取 auth.docker.io token 未走代理，直连被污染 IPv6（Facebook 网段）→ no route to host；故障转移链（aliyun→huawei→official）三档全灭，脚本按设计 fail-fast。
+- 解法：利用正常的 pull 通道预拉三个 digest 锁定基础镜像（python:3.11-slim/node:22-bookworm-slim/nginx:1.27-alpine，代理带宽约 100KB/s 共耗时 ~20min），BuildKit FROM 命中本地 containerd store 跳过 registry 认证，重跑全绿。
+- 结果：btdeck-backend:latest 475MB（符合 <550MB 目标）+ btdeck-frontend:latest 236MB；tar 导出 116M/51M；OCI label 双镜像一致 v1.0.6@7e275c5cb8d2；悬空镜像已清理。
+- 本次运行模式说明：①部署禁用（无 SSH 密钥且无 .btdeck-deploy-credentials.sh，非交互会话无法输密码；跑完已恢复 DEFAULT_DEPLOY_ENABLED=1）；②BTDECK_ALLOW_DIRTY_IDENTITY=1（工作区含 .gitignore/.bat 变更未提交，严格模式会拦截；dirty=true 为 WIP 身份，/health/ready 会 503，正式部署前需先提交再重跑）。
+- 后续待办：干净工作区重跑获得有效身份；如需远程部署创建 .btdeck-deploy-credentials.sh（export SSH_PASSWORD=...）并交互式运行。
