@@ -82,13 +82,14 @@ describe('孤儿文件管理页信息层级', () => {
     expect(orphanFilesSource).toContain('class="management-stats-grid"')
     expect(orphanFilesSource).toContain('class="management-stat-card"')
     expect(orphanFilesSource).toContain('<CollapsiblePanel')
-    expect(orphanFilesSource).toContain('title="扫描统计"')
+    // 双语 P6-4b：面板/计数文案走 i18n 键，锚定键引用而非中文字面量
+    expect(orphanFilesSource).toContain(":title=\"$t('orphanFiles.stats.title')\"")
     expect(orphanFilesSource).toContain('storage-key="btdeck_orphan_file_stats_collapsed"')
-    expect(orphanFilesSource).toContain('已选择 {{ selectedCount }} 项')
+    expect(orphanFilesSource).toContain("$t('orphanFiles.list.selected', {count: selectedCount})")
     expect(orphanFilesSource).toContain('management-pagination')
 
     const listPanel = orphanFilesSource.match(/<!-- 孤儿文件列表 -->[\s\S]*?<\/section>/)?.[0] || ''
-    expect(listPanel).toContain('清理选中')
+    expect(listPanel).toContain("$t('orphanFiles.list.cleanupSelected')")
   })
 
   it('隔离区表格复用孤儿列表的共享表头样式', () => {

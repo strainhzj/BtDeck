@@ -21,6 +21,7 @@
 
 import elementEn from 'element-ui/lib/locale/lang/en'
 import { MessageTree } from '../../types'
+import { auditLogs } from './auditLogs'
 import { auth } from './auth'
 import { common } from './common'
 import { dashboard } from './dashboard'
@@ -28,6 +29,7 @@ import { downloader } from './downloader'
 import { errors } from './errors'
 import { fileManagement } from './fileManagement'
 import { navigation } from './navigation'
+import { orphanFiles } from './orphanFiles'
 import { queryTemplate } from './queryTemplate'
 import { recycleBin } from './recycleBin'
 import { search } from './search'
@@ -39,6 +41,7 @@ import { torrent } from './torrent'
 import { tracker } from './tracker'
 
 const messages: MessageTree = {
+  auditLogs,
   auth,
   common,
   dashboard,
@@ -46,6 +49,7 @@ const messages: MessageTree = {
   errors,
   fileManagement,
   navigation,
+  orphanFiles,
   queryTemplate,
   recycleBin,
   search,

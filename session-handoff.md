@@ -5281,3 +5281,28 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 ---
 
+
+## 2026-09-20 交接：桌面双语 P6-4b 审计日志/孤儿文件域完成（全绿未提交，接 P6-4a 两提交之后）
+
+### 已完成
+
+- **范围**：views/logs/audit.vue + views/orphan-files/index.vue 全量双语；后端 audit_logs.py / orphan_files.py 全端点 reasonCode 契约（契约随批决策沿用 P6-4a）。
+- **前端**：新 auditLogs/orphanFiles 两语言包模块（zh 逐字节 + en 成对）；操作类型 19 项键化数据驱动（OPERATION_GROUPS 短/长双形态 + Q02 回退）；孤儿状态/置信度按稳定码位（与筛选选项同源）；快捷操作说明 strong 分片；危险链路三要素保留；分页汇总分片键。
+- **关键取舍**：扫描上下文 cleanup_block_reason/error_message 后端数据原文透传（{reason} 槽位 + 本地键兜底，B03/Q02）；E01 拒绝/部分失败明细转 console + 计数键提示（6 处）；200 信息态按 task_id 分支提示；summarizeIgnoreFailures 死方法删除；audit.vue 模板 `?.` 可选链根修（buble 不支持，首次可挂载）。
+- **后端**：audit_logs 7 键 + orphan_files 全端点 22 键 data.reasonCode；动态 str(e)/scan_id 只进日志；归档业务失败 message 透传 + reasonCode 追加；hardlink rejected 双形态 200 包裹 + reasonCode 追加进 data（E14 同款）；download-export 保持真 HTTPException（detail 去动态诊断）；成功计数 msg 保持 B03。
+- **测试**：backend test_reason_contract_p6b 36 例 + frontend p6-logs-orphan-domain-i18n 22 例；orphan-files.spec 迁移 i18n 挂载 + 6 例 E01 语义化；management-pages-ui 断言语义化；test_orphan_files_api 1 例增量调整；审计集 65 面。
+- **验证全绿**：前端 typecheck/lint 三项/build/全量 Jest 123 套 1799 例；后端全量 4832 passed/0 failed + mypy/black/flake8 净；根 ./init.sh 通过。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap 七处（根 README 功能域两行+元信息、entry i18n 行、views 两文件行、backend api 两端点行、test-coverage 两行）。
+
+### 待办/注意
+
+- **P6 剩余**：P6-5（收口：M2 门禁核查 + 移动中文回归抽查 + P6 六批遗漏扫描）——完成后 p6 才可标 done。
+- 英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前须重跑 stage-server.py。
+- tracker_messages.py（21 条中文 msg）仍无前端消费方，不契约化（P0 边界外）。
+- 未执行 Git 提交（待用户指令）。
+
+### 坑位（下会话注意）
+
+- buble 模板编译器不支持 `?.` 可选链——模板表达式内可选链必须避免（页面无挂载测试时不暴露，jest 挂载即炸）。
+- vue-jest 下 console.error spy 按参数匹配断言（同流程多次调用常态），勿断言调用次数。
+- eslint --max-warnings 0 对测试文件同样生效：空 arrow `() => {}` 报 no-empty-function，用 `() => undefined`；`--fix` 会把插值对象 `{ count: x }` 收敛为 `{count: x}`，源码契约断言以 fix 后形态为锚。

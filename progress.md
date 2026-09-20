@@ -1,5 +1,17 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-20（P6-4b 审计日志/孤儿文件域）：两页全量双语 + audit_logs/orphan_files 全端点 reasonCode 契约（全绿未提交）
+
+- **范围（沿用 P6-4a 已确认决策：契约随批）**：views/logs/audit.vue（198 中文行）+ views/orphan-files/index.vue（349 中文行）+ 后端 audit_logs.py（18 条 msg）/orphan_files.py（31 条 msg）。
+- **前端（新 auditLogs/orphanFiles 两模块，zh 逐字节 + en 成对）**：audit.vue——筛选项 19 项操作类型键化数据驱动（OPERATION_GROUPS：短标签/筛选长标签双形态，未知 value 回退原文 Q02）、结果三态、统计/表头/详情五节/归档弹窗/反馈全量接键；orphan-files——双页签/统计/扫描状态三态/筛选/工具栏/两种表格/隔离区/副本位置弹窗/清理确认/快捷操作全量接键；状态与置信度按稳定码位且与筛选选项同源；快捷操作说明 strong 分片五键；危险链路三要素保留；分页汇总分片键（P6-1 先例，弃 v-html）。
+- **关键取舍**：①扫描上下文 cleanup_block_reason 与 error_message 属后端数据（B03/Q02）——包装文案走键、数据值原文经 {reason} 槽位透传、本地键兑底；②E01 拒绝/部分失败明细转 console、用户提示改计数键（6 处，对齐回收站 P5 先例）；③任务提交类 200 信息态（彻底删除/主动清理/快捷匹配均已在处理中）按 task_id 分支本地化提示，不再依赖后端 msg；④summarizeIgnoreFailures 死方法删除；⑤audit.vue 模板 `?.` 可选链根修（buble 不支持，该页首次可挂载；statistics.result_stats 初始恒对象直取安全）。
+- **后端**：audit_logs.py 7 键 + orphan_files.py 全端点 22 键 data.reasonCode（信封四字段不变）；动态 str(e)/scan_id 只进日志；归档业务失败 service message 原文透传 + reasonCode 追加；hardlink-copies/delete rejected 双形态保持 200 包裹 + reasonCode 追加进 data（E14 同款）；download-export 保持真 HTTPException（detail 去动态 str(e)）；成功/部分成功计数 msg 保持 B03 原文。errors.byCode 扩 29 键（AUDIT_LOG_* 7 + ORPHAN_* 22）。
+- **测试**：backend test_reason_contract_p6b.py 36 例（失败矩阵/msg 无泄露/rejected 双形态/清单双向完整性/动态 msg·detail 禁回流）+ frontend p6-logs-orphan-domain-i18n.spec.ts 22 例；orphan-files.spec 迁移 i18n 挂载 + 6 例 E01 语义化（计数键 toast + console.error spy）；management-pages-ui 断言语义化；test_orphan_files_api 1 例按 reasonCode 增量调整；审计集扩至 65 面。
+- **验证**：前端 typecheck 绿、lint 三项绿、全量 Jest **123 套 1799 例全绿**（基线 122/1777）、build 绿；后端全量 **4832 passed / 0 failed**（基线 4796 + 新 36）+ mypy/black/flake8 净；根 ./init.sh 通过。roadmap 七处同步。
+- **坑**：①buble 模板编译器不支持 `?.` 可选链——页面此前无挂载测试未暴露，模板表达式内可选链必须避免（统计卡两处改直取）；②vue-jest 下 console.error spy 会捕获同流程多调用，断言按参数匹配而非调用数；③eslint 对测试文件 --max-warnings 0：`mockImplementation(() => {})` 空 arrow 报 no-empty-function，改 `() => undefined`；④eslint --fix 会把插值对象 `{ count: x }` 收敛为 `{count: x}`，源码契约断言须以 fix 后形态为锚。
+- **待办**：P6-5（收口：M2 门禁核查 + 移动中文回归抽查）；英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前须重跑 stage-server.py。未执行 Git 提交。
+
+---
 ## 2026-09-20（P6-4a 任务域）：任务页 + 三组件全量双语 + cron_tasks 全端点 reasonCode 契约（全绿未提交）
 
 - **范围（用户确认两项决策）**：①后端错误契约随批补齐；②P6-4 拆两批交付（先任务域）。MCP/MoviePilot 页签经全仓核实不存在（settings 仅 4 个已翻译页签），计划项过时将在 evidence 注明。

@@ -2,8 +2,8 @@
   <div class="app-container management-page orphan-files-page">
     <header class="management-page__header" aria-labelledby="orphan-files-title">
       <div class="management-page__heading">
-        <h1 id="orphan-files-title" class="management-page__title">孤儿文件</h1>
-        <p class="management-page__subtitle">扫描未被种子引用的文件，并在清理前进行安全复核</p>
+        <h1 id="orphan-files-title" class="management-page__title">{{ $t('orphanFiles.title') }}</h1>
+        <p class="management-page__subtitle">{{ $t('orphanFiles.subtitle') }}</p>
       </div>
       <div class="management-page__actions">
         <el-button
@@ -11,7 +11,7 @@
           :loading="listLoading"
           @click="refreshPageData()"
         >
-          刷新
+          {{ $t('common.refresh') }}
         </el-button>
         <el-button
           type="primary"
@@ -19,26 +19,26 @@
           :loading="scanLoading"
           @click="handleScan"
         >
-          立即扫描
+          {{ $t('orphanFiles.scanNow') }}
         </el-button>
       </div>
     </header>
 
     <!-- 页面 Tab：孤儿文件 / 隔离区 -->
     <el-tabs v-model="activeTab" class="orphan-files-tabs" @tab-click="handleTabSwitch">
-      <el-tab-pane label="孤儿文件" name="orphans">
+      <el-tab-pane :label="$t('orphanFiles.tabs.orphans')" name="orphans">
     <!-- 统计摘要 -->
     <CollapsiblePanel
-      title="扫描统计"
+      :title="$t('orphanFiles.stats.title')"
       storage-key="btdeck_orphan_file_stats_collapsed"
     >
-      <section class="management-stats-grid" aria-label="最近一次孤儿文件扫描摘要">
+      <section class="management-stats-grid" :aria-label="$t('orphanFiles.stats.summaryAria')">
         <div class="management-stat-card">
           <span class="management-stat-card__icon" aria-hidden="true">
             <i class="el-icon-document" />
           </span>
           <div class="management-stat-card__content">
-            <div class="management-stat-card__label">待清理文件数</div>
+            <div class="management-stat-card__label">{{ $t('orphanFiles.stats.pendingCount') }}</div>
             <div class="management-stat-card__value">{{ scanContext.remaining_count }}</div>
           </div>
         </div>
@@ -47,7 +47,7 @@
             <i class="el-icon-coin" />
           </span>
           <div class="management-stat-card__content">
-            <div class="management-stat-card__label">待清理空间</div>
+            <div class="management-stat-card__label">{{ $t('orphanFiles.stats.pendingSize') }}</div>
             <div class="management-stat-card__value">{{ formatSize(scanContext.remaining_size) }}</div>
           </div>
         </div>
@@ -56,7 +56,7 @@
             <i class="el-icon-warning-outline" />
           </span>
           <div class="management-stat-card__content">
-            <div class="management-stat-card__label">已忽视文件数</div>
+            <div class="management-stat-card__label">{{ $t('orphanFiles.stats.ignoredCount') }}</div>
             <div class="management-stat-card__value">{{ scanContext.ignored_count }}</div>
           </div>
         </div>
@@ -65,7 +65,7 @@
             <i class="el-icon-folder-opened" />
           </span>
           <div class="management-stat-card__content">
-            <div class="management-stat-card__label">扫描路径数</div>
+            <div class="management-stat-card__label">{{ $t('orphanFiles.stats.pathCount') }}</div>
             <div class="management-stat-card__value">{{ displayScan ? displayScan.total_paths_scanned : 0 }}</div>
           </div>
         </div>
@@ -74,9 +74,9 @@
             <i class="el-icon-time" />
           </span>
           <div class="management-stat-card__content">
-            <div class="management-stat-card__label">最近成功扫描</div>
+            <div class="management-stat-card__label">{{ $t('orphanFiles.stats.lastScan') }}</div>
             <div class="management-stat-card__value management-stat-card__value--compact">
-              {{ displayScan ? formatTime(displayScan.scan_time) : '尚无成功扫描' }}
+              {{ displayScan ? formatTime(displayScan.scan_time) : $t('orphanFiles.stats.noScan') }}
             </div>
           </div>
         </div>
@@ -86,7 +86,7 @@
     <el-alert
       v-if="latestAttempt && latestAttempt.status === 'failed'"
       class="orphan-scan-state-alert"
-      title="最近一次扫描失败"
+      :title="$t('orphanFiles.scanState.failedTitle')"
       :description="scanStatusMessage"
       type="warning"
       :closable="false"
@@ -95,7 +95,7 @@
     <el-alert
       v-else-if="latestAttempt && (latestAttempt.status === 'queued' || latestAttempt.status === 'running')"
       class="orphan-scan-state-alert"
-      :title="latestAttempt.status === 'queued' ? '孤儿文件扫描等待执行' : '孤儿文件扫描进行中'"
+      :title="latestAttempt.status === 'queued' ? $t('orphanFiles.scanState.queuedTitle') : $t('orphanFiles.scanState.runningTitle')"
       :description="scanStatusMessage"
       type="info"
       :closable="false"
@@ -104,25 +104,25 @@
     <el-alert
       v-if="largeScanReminderVisible"
       class="orphan-scan-state-alert"
-      title="超量扫描提醒"
+      :title="$t('orphanFiles.scanState.largeTitle')"
       type="warning"
       :closable="true"
       show-icon
       @close="dismissLargeScanReminder"
     >
-      本次扫描发现的孤儿文件数量较多，请留意下载器路径映射和孤儿判定；此提醒不影响清理。
+      {{ $t('orphanFiles.scanState.largeText') }}
     </el-alert>
 
     <!-- 筛选条件 -->
-    <section class="management-panel" aria-label="孤儿文件筛选条件">
+    <section class="management-panel" :aria-label="$t('orphanFiles.filter.aria')">
       <div class="management-filter">
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-path-like">文件路径</label>
+          <label class="management-filter__label" for="orphan-path-like">{{ $t('orphanFiles.filter.pathLike') }}</label>
           <el-input
             id="orphan-path-like"
             v-model="listQuery.path_like"
             class="management-filter__control orphan-path-input"
-            placeholder="路径关键字模糊匹配"
+            :placeholder="$t('orphanFiles.filter.pathPlaceholder')"
             prefix-icon="el-icon-search"
             clearable
             @keyup.enter.native="handleFilter"
@@ -130,7 +130,7 @@
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-downloader">下载器</label>
+          <label class="management-filter__label" for="orphan-downloader">{{ $t('orphanFiles.filter.downloader') }}</label>
           <AdvancedMultiSelect
             v-model="listQuery.downloader_id"
             :options="downloaderOptions"
@@ -144,14 +144,14 @@
         </div>
         <div class="management-filter__field">
           <label class="management-filter__label" for="orphan-status">
-            状态
+            {{ $t('orphanFiles.filter.status') }}
             <el-tooltip
               v-if="statusFilterDegraded"
-              content="同时选“待清理”与“已忽视/已清理”会扩大为全部未删除文件"
+              :content="$t('orphanFiles.filter.statusDegradedTip')"
               placement="top"
               :open-delay="200"
             >
-              <span class="management-filter__warn-icon" aria-label="筛选组合提示">⚠</span>
+              <span class="management-filter__warn-icon" :aria-label="$t('orphanFiles.filter.warnAria')">⚠</span>
             </el-tooltip>
           </label>
           <AdvancedMultiSelect
@@ -166,7 +166,7 @@
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-confidence">置信度</label>
+          <label class="management-filter__label" for="orphan-confidence">{{ $t('orphanFiles.filter.confidence') }}</label>
           <AdvancedMultiSelect
             v-model="listQuery.confidence"
             :options="confidenceOptions"
@@ -179,9 +179,9 @@
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-located-copies">副本筛选</label>
+          <label class="management-filter__label" for="orphan-located-copies">{{ $t('orphanFiles.filter.located') }}</label>
           <el-tooltip
-            content="按扫描时统计的硬链接副本数过滤；副本位置详情由弹窗实时复核"
+            :content="$t('orphanFiles.filter.locatedTip')"
             placement="top"
             :open-delay="200"
           >
@@ -191,16 +191,16 @@
               class="management-filter__control orphan-located-copies-checkbox"
               @change="handleFilter"
             >
-              有硬链接副本
+              {{ $t('orphanFiles.filter.hasCopies') }}
             </el-checkbox>
           </el-tooltip>
         </div>
         <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">
-            搜索
+            {{ $t('orphanFiles.filter.search') }}
           </el-button>
           <el-button icon="el-icon-refresh-left" @click="handleResetFilter">
-            重置
+            {{ $t('orphanFiles.filter.reset') }}
           </el-button>
         </div>
       </div>
@@ -208,14 +208,14 @@
 
     <!-- 孤儿文件列表 -->
     <CollapsiblePanel
-      title="文件列表"
-      :description="displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果'"
+      :title="$t('orphanFiles.list.title')"
+      :description="displayScan ? $t('orphanFiles.list.description', {time: formatTime(displayScan.scan_time)}) : $t('orphanFiles.list.descriptionEmpty')"
       storage-key="btdeck_orphan_file_list_collapsed"
     >
       <template #meta>
         <div class="management-panel__meta">
           <el-tag v-if="selectedCount > 0" type="info" effect="plain">
-            已选择 {{ selectedCount }} 项
+            {{ $t('orphanFiles.list.selected', {count: selectedCount}) }}
           </el-tag>
           <el-button
             type="danger"
@@ -224,7 +224,7 @@
             :title="batchCleanupTitle"
             @click="handleCleanupPreview"
           >
-            清理选中
+            {{ $t('orphanFiles.list.cleanupSelected') }}
           </el-button>
           <el-button
             icon="el-icon-warning-outline"
@@ -232,7 +232,7 @@
             :title="batchIgnoreTitle"
             @click="handleBatchIgnore(true)"
           >
-            忽视选中
+            {{ $t('orphanFiles.list.ignoreSelected') }}
           </el-button>
           <el-button
             icon="el-icon-circle-check"
@@ -240,10 +240,10 @@
             :title="batchUnignoreTitle"
             @click="handleBatchIgnore(false)"
           >
-            取消忽视
+            {{ $t('orphanFiles.list.unignoreSelected') }}
           </el-button>
           <el-tooltip
-            content="开启后同目录下多个文件折叠为文件夹一行（仅影响展示，删除仍按文件）"
+            :content="$t('orphanFiles.list.folderViewTip')"
             placement="top"
           >
             <el-button
@@ -251,12 +251,12 @@
               :icon="folderView ? 'el-icon-folder-opened' : 'el-icon-folder'"
               @click="setFolderView(!folderView)"
             >
-              按文件夹展示
+              {{ $t('orphanFiles.list.folderView') }}
             </el-button>
           </el-tooltip>
           <el-dropdown trigger="click" @command="handleQuickAction">
             <el-button icon="el-icon-magic-stick">
-              快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
+              {{ $t('orphanFiles.list.quickAction') }}<i class="el-icon-arrow-down el-icon--right"></i>
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item
@@ -265,24 +265,24 @@
                 :disabled="!cleanupAllowed"
                 :title="cleanupBlockReason"
               >
-                快捷删除（按前缀）
+                {{ $t('orphanFiles.list.quickCleanup') }}
               </el-dropdown-item>
               <el-dropdown-item
                 command="ignore"
                 icon="el-icon-warning-outline"
                 :disabled="!displayScan"
-                title="按路径前缀批量忽视待清理文件"
+                :title="$t('orphanFiles.list.quickIgnoreTitle')"
               >
-                快捷忽视（按前缀）
+                {{ $t('orphanFiles.list.quickIgnore') }}
               </el-dropdown-item>
               <el-dropdown-item
                 command="toggleLocatedCopies"
                 :icon="listQuery.hardlinkCopies ? 'el-icon-check' : 'el-icon-copy-document'"
                 :disabled="!displayScan"
-                :title="listQuery.hardlinkCopies ? '取消副本筛选，恢复完整列表' : '仅显示有硬链接副本的文件（扫描时统计）'"
+                :title="listQuery.hardlinkCopies ? $t('orphanFiles.list.locatedOff') : $t('orphanFiles.list.locatedOn')"
                 divided
               >
-                {{ listQuery.hardlinkCopies ? '取消有副本筛选' : '筛选有副本文件' }}
+                {{ listQuery.hardlinkCopies ? $t('orphanFiles.list.clearLocated') : $t('orphanFiles.list.filterLocated') }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
@@ -300,7 +300,7 @@
           border
           fit
           highlight-current-row
-          empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
+          :empty-text="$t('orphanFiles.list.empty')"
           style="width: 100%"
           @selection-change="handleOrphanSelectionChange"
           @expand-change="handleFolderExpandChange"
@@ -318,11 +318,11 @@
                   @selection-change="handleFolderChildSelection(scope.row, $event)"
                 >
                   <el-table-column type="selection" width="48" :selectable="rowSelectable" />
-                  <el-table-column prop="file_path" label="文件路径" min-width="320" show-overflow-tooltip />
-                  <el-table-column label="大小" width="110" align="center">
+                  <el-table-column prop="file_path" :label="$t('orphanFiles.list.col.path')" min-width="320" show-overflow-tooltip />
+                  <el-table-column :label="$t('orphanFiles.list.col.size')" width="110" align="center">
                     <template slot-scope="childScope">{{ formatSize(childScope.row.file_size) }}</template>
                   </el-table-column>
-                  <el-table-column label="副本数量" width="90" align="center">
+                  <el-table-column :label="$t('orphanFiles.list.col.copies')" width="90" align="center">
                     <template slot-scope="childScope">
                       <button
                         v-if="canOpenHardlinkLocations(childScope.row)"
@@ -336,14 +336,14 @@
                       <span v-else>{{ formatHardlinkCopyCount(childScope.row.hardlink_copy_count) }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="状态" width="90" align="center">
+                  <el-table-column :label="$t('orphanFiles.list.col.status')" width="90" align="center">
                     <template slot-scope="childScope">
-                      <el-tag v-if="childScope.row.is_deleted" type="info" size="mini">已清理</el-tag>
-                      <el-tag v-else-if="childScope.row.is_ignored" type="warning" size="mini">已忽视</el-tag>
-                      <el-tag v-else type="danger" size="mini">待清理</el-tag>
+                      <el-tag v-if="childScope.row.is_deleted" type="info" size="mini">{{ $t('orphanFiles.status.deleted') }}</el-tag>
+                      <el-tag v-else-if="childScope.row.is_ignored" type="warning" size="mini">{{ $t('orphanFiles.status.ignored') }}</el-tag>
+                      <el-tag v-else type="danger" size="mini">{{ $t('orphanFiles.status.pending') }}</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="90" align="center">
+                  <el-table-column :label="$t('orphanFiles.list.col.action')" width="90" align="center">
                     <template slot-scope="childScope">
                       <el-button
                         v-if="!childScope.row.is_deleted"
@@ -351,7 +351,7 @@
                         size="mini"
                         @click="handleRowIgnore(childScope.row, !childScope.row.is_ignored)"
                       >
-                        {{ childScope.row.is_ignored ? '取消忽视' : '忽视' }}
+                        {{ childScope.row.is_ignored ? $t('orphanFiles.list.unignore') : $t('orphanFiles.list.ignore') }}
                       </el-button>
                     </template>
                   </el-table-column>
@@ -375,26 +375,26 @@
             width="55"
             align="center"
             :selectable="rowSelectable"
-            aria-label="选择当前页的全部孤儿文件"
+            :aria-label="$t('orphanFiles.list.selectAllAria')"
           />
-          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip class-name="orphan-path-cell">
+          <el-table-column :label="$t('orphanFiles.list.col.path')" prop="file_path" min-width="300" show-overflow-tooltip class-name="orphan-path-cell">
             <template slot-scope="scope">
               <span v-if="scope.row._is_folder" class="orphan-folder-cell">
                 <i class="el-icon-folder" aria-hidden="true"></i>
                 <span class="orphan-folder-cell__path" :title="scope.row.folder_path">{{ scope.row.folder_path }}</span>
                 <el-tag size="mini" type="info" class="orphan-folder-cell__count">
-                  {{ scope.row.child_count }} 个文件
+                  {{ $t('orphanFiles.list.filesCount', {count: scope.row.child_count}) }}
                 </el-tag>
               </span>
               <span v-else>{{ scope.row.file_path }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="大小" width="120" align="center">
+          <el-table-column :label="$t('orphanFiles.list.col.size')" width="120" align="center">
             <template slot-scope="scope">
               {{ formatSize(scope.row._is_folder ? scope.row.total_size : scope.row.file_size) }}
             </template>
           </el-table-column>
-          <el-table-column label="副本数量" width="100" align="center">
+          <el-table-column :label="$t('orphanFiles.list.col.copies')" width="100" align="center">
             <template slot-scope="scope">
               <button
                 v-if="canOpenHardlinkLocations(scope.row)"
@@ -415,65 +415,65 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="修改时间" width="170" align="center">
+          <el-table-column :label="$t('orphanFiles.list.col.mtime')" width="170" align="center">
             <template slot-scope="scope">
               {{ (scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) ? formatTime(scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) : '-' }}
             </template>
           </el-table-column>
-          <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
+          <el-table-column :label="$t('orphanFiles.list.col.downloader')" width="140" align="center" show-overflow-tooltip>
             <template slot-scope="scope">
               <template v-if="scope.row._is_folder">
-                {{ scope.row.downloader_name || '多个' }}
+                {{ scope.row.downloader_name || $t('orphanFiles.list.multipleDownloaders') }}
               </template>
               <template v-else>
                 {{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}
               </template>
             </template>
           </el-table-column>
-          <el-table-column label="置信度" width="100" align="center">
+          <el-table-column :label="$t('orphanFiles.list.col.confidence')" width="100" align="center">
             <template slot-scope="scope">
               <template v-if="scope.row._is_folder">
                 <el-tooltip
                   v-if="scope.row.has_low_confidence"
-                  content="文件夹内含离线降级目录粗筛判定的低置信度项，有误判风险"
+                  :content="$t('orphanFiles.confidenceTag.folderLowTip')"
                   placement="top"
                 >
-                  <el-tag type="info" size="small">混合</el-tag>
+                  <el-tag type="info" size="small">{{ $t('orphanFiles.confidenceTag.mixed') }}</el-tag>
                 </el-tooltip>
-                <el-tooltip v-else content="文件夹内全部为在线精筛判定，确认未被任何种子引用" placement="top">
-                  <el-tag type="success" size="small">高</el-tag>
+                <el-tooltip v-else :content="$t('orphanFiles.confidenceTag.folderHighTip')" placement="top">
+                  <el-tag type="success" size="small">{{ $t('orphanFiles.confidenceTag.high') }}</el-tag>
                 </el-tooltip>
               </template>
               <template v-else>
                 <el-tooltip
                   v-if="scope.row.confidence === 'low'"
-                  content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
+                  :content="$t('orphanFiles.confidenceTag.lowTip')"
                   placement="top"
                 >
-                  <el-tag type="info" size="small">低</el-tag>
+                  <el-tag type="info" size="small">{{ $t('orphanFiles.confidenceTag.low') }}</el-tag>
                 </el-tooltip>
-                <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
-                  <el-tag type="success" size="small">高</el-tag>
+                <el-tooltip v-else :content="$t('orphanFiles.confidenceTag.highTip')" placement="top">
+                  <el-tag type="success" size="small">{{ $t('orphanFiles.confidenceTag.high') }}</el-tag>
                 </el-tooltip>
               </template>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="90" align="center">
+          <el-table-column :label="$t('orphanFiles.list.col.status')" width="90" align="center">
             <template slot-scope="scope">
               <template v-if="scope.row._is_folder">
-                <el-tag v-if="scope.row.all_deleted" type="info" size="small">已清理</el-tag>
-                <el-tag v-else-if="scope.row.all_ignored" type="warning" size="small">已忽视</el-tag>
-                <el-tag v-else-if="scope.row.all_pending" type="danger" size="small">待清理</el-tag>
-                <el-tag v-else type="info" size="small">混合</el-tag>
+                <el-tag v-if="scope.row.all_deleted" type="info" size="small">{{ $t('orphanFiles.status.deleted') }}</el-tag>
+                <el-tag v-else-if="scope.row.all_ignored" type="warning" size="small">{{ $t('orphanFiles.status.ignored') }}</el-tag>
+                <el-tag v-else-if="scope.row.all_pending" type="danger" size="small">{{ $t('orphanFiles.status.pending') }}</el-tag>
+                <el-tag v-else type="info" size="small">{{ $t('orphanFiles.status.mixed') }}</el-tag>
               </template>
               <template v-else>
-                <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
-                <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
-                <el-tag v-else type="danger" size="small">待清理</el-tag>
+                <el-tag v-if="scope.row.is_deleted" type="info" size="small">{{ $t('orphanFiles.status.deleted') }}</el-tag>
+                <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">{{ $t('orphanFiles.status.ignored') }}</el-tag>
+                <el-tag v-else type="danger" size="small">{{ $t('orphanFiles.status.pending') }}</el-tag>
               </template>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="center" fixed="right">
+          <el-table-column :label="$t('orphanFiles.list.col.action')" width="100" align="center" fixed="right">
             <template slot-scope="scope">
               <span v-if="scope.row._is_folder">-</span>
               <el-button
@@ -482,7 +482,7 @@
                 size="small"
                 @click="handleRowIgnore(scope.row, true)"
               >
-                忽视
+                {{ $t('orphanFiles.list.ignore') }}
               </el-button>
               <el-button
                 v-else-if="!scope.row.is_deleted && scope.row.is_ignored"
@@ -490,7 +490,7 @@
                 size="small"
                 @click="handleRowIgnore(scope.row, false)"
               >
-                取消忽视
+                {{ $t('orphanFiles.list.unignore') }}
               </el-button>
               <span v-else>-</span>
             </template>
@@ -499,7 +499,7 @@
       </div>
 
       <!-- 列表传统分页：按页码切换，切换页码时清空当前页选择。 -->
-      <nav class="torrent-pagination management-pagination" aria-label="孤儿文件分页">
+      <nav class="torrent-pagination management-pagination" :aria-label="$t('orphanFiles.list.paginationAria')">
         <div class="pagination-info">
           <PageSizeCombobox
             ref="pageSizeCombobox"
@@ -515,7 +515,7 @@
             @apply="applyPageSizeSelection"
             @select="handlePageSizeSelect"
           />
-          <span class="pagination-summary">共 <strong>{{ total }}</strong> 条</span>
+          <span class="pagination-summary">{{ $t('orphanFiles.list.totalPrefix') }}<strong>{{ total }}</strong>{{ $t('orphanFiles.list.totalSuffix') }}</span>
         </div>
         <div class="pagination-controls">
           <el-pagination
@@ -532,18 +532,18 @@
       </el-tab-pane>
 
       <!-- 隔离区管理 -->
-      <el-tab-pane label="隔离区" name="quarantine">
+      <el-tab-pane :label="$t('orphanFiles.tabs.quarantine')" name="quarantine">
         <section class="management-panel" aria-labelledby="quarantine-list-title">
           <div class="management-panel__header">
             <div class="management-panel__heading">
-              <h2 id="quarantine-list-title" class="management-panel__title">隔离区文件</h2>
+              <h2 id="quarantine-list-title" class="management-panel__title">{{ $t('orphanFiles.quarantine.title') }}</h2>
               <p class="management-panel__subtitle">
-                已清理文件暂存于此（保留期 {{ quarantineRetentionDays }} 天），可恢复到原位置或立即彻底删除
+                {{ $t('orphanFiles.quarantine.subtitle', {days: quarantineRetentionDays}) }}
               </p>
             </div>
             <div class="management-panel__meta">
               <el-tag v-if="quarantineSelected.length > 0" type="info" effect="plain">
-                已选择 {{ quarantineSelected.length }} 项
+                {{ $t('orphanFiles.quarantine.selected', {count: quarantineSelected.length}) }}
               </el-tag>
               <el-button
                 type="success"
@@ -552,7 +552,7 @@
                 :loading="restoreExecuting"
                 @click="handleQuarantineRestore"
               >
-                恢复选中
+                {{ $t('orphanFiles.quarantine.restore') }}
               </el-button>
               <el-button
                 type="danger"
@@ -561,10 +561,10 @@
                 :loading="purgeExecuting"
                 @click="handleQuarantinePurge"
               >
-                彻底删除选中
+                {{ $t('orphanFiles.quarantine.purge') }}
               </el-button>
               <el-button icon="el-icon-refresh" :loading="quarantineLoading" @click="loadQuarantineList">
-                刷新
+                {{ $t('common.refresh') }}
               </el-button>
             </div>
           </div>
@@ -581,23 +581,23 @@
               @selection-change="handleQuarantineSelectionChange"
             >
               <el-table-column type="selection" width="55" />
-              <el-table-column label="原位置（规范化路径）" prop="canonical_path" min-width="300" show-overflow-tooltip />
-              <el-table-column label="大小" width="120" align="center">
+              <el-table-column :label="$t('orphanFiles.quarantine.col.path')" prop="canonical_path" min-width="300" show-overflow-tooltip />
+              <el-table-column :label="$t('orphanFiles.quarantine.col.size')" width="120" align="center">
                 <template slot-scope="{row}">
                   {{ formatSize(row.file_size) }}
                 </template>
               </el-table-column>
-              <el-table-column label="隔离时间" width="170" align="center">
+              <el-table-column :label="$t('orphanFiles.quarantine.col.quarantinedAt')" width="170" align="center">
                 <template slot-scope="{row}">
                   {{ formatIsoTime(row.quarantined_at) }}
                 </template>
               </el-table-column>
-              <el-table-column label="预计删除" width="170" align="center">
+              <el-table-column :label="$t('orphanFiles.quarantine.col.purgeAfter')" width="170" align="center">
                 <template slot-scope="{row}">
                   {{ formatIsoTime(row.purge_after) }}
                 </template>
               </el-table-column>
-              <el-table-column label="延后次数" width="110" align="center">
+              <el-table-column :label="$t('orphanFiles.quarantine.col.delayCount')" width="110" align="center">
                 <template slot-scope="{row}">
                   <el-tag
                     v-if="(row.purge_delay_count || 0) > 0"
@@ -610,15 +610,15 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
+              <el-table-column :label="$t('orphanFiles.quarantine.col.downloader')" width="140" align="center" show-overflow-tooltip>
                 <template slot-scope="{row}">
                   {{ row.downloader_name || row.downloader_id || '-' }}
                 </template>
               </el-table-column>
             </el-table>
           </div>
-          <nav class="management-pagination" aria-label="隔离区分页">
-            <span class="management-pagination__total">共 {{ quarantineTotal }} 条</span>
+          <nav class="management-pagination" :aria-label="$t('orphanFiles.quarantine.paginationAria')">
+            <span class="management-pagination__total">{{ $t('orphanFiles.quarantine.total', {count: quarantineTotal}) }}</span>
             <el-pagination
               background
               :current-page.sync="quarantinePage"
@@ -643,7 +643,7 @@
     >
       <div v-loading="hardlinkLocationLoading" class="hardlink-location-content">
         <el-alert
-          title="副本位置由每日定时任务在后台整体查找并存储，此处直接显示最近一轮结果。"
+          :title="$t('orphanFiles.hardlink.notice')"
           type="info"
           :closable="false"
           show-icon
@@ -651,16 +651,16 @@
 
         <template v-if="hardlinkLocationResult">
           <div class="hardlink-location-summary">
-            <span>实时副本 <strong>{{ hardlinkLocationResult.total_copy_count }}</strong></span>
-            <span>已定位 <strong>{{ hardlinkLocationResult.total_found_count }}</strong></span>
-            <span>待预扫描 <strong>{{ hardlinkLocationResult.pending_scan_count }}</strong></span>
+            <span>{{ $t('orphanFiles.hardlink.realtime') }} <strong>{{ hardlinkLocationResult.total_copy_count }}</strong></span>
+            <span>{{ $t('orphanFiles.hardlink.located') }} <strong>{{ hardlinkLocationResult.total_found_count }}</strong></span>
+            <span>{{ $t('orphanFiles.hardlink.pending') }} <strong>{{ hardlinkLocationResult.pending_scan_count }}</strong></span>
           </div>
 
           <el-alert
             v-if="hardlinkLocationResult.total_unlocated_count > 0"
             class="hardlink-location-alert"
-            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在最近一轮预扫描中定位`"
-            description="这些副本可能位于无权限或未挂载目录，也可能尚未被预扫描覆盖；副本总数为实时统计。"
+            :title="$t('orphanFiles.hardlink.unlocatedTitle', {count: hardlinkLocationResult.total_unlocated_count})"
+            :description="$t('orphanFiles.hardlink.unlocatedDesc')"
             type="warning"
             :closable="false"
             show-icon
@@ -668,7 +668,7 @@
           <el-alert
             v-if="hardlinkLocationResult.unknown_count > 0"
             class="hardlink-location-alert"
-            :title="`${hardlinkLocationResult.unknown_count} 个源文件当前不可访问，无法核对位置`"
+            :title="$t('orphanFiles.hardlink.unknownTitle', {count: hardlinkLocationResult.unknown_count})"
             type="error"
             :closable="false"
             show-icon
@@ -684,7 +684,7 @@
           <el-alert
             v-if="hardlinkLocationResult.missing_orphan_ids.length > 0"
             class="hardlink-location-alert"
-            :title="`${hardlinkLocationResult.missing_orphan_ids.length} 个列表项已失效，请刷新页面后重试`"
+            :title="$t('orphanFiles.hardlink.invalidTitle', {count: hardlinkLocationResult.missing_orphan_ids.length})"
             type="warning"
             :closable="false"
             show-icon
@@ -701,23 +701,23 @@
                   {{ item.file_path }}
                 </span>
                 <span class="hardlink-location-item__metrics">
-                  <el-tag size="mini" type="info">副本 {{ formatHardlinkCopyCount(item.copy_count) }}</el-tag>
-                  <el-tag v-if="item.pending_scan" size="mini" type="warning">待预扫描</el-tag>
-                  <el-tag v-else size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                  <el-tag size="mini" type="info">{{ $t('orphanFiles.hardlink.copyTag', {count: formatHardlinkCopyCount(item.copy_count)}) }}</el-tag>
+                  <el-tag v-if="item.pending_scan" size="mini" type="warning">{{ $t('orphanFiles.hardlink.pendingTag') }}</el-tag>
+                  <el-tag v-else size="mini" type="success">{{ $t('orphanFiles.hardlink.locatedTag', {count: item.found_count}) }}</el-tag>
                   <el-tag
                     v-if="item.scanned_at"
                     size="mini"
                     type="info"
                     :title="item.scanned_at"
                   >
-                    扫描于 {{ formatTime(item.scanned_at) }}
+                    {{ $t('orphanFiles.hardlink.scannedAt', {time: formatTime(item.scanned_at)}) }}
                   </el-tag>
                 </span>
               </header>
 
               <el-alert
                 v-if="item.copy_count === null"
-                :title="item.error || '源文件不可访问，无法重新核对副本位置'"
+                :title="item.error || $t('orphanFiles.hardlink.inaccessible')"
                 type="error"
                 :closable="false"
                 show-icon
@@ -743,7 +743,7 @@
                     class="hardlink-location-copy__button"
                     @click="copyHardlinkPath(copyPath)"
                   >
-                    复制路径
+                    {{ $t('orphanFiles.hardlink.copyPath') }}
                   </el-button>
                   <el-button
                     type="text"
@@ -752,37 +752,37 @@
                     :loading="isHardlinkCopyDeleting(item.orphan_id, copyPath)"
                     @click="handleHardlinkCopyDelete(item.orphan_id, copyPath)"
                   >
-                    删除
+                    {{ $t('orphanFiles.hardlink.remove') }}
                   </el-button>
                 </div>
                 <p v-if="item.result_truncated" class="hardlink-location-unlocated">
-                  路径数超过存储上限，仅显示前 {{ item.copies.length }} 条。
+                  {{ $t('orphanFiles.hardlink.truncated', {count: item.copies.length}) }}
                 </p>
               </div>
               <p v-else-if="item.pending_scan" class="hardlink-location-empty">
-                等待每日定时任务预扫描定位副本路径，可稍后重新打开查看。
+                {{ $t('orphanFiles.hardlink.emptyPending') }}
               </p>
               <p v-else-if="item.copy_count && item.copy_count > 0" class="hardlink-location-empty">
-                最近一轮预扫描未定位到副本路径。
+                {{ $t('orphanFiles.hardlink.emptyUnlocated') }}
               </p>
               <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
-                该文件当前已无其它硬链接副本。
+                {{ $t('orphanFiles.hardlink.emptyNone') }}
               </p>
               <p v-if="item.unlocated_count && item.unlocated_count > 0" class="hardlink-location-unlocated">
-                该文件还有 {{ item.unlocated_count }} 个副本位置未定位。
+                {{ $t('orphanFiles.hardlink.unlocatedCount', {count: item.unlocated_count}) }}
               </p>
             </section>
           </div>
         </template>
       </div>
       <span slot="footer" class="dialog-footer">
-        <el-button @click="hardlinkLocationDialogVisible = false">关闭</el-button>
+        <el-button @click="hardlinkLocationDialogVisible = false">{{ $t('common.close') }}</el-button>
       </span>
     </el-dialog>
 
     <!-- 清理确认对话框 -->
     <el-dialog
-      title="清理确认"
+      :title="$t('orphanFiles.cleanup.title')"
       :visible.sync="cleanupDialogVisible"
       width="500px"
       :close-on-click-modal="false"
@@ -791,45 +791,45 @@
       <div v-loading="cleanupLoading">
         <el-alert
           v-if="cleanupPreviewData"
-          title="确认清理以下孤儿文件？此操作不可恢复！"
+          :title="$t('orphanFiles.cleanup.confirmTitle')"
           type="warning"
           :closable="false"
           show-icon
         >
           <template slot="default">
-            <p>文件数量: <strong>{{ cleanupPreviewData.total_count }}</strong></p>
-            <p>总大小: <strong>{{ formatSize(cleanupPreviewData.total_size) }}</strong></p>
+            <p>{{ $t('orphanFiles.cleanup.fileCount') }}<strong>{{ cleanupPreviewData.total_count }}</strong></p>
+            <p>{{ $t('orphanFiles.cleanup.totalSize') }}<strong>{{ formatSize(cleanupPreviewData.total_size) }}</strong></p>
           </template>
         </el-alert>
         <el-alert
           v-if="cleanupPreviewData && (cleanupPreviewData.low_confidence_count || 0) > 0"
           class="cleanup-low-confidence-warn"
-          :title="`其中 ${cleanupPreviewData.low_confidence_count} 个为低置信度（离线降级目录粗筛判定）`"
+          :title="$t('orphanFiles.cleanup.lowTitle', {count: cleanupPreviewData.low_confidence_count})"
           type="error"
           :closable="false"
           show-icon
         >
           <template slot="default">
-            <p>低置信度文件有误判风险（可能并非真正的孤儿）。确认清理前请核对路径，避免误删用户数据。</p>
+            <p>{{ $t('orphanFiles.cleanup.lowText') }}</p>
           </template>
         </el-alert>
       </div>
       <span slot="footer" class="dialog-footer">
-        <el-button @click="handleCloseCleanupDialog">关闭</el-button>
+        <el-button @click="handleCloseCleanupDialog">{{ $t('common.close') }}</el-button>
         <el-button
           v-if="cleanupPreviewData"
           type="danger"
           :loading="cleanupExecuting"
           @click="handleCleanupConfirm"
         >
-          确认清理
+          {{ $t('orphanFiles.cleanup.confirm') }}
         </el-button>
       </span>
     </el-dialog>
 
     <!-- 快捷操作（左匹配）对话框 -->
     <el-dialog
-      :title="quickActionType === 'cleanup' ? '快捷删除（按前缀）' : '快捷忽视（按前缀）'"
+      :title="quickActionType === 'cleanup' ? $t('orphanFiles.quickAction.cleanupTitle') : $t('orphanFiles.quickAction.ignoreTitle')"
       :visible.sync="quickActionDialogVisible"
       width="520px"
       :close-on-click-modal="false"
@@ -840,24 +840,24 @@
           type="info"
           :closable="false"
           show-icon
-          title="按路径前缀左匹配待清理文件"
+          :title="$t('orphanFiles.quickAction.noticeTitle')"
         >
           <template slot="default">
             <p>
-              输入路径前缀（绝对路径开头），将匹配所有
-              <strong>文件路径</strong> 以此开头的<strong>待清理</strong>文件（排除已忽视/已清理）。
+              {{ $t('orphanFiles.quickAction.noticeLead') }}
+              <strong>{{ $t('orphanFiles.quickAction.noticeFileStrong') }}</strong>{{ $t('orphanFiles.quickAction.noticeMid') }}<strong>{{ $t('orphanFiles.quickAction.noticePendingStrong') }}</strong>{{ $t('orphanFiles.quickAction.noticeTail') }}
             </p>
-            <p v-if="quickActionType === 'cleanup'">删除即移入隔离区，可恢复。</p>
+            <p v-if="quickActionType === 'cleanup'">{{ $t('orphanFiles.quickAction.cleanupNote') }}</p>
           </template>
         </el-alert>
         <div style="margin-top: 16px">
           <label for="quick-action-prefix" style="display:block; margin-bottom: 6px; font-weight: 600">
-            路径前缀
+            {{ $t('orphanFiles.quickAction.prefixLabel') }}
           </label>
           <el-input
             id="quick-action-prefix"
             v-model="quickActionPrefix"
-            placeholder="例如：D:\downloads\待清理目录\ 或 /data/leak/"
+            :placeholder="$t('orphanFiles.quickAction.prefixPlaceholder')"
             clearable
             :disabled="quickActionLoading"
             @keyup.enter.native="handleQuickActionConfirm"
@@ -865,13 +865,13 @@
         </div>
       </div>
       <span slot="footer" class="dialog-footer">
-        <el-button :disabled="quickActionLoading" @click="handleQuickActionCancel">取消</el-button>
+        <el-button :disabled="quickActionLoading" @click="handleQuickActionCancel">{{ $t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="quickActionLoading"
           @click="handleQuickActionConfirm"
         >
-          确定
+          {{ $t('orphanFiles.quickAction.ok') }}
         </el-button>
       </span>
     </el-dialog>
@@ -906,12 +906,12 @@ import {
   OrphanSelectionPayload,
   OrphanSelectionFilters,
   CleanupPreviewSuccess,
-  IgnoreResult,
   QuarantineItem,
   PrefixMatchPreviewResult
 } from '@/api/orphan-files'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
+import { apiResponseMessage, translate } from '@/i18n'
 import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/PageSizeCombobox.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
@@ -1000,7 +1000,7 @@ export default class OrphanFiles extends Vue {
   private hardlinkLocationDialogVisible = false
   private hardlinkLocationLoading = false
   private hardlinkLocationResult: HardlinkCopyLocationsResult | null = null
-  private hardlinkLocationDialogTitle = '硬链接副本位置'
+  private hardlinkLocationDialogTitle = translate('orphanFiles.hardlink.title')
   private hardlinkLocationRequestSeq = 0
   // 当前弹窗涉及的孤儿 ID（删除副本后重查用）；重查只遮罩列表区，不清空旧结果。
   private hardlinkLocationOrphanIds: number[] = []
@@ -1016,7 +1016,7 @@ export default class OrphanFiles extends Vue {
     remaining_size: 0,
     ignored_count: 0,
     cleanup_allowed: false,
-    cleanup_block_reason: '尚无可清理的成功扫描'
+    cleanup_block_reason: translate('orphanFiles.msg.blockReasonInitial')
   }
   private dismissedLargeScanReminderId: string | null = null
 
@@ -1076,7 +1076,10 @@ export default class OrphanFiles extends Vue {
         this.quarantineTotal = res.data.total
       }
     } catch (error) {
-      this.$message.error('加载隔离区列表失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.loadQuarantineFailed') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.quarantineLoading = false
     }
@@ -1089,7 +1092,7 @@ export default class OrphanFiles extends Vue {
   private async handleQuarantineRestore() {
     if (this.quarantineSelected.length === 0) return
     try {
-      await this.$confirm('确认恢复选中的文件到原位置？', '恢复确认', {
+      await this.$confirm(translate('orphanFiles.msg.restoreConfirm'), translate('orphanFiles.msg.restoreTitle'), {
         type: 'warning'
       })
     } catch {
@@ -1102,15 +1105,23 @@ export default class OrphanFiles extends Vue {
       if (res.code === '200' && res.data) {
         const d = res.data
         if (d.rejected) {
-          this.$message.error(d.failed_list[0]?.reason || '恢复被拒绝')
+          // E01：拒绝原因属后端诊断数据，只进控制台，用户提示用固定键
+          console.error('隔离区恢复被拒绝:', d.failed_list)
+          this.$message.error(translate('orphanFiles.msg.restoreRejected'))
         } else {
-          this.$message.success(`恢复完成：成功 ${d.restored_count} 个${d.failed_count ? '，失败 ' + d.failed_count + ' 个' : ''}`)
+          const failedSuffix = d.failed_count
+            ? translate('orphanFiles.msg.restoreFailedSuffix', { count: d.failed_count })
+            : ''
+          this.$message.success(translate('orphanFiles.msg.restoreDone', { count: d.restored_count }) + failedSuffix)
         }
         this.quarantinePage = 1
         await this.loadQuarantineList()
       }
     } catch (error) {
-      this.$message.error('恢复失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.restoreFailed') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.restoreExecuting = false
     }
@@ -1120,9 +1131,13 @@ export default class OrphanFiles extends Vue {
     if (this.quarantineSelected.length === 0) return
     try {
       await this.$confirm(
-        '确认彻底删除选中的文件？此操作不可恢复，文件将被永久删除！',
-        '彻底删除确认',
-        { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+        translate('orphanFiles.msg.purgeConfirm'),
+        translate('orphanFiles.msg.purgeTitle'),
+        {
+          type: 'error',
+          confirmButtonText: translate('orphanFiles.hardlink.confirmDelete'),
+          cancelButtonText: translate('common.cancel')
+        }
       )
     } catch {
       return
@@ -1135,12 +1150,17 @@ export default class OrphanFiles extends Vue {
         const taskId = res.data.task_id
         const skippedCount = res.data.skipped_count || 0
         if (taskId) {
-          const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+          const skippedText = skippedCount
+            ? translate('orphanFiles.msg.skippedCount', { count: skippedCount })
+            : ''
           this.$message.success(
-            `彻底删除任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+            translate('orphanFiles.msg.purgeSubmitted', {
+              taskId: taskId.slice(0, 8),
+              skipped: skippedText
+            })
           )
         } else {
-          this.$message.info(res.msg || '所选隔离文件均已在彻底删除任务中处理')
+          this.$message.info(translate('orphanFiles.msg.purgeAllProcessing'))
         }
         this.quarantineSelected = []
         const table = this.$refs.quarantineTable as OrphanTableRef | undefined
@@ -1149,7 +1169,10 @@ export default class OrphanFiles extends Vue {
         await this.loadQuarantineList()
       }
     } catch (error) {
-      this.$message.error('删除失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.purgeFailed') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.purgeExecuting = false
     }
@@ -1218,10 +1241,13 @@ export default class OrphanFiles extends Vue {
         this.$set(row, 'child_total', response.data.total)
         this.$set(row, 'children_loaded', true)
       } else {
-        this.$message.error(response.msg || '加载文件夹子项失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.folderChildrenFailed')))
       }
     } catch (error) {
-      this.$message.error('加载文件夹子项失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.folderChildrenFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.$set(row, 'children_loading', false)
     }
@@ -1279,10 +1305,12 @@ export default class OrphanFiles extends Vue {
   private getHardlinkCopyCountTitle(row: OrphanTableRow): string {
     const count = row.hardlink_copy_count
     if (typeof count !== 'number') {
-      return isFolderRow(row) ? '展开后仅统计当前可见文件的副本数量快照' : '副本数量尚未生成快照（等待扫描）'
+      return isFolderRow(row)
+        ? translate('orphanFiles.hardlink.countFolderTitle')
+        : translate('orphanFiles.hardlink.countUnknownTitle')
     }
-    if (count === 0) return '暂无其它硬链接副本（点击可实时复核）'
-    return `点击查看 ${count} 个硬链接副本的位置`
+    if (count === 0) return translate('orphanFiles.hardlink.countZeroTitle')
+    return translate('orphanFiles.hardlink.countNTitle', { count })
   }
 
   /** 文件夹行提交所有已生成数值快照的子项（含 0）：列值是扫描快照，弹窗实时复核兜住快照后新增的副本；null 子项跳过。 */
@@ -1297,8 +1325,8 @@ export default class OrphanFiles extends Vue {
 
     this.hardlinkLocationOrphanIds = [...new Set(targets.map((item) => item.id))]
     this.hardlinkLocationDialogTitle = isFolderRow(row)
-      ? `硬链接副本位置（${targets.length} 个文件）`
-      : '硬链接副本位置'
+      ? translate('orphanFiles.hardlink.titleWithCount', { count: targets.length })
+      : translate('orphanFiles.hardlink.title')
     this.hardlinkLocationDialogVisible = true
     await this.fetchHardlinkLocations(this.hardlinkLocationOrphanIds)
   }
@@ -1326,13 +1354,15 @@ export default class OrphanFiles extends Vue {
       if (response.code === '200' && response.data) {
         this.hardlinkLocationResult = response.data
       } else {
-        this.$message.error(response.msg || '查询硬链接副本位置失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.hardlinkQueryFailed')))
       }
     } catch (error) {
       if (requestId !== this.hardlinkLocationRequestSeq) return
       this.$message.error(
-        (keepResult ? '刷新副本位置失败，当前展示为删除前结果：' : '查询硬链接副本位置失败：') +
-          extractErrorMessage(error, '网络错误')
+        (keepResult
+          ? translate('orphanFiles.msg.hardlinkRefreshFailed')
+          : translate('orphanFiles.msg.hardlinkQueryFailedWith')) +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
       )
     } finally {
       if (requestId === this.hardlinkLocationRequestSeq) {
@@ -1347,7 +1377,7 @@ export default class OrphanFiles extends Vue {
     this.hardlinkLocationLoading = false
     this.hardlinkLocationRefreshing = false
     this.hardlinkLocationResult = null
-    this.hardlinkLocationDialogTitle = '硬链接副本位置'
+    this.hardlinkLocationDialogTitle = translate('orphanFiles.hardlink.title')
     this.hardlinkLocationOrphanIds = []
     this.hardlinkCopyDeleting = {}
   }
@@ -1367,9 +1397,13 @@ export default class OrphanFiles extends Vue {
     if (this.hardlinkCopyDeleting[stateKey]) return
     try {
       await this.$confirm(
-        `确认删除硬链接副本？\n${copyPath}\n此操作不可恢复：仅移除该路径链接，数据仍由源文件保留；位于种子目录内的副本会被拒绝删除。`,
-        '删除副本确认',
-        { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+        translate('orphanFiles.hardlink.deleteConfirm', { path: copyPath }),
+        translate('orphanFiles.hardlink.deleteTitle'),
+        {
+          type: 'error',
+          confirmButtonText: translate('orphanFiles.hardlink.confirmDelete'),
+          cancelButtonText: translate('common.cancel')
+        }
       )
     } catch {
       return
@@ -1382,10 +1416,12 @@ export default class OrphanFiles extends Vue {
       if (response.code === '200' && response.data) {
         const data = response.data
         if (data.rejected) {
-          this.$message.error(data.error || data.failed_list[0]?.reason || '删除被拒绝')
+          // E01：拒绝原因属后端诊断数据，只进控制台，用户提示用固定键
+          console.error('删除硬链接副本被拒绝:', data.error || data.failed_list)
+          this.$message.error(translate('orphanFiles.hardlink.rejected'))
         } else {
           if (data.success_count > 0) {
-            this.$message.success(`已删除副本：${copyPath}`)
+            this.$message.success(translate('orphanFiles.hardlink.deleted', { path: copyPath }))
             this.syncHardlinkCopyCount(orphanId, data.copy_count)
             if (
               this.hardlinkLocationDialogVisible &&
@@ -1395,14 +1431,19 @@ export default class OrphanFiles extends Vue {
             }
           }
           if (data.failed_count > 0) {
-            this.$message.error(`删除失败：${data.failed_list[0]?.reason || '未知原因'}`)
+            // E01：逐条失败原因只进控制台
+            console.error('删除硬链接副本部分失败:', data.failed_list)
+            this.$message.error(translate('orphanFiles.msg.hardlinkDeletePartial'))
           }
         }
       } else {
-        this.$message.error(response.msg || '删除硬链接副本失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.hardlinkDeleteFailed')))
       }
     } catch (error) {
-      this.$message.error('删除硬链接副本失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.hardlinkDeleteFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.$delete(this.hardlinkCopyDeleting, stateKey)
     }
@@ -1435,9 +1476,12 @@ export default class OrphanFiles extends Vue {
   private async copyHardlinkPath(path: string): Promise<void> {
     try {
       await copyTextToClipboard(path)
-      this.$message.success('路径已复制')
+      this.$message.success(translate('orphanFiles.msg.pathCopied'))
     } catch (error) {
-      this.$message.error('复制失败：' + extractErrorMessage(error, '当前浏览器不支持剪贴板'))
+      this.$message.error(
+        translate('orphanFiles.msg.copyPathFailed') +
+          extractErrorMessage(error, translate('orphanFiles.msg.clipboardUnsupported'))
+      )
     }
   }
 
@@ -1459,7 +1503,8 @@ export default class OrphanFiles extends Vue {
   }
 
   private get cleanupBlockReason(): string {
-    return this.scanContext.cleanup_block_reason || '当前扫描快照不允许清理'
+    // 后端返回的 cleanup_block_reason 属扫描上下文数据（B03 原文透传）；本地兑底走键
+    return this.scanContext.cleanup_block_reason || translate('orphanFiles.msg.blockReasonDefault')
   }
 
   /** 权威选择集：展开文件夹行 child_ids 后的实际文件 id（后端始终收扁平 orphan_ids）。 */
@@ -1503,17 +1548,17 @@ export default class OrphanFiles extends Vue {
   /** 置信度筛选选项（值与 OrphanConfidence 联合类型对齐，防拼写漂移）。 */
   private get confidenceOptions(): SelectOption[] {
     return [
-      { value: 'high', label: '高置信度' },
-      { value: 'low', label: '低置信度' }
+      { value: 'high', label: translate('orphanFiles.confidence.high') },
+      { value: 'low', label: translate('orphanFiles.confidence.low') }
     ]
   }
 
   /** 状态筛选选项（值与 OrphanStatusFilter 联合类型对齐，防拼写漂移）。 */
   private get statusOptions(): SelectOption[] {
     return [
-      { value: 'pending', label: '待清理' },
-      { value: 'ignored', label: '已忽视' },
-      { value: 'deleted', label: '已清理' }
+      { value: 'pending', label: translate('orphanFiles.status.pending') },
+      { value: 'ignored', label: translate('orphanFiles.status.ignored') },
+      { value: 'deleted', label: translate('orphanFiles.status.deleted') }
     ]
   }
 
@@ -1554,8 +1599,8 @@ export default class OrphanFiles extends Vue {
   }
 
   private get batchCleanupTitle(): string {
-    if (this.selectedCount === 0) return '请先选择待清理文件'
-    if (!this.allSelectionPending) return '请勿混选不同状态，仅支持清理"待清理"项'
+    if (this.selectedCount === 0) return translate('orphanFiles.batchTitle.cleanupSelectFirst')
+    if (!this.allSelectionPending) return translate('orphanFiles.batchTitle.cleanupMixed')
     return this.cleanupAllowed ? '' : this.cleanupBlockReason
   }
 
@@ -1564,8 +1609,8 @@ export default class OrphanFiles extends Vue {
   }
 
   private get batchIgnoreTitle(): string {
-    if (this.selectedCount === 0) return '请先选择待清理文件'
-    if (!this.allSelectionPending) return '请勿混选不同状态，仅支持忽视"待清理"项'
+    if (this.selectedCount === 0) return translate('orphanFiles.batchTitle.ignoreSelectFirst')
+    if (!this.allSelectionPending) return translate('orphanFiles.batchTitle.ignoreMixed')
     return ''
   }
 
@@ -1574,8 +1619,8 @@ export default class OrphanFiles extends Vue {
   }
 
   private get batchUnignoreTitle(): string {
-    if (this.selectedCount === 0) return '请先选择已忽视文件'
-    if (!this.allSelectionIgnored) return '请勿混选不同状态，仅支持取消"已忽视"项'
+    if (this.selectedCount === 0) return translate('orphanFiles.batchTitle.unignoreSelectFirst')
+    if (!this.allSelectionIgnored) return translate('orphanFiles.batchTitle.unignoreMixed')
     return ''
   }
 
@@ -1583,17 +1628,18 @@ export default class OrphanFiles extends Vue {
     const latest = this.latestAttempt
     if (!latest) return ''
     if (latest.status === 'queued') {
-      return '扫描任务已进入后台队列；页面仅轮询轻量状态，列表与清理暂不可用。'
+      return translate('orphanFiles.scanState.queuedDesc')
     }
     if (latest.status === 'running') {
-      return '扫描正在进行中，完成前列表与统计保持为空，清理功能暂不可用。'
+      return translate('orphanFiles.scanState.runningDesc')
     }
     if (latest.status === 'failed') {
-      const reason = latest.error_message || '未知错误'
+      // error_message 属后端扫描数据（B03 原文透传，Q02）
+      const reason = latest.error_message || translate('orphanFiles.scanState.unknownError')
       if (this.displayScan) {
-        return `失败原因：${reason}。当前只读展示最近一次成功扫描的剩余结果，重新扫描成功前不可清理。`
+        return translate('orphanFiles.scanState.failedWithDisplay', { reason })
       }
-      return `失败原因：${reason}。当前尚无可展示的成功扫描结果。`
+      return translate('orphanFiles.scanState.failedNoDisplay', { reason })
     }
     return ''
   }
@@ -1659,11 +1705,14 @@ export default class OrphanFiles extends Vue {
           this.startScanPolling(latest.scan_id)
         }
       } else {
-        this.$message.error(response.msg || '获取列表失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.listFailed')))
       }
     } catch (error) {
       if (requestId !== this.refreshRequestSeq) return
-      this.$message.error('获取孤儿文件列表失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.listFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       if (requestId === this.refreshRequestSeq) {
         this.listLoading = false
@@ -1720,7 +1769,7 @@ export default class OrphanFiles extends Vue {
       ORPHAN_PAGE_SIZE_MAX
     )
     if (Number.isFinite(requestedPageSize) && requestedPageSize > ORPHAN_PAGE_SIZE_MAX) {
-      this.$message.info(`单次最多加载 ${ORPHAN_PAGE_SIZE_MAX} 条，已自动调整`)
+      this.$message.info(translate('orphanFiles.msg.pageSizeAdjusted', { count: ORPHAN_PAGE_SIZE_MAX }))
     }
     this.pageSizeInput = String(normalizedPageSize)
     this.pageSizeDropdownExpanded = false
@@ -1772,9 +1821,9 @@ export default class OrphanFiles extends Vue {
 
   private async handleScan() {
     try {
-      await this.$confirm('确认立即扫描孤儿文件？扫描可能需要较长时间。', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(translate('orphanFiles.msg.scanConfirm'), translate('orphanFiles.msg.tipTitle'), {
+        confirmButtonText: translate('orphanFiles.quickAction.ok'),
+        cancelButtonText: translate('common.cancel'),
         type: 'info'
       })
     } catch {
@@ -1788,14 +1837,21 @@ export default class OrphanFiles extends Vue {
       if (response.code === '200' && response.data) {
         const data = response.data
         this.activeScanId = data.scan_id
-        this.$message.success(data.accepted ? '扫描任务已提交到后台' : '已有扫描任务，继续跟踪其状态')
+        this.$message.success(
+          data.accepted
+            ? translate('orphanFiles.msg.scanSubmitted')
+            : translate('orphanFiles.msg.scanExisting')
+        )
         await this.refreshPageData()
         this.startScanPolling(data.scan_id)
       } else {
-        this.$message.error(response.msg || '扫描失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.scanFailed')))
       }
     } catch (error) {
-      this.$message.error('扫描失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.scanFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.scanSubmitting = false
       this.scanLoading = this.activeScanId !== null
@@ -1824,10 +1880,19 @@ export default class OrphanFiles extends Vue {
         this.stopScanPolling()
         if (record.status === 'completed') {
           this.$message.success(
-            `扫描完成：孤儿 ${record.total_orphans}，新增明细 ${record.new_orphans}，复用 ${record.known_orphans}`
+            translate('orphanFiles.msg.scanDone', {
+              total: record.total_orphans,
+              added: record.new_orphans,
+              known: record.known_orphans
+            })
           )
         } else {
-          this.$message.warning(`扫描失败：${record.error_message || '未知错误'}`)
+          // error_message 属后端扫描数据（B03 原文透传，Q02）
+          this.$message.warning(
+            translate('orphanFiles.msg.scanFailedRecord', {
+              reason: record.error_message || translate('orphanFiles.scanState.unknownError')
+            })
+          )
         }
         await this.refreshPageData()
       } catch (error) {
@@ -1850,7 +1915,7 @@ export default class OrphanFiles extends Vue {
 
   private async handleCleanupPreview() {
     if (this.selectedCount === 0) {
-      this.$message.warning('请先选择要清理的文件')
+      this.$message.warning(translate('orphanFiles.msg.cleanupSelectFirst'))
       return
     }
     if (!this.allSelectionPending) {
@@ -1876,25 +1941,28 @@ export default class OrphanFiles extends Vue {
       })
       if (response.code === '200' && response.data) {
         if (response.data.rejected === true) {
-          this.$message.error(response.data.error || response.data.reason)
+          // E01：拒绝原因属后端门禁数据，只进控制台，用户提示用固定键
+          console.error('清理预览被拒绝:', response.data.error || response.data.reason)
+          this.$message.error(translate('orphanFiles.msg.previewRejected'))
           this.cleanupDialogVisible = false
           await this.refreshPageData()
         } else if (response.data.total_count === 0) {
           // 预览为空：所选文件均不满足清理条件（低置信度/已忽视/已清理/scan_id 不匹配）。
           // 不弹空对话框，给出针对性提示引导用户。
-          this.$message.warning(
-            '所选文件均无可清理项：可能是低置信度（需等下载器上线精筛）、已忽视（需先取消忽视）或已清理。'
-          )
+          this.$message.warning(translate('orphanFiles.msg.cleanupEmptySelection'))
           this.cleanupDialogVisible = false
         } else {
           this.cleanupPreviewData = response.data
         }
       } else {
-        this.$message.error(response.msg || '预览失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.previewFailed')))
         this.cleanupDialogVisible = false
       }
     } catch (error) {
-      this.$message.error('预览失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.previewFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
       this.cleanupDialogVisible = false
     } finally {
       this.cleanupLoading = false
@@ -1905,7 +1973,7 @@ export default class OrphanFiles extends Vue {
     this.cleanupExecuting = true
     try {
       if (!this.previewScanId || !this.previewSelection) {
-        this.$message.warning('扫描批次已失效，请刷新后重试')
+        this.$message.warning(translate('orphanFiles.msg.scanStale'))
         return
       }
       const response = await cleanupOrphans({
@@ -1916,20 +1984,28 @@ export default class OrphanFiles extends Vue {
         const taskId = response.data.task_id
         const skippedCount = response.data.skipped_count || 0
         if (taskId) {
-          const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+          const skippedText = skippedCount
+            ? translate('orphanFiles.msg.skippedCount', { count: skippedCount })
+            : ''
           this.$message.success(
-            `主动清理任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+            translate('orphanFiles.msg.cleanupSubmitted', {
+              taskId: taskId.slice(0, 8),
+              skipped: skippedText
+            })
           )
         } else {
-          this.$message.info(response.msg || '所选孤儿文件均已在主动清理任务中处理')
+          this.$message.info(translate('orphanFiles.msg.cleanupAllProcessing'))
         }
         this.handleCloseCleanupDialog()
         await this.refreshPageData()
       } else {
-        this.$message.error(response.msg || '清理失败')
+        this.$message.error(apiResponseMessage(response, translate('orphanFiles.msg.cleanupFailed')))
       }
     } catch (error) {
-      this.$message.error('清理失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.cleanupFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.cleanupExecuting = false
     }
@@ -1951,7 +2027,11 @@ export default class OrphanFiles extends Vue {
   private async handleBatchIgnore(ignored: boolean): Promise<void> {
     const rows = ignored ? this.pendingSelection : this.ignoredSelection
     if (rows.length === 0) {
-      this.$message.warning(ignored ? '请选择待清理的文件' : '请选择已忽视的文件')
+      this.$message.warning(
+        ignored
+          ? translate('orphanFiles.msg.ignoreSelectPending')
+          : translate('orphanFiles.msg.ignoreSelectIgnored')
+      )
       return
     }
     await this.applyIgnore({ orphan_ids: rows.map((r) => r.id) }, rows.length, ignored)
@@ -1962,13 +2042,19 @@ export default class OrphanFiles extends Vue {
     selectionCount: number,
     ignored: boolean
   ): Promise<void> {
-    const action = ignored ? '忽视' : '取消忽视'
+    const action = ignored
+      ? translate('orphanFiles.msg.actionIgnore')
+      : translate('orphanFiles.msg.actionUnignore')
     try {
-      await this.$confirm(`确认${action}选中的 ${selectionCount} 个孤儿文件？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info'
-      })
+      await this.$confirm(
+        translate('orphanFiles.msg.ignoreConfirm', { action, count: selectionCount }),
+        translate('orphanFiles.msg.tipTitle'),
+        {
+          confirmButtonText: translate('orphanFiles.quickAction.ok'),
+          cancelButtonText: translate('common.cancel'),
+          type: 'info'
+        }
+      )
     } catch {
       return // 用户取消
     }
@@ -1984,38 +2070,48 @@ export default class OrphanFiles extends Vue {
       if (response.code === '200' && response.data) {
         const data = response.data
         if (data.rejected === true) {
-          this.$message.error(`${action}失败：${this.summarizeIgnoreFailures(data)}`)
+          // E01：拒绝原因只进控制台，用户提示按失败计数
+          console.error(`${action}被拒绝:`, data.error, data.failed_list)
+          this.$message.error(
+            translate('orphanFiles.msg.ignoreFailedCount', {
+              action,
+              count: data.failed_count || selectionCount
+            })
+          )
         } else if (data.success_count === 0 && data.failed_count > 0) {
-          this.$message.error(`${action}失败：${this.summarizeIgnoreFailures(data)}`)
+          console.error(`${action}失败明细:`, data.failed_list)
+          this.$message.error(
+            translate('orphanFiles.msg.ignoreFailedCount', { action, count: data.failed_count })
+          )
         } else if (data.failed_count > 0) {
+          console.error(`${action}部分失败明细:`, data.failed_list)
           this.$message.warning(
-            `${action}部分完成：成功 ${data.success_count} 个，失败 ${data.failed_count} 个；${this.summarizeIgnoreFailures(data)}`
+            translate('orphanFiles.msg.ignorePartial', {
+              action,
+              success: data.success_count,
+              failed: data.failed_count
+            })
           )
         } else {
-          this.$message.success(`${action}完成：成功 ${data.success_count} 个`)
+          this.$message.success(translate('orphanFiles.msg.ignoreDone', { action, count: data.success_count }))
         }
         await this.refreshPageData()
       } else {
-        this.$message.error(response.msg || `${action}失败`)
+        this.$message.error(
+          apiResponseMessage(response, translate('orphanFiles.msg.ignoreFailed', { action }))
+        )
       }
     } catch (error) {
-      this.$message.error(`${action}失败：` + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.ignoreFailed', { action }) +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
     } finally {
       this.ignoreLoading = false
     }
   }
 
   // ========== 工具方法 ==========
-
-  private summarizeIgnoreFailures(data: IgnoreResult): string {
-    if (data.error) return data.error
-    const reasons = Array.from(
-      new Set(data.failed_list.map((item) => item.reason).filter((reason) => Boolean(reason)))
-    )
-    if (reasons.length === 0) return `${data.failed_count} 个文件未处理`
-    const summary = reasons.slice(0, 3).join('；')
-    return reasons.length > 3 ? `${summary}；另有 ${reasons.length - 3} 类原因` : summary
-  }
 
   // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视；副本定位筛选切换） ==========
 
@@ -2041,12 +2137,12 @@ export default class OrphanFiles extends Vue {
 
     const prefix = (this.quickActionPrefix || '').trim()
     if (!prefix) {
-      this.$message.warning('请输入路径前缀')
+      this.$message.warning(translate('orphanFiles.msg.prefixRequired'))
       return
     }
     const displayScan = this.displayScan
     if (!displayScan) {
-      this.$message.warning('当前无可用的成功扫描批次，无法按前缀操作')
+      this.$message.warning(translate('orphanFiles.msg.noScanBatch'))
       return
     }
     if (actionType === 'cleanup' && !this.cleanupAllowed) {
@@ -2065,24 +2161,28 @@ export default class OrphanFiles extends Vue {
       if (resp.code === '200' && resp.data) {
         preview = resp.data
       } else {
-        this.$message.error(resp.msg || '前缀匹配预览失败')
+        this.$message.error(apiResponseMessage(resp, translate('orphanFiles.msg.prefixPreviewFailed')))
         this.quickActionLoading = false
         return
       }
     } catch (error) {
-      this.$message.error('前缀匹配预览失败：' + extractErrorMessage(error, '网络错误'))
+      this.$message.error(
+        translate('orphanFiles.msg.prefixPreviewFailedWith') +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
+      )
       this.quickActionLoading = false
       return
     }
 
-    // scan 过期/未完成：后端返回 rejected，提示原因并保留对话框供用户刷新后重试
+    // scan 过期/未完成：后端返回 rejected，提示固定文案并保留对话框供用户刷新后重试（E01：原因只进控制台）
     if (preview && preview.rejected === true) {
-      this.$message.error(preview.reason || '当前扫描快照不允许操作')
+      console.error('前缀匹配预览被拒绝:', preview.reason)
+      this.$message.error(translate('orphanFiles.msg.snapshotNotAllowed'))
       this.quickActionLoading = false
       return
     }
     if (preview.count === 0) {
-      this.$message.warning('没有匹配的待清理文件')
+      this.$message.warning(translate('orphanFiles.msg.noMatch'))
       this.quickActionLoading = false
       return
     }
@@ -2098,21 +2198,21 @@ export default class OrphanFiles extends Vue {
 
     // 二次确认（删除文案含总数/大小/低置信度警告；忽视文案含总数）
     const isCleanup = actionType === 'cleanup'
-    let confirmText = `将影响 ${preview.count} 个待清理文件`
+    let confirmText = translate('orphanFiles.msg.affectCount', { count: preview.count })
     if (isCleanup) {
-      confirmText += `（共 ${this.formatSize(preview.total_size)}）`
+      confirmText += translate('orphanFiles.msg.sizeSuffix', { size: this.formatSize(preview.total_size) })
       if (preview.low_confidence_count > 0) {
-        confirmText += `\n⚠️ 其中 ${preview.low_confidence_count} 个为低置信度，有误判风险，请核对路径`
+        confirmText += translate('orphanFiles.msg.lowWarn', { count: preview.low_confidence_count })
       }
-      confirmText += '\n\n确认将它们移入隔离区（可恢复）？'
+      confirmText += translate('orphanFiles.msg.moveToQuarantine')
     } else {
-      confirmText += '\n\n确认将它们设为忽视（受保护，不再被自动/手动清理）？'
+      confirmText += translate('orphanFiles.msg.setIgnored')
     }
 
     try {
-      await this.$confirm(confirmText, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(confirmText, translate('orphanFiles.msg.tipTitle'), {
+        confirmButtonText: translate('orphanFiles.quickAction.ok'),
+        cancelButtonText: translate('common.cancel'),
         type: isCleanup ? 'warning' : 'info',
         dangerouslyUseHTMLString: false
       })
@@ -2134,17 +2234,22 @@ export default class OrphanFiles extends Vue {
           const taskId = resp.data.task_id || ''
           const skippedCount = resp.data.skipped_count || 0
           if (taskId) {
-            const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+            const skippedText = skippedCount
+              ? translate('orphanFiles.msg.skippedCount', { count: skippedCount })
+              : ''
             this.$message.success(
-              `主动清理任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+              translate('orphanFiles.msg.cleanupSubmitted', {
+                taskId: taskId.slice(0, 8),
+                skipped: skippedText
+              })
             )
           } else {
-            this.$message.info(resp.msg || '匹配文件均已在主动清理任务中处理')
+            this.$message.info(translate('orphanFiles.msg.matchAllProcessing'))
           }
           this.quickActionDialogVisible = false
           await this.refreshPageData()
         } else {
-          this.$message.error(resp.msg || '清理任务提交失败')
+          this.$message.error(apiResponseMessage(resp, translate('orphanFiles.msg.cleanupSubmitFailed')))
         }
       } else {
         // 快捷忽视：直接调 setIgnored，跳过 applyIgnore 的内置 $confirm（此处已二次确认）
@@ -2156,26 +2261,49 @@ export default class OrphanFiles extends Vue {
         })
         if (resp.code === '200' && resp.data) {
           const data = resp.data
+          const action = translate('orphanFiles.msg.actionIgnore')
           if (data.rejected === true) {
-            this.$message.error(`忽视失败：${this.summarizeIgnoreFailures(data)}`)
+            // E01：拒绝原因只进控制台
+            console.error('快捷忽视被拒绝:', data.error, data.failed_list)
+            this.$message.error(
+              translate('orphanFiles.msg.ignoreFailedCount', {
+                action,
+                count: data.failed_count || preview.count
+              })
+            )
           } else if (data.success_count === 0 && data.failed_count > 0) {
-            this.$message.error(`忽视失败：${this.summarizeIgnoreFailures(data)}`)
+            console.error('快捷忽视失败明细:', data.failed_list)
+            this.$message.error(
+              translate('orphanFiles.msg.ignoreFailedCount', { action, count: data.failed_count })
+            )
           } else if (data.failed_count > 0) {
+            console.error('快捷忽视部分失败明细:', data.failed_list)
             this.$message.warning(
-              `忽视部分完成：成功 ${data.success_count} 个，失败 ${data.failed_count} 个；${this.summarizeIgnoreFailures(data)}`
+              translate('orphanFiles.msg.ignorePartial', {
+                action,
+                success: data.success_count,
+                failed: data.failed_count
+              })
             )
           } else {
-            this.$message.success(`忽视完成：成功 ${data.success_count} 个`)
+            this.$message.success(translate('orphanFiles.msg.ignoreDone', { action, count: data.success_count }))
           }
           this.quickActionDialogVisible = false
           await this.refreshPageData()
         } else {
-          this.$message.error(resp.msg || '忽视失败')
+          this.$message.error(
+            apiResponseMessage(resp, translate('orphanFiles.msg.ignoreFailed', {
+              action: translate('orphanFiles.msg.actionIgnore')
+            }))
+          )
         }
       }
     } catch (error) {
       this.$message.error(
-        (isCleanup ? '清理失败：' : '忽视失败：') + extractErrorMessage(error, '网络错误')
+        (isCleanup
+          ? translate('orphanFiles.msg.cleanupFailedWith')
+          : translate('orphanFiles.msg.ignoreFailed', { action: translate('orphanFiles.msg.actionIgnore') })) +
+          extractErrorMessage(error, translate('orphanFiles.msg.networkFallback'))
       )
     } finally {
       this.quickActionLoading = false

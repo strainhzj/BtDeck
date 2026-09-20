@@ -98,7 +98,10 @@ const AUDITED_FILES = [
   'src/components/tasks/CronEditor.vue',
   'src/components/tasks/MonacoEditor.vue',
   'src/components/tasks/PythonClassSelector.vue',
-  'src/api/tasks.ts'
+  'src/api/tasks.ts',
+  // P6-4b（审计日志/孤儿文件域）新增扫描面
+  'src/views/logs/audit.vue',
+  'src/views/orphan-files/index.vue'
 ]
 
 /**

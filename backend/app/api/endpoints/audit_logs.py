@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["audit-logs"])
 
 
+# 双语 P6-4b 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段），
+# 动态 str(e) 不进 msg（诊断只进日志），前端按 errors.byCode 本地化。
+def _audit_error(reason_code: str, msg: str, code: str) -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
+
+
 # ========== 请求模型 ==========
 
 
@@ -108,10 +114,10 @@ async def query_audit_logs(
 
     except ValueError as e:
         logger.error(f"查询审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
+        return _audit_error("AUDIT_LOG_PARAM_INVALID", "时间参数格式错误", "400")
     except Exception as e:
         logger.error(f"查询审计日志失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _audit_error("AUDIT_LOG_QUERY_FAILED", "查询审计日志失败，请稍后重试", "500")
 
 
 @router.get("/statistics", response_model=CommonResponse)
@@ -141,10 +147,10 @@ async def get_audit_log_statistics(
 
     except ValueError as e:
         logger.error(f"获取审计日志统计失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
+        return _audit_error("AUDIT_LOG_PARAM_INVALID", "时间参数格式错误", "400")
     except Exception as e:
         logger.error(f"获取审计日志统计失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _audit_error("AUDIT_LOG_STATS_FAILED", "获取统计信息失败，请稍后重试", "500")
 
 
 @router.post("/archive", response_model=CommonResponse)
@@ -177,14 +183,20 @@ async def archive_audit_logs(
         if result["success"]:
             return CommonResponse(status="success", msg=result["message"], code="200", data=result)
         else:
-            return CommonResponse(status="error", msg=result["message"], code="500", data=result)
+            # 归档业务失败：服务层明细消息保留在 msg（原文透传），reasonCode 供前端本地化
+            return CommonResponse(
+                status="error",
+                msg=result["message"],
+                code="500",
+                data={**result, "reasonCode": "AUDIT_LOG_ARCHIVE_FAILED"},
+            )
 
     except ValueError as e:
         logger.error(f"归档审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
+        return _audit_error("AUDIT_LOG_PARAM_INVALID", "时间参数格式错误", "400")
     except Exception as e:
         logger.error(f"归档审计日志失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"归档失败: {str(e)}", code="500", data=None)
+        return _audit_error("AUDIT_LOG_ARCHIVE_FAILED", "归档失败，请稍后重试", "500")
 
 
 @router.post("/export", response_model=CommonResponse)
@@ -224,7 +236,7 @@ async def export_audit_logs(
         )
 
         if not result["list"]:
-            return CommonResponse(status="error", msg="没有符合条件的数据可导出", code="400", data=None)
+            return _audit_error("AUDIT_LOG_EXPORT_EMPTY", "没有符合条件的数据可导出", "400")
 
         # 导出目录
         export_dir = Path("data/audit_logs_export")
@@ -256,14 +268,14 @@ async def export_audit_logs(
                 },
             )
         else:
-            return CommonResponse(status="error", msg="导出失败", code="500", data=None)
+            return _audit_error("AUDIT_LOG_EXPORT_FAILED", "导出失败，请稍后重试", "500")
 
     except ValueError as e:
         logger.error(f"导出审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
+        return _audit_error("AUDIT_LOG_PARAM_INVALID", "时间参数格式错误", "400")
     except Exception as e:
         logger.error(f"导出审计日志失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"导出失败: {str(e)}", code="500", data=None)
+        return _audit_error("AUDIT_LOG_EXPORT_FAILED", "导出失败，请稍后重试", "500")
 
 
 @router.get("/operation-types", response_model=CommonResponse)
@@ -294,7 +306,7 @@ async def get_operation_types(current_user=Depends(get_current_user)):
 
     except Exception as e:
         logger.error(f"获取操作类型失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _audit_error("AUDIT_LOG_OPERATION_TYPES_FAILED", "获取操作类型失败，请稍后重试", "500")
 
 
 @router.get("/download-export/{file_name}", response_model=None)
@@ -330,4 +342,5 @@ async def download_export_file(file_name: str, current_user=Depends(get_current_
         raise
     except Exception as e:
         logger.error(f"下载导出文件失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+        # HTTPException 形态由全局异常处理器归一化为信封；动态诊断只进日志
+        raise HTTPException(status_code=500, detail="下载失败")
