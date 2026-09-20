@@ -17,7 +17,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 高级搜索 API advanced-search | `advanced_search.py` | 高级搜索 API（13 字段全字段搜索 + 多选排除）；v1.0.6.27 起接入 `sqlite_search_runtime`（正则执行熔断）与 `app.contracts`（操作符契约校验），防 ReDoS 与前后端漂移 |
-| 审计日志 API audit-log | `audit_logs.py` | 审计日志异步 API：查询/导出/归档/统计 |
+| 审计日志 API audit-log | `audit_logs.py` | 审计日志异步 API：查询/导出/归档/统计；✨2026-09-20 双语 P6-4b：失败路径 data.reasonCode 7 键（AUDIT_LOG_PARAM_INVALID/QUERY/STATS/ARCHIVE/EXPORT_EMPTY/EXPORT/OPERATION_TYPES_FAILED）+ 动态 str(e) 不进 msg；归档业务失败 message 原文透传 + reasonCode 追加；download-export 保持真 HTTPException（detail 固定无诊断） |
 | 定时任务 API cron | `cron_tasks.py` | 定时任务（cron）配置与日志 CRUD/启停；✨2026-09-20 双语 P6-4a：全端点失败路径 data.reasonCode 29 键（TASKS_CUSTOM_SCRIPTS_DISABLED/HOST_UNSUPPORTED 403、UNSUPPORTED_TASK_TYPE/EXECUTOR_NOT_ALLOWED、NOT_FOUND/CRUD_FAILED、TASK_CONFLICT、操作/日志/清理/校验各域 FAILED 类）+ 动态 str(e)/任务值/CRUD 冲突明细只进日志 msg 固定；P4 能力矩阵 reasonCode 保留 |
 | 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息（`/user/info` 实时下发 `mustChangePassword` 强制改密标志，W9 补全；异常兜底 code 500 防前端误登出）/改密/2FA（挂 `/user` 与 `/users`；2FA 输入错误一律 400，业务 401 仅保留 token 缺陷两处自愈语义）；2FA 二维码 Pillow 缺失（Android 服务端）时降级手动录入——`_generate_totp_qr_png` 返回 None 则信封带 secret+qr_available=False（2026-09-04） |
 | 仪表盘 dashboard | `dashboard.py` | 仪表盘聚合数据，委托 `DashboardService` |
@@ -31,7 +31,7 @@
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务 |
+| 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务；✨2026-09-20 双语 P6-4b：失败路径 data.reasonCode 22 键（ORPHAN_*，覆盖全部 17 端点）+ 动态 str(e)/scan_id 不进 msg；hardlink 删除 rejected 双形态 200 包裹 + reasonCode 追加进 data（E14 同款）；成功/部分成功计数 msg 保持 B03 原文（前端自行组文案） |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理；✨2026-09-19 双语 P5：五端点失败路径 data.reasonCode（RECYCLE_BIN_*/RECYCLE_RESTORE_FAILED/E16 NOT_IMPLEMENTED 501）+ 动态 str(e) msg 收敛 |
 | 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service`；审计写 torrent_audit_log 含 IP/user_agent |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |

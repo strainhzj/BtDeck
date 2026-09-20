@@ -11,13 +11,13 @@
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化；✨2026-09-19 遗留清扫：控制台操作反馈 17 条键化（测试连接三态/同步链路/启停/删除确认走 downloader.msg.*，禁 response.msg 中文兜底）；✨2026-09-19 P6-2：设置弹窗页签骨架与速度/高级/路径管理/路径映射/路径维护/标签/模板八子树全量键化（含键化数据数组与 template-presets 预设展示映射），BasicSettingsTab.vue 死代码删除 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API）；✨2026-09-20 双语 P6-3：全域全量 i18n（错误展示接 apiErrorMessage/apiResponseMessage） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志；✨2026-09-20 双语 P6-4a：模板/脚本全量走 tasks.* 键（任务状态展示按 taskStatus 码位、类型名按 taskType 码位、分页分片键、危险确认「不可恢复」明示），错误展示接 apiErrorMessage/apiResponseMessage |
-| 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
+| 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页；✨2026-09-20 双语 P6-4b 全量 i18n（筛选/操作栏/统计/表头/详情与归档弹窗；操作类型 19 项按稳定 value 键化双形态（短标签/筛选长标签）；错误展示接 apiResponseMessage/apiErrorMessage） |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控；✨2026-09-19 双语 P5 全量双语（recycleBin 模块 78 键：筛选/工具栏/表格/清理预览/手动上传弹窗/危险确认链路/三态结果；错误展示走 apiErrorMessage/apiResponseMessage 禁中文 msg 直读） |
 | 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-18 桌面双语 P2：2FA/改密/诊断页签文案全量 i18n 化 |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |；2026-09-21 P3-1 双语（卡片/状态/快捷操作/aria + 本地化日期）
 | 登录 login | `login/index.vue` | 登录页；✨2026-09-18 桌面双语 P2：表单/校验/消息 i18n 化 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；桌面端保留稳定明细/硬链接/隔离流程，路由与移动页由 `orphan_files` 能力门控 |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；桌面端保留稳定明细/硬链接/隔离流程，路由与移动页由 `orphan_files` 能力门控；✨2026-09-20 双语 P6-4b 全量 i18n（双页签/统计/扫描状态 alert/筛选/工具栏/两种表格/隔离区/副本位置/清理确认/快捷操作弹窗；状态与置信度按稳定码位；E01 拒绝/部分失败明细转 console；错误展示接契约入口） |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -109,14 +109,14 @@
 | 模块/文件 | 职责 |
 |-----------|------|
 | `tasks/index.vue` | 任务管理主页（`TaskManage` L1002）：任务日志统计摘要使用 `btdeck_task_log_stats_collapsed` 持久化折叠状态；`handleViewLogs` L1316 记录可见任务筛选，`resetLogQuery` L1901 / `clearLogTaskFilter` L1917 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮；✨2026-09-20 双语 P6-4a：双页签/筛选/工具栏/表格/操作菜单/任务表单（清理配置/高级配置/启用开关）/执行详情/清理预览/日志清理弹窗全量走键；getStatusName 改收 row 按 taskStatus 码位本地化（未知码回退后端原文 Q02）、getTaskTypeName/getLogTaskTypeName 按 taskType 码位；taskTypeOptions 键化（labelKey）+ taskOptions 死数组删除 |
-| `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
+| `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs` L585）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐）；✨2026-09-20 双语 P6-4b：全量文案走 auditLogs.* 键；操作类型 19 项键化数据驱动（OPERATION_GROUPS L509 + 短标签 operationType/筛选长标签 operationTypeFull 双形态，未知值回退原文 Q02）；错误展示接 apiResponseMessage/apiErrorMessage（response.msg 直读清零） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L373）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
 | `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |；2026-09-21 P3-2 双语：页头/筛选/列头/删除确认走 queryTemplate.list.*，系统预设名称/描述按 preset_key 本地化（presetDisplayName/presetDisplayDescription），formatTime 按 getLocale 本地化日期
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框；✨2026-08-27 simple 表单补 Tracker 域名多选（AdvancedMultiSelect，options 懒加载 `/torrents/tracker-domains`，编辑回填 + buildConditions 写入，修复模板保存丢失 tracker 筛选） |；2026-09-21 P3-2 双语：表单/状态选项（复用 torrent.status.*）/排序选项/提示走 queryTemplate.dialog.*（校验规则 getter 化）
 | `login/index.vue` | 登录页（`Login`）：使用 D 形 mark + `BtDeck` 字标的 `AppLogo` 横向完整品牌 Logo；桌面/移动登录入口统一品牌资源 |
-| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L948）；统计摘要使用 `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1209 仅展开时加载子页，`startScanPolling` L1805 轮询后台扫描，`dismissLargeScanReminder` L1269 关闭超量提醒；保留硬链接定位、清理/忽视/隔离恢复 |
+| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L948）；统计摘要使用 `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1232 仅展开时加载子页，`startScanPolling` L1861 轮询后台扫描，`dismissLargeScanReminder` L1295 关闭超量提醒；保留硬链接定位、清理/忽视/隔离恢复；✨2026-09-20 双语 P6-4b：全量文案走 orphanFiles.* 键（危险链路三要素保留）；状态/置信度按稳定码位（status/confidenceTag，与筛选选项同源）；扫描上下文 cleanup_block_reason/error_message 后端数据原文透传（{reason} 槽位 + 本地键兑底）；E01 拒绝/部分失败明细转 console、计数键提示；200 信息态按 task_id 分支提示；错误展示接契约入口（msg 直读清零） |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |
