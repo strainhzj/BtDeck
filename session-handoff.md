@@ -5270,6 +5270,14 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - MCP/MoviePilot 页签不存在（计划项过时，已在 evidence 注明）；tracker_messages.py 仍无前端消费方。
 - 英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前重跑 stage-server.py。
 - 未执行 Git 提交（待用户指令或随 P6-4b 一并处理）。
+- **P6-4a 已提交**：b79544d（feat，23 文件 +2657/-781）+ f84adf7（docs roadmap，7 文件）。
+
+### P6-4b 开工调研（本会话已完成盘点，下会话可直接实施）
+
+- **audit.vue（1276 行，198 中文行）**：管理页骨架（标题/副标题/筛选面板 CollapsiblePanel title+desc）；操作类型筛选 19 选项分 4 组（种子管理 7/下载器 4/定时任务 5/关键词规则 3）——与脚本区 `operationTypeLabels` 19 项值→标签 map **同源两份**（建议语言包建 `operationType.*` 子树两处消费）；结果三态（成功/失败/部分成功）同样两份（筛选选项 + resultMap）；表头 8 列；详情弹窗 5 节（基本信息/调试信息/操作详情/修改前旧值/修改后新值/错误信息）+ 复制 JSON；归档弹窗（截止时间/文件名/说明 alert + 危险确认「归档操作不可恢复」）；toast 若干（含 `response.msg ||` 直读 3 处 L585/700/739 待接 apiResponseMessage）。
+- **orphan-files/index.vue（2500 行，349 中文行）**：双页签（孤儿文件/隔离区）；统计卡 5 张 + 扫描失败/进行中/超量提醒 alerts；筛选面板（路径/下载器/状态/置信度/副本筛选 + 组合提示 tooltip）；工具栏（清理/忽视/取消忽视选中 + 快捷操作下拉 3 项 + 按文件夹展示）；两种表格（嵌套文件夹/扁平）×列头 8；状态/置信度标签（待清理/已忽视/已清理/混合 + 高/低）；分页；隔离区页签（恢复/彻底删除/延后次数列 + 保留期描述）；硬链接副本位置弹窗（实时/已定位/待预扫描计数、副本标签、删除副本链路 + 路径数上限提示 + 四空态）；清理确认弹窗（低置信度警告 alert + 危险语义）；快捷操作弹窗（cleanup/ignore 双模式标题与文案 + 确认文本拼接 `将影响 N 个…低置信度…移入隔离区/设为忽视`）；大量复合模板串 toast/confirm（`${action}失败：` 等）与 `response.msg ||` 直读 ~10 处；`cleanup_block_reason: '尚无可清理的成功扫描'` 等 scanContext 展示；筛选选项数组（置信度/状态 label 中文两处）。**共享组件**（PageSizeCombobox/AdvancedMultiSelect）已双语。隔离区/副本删除走 reasonCode 契约（E13/删除副本端点 P4/P5 已有部分 reasonCode——先查再补）。
+- **后端**：audit_logs.py 18 条中文 msg + orphan_files.py 31 条（含 P5 已契约化的删除/清理端点？grep reasonCode 先行核实，仅补缺口）。
+- **建议节奏**：audit.vue + 后端 audit_logs 一批，orphan-files + 后端 orphan_files 一批（orphan 单文件体量 ≈ P6-3 全批）。
 
 ---
 
