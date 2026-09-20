@@ -1,4 +1,4 @@
-## 2026-09-20 交接：桌面双语 P6-5 收口批完成（全绿未提交，p6 保持 in_progress 待 R06 签认）
+## 2026-09-20 交接：桌面双语 P6-5 收口批完成（已提交 4cbaccc + d1295e2；推送由用户自行执行）
 
 ### 已完成（用户确认四决策：三部分全做/死代码删除/banner 翻译/p6 不标 done）
 
@@ -13,7 +13,7 @@
 1. **P7（M2 收口）**：中英文完整回归、浏览器视觉验收（V01/V02）、R01～R06 人工签认（两份审校清单）、英文人工审校汇总、feature/roadmap/handoff 收口。
 2. P5/P6 均保持 in_progress，签认完成后再定 done 时机。
 3. Android 嵌入服务未同步 P4 之后的后端契约，下次出 APK 前重跑 stage-server.py。
-4. 本批未提交 Git（待用户指令）。
+4. **已提交**：4cbaccc（feat，33 文件 +717/-1011）+ d1295e2（docs roadmap，9 文件）+ eae6170（handoff 补记）；**推送未完成**——本 piagent 会话无凭据（huangzj 密钥 ACL 不可读/HTTPS 无凭据/gh 未登录，匿名 fetch 可用），用户将在自己终端执行 `git push git@github.com:strainhzj/BtDeck.git dev`（origin/dev 实测在 d382fe6，待推 10 提交：P6-3～P6-5 全部）；**推送后请复核 CI 双 job**（上次全绿为 baaa696）。
 
 ### 坑位（下会话注意）
 
