@@ -52,7 +52,7 @@
 | 种子管理类型 torrent | `torrent.ts` | 🔵 种子管理类型（最大）：`TorrentStatus` enum、`Torrent`/`TrackerInfo`/`Downloader`、列表参数/响应（含实时 `downloadComplete` 完成证据）、`AdvancedSearchParams`/`ConditionGroup`/`Condition`、`TorrentAuditLog`、`AuditOperationType`/`AuditOperationResult`/`DeleteLevel` enum、回收站/清理参数 |
 | 通用工具类型 common | `common.ts` | 通用工具类型：`Partial/Required/Pick/Omit/DeepReadonly/DeepPartial/ReturnType/Parameters/UnwrapPromise` 等高阶类型 + `KeyValuePair/ID/Timestamp/SortConfig/UploadFile` |
 | 统一入口 index | `index.ts` | 统一入口：`BTDeckTypes` 命名空间（L21-99）+ re-export api/scheduled-tasks/task-logs/components/common（⚠ 不 re-export torrent/dashboard） |
-| 定时任务类型 scheduled-tasks | `scheduled-tasks.ts` | 定时任务类型：`TaskType`/`TaskStatus` enum、`ScheduledTask`、CRUD 请求、清理配置/预览/执行 |
+| 定时任务类型 scheduled-tasks | `scheduled-tasks.ts` | 定时任务类型：`TaskType`/`TaskStatus` enum、`ScheduledTask`、CRUD 请求、清理配置/预览/执行；✨2026-09-20 双语 P6-4a：TaskTypeOption 重塑（label→labelKey 展示键，description/language 死字段删除） |
 | 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard` + `TASK_STATUS_OPTIONS`/`TASK_TYPE_OPTIONS` 常量 |
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |

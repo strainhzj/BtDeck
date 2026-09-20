@@ -143,6 +143,8 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
+| `p6-tasks-domain-i18n.spec.ts` ✨2026-09-20 | P6-4a 任务域双语（22 例）：tasks 子树 zh 逐字节与 en 插值（页签/类型状态码位映射/危险批量确认/表单/清理配置/语法错误/Cron 编辑器字段与内置模板/Python 选择器/monaco）、TASKS_* reasonCode 本地化（camelCase 映射 + 未知码回退）、api/tasks 共享层六态与 stale tooltip 双语（C01）、源码契约（模板身份 key 化不回流/假类树不回流/getTaskTypeConfig 接线/msg 直读清零/taskStatusName 直显清零/Monaco 死字段不回流）、挂载冒烟 |
+| `tests/api/test_reason_contract_p6_tasks.py` ✨2026-09-20 | 定时任务域 reasonCode 契约（20 例）：策略 403（自定义脚本禁用/主机形态）、类型与 type4 白名单拒绝、CRUD 冲突 TASKS_TASK_CONFLICT（CRUD 原文明细不进 msg）/NOT_FOUND 404/异常 500 固定 msg 无 str(e)、日志统计/清理校验（CONDITION_REQUIRED/DAYS_INVALID/422 INVALID_PARAMS）、校验器与 type-config 失败、成功路径 data 形状（taskTypes+pythonClasses）、源码级 reasonCode 清单双向完整性 + 动态 msg 禁回流 + P4 能力矩阵 reasonCode 保留 |
 | `p6-tracker-domain-i18n.spec.ts` ✨2026-09-20 | P6-3 Tracker 管理域双语（26 例）：tracker 十五子树 zh 逐字节与 en 插值（池子/看板/搜索/汇报配置/测试工具时间线/四弹窗/关键词卡）、reasonCode 本地化（18 新键 camelCase 映射 + 未知码回退 fallback）、utils/tracker 共享层（poolLabel/poolOptions/getLanguageLabel/extractErrorMessage 双语与 Q02 回退）、源码契约（pool_label 后端中文字段不直显、POOL_LABELS 常量不回流、错误展示接线、批量明细只进日志）、挂载冒烟（移动端复用 AddKeywordDialog） |
 | `tests/api/test_reason_contract_p6.py` ✨2026-09-20 | Tracker 关键词池/汇报配置/匹配测试 reasonCode 契约（26 例）：四端点失败路径 reasonCode 矩阵 + msg 固定无 str(e)/无池名/无合法值清单泄漏、reannounce not-found 结构化 error_code 判定（禁中文子串匹配回流）、成功路径 data 形状钉住（preview/search-all/batch 部分成功/match 驼峰字段）、reasonCode 清单完整性（源码扫描 vs 登记集） |
 | `p6-downloader-domain-i18n.spec.ts` ✨2026-09-19 | P6-2 下载器域收尾双语（26 例）：downloader.tabs/speed/advanced/pathMapping/pathMaintenance/tag/template 七子树 zh 逐字节 + en 插值、键化数据数组（星期 labelKey/高级字段 labelKey+hintKey/映射类型三键）、内置模板 preset_key 展示映射（zh 与后端存储值一致/en/Q02 原文回退/camel 兼容）、源码契约与死代码移除 |

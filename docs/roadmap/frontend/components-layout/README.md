@@ -37,9 +37,9 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| Cron 编辑器 cron | `CronEditor.vue` | Cron 表达式可视化编辑器（`CronEditor`） |
-| Python 类选择器 python-class | `PythonClassSelector.vue` | Python 类/方法选择器（`PythonClassSelector`） |
-| 任务 Monaco 编辑器 tasks-monaco | `MonacoEditor.vue` | 任务专用 Monaco 编辑器（含 Python 高亮） |
+| Cron 编辑器 cron | `CronEditor.vue` | Cron 表达式可视化编辑器（`CronEditor`）；✨2026-09-20 双语 P6-4a：模板选择/自定义表达式/可视化配置/执行预览/校验消息/内置模板 13 项展示全量走 tasks.cronEditor.* 键；内置模板身份 key 化（key??name，中文 name/description 字段移除），category 中文值保留为数据身份（筛选/CSS 类/tag 映射，白名单治理） |
+| Python 类选择器 python-class | `PythonClassSelector.vue` | Python 类/方法选择器（`PythonClassSelector`）；✨2026-09-20 双语 P6-4a：预定义类树改由后端 type-config pythonClasses 驱动（getTaskTypeConfig 零调用→接线，~170 行硬编码假类树删除——BackupTask 等类后端不存在选择必失败；后端中文描述 Q02 原文透传，参数字典归一化兼容 string/object），快捷模板由真实类前 6 派生；UI 文案全量走 tasks.pythonSelector.* 键 |
+| 任务 Monaco 编辑器 tasks-monaco | `MonacoEditor.vue` | 任务专用 Monaco 编辑器（含 Python 高亮）；✨2026-09-20 双语 P6-4a：降级告警/重试/本地启发式消息走 tasks.monaco.* 键；死字段删除（中文标识符 代码语法正确/可以正常执行 与 write-only 的 syntaxStatus/executionStatus） |
 
 #### components/torrents/（11 个 .vue + 2 个业务 .ts + 7 个测试）
 
