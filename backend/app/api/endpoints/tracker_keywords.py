@@ -11,7 +11,7 @@ Tracker关键词CRUD API接口
 3. 数据库索引: 确保keyword和keyword_type字段有复合索引
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 import uuid
@@ -30,6 +30,14 @@ from app.torrents.models import TrackerKeywordConfig
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 
 logger = logging.getLogger(__name__)
+
+
+# 双语 P6-3 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段），
+# 动态 str(e) 不进 msg（诊断只进日志），前端按 errors.byCode 本地化。
+def _keyword_error(reason_code: str, msg: str, code: str = "400") -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
+
+
 router = APIRouter()
 
 
@@ -52,23 +60,22 @@ def create_keyword(
     try:
         # 额外验证参数长度，防止数据库错误
         if keyword.keyword and len(keyword.keyword) > 200:
-            return CommonResponse(status="error", msg="关键词长度超过限制(最大200字符)", code="400", data=None)
+            return _keyword_error("KEYWORD_TOO_LONG", "关键词长度超过限制(最大200字符)")
         if keyword.language and len(keyword.language) > 10:
-            return CommonResponse(status="error", msg="语言代码长度超过限制(最大10字符)", code="400", data=None)
+            return _keyword_error("LANGUAGE_CODE_TOO_LONG", "语言代码长度超过限制(最大10字符)")
         if keyword.category and len(keyword.category) > 50:
-            return CommonResponse(status="error", msg="分类长度超过限制(最大50字符)", code="400", data=None)
+            return _keyword_error("CATEGORY_TOO_LONG", "分类长度超过限制(最大50字符)")
         if keyword.description and len(keyword.description) > 200:
-            return CommonResponse(status="error", msg="描述长度超过限制(最大200字符)", code="400", data=None)
+            return _keyword_error("DESCRIPTION_TOO_LONG", "描述长度超过限制(最大200字符)")
 
         # 检查关键词是否已存在 (keyword全局唯一,不区分keyword_type和dr状态)
         existing = db.query(TrackerKeywordConfig).filter(TrackerKeywordConfig.keyword == keyword.keyword).first()
 
         if existing:
             if existing.dr == 0:
-                # 活跃记录，不允许创建
-                return CommonResponse(
-                    status="error", msg=f"该关键词已存在于{existing.keyword_type}池中", code="400", data=None
-                )
+                # 活跃记录，不允许创建（池类型属诊断信息，只进日志不进 msg）
+                logger.info(f"创建关键词拒绝: 已存在于 {existing.keyword_type} 池")
+                return _keyword_error("KEYWORD_ALREADY_EXISTS", "该关键词已存在于对应池中")
             else:
                 # 已删除记录(dr=1)，恢复它
                 logger.info(f"恢复已删除的关键词: {existing.keyword_id}, keyword={keyword.keyword}")
@@ -129,7 +136,7 @@ def create_keyword(
     except Exception as e:
         db.rollback()
         logger.error(f"创建关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"创建失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.get("", summary="查询关键词列表")
@@ -183,7 +190,7 @@ def get_keywords(
 
     except Exception as e:
         logger.error(f"查询关键词列表失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.get("/{keyword_id}", summary="获取单个关键词")
@@ -203,7 +210,7 @@ def get_keyword(
         )
 
         if not keyword:
-            return CommonResponse(status="error", msg="关键词不存在", code="404", data=None)
+            return _keyword_error("KEYWORD_NOT_FOUND", "关键词不存在", code="404")
 
         return CommonResponse(
             status="success",
@@ -214,7 +221,7 @@ def get_keyword(
 
     except Exception as e:
         logger.error(f"获取关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.put("/{keyword_id}", summary="更新关键词")
@@ -235,7 +242,7 @@ def update_keyword(
         )
 
         if not keyword:
-            return CommonResponse(status="error", msg="关键词不存在", code="404", data=None)
+            return _keyword_error("KEYWORD_NOT_FOUND", "关键词不存在", code="404")
 
         # 获取原始keyword值
         original_keyword_value = keyword.keyword
@@ -252,13 +259,9 @@ def update_keyword(
 
             if existing:
                 if existing.dr == 0:
-                    # 与活跃记录冲突，不允许更新
-                    return CommonResponse(
-                        status="error",
-                        msg=f"关键词\"{update_data['keyword']}\"已存在于{existing.keyword_type}池中",
-                        code="400",
-                        data=None,
-                    )
+                    # 与活跃记录冲突，不允许更新（关键词值/池类型属诊断信息，只进日志不进 msg）
+                    logger.info(f"更新关键词拒绝: 已存在于 {existing.keyword_type} 池")
+                    return _keyword_error("KEYWORD_ALREADY_EXISTS", "该关键词已存在于对应池中")
                 else:
                     # 与已删除记录冲突，恢复它并删除当前记录
                     logger.info(f"更新关键词: 恢复已删除的记录 {existing.keyword_id}，删除当前记录 {keyword_id}")
@@ -310,7 +313,7 @@ def update_keyword(
     except Exception as e:
         db.rollback()
         logger.error(f"更新关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.delete("/{keyword_id}", summary="删除关键词")
@@ -330,7 +333,7 @@ def delete_keyword(
         )
 
         if not keyword:
-            return CommonResponse(status="error", msg="关键词不存在", code="404", data=None)
+            return _keyword_error("KEYWORD_NOT_FOUND", "关键词不存在", code="404")
 
         # 软删除
         keyword.dr = 1
@@ -345,7 +348,7 @@ def delete_keyword(
     except Exception as e:
         db.rollback()
         logger.error(f"删除关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/batch", summary="批量创建关键词")
@@ -360,12 +363,12 @@ def batch_create_keywords(
     try:
         keywords_list = keywords_data.get("keywords", [])
         if not keywords_list:
-            return CommonResponse(status="error", msg="关键词列表不能为空", code="400", data=None)
+            return _keyword_error("KEYWORD_LIST_REQUIRED", "关键词列表不能为空")
 
         # 检查列表内是否有重复的keyword
         keywords_in_request = [kw.get("keyword") for kw in keywords_list]
         if len(keywords_in_request) != len(set(keywords_in_request)):
-            return CommonResponse(status="error", msg="批量创建的关键词列表中存在重复的keyword", code="400", data=None)
+            return _keyword_error("KEYWORD_DUPLICATE_IN_BATCH", "批量创建的关键词列表中存在重复的keyword")
 
         created_keywords = []
         restored_keywords = []
@@ -455,7 +458,7 @@ def batch_create_keywords(
     except Exception as e:
         db.rollback()
         logger.error(f"批量创建关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"批量创建失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/batch/enable", summary="批量启用关键词")
@@ -492,7 +495,7 @@ def batch_enable_keywords(
     except Exception as e:
         db.rollback()
         logger.error(f"批量启用关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"批量启用失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/batch/disable", summary="批量禁用关键词")
@@ -529,7 +532,7 @@ def batch_disable_keywords(
     except Exception as e:
         db.rollback()
         logger.error(f"批量禁用关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"批量禁用失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.put("/batch/status", summary="批量更新关键词状态")
@@ -546,7 +549,7 @@ def batch_update_status(
         enabled = status_data.get("enabled")
 
         if not keyword_ids:
-            return CommonResponse(status="error", msg="关键词ID列表不能为空", code="400", data=None)
+            return _keyword_error("KEYWORD_LIST_REQUIRED", "关键词ID列表不能为空")
 
         # 查询并更新
         keywords = (
@@ -572,7 +575,7 @@ def batch_update_status(
     except Exception as e:
         db.rollback()
         logger.error(f"批量更新关键词状态失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"批量更新状态失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/batch/delete", summary="批量删除关键词")
@@ -609,4 +612,4 @@ def batch_delete_keywords(
     except Exception as e:
         db.rollback()
         logger.error(f"批量删除关键词失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"批量删除失败: {str(e)}")
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")

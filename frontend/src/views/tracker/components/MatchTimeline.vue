@@ -2,7 +2,7 @@
   <div class="match-timeline">
     <div class="timeline-title">
       <span class="title-icon">⏱️</span>
-      <span>匹配过程时间线</span>
+      <span>{{ $t('tracker.timeline.title') }}</span>
     </div>
     <div class="timeline-steps">
       <div

@@ -9,13 +9,13 @@
   >
     <div class="dialog-body">
       <div class="form-group">
-        <label class="form-label">关键词内容 *</label>
+        <label class="form-label">{{ $t('tracker.addDialog.contentLabel') }}</label>
         <input
           ref="keywordInput"
           v-model="keywordForm.keyword"
           type="text"
           class="form-input"
-          placeholder="请输入关键词"
+          :placeholder="$t('tracker.addDialog.placeholder')"
           @keypress.enter="handleConfirm"
         >
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -23,10 +23,10 @@
     </div>
 
     <div slot="footer" class="dialog-footer">
-      <button class="btn btn-secondary" @click="handleClose">取消</button>
+      <button class="btn btn-secondary" @click="handleClose">{{ $t('tracker.pools.dialog.cancel') }}</button>
       <button class="btn btn-primary" :disabled="!keywordForm.keyword || loading" @click="handleConfirm">
         <span v-if="loading" class="spinner"></span>
-        <span>{{ loading ? '添加中...' : '确定添加' }}</span>
+        <span>{{ loading ? $t('tracker.addDialog.adding') : $t('tracker.addDialog.confirmAdd') }}</span>
       </button>
     </div>
   </el-dialog>
@@ -37,6 +37,7 @@ import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { createKeyword } from '@/api/tracker'
 import { PoolType } from '@/api/tracker'
 import { extractErrorMessage } from '@/utils/tracker'
+import { apiResponseMessage } from '@/i18n'
 
 interface KeywordForm {
   keyword: string
@@ -65,7 +66,7 @@ export default class AddKeywordDialog extends Vue {
   }
 
   get dialogTitle(): string {
-    return `添加关键词到 ${this.poolLabel}`
+    return this.$t('tracker.addDialog.title', { pool: this.poolLabel })
   }
 
   get keywordType(): 'success' | 'failed' | 'ignored' {
@@ -98,12 +99,12 @@ export default class AddKeywordDialog extends Vue {
 
   validateKeyword(): boolean {
     if (!this.keywordForm.keyword || !this.keywordForm.keyword.trim()) {
-      this.errorMessage = '关键词不能为空'
+      this.errorMessage = this.$t('tracker.addDialog.required')
       return false
     }
 
     if (this.keywordForm.keyword.trim().length > 100) {
-      this.errorMessage = '关键词长度不能超过100个字符'
+      this.errorMessage = this.$t('tracker.addDialog.tooLong')
       return false
     }
 
@@ -128,15 +129,15 @@ export default class AddKeywordDialog extends Vue {
       })
 
       if (response.code === '200') {
-        this.$message.success(`已添加关键词 "${this.keywordForm.keyword}" 到 ${this.poolLabel}`)
+        this.$message.success(this.$t('tracker.addDialog.addSuccess', { keyword: this.keywordForm.keyword, pool: this.poolLabel }))
         this.$emit('success')
         this.handleClose()
       } else {
-        this.errorMessage = response.msg || '添加关键词失败'
+        this.errorMessage = apiResponseMessage(response, this.$t('tracker.addDialog.addFailed'))
       }
     } catch (error: any) {
       console.error('添加关键词失败:', error)
-      this.errorMessage = extractErrorMessage(error, '添加关键词失败,请稍后重试')
+      this.errorMessage = extractErrorMessage(error, this.$t('tracker.addDialog.addFailedRetry'))
     } finally {
       this.loading = false
     }

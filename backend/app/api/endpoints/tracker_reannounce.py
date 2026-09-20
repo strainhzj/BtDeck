@@ -15,8 +15,26 @@ from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.core import reannounce_config_operations as ops
+from app.core.database_result import DatabaseError, DatabaseResult
 
 logger = logging.getLogger(__name__)
+
+
+# 双语 P6-3 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段）。
+# ops 层 result.message 含动态 str(e)/id，属诊断信息：只进日志不进 msg，前端按 errors.byCode 本地化。
+def _reannounce_error(reason_code: str, msg: str, code: str) -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
+
+
+def _ops_failure_reason(result: "DatabaseResult") -> tuple[str, str]:
+    """把 ops 层 DatabaseResult 的 error_code 映射为（reasonCode, 固定 msg）。"""
+    if result.error_code == DatabaseError.NOT_FOUND.value:
+        return "REANNOUNCE_CONFIG_NOT_FOUND", "配置不存在"
+    if result.error_code == DatabaseError.VALIDATION_ERROR.value:
+        return "REANNOUNCE_CONFIG_INVALID", "配置参数无效"
+    return "DB_OPERATION_FAILED", "数据库操作失败"
+
+
 router = APIRouter()
 
 
@@ -53,7 +71,9 @@ async def list_configs(_user=Depends(require_authenticated_user), db: Session = 
     """获取所有站点汇报配置"""
     result = ops.get_configs(db)
     if not result.success:
-        return CommonResponse(status="error", msg=result.message, code="500")
+        reason, msg = _ops_failure_reason(result)
+        logger.error(f"查询汇报配置失败: {result.message}")
+        return _reannounce_error(reason, msg, "500")
 
     configs = [c.to_dict() for c in (result.data or [])]
     return CommonResponse(
@@ -77,7 +97,9 @@ async def create_config(
 
     result = ops.create_config(db, config_data)
     if not result.success:
-        return CommonResponse(status="error", msg=result.message, code="400")
+        reason, msg = _ops_failure_reason(result)
+        logger.error(f"创建汇报配置失败: {result.message}")
+        return _reannounce_error(reason, msg, "400")
 
     return CommonResponse(
         status="success",
@@ -96,18 +118,20 @@ async def batch_update_configs(
 
     if not req_data or "items" not in req_data:
         logger.error(f"请求数据格式错误: {req_data}")
-        return CommonResponse(status="error", msg="请求数据格式错误", code="400")
+        return _reannounce_error("REANNOUNCE_BATCH_FORMAT_INVALID", "请求数据格式错误", "400")
 
     items = req_data.get("items", [])
     logger.info(f"提取的items数量: {len(items)}, 内容: {items}")
 
     if not items:
-        return CommonResponse(status="error", msg="请求数据不能为空", code="400")
+        return _reannounce_error("REANNOUNCE_BATCH_EMPTY", "请求数据不能为空", "400")
 
     result = ops.batch_update_configs(db, items)
 
     if not result.success:
-        return CommonResponse(status="error", msg=result.message, code="500")
+        reason, msg = _ops_failure_reason(result)
+        logger.error(f"批量更新汇报配置失败: {result.message}")
+        return _reannounce_error(reason, msg, "500")
 
     return CommonResponse(
         status="success",
@@ -127,12 +151,13 @@ async def update_config(
     """更新站点汇报配置"""
     update_data = {k: v for k, v in req_data.dict().items() if v is not None}
     if not update_data:
-        return CommonResponse(status="error", msg="没有需要更新的字段", code="400")
+        return _reannounce_error("REANNOUNCE_NO_FIELDS_TO_UPDATE", "没有需要更新的字段", "400")
 
     result = ops.update_config(db, config_id, update_data)
     if not result.success:
-        code = "404" if "不存在" in result.message else "400"
-        return CommonResponse(status="error", msg=result.message, code=code)
+        reason, msg = _ops_failure_reason(result)
+        logger.error(f"更新汇报配置失败: {result.message}")
+        return _reannounce_error(reason, msg, "404" if reason == "REANNOUNCE_CONFIG_NOT_FOUND" else "400")
 
     return CommonResponse(
         status="success",
@@ -147,7 +172,9 @@ async def delete_config(config_id: str, _user=Depends(require_authenticated_user
     """删除站点汇报配置"""
     result = ops.delete_config(db, config_id)
     if not result.success:
-        return CommonResponse(status="error", msg=result.message, code="404")
+        reason, msg = _ops_failure_reason(result)
+        logger.error(f"删除汇报配置失败: {result.message}")
+        return _reannounce_error(reason, msg, "404")
 
     return CommonResponse(status="success", msg="删除成功", code="200")
 

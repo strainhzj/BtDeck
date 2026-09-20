@@ -3,10 +3,10 @@
     <!-- 页面标题 -->
     <div class="page-header">
       <h2 class="page-title">
-        📢 Tracker汇报配置
+        📢 {{ $t('tracker.reannounce.title') }}
       </h2>
       <p class="page-description">
-        配置站点的Tracker汇报间隔，支持域名通配符匹配
+        {{ $t('tracker.reannounce.description') }}
       </p>
     </div>
 
@@ -14,7 +14,7 @@
     <div class="filter-container">
       <el-input
         v-model="listQuery.domain_display_name"
-        placeholder="搜索域名名称..."
+        :placeholder="$t('tracker.reannounce.searchDomain')"
         style="width: 250px;"
         class="filter-item"
         clearable
@@ -25,13 +25,13 @@
 
       <el-select
         v-model="listQuery.enabled"
-        placeholder="启用状态"
+        :placeholder="$t('tracker.reannounce.enabledStatus')"
         clearable
         style="width: 150px;"
         class="filter-item"
       >
-        <el-option label="已启用" :value="true" />
-        <el-option label="已禁用" :value="false" />
+        <el-option :label="$t('tracker.reannounce.enabled')" :value="true" />
+        <el-option :label="$t('tracker.reannounce.disabled')" :value="false" />
       </el-select>
 
       <el-button
@@ -42,7 +42,7 @@
         size="small"
         @click="handleFilter"
       >
-        搜索
+        {{ $t('tracker.reannounce.search') }}
       </el-button>
       <el-button
         class="filter-item"
@@ -51,7 +51,7 @@
         size="small"
         @click="resetFilter"
       >
-        重置
+        {{ $t('tracker.reannounce.reset') }}
       </el-button>
     </div>
 
@@ -64,31 +64,31 @@
             icon="el-icon-plus"
             @click="openCreateDialog"
           >
-            新增配置
+            {{ $t('tracker.reannounce.createConfig') }}
           </el-button>
           <el-button
             icon="el-icon-search"
             :loading="autoDetectLoading"
             @click="handleAutoDetect"
           >
-            自动检测域名
+            {{ $t('tracker.reannounce.autoDetect') }}
           </el-button>
           <el-button
             icon="el-icon-edit-outline"
             @click="enterBatchMode"
           >
-            批量设置
+            {{ $t('tracker.reannounce.batchSetup') }}
           </el-button>
         </template>
         <template v-else>
           <el-tag type="info" effect="plain">
-            批量编辑模式 - 已选择 {{ editedCount }} 条记录
+            {{ $t('tracker.reannounce.batchModeInfo', {count: editedCount}) }}
           </el-tag>
           <el-button
             icon="el-icon-close"
             @click="exitBatchMode"
           >
-            退出批量编辑
+            {{ $t('tracker.reannounce.exitBatch') }}
           </el-button>
         </template>
       </div>
@@ -108,17 +108,17 @@
       <div v-if="batchMode && hasChanges" class="float-action-bar">
         <div class="float-info">
           <i class="el-icon-warning" />
-          <span>已修改 {{ editedCount }} 条记录</span>
+          <span>{{ $t('tracker.reannounce.modifiedCount', {count: editedCount}) }}</span>
         </div>
         <div class="float-buttons">
-          <el-button size="medium" @click="handleCancelChanges">撤销更改</el-button>
+          <el-button size="medium" @click="handleCancelChanges">{{ $t('tracker.reannounce.undoChanges') }}</el-button>
           <el-button
             type="primary"
             size="medium"
             :loading="savingBatch"
             @click="handleSaveBatch"
           >
-            保存更改
+            {{ $t('tracker.reannounce.saveChanges') }}
           </el-button>
         </div>
       </div>
@@ -128,7 +128,7 @@
     <el-table
       v-loading="listLoading"
       :data="list"
-      element-loading-text="加载中..."
+      :element-loading-text="$t('tracker.reannounce.loadingText')"
       border
       fit
       highlight-current-row
@@ -138,31 +138,31 @@
       header-row-class-name="reannounce-table-header"
       style="width: 100%;"
     >
-      <el-table-column label="域名显示名称" min-width="150">
+      <el-table-column :label="$t('tracker.reannounce.colDisplayName')" min-width="150">
         <template slot-scope="{row}">
           <el-input
             v-if="batchMode && editedRows[row.config_id]"
             v-model="editedRows[row.config_id].domain_display_name"
             size="mini"
-            placeholder="域名显示名称"
+            :placeholder="$t('tracker.reannounce.displayNamePlaceholder')"
           />
           <span v-else>{{ row.domain_display_name }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="域名模式" min-width="180">
+      <el-table-column :label="$t('tracker.reannounce.colPattern')" min-width="180">
         <template slot-scope="{row}">
           <el-input
             v-if="batchMode && editedRows[row.config_id]"
             v-model="editedRows[row.config_id].domain_pattern"
             size="mini"
-            placeholder="%.tracker.com"
+            :placeholder="$t('tracker.reannounce.patternPlaceholder')"
           />
           <span v-else v-html="sanitizeDomainPattern(row.domain_pattern)" />
         </template>
       </el-table-column>
 
-      <el-table-column label="间隔分钟" width="100" align="center">
+      <el-table-column :label="$t('tracker.reannounce.colInterval')" width="100" align="center">
         <template slot-scope="{row}">
           <el-input
             v-if="batchMode && editedRows[row.config_id]"
@@ -171,14 +171,14 @@
             type="number"
             :min="1"
             :max="1440"
-            placeholder="分钟"
+            :placeholder="$t('tracker.reannounce.minutesPlaceholder')"
             style="width: 70px;"
           />
           <span v-else>{{ row.interval_minutes }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="启用开关" width="100" align="center">
+      <el-table-column :label="$t('tracker.reannounce.colEnabled')" width="100" align="center">
         <template slot-scope="{row}">
           <el-switch
             v-if="batchMode && editedRows[row.config_id]"
@@ -193,11 +193,11 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="150" align="center" fixed="right">
+      <el-table-column :label="$t('tracker.reannounce.colActions')" width="150" align="center" fixed="right">
         <template slot-scope="{row}">
           <template v-if="batchMode">
-            <el-tag v-if="editedRows[row.config_id]" type="success" size="mini">已编辑</el-tag>
-            <span v-else class="no-edit-hint">未编辑</span>
+            <el-tag v-if="editedRows[row.config_id]" type="success" size="mini">{{ $t('tracker.reannounce.edited') }}</el-tag>
+            <span v-else class="no-edit-hint">{{ $t('tracker.reannounce.notEdited') }}</span>
           </template>
           <template v-else>
             <el-button
@@ -206,7 +206,7 @@
               icon="el-icon-edit"
               @click="openEditDialog(row)"
             >
-              编辑
+              {{ $t('tracker.reannounce.edit') }}
             </el-button>
             <el-button
               type="text"
@@ -215,7 +215,7 @@
               class="danger-text"
               @click="handleDelete(row)"
             >
-              删除
+              {{ $t('tracker.reannounce.delete') }}
             </el-button>
           </template>
         </template>
@@ -244,24 +244,24 @@
         :rules="formRules"
         label-width="120px"
       >
-        <el-form-item label="域名模式" prop="domain_pattern">
+        <el-form-item :label="$t('tracker.reannounce.formPattern')" prop="domain_pattern">
           <el-input
             v-model="formData.domain_pattern"
-            placeholder="%.tracker.com"
+            :placeholder="$t('tracker.reannounce.patternPlaceholder')"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-            💡 支持使用 % 作为通配符匹配多个子域名
+            {{ $t('tracker.reannounce.patternHint') }}
           </div>
         </el-form-item>
 
-        <el-form-item label="域名显示名称" prop="domain_display_name">
+        <el-form-item :label="$t('tracker.reannounce.formDisplayName')" prop="domain_display_name">
           <el-input
             v-model="formData.domain_display_name"
-            placeholder="Tracker站点"
+            :placeholder="$t('tracker.reannounce.displayNameDialogPlaceholder')"
           />
         </el-form-item>
 
-        <el-form-item label="汇报间隔（分钟）" prop="interval_minutes">
+        <el-form-item :label="$t('tracker.reannounce.formInterval')" prop="interval_minutes">
           <el-input-number
             v-model="formData.interval_minutes"
             :min="1"
@@ -270,22 +270,22 @@
           />
         </el-form-item>
 
-        <el-form-item label="启用配置">
+        <el-form-item :label="$t('tracker.reannounce.formEnabled')">
           <el-switch v-model="formData.enabled" />
           <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-            开启后将按设定间隔自动汇报Tracker
+            {{ $t('tracker.reannounce.enabledHint') }}
           </div>
         </el-form-item>
       </el-form>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('tracker.pools.dialog.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="submitLoading"
           @click="handleSubmit"
         >
-          确定
+          {{ $t('tracker.pools.dialog.confirm') }}
         </el-button>
       </div>
     </el-dialog>
@@ -295,6 +295,7 @@
 <script>
 import { getReannounceConfigs, createReannounceConfig, updateReannounceConfig, deleteReannounceConfig, autoDetectDomains, batchUpdateReannounceConfigs } from '@/api/tracker'
 import Pagination from '@/components/Pagination'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 
 export default {
   name: 'TrackerReannounceConfig',
@@ -320,36 +321,43 @@ export default {
       originalData: {},  // { config_id: { 原始数据 } }
       savingBatch: false,
       dialogVisible: false,
-      dialogTitle: '新增配置',
+      // 双语 P6-3：标题由 dialogMode 驱动（computed dialogTitle），替代原中文硬编码 data
+      dialogMode: 'create',
       formData: {
         config_id: undefined,
         domain_pattern: '',
         domain_display_name: '',
         interval_minutes: 30,
         enabled: true
-      },
-      formRules: {
+      }
+    }
+  },
+  computed: {
+    // 双语 P6-3：弹窗标题由 dialogMode 驱动，替代原中文硬编码 data（openCreateDialog/openEditDialog 赋值处同步改）
+    dialogTitle() {
+      return this.dialogMode === 'edit'
+        ? this.$t('tracker.reannounce.editTitle')
+        : this.$t('tracker.reannounce.createTitle')
+    },
+    // 双语 P6-3：校验规则 computed 化（语言切换响应式，原 data 内中文 message 静态求值不可切换）
+    formRules() {
+      return {
         domain_pattern: [
-          { required: true, message: '请输入域名模式', trigger: 'blur' }
+          { required: true, message: this.$t('tracker.reannounce.patternRequired'), trigger: 'blur' }
         ],
         interval_minutes: [
-          { required: true, message: '请输入汇报间隔', trigger: 'blur' },
+          { required: true, message: this.$t('tracker.reannounce.intervalRequired'), trigger: 'blur' },
           {
             type: 'number',
             min: 1,
             max: 1440,
-            message: '汇报间隔必须在 1-1440 分钟之间',
+            message: this.$t('tracker.reannounce.intervalRange'),
             trigger: 'blur',
             transform: (value) => Number(value)  // ✅ 修复：确保类型转换
           }
         ]
       }
-    }
-  },
-  created() {
-    this.getList()
-  },
-  computed: {
+    },
     // 是否有未保存的更改（比较editedRows和originalData）
     hasChanges() {
       for (const [configId, editedData] of Object.entries(this.editedRows)) {
@@ -386,6 +394,9 @@ export default {
       return count
     }
   },
+  created() {
+    this.getList()
+  },
   methods: {
     cellStyle({ columnIndex }) {
       // 在操作列(第5列，索引4)添加左边框，使其在固定列上方显示
@@ -410,12 +421,12 @@ export default {
           this.list = response.data.list
           this.total = response.data.total
         } else {
-          this.$message.error(response.msg || '获取配置列表失败')
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.getListFailed')))
         }
         this.listLoading = false
       }).catch(error => {
         console.error('获取配置列表失败:', error)
-        this.$message.error('获取配置列表失败')
+        this.$message.error(this.$t('tracker.reannounce.getListFailed'))
         this.listLoading = false
       })
     },
@@ -457,7 +468,7 @@ export default {
     },
 
     openCreateDialog() {
-      this.dialogTitle = '新增配置'
+      this.dialogMode = 'create'
       this.formData = {
         config_id: undefined,
         domain_pattern: '',
@@ -472,7 +483,7 @@ export default {
     },
 
     openEditDialog(row) {
-      this.dialogTitle = '编辑配置'
+      this.dialogMode = 'edit'
       this.formData = {
         config_id: row.config_id,
         domain_pattern: row.domain_pattern,
@@ -504,32 +515,32 @@ export default {
             // 更新
             updateReannounceConfig(this.formData.config_id, data).then(response => {
               if (response.code === '200') {
-                this.$message.success('配置更新成功')
+                this.$message.success(this.$t('tracker.reannounce.updateSuccess'))
                 this.dialogVisible = false
                 this.getList()
               } else {
-                this.$message.error(response.msg || '配置更新失败')
+                this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.updateFailed')))
               }
               this.submitLoading = false
             }).catch(error => {
               console.error('配置更新失败:', error)
-              this.$message.error('配置更新失败')
+              this.$message.error(this.$t('tracker.reannounce.updateFailed'))
               this.submitLoading = false
             })
           } else {
             // 新增
             createReannounceConfig(data).then(response => {
               if (response.code === '200') {
-                this.$message.success('配置创建成功')
+                this.$message.success(this.$t('tracker.reannounce.createSuccess'))
                 this.dialogVisible = false
                 this.getList()
               } else {
-                this.$message.error(response.msg || '配置创建失败')
+                this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.createFailed')))
               }
               this.submitLoading = false
             }).catch(error => {
               console.error('配置创建失败:', error)
-              this.$message.error('配置创建失败')
+              this.$message.error(this.$t('tracker.reannounce.createFailed'))
               this.submitLoading = false
             })
           }
@@ -546,38 +557,38 @@ export default {
 
       updateReannounceConfig(row.config_id, { enabled: newEnabled }).then(response => {
         if (response.code === '200') {
-          this.$message.success(newEnabled ? '配置已启用' : '配置已禁用')
+          this.$message.success(newEnabled ? this.$t('tracker.reannounce.toggleEnabled') : this.$t('tracker.reannounce.toggleDisabled'))
         } else {
           // 失败时回滚UI状态
           this.$set(row, 'enabled', originalEnabled)
-          this.$message.error(response.msg || '配置状态更新失败')
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.toggleFailed')))
         }
       }).catch(error => {
         // 异常时也要回滚UI状态
         this.$set(row, 'enabled', originalEnabled)
         console.error('配置状态更新失败:', error)
-        this.$message.error('配置状态更新失败')
+        this.$message.error(this.$t('tracker.reannounce.toggleFailed'))
       })
     },
 
     handleDelete(row) {
-      this.$confirm(`确定要删除配置「${row.domain_display_name}」吗？`, '确认删除', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      this.$confirm(this.$t('tracker.reannounce.deleteConfirm', { name: row.domain_display_name }), this.$t('tracker.pools.dialog.confirmDelete'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       }).then(() => {
         deleteReannounceConfig(row.config_id).then(response => {
           if (response.code === '200') {
-            this.$message.success('配置删除成功')
+            this.$message.success(this.$t('tracker.reannounce.deleteSuccess'))
             this.getList()
           } else {
-            this.$message.error(response.msg || '配置删除失败')
+            this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.deleteFailed')))
           }
         }).catch(error => {
           console.error('配置删除失败:', error)
-          this.$message.error('配置删除失败')
+          this.$message.error(this.$t('tracker.reannounce.deleteFailed'))
         })
-      }).catch(() => { /* noop - 用户取消确认 */ })
+      }).catch(() => { /* noop - user cancelled the confirm */ })
     },
 
     handleAutoDetect() {
@@ -585,15 +596,15 @@ export default {
       autoDetectDomains().then(response => {
         if (response.code === '200') {
           const { detected, created } = response.data
-          this.$message.success(`检测到 ${detected} 个域名，新增 ${created} 个配置`)
+          this.$message.success(this.$t('tracker.reannounce.detectResult', { detected, created }))
           this.getList()
         } else {
-          this.$message.error(response.msg || '自动检测失败')
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.detectFailed')))
         }
         this.autoDetectLoading = false
       }).catch(error => {
         console.error('自动检测失败:', error)
-        this.$message.error('自动检测失败')
+        this.$message.error(this.$t('tracker.reannounce.detectFailed'))
         this.autoDetectLoading = false
       })
     },
@@ -627,15 +638,15 @@ export default {
 
     // 退出批量编辑模式
     exitBatchMode() {
-      this.$confirm('退出批量编辑将丢失未保存的更改，确定要退出吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      this.$confirm(this.$t('tracker.reannounce.exitBatchConfirm'), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       }).then(() => {
         this.batchMode = false
         this.editedRows = {}
         this.originalData = {}
-      }).catch(() => { /* noop - 用户取消确认 */ })
+      }).catch(() => { /* noop - user cancelled the confirm */ })
     },
 
     // 处理字段变化
@@ -648,9 +659,9 @@ export default {
 
     // 撤销更改
     handleCancelChanges() {
-      this.$confirm('确定要撤销所有更改吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      this.$confirm(this.$t('tracker.reannounce.undoConfirm'), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       }).then(() => {
         // 恢复到原始数据
@@ -659,7 +670,7 @@ export default {
             this.$set(this.editedRows, row.config_id, { ...this.originalData[row.config_id] })
           }
         })
-      }).catch(() => { /* noop - 用户取消确认 */ })
+      }).catch(() => { /* noop - user cancelled the confirm */ })
     },
 
     // 保存批量更改
@@ -689,7 +700,7 @@ export default {
       }
 
       if (items.length === 0) {
-        this.$message.warning('没有需要保存的更改')
+        this.$message.warning(this.$t('tracker.reannounce.nothingToSave'))
         return
       }
 
@@ -699,12 +710,12 @@ export default {
         if (response.code === '200') {
           const { success_count, failed_count, results } = response.data
           if (failed_count > 0) {
-            // 部分失败
+            // 部分失败：逐条 message 属后端诊断数据（含原文），只进日志不进提示（E01 防中文泄漏）
             const failedItems = results.filter(r => !r.success)
-            const messages = failedItems.map(r => `${r.config_id}: ${r.message}`).join('; ')
-            this.$message.warning(`批量更新完成，成功 ${success_count} 条，失败 ${failed_count} 条：${messages}`)
+            console.error('批量更新部分失败明细:', failedItems)
+            this.$message.warning(this.$t('tracker.reannounce.batchPartial', { success: success_count, failed: failed_count }))
           } else {
-            this.$message.success(`批量更新成功，已保存 ${success_count} 条记录`)
+            this.$message.success(this.$t('tracker.reannounce.batchSuccess', { count: success_count }))
           }
           // 刷新列表
           this.getList()
@@ -713,13 +724,12 @@ export default {
           this.originalData = {}
           this.batchMode = false
         } else {
-          this.$message.error(response.msg || '批量更新失败')
+          this.$message.error(apiResponseMessage(response, this.$t('tracker.reannounce.batchFailed')))
         }
         this.savingBatch = false
       }).catch(error => {
         console.error('批量更新失败:', error)
-        const errorMsg = error.response?.data?.msg || error.message || '批量更新失败'
-        this.$message.error(errorMsg)
+        this.$message.error(apiErrorMessage(error, this.$t('tracker.reannounce.batchFailed')))
         this.savingBatch = false
       })
     }

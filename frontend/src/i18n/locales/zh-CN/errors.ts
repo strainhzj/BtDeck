@@ -124,6 +124,25 @@ export const errors = {
     recycleRestoreFailed: '还原种子失败，请稍后重试',
     recyclePreviewFailed: '清理预览失败，请稍后重试',
     recycleCleanupFailed: '清理回收站失败，请稍后重试',
-    notImplemented: '该功能尚未开放，敬请期待'
+    notImplemented: '该功能尚未开放，敬请期待',
+    /* ↓ 双语 P6-3 扩展：Tracker 关键词池 / 汇报配置 / 判断测试 */
+    keywordTooLong: '关键词长度超过限制（最大 200 字符）',
+    languageCodeTooLong: '语言代码长度超过限制（最大 10 字符）',
+    categoryTooLong: '分类长度超过限制（最大 50 字符）',
+    descriptionTooLong: '描述长度超过限制（最大 200 字符）',
+    keywordAlreadyExists: '该关键词已存在于对应池中',
+    keywordNotFound: '关键词不存在或已删除',
+    keywordListRequired: '关键词列表不能为空',
+    keywordDuplicateInBatch: '批量列表中存在重复的关键词',
+    keywordInvalidPoolType: '无效的池子类型',
+    keywordParamsRequired: '缺少必要参数（keyword_id / target_pool）',
+    keywordIdsMustBeList: 'keywordIds 必须是列表',
+    keywordPrefixRequired: '前缀不能为空',
+    reannounceConfigNotFound: '汇报配置不存在或已删除',
+    reannounceConfigInvalid: '配置参数无效，请检查后重试',
+    reannounceNoFieldsToUpdate: '没有需要更新的字段',
+    reannounceBatchFormatInvalid: '批量请求数据格式错误',
+    reannounceBatchEmpty: '批量请求数据不能为空',
+    testMatchFailed: '测试失败，请稍后重试'
   }
 }

@@ -7,9 +7,11 @@
  * - handleQuickActionSuccess 通知父组件刷新并重载列表
  */
 import Vue from 'vue'
+import VueI18n from 'vue-i18n'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import KeywordListModal from '@/views/tracker/components/KeywordListModal.vue'
+import i18n from '@/i18n'
 import { ApiResponse, getPoolKeywords, GetPoolKeywordsParams, PaginatedResponse, PoolKeyword, PoolType } from '@/api/tracker'
 
 jest.mock('@/api/tracker', () => ({
@@ -21,6 +23,8 @@ jest.mock('@/api/tracker', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-3：弹窗文案走 $t（tracker.listModal.* / tracker.pools.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 localVue.directive('loading', {})
 
 const mockGetPoolKeywords = getPoolKeywords as jest.MockedFunction<typeof getPoolKeywords>
@@ -60,6 +64,7 @@ async function flushLifecycle(): Promise<void> {
 function mountModal(poolType = 'candidate'): Wrapper<Vue> {
   return shallowMount(KeywordListModal, {
     localVue,
+    i18n,
     propsData: {
       visible: true,
       poolType,

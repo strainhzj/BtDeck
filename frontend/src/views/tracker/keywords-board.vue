@@ -4,7 +4,7 @@
     <div class="page-header">
       <h1>
         <LucideIcon name="tags" :size="22" />
-        Tracker关键词管理
+        {{ $t('tracker.board.title') }}
       </h1>
       <div class="header-actions">
         <el-button
@@ -12,7 +12,7 @@
           @click="handleSearch"
         >
           <LucideIcon name="search" :size="14" style="margin-right: 6px" />
-          搜索
+          {{ $t('tracker.board.search') }}
         </el-button>
         <el-button
           type="primary"
@@ -20,7 +20,7 @@
           @click="handleRefresh"
         >
           <LucideIcon v-if="!refreshing" name="refresh-cw" :size="14" style="margin-right: 6px" />
-          刷新
+          {{ $t('tracker.board.refresh') }}
         </el-button>
       </div>
     </div>
@@ -40,12 +40,12 @@
         <div class="pool-header">
           <span class="pool-title">
             <LucideIcon :name="pool.icon" :size="18" />
-            {{ pool.label }}
+            {{ getPoolLabel(pool.type) }}
           </span>
           <div class="pool-header-right">
             <!-- 快捷操作按钮（所有池子显示，含候选池） -->
             <div class="pool-actions">
-              <el-tooltip content="快捷操作（按前缀左匹配）" placement="bottom">
+              <el-tooltip :content="$t('tracker.pools.quickActionTip')" placement="bottom">
                 <i class="pool-action-btn" @click="handleQuickAction(pool.type)">
                   <LucideIcon name="wand-sparkles" :size="18" />
                 </i>
@@ -53,17 +53,17 @@
             </div>
             <!-- 池子操作按钮 (仅忽略池、成功池、失败池显示；候选池由系统自动生成) -->
             <div v-if="pool.type !== 'candidate'" class="pool-actions">
-              <el-tooltip content="添加关键词" placement="bottom">
+              <el-tooltip :content="$t('tracker.pools.addKeyword')" placement="bottom">
                 <i class="pool-action-btn" @click="handleAddKeyword(pool.type)">
                   <LucideIcon name="plus" :size="18" />
                 </i>
               </el-tooltip>
-              <el-tooltip content="导入关键词" placement="bottom">
+              <el-tooltip :content="$t('tracker.pools.importKeywords')" placement="bottom">
                 <i class="pool-action-btn" @click="handleImportKeywords(pool.type)">
                   <LucideIcon name="upload" :size="18" />
                 </i>
               </el-tooltip>
-              <el-tooltip content="导出关键词" placement="bottom">
+              <el-tooltip :content="$t('tracker.pools.exportKeywords')" placement="bottom">
                 <i class="pool-action-btn" @click="handleExportKeywords(pool.type)">
                   <LucideIcon name="download" :size="18" />
                 </i>
@@ -94,7 +94,7 @@
           type="text"
           @click="openModal(pool.type)"
         >
-          查看全部 →
+          {{ $t('tracker.pools.viewAll') }}
         </el-button>
       </div>
     </div>
@@ -143,7 +143,8 @@ import ImportKeywordsDialog from './components/ImportKeywordsDialog.vue'
 import KeywordQuickActionDialog from './components/KeywordQuickActionDialog.vue'
 import { getPoolKeywords, deleteKeyword, moveKeywordToPool, PoolType } from '@/api/tracker'
 // 错误路径消息提取（M3 复核发现：原文件使用但未导入，池加载/移动/删除失败时抛 ReferenceError）
-import { extractErrorMessage } from '@/utils/tracker'
+import { extractErrorMessage, poolLabel } from '@/utils/tracker'
+import { apiResponseMessage } from '@/i18n'
 
 interface PoolKeyword {
   keyword_id: string
@@ -154,7 +155,6 @@ interface PoolKeyword {
 
 interface Pool {
   type: string
-  label: string
   icon: string
   count: number
   keywords: PoolKeyword[]
@@ -189,7 +189,6 @@ export default class TrackerKeywordsBoard extends Vue {
   pools: Pool[] = [
     {
       type: 'candidate',
-      label: '候选池',
       icon: 'clipboard-list',
       count: 0,
       keywords: [],
@@ -197,7 +196,6 @@ export default class TrackerKeywordsBoard extends Vue {
     },
     {
       type: 'ignored',
-      label: '忽略池',
       icon: 'forward',
       count: 0,
       keywords: [],
@@ -205,7 +203,6 @@ export default class TrackerKeywordsBoard extends Vue {
     },
     {
       type: 'success',
-      label: '成功池',
       icon: 'circle-check-big',
       count: 0,
       keywords: [],
@@ -213,7 +210,6 @@ export default class TrackerKeywordsBoard extends Vue {
     },
     {
       type: 'failed',
-      label: '失败池',
       icon: 'circle-x',
       count: 0,
       keywords: [],
@@ -232,7 +228,7 @@ export default class TrackerKeywordsBoard extends Vue {
       await Promise.all(promises)
     } catch (error: any) {
       console.error('加载池数据失败:', error)
-      const errorMsg = extractErrorMessage(error, '加载池数据失败')
+      const errorMsg = extractErrorMessage(error, this.$t('tracker.board.loadAllFailed'))
       this.$message.error(errorMsg)
     } finally {
       this.refreshing = false
@@ -255,7 +251,7 @@ export default class TrackerKeywordsBoard extends Vue {
           pool.count = response.data.total || 0
         }
       } else {
-        this.$message.error(response.msg || '加载失败')
+        this.$message.error(apiResponseMessage(response, this.$t('tracker.board.loadFailed')))
         const pool = this.pools.find(p => p.type === poolType)
         if (pool) {
           pool.keywords = []
@@ -264,7 +260,7 @@ export default class TrackerKeywordsBoard extends Vue {
       }
     } catch (error: any) {
       console.error(`加载 ${poolType} 数据失败:`, error)
-      const errorMsg = extractErrorMessage(error, `加载${this.getPoolLabel(poolType)}数据失败`)
+      const errorMsg = extractErrorMessage(error, this.$t('tracker.board.loadPoolFailed', { pool: this.getPoolLabel(poolType) }))
       this.$message.error(errorMsg)
       const pool = this.pools.find(p => p.type === poolType)
       if (pool) {
@@ -395,8 +391,8 @@ export default class TrackerKeywordsBoard extends Vue {
   /**
    * 显示移动成功消息
    */
-  private showMoveSuccessMessage(keyword: string, targetPoolLabel: string): void {
-    this.$message.success(`关键词 "${keyword}" 已移动到 ${targetPoolLabel}`)
+  private showMoveSuccessMessage(keyword: string, targetPoolType: string): void {
+    this.$message.success(this.$t('tracker.board.moveSuccess', { keyword, pool: this.getPoolLabel(targetPoolType) }))
   }
 
   /**
@@ -435,13 +431,13 @@ export default class TrackerKeywordsBoard extends Vue {
       this.addKeywordToTargetPool(targetPool, draggedKeywordCopy)
 
       // 显示成功消息
-      this.showMoveSuccessMessage(draggedKeywordCopy.keyword, targetPool.label)
+      this.showMoveSuccessMessage(draggedKeywordCopy.keyword, targetPool.type)
 
       // 重置拖拽状态
       this.resetDragState()
     } catch (error: any) {
       console.error('移动关键词失败:', error)
-      const errorMsg = extractErrorMessage(error, '移动失败')
+      const errorMsg = extractErrorMessage(error, this.$t('tracker.board.moveFailed'))
       this.$message.error(errorMsg)
     }
   }
@@ -450,11 +446,11 @@ export default class TrackerKeywordsBoard extends Vue {
   async handleDeleteKeyword(poolType: string, keyword: PoolKeyword) {
     try {
       await this.$confirm(
-        `确定要删除关键词 "${keyword.keyword}" 吗？`,
-        '提示',
+        this.$t('tracker.board.deleteConfirm', { keyword: keyword.keyword }),
+        this.$t('tracker.pools.dialog.notice'),
         {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
+          confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+          cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
           type: 'warning'
         }
       )
@@ -472,11 +468,11 @@ export default class TrackerKeywordsBoard extends Vue {
         }
       }
 
-      this.$message.success('删除成功')
+      this.$message.success(this.$t('tracker.board.deleteSuccess'))
     } catch (error: any) {
       if (error !== 'cancel') {
         console.error('删除关键词失败:', error)
-        const errorMsg = extractErrorMessage(error, '删除失败')
+        const errorMsg = extractErrorMessage(error, this.$t('tracker.board.deleteFailed'))
         this.$message.error(errorMsg)
       }
     }
@@ -494,7 +490,7 @@ export default class TrackerKeywordsBoard extends Vue {
 
     // 候选池不支持手动添加关键词
     if (!keywordType) {
-      this.$message.warning('候选池不支持手动添加关键词,请将关键词拖拽到其他池子')
+      this.$message.warning(this.$t('tracker.board.candidateAddDenied'))
       return
     }
 
@@ -507,7 +503,7 @@ export default class TrackerKeywordsBoard extends Vue {
 
     // 候选池不支持导入关键词
     if (!keywordType) {
-      this.$message.warning('候选池不支持导入关键词,请将关键词拖拽到其他池子')
+      this.$message.warning(this.$t('tracker.board.candidateImportDenied'))
       return
     }
 
@@ -528,7 +524,7 @@ export default class TrackerKeywordsBoard extends Vue {
   }
 
   handleExportKeywords(poolType: string) {
-    this.$message.info(`导出功能开发中 - ${this.getPoolLabel(poolType)}`)
+    this.$message.info(this.$t('tracker.board.exportWip', { pool: this.getPoolLabel(poolType) }))
     // TODO: 实现导出功能
     // 1. 获取池子所有关键词
     // 2. 生成文件（JSON/CSV/TXT）
@@ -536,8 +532,7 @@ export default class TrackerKeywordsBoard extends Vue {
   }
 
   getPoolLabel(poolType: string): string {
-    const pool = this.pools.find(p => p.type === poolType)
-    return pool?.label || poolType
+    return poolLabel(poolType)
   }
 
   /**

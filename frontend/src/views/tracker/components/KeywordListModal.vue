@@ -22,7 +22,7 @@
         <div class="search-input-wrapper">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="搜索关键词..."
+            :placeholder="$t('tracker.listModal.searchPlaceholder')"
             clearable
             @input="handleSearch"
           >
@@ -31,7 +31,7 @@
         </div>
 
         <!-- 快捷操作（按前缀左匹配），位于搜索框右侧 -->
-        <el-tooltip content="快捷操作（按前缀左匹配）" placement="top">
+        <el-tooltip :content="$t('tracker.pools.quickActionTip')" placement="top">
           <i class="quick-action-btn" @click="openQuickAction">
             <LucideIcon name="wand-sparkles" :size="16" />
           </i>
@@ -39,37 +39,37 @@
 
         <el-select
           v-model="searchForm.timeRange"
-          placeholder="时间范围"
+          :placeholder="$t('tracker.search.timeRange')"
           clearable
           @change="handleSearch"
         >
-          <el-option label="全部" value="">
-            <LucideIcon name="list-filter" :size="13" /> 全部
+          <el-option :label="$t('tracker.search.all')" value="">
+            <LucideIcon name="list-filter" :size="13" /> {{ $t('tracker.search.all') }}
           </el-option>
-          <el-option label="今天" value="today">
-            <LucideIcon name="calendar-days" :size="13" /> 今天
+          <el-option :label="$t('tracker.search.today')" value="today">
+            <LucideIcon name="calendar-days" :size="13" /> {{ $t('tracker.search.today') }}
           </el-option>
-          <el-option label="本周" value="week">
-            <LucideIcon name="calendar-range" :size="13" /> 本周
+          <el-option :label="$t('tracker.search.week')" value="week">
+            <LucideIcon name="calendar-range" :size="13" /> {{ $t('tracker.search.week') }}
           </el-option>
-          <el-option label="本月" value="month">
-            <LucideIcon name="calendar-range" :size="13" /> 本月
+          <el-option :label="$t('tracker.search.month')" value="month">
+            <LucideIcon name="calendar-range" :size="13" /> {{ $t('tracker.search.month') }}
           </el-option>
         </el-select>
 
         <el-select
           v-model="searchForm.sortBy"
-          placeholder="排序方式"
+          :placeholder="$t('tracker.search.sortPlaceholder')"
           @change="handleSearch"
         >
-          <el-option label="添加时间 ↓" value="time_desc">
-            <LucideIcon name="clock" :size="13" /> 添加时间 ↓
+          <el-option :label="$t('tracker.search.sortTimeDesc')" value="time_desc">
+            <LucideIcon name="clock" :size="13" /> {{ $t('tracker.search.sortTimeDesc') }}
           </el-option>
-          <el-option label="添加时间 ↑" value="time_asc">
-            <LucideIcon name="clock" :size="13" /> 添加时间 ↑
+          <el-option :label="$t('tracker.search.sortTimeAsc')" value="time_asc">
+            <LucideIcon name="clock" :size="13" /> {{ $t('tracker.search.sortTimeAsc') }}
           </el-option>
-          <el-option label="关键词 A-Z" value="name_asc">
-            <LucideIcon name="arrow-down-a-z" :size="13" /> 关键词 A-Z
+          <el-option :label="$t('tracker.search.sortNameAsc')" value="name_asc">
+            <LucideIcon name="arrow-down-a-z" :size="13" /> {{ $t('tracker.search.sortNameAsc') }}
           </el-option>
         </el-select>
       </div>
@@ -77,7 +77,7 @@
       <!-- 批量操作栏 -->
       <div v-show="selectedKeywords.length > 0" class="batch-actions">
         <span class="batch-info">
-          <LucideIcon name="circle-check-big" :size="14" style="margin-right: 4px" /> 已选 <strong>{{ selectedKeywords.length }}</strong> 项
+          <LucideIcon name="circle-check-big" :size="14" style="margin-right: 4px" /> {{ $t('tracker.listModal.selectedPrefix') }}<strong>{{ selectedKeywords.length }}</strong>{{ $t('tracker.listModal.selectedSuffix') }}
         </span>
         <el-button
           type="danger"
@@ -85,7 +85,7 @@
           @click="handleBatchDelete"
         >
           <LucideIcon name="trash-2" :size="14" style="margin-right: 6px" />
-          批量删除
+          {{ $t('tracker.listModal.batchDelete') }}
         </el-button>
         <el-dropdown @command="handleBatchMove">
           <el-button
@@ -93,7 +93,7 @@
             size="small"
           >
             <LucideIcon name="list-filter" :size="14" style="margin-right: 6px" />
-            批量移动到 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
+            {{ $t('tracker.pools.batchMoveTo') }} <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
           </el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item
@@ -124,14 +124,14 @@
               {{ item.keyword }}
             </div>
             <div class="keyword-time">
-              <LucideIcon name="clock" :size="12" style="margin-right: 2px" /> {{ item.create_time || '未知时间' }}
+              <LucideIcon name="clock" :size="12" style="margin-right: 2px" /> {{ item.create_time || $t('tracker.pools.unknownTime') }}
             </div>
           </div>
 
           <div class="keyword-actions">
             <el-dropdown @command="(command) => handleMove(item, command)">
               <el-button size="small" type="text">
-                <LucideIcon name="list-filter" :size="13" style="margin-right: 4px" />移动到 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
+                <LucideIcon name="list-filter" :size="13" style="margin-right: 4px" />{{ $t('tracker.pools.moveTo') }} <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
               </el-button>
               <el-dropdown-menu slot="dropdown">
                 <el-dropdown-item
@@ -151,12 +151,12 @@
               icon="el-icon-delete"
               @click="handleDelete(item)"
             >
-              删除
+              {{ $t('tracker.search.delete') }}
             </el-button>
           </div>
         </div>
 
-        <el-empty v-if="!loading && keywordList.length === 0" description="暂无数据" />
+        <el-empty v-if="!loading && keywordList.length === 0" :description="$t('tracker.listModal.empty')" />
       </div>
 
       <!-- 分页 -->
@@ -183,7 +183,7 @@
 
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="handleClose">关 闭</el-button>
+        <el-button @click="handleClose">{{ $t('tracker.pools.dialog.close') }}</el-button>
       </span>
     </template>
   </el-dialog>
@@ -193,6 +193,8 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { moveKeywordToPool, deleteKeyword, batchMoveKeywords, batchDeleteKeywords, getPoolKeywords } from '@/api/tracker'
 import type { PoolType } from '@/api/tracker'
+import { poolLabel, poolOptions } from '@/utils/tracker'
+import { apiResponseMessage } from '@/i18n'
 import KeywordQuickActionDialog from './KeywordQuickActionDialog.vue'
 
 interface KeywordItem {
@@ -248,14 +250,6 @@ export default class KeywordListModal extends Vue {
   allSelected = false
   isIndeterminate = false
 
-  // 池子配置
-  poolConfig = {
-    candidate: { label: '候选池', value: 'candidate' },
-    ignored: { label: '忽略池', value: 'ignored' },
-    success: { label: '成功池', value: 'success' },
-    failed: { label: '失败池', value: 'failed' }
-  }
-
   @Watch('visible')
   onVisibleChange(val: boolean) {
     this.dialogVisible = val
@@ -270,15 +264,17 @@ export default class KeywordListModal extends Vue {
   }
 
   get dialogTitle(): string {
-    return `${this.poolConfig[this.poolType]?.label || '池子'}详情`
+    const label = poolLabel(this.poolType) || this.$t('tracker.pools.poolFallback')
+    return this.$t('tracker.listModal.titleSuffix', { pool: label })
   }
 
   get quickActionSourcePoolLabel(): string {
-    return this.poolConfig[this.quickActionSourcePool]?.label || '池子'
+    return poolLabel(this.quickActionSourcePool) || this.$t('tracker.pools.poolFallback')
   }
 
   get availablePools() {
-    return Object.values(this.poolConfig).filter(pool => pool.value !== this.poolType)
+    // 双语 P6-3：排除当前池子，标签随语言切换响应式
+    return poolOptions([this.poolType])
   }
 
   get selectedKeywords(): KeywordItem[] {
@@ -326,18 +322,18 @@ export default class KeywordListModal extends Vue {
         this.keywordList = response.data.list.map((kw: any) => ({
           ...kw,
           selected: false,
-          create_time: kw.create_time || '未知时间'
+          create_time: kw.create_time || this.$t('tracker.pools.unknownTime')
         }))
         this.pagination.total = response.data.total || 0
         // 重置全选状态
         this.updateSelectAllStatus()
       } else {
-        this.$message.error(response.msg || '加载数据失败')
+        this.$message.error(apiResponseMessage(response, this.$t('tracker.listModal.loadFailed')))
         this.keywordList = []
         this.pagination.total = 0
       }
     } catch (error) {
-      this.$message.error('加载数据失败')
+      this.$message.error(this.$t('tracker.listModal.loadFailed'))
       console.error(error)
       this.keywordList = []
       this.pagination.total = 0
@@ -375,30 +371,30 @@ export default class KeywordListModal extends Vue {
         keyword_id: item.keyword_id,
         target_pool: targetPool
       })
-      this.$message.success(`关键词已移动到 ${this.poolConfig[targetPool].label}`)
+      this.$message.success(this.$t('tracker.listModal.moveSuccess', { pool: poolLabel(targetPool) }))
       this.$emit('refresh')
       this.loadData()
     } catch (error) {
-      this.$message.error('移动失败')
+      this.$message.error(this.$t('tracker.listModal.moveFailed'))
       console.error(error)
     }
   }
 
   async handleDelete(item: KeywordItem) {
     try {
-      await this.$confirm(`确定要删除关键词 "${item.keyword}" 吗？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tracker.listModal.deleteConfirm', { keyword: item.keyword }), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       })
 
       await deleteKeyword(item.keyword_id)
-      this.$message.success('删除成功')
+      this.$message.success(this.$t('tracker.listModal.deleteSuccess'))
       this.$emit('refresh')
       this.loadData()
     } catch (error) {
       if (error !== 'cancel') {
-        this.$message.error('删除失败')
+        this.$message.error(this.$t('tracker.listModal.deleteFailed'))
         console.error(error)
       }
     }
@@ -411,11 +407,11 @@ export default class KeywordListModal extends Vue {
         keyword_ids: selectedIds,
         target_pool: targetPool
       })
-      this.$message.success(`已将 ${selectedIds.length} 个关键词移动到 ${this.poolConfig[targetPool].label}`)
+      this.$message.success(this.$t('tracker.listModal.batchMoveSuccess', { count: selectedIds.length, pool: poolLabel(targetPool) }))
       this.$emit('refresh')
       this.loadData()
     } catch (error) {
-      this.$message.error('批量移动失败')
+      this.$message.error(this.$t('tracker.listModal.batchMoveFailed'))
       console.error(error)
     }
   }
@@ -423,19 +419,19 @@ export default class KeywordListModal extends Vue {
   async handleBatchDelete() {
     const selectedIds = this.selectedKeywords.map(item => item.keyword_id)
     try {
-      await this.$confirm(`确定要删除选中的 ${selectedIds.length} 个关键词吗？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tracker.listModal.batchDeleteConfirm', { count: selectedIds.length }), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       })
 
       await batchDeleteKeywords({ keyword_ids: selectedIds })
-      this.$message.success(`已删除 ${selectedIds.length} 个关键词`)
+      this.$message.success(this.$t('tracker.listModal.batchDeleteSuccess', { count: selectedIds.length }))
       this.$emit('refresh')
       this.loadData()
     } catch (error) {
       if (error !== 'cancel') {
-        this.$message.error('批量删除失败')
+        this.$message.error(this.$t('tracker.listModal.batchDeleteFailed'))
         console.error(error)
       }
     }

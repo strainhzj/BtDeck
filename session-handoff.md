@@ -5230,3 +5230,26 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
 - 坑位：pytest fixture 须 register_exception_handlers(app) 才复刻生产 422 信封；Notification.extra_data 是 JSON 字符串需 json.loads；pause/resume/recheck 空 hashes 被 pydantic 拦截（业务 400 分支不可达）；Optional[UploadFile]=File(...) 表单必填。
 - Git 已提交（未推送）：9206f82（feat，35 文件）+ ef37db9（docs(roadmap)，7 文件）；data/ 下未跟踪产物保持不动。
+## 2026-09-20 交接：桌面双语 P6-3 Tracker 管理域完成（全绿未提交）
+
+### 已完成
+
+- **范围**：views/tracker 全域——4 页面（关键词看板/搜索、汇报配置、判断测试）+ 9 组件 + utils/tracker.ts；后端 tracker_keywords/keywords_pools/reannounce/test 四端点 reasonCode 契约（经用户确认随批）。
+- **前端**：tracker 语言包十五子树（zh 逐字节 + en）；poolLabel/poolOptions 池名共享、getLanguageLabel 键化、extractErrorMessage 兜底键化、9 个零消费方导出删除；搜索页 pool_label 后端中文字段改本地化直出；4 处 .msg 直读改契约入口；汇报批量部分失败明细转 console。
+- **后端**：18 个 reasonCode 新键（KEYWORD_*/REANNOUNCE_*/TEST_MATCH_FAILED + 复用 DB_OPERATION_FAILED）；str(e)/池名/合法值清单只进日志；reannounce not-found 改 result.error_code 结构化判定（原中文子串匹配删除，源码断言钉死）。
+- **测试**：backend test_reason_contract_p6 26 例 + frontend p6-tracker-domain-i18n 26 例；3 存量套件挂 i18n；审计集 58 面（14 文件 + parseJSON 白名单）。
+- **验证全绿**：前端 typecheck/lint 三项/build/Jest 121 套 1755 例；后端全量 4776 passed/0 skipped 外 17 skipped、mypy/black/flake8 净；roadmap 六处同步。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap（根/entry/views/utils-types/backend api/test-coverage）。
+
+### 并发事件（重要）
+
+- 执行中检测到旧会话（pi CLI pts/0，即用户报告「卡死」的会话）仍在实时写同批文件；经用户拍板终止（kill PID 2931）后由本会话接管。接管时旧会话已完成：语言包十五子树、utils/tracker 收敛、4 页面 + 13 组件接线、审计集扩容；本会话续作：测试迁移、后端契约、漏点修复、新 spec、验证、文档。工作区无冲突损坏（逐文件复核 + 全量测试背书）。
+
+### 待办/注意
+
+- P6 剩余：P6-4（任务/日志/孤儿文件/设置 MCP·MoviePilot 页签）、P6-5 收口；tracker_messages.py 前端无消费方未契约化（P0 边界外）。
+- 英文人工审校与浏览器视觉验收随 P7；本批未执行 Git 提交（含旧会话未提交改动，一并待用户指令）。
+- Android 嵌入服务未同步本批后端四端点契约变更，下次出 APK 前须重跑 stage-server.py。
+
+---
+

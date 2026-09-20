@@ -124,6 +124,25 @@ export const errors = {
     recycleRestoreFailed: 'Failed to restore the torrents. Please try again later.',
     recyclePreviewFailed: 'Failed to preview the cleanup. Please try again later.',
     recycleCleanupFailed: 'Failed to clean up the recycle bin. Please try again later.',
-    notImplemented: 'This feature is not available yet'
+    notImplemented: 'This feature is not available yet',
+    /* ↓ Bilingual P6-3: tracker keyword pools / reannounce config / match test */
+    keywordTooLong: 'Keyword exceeds the length limit (max 200 characters)',
+    languageCodeTooLong: 'Language code exceeds the length limit (max 10 characters)',
+    categoryTooLong: 'Category exceeds the length limit (max 50 characters)',
+    descriptionTooLong: 'Description exceeds the length limit (max 200 characters)',
+    keywordAlreadyExists: 'This keyword already exists in the target pool',
+    keywordNotFound: 'Keyword not found or already deleted',
+    keywordListRequired: 'Keyword list cannot be empty',
+    keywordDuplicateInBatch: 'Duplicate keywords in the batch list',
+    keywordInvalidPoolType: 'Invalid pool type',
+    keywordParamsRequired: 'Missing required parameters (keyword_id / target_pool)',
+    keywordIdsMustBeList: 'keywordIds must be a list',
+    keywordPrefixRequired: 'Prefix cannot be empty',
+    reannounceConfigNotFound: 'Reannounce config not found or already deleted',
+    reannounceConfigInvalid: 'Invalid config values, please check and retry',
+    reannounceNoFieldsToUpdate: 'No fields to update',
+    reannounceBatchFormatInvalid: 'Invalid batch request data format',
+    reannounceBatchEmpty: 'Batch request data cannot be empty',
+    testMatchFailed: 'Test failed, please try again later'
   }
 }

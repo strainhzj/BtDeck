@@ -10,9 +10,11 @@
  * - availableTargetPools 排除 candidate 与源池
  */
 import Vue from 'vue'
+import VueI18n from 'vue-i18n'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import KeywordQuickActionDialog from '@/views/tracker/components/KeywordQuickActionDialog.vue'
+import i18n from '@/i18n'
 import {
   ApiResponse,
   batchDeleteKeywords,
@@ -29,6 +31,8 @@ jest.mock('@/api/tracker', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-3：弹窗文案走 $t（tracker.quickAction.* / tracker.pools.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 localVue.directive('loading', {})
 
 const mockBatchDeleteKeywords = batchDeleteKeywords as jest.MockedFunction<typeof batchDeleteKeywords>
@@ -75,6 +79,7 @@ async function flushLifecycle(): Promise<void> {
 function mountDialog(props: Record<string, unknown> = {}): Wrapper<Vue> {
   return shallowMount(KeywordQuickActionDialog, {
     localVue,
+    i18n,
     propsData: {
       visible: true,
       sourcePool: 'success',

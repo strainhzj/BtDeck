@@ -19,8 +19,8 @@
             @drop.prevent="handleDrop"
           >
             <div class="upload-icon"><LucideIcon name="file-up" :size="48" /></div>
-            <div class="upload-text">点击或拖拽TXT文件到此处</div>
-            <div class="upload-hint">仅支持.txt文件,每行一个关键词</div>
+            <div class="upload-text">{{ $t('tracker.importDialog.uploadText') }}</div>
+            <div class="upload-hint">{{ $t('tracker.importDialog.uploadHint') }}</div>
           </div>
           <input
             ref="fileInput"
@@ -33,11 +33,11 @@
 
         <!-- 文本输入 -->
         <div>
-          <label class="form-label">或手动输入关键词</label>
+          <label class="form-label">{{ $t('tracker.importDialog.manualLabel') }}</label>
           <textarea
             v-model="textContent"
             class="form-textarea"
-            placeholder="每行一个关键词,按回车分隔"
+            :placeholder="$t('tracker.importDialog.textareaPlaceholder')"
             @input="parseTextContent"
           ></textarea>
         </div>
@@ -46,7 +46,7 @@
       <!-- 预览区域 -->
       <div class="preview-area">
         <div class="preview-text">
-          将导入 <span class="preview-count">{{ parsedKeywords.length }}</span> 个关键词
+          {{ $t('tracker.importDialog.previewPrefix') }}<span class="preview-count">{{ parsedKeywords.length }}</span>{{ $t('tracker.importDialog.previewSuffix') }}
         </div>
       </div>
 
@@ -60,21 +60,21 @@
 
       <!-- 成功消息 -->
       <div v-if="importSuccess" class="success-message">
-        <span class="success-icon"><LucideIcon name="circle-check-big" :size="20" /></span>
-        <span>成功导入 {{ successCount }} 个关键词,失败 {{ failCount }} 个</span>
+        <span><LucideIcon name="circle-check-big" :size="20" /></span>
+        <span>{{ $t('tracker.importDialog.successBox', {success: successCount, fail: failCount}) }}</span>
       </div>
     </div>
 
     <div slot="footer" class="dialog-footer">
       <button class="btn btn-secondary" @click="handleClose" :disabled="importing">
-        {{ importing ? '导入中...' : '取消' }}
+        {{ importing ? $t('tracker.importDialog.importing') : $t('tracker.importDialog.cancel') }}
       </button>
       <button v-if="!importing" class="btn btn-primary" :disabled="parsedKeywords.length === 0" @click="handleImport">
-        开始导入
+        {{ $t('tracker.importDialog.startImport') }}
       </button>
       <button v-else class="btn btn-danger" @click="handleCancelImport">
         <span class="spinner"></span>
-        <span>取消导入</span>
+        <span>{{ $t('tracker.importDialog.cancelImport') }}</span>
       </button>
     </div>
   </el-dialog>
@@ -83,6 +83,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { createKeyword } from '@/api/tracker'
+import { apiResponseMessage } from '@/i18n'
 import { PoolType } from '@/api/tracker'
 
 @Component({
@@ -114,7 +115,7 @@ export default class ImportKeywordsDialog extends Vue {
   }
 
   get dialogTitle(): string {
-    return `导入关键词到 ${this.poolLabel}`
+    return this.$t('tracker.importDialog.title', { pool: this.poolLabel })
   }
 
   get keywordType(): 'success' | 'failed' | 'ignored' {
@@ -184,7 +185,7 @@ export default class ImportKeywordsDialog extends Vue {
 
   processFile(file: File) {
     if (!file.name.endsWith('.txt')) {
-      this.$message.error('仅支持.txt文件')
+      this.$message.error(this.$t('tracker.importDialog.onlyTxt'))
       return
     }
 
@@ -193,17 +194,17 @@ export default class ImportKeywordsDialog extends Vue {
       const content = e.target?.result as string
       this.textContent = content
       this.parseTextContent()
-      this.$message.success(`已读取 ${this.parsedKeywords.length} 个关键词`)
+      this.$message.success(this.$t('tracker.importDialog.readSuccess', { count: this.parsedKeywords.length }))
     }
     reader.onerror = () => {
-      this.$message.error('文件读取失败')
+      this.$message.error(this.$t('tracker.importDialog.readFailed'))
     }
     reader.readAsText(file)
   }
 
   async handleImport() {
     if (this.parsedKeywords.length === 0) {
-      this.$message.warning('请先输入或上传关键词')
+      this.$message.warning(this.$t('tracker.importDialog.requireKeywords'))
       return
     }
 
@@ -221,8 +222,8 @@ export default class ImportKeywordsDialog extends Vue {
       for (let i = 0; i < this.parsedKeywords.length; i += batchSize) {
         // 检查是否取消
         if (this.importCancelled) {
-          this.progressText = '导入已取消'
-          this.$message.warning(`导入已取消,成功 ${this.successCount} 个,失败 ${this.failCount} 个`)
+          this.progressText = this.$t('tracker.importDialog.cancelled')
+          this.$message.warning(this.$t('tracker.importDialog.cancelledWithStats', { success: this.successCount, fail: this.failCount }))
           break
         }
 
@@ -242,7 +243,7 @@ export default class ImportKeywordsDialog extends Vue {
 
         // 更新进度
         this.progress = Math.min(100, Math.round(((i + batch.length) / total) * 100))
-        this.progressText = `正在导入 ${this.progress}% (${this.successCount + this.failCount}/${total})`
+        this.progressText = this.$t('tracker.importDialog.progress', { percent: this.progress, done: this.successCount + this.failCount, total })
 
         // 避免过快请求
         await new Promise(resolve => setTimeout(resolve, 200))
@@ -252,11 +253,14 @@ export default class ImportKeywordsDialog extends Vue {
       if (!this.importCancelled) {
         this.importing = false
         this.importSuccess = true
-        this.progressText = '导入完成'
+        this.progressText = this.$t('tracker.importDialog.done')
 
         // 显示成功消息
         if (this.successCount > 0) {
-          this.$message.success(`成功导入 ${this.successCount} 个关键词${this.failCount > 0 ? `,失败 ${this.failCount} 个` : ''}`)
+          this.$message.success(
+            this.$t('tracker.importDialog.toastSuccess', { success: this.successCount }) +
+            (this.failCount > 0 ? this.$t('tracker.importDialog.toastFailSuffix', { fail: this.failCount }) : '')
+          )
           this.$emit('success', this.successCount)
 
           // 3秒后自动关闭
@@ -266,12 +270,12 @@ export default class ImportKeywordsDialog extends Vue {
             }
           }, 3000)
         } else {
-          this.$message.error('导入失败,请稍后重试')
+          this.$message.error(this.$t('tracker.importDialog.allFailed'))
         }
       }
     } catch (error) {
       console.error('导入过程出错:', error)
-      this.$message.error('导入过程出错,请稍后重试')
+      this.$message.error(this.$t('tracker.importDialog.processError'))
     } finally {
       this.importing = false
     }
@@ -280,7 +284,7 @@ export default class ImportKeywordsDialog extends Vue {
   // 取消导入
   handleCancelImport() {
     this.importCancelled = true
-    this.$message.info('正在取消导入...')
+    this.$message.info(this.$t('tracker.importDialog.cancelling'))
   }
 
   beforeDestroy() {
@@ -301,7 +305,7 @@ export default class ImportKeywordsDialog extends Vue {
       })
 
       if (response.code !== '200') {
-        throw new Error(response.msg || '添加失败')
+        throw new Error(apiResponseMessage(response, this.$t('tracker.importDialog.addFailedFallback')))
       }
     } catch (error) {
       console.error(`添加关键词 "${keyword}" 失败:`, error)

@@ -5,13 +5,13 @@
       <div class="header-left">
         <el-button @click="handleBack">
           <LucideIcon name="arrow-left" :size="14" style="margin-right: 6px" />
-          返回看板
+          {{ $t('tracker.search.backToBoard') }}
         </el-button>
-        <h1 class="search-title">搜索关键词</h1>
+        <h1 class="search-title">{{ $t('tracker.search.title') }}</h1>
       </div>
       <div class="header-stats">
         <el-tag type="info" size="medium">
-          共找到 <strong>{{ pagination.total }}</strong> 个关键词
+          {{ $t('tracker.search.foundPrefix') }}<strong>{{ pagination.total }}</strong>{{ $t('tracker.search.foundSuffix') }}
         </el-tag>
       </div>
     </div>
@@ -24,11 +24,11 @@
           v-model="searchForm.keyword"
           type="text"
           class="search-input"
-          placeholder="输入关键词搜索..."
+          :placeholder="$t('tracker.search.inputPlaceholder')"
           @input="debouncedSearch"
           @keypress.enter="handleSearch"
         >
-        <button class="search-button" @click="handleSearch">搜索</button>
+        <button class="search-button" @click="handleSearch">{{ $t('tracker.search.searchButton') }}</button>
       </div>
     </div>
 
@@ -36,62 +36,62 @@
     <div class="filter-bar">
       <el-select
         v-model="selectedPools"
-        placeholder="选择池子"
+        :placeholder="$t('tracker.search.poolPlaceholder')"
         multiple
         collapse-tags
         clearable
         size="small"
         @change="handleSearch"
       >
-        <el-option label="候选池" value="candidate">
-          <LucideIcon name="clipboard-list" :size="13" /> 候选池
+        <el-option :label="$t('tracker.pools.candidate')" value="candidate">
+          <LucideIcon name="clipboard-list" :size="13" /> {{ $t('tracker.pools.candidate') }}
         </el-option>
-        <el-option label="忽略池" value="ignored">
-          <LucideIcon name="forward" :size="13" /> 忽略池
+        <el-option :label="$t('tracker.pools.ignored')" value="ignored">
+          <LucideIcon name="forward" :size="13" /> {{ $t('tracker.pools.ignored') }}
         </el-option>
-        <el-option label="成功池" value="success">
-          <LucideIcon name="circle-check-big" :size="13" /> 成功池
+        <el-option :label="$t('tracker.pools.success')" value="success">
+          <LucideIcon name="circle-check-big" :size="13" /> {{ $t('tracker.pools.success') }}
         </el-option>
-        <el-option label="失败池" value="failed">
-          <LucideIcon name="circle-x" :size="13" /> 失败池
+        <el-option :label="$t('tracker.pools.failed')" value="failed">
+          <LucideIcon name="circle-x" :size="13" /> {{ $t('tracker.pools.failed') }}
         </el-option>
       </el-select>
 
       <el-select
         v-model="searchForm.timeRange"
-        placeholder="时间范围"
+        :placeholder="$t('tracker.search.timeRange')"
         clearable
         size="small"
         @change="handleSearch"
       >
-        <el-option label="全部" value="">
-          <LucideIcon name="list-filter" :size="13" /> 全部
+        <el-option :label="$t('tracker.search.all')" value="">
+          <LucideIcon name="list-filter" :size="13" /> {{ $t('tracker.search.all') }}
         </el-option>
-        <el-option label="今天" value="today">
-          <LucideIcon name="calendar-days" :size="13" /> 今天
+        <el-option :label="$t('tracker.search.today')" value="today">
+          <LucideIcon name="calendar-days" :size="13" /> {{ $t('tracker.search.today') }}
         </el-option>
-        <el-option label="本周" value="week">
-          <LucideIcon name="calendar-range" :size="13" /> 本周
+        <el-option :label="$t('tracker.search.week')" value="week">
+          <LucideIcon name="calendar-range" :size="13" /> {{ $t('tracker.search.week') }}
         </el-option>
-        <el-option label="本月" value="month">
-          <LucideIcon name="calendar-range" :size="13" /> 本月
+        <el-option :label="$t('tracker.search.month')" value="month">
+          <LucideIcon name="calendar-range" :size="13" /> {{ $t('tracker.search.month') }}
         </el-option>
       </el-select>
 
       <el-select
         v-model="searchForm.sortBy"
-        placeholder="排序方式"
+        :placeholder="$t('tracker.search.sortPlaceholder')"
         size="small"
         @change="handleSearch"
       >
-        <el-option label="添加时间 ↓" value="time_desc">
-          <LucideIcon name="clock" :size="13" /> 添加时间 ↓
+        <el-option :label="$t('tracker.search.sortTimeDesc')" value="time_desc">
+          <LucideIcon name="clock" :size="13" /> {{ $t('tracker.search.sortTimeDesc') }}
         </el-option>
-        <el-option label="添加时间 ↑" value="time_asc">
-          <LucideIcon name="clock" :size="13" /> 添加时间 ↑
+        <el-option :label="$t('tracker.search.sortTimeAsc')" value="time_asc">
+          <LucideIcon name="clock" :size="13" /> {{ $t('tracker.search.sortTimeAsc') }}
         </el-option>
-        <el-option label="关键词 A-Z" value="name_asc">
-          <LucideIcon name="arrow-down-a-z" :size="13" /> 关键词 A-Z
+        <el-option :label="$t('tracker.search.sortNameAsc')" value="name_asc">
+          <LucideIcon name="arrow-down-a-z" :size="13" /> {{ $t('tracker.search.sortNameAsc') }}
         </el-option>
       </el-select>
     </div>
@@ -101,11 +101,11 @@
       <table v-if="searchResults.length > 0" class="results-table">
         <thead>
           <tr>
-            <th width="80">序号</th>
-            <th>关键词</th>
-            <th width="120">所在池子</th>
-            <th width="180">添加时间</th>
-            <th width="260">操作</th>
+            <th width="80">{{ $t('tracker.search.colIndex') }}</th>
+            <th>{{ $t('tracker.search.colKeyword') }}</th>
+            <th width="120">{{ $t('tracker.search.colPool') }}</th>
+            <th width="180">{{ $t('tracker.search.colTime') }}</th>
+            <th width="260">{{ $t('tracker.search.colActions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -119,16 +119,16 @@
             </td>
             <td>
               <span class="pool-badge" :class="item.pool_type">
-                {{ item.pool_label }}
+                {{ getPoolLabel(item.pool_type) }}
               </span>
             </td>
-            <td>{{ item.create_time || '未知时间' }}</td>
+            <td>{{ item.create_time || $t('tracker.pools.unknownTime') }}</td>
             <td>
               <div class="action-buttons">
-                <button class="action-btn" @click="handleViewDetail(item)">查看详情</button>
+                <button class="action-btn" @click="handleViewDetail(item)">{{ $t('tracker.search.viewDetail') }}</button>
                 <el-dropdown @command="(command) => handleMove(item, command)">
                   <button class="action-btn">
-                    移动到池子 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
+                    {{ $t('tracker.pools.moveToPool') }} <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
                   </button>
                   <el-dropdown-menu slot="dropdown">
                     <el-dropdown-item
@@ -140,7 +140,7 @@
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </el-dropdown>
-                <button class="action-btn btn-delete" @click="handleDelete(item)">删除</button>
+                <button class="action-btn btn-delete" @click="handleDelete(item)">{{ $t('tracker.search.delete') }}</button>
               </div>
             </td>
           </tr>
@@ -150,7 +150,7 @@
       <!-- 空状态 -->
       <div v-if="!loading && searchResults.length === 0" class="empty-state">
         <div class="empty-icon"><LucideIcon name="search" :size="48" /></div>
-        <p class="empty-text">暂无搜索结果，请尝试调整搜索条件或关键词</p>
+        <p class="empty-text">{{ $t('tracker.search.empty') }}</p>
       </div>
     </div>
 
@@ -172,7 +172,8 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { searchAllPools, moveKeywordToPool, deleteKeyword, type SearchResultItem, type PoolType } from '@/api/tracker'
-import { extractErrorMessage, debounce } from '@/utils/tracker'
+import { extractErrorMessage, poolLabel, poolOptions } from '@/utils/tracker'
+import { apiResponseMessage } from '@/i18n'
 
 interface SearchForm {
   keyword: string
@@ -203,14 +204,6 @@ export default class KeywordsSearchPage extends Vue {
     total: 0
   }
   searchResults: SearchResultItem[] = []
-
-  // 池子配置
-  poolConfig = {
-    candidate: { label: '候选池', value: 'candidate' as PoolType },
-    ignored: { label: '忽略池', value: 'ignored' as PoolType },
-    success: { label: '成功池', value: 'success' as PoolType },
-    failed: { label: '失败池', value: 'failed' as PoolType }
-  }
 
   mounted() {
     // 从路由参数获取初始搜索关键词
@@ -254,7 +247,8 @@ export default class KeywordsSearchPage extends Vue {
   }
 
   get availablePools() {
-    return Object.values(this.poolConfig)
+    // 双语 P6-3：池子名走 tracker.pools.*（语言切换响应式）
+    return poolOptions()
   }
 
   async loadData() {
@@ -289,21 +283,18 @@ export default class KeywordsSearchPage extends Vue {
       const response = await searchAllPools(params)
 
       if (response.code === '200' && response.data) {
-        // 添加pool_label默认值,确保类型安全
-        this.searchResults = (response.data.list || []).map(item => ({
-          ...item,
-          pool_label: item.pool_label || this.getPoolLabel(item.pool_type)
-        }))
+        // pool_label 为后端中文字段（含 emoji 前缀），仅保留在数据中不直显；展示统一走 getPoolLabel 本地化
+        this.searchResults = response.data.list || []
         this.pagination.total = response.data.total || 0
       } else {
-        this.$message.error(response.msg || '搜索失败')
+        this.$message.error(apiResponseMessage(response, this.$t('tracker.search.searchFailed')))
         this.searchResults = []
         this.pagination.total = 0
       }
     } catch (error) {
       console.error('搜索失败:', error)
       const errorMsg = extractErrorMessage(error)
-      this.$message.error(errorMsg || '搜索失败')
+      this.$message.error(errorMsg || this.$t('tracker.search.searchFailed'))
       this.searchResults = []
       this.pagination.total = 0
     } finally {
@@ -350,31 +341,31 @@ export default class KeywordsSearchPage extends Vue {
         keyword_id: item.keyword_id,
         target_pool: targetPool
       })
-      this.$message.success(`关键词已移动到 ${this.poolConfig[targetPool].label}`)
+      this.$message.success(this.$t('tracker.search.moveSuccess', { pool: this.getPoolLabel(targetPool) }))
       this.loadData()
     } catch (error) {
       console.error('移动关键词失败:', error)
       const errorMsg = extractErrorMessage(error)
-      this.$message.error(errorMsg || '移动失败')
+      this.$message.error(errorMsg || this.$t('tracker.search.moveFailed'))
     }
   }
 
   async handleDelete(item: SearchResultItem) {
     try {
-      await this.$confirm(`确定要删除关键词 "${item.keyword}" 吗？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tracker.search.deleteConfirm', { keyword: item.keyword }), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       })
 
       await deleteKeyword(item.keyword_id)
-      this.$message.success('删除成功')
+      this.$message.success(this.$t('tracker.search.deleteSuccess'))
       this.loadData()
     } catch (error) {
       if (error !== 'cancel') {
         console.error('删除关键词失败:', error)
         const errorMsg = extractErrorMessage(error)
-        this.$message.error(errorMsg || '删除失败')
+        this.$message.error(errorMsg || this.$t('tracker.search.deleteFailed'))
       }
     }
   }
@@ -396,8 +387,7 @@ export default class KeywordsSearchPage extends Vue {
    * 获取池子显示标签
    */
   getPoolLabel(poolType: PoolType): string {
-    const pool = this.poolConfig[poolType]
-    return pool?.label || poolType
+    return poolLabel(poolType)
   }
 
   /**

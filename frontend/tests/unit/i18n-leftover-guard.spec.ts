@@ -77,7 +77,22 @@ const AUDITED_FILES = [
   'src/views/downloader/components/DownloaderPathManagement.vue',
   'src/views/downloader/components/TagManagementTab.vue',
   'src/views/downloader/components/TemplateSelectionDialog.vue',
-  'src/views/downloader/template-presets.ts'
+  'src/views/downloader/template-presets.ts',
+  // P6-3（Tracker 管理域）新增扫描面
+  'src/views/tracker/keywords-board.vue',
+  'src/views/tracker/keywords-search.vue',
+  'src/views/tracker/reannounce-config.vue',
+  'src/views/tracker/test.vue',
+  'src/views/tracker/components/AddKeywordDialog.vue',
+  'src/views/tracker/components/ApiLogViewer.vue',
+  'src/views/tracker/components/ImportKeywordsDialog.vue',
+  'src/views/tracker/components/KeywordCard.vue',
+  'src/views/tracker/components/KeywordListModal.vue',
+  'src/views/tracker/components/KeywordQuickActionDialog.vue',
+  'src/views/tracker/components/KeywordTagCard.vue',
+  'src/views/tracker/components/MatchTimeline.vue',
+  'src/views/tracker/components/TestResultSummary.vue',
+  'src/utils/tracker.ts'
 ]
 
 /**
@@ -115,6 +130,11 @@ const ALLOWLIST: Array<{ file: string, contains: string, reason: string }> = [
     file: 'src/views/torrents/utils/torrentBatch.ts',
     contains: "TRACKER_FAIL_VALUES = new Set(['工作失败'",
     reason: '同上：后端状态数据值集合（含 已禁用/超时/已清除），属判定口径而非展示文案'
+  },
+  {
+    file: 'src/utils/tracker.ts',
+    contains: "throw new Error('JSON格式不正确')",
+    reason: 'parseJSON 内部异常消息：调用方（test.vue 历史加载）捕获后仅进日志，不进入任何用户提示'
   }
 ]
 

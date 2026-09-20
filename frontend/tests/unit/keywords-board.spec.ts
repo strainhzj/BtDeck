@@ -8,9 +8,11 @@
  * - 快捷操作成功后的精准刷新（删除仅源池 / 移动源+目标）
  */
 import Vue from 'vue'
+import VueI18n from 'vue-i18n'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import KeywordsBoard from '@/views/tracker/keywords-board.vue'
+import i18n from '@/i18n'
 import {
   ApiResponse,
   getPoolKeywords,
@@ -27,6 +29,8 @@ jest.mock('@/api/tracker', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-3：看板文案走 $t（tracker.board.* / tracker.pools.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 localVue.directive('loading', {})
 
 const mockGetPoolKeywords = getPoolKeywords as jest.MockedFunction<typeof getPoolKeywords>
@@ -69,6 +73,7 @@ async function flushLifecycle(): Promise<void> {
 function mountView(): Wrapper<Vue> {
   return shallowMount(KeywordsBoard, {
     localVue,
+    i18n,
     mocks: {
       $message: message,
       $confirm: confirm
