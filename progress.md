@@ -1,5 +1,13 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-20（P7 收口·前置准备）：全量回归证据 + 验收清单产出
+
+- **自动化回归（本轮实测）**：后端 `pytest -q --cov=app --cov-fail-under=40`（CI 同参数）**4832 passed / 17 skipped / 0 failed**，覆盖率 65.38%；前端全量 Jest **124 套 1814 例**、typecheck、lint 三项、build 全绿；根 `./init.sh`（ci）通过。P6-5 后零回归。
+- **验收清单**：产出 `PLANS/bilingual/p7-acceptance-checklist.md`——§5 矩阵 22 项逐项状态（自动覆盖 / 待浏览器 / 待实操）+ §6 R01～R06 实操步骤 + 签认区 + P7 退出检查。结论：L01/L02/L05/F01/T01/Q01/Q02/E01/E02/E03/B01/B02/B03/C01 已自动覆盖；L03/L04 部分；V01/V02/A01/A02/D01/D02/T02/T03 待用户浏览器/真实下载器执行。
+- **计划文档状态行**：`PLANS/desktop-bilingual.md` 顶部更新为 P0～P6 代码批完成、P7 收口进行中（此前残留 P1～P7 pending 已陈旧）。
+- **推送状态**：本地待推提交（origin/dev 实测 d382fe6；本会话 piagent 无凭据，用户自行推送后请复核 CI 双 job）。
+
+---
 ## 2026-09-20（P6-5 收口批）：遗漏扫描修补 + 审计门禁翻转全桌面负向排除 + R06 清单 + C01 抽查（全绿未提交）
 
 - **范围（用户确认四决策）**：①三部分全做（遗漏扫描修补 / M2 门禁核查 / 移动中文回归抽查）；②CompactTable 与 types 死数组删除；③DemoModeBanner 翻译（demo fixtures 排除）；④p6 保持 in_progress（R06 签认前不 done）。

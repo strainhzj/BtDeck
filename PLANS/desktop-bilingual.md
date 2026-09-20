@@ -1,6 +1,6 @@
 # 桌面 Web 中英双语执行计划
 
-> 状态：P0 完成（2026-09-18，产出见 [bilingual/](./bilingual/README.md)）；P1～P7 pending
+> 状态：P0～P6 代码批全部完成（P1～P4 M1 子范围 + P5/P6 全域双语 + 错误契约 reasonCode），P7 收口进行中（自动化回归完成，浏览器视觉验收与 R01～R06 签认待用户执行，见 [bilingual/p7-acceptance-checklist.md](./bilingual/p7-acceptance-checklist.md)）；P5/P6 任务保持 in_progress，待签认后再复核 done
 > Feature：`desktop-bilingual-20260918`
 > 创建 / 更新：2026-09-18
 > 授权边界：P0 仅文档与静态脚本产出，不改业务代码、不安装依赖、不提交 Git；P1 起的授权与依赖安装由用户另行确认。
