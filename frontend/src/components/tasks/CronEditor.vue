@@ -2,16 +2,16 @@
   <div class="cron-editor">
     <el-tabs v-model="activeTab" @tab-click="handleTabChange">
       <!-- 模板选择 -->
-      <el-tab-pane label="模板选择" name="template">
+      <el-tab-pane :label="$t('tasks.cronEditor.tabs.template')" name="template">
         <div class="template-header">
-          <span class="template-title">选择预设模板</span>
-          <el-select v-model="templateFilter" placeholder="筛选分类" size="small" style="width: 120px;">
-            <el-option label="全部" value="" />
-            <el-option label="基础" value="基础" />
-            <el-option label="小时" value="小时" />
-            <el-option label="日常" value="日常" />
-            <el-option label="工作日" value="工作日" />
-            <el-option label="周末" value="周末" />
+          <span class="template-title">{{ $t('tasks.cronEditor.templateTitle') }}</span>
+          <el-select v-model="templateFilter" :placeholder="$t('tasks.cronEditor.filterPlaceholder')" size="small" style="width: 120px;">
+            <el-option :label="$t('tasks.cronEditor.category.all')" value="" />
+            <el-option :label="$t('tasks.cronEditor.category.basic')" value="基础" />
+            <el-option :label="$t('tasks.cronEditor.category.hourly')" value="小时" />
+            <el-option :label="$t('tasks.cronEditor.category.daily')" value="日常" />
+            <el-option :label="$t('tasks.cronEditor.category.workday')" value="工作日" />
+            <el-option :label="$t('tasks.cronEditor.category.weekend')" value="周末" />
           </el-select>
         </div>
 
@@ -21,7 +21,7 @@
             :key="template.name"
             class="template-item"
             :class="{
-              active: selectedTemplate === template.name,
+              active: selectedTemplate === templateIdentity(template),
               ['template-category-' + template.category]: true
             }"
             @click="selectTemplate(template)"
@@ -30,15 +30,15 @@
               <i :class="template.icon"></i>
             </div>
             <div class="template-info">
-              <div class="template-name">{{ template.name }}</div>
-              <div class="template-desc">{{ template.description }}</div>
+              <div class="template-name">{{ templateDisplayName(template) }}</div>
+              <div class="template-desc">{{ templateDescDisplay(template) }}</div>
               <div class="template-cron">
                 <el-tag size="mini" :type="getTemplateTagType(template.category)">
                   {{ template.expression }}
                 </el-tag>
               </div>
             </div>
-            <div class="template-check" v-if="selectedTemplate === template.name">
+            <div class="template-check" v-if="selectedTemplate === templateIdentity(template)">
               <i class="el-icon-check"></i>
             </div>
           </div>
@@ -48,7 +48,7 @@
         <div class="custom-template-section">
           <div class="section-title">
             <i class="el-icon-setting"></i>
-            自定义模板
+            {{ $t('tasks.cronEditor.customSection') }}
           </div>
           <el-row :gutter="16" class="custom-template-grid">
             <el-col :span="8" v-for="(custom, index) in customTemplates" :key="index">
@@ -61,15 +61,15 @@
             </el-col>
           </el-row>
           <el-button type="text" size="small" @click="showAddCustomTemplate = true">
-            <i class="el-icon-plus"></i> 添加自定义模板
+            <i class="el-icon-plus"></i> {{ $t('tasks.cronEditor.addCustom') }}
           </el-button>
         </div>
       </el-tab-pane>
 
       <!-- 自定义表达式 -->
-      <el-tab-pane label="自定义表达式" name="custom">
+      <el-tab-pane :label="$t('tasks.cronEditor.tabs.custom')" name="custom">
         <el-form :model="customForm" :rules="formRules" ref="customFormRef" label-width="80px">
-          <el-form-item label="Cron表达式" prop="expression">
+          <el-form-item :label="$t('tasks.cronEditor.expressionLabel')" prop="expression">
             <el-input
               v-model="customForm.expression"
               placeholder="* * * * *"
@@ -77,12 +77,12 @@
             >
               <template slot="append">
                 <el-button @click="validateCustomExpression" icon="el-icon-check" :loading="validating">
-                  验证
+                  {{ $t('tasks.cronEditor.validateBtn') }}
                 </el-button>
               </template>
             </el-input>
             <div class="expression-help">
-              <small>格式：分 时 日 月 周 (0-59 0-23 1-31 1-12 0-6)</small>
+              <small>{{ $t('tasks.cronEditor.formatHint') }}</small>
             </div>
           </el-form-item>
 
@@ -90,35 +90,35 @@
           <div class="visual-config">
             <div class="config-title">
               <i class="el-icon-s-grid"></i>
-              可视化配置
+              {{ $t('tasks.cronEditor.visualTitle') }}
             </div>
 
             <el-row :gutter="16">
               <el-col :span="12">
-                <el-form-item label="分钟" class="minute-field">
+                <el-form-item :label="$t('tasks.cronEditor.field.minute')" class="minute-field">
                   <el-input
                     v-model="customForm.minute"
-                    placeholder="0-59 或 */5"
+                    :placeholder="$t('tasks.cronEditor.field.placeholderMinute')"
                     @input="buildExpressionFromForm"
                   >
                     <template slot="prepend">
-                      <el-tooltip content="分 (0-59)" placement="top">
-                        <span>分</span>
+                      <el-tooltip :content="$t('tasks.cronEditor.field.tooltipMinute')" placement="top">
+                        <span>{{ $t('tasks.cronEditor.field.minuteShort') }}</span>
                       </el-tooltip>
                     </template>
                   </el-input>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="小时" class="hour-field">
+                <el-form-item :label="$t('tasks.cronEditor.field.hour')" class="hour-field">
                   <el-input
                     v-model="customForm.hour"
-                    placeholder="0-23 或 */2"
+                    :placeholder="$t('tasks.cronEditor.field.placeholderHour')"
                     @input="buildExpressionFromForm"
                   >
                     <template slot="prepend">
-                      <el-tooltip content="时 (0-23)" placement="top">
-                        <span>时</span>
+                      <el-tooltip :content="$t('tasks.cronEditor.field.tooltipHour')" placement="top">
+                        <span>{{ $t('tasks.cronEditor.field.hourShort') }}</span>
                       </el-tooltip>
                     </template>
                   </el-input>
@@ -128,30 +128,30 @@
 
             <el-row :gutter="16">
               <el-col :span="12">
-                <el-form-item label="日期" class="day-field">
+                <el-form-item :label="$t('tasks.cronEditor.field.day')" class="day-field">
                   <el-input
                     v-model="customForm.day"
-                    placeholder="1-31 或 1,15,L"
+                    :placeholder="$t('tasks.cronEditor.field.placeholderDay')"
                     @input="buildExpressionFromForm"
                   >
                     <template slot="prepend">
-                      <el-tooltip content="日 (1-31, L=最后一天)" placement="top">
-                        <span>日</span>
+                      <el-tooltip :content="$t('tasks.cronEditor.field.tooltipDay')" placement="top">
+                        <span>{{ $t('tasks.cronEditor.field.dayShort') }}</span>
                       </el-tooltip>
                     </template>
                   </el-input>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="月份" class="month-field">
+                <el-form-item :label="$t('tasks.cronEditor.field.month')" class="month-field">
                   <el-input
                     v-model="customForm.month"
-                    placeholder="1-12 或 1,6,12"
+                    :placeholder="$t('tasks.cronEditor.field.placeholderMonth')"
                     @input="buildExpressionFromForm"
                   >
                     <template slot="prepend">
-                      <el-tooltip content="月 (1-12)" placement="top">
-                        <span>月</span>
+                      <el-tooltip :content="$t('tasks.cronEditor.field.tooltipMonth')" placement="top">
+                        <span>{{ $t('tasks.cronEditor.field.monthShort') }}</span>
                       </el-tooltip>
                     </template>
                   </el-input>
@@ -159,41 +159,41 @@
               </el-col>
             </el-row>
 
-            <el-form-item label="星期" class="weekday-field">
+            <el-form-item :label="$t('tasks.cronEditor.field.weekday')" class="weekday-field">
               <el-checkbox-group v-model="customForm.weekdays" @change="buildExpressionFromForm">
                 <el-checkbox :label="0">
-                  <el-tooltip content="星期日" placement="top">
-                    <span>日</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipSun')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdaySun') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="1">
-                  <el-tooltip content="星期一" placement="top">
-                    <span>一</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipMon')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdayMon') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="2">
-                  <el-tooltip content="星期二" placement="top">
-                    <span>二</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipTue')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdayTue') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="3">
-                  <el-tooltip content="星期三" placement="top">
-                    <span>三</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipWed')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdayWed') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="4">
-                  <el-tooltip content="星期四" placement="top">
-                    <span>四</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipThu')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdayThu') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="5">
-                  <el-tooltip content="星期五" placement="top">
-                    <span>五</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipFri')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdayFri') }}</span>
                   </el-tooltip>
                 </el-checkbox>
                 <el-checkbox :label="6">
-                  <el-tooltip content="星期六" placement="top">
-                    <span>六</span>
+                  <el-tooltip :content="$t('tasks.cronEditor.field.tooltipSat')" placement="top">
+                    <span>{{ $t('tasks.cronEditor.field.weekdaySat') }}</span>
                   </el-tooltip>
                 </el-checkbox>
               </el-checkbox-group>
@@ -207,7 +207,7 @@
     <div class="execution-preview" v-if="nextExecutions.length > 0 || previewLoading">
       <div class="preview-header">
         <i class="el-icon-time"></i>
-        <span class="preview-title">下次执行时间预览</span>
+        <span class="preview-title">{{ $t('tasks.cronEditor.preview.title') }}</span>
         <el-button
           type="text"
           size="mini"
@@ -215,7 +215,7 @@
           :loading="previewLoading"
           style="float: right;"
         >
-          刷新
+          {{ $t('tasks.cronEditor.preview.refresh') }}
         </el-button>
       </div>
 
@@ -244,7 +244,7 @@
             effect="dark"
             class="next-indicator"
           >
-            下次执行
+            {{ $t('tasks.cronEditor.preview.nextExecute') }}
           </el-tag>
           <span v-if="getTimeUntilExecution(time)" class="time-until">
             {{ getTimeUntilExecution(time) }}
@@ -253,14 +253,14 @@
       </div>
 
       <div v-if="nextExecutions.length === 0 && !previewLoading" class="preview-empty">
-        <el-empty description="暂无执行时间" :image-size="80" />
+        <el-empty :description="$t('tasks.cronEditor.preview.empty')" :image-size="80" />
       </div>
     </div>
 
     <!-- 表达式验证状态 -->
     <div class="validation-status" v-if="validationResult">
       <el-alert
-        :title="validationResult.valid ? '表达式有效' : '表达式有误'"
+        :title="validationResult.valid ? $t('tasks.cronEditor.validation.validTitle') : $t('tasks.cronEditor.validation.invalidTitle')"
         :type="validationResult.valid ? 'success' : 'error'"
         :description="validationResult.message"
         show-icon
@@ -268,7 +268,7 @@
       >
         <div v-if="validationResult.suggestions && validationResult.suggestions.length > 0" slot="description">
           <div class="suggestions">
-            <strong>建议：</strong>
+            <strong>{{ $t('tasks.cronEditor.validation.suggestion') }}</strong>
             <ul>
               <li v-for="(suggestion, index) in validationResult.suggestions" :key="index">
                 {{ suggestion }}
@@ -280,21 +280,21 @@
     </div>
 
     <!-- 添加自定义模板对话框 -->
-    <el-dialog title="添加自定义模板" :visible.sync="showAddCustomTemplate" width="500px">
+    <el-dialog :title="$t('tasks.cronEditor.addDialog.title')" :visible.sync="showAddCustomTemplate" width="500px">
       <el-form :model="newCustomTemplate" :rules="customTemplateRules" ref="customTemplateRef" label-width="100px">
-        <el-form-item label="模板名称" prop="name">
-          <el-input v-model="newCustomTemplate.name" placeholder="例如：每小时备份" />
+        <el-form-item :label="$t('tasks.cronEditor.addDialog.nameLabel')" prop="name">
+          <el-input v-model="newCustomTemplate.name" :placeholder="$t('tasks.cronEditor.addDialog.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="Cron表达式" prop="expression">
+        <el-form-item :label="$t('tasks.cronEditor.addDialog.expressionLabel')" prop="expression">
           <el-input v-model="newCustomTemplate.expression" placeholder="0 * * * *" />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
-          <el-input v-model="newCustomTemplate.description" type="textarea" placeholder="模板用途说明" />
+        <el-form-item :label="$t('tasks.cronEditor.addDialog.descLabel')" prop="description">
+          <el-input v-model="newCustomTemplate.description" type="textarea" :placeholder="$t('tasks.cronEditor.addDialog.descPlaceholder')" />
         </el-form-item>
       </el-form>
       <div slot="footer">
-        <el-button @click="showAddCustomTemplate = false">取消</el-button>
-        <el-button type="primary" @click="addCustomTemplate" :loading="savingCustom">保存</el-button>
+        <el-button @click="showAddCustomTemplate = false">{{ $t('tasks.cronEditor.addDialog.cancel') }}</el-button>
+        <el-button type="primary" @click="addCustomTemplate" :loading="savingCustom">{{ $t('tasks.cronEditor.addDialog.save') }}</el-button>
       </div>
     </el-dialog>
   </div>
@@ -305,8 +305,12 @@ import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import request from '@/utils/request'
 
 interface CronTemplate {
-  name: string
-  description: string
+  /** 内置模板身份与展示键（tasks.cronEditor.templates.*）；自定义模板无此字段 */
+  key?: string
+  /** 自定义模板名称（用户数据，原文直出 Q02）；内置模板不再携带 */
+  name?: string
+  /** 自定义模板描述；内置模板不再携带 */
+  description?: string
   expression: string
   icon: string
   category: string
@@ -344,92 +348,79 @@ export default class CronEditor extends Vue {
   // 预定义模板
   private templates: CronTemplate[] = [
     {
-      name: '每分钟',
-      description: '每分钟执行一次',
+      key: 'everyMinute',
       expression: '* * * * *',
       icon: 'el-icon-time',
       category: '基础'
     },
     {
-      name: '每5分钟',
-      description: '每5分钟执行一次',
+      key: 'every5Minutes',
       expression: '*/5 * * * *',
       icon: 'el-icon-timer',
       category: '基础'
     },
     {
-      name: '每15分钟',
-      description: '每15分钟执行一次',
+      key: 'every15Minutes',
       expression: '*/15 * * * *',
       icon: 'el-icon-timer',
       category: '基础'
     },
     {
-      name: '每30分钟',
-      description: '每30分钟执行一次',
+      key: 'every30Minutes',
       expression: '*/30 * * * *',
       icon: 'el-icon-timer',
       category: '基础'
     },
     {
-      name: '每小时',
-      description: '每小时的第0分钟执行',
+      key: 'hourly',
       expression: '0 * * * *',
       icon: 'el-icon-clock',
       category: '小时'
     },
     {
-      name: '每2小时',
-      description: '每2小时执行一次',
+      key: 'every2Hours',
       expression: '0 */2 * * *',
       icon: 'el-icon-clock',
       category: '小时'
     },
     {
-      name: '每天',
-      description: '每天0点执行',
+      key: 'daily',
       expression: '0 0 * * *',
       icon: 'el-icon-date',
       category: '日常'
     },
     {
-      name: '每天9点',
-      description: '每天上午9点执行',
+      key: 'daily9am',
       expression: '0 9 * * *',
       icon: 'el-icon-sunrise',
       category: '日常'
     },
     {
-      name: '每周',
-      description: '每周日0点执行',
+      key: 'weekly',
       expression: '0 0 * * 0',
       icon: 'el-icon-week',
       category: '日常'
     },
     {
-      name: '每月',
-      description: '每月1日0点执行',
+      key: 'monthly',
       expression: '0 0 1 * *',
       icon: 'el-icon-calendar',
       category: '日常'
     },
     {
-      name: '工作日',
-      description: '周一到周五9点执行',
+      key: 'workday',
       expression: '0 9 * * 1-5',
       icon: 'el-icon-office-building',
       category: '工作日'
     },
     {
-      name: '工作日上午',
-      description: '工作日9点和17点执行',
+      key: 'workdayAm',
       expression: '0 9,17 * * 1-5',
       icon: 'el-icon-briefcase',
       category: '工作日'
     },
     {
-      name: '周末',
-      description: '周六和周日10点执行',
+      key: 'weekend',
       expression: '0 10 * * 6,0',
       icon: 'el-icon-sunny',
       category: '周末'
@@ -456,16 +447,16 @@ export default class CronEditor extends Vue {
 
   private formRules = {
     expression: [
-      { required: true, message: '请输入Cron表达式', trigger: 'blur' },
+      { required: true, message: this.$t('tasks.cronEditor.rules.expressionRequired'), trigger: 'blur' },
       {
         validator: (rule, value, callback) => {
           if (!value) {
-            callback(new Error('请输入Cron表达式'))
+            callback(new Error(this.$t('tasks.cronEditor.rules.expressionEmpty')))
           } else {
             // 基础格式检查：5个字段，用空格分隔
             const parts = value.trim().split(/\s+/)
             if (parts.length !== 5) {
-              callback(new Error('Cron表达式必须包含5个字段：分 时 日 月 周'))
+              callback(new Error(this.$t('tasks.cronEditor.rules.expressionFiveFields')))
               return
             }
 
@@ -481,7 +472,7 @@ export default class CronEditor extends Vue {
             for (let i = 0; i < 5; i++) {
               const part = parts[i].trim()
               if (!part) {
-                callback(new Error(`第${i + 1}个字段不能为空`))
+                callback(new Error(this.$t('tasks.cronEditor.rules.fieldEmpty', { index: i + 1 })))
                 return
               }
 
@@ -494,7 +485,7 @@ export default class CronEditor extends Vue {
               }
 
               if (!isValid) {
-                callback(new Error(`第${i + 1}个字段格式不正确: ${part}`))
+                callback(new Error(this.$t('tasks.cronEditor.rules.fieldInvalid', { index: i + 1, part })))
                 return
               }
             }
@@ -509,15 +500,30 @@ export default class CronEditor extends Vue {
 
   private customTemplateRules = {
     name: [
-      { required: true, message: '请输入模板名称', trigger: 'blur' },
-      { min: 2, max: 50, message: '模板名称长度在2-50个字符', trigger: 'blur' }
+      { required: true, message: this.$t('tasks.cronEditor.rules.nameRequired'), trigger: 'blur' },
+      { min: 2, max: 50, message: this.$t('tasks.cronEditor.rules.nameLength'), trigger: 'blur' }
     ],
     expression: [
-      { required: true, message: '请输入Cron表达式', trigger: 'blur' }
+      { required: true, message: this.$t('tasks.cronEditor.rules.expressionRequired'), trigger: 'blur' }
     ],
     description: [
-      { max: 200, message: '描述不能超过200个字符', trigger: 'blur' }
+      { max: 200, message: this.$t('tasks.cronEditor.rules.descLength'), trigger: 'blur' }
     ]
+  }
+
+  /** 内置模板展示名（按 key 映射；无 key（自定义/未知）原文回退 Q02） */
+  private templateDisplayName(template: CronTemplate): string {
+    return template.key ? this.$t(`tasks.cronEditor.templates.${template.key}.name`) as string : template.name
+  }
+
+  /** 内置模板展示描述 */
+  private templateDescDisplay(template: CronTemplate): string {
+    return template.key ? this.$t(`tasks.cronEditor.templates.${template.key}.desc`) as string : template.description
+  }
+
+  /** 模板身份（内置=key、自定义=name；选中/勾选判定唯一口径） */
+  private templateIdentity(template: CronTemplate): string {
+    return template.key ?? template.name
   }
 
   get filteredTemplates(): CronTemplate[] {
@@ -538,7 +544,7 @@ export default class CronEditor extends Vue {
     if (this.value) {
       this.setExpression(this.value)
     } else {
-      this.selectTemplate(this.templates.find(t => t.name === '每天') || this.templates[0])
+      this.selectTemplate(this.templates.find(t => t.key === 'daily') || this.templates[0])
     }
 
     // 加载自定义模板
@@ -546,7 +552,7 @@ export default class CronEditor extends Vue {
   }
 
   private selectTemplate(template: CronTemplate) {
-    this.selectedTemplate = template.name
+    this.selectedTemplate = this.templateIdentity(template)
     this.activeTab = 'template'
 
     this.customForm.expression = template.expression
@@ -643,7 +649,7 @@ export default class CronEditor extends Vue {
     try {
       const expression = this.customForm.expression
       if (!expression) {
-        this.validationResult = { valid: false, message: 'Cron表达式不能为空' }
+        this.validationResult = { valid: false, message: this.$t('tasks.cronEditor.msg.expressionEmpty') }
         return
       }
 
@@ -651,7 +657,7 @@ export default class CronEditor extends Vue {
       this.validationResult = result
     } catch (error) {
       console.error('验证表达式失败:', error)
-      this.validationResult = { valid: false, message: '验证失败，请检查表达式格式' }
+      this.validationResult = { valid: false, message: this.$t('tasks.cronEditor.msg.validateFailed') }
     } finally {
       this.validating = false
     }
@@ -744,7 +750,7 @@ export default class CronEditor extends Vue {
 
     // 如果是明天，添加"明天"标识
     if (time >= tomorrow && time < tomorrow.getTime() + 24 * 60 * 60 * 1000) {
-      timeStr = `明天 ${timeStr.split(' ')[1]}`
+      timeStr = this.$t('tasks.cronEditor.time.tomorrow', { time: timeStr.split(' ')[1] })
     }
 
     return timeStr
@@ -760,10 +766,10 @@ export default class CronEditor extends Vue {
     const hours = Math.floor(diff / (1000 * 60 * 60))
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
 
-    if (days > 0) return `${days}天后`
-    if (hours > 0) return `${hours}小时后`
-    if (minutes > 0) return `${minutes}分钟后`
-    return '即将执行'
+    if (days > 0) return this.$t('tasks.cronEditor.time.daysLater', { count: days })
+    if (hours > 0) return this.$t('tasks.cronEditor.time.hoursLater', { count: hours })
+    if (minutes > 0) return this.$t('tasks.cronEditor.time.minutesLater', { count: minutes })
+    return this.$t('tasks.cronEditor.time.soon')
   }
 
   private getPreviewTagType(index: number): string {
@@ -794,7 +800,7 @@ export default class CronEditor extends Vue {
       return response.data.data
     } catch (error) {
       console.error('调用验证API失败:', error)
-      return { valid: false, message: '验证服务不可用' }
+      return { valid: false, message: this.$t('tasks.cronEditor.msg.validateUnavailable') }
     }
   }
 
@@ -867,7 +873,7 @@ export default class CronEditor extends Vue {
       // 验证表达式
       const result = await this.callValidationAPI(this.newCustomTemplate.expression)
       if (!result.valid) {
-        this.$message.error('Cron表达式格式不正确')
+        this.$message.error(this.$t('tasks.cronEditor.msg.formatInvalid'))
         return
       }
 
@@ -878,7 +884,7 @@ export default class CronEditor extends Vue {
       this.showAddCustomTemplate = false
       this.newCustomTemplate = { name: '', expression: '', description: '', enabled: true }
 
-      this.$message.success('自定义模板添加成功')
+      this.$message.success(this.$t('tasks.cronEditor.msg.customAdded'))
     } catch (error) {
       console.error('添加自定义模板失败:', error)
     } finally {

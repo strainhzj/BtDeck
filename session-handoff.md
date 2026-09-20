@@ -5253,3 +5253,23 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 ---
 
+## 2026-09-20 交接：桌面双语 P6-4a 任务域完成（全绿未提交，接 P6-3 两提交之后）
+
+### 已完成
+
+- **范围**：views/tasks/index.vue + components/tasks 三组件 + api/tasks.ts 共享层；后端 cron_tasks.py 全端点 reasonCode（两项决策经用户确认：契约随批、拆两批）。
+- **结构改造**：PythonClassSelector 预定义类改由后端 type-config 驱动（getTaskTypeConfig 零调用→接线；假类树删除）；CronEditor 内置模板身份 key 化；任务状态/类型展示按稳定码位。
+- **后端**：29 个 TASKS_* reasonCode + str(e)/冲突明细只进日志；P4 能力矩阵 reasonCode 保留（断言钉住）。
+- **测试**：backend 20 例 + frontend 22 例 + 存量 5 套件断言语义化；审计集 63 面 + 白名单 38 条。
+- **验证全绿**：前端 typecheck/lint 三项/Jest 122 套 1777 例/build；后端全量 4796 passed/0 failed + mypy/black/flake8 净。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap 七处。
+
+### 待办/注意
+
+- **P6-4b**：views/logs/audit.vue（198 中文行）+ views/orphan-files/index.vue（349 中文行）+ 后端 audit_logs.py（18 条 msg）/orphan_files.py（31 条 msg）契约——范围与决策已由本批确认沿用（契约随批）。
+- MCP/MoviePilot 页签不存在（计划项过时，已在 evidence 注明）；tracker_messages.py 仍无前端消费方。
+- 英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前重跑 stage-server.py。
+- 未执行 Git 提交（待用户指令或随 P6-4b 一并处理）。
+
+---
+

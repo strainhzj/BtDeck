@@ -102,7 +102,8 @@ describe('孤儿文件管理页信息层级', () => {
 describe('任务日志统计摘要', () => {
   it('统计卡片使用可折叠面板并独立持久化折叠状态', () => {
     expect(scheduledTasksSource).toContain('<CollapsiblePanel')
-    expect(scheduledTasksSource).toContain('title="日志统计"')
+    // 双语 P6-4a：统计面板标题走 tasks.logs.statsTitle 键
+    expect(scheduledTasksSource).toContain(":title=\"$t('tasks.logs.statsTitle')\"")
     expect(scheduledTasksSource).toContain('storage-key="btdeck_task_log_stats_collapsed"')
     expect(scheduledTasksSource).toContain('class="log-stats-compact"')
     expect(scheduledTasksSource).not.toContain('storage-key="btdeck_orphan_file_stats_collapsed"')

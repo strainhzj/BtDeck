@@ -2,12 +2,12 @@
   <div class="python-class-selector">
     <el-tabs v-model="activeTab" @tab-click="handleTabChange">
       <!-- 预定义类选择 -->
-      <el-tab-pane label="预定义类" name="preset">
+      <el-tab-pane :label="$t('tasks.pythonSelector.tabs.preset')" name="preset">
         <div class="preset-header">
-          <span class="preset-title">选择系统预定义的Python任务类</span>
+          <span class="preset-title">{{ $t('tasks.pythonSelector.presetTitle') }}</span>
           <el-input
             v-model="searchKeyword"
-            placeholder="搜索类名或描述..."
+            :placeholder="$t('tasks.pythonSelector.searchPlaceholder')"
             prefix-icon="el-icon-search"
             size="small"
             style="width: 200px;"
@@ -39,7 +39,7 @@
                 </span>
                 <span v-if="data.type === 'class'" class="node-badge">
                   <el-tag size="mini" :type="getClassTypeColor(data.category)">
-                    {{ data.category || '类' }}
+                    {{ data.category || $t('tasks.pythonSelector.categoryFallback') }}
                   </el-tag>
                 </span>
               </span>
@@ -47,10 +47,10 @@
                 {{ data.description }}
               </span>
               <span v-if="data.type === 'class'" class="node-actions">
-                <el-tooltip content="查看类详情" placement="top">
+                <el-tooltip :content="$t('tasks.pythonSelector.viewDetailTip')" placement="top">
                   <i class="el-icon-info" @click.stop="showClassDetail(data)"></i>
                 </el-tooltip>
-                <el-tooltip content="选择此类" placement="top">
+                <el-tooltip :content="$t('tasks.pythonSelector.selectTip')" placement="top">
                   <i class="el-icon-check" @click.stop="selectClass(data)"></i>
                 </el-tooltip>
               </span>
@@ -62,19 +62,19 @@
         <div v-if="selectedClass" class="selected-class-info">
           <div class="info-header">
             <i class="el-icon-collection"></i>
-            <span class="info-title">当前选择的类</span>
+            <span class="info-title">{{ $t('tasks.pythonSelector.selectedTitle') }}</span>
           </div>
           <div class="info-content">
             <div class="info-item">
-              <label>类路径：</label>
+              <label>{{ $t('tasks.pythonSelector.classPathLabel') }}</label>
               <el-tag type="success">{{ selectedClass.path }}</el-tag>
             </div>
             <div class="info-item">
-              <label>描述：</label>
-              <span>{{ selectedClass.description || '无描述' }}</span>
+              <label>{{ $t('tasks.pythonSelector.descLabel') }}</label>
+              <span>{{ selectedClass.description || $t('tasks.pythonSelector.noDesc') }}</span>
             </div>
             <div v-if="selectedClass.parameters && Object.keys(selectedClass.parameters).length > 0" class="info-item">
-              <label>参数：</label>
+              <label>{{ $t('tasks.pythonSelector.paramsLabel') }}</label>
               <div class="parameters-list">
                 <div
                   v-for="(param, key) in selectedClass.parameters"
@@ -96,29 +96,29 @@
       </el-tab-pane>
 
       <!-- 手动输入 -->
-      <el-tab-pane label="手动输入" name="manual">
+      <el-tab-pane :label="$t('tasks.pythonSelector.tabs.manual')" name="manual">
         <el-form :model="manualForm" :rules="formRules" ref="manualFormRef" label-width="100px">
-          <el-form-item label="类路径" prop="classPath">
+          <el-form-item :label="$t('tasks.pythonSelector.manual.classPathLabel')" prop="classPath">
             <el-input
               v-model="manualForm.classPath"
-              placeholder="例如: app.tasks.custom.MyCustomTask"
+              :placeholder="$t('tasks.pythonSelector.manual.placeholder')"
               @input="handleManualInput"
               clearable
             >
               <template slot="prepend">
-                <el-tooltip content="完整模块路径.类名" placement="top">
+                <el-tooltip :content="$t('tasks.pythonSelector.manual.tooltip')" placement="top">
                   <i class="el-icon-s-unfold"></i>
                 </el-tooltip>
               </template>
             </el-input>
             <div class="input-help">
-              <small>格式：模块路径.类名，例如：app.tasks.backup.BackupTask</small>
+              <small>{{ $t('tasks.pythonSelector.manual.formatHint') }}</small>
             </div>
           </el-form-item>
 
           <!-- 快速输入模板 -->
           <el-collapse v-model="quickInputExpanded">
-            <el-collapse-item title="常用路径模板" name="templates">
+            <el-collapse-item :title="$t('tasks.pythonSelector.manual.templatesTitle')" name="templates">
               <div class="quick-templates">
                 <el-button
                   v-for="template in quickTemplates"
@@ -134,7 +134,7 @@
           </el-collapse>
 
           <!-- 历史记录 -->
-          <el-form-item label="历史记录" v-if="historyList.length > 0">
+          <el-form-item :label="$t('tasks.pythonSelector.manual.historyLabel')" v-if="historyList.length > 0">
             <div class="history-list">
               <div
                 v-for="(item, index) in historyList"
@@ -158,13 +158,13 @@
           </el-form-item>
 
           <!-- 验证状态 -->
-          <el-form-item label="验证状态" v-if="validationResult || manualForm.classPath">
+          <el-form-item :label="$t('tasks.pythonSelector.manual.validationLabel')" v-if="validationResult || manualForm.classPath">
             <div v-if="validating" class="validation-loading">
               <el-skeleton :rows="2" animated />
             </div>
             <el-alert
               v-else-if="validationResult"
-              :title="validationResult.valid ? '类路径有效' : '类路径有误'"
+              :title="validationResult.valid ? $t('tasks.pythonSelector.manual.validTitle') : $t('tasks.pythonSelector.manual.invalidTitle')"
               :type="validationResult.valid ? 'success' : 'error'"
               :description="validationResult.message"
               show-icon
@@ -174,24 +174,24 @@
                 <div class="validation-details">
                   <p v-if="validationResult.details.exists">
                     <i class="el-icon-check-circle" style="color: #67c23a;"></i>
-                    类存在且可导入
+                    {{ $t('tasks.pythonSelector.manual.importable') }}
                   </p>
                   <p v-if="validationResult.details.module_path">
                     <i class="el-icon-folder" style="color: #409eff;"></i>
-                    模块路径: {{ validationResult.details.module_path }}
+                    {{ $t('tasks.pythonSelector.manual.modulePath') }}{{ validationResult.details.module_path }}
                   </p>
                   <p v-if="validationResult.details.class_info">
                     <i class="el-icon-document" style="color: #909399;"></i>
-                    类信息: {{ validationResult.details.class_info }}
+                    {{ $t('tasks.pythonSelector.manual.classInfo') }}{{ validationResult.details.class_info }}
                   </p>
                 </div>
               </div>
             </el-alert>
             <div v-else-if="manualForm.classPath" class="validation-pending">
               <el-alert
-                title="等待验证"
+                :title="$t('tasks.pythonSelector.manual.waitingTitle')"
                 type="info"
-                description="请点击验证按钮检查类路径"
+                :description="$t('tasks.pythonSelector.manual.waitingDesc')"
                 show-icon
                 :closable="false"
               />
@@ -207,11 +207,11 @@
               :disabled="!manualForm.classPath"
             >
               <i class="el-icon-check"></i>
-              验证类路径
+              {{ $t('tasks.pythonSelector.manual.validateBtn') }}
             </el-button>
             <el-button @click="clearManualForm">
               <i class="el-icon-refresh-left"></i>
-              清空
+              {{ $t('tasks.pythonSelector.manual.clearBtn') }}
             </el-button>
           </el-form-item>
         </el-form>
@@ -220,7 +220,7 @@
 
     <!-- 类详情对话框 -->
     <el-dialog
-      title="Python类详情"
+      :title="$t('tasks.pythonSelector.detail.title')"
       :visible.sync="showDetailDialog"
       width="600px"
       class="class-detail-dialog"
@@ -235,43 +235,43 @@
 
         <div class="detail-content">
           <div class="detail-section">
-            <h4>基本信息</h4>
+            <h4>{{ $t('tasks.pythonSelector.detail.basic') }}</h4>
             <el-descriptions :column="2" size="small" border>
-              <el-descriptions-item label="类路径">{{ detailClass.path }}</el-descriptions-item>
-              <el-descriptions-item label="模块">{{ detailClass.module }}</el-descriptions-item>
-              <el-descriptions-item label="类型">{{ detailClass.category }}</el-descriptions-item>
-              <el-descriptions-item label="状态">
+              <el-descriptions-item :label="$t('tasks.pythonSelector.detail.path')">{{ detailClass.path }}</el-descriptions-item>
+              <el-descriptions-item :label="$t('tasks.pythonSelector.detail.module')">{{ detailClass.module }}</el-descriptions-item>
+              <el-descriptions-item :label="$t('tasks.pythonSelector.detail.category')">{{ detailClass.category }}</el-descriptions-item>
+              <el-descriptions-item :label="$t('tasks.pythonSelector.detail.status')">
                 <el-tag :type="detailClass.available ? 'success' : 'danger'">
-                  {{ detailClass.available ? '可用' : '不可用' }}
+                  {{ detailClass.available ? $t('tasks.pythonSelector.detail.available') : $t('tasks.pythonSelector.detail.unavailable') }}
                 </el-tag>
               </el-descriptions-item>
             </el-descriptions>
           </div>
 
           <div class="detail-section">
-            <h4>描述</h4>
-            <p>{{ detailClass.description || '暂无描述' }}</p>
+            <h4>{{ $t('tasks.pythonSelector.detail.descTitle') }}</h4>
+            <p>{{ detailClass.description || $t('tasks.pythonSelector.detail.noDesc') }}</p>
           </div>
 
           <div v-if="detailClass.parameters" class="detail-section">
-            <h4>参数配置</h4>
+            <h4>{{ $t('tasks.pythonSelector.detail.paramsTitle') }}</h4>
             <el-table :data="parameterTableData" size="small" border>
-              <el-table-column prop="name" label="参数名" width="150" />
-              <el-table-column prop="type" label="类型" width="100" />
-              <el-table-column prop="required" label="必填" width="80">
+              <el-table-column prop="name" :label="$t('tasks.pythonSelector.detail.colName')" width="150" />
+              <el-table-column prop="type" :label="$t('tasks.pythonSelector.detail.colType')" width="100" />
+              <el-table-column prop="required" :label="$t('tasks.pythonSelector.detail.colRequired')" width="80">
                 <template slot-scope="scope">
                   <el-tag size="mini" :type="scope.row.required ? 'warning' : 'info'">
-                    {{ scope.row.required ? '是' : '否' }}
+                    {{ scope.row.required ? $t('tasks.pythonSelector.detail.requiredYes') : $t('tasks.pythonSelector.detail.requiredNo') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="description" label="说明" />
-              <el-table-column prop="default" label="默认值" width="100" />
+              <el-table-column prop="description" :label="$t('tasks.pythonSelector.detail.colDesc')" />
+              <el-table-column prop="default" :label="$t('tasks.pythonSelector.detail.colDefault')" width="100" />
             </el-table>
           </div>
 
           <div v-if="detailClass.methods" class="detail-section">
-            <h4>可用方法</h4>
+            <h4>{{ $t('tasks.pythonSelector.detail.methodsTitle') }}</h4>
             <div class="methods-list">
               <div
                 v-for="method in detailClass.methods"
@@ -286,9 +286,9 @@
         </div>
 
         <div slot="footer" class="dialog-footer">
-          <el-button @click="showDetailDialog = false">关闭</el-button>
+          <el-button @click="showDetailDialog = false">{{ $t('tasks.pythonSelector.detail.close') }}</el-button>
           <el-button type="primary" @click="selectClass(detailClass)">
-            选择此类
+            {{ $t('tasks.pythonSelector.detail.select') }}
           </el-button>
         </div>
       </div>
@@ -298,7 +298,8 @@
 
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
-import { validatePythonClass } from '@/api/tasks'
+import { getTaskTypeConfig, validatePythonClass } from '@/api/tasks'
+import type { PythonClassInfo } from '@/api/tasks'
 
 interface ClassNode {
   label: string
@@ -359,204 +360,12 @@ export default class PythonClassSelector extends Vue {
   private quickInputExpanded = ['templates']
 
   // 预定义Python类树数据
-  private classTree: ClassNode[] = [
-    {
-      label: 'app.tasks',
-      path: 'app.tasks',
-      type: 'module',
-      icon: 'el-icon-folder',
-      module: 'app.tasks',
-      children: [
-        {
-          label: 'backup',
-          path: 'app.tasks.backup',
-          type: 'module',
-          icon: 'el-icon-folder',
-          module: 'app.tasks.backup',
-          children: [
-            {
-              label: 'BackupTask',
-              path: 'app.tasks.backup.BackupTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '备份',
-              description: '通用数据备份任务',
-              parameters: {
-                source_path: { type: 'string', required: true, description: '备份源路径' },
-                target_path: { type: 'string', required: true, description: '备份目标路径' },
-                backup_type: { type: 'string', default: 'full', description: '备份类型：full/incremental' },
-                exclude_patterns: { type: 'array', default: [], description: '排除文件模式' }
-              },
-              methods: [
-                { name: '__init__', description: '初始化备份任务' },
-                { name: 'execute', description: '执行备份操作' },
-                { name: 'verify', description: '验证备份完整性' }
-              ]
-            },
-            {
-              label: 'DatabaseBackupTask',
-              path: 'app.tasks.backup.DatabaseBackupTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '备份',
-              description: '数据库备份任务',
-              parameters: {
-                db_type: { type: 'string', required: true, description: '数据库类型' },
-                connection_string: { type: 'string', required: true, description: '数据库连接字符串' },
-                backup_path: { type: 'string', required: true, description: '备份文件路径' },
-                dump_options: { type: 'object', description: '数据库导出选项' }
-              }
-            }
-          ]
-        },
-        {
-          label: 'cleanup',
-          path: 'app.tasks.cleanup',
-          type: 'module',
-          icon: 'el-icon-folder',
-          module: 'app.tasks.cleanup',
-          children: [
-            {
-              label: 'LogCleanupTask',
-              path: 'app.tasks.cleanup.LogCleanupTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '清理',
-              description: '日志文件清理任务',
-              parameters: {
-                log_paths: { type: 'array', required: true, description: '日志文件路径列表' },
-                retention_days: { type: 'integer', default: 30, description: '保留天数' },
-                file_patterns: { type: 'array', default: ['*.log'], description: '文件匹配模式' },
-                compress_before_delete: { type: 'boolean', default: true, description: '删除前压缩' }
-              }
-            },
-            {
-              label: 'TempFileCleanupTask',
-              path: 'app.tasks.cleanup.TempFileCleanupTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '清理',
-              description: '临时文件清理任务',
-              parameters: {
-                temp_paths: { type: 'array', required: true, description: '临时目录路径列表' },
-                max_age_hours: { type: 'integer', default: 24, description: '最大文件年龄(小时)' },
-                min_file_size: { type: 'integer', description: '最小文件大小(bytes)' }
-              }
-            },
-            {
-              label: 'CacheCleanupTask',
-              path: 'app.tasks.cleanup.CacheCleanupTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '清理',
-              description: '缓存文件清理任务',
-              parameters: {
-                cache_types: { type: 'array', required: true, description: '缓存类型列表' },
-                cache_root: { type: 'string', required: true, description: '缓存根目录' },
-                max_size_mb: { type: 'integer', description: '最大缓存大小(MB)' }
-              }
-            }
-          ]
-        },
-        {
-          label: 'sync',
-          path: 'app.tasks.sync',
-          type: 'module',
-          icon: 'el-icon-folder',
-          module: 'app.tasks.sync',
-          children: [
-            {
-              label: 'TorrentSyncTask',
-              path: 'app.tasks.sync.TorrentSyncTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '同步',
-              description: '种子数据同步任务',
-              parameters: {
-                source_downloader: { type: 'string', required: true, description: '源下载器ID' },
-                target_downloader: { type: 'string', required: true, description: '目标下载器ID' },
-                sync_type: { type: 'string', default: 'full', description: '同步类型：full/incremental' },
-                filter_criteria: { type: 'object', description: '同步过滤条件' }
-              }
-            },
-            {
-              label: 'DownloaderSyncTask',
-              path: 'app.tasks.sync.DownloaderSyncTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '同步',
-              description: '下载器状态同步任务',
-              parameters: {
-                downloader_ids: { type: 'array', required: true, description: '下载器ID列表' },
-                sync_interval: { type: 'integer', default: 300, description: '同步间隔(秒)' },
-                sync_settings: { type: 'object', description: '同步配置' }
-              }
-            }
-          ]
-        },
-        {
-          label: 'monitor',
-          path: 'app.tasks.monitor',
-          type: 'module',
-          icon: 'el-icon-folder',
-          module: 'app.tasks.monitor',
-          children: [
-            {
-              label: 'SystemMonitorTask',
-              path: 'app.tasks.monitor.SystemMonitorTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '监控',
-              description: '系统资源监控任务',
-              parameters: {
-                metrics: { type: 'array', default: ['cpu', 'memory', 'disk'], description: '监控指标' },
-                thresholds: { type: 'object', required: true, description: '告警阈值配置' },
-                notification_channels: { type: 'array', description: '通知渠道' },
-                report_format: { type: 'string', default: 'json', description: '报告格式' }
-              }
-            },
-            {
-              label: 'HealthCheckTask',
-              path: 'app.tasks.monitor.HealthCheckTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '监控',
-              description: '服务健康检查任务',
-              parameters: {
-                services: { type: 'array', required: true, description: '检查的服务列表' },
-                timeout: { type: 'integer', default: 30, description: '检查超时时间(秒)' },
-                retry_count: { type: 'integer', default: 3, description: '重试次数' },
-                check_interval: { type: 'integer', default: 60, description: '检查间隔(秒)' }
-              }
-            }
-          ]
-        },
-        {
-          label: 'custom',
-          path: 'app.tasks.custom',
-          type: 'module',
-          icon: 'el-icon-folder',
-          module: 'app.tasks.custom',
-          children: [
-            {
-              label: 'CustomScriptTask',
-              path: 'app.tasks.custom.CustomScriptTask',
-              type: 'class',
-              icon: 'el-icon-document',
-              category: '自定义',
-              description: '自定义脚本执行任务',
-              parameters: {
-                script_path: { type: 'string', required: true, description: '脚本文件路径' },
-                script_args: { type: 'array', description: '脚本参数' },
-                working_directory: { type: 'string', description: '工作目录' },
-                environment: { type: 'object', description: '环境变量' }
-              }
-            }
-          ]
-        }
-      ]
-    }
-  ]
+  /**
+   * 预定义类树（P6-4a 起由后端 type-config pythonClasses 驱动——getTaskTypeConfig
+   * 此前已定义但零调用，本批补全接线；后端中文描述按 Q02 原始数据透传，
+   * 原硬编码假树（BackupTask 等后端不存在的类，选择后必然后端校验失败）删除。
+   */
+  private classTree: ClassNode[] = []
 
   private treeProps = {
     children: 'children',
@@ -565,23 +374,17 @@ export default class PythonClassSelector extends Vue {
 
   private formRules = {
     classPath: [
-      { required: true, message: '请输入类路径', trigger: 'blur' },
+      { required: true, message: this.$t('tasks.pythonSelector.rules.classPathRequired'), trigger: 'blur' },
       {
         pattern: /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/,
-        message: '类路径格式错误，应使用点号分隔的标识符，如：app.tasks.MyTask',
+        message: this.$t('tasks.pythonSelector.rules.classPathFormat'),
         trigger: 'blur'
       }
     ]
   }
 
-  private quickTemplates: QuickTemplate[] = [
-    { name: '备份任务', path: 'app.tasks.backup.BackupTask', description: '数据备份相关任务' },
-    { name: '日志清理', path: 'app.tasks.cleanup.LogCleanupTask', description: '日志文件清理' },
-    { name: '系统监控', path: 'app.tasks.monitor.SystemMonitorTask', description: '系统资源监控' },
-    { name: '健康检查', path: 'app.tasks.monitor.HealthCheckTask', description: '服务健康检查' },
-    { name: '种子同步', path: 'app.tasks.sync.TorrentSyncTask', description: '种子数据同步' },
-    { name: '自定义脚本', path: 'app.tasks.custom.CustomScriptTask', description: '自定义脚本执行' }
-  ]
+  /** 常用路径模板（由后端真实类派生，最多 6 个；原硬编码假路径删除） */
+  private quickTemplates: QuickTemplate[] = []
 
   get filteredClassTree(): ClassNode[] {
     if (!this.searchKeyword) {
@@ -601,7 +404,7 @@ export default class PythonClassSelector extends Vue {
         type: param.type,
         required: param.required || false,
         description: param.description || '',
-        default: param.default || (param.required ? '必填' : '可选')
+        default: param.default || (param.required ? this.$t('tasks.pythonSelector.detail.defaultRequired') : this.$t('tasks.pythonSelector.detail.defaultOptional'))
       }))
     }
 
@@ -629,8 +432,73 @@ export default class PythonClassSelector extends Vue {
     // 加载历史记录
     this.loadHistory()
 
-    // 默认展开第一层模块
-    this.expandedKeys = this.classTree.map(node => node.path)
+    // 预定义类树由后端 type-config 驱动（加载完成后展开第一层模块）
+    this.loadClasses()
+  }
+
+  /** 从后端 type-config pythonClasses 构建类树（按模块分组；失败保持空树） */
+  private async loadClasses() {
+    this.loadingClasses = true
+    try {
+      const response = await getTaskTypeConfig()
+      if (response.code === '200' && response.data?.pythonClasses) {
+        this.classTree = this.buildTreeFromClasses(response.data.pythonClasses)
+        this.expandedKeys = this.classTree.map(node => node.path)
+        this.quickTemplates = this.classTree
+          .flatMap(node => node.children || [])
+          .filter((node): node is ClassNode => node.type === 'class')
+          .slice(0, 6)
+          .map(cls => ({ name: cls.label, path: cls.path, description: cls.description || '' }))
+      }
+    } catch (error) {
+      console.error('加载Python类列表失败:', error)
+    } finally {
+      this.loadingClasses = false
+    }
+  }
+
+  /** pythonClasses 扁平列表 → 模块分组的 ClassNode 树 */
+  private buildTreeFromClasses(classes: PythonClassInfo[]): ClassNode[] {
+    const modules = new Map<string, ClassNode[]>()
+    classes.forEach(cls => {
+      const modulePath = cls.module || 'unknown'
+      const children = modules.get(modulePath) ?? []
+      children.push({
+        label: cls.className,
+        path: `${modulePath}.${cls.className}`,
+        type: 'class',
+        icon: 'el-icon-document',
+        description: cls.description || undefined,
+        module: modulePath,
+        // 后端参数值为简单类型字符串或对象两种形态，统一归一为表格所需结构
+        parameters: this.normalizeParameters(cls.parameters),
+        methods: (cls.methods || []).map(name => ({ name, description: '' })),
+        available: true
+      })
+      modules.set(modulePath, children)
+    })
+    return Array.from(modules.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([modulePath, children]) => ({
+        label: modulePath,
+        path: modulePath,
+        type: 'module' as const,
+        icon: 'el-icon-folder',
+        module: modulePath,
+        children: children.sort((a, b) => a.label.localeCompare(b.label))
+      }))
+  }
+
+  /** 参数字典归一化（后端形如 {timeout: "int"} 或对象形态） */
+  private normalizeParameters(parameters?: Record<string, any>): Record<string, any> | undefined {
+    if (!parameters || Object.keys(parameters).length === 0) {
+      return undefined
+    }
+    const normalized: Record<string, any> = {}
+    Object.entries(parameters).forEach(([key, value]) => {
+      normalized[key] = typeof value === 'string' ? { type: value } : value
+    })
+    return normalized
   }
 
   mounted() {
@@ -749,7 +617,7 @@ export default class PythonClassSelector extends Vue {
       console.error('验证类路径失败:', error)
       this.validationResult = {
         valid: false,
-        message: '验证失败，请检查网络连接'
+        message: this.$t('tasks.pythonSelector.msg.validateFailed')
       }
     } finally {
       this.validating = false
@@ -854,36 +722,36 @@ export default class PythonClassSelector extends Vue {
     if (!allowedPrefixes.some(prefix => modulePath.startsWith(prefix))) {
       return {
         valid: false,
-        message: '类路径不在允许的模块范围内',
+        message: this.$t('tasks.pythonSelector.msg.notAllowed'),
         details: {
           exists: false,
           module_path: modulePath,
-          class_info: '模块不在允许范围内'
+          class_info: this.$t('tasks.pythonSelector.msg.notAllowedClassInfo')
         }
       }
     }
 
     return {
       valid: true,
-      message: '类路径格式正确，等待运行时验证',
+      message: this.$t('tasks.pythonSelector.msg.formatOkWaiting'),
       details: {
         exists: false,
         module_path: modulePath,
-        class_info: '需要在运行时验证类的存在性'
+        class_info: this.$t('tasks.pythonSelector.msg.needRuntimeCheck'),
       }
     }
   }
 
   private validateClassPathFormat(path: string): ValidationResult {
     if (!path) {
-      return { valid: false, message: '类路径不能为空' }
+      return { valid: false, message: this.$t('tasks.pythonSelector.msg.emptyPath') }
     }
 
     const validPattern = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/
     if (!validPattern.test(path)) {
       return {
         valid: false,
-        message: '类路径格式错误，应使用点号分隔的标识符，如：app.tasks.MyTask'
+        message: this.$t('tasks.pythonSelector.validation.formatInvalid')
       }
     }
 
@@ -891,7 +759,7 @@ export default class PythonClassSelector extends Vue {
     if (parts.length < 2) {
       return {
         valid: false,
-        message: '类路径应包含至少一个模块名和类名'
+        message: this.$t('tasks.pythonSelector.validation.missingParts')
       }
     }
 
@@ -899,11 +767,11 @@ export default class PythonClassSelector extends Vue {
     if (!/^[A-Z][a-zA-Z0-9]*$/.test(className)) {
       return {
         valid: false,
-        message: '类名应以大写字母开头，后跟字母或数字'
+        message: this.$t('tasks.pythonSelector.validation.classNameCase')
       }
     }
 
-    return { valid: true, message: '格式正确' }
+    return { valid: true, message: this.$t('tasks.pythonSelector.validation.formatOk') }
   }
 
   // 历史记录管理

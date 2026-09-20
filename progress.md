@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-20（P6-4a 任务域）：任务页 + 三组件全量双语 + cron_tasks 全端点 reasonCode 契约（全绿未提交）
+
+- **范围（用户确认两项决策）**：①后端错误契约随批补齐；②P6-4 拆两批交付（先任务域）。MCP/MoviePilot 页签经全仓核实不存在（settings 仅 4 个已翻译页签），计划项过时将在 evidence 注明。
+- **前端（~960 中文行）**：新 `tasks` 语言包模块 ~330 键（zh 逐字节 + en 成对）；`api/tasks.ts` 共享展示层 i18n 化——getTaskOutcomeMeta 六态（`no_action` 蛇形值→`noAction` 键位显式映射，TASK_OUTCOME_META 死文案字段移除只留 tag type）、getStaleTooltipText 三形态插值键、deleteTasks 聚合 msg 键化（移动端 tasks 页复用零回归，C01）；TaskTypeOption 接口重塑（label→labelKey）+ taskOptions 死数组删除；MonacoEditor 死字段删除（中文标识符 `代码语法正确`/`可以正常执行` 与 write-only 的 syntaxStatus/executionStatus）。
+- **两项结构性改造**：①**PythonClassSelector 预定义类改由后端驱动**——`getTaskTypeConfig()` 此前已定义但零调用（设计缺口），本批补全接线：pythonClasses 按模块分组建树、参数字典归一化（string/object 两形态）、快捷模板由真实类前 6 派生；~170 行硬编码假类树删除（BackupTask/DatabaseBackupTask 等后端不存在的类，选择必失败）；后端中文描述按 Q02 原文透传。②**CronEditor 内置模板身份 key 化**——13 模板移除中文 name/description 字段，身份与展示统一走 key（`templateIdentity` = key??name），`'每天'` find 改 `t.key==='daily'`；category 中文值保留为数据身份（筛选 value/CSS 类/tag 映射，白名单治理）；自定义模板（用户数据）原文直出。
+- **展示码位化**：任务状态按 taskStatus 码位（getStatusName 改收 row，未知码回退后端原文 Q02）、类型名按 taskType 码位（表格/日志/表单三处映射）；taskStatusName 中文值仅作数据匹配（isTaskExecutable 等口径，白名单 10 条）。
+- **后端（cron_tasks.py 全端点）**：失败路径 data.reasonCode 29 新键——策略 403（TASKS_CUSTOM_SCRIPTS_DISABLED/HOST_UNSUPPORTED）、类型/白名单（UNSUPPORTED_TASK_TYPE/EXECUTOR_NOT_ALLOWED）、CRUD（NOT_FOUND + CREATE/GET/UPDATE/DELETE/LIST_FAILED + **TASK_CONFLICT**（编码/名称冲突分类，CRUD 原文明细只进日志））、操作四域、日志五域、清理五键、校验四键；动态 str(e)/任务值 msg 固定化；P4 能力矩阵 reasonCode 保留（契约测试钉住）。信封四字段不变。
+- **测试**：backend `test_reason_contract_p6_tasks.py` 20 例（含 reasonCode 清单**双向**完整性（源码扫描 vs 登记集互检）+ 源码级动态 msg 禁回流）；frontend `p6-tasks-domain-i18n.spec.ts` 22 例；存量迁移——tasks-sync-freshness 3 处源码契约断言语义化（中文锚改键引用）、tasks-capability-wiring/management-pages-ui 各 1 处、test_cron_security_api 4 例（类型值 in msg 断言改 reasonCode 断言）；审计集扩至 63 面（+5 文件）+ 白名单 38 条（数据语义：taskStatusName 匹配/状态与类目 tag 映射键/筛选与 category 数据值，逐条注明理由）。
+- **验证**：前端 typecheck 绿、lint 三项绿、全量 Jest **122 套 1777 例全绿**（基线 121/1755）、build 绿；后端全量 **4796 passed / 0 failed**（含新 20 例）+ mypy/black/flake8 净。roadmap 七处同步（根 README、entry、views、components-layout 三组件行、utils-types、backend api、test-coverage 两行）。
+- **坑**：①类型数组有两份逐字相同副本——`str.replace` 一次性全替换后才发现第二份是零消费方死数组（应先查消费方再替换）；②locale 末项无尾逗号导致锚点带逗号静默失配（replace 未命中且无 assert，靠键可达性门禁抓出）；③后端契约测试初版凭印象写路由（/create 实为 /add、/validate/cron 实为 /validation/cron）与 mock 目标（TaskLogsCRUD 非 CronTaskCRUD、校验器函数内 import 需 patch 源模块类）——先 grep 路由与方法名再写测试；④pydantic 必填字段（executor/cron_plan）缺失返回 422 裸 detail 形态（测试 App 未挂全局异常处理器），payload 需带全必填；⑤eslint 对测试文件同样 --max-warnings 0（spec 内 require('vue-i18n').default 在 TS 环境解析为 undefined，挂载冒烟须顶层 import）。
+- **待办**：P6-4b（audit 日志页 + orphan-files 孤儿文件页 + 后端两端点契约）待启动；英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务下次出 APK 前须重跑 stage-server.py。未执行 Git 提交。
+
+---
 ## 2026-09-20（P6-3 Tracker 管理域收尾）：views/tracker 全域双语 + 四端点 reasonCode 契约（全绿未提交）
 
 - **范围（用户确认两项决策）**：①后端错误契约随批补齐（4 端点 42 条中文 msg）；②Tracker 管理域 4 页面 + 9 组件 + utils/tracker.ts 按既定模式全量双语。**并发事件**：执行中途发现旧会话（pi CLI pts/0，即「卡死」会话）仍在实时写同一批文件，经用户拍板终止（PID 2931）后接管——接管时旧会话已完成语言包十五子树、utils/tracker 收敛、4 页面与全部 13 组件接线、审计集扩容；本会话续作：3 套件 i18n 挂载迁移、后端四端点 reasonCode、errors.byCode 18 键、遗留漏点修复、前后端新 spec、全量验证与文档。

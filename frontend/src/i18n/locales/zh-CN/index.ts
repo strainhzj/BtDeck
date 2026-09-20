@@ -32,6 +32,7 @@ import { navigation } from './navigation'
 import { queryTemplate } from './queryTemplate'
 import { recycleBin } from './recycleBin'
 import { search } from './search'
+import { tasks } from './tasks'
 import { settings } from './settings'
 import { time } from './time'
 import { transfer } from './transfer'
@@ -49,6 +50,7 @@ const messages: MessageTree = {
   queryTemplate,
   recycleBin,
   search,
+  tasks,
   settings,
   time,
   torrent,

@@ -8,59 +8,59 @@
           <svg class="tab-icon" style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
           </svg>
-          任务管理
+          {{ $t('tasks.tabs.management') }}
         </template>
         <!-- 页面标题 -->
         <div class="section-header">
-          <h2 class="section-title">任务列表</h2>
+          <h2 class="section-title">{{ $t('tasks.list.title') }}</h2>
         </div>
         <!-- 搜索筛选区 -->
         <section class="filter-section">
           <div class="filter-form">
             <div class="form-group">
-              <label class="form-label">任务名称</label>
+              <label class="form-label">{{ $t('tasks.list.filter.taskName') }}</label>
               <el-input
                 v-model="queryParams.taskName"
-                placeholder="请输入任务名称"
+                :placeholder="$t('tasks.list.filter.taskNamePlaceholder')"
                 clearable
 
                 @keyup.enter="handleQuery"
               />
             </div>
             <div class="form-group">
-              <label class="form-label">任务编码</label>
+              <label class="form-label">{{ $t('tasks.list.filter.taskCode') }}</label>
               <el-input
                 v-model="queryParams.taskCode"
-                placeholder="请输入任务编码"
+                :placeholder="$t('tasks.list.filter.taskCodePlaceholder')"
                 clearable
 
                 @keyup.enter="handleQuery"
               />
             </div>
             <div class="form-group">
-              <label class="form-label">是否启用</label>
-              <el-select v-model="queryParams.enabled" placeholder="请选择" clearable>
-                <el-option label="启用" :value="true" />
-                <el-option label="禁用" :value="false" />
+              <label class="form-label">{{ $t('tasks.list.filter.enabled') }}</label>
+              <el-select v-model="queryParams.enabled" :placeholder="$t('tasks.list.filter.selectPlaceholder')" clearable>
+                <el-option :label="$t('tasks.list.filter.enabledOption')" :value="true" />
+                <el-option :label="$t('tasks.list.filter.disabledOption')" :value="false" />
               </el-select>
             </div>
             <div class="form-group">
-              <label class="form-label">任务类型</label>
-              <el-select v-model="queryParams.taskType" placeholder="请选择" clearable>
-                <el-option label="shell脚本" :value="0" />
-                <el-option label="cmd脚本" :value="1" />
-                <el-option label="powershell脚本" :value="2" />
-                <el-option label="python脚本" :value="3" />
-                <el-option label="python内部类" :value="4" />
-                <el-option label="清理回收站" :value="5" />
+              <label class="form-label">{{ $t('tasks.list.filter.taskType') }}</label>
+              <el-select v-model="queryParams.taskType" :placeholder="$t('tasks.list.filter.selectPlaceholder')" clearable>
+                <el-option :label="$t('tasks.type.shell')" :value="0" />
+                <el-option :label="$t('tasks.type.cmd')" :value="1" />
+                <el-option :label="$t('tasks.type.powershell')" :value="2" />
+                <el-option :label="$t('tasks.type.python')" :value="3" />
+                <el-option :label="$t('tasks.type.pythonClass')" :value="4" />
+                <el-option :label="$t('tasks.type.cleanup')" :value="5" />
               </el-select>
             </div>
             <div class="form-group" style="flex-direction: row; align-items: flex-end; gap: 8px;">
               <el-button type="primary" class="btn" @click="handleQuery">
-                <LucideIcon name="search" :size="14" /> 查询
+                <LucideIcon name="search" :size="14" /> {{ $t('tasks.list.query') }}
               </el-button>
               <el-button class="btn btn-secondary" @click="resetQuery">
-                <LucideIcon name="rotate-ccw" :size="14" /> 重置
+                <LucideIcon name="rotate-ccw" :size="14" /> {{ $t('tasks.list.reset') }}
               </el-button>
             </div>
           </div>
@@ -72,7 +72,7 @@
           <batch-button
             type="success"
             lucide-icon="play"
-            tooltip="启用"
+            :tooltip="$t('tasks.list.toolbar.enable')"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchEnable"
           />
@@ -81,7 +81,7 @@
           <batch-button
             type="warning"
             lucide-icon="pause"
-            tooltip="暂停"
+            :tooltip="$t('tasks.list.toolbar.pause')"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchDisable"
           />
@@ -90,7 +90,7 @@
           <batch-button
             type="danger"
             lucide-icon="trash"
-            tooltip="删除"
+            :tooltip="$t('tasks.list.toolbar.delete')"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchDelete"
           />
@@ -99,7 +99,7 @@
           <batch-button
             type="info"
             lucide-icon="refresh-cw"
-            tooltip="重检"
+            :tooltip="$t('tasks.list.toolbar.recheck')"
             :disabled="multipleSelection.length === 0"
             @click="handleRefresh"
           />
@@ -110,7 +110,7 @@
           <batch-button
             type="default"
             lucide-icon="refresh-cw"
-            tooltip="刷新"
+            :tooltip="$t('tasks.list.toolbar.refresh')"
             @click="handleRefresh"
           />
 
@@ -118,7 +118,7 @@
           <batch-button
             type="primary"
             lucide-icon="plus"
-            tooltip="新增任务"
+            :tooltip="$t('tasks.list.toolbar.create')"
             @click="handleCreate"
           />
         </section>
@@ -132,36 +132,36 @@
             style="width: 100%"
           >
             <el-table-column type="selection" width="55" />
-            <el-table-column prop="taskName" label="任务名称" min-width="150" show-overflow-tooltip resizable />
-            <el-table-column prop="taskCode" label="任务编码" width="120" show-overflow-tooltip resizable />
-            <el-table-column prop="taskTypeName" label="任务类型" width="110" resizable>
+            <el-table-column prop="taskName" :label="$t('tasks.list.col.taskName')" min-width="150" show-overflow-tooltip resizable />
+            <el-table-column prop="taskCode" :label="$t('tasks.list.col.taskCode')" width="120" show-overflow-tooltip resizable />
+            <el-table-column prop="taskTypeName" :label="$t('tasks.list.col.taskType')" width="110" resizable>
               <template slot-scope="scope">
                 <el-tag :type="getTaskTypeTag(scope.row.taskType)" size="small">
-                  {{ scope.row.taskTypeName }}
+                  {{ getTaskTypeName(scope.row.taskType) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="taskStatusName" label="状态" width="100" resizable>
+            <el-table-column prop="taskStatusName" :label="$t('tasks.list.col.status')" width="100" resizable>
               <template slot-scope="scope">
-                <el-tag v-if="scope.row.platformAvailable === false" type="warning" size="small">平台禁用</el-tag>
+                <el-tag v-if="scope.row.platformAvailable === false" type="warning" size="small">{{ $t('tasks.list.platformDisabled') }}</el-tag>
                 <el-tag :type="getStatusTag(scope.row.taskStatusName)" size="small">
-                  {{ scope.row.taskStatusName }}
+                  {{ getStatusName(scope.row) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="enabled" label="启用状态" width="90" align="center" resizable>
+            <el-table-column prop="enabled" :label="$t('tasks.list.col.enabled')" width="90" align="center" resizable>
               <template slot-scope="scope">
                 <el-tag :type="scope.row.enabled ? 'success' : 'info'" size="small">
-                  {{ scope.row.enabled ? '已启用' : '已禁用' }}
+                  {{ scope.row.enabled ? $t('tasks.list.enabledTag') : $t('tasks.list.disabledTag') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="cronPlan" label="Cron表达式" min-width="150" show-overflow-tooltip resizable>
+            <el-table-column prop="cronPlan" :label="$t('tasks.list.col.cron')" min-width="150" show-overflow-tooltip resizable>
               <template slot-scope="scope">
                 <code class="cron-code">{{ scope.row.cronPlan }}</code>
               </template>
             </el-table-column>
-            <el-table-column prop="lastExecuteTime" label="上次执行" min-width="180" resizable>
+            <el-table-column prop="lastExecuteTime" :label="$t('tasks.list.col.lastExecute')" min-width="180" resizable>
               <template slot-scope="scope">
                 <div class="task-result-cell">
                   <div class="task-result-tags">
@@ -177,18 +177,18 @@
                       :content="getStaleTooltipText(scope.row.lastSuccessfulDataAt, scope.row.lastAttemptAt)"
                       placement="top"
                     >
-                      <el-tag type="danger" size="mini" effect="plain">数据陈旧</el-tag>
+                      <el-tag type="danger" size="mini" effect="plain">{{ $t('tasks.list.dataStale') }}</el-tag>
                     </el-tooltip>
                   </div>
                   <div class="task-result-time">{{ scope.row.lastExecuteTime || '—' }}</div>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right" align="center" resizable>
+            <el-table-column :label="$t('tasks.list.col.actions')" width="110" fixed="right" align="center" resizable>
         <template slot-scope="scope">
           <el-dropdown @command="handleCommand" trigger="click" size="mini">
             <el-button size="mini" type="primary">
-              操作 <LucideIcon name="chevron-down" :size="12" style="margin-left: 4px;" />
+              {{ $t('tasks.list.menu.actions') }} <LucideIcon name="chevron-down" :size="12" style="margin-left: 4px;" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item
@@ -196,26 +196,26 @@
                 :disabled="!scope.row.enabled || scope.row.platformAvailable === false"
               >
                 <LucideIcon class="menu-icon" name="play" :size="14" />
-                立即执行
-                <el-tooltip v-if="scope.row.platformAvailable === false" content="当前主机能力不支持，任务不会执行" placement="right">
+                {{ $t('tasks.list.menu.execute') }}
+                <el-tooltip v-if="scope.row.platformAvailable === false" :content="$t('tasks.list.tip.executeUnsupported')" placement="right">
                   <LucideIcon class="menu-icon" name="info" :size="14" />
                 </el-tooltip>
-                <el-tooltip v-else-if="!scope.row.enabled" content="任务已禁用，请先启用" placement="right">
+                <el-tooltip v-else-if="!scope.row.enabled" :content="$t('tasks.list.tip.executeDisabled')" placement="right">
                   <LucideIcon class="menu-icon" name="info" :size="14" />
                 </el-tooltip>
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'edit', row: scope.row}">
-                <LucideIcon class="menu-icon" name="pencil" :size="14" /> 编辑
+                <LucideIcon class="menu-icon" name="pencil" :size="14" /> {{ $t('tasks.list.menu.edit') }}
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'logs', row: scope.row}">
-                <LucideIcon class="menu-icon" name="eye" :size="14" /> 查看日志
+                <LucideIcon class="menu-icon" name="eye" :size="14" /> {{ $t('tasks.list.menu.logs') }}
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'interrupt', row: scope.row}">
-                <LucideIcon class="menu-icon" name="pause" :size="14" /> 中断
+                <LucideIcon class="menu-icon" name="pause" :size="14" /> {{ $t('tasks.list.menu.interrupt') }}
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'delete', row: scope.row}" divided>
                 <LucideIcon class="menu-icon danger" name="trash" :size="14" />
-                <span style="color: #f56c6c;">删除</span>
+                <span style="color: #f56c6c;">{{ $t('tasks.list.menu.delete') }}</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
@@ -226,7 +226,7 @@
 
       <!-- 分页组件 - 使用种子管理页面的固定分页样式 -->
       <nav class="task-pagination">
-        <span class="pagination-info">共 {{ total }} 条，第 {{ queryParams.page }}/{{ Math.ceil(total / queryParams.limit) || 1 }} 页</span>
+        <span class="pagination-info">{{ $t('tasks.list.pagination.prefix') }}{{ total }}{{ $t('tasks.list.pagination.middle') }}{{ queryParams.page }}/{{ Math.ceil(total / queryParams.limit) || 1 }}{{ $t('tasks.list.pagination.suffix') }}</span>
         <div class="pagination-controls">
           <!-- 每页条数选择器 -->
           <el-select
@@ -237,7 +237,7 @@
             <el-option
               v-for="size in [5, 20, 50, 100, 200]"
               :key="size"
-              :label="`${size} 条/页`"
+              :label="size + $t('tasks.list.pagination.perPageSuffix')"
               :value="size"
             />
           </el-select>
@@ -275,15 +275,15 @@
           <svg class="tab-icon" style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
-          任务日志
+          {{ $t('tasks.tabs.logs') }}
         </template>
         <!-- 页面标题 -->
         <div class="section-header">
-          <h2 class="section-title">任务日志</h2>
+          <h2 class="section-title">{{ $t('tasks.logs.title') }}</h2>
         </div>
         <!-- 日志统计信息 - 紧凑一行布局 -->
         <CollapsiblePanel
-          title="日志统计"
+          :title="$t('tasks.logs.statsTitle')"
           storage-key="btdeck_task_log_stats_collapsed"
         >
           <div class="log-stats-compact">
@@ -291,28 +291,28 @@
               <div class="log-stat-icon primary"><LucideIcon name="bar-chart-3" :size="16" /></div>
               <div class="log-stat-content">
                 <div class="log-stat-value">{{ logStatistics.totalLogs }}</div>
-                <div class="log-stat-label">总日志数</div>
+                <div class="log-stat-label">{{ $t('tasks.logs.stat.total') }}</div>
               </div>
             </div>
             <div class="log-stat-item">
               <div class="log-stat-icon success"><LucideIcon name="circle-check-big" :size="16" /></div>
               <div class="log-stat-content">
                 <div class="log-stat-value">{{ logStatistics.successLogs }}</div>
-                <div class="log-stat-label">成功日志</div>
+                <div class="log-stat-label">{{ $t('tasks.logs.stat.success') }}</div>
               </div>
             </div>
             <div class="log-stat-item">
               <div class="log-stat-icon danger"><LucideIcon name="circle-x" :size="16" /></div>
               <div class="log-stat-content">
                 <div class="log-stat-value">{{ logStatistics.failedLogs }}</div>
-                <div class="log-stat-label">失败日志</div>
+                <div class="log-stat-label">{{ $t('tasks.logs.stat.failed') }}</div>
               </div>
             </div>
             <div class="log-stat-item">
               <div class="log-stat-icon info"><LucideIcon name="calendar-days" :size="16" /></div>
               <div class="log-stat-content">
                 <div class="log-stat-value">{{ logStatistics.todayLogs }}</div>
-                <div class="log-stat-label">今日日志</div>
+                <div class="log-stat-label">{{ $t('tasks.logs.stat.today') }}</div>
               </div>
             </div>
           </div>
@@ -321,7 +321,7 @@
         <!-- 日志筛选区 -->
         <section class="filter-section filter-section-logs">
           <div v-if="activeLogTaskName" class="active-log-task-filter">
-            <span class="active-log-task-filter__label">当前任务筛选</span>
+            <span class="active-log-task-filter__label">{{ $t('tasks.logs.activeFilter') }}</span>
             <el-tag closable type="info" @close="clearLogTaskFilter">
               {{ activeLogTaskName }}
             </el-tag>
@@ -329,10 +329,10 @@
           <div class="filter-form filter-form-logs">
             <!-- 第一行：任务名称、日志内容、执行结果、搜索/重置按钮 -->
             <div class="form-group">
-              <label class="form-label">任务名称</label>
+              <label class="form-label">{{ $t('tasks.logs.filter.taskName') }}</label>
               <el-input
                 v-model="logQueryParams.task_name"
-                placeholder="搜索任务名称"
+                :placeholder="$t('tasks.logs.filter.taskNamePlaceholder')"
                 clearable
 
                 @keyup.enter="handleLogQuery"
@@ -340,10 +340,10 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">日志内容</label>
+              <label class="form-label">{{ $t('tasks.logs.filter.content') }}</label>
               <el-input
                 v-model="logQueryParams.log_content"
-                placeholder="搜索日志内容"
+                :placeholder="$t('tasks.logs.filter.contentPlaceholder')"
                 clearable
 
                 @keyup.enter="handleLogQuery"
@@ -351,36 +351,36 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">执行结果</label>
+              <label class="form-label">{{ $t('tasks.logs.filter.result') }}</label>
               <el-select
                 v-model="logQueryParams.success"
-                placeholder="执行结果"
+                :placeholder="$t('tasks.logs.filter.result')"
                 clearable
 
               >
-                <el-option label="成功" :value="true" />
-                <el-option label="失败" :value="false" />
+                <el-option :label="$t('tasks.logs.filter.success')" :value="true" />
+                <el-option :label="$t('tasks.logs.filter.failed')" :value="false" />
               </el-select>
             </div>
 
             <div class="form-group" style="flex-direction: row; align-items: flex-end; gap: 8px;">
               <el-button type="primary" class="btn" @click="handleLogQuery">
-                <LucideIcon name="search" :size="14" /> 搜索
+                <LucideIcon name="search" :size="14" /> {{ $t('tasks.logs.filter.search') }}
               </el-button>
               <el-button class="btn btn-secondary" @click="resetLogQuery">
-                <LucideIcon name="x" :size="14" /> 清空
+                <LucideIcon name="x" :size="14" /> {{ $t('tasks.logs.filter.clear') }}
               </el-button>
             </div>
 
             <!-- 第二行：时间范围（单独一行） -->
             <div class="form-group form-group-wide">
-              <label class="form-label">时间范围</label>
+              <label class="form-label">{{ $t('tasks.logs.filter.timeRange') }}</label>
               <el-date-picker
                 v-model="logDateRange"
                 type="datetimerange"
-                range-separator="至"
-                start-placeholder="开始时间"
-                end-placeholder="结束时间"
+                :range-separator="$t('tasks.logs.filter.rangeSep')"
+                :start-placeholder="$t('tasks.logs.filter.startPlaceholder')"
+                :end-placeholder="$t('tasks.logs.filter.endPlaceholder')"
                 value-format="yyyy-MM-dd HH:mm:ss"
 
                 @change="handleLogDateRangeChange"
@@ -397,18 +397,18 @@
             class="batch-btn batch-btn-danger"
             @click="handleLogBatchDelete"
           >
-            <LucideIcon name="trash" :size="14" /> 批量删除 ({{ logMultipleSelection.length }})
+            <LucideIcon name="trash" :size="14" /> {{ $t('tasks.logs.toolbar.batchDelete') }} ({{ logMultipleSelection.length }})
           </el-button>
 
           <el-dropdown @command="handleLogExport">
             <el-button type="success" size="small">
-              <LucideIcon name="download" :size="14" /> 导出
+              <LucideIcon name="download" :size="14" /> {{ $t('tasks.logs.toolbar.export') }}
               <LucideIcon name="chevron-down" :size="12" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
-              <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
-              <el-dropdown-item command="json">导出为 JSON</el-dropdown-item>
-              <el-dropdown-item command="txt">导出为 TXT</el-dropdown-item>
+              <el-dropdown-item command="csv">{{ $t('tasks.logs.toolbar.exportCsv') }}</el-dropdown-item>
+              <el-dropdown-item command="json">{{ $t('tasks.logs.toolbar.exportJson') }}</el-dropdown-item>
+              <el-dropdown-item command="txt">{{ $t('tasks.logs.toolbar.exportTxt') }}</el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
 
@@ -417,7 +417,7 @@
             size="small"
             @click="handleLogCleanup"
           >
-            <LucideIcon name="wand-sparkles" :size="14" /> 清理过期日志
+            <LucideIcon name="wand-sparkles" :size="14" /> {{ $t('tasks.logs.toolbar.cleanup') }}
           </el-button>
         </section>
 
@@ -431,24 +431,24 @@
           style="width: 100%"
         >
           <el-table-column type="selection" width="55" />
-          <el-table-column prop="taskName" label="任务名称" min-width="150" show-overflow-tooltip resizable />
-          <el-table-column prop="taskTypeName" label="任务类型" width="110" resizable>
+          <el-table-column prop="taskName" :label="$t('tasks.logs.col.taskName')" min-width="150" show-overflow-tooltip resizable />
+          <el-table-column prop="taskTypeName" :label="$t('tasks.logs.col.taskType')" width="110" resizable>
             <template slot-scope="scope">
               <el-tag :type="getLogTaskTypeTag(scope.row.taskType)" size="small">
                 {{ getLogTaskTypeName(scope.row.taskType) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="startTime" label="开始时间" min-width="160" show-overflow-tooltip resizable />
-          <el-table-column prop="endTime" label="结束时间" min-width="160" show-overflow-tooltip resizable />
-          <el-table-column prop="duration" label="耗时" width="90" align="center" resizable>
+          <el-table-column prop="startTime" :label="$t('tasks.logs.col.startTime')" min-width="160" show-overflow-tooltip resizable />
+          <el-table-column prop="endTime" :label="$t('tasks.logs.col.endTime')" min-width="160" show-overflow-tooltip resizable />
+          <el-table-column prop="duration" :label="$t('tasks.logs.col.duration')" width="90" align="center" resizable>
             <template slot-scope="scope">
               <span :style="{color: scope.row.duration > 60 ? '#f56c6c' : scope.row.duration > 10 ? '#e6a23c' : '#67c23a', fontWeight: '500'}">
                 {{ scope.row.duration }}s
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="success" label="执行结果" width="100" align="center" resizable>
+          <el-table-column prop="success" :label="$t('tasks.logs.col.result')" width="100" align="center" resizable>
             <template slot-scope="scope">
               <el-tag
                 v-if="getTaskOutcomeMeta(scope.row.outcome)"
@@ -458,11 +458,11 @@
                 {{ getTaskOutcomeMeta(scope.row.outcome).text }}
               </el-tag>
               <el-tag v-else :type="scope.row.success ? 'success' : 'danger'" size="small">
-                {{ scope.row.success ? '成功' : '失败' }}
+                {{ scope.row.success ? $t('tasks.logs.successTag') : $t('tasks.logs.failedTag') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="执行详情" min-width="150" resizable>
+          <el-table-column :label="$t('tasks.logs.col.detail')" min-width="150" resizable>
             <template slot-scope="scope">
               <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 {{ scope.row.logDetail }}
@@ -474,7 +474,7 @@
                 @click="handleViewLogDetail(scope.row)"
                 style="margin-top: 5px; padding: 0;"
               >
-                查看详情
+                {{ $t('tasks.logs.viewDetail') }}
               </el-button>
             </template>
           </el-table-column>
@@ -483,7 +483,7 @@
 
         <!-- 日志分页组件 - 使用种子管理页面的固定分页样式 -->
         <nav class="task-pagination">
-          <span class="pagination-info">共 {{ logTotal }} 条，第 {{ logQueryParams.page }}/{{ Math.ceil(logTotal / logQueryParams.limit) || 1 }} 页</span>
+          <span class="pagination-info">{{ $t('tasks.list.pagination.prefix') }}{{ logTotal }}{{ $t('tasks.list.pagination.middle') }}{{ logQueryParams.page }}/{{ Math.ceil(logTotal / logQueryParams.limit) || 1 }}{{ $t('tasks.list.pagination.suffix') }}</span>
           <div class="pagination-controls">
             <!-- 每页条数选择器 -->
             <el-select
@@ -494,7 +494,7 @@
               <el-option
                 v-for="size in [5, 20, 50, 100, 200, 500, 1000]"
                 :key="size"
-                :label="`${size} 条/页`"
+                :label="size + $t('tasks.list.pagination.perPageSuffix')"
                 :value="size"
               />
             </el-select>
@@ -539,35 +539,35 @@
         <!-- 基本信息 -->
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="任务名称" prop="task_name">
-              <el-input v-model="taskForm.task_name" placeholder="请输入任务名称" />
+            <el-form-item :label="$t('tasks.form.taskName')" prop="task_name">
+              <el-input v-model="taskForm.task_name" :placeholder="$t('tasks.form.taskNamePlaceholder')" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="任务编码" prop="task_code">
-              <el-input v-model="taskForm.task_code" placeholder="请输入任务编码" />
+            <el-form-item :label="$t('tasks.form.taskCode')" prop="task_code">
+              <el-input v-model="taskForm.task_code" :placeholder="$t('tasks.form.taskCodePlaceholder')" />
             </el-form-item>
           </el-col>
         </el-row>
 
-        <el-form-item label="任务类型" prop="task_type">
+        <el-form-item :label="$t('tasks.form.taskType')" prop="task_type">
           <el-select
             v-model="taskForm.task_type"
-            placeholder="请选择任务类型"
+            :placeholder="$t('tasks.form.taskTypePlaceholder')"
             style="width: 100%"
             @change="handleTaskTypeChange"
           >
             <el-option
               v-for="option in taskTypeOptions"
               :key="option.value"
-              :label="option.label"
+              :label="$t(option.labelKey)"
               :value="option.value"
               :disabled="isTaskTypeDisabled(option.value)"
             >
               <LucideIcon :name="option.icon" :size="14" style="margin-right: 8px;" />
-              {{ option.label }}
+              {{ $t(option.labelKey) }}
               <span v-if="isTaskTypeDisabled(option.value)" class="task-type-unsupported-hint">
-                （当前主机形态不支持）
+                {{ $t('tasks.form.typeUnsupportedHint') }}
               </span>
             </el-option>
           </el-select>
@@ -593,7 +593,7 @@
             <el-alert
               v-for="error in syntaxErrors.slice(0, 3)"
               :key="`${error.startLineNumber}-${error.startColumn}`"
-              :title="`第${error.startLineNumber}行：${error.message}`"
+              :title="$t('tasks.syntax.lineError', {line: error.startLineNumber, message: error.message})"
               type="error"
               show-icon
               :closable="false"
@@ -602,18 +602,18 @@
             />
             <div v-if="syntaxErrors.length > 3" class="more-errors">
               <el-link type="primary" @click="showAllErrors = true">
-                查看全部 {{ syntaxErrors.length }} 个错误
+                {{ $t('tasks.syntax.viewAll', {count: syntaxErrors.length}) }}
               </el-link>
             </div>
             <el-collapse v-if="showAllErrors && syntaxErrors.length > 3" class="all-errors">
               <el-collapse-item
                 v-for="(error, index) in syntaxErrors.slice(3)"
                 :key="`error-${index}`"
-                :title="`第${error.startLineNumber}行：${error.message}`"
+                :title="$t('tasks.syntax.lineError', {line: error.startLineNumber, message: error.message})"
                 name="error"
               >
                 <div class="error-detail">
-                  <strong>第{{ error.startLineNumber }}行, 第{{ error.startColumn }}列:</strong>
+                  <strong>{{ $t('tasks.syntax.detailLine', {line: error.startLineNumber, col: error.startColumn}) }}</strong>
                   {{ error.message }}
                 </div>
               </el-collapse-item>
@@ -621,9 +621,9 @@
           </div>
           <div v-else-if="syntaxValidationResult && syntaxValidationResult.valid === true" class="syntax-success">
             <el-alert
-              title="语法检查通过"
+              :title="$t('tasks.syntax.passTitle')"
               type="success"
-              description="代码语法正确, 可以正常执行"
+              :description="$t('tasks.syntax.passDesc')"
               show-icon
               :closable="false"
               size="mini"
@@ -633,7 +633,7 @@
 
         <!-- Python类选择器 -->
         <el-form-item
-          label="执行类"
+          :label="$t('tasks.form.executorClass')"
           prop="executor"
           v-if="taskForm.task_type === 4"
         >
@@ -647,45 +647,45 @@
         <!-- 清理任务配置表单 -->
         <el-form-item
           v-if="taskForm.task_type === 5"
-          label="清理配置"
+          :label="$t('tasks.form.cleanup.label')"
         >
           <el-row :gutter="20">
             <el-col :span="8">
-              <el-form-item label="清理等级3" label-width="100px">
+              <el-form-item :label="$t('tasks.form.cleanup.level3')" label-width="100px">
                 <el-switch
                   v-model="cleanupConfig.cleanup_level_3"
                   :disabled="!level3Available"
-                  active-text="启用"
-                  inactive-text="禁用"
+                  :active-text="$t('tasks.form.cleanup.on')"
+                  :inactive-text="$t('tasks.form.cleanup.off')"
                 />
                 <div class="form-help">
-                  <small>{{ level3Available ? '清理等级为3的种子' : '当前主机不支持等级3文件操作' }}</small>
+                  <small>{{ level3Available ? $t('tasks.form.cleanup.level3Desc') : $t('tasks.form.cleanup.level3Unsupported') }}</small>
                 </div>
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="清理等级4" label-width="100px">
+              <el-form-item :label="$t('tasks.form.cleanup.level4')" label-width="100px">
                 <el-switch
                   v-model="cleanupConfig.cleanup_level_4"
-                  active-text="启用"
-                  inactive-text="禁用"
+                  :active-text="$t('tasks.form.cleanup.on')"
+                  :inactive-text="$t('tasks.form.cleanup.off')"
                 />
                 <div class="form-help">
-                  <small>清理等级为4的种子</small>
+                  <small>{{ $t('tasks.form.cleanup.level4Desc') }}</small>
                 </div>
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="天数阈值" label-width="100px">
+              <el-form-item :label="$t('tasks.form.cleanup.daysLabel')" label-width="100px">
                 <el-input-number
                   v-model="cleanupConfig.days_threshold"
                   :min="1"
                   :max="365"
-                  placeholder="天数"
+                  :placeholder="$t('tasks.form.cleanup.daysPlaceholder')"
                   style="width: 100%"
                 />
                 <div class="form-help">
-                  <small>清理多少天前的种子（1-365天）</small>
+                  <small>{{ $t('tasks.form.cleanup.daysDesc') }}</small>
                 </div>
               </el-form-item>
             </el-col>
@@ -700,21 +700,21 @@
                 @click="previewCleanup"
                 :loading="previewLoading"
               >
-                <LucideIcon name="search" :size="14" /> 预览清理
+                <LucideIcon name="search" :size="14" /> {{ $t('tasks.form.cleanup.previewBtn') }}
               </el-button>
             </el-col>
           </el-row>
         </el-form-item>
 
         <!-- Cron表达式编辑器 -->
-        <el-form-item label="执行计划" prop="cron_plan">
+        <el-form-item :label="$t('tasks.form.cronLabel')" prop="cron_plan">
           <cron-editor
             v-model="taskForm.cron_plan"
             @change="handleCronChange"
           />
           <div v-if="cronValidationResult && !cronValidationResult.valid" class="cron-validation-error">
             <el-alert
-              :title="'Cron表达式错误: ' + cronValidationResult.message"
+              :title="$t('tasks.form.cronError', {message: cronValidationResult.message})"
               type="error"
               show-icon
               :closable="false"
@@ -727,7 +727,7 @@
         <el-form-item>
           <el-button type="text" @click="showAdvancedConfig = !showAdvancedConfig" size="small">
             <LucideIcon :name="showAdvancedConfig ? 'chevron-up' : 'chevron-down'" :size="14" />
-            {{ showAdvancedConfig ? '收起' : '展开' }}高级配置
+            {{ showAdvancedConfig ? $t('tasks.form.advancedCollapse') : $t('tasks.form.advancedExpand') }}{{ $t('tasks.form.advancedSuffix') }}
           </el-button>
         </el-form-item>
 
@@ -735,56 +735,56 @@
           <div v-show="showAdvancedConfig" class="advanced-config">
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="超时时间">
+                <el-form-item :label="$t('tasks.form.timeout.label')">
                   <el-input-number
                     v-model="taskForm.timeout_seconds"
                     :min="60"
                     :max="86400"
-                    placeholder="秒"
+                    :placeholder="$t('tasks.form.timeout.placeholder')"
                     style="width: 100%"
                   />
                   <div class="form-help">
-                    <small>任务执行超时时间(秒), 默认1小时</small>
+                    <small>{{ $t('tasks.form.timeout.desc') }}</small>
                   </div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="最大重试次数">
+                <el-form-item :label="$t('tasks.form.retry.maxLabel')">
                   <el-input-number
                     v-model="taskForm.max_retry_count"
                     :min="0"
                     :max="10"
-                    placeholder="次数"
+                    :placeholder="$t('tasks.form.retry.placeholder')"
                     style="width: 100%"
                   />
                   <div class="form-help">
-                    <small>失败后最大重试次数, 默认不重试</small>
+                    <small>{{ $t('tasks.form.retry.maxDesc') }}</small>
                   </div>
                 </el-form-item>
               </el-col>
             </el-row>
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="重试间隔">
+                <el-form-item :label="$t('tasks.form.retry.intervalLabel')">
                   <el-input-number
                     v-model="taskForm.retry_interval"
                     :min="60"
                     :max="3600"
-                    placeholder="秒"
+                    :placeholder="$t('tasks.form.retry.intervalPlaceholder')"
                     style="width: 100%"
                   />
                   <div class="form-help">
-                    <small>重试间隔时间(秒), 默认5分钟</small>
+                    <small>{{ $t('tasks.form.retry.intervalDesc') }}</small>
                   </div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="任务描述">
+                <el-form-item :label="$t('tasks.form.descLabel')">
                   <el-input
                     v-model="taskForm.description"
                     type="textarea"
                     :rows="2"
-                    placeholder="任务描述（可选）"
+                    :placeholder="$t('tasks.form.descPlaceholder')"
                     style="width: 100%"
                   />
                 </el-form-item>
@@ -797,19 +797,19 @@
         <el-form-item prop="enabled">
           <el-switch
             v-model="taskForm.enabled"
-            :active-text="taskForm.enabled ? '启用' : '禁用'"
-            :inactive-text="taskForm.enabled ? '禁用' : '启用'"
+            :active-text="taskForm.enabled ? $t('tasks.form.enabledOn') : $t('tasks.form.enabledOff')"
+            :inactive-text="taskForm.enabled ? $t('tasks.form.enabledOff') : $t('tasks.form.enabledOn')"
           />
           <div class="form-help">
             <small>
-              {{ taskForm.enabled ? '启用状态：任务将按计划执行' : '禁用状态：任务不会执行' }}
+              {{ taskForm.enabled ? $t('tasks.form.enabledOnDesc') : $t('tasks.form.enabledOffDesc') }}
             </small>
           </div>
         </el-form-item>
       </el-form>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="dialogVisible = false" :disabled="submitLoading">取消</el-button>
+        <el-button @click="dialogVisible = false" :disabled="submitLoading">{{ $t('tasks.form.cancel') }}</el-button>
         <el-button
           type="primary"
           @click="handleSubmit"
@@ -817,14 +817,14 @@
           :disabled="!canSubmit"
         >
           <LucideIcon name="check" :size="14" />
-          {{ submitLoading ? '保存中...' : '确定' }}
+          {{ submitLoading ? $t('tasks.form.saving') : $t('tasks.form.confirm') }}
         </el-button>
       </div>
     </el-dialog>
 
     <!-- 任务执行详情弹窗 -->
     <el-dialog
-      title="任务执行详情"
+      :title="$t('tasks.logDetail.title')"
       :visible.sync="logDetailVisible"
       width="700px"
       :close-on-click-modal="false"
@@ -833,15 +833,15 @@
       <div class="log-detail-content">
         <div class="log-detail-header">
           <div class="detail-item">
-            <span class="label">任务名称：</span>
+            <span class="label">{{ $t('tasks.logDetail.taskName') }}</span>
             <span class="value">{{ selectedLog?.taskName }}</span>
           </div>
           <div class="detail-item">
-            <span class="label">执行时间：</span>
+            <span class="label">{{ $t('tasks.logDetail.executeTime') }}</span>
             <span class="value">{{ selectedLog?.startTime }} ~ {{ selectedLog?.endTime }}</span>
           </div>
           <div class="detail-item">
-            <span class="label">执行结果：</span>
+            <span class="label">{{ $t('tasks.logDetail.result') }}</span>
             <el-tag
               v-if="getTaskOutcomeMeta(selectedLog?.outcome)"
               :type="getTaskOutcomeMeta(selectedLog?.outcome).type"
@@ -850,11 +850,11 @@
               {{ getTaskOutcomeMeta(selectedLog?.outcome).text }}
             </el-tag>
             <el-tag v-else :type="selectedLog?.success ? 'success' : 'danger'" size="small">
-              {{ selectedLog?.success ? '成功' : '失败' }}
+              {{ selectedLog?.success ? $t('tasks.logDetail.success') : $t('tasks.logDetail.failed') }}
             </el-tag>
           </div>
           <div class="detail-item">
-            <span class="label">执行耗时：</span>
+            <span class="label">{{ $t('tasks.logDetail.duration') }}</span>
             <span class="value" :style="{color: selectedLog?.duration > 60 ? '#f56c6c' : selectedLog?.duration > 10 ? '#e6a23c' : '#67c23a', fontWeight: '500'}">
               {{ selectedLog?.duration }}s
             </span>
@@ -862,94 +862,94 @@
         </div>
 
         <div class="log-detail-main">
-          <h4 class="detail-title">执行详情内容：</h4>
+          <h4 class="detail-title">{{ $t('tasks.logDetail.contentTitle') }}</h4>
           <div class="detail-content">
-            <pre>{{ selectedLog?.logDetail || '暂无详情信息' }}</pre>
+            <pre>{{ selectedLog?.logDetail || $t('tasks.logDetail.empty') }}</pre>
           </div>
         </div>
       </div>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="logDetailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="handleCopyLogDetail">复制内容</el-button>
+        <el-button @click="logDetailVisible = false">{{ $t('tasks.logDetail.close') }}</el-button>
+        <el-button type="primary" @click="handleCopyLogDetail">{{ $t('tasks.logDetail.copy') }}</el-button>
       </div>
     </el-dialog>
 
     <!-- 清理预览对话框 -->
     <el-dialog
-      title="清理预览"
+      :title="$t('tasks.preview.title')"
       :visible.sync="previewDialogVisible"
       width="600px"
     >
       <div v-if="previewData">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="等级3种子">
-            {{ previewData.level3_count }} 个
+          <el-descriptions-item :label="$t('tasks.preview.level3')">
+            {{ previewData.level3_count }}{{ $t('tasks.preview.countSuffix') }}
           </el-descriptions-item>
-          <el-descriptions-item label="等级4种子">
-            {{ previewData.level4_count }} 个
+          <el-descriptions-item :label="$t('tasks.preview.level4')">
+            {{ previewData.level4_count }}{{ $t('tasks.preview.countSuffix') }}
           </el-descriptions-item>
-          <el-descriptions-item label="总计">
-            {{ previewData.total_count }} 个
+          <el-descriptions-item :label="$t('tasks.preview.total')">
+            {{ previewData.total_count }}{{ $t('tasks.preview.countSuffix') }}
           </el-descriptions-item>
-          <el-descriptions-item label="释放空间">
+          <el-descriptions-item :label="$t('tasks.preview.freed')">
             {{ previewData.total_size_gb }} GB
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- 等级3种子列表（可折叠） -->
         <el-collapse v-if="previewData.level3_items && previewData.level3_items.length > 0" style="margin-top: 20px;">
-          <el-collapse-item title="等级3种子详情（最多显示20条）" name="level3">
+          <el-collapse-item :title="$t('tasks.preview.level3Detail')" name="level3">
             <el-table :data="previewData.level3_items" size="small" max-height="300">
-              <el-table-column prop="name" label="名称" show-overflow-tooltip />
-              <el-table-column prop="size" label="大小(GB)">
+              <el-table-column prop="name" :label="$t('tasks.preview.colName')" show-overflow-tooltip />
+              <el-table-column prop="size" :label="$t('tasks.preview.colSize')">
                 <template slot-scope="scope">
                   {{ (scope.row.size / 1024**3).toFixed(2) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="deleted_at" label="删除时间" width="180" />
+              <el-table-column prop="deleted_at" :label="$t('tasks.preview.colDeletedAt')" width="180" />
             </el-table>
           </el-collapse-item>
         </el-collapse>
 
         <!-- 等级4种子列表（可折叠） -->
         <el-collapse v-if="previewData.level4_items && previewData.level4_items.length > 0" style="margin-top: 10px;">
-          <el-collapse-item title="等级4种子详情（最多显示20条）" name="level4">
+          <el-collapse-item :title="$t('tasks.preview.level4Detail')" name="level4">
             <el-table :data="previewData.level4_items" size="small" max-height="300">
-              <el-table-column prop="name" label="名称" show-overflow-tooltip />
-              <el-table-column prop="size" label="大小(GB)">
+              <el-table-column prop="name" :label="$t('tasks.preview.colName')" show-overflow-tooltip />
+              <el-table-column prop="size" :label="$t('tasks.preview.colSize')">
                 <template slot-scope="scope">
                   {{ (scope.row.size / 1024**3).toFixed(2) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="tags" label="标签" width="150" />
+              <el-table-column prop="tags" :label="$t('tasks.preview.colTags')" width="150" />
             </el-table>
           </el-collapse-item>
         </el-collapse>
       </div>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="previewDialogVisible = false">关闭</el-button>
+        <el-button @click="previewDialogVisible = false">{{ $t('tasks.preview.close') }}</el-button>
       </div>
     </el-dialog>
 
     <!-- 日志清理对话框 -->
-    <el-dialog title="清理过期日志" :visible.sync="logCleanupDialogVisible" width="440px">
+    <el-dialog :title="$t('tasks.cleanupDialog.title')" :visible.sync="logCleanupDialogVisible" width="440px">
       <el-form label-width="120px">
-        <el-form-item label="保留最近天数">
+        <el-form-item :label="$t('tasks.cleanupDialog.keepDays')">
           <el-input-number v-model="logCleanupForm.days" :min="1" :max="365" />
-          <small style="margin-left: 8px; color: #909399;">清理此天数之前的日志</small>
+          <small style="margin-left: 8px; color: #909399;">{{ $t('tasks.cleanupDialog.keepDaysHint') }}</small>
         </el-form-item>
-        <el-form-item label="保留成功日志">
+        <el-form-item :label="$t('tasks.cleanupDialog.keepSuccess')">
           <el-switch v-model="logCleanupForm.keep_success" />
         </el-form-item>
-        <el-form-item label="保留失败日志">
+        <el-form-item :label="$t('tasks.cleanupDialog.keepError')">
           <el-switch v-model="logCleanupForm.keep_error" />
         </el-form-item>
       </el-form>
       <div slot="footer">
-        <el-button @click="logCleanupDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="logCleanupLoading" @click="executeLogCleanup">确定清理</el-button>
+        <el-button @click="logCleanupDialogVisible = false">{{ $t('tasks.cleanupDialog.cancel') }}</el-button>
+        <el-button type="warning" :loading="logCleanupLoading" @click="executeLogCleanup">{{ $t('tasks.cleanupDialog.confirm') }}</el-button>
       </div>
     </el-dialog>
   </div>
@@ -976,6 +976,7 @@ import {
   isTaskDataStale as resolveTaskDataStale,
   getStaleTooltipText as buildStaleTooltipText
 } from '@/api/tasks'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 import request from '@/utils/request'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { customScriptsUnsupported, isCapabilityAvailable, loadPlatformCapabilities } from '@/api/platform-capabilities'
@@ -1109,12 +1110,12 @@ export default class TaskManage extends Vue {
 
   // 任务类型选项
   private taskTypeOptions: TaskTypeOption[] = [
-    { label: 'shell脚本', value: 0, icon: 'file-text', description: 'Linux/Unix Shell脚本' },
-    { label: 'cmd脚本', value: 1, icon: 'file-text', description: 'Windows批处理脚本' },
-    { label: 'powershell脚本', value: 2, icon: 'file-text', description: 'Windows PowerShell脚本' },
-    { label: 'python脚本', value: 3, icon: 'file-text', description: 'Python脚本文件' },
-    { label: 'python内部类', value: 4, icon: 'file-text', description: 'Python内部类方法' },
-    { label: '清理回收站', value: 5, icon: 'trash', description: '自动清理回收站任务' }
+    { labelKey: 'tasks.type.shell', value: 0, icon: 'file-text' },
+    { labelKey: 'tasks.type.cmd', value: 1, icon: 'file-text' },
+    { labelKey: 'tasks.type.powershell', value: 2, icon: 'file-text' },
+    { labelKey: 'tasks.type.python', value: 3, icon: 'file-text' },
+    { labelKey: 'tasks.type.pythonClass', value: 4, icon: 'file-text' },
+    { labelKey: 'tasks.type.cleanup', value: 5, icon: 'trash' }
   ]
 
   // UI状态
@@ -1140,15 +1141,6 @@ export default class TaskManage extends Vue {
   }
 
   // 任务查询选项（修复模板undefined错误）
-  private taskOptions: TaskTypeOption[] = [
-    { label: 'shell脚本', value: 0, icon: 'file-text', description: 'Linux/Unix Shell脚本' },
-    { label: 'cmd脚本', value: 1, icon: 'file-text', description: 'Windows批处理脚本' },
-    { label: 'powershell脚本', value: 2, icon: 'file-text', description: 'Windows PowerShell脚本' },
-    { label: 'python脚本', value: 3, icon: 'file-text', description: 'Python脚本文件' },
-    { label: 'python内部类', value: 4, icon: 'file-text', description: 'Python内部类方法' },
-    { label: '清理回收站', value: 5, icon: 'trash', description: '自动清理回收站任务' }
-  ]
-
   // 日志查询相关（修复模板undefined错误）
   private logDateRange: any[] = []
   // 注意：logMultipleSelection 已在第 808 行声明为 BTDeckTypes.TaskLog[]
@@ -1160,20 +1152,20 @@ export default class TaskManage extends Vue {
   get rules() {
     return {
       task_name: [
-        { required: true, message: '请输入任务名称', trigger: 'blur' }
+        { required: true, message: this.$t('tasks.form.taskNamePlaceholder'), trigger: 'blur' }
       ],
       task_code: [
-        { required: true, message: '请输入任务编码', trigger: 'blur' },
-        { pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/, message: '任务编码格式不正确', trigger: 'blur' }
+        { required: true, message: this.$t('tasks.form.taskCodePlaceholder'), trigger: 'blur' },
+        { pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/, message: this.$t('tasks.msg.taskCodeFormat'), trigger: 'blur' }
       ],
       task_type: [
-        { required: true, message: '请选择任务类型', trigger: 'change' }
+        { required: true, message: this.$t('tasks.form.taskTypePlaceholder'), trigger: 'change' }
       ],
       executor: [
-        { required: true, message: '请输入执行内容', trigger: 'blur' }
+        { required: true, message: this.$t('tasks.msg.executorRequired'), trigger: 'blur' }
       ],
       cron_plan: [
-        { required: true, message: '请输入Cron表达式', trigger: 'blur' }
+        { required: true, message: this.$t('tasks.cronEditor.rules.expressionRequired'), trigger: 'blur' }
       ]
     }
   }
@@ -1266,14 +1258,14 @@ export default class TaskManage extends Vue {
       this.calculateTaskStatistics()
     } catch (error) {
       console.error('获取任务列表失败:', error)
-      this.$message.error('获取任务列表失败')
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.fetchListFailed')))
     } finally {
       this.loading = false
     }
   }
 
   private handleCreate() {
-    this.dialogTitle = '新增任务'
+    this.dialogTitle = this.$t('tasks.form.createTitle')
     this.dialogVisible = true
     this.$nextTick(() => {
       this.resetForm()
@@ -1294,7 +1286,7 @@ export default class TaskManage extends Vue {
 
     console.log('Resolved taskId:', taskId)
 
-    this.dialogTitle = '编辑任务'
+    this.dialogTitle = this.$t('tasks.form.editTitle')
     this.dialogVisible = true
     this.taskForm = {
       id: taskId, // 使用解析出的ID
@@ -1326,7 +1318,7 @@ export default class TaskManage extends Vue {
         }
       } catch (e) {
         console.error('清理任务配置解析失败:', e)
-        this.$message.error('清理任务配置解析失败，使用默认配置')
+        this.$message.error(this.$t('tasks.msg.cleanupConfigParseFailed'))
         this.cleanupConfig = {
           cleanup_level_3: true,
           cleanup_level_4: true,
@@ -1347,8 +1339,8 @@ export default class TaskManage extends Vue {
       const taskId = row.taskId || row.id || row.task_id || row.ID
 
       if (!taskId) {
-        this.$message.error('无法获取任务ID')
-        throw new Error('无法获取任务ID')
+        this.$message.error(this.$t('tasks.msg.noTaskId'))
+        throw new Error(this.$t('tasks.msg.noTaskId'))
       }
 
       console.log('=== View Logs Debug ===')
@@ -1358,7 +1350,7 @@ export default class TaskManage extends Vue {
       // 1. 先设置筛选条件，再切换页签，确保页签 watcher 不会先请求全部日志。
       logQueryParams.task_id = taskId
       logQueryParams.page = 1 // 重置到第一页
-      this.activeLogTaskName = row.taskName || `任务 ${taskId}`
+      this.activeLogTaskName = row.taskName || this.$t('tasks.msg.logTaskFallback', { id: taskId })
 
       // 清空其他筛选条件以提供更精确的结果。
       logQueryParams.task_name = ''
@@ -1375,11 +1367,11 @@ export default class TaskManage extends Vue {
       // 5. 获取日志列表
       await this.fetchLogList()
 
-      this.$message.success(`已切换到任务"${row.taskName}"的日志`)
+      this.$message.success(this.$t('tasks.msg.switchedLogs', { name: row.taskName }))
 
     } catch (error) {
       console.error('查看日志失败:', error)
-      this.$message.error('查看日志失败，请稍后重试')
+      this.$message.error(this.$t('tasks.msg.viewLogsFailed'))
     } finally {
       this.logLoading = false
     }
@@ -1387,44 +1379,41 @@ export default class TaskManage extends Vue {
 
   private async handleExecute(row: ScheduledTask) {
     if (row.platformAvailable === false) {
-      this.$message.warning('当前主机能力不支持该任务，未执行')
+      this.$message.warning(this.$t('tasks.msg.capabilityUnsupported'))
       return
     }
     // 检查任务是否启用
     if (!row.enabled) {
-      this.$message.warning(`任务 "${row.taskName}" 已禁用，无法启动。请先启用该任务。`)
+      this.$message.warning(this.$t('tasks.msg.taskDisabled', { name: row.taskName }))
       return
     }
 
     try {
       await executeTask({ id: row.taskId })
-      this.$message.success('任务执行成功')
+      this.$message.success(this.$t('tasks.msg.executeSuccess'))
       setTimeout(() => {
         this.fetchTaskList()
       }, 1000) // 延迟1秒刷新，等待状态更新
     } catch (error) {
       console.error('执行任务失败:', error)
       // 提取详细的错误信息
-      const error_msg = error && error.response && error.response.data
-        ? error.response.data.msg || error.response.data.message
-        : '执行任务失败'
-      this.$message.error(error_msg)
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.executeFailed')))
     }
   }
 
   private handleDelete(row: ScheduledTask) {
-    this.$confirm('确定要删除这个任务吗?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('tasks.msg.deleteConfirm'), this.$t('tasks.dialog.notice'), {
+      confirmButtonText: this.$t('tasks.dialog.confirm'),
+      cancelButtonText: this.$t('tasks.dialog.cancel'),
       type: 'warning'
     }).then(async() => {
       try {
         await deleteTasks({ ids: [row.taskId || row.id] }) // 优先使用taskId，兼容id字段
-        this.$message.success('删除成功')
+        this.$message.success(this.$t('tasks.msg.deleteSuccess'))
         this.fetchTaskList()
       } catch (error) {
         console.error('删除任务失败:', error)
-        this.$message.error('删除任务失败')
+        this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.deleteFailed')))
       }
     }).catch((action) => {
       // 捕获用户取消操作，避免未处理的Promise rejection错误
@@ -1441,25 +1430,25 @@ export default class TaskManage extends Vue {
   // 批量启用任务
   private async handleBatchEnable() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请选择要启用的任务')
+      this.$message.warning(this.$t('tasks.msg.selectToEnable'))
       return
     }
 
     try {
-      await this.$confirm(`确定要启用选中的 ${this.multipleSelection.length} 个任务吗？`, '批量启用', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tasks.msg.batchEnableConfirm', { count: this.multipleSelection.length }), this.$t('tasks.msg.batchEnableTitle'), {
+        confirmButtonText: this.$t('tasks.dialog.confirm'),
+        cancelButtonText: this.$t('tasks.dialog.cancel'),
         type: 'warning'
       })
 
       // TODO: 调用批量启用API
-      this.$message.success(`成功启用 ${this.multipleSelection.length} 个任务`)
+      this.$message.success(this.$t('tasks.msg.batchEnableSuccess', { count: this.multipleSelection.length }))
       this.multipleSelection = []
       this.fetchTaskList()
     } catch (error) {
       if (error !== 'cancel') {
         console.error('批量启用失败:', error)
-        this.$message.error('批量启用失败')
+        this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.batchEnableFailed')))
       }
     }
   }
@@ -1467,25 +1456,25 @@ export default class TaskManage extends Vue {
   // 批量禁用任务
   private async handleBatchDisable() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请选择要禁用的任务')
+      this.$message.warning(this.$t('tasks.msg.selectToDisable'))
       return
     }
 
     try {
-      await this.$confirm(`确定要禁用选中的 ${this.multipleSelection.length} 个任务吗？`, '批量禁用', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tasks.msg.batchDisableConfirm', { count: this.multipleSelection.length }), this.$t('tasks.msg.batchDisableTitle'), {
+        confirmButtonText: this.$t('tasks.dialog.confirm'),
+        cancelButtonText: this.$t('tasks.dialog.cancel'),
         type: 'warning'
       })
 
       // TODO: 调用批量禁用API
-      this.$message.success(`成功禁用 ${this.multipleSelection.length} 个任务`)
+      this.$message.success(this.$t('tasks.msg.batchDisableSuccess', { count: this.multipleSelection.length }))
       this.multipleSelection = []
       this.fetchTaskList()
     } catch (error) {
       if (error !== 'cancel') {
         console.error('批量禁用失败:', error)
-        this.$message.error('批量禁用失败')
+        this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.batchDisableFailed')))
       }
     }
   }
@@ -1493,14 +1482,14 @@ export default class TaskManage extends Vue {
   // 批量删除任务
   private async handleBatchDelete() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请选择要删除的任务')
+      this.$message.warning(this.$t('tasks.msg.selectToDelete'))
       return
     }
 
     try {
-      await this.$confirm(`确定要删除选中的 ${this.multipleSelection.length} 个任务吗？此操作不可恢复！`, '批量删除', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tasks.msg.batchDeleteConfirm', { count: this.multipleSelection.length }), this.$t('tasks.msg.batchDeleteTitle'), {
+        confirmButtonText: this.$t('tasks.dialog.confirm'),
+        cancelButtonText: this.$t('tasks.dialog.cancel'),
         type: 'error'
       })
 
@@ -1509,13 +1498,13 @@ export default class TaskManage extends Vue {
         .map(task => task.id)
         .filter((id): id is number => id !== undefined && id !== null)
       await deleteTasks({ task_ids: ids })
-      this.$message.success(`成功删除 ${ids.length} 个任务`)
+      this.$message.success(this.$t('tasks.msg.batchDeleteSuccess', { count: ids.length }))
       this.multipleSelection = []
       this.fetchTaskList()
     } catch (error) {
       if (error !== 'cancel') {
         console.error('批量删除失败:', error)
-        this.$message.error('批量删除失败')
+        this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.batchDeleteFailed')))
       }
     }
   }
@@ -1527,14 +1516,14 @@ export default class TaskManage extends Vue {
 
       // 主机形态兜底拦截（服务端同款判定，双保险——见 isTaskTypeDisabled）
       if (this.isTaskTypeDisabled(this.taskForm.task_type)) {
-        this.$message.error('当前主机形态不支持自定义脚本任务')
+        this.$message.error(this.$t('tasks.msg.customScriptUnsupported'))
         return
       }
 
       // 如果是清理任务类型，将 cleanupConfig 转为 JSON 赋值给 executor
       if (this.taskForm.task_type === 5) {
         if (this.cleanupConfig.cleanup_level_3 && !this.level3Available && !this.taskForm.id) {
-          this.$message.error('当前主机不支持等级3文件操作，请关闭等级3后再创建任务')
+          this.$message.error(this.$t('tasks.msg.level3Unsupported'))
           return
         }
         this.taskForm.executor = JSON.stringify(this.cleanupConfig)
@@ -1542,17 +1531,17 @@ export default class TaskManage extends Vue {
 
       if (this.taskForm.id) {
         await updateTask(this.taskForm as TaskUpdateRequest)
-        this.$message.success('更新成功')
+        this.$message.success(this.$t('tasks.msg.updateSuccess'))
       } else {
         await createTask(this.taskForm as TaskCreateRequest)
-        this.$message.success('创建成功')
+        this.$message.success(this.$t('tasks.msg.createSuccess'))
       }
 
       this.dialogVisible = false
       this.fetchTaskList()
     } catch (error) {
       console.error('保存任务失败:', error)
-      this.$message.error('保存任务失败')
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.saveFailed')))
     } finally {
       this.submitLoading = false
     }
@@ -1597,14 +1586,14 @@ export default class TaskManage extends Vue {
 
   private getTaskTypeName(type: number): string {
     const typeNames = {
-      0: 'shell脚本',
-      1: 'cmd脚本',
-      2: 'powershell脚本',
-      3: 'python脚本',
-      4: 'python内部类',
-      5: '清理回收站'
+      0: this.$t('tasks.type.shell'),
+      1: this.$t('tasks.type.cmd'),
+      2: this.$t('tasks.type.powershell'),
+      3: this.$t('tasks.type.python'),
+      4: this.$t('tasks.type.pythonClass'),
+      5: this.$t('tasks.type.cleanup')
     }
-    return typeNames[type] || '未知'
+    return typeNames[type] || this.$t('tasks.type.unknownShort')
   }
 
   private getTaskTypeTag(type: number): string {
@@ -1619,9 +1608,14 @@ export default class TaskManage extends Vue {
     return tags[type] || 'info'
   }
 
-  private getStatusName(statusName: string): string {
-    // 直接使用后端返回的状态名称
-    return statusName || '未知状态'
+  private getStatusName(row: BTDeckTypes.ScheduledTask): string {
+    // 状态展示按稳定码位（taskStatus 0/1/2）本地化；未知码回退后端原文（Q02）
+    const statusNames: Record<number, string> = {
+      0: this.$t('tasks.status.waiting'),
+      1: this.$t('tasks.status.running'),
+      2: this.$t('tasks.status.idle')
+    }
+    return statusNames[row.taskStatus] ?? (row.taskStatusName || this.$t('tasks.status.unknown'))
   }
 
   private getStatusTag(statusName: string): string {
@@ -1684,11 +1678,11 @@ export default class TaskManage extends Vue {
   private async handleInterrupt(row: ScheduledTask) {
     try {
       await interruptTask(row.taskId)
-      this.$message.success('任务中断成功')
+      this.$message.success(this.$t('tasks.msg.interruptSuccess'))
       this.fetchTaskList()
     } catch (error) {
       console.error('中断任务失败:', error)
-      this.$message.error('中断任务失败')
+      this.$message.error(this.$t('tasks.msg.interruptFailed'))
     }
   }
 
@@ -1735,12 +1729,12 @@ export default class TaskManage extends Vue {
   // 获取执行器标签
   private getExecutorLabel(): string {
     const labels = {
-      0: 'Shell脚本',
-      1: 'Cmd脚本',
-      2: 'PowerShell脚本',
-      3: 'Python脚本'
+      0: this.$t('tasks.type.executorShell'),
+      1: this.$t('tasks.type.executorCmd'),
+      2: this.$t('tasks.type.executorPowershell'),
+      3: this.$t('tasks.type.executorPython')
     }
-    return labels[this.taskForm.task_type] || '执行内容'
+    return labels[this.taskForm.task_type] || this.$t('tasks.type.executorFallback')
   }
 
   // 获取编辑器语言
@@ -1759,7 +1753,7 @@ export default class TaskManage extends Vue {
     this.syntaxErrors = errors
     this.syntaxValidationResult = {
       valid: errors.length === 0,
-      message: errors.length === 0 ? '语法检查通过' : `发现 ${errors.length} 个语法错误`
+      message: errors.length === 0 ? this.$t('tasks.syntax.passTitle') : this.$t('tasks.cronEditor.rules.syntaxErrorCount', { count: errors.length })
     }
     this.updateSubmitStatus()
   }
@@ -1786,7 +1780,7 @@ export default class TaskManage extends Vue {
   // 编辑器初始化错误处理
   private handleEditorInitError(error: any) {
     console.error('编辑器初始化失败:', error)
-    this.$message.warning('代码编辑器加载失败，已切换到基础模式')
+    this.$message.warning(this.$t('tasks.msg.editorFallback'))
   }
 
   // 编辑器焦点事件
@@ -1864,7 +1858,7 @@ export default class TaskManage extends Vue {
         }
       } catch (error) {
         console.error('加载日志数据失败:', error)
-        this.$message.error('加载日志数据失败')
+        this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.loadLogsFailed')))
       }
     }
   }
@@ -1917,7 +1911,7 @@ export default class TaskManage extends Vue {
       this.logTotal = response.data?.total || 0
     } catch (error) {
       console.error('获取日志列表失败:', error)
-      this.$message.error('获取日志列表失败')
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.fetchLogsFailed')))
     } finally {
       this.logLoading = false
     }
@@ -1975,14 +1969,14 @@ export default class TaskManage extends Vue {
   // 获取日志任务类型名称
   private getLogTaskTypeName(type: number): string {
     const typeNames = {
-      0: 'shell脚本',
-      1: 'cmd脚本',
-      2: 'powershell脚本',
-      3: 'python脚本',
-      4: 'python内部类',
-      5: '清理回收站'
+      0: this.$t('tasks.type.shell'),
+      1: this.$t('tasks.type.cmd'),
+      2: this.$t('tasks.type.powershell'),
+      3: this.$t('tasks.type.python'),
+      4: this.$t('tasks.type.pythonClass'),
+      5: this.$t('tasks.type.cleanup')
     }
-    return typeNames[type] || '未知类型'
+    return typeNames[type] || this.$t('tasks.type.unknownType')
   }
 
   // 获取日志任务类型标签
@@ -2005,15 +1999,15 @@ export default class TaskManage extends Vue {
       const url = window.URL.createObjectURL(blob as unknown as Blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `任务日志_${Date.now()}.${command}`
+      a.download = `${this.$t('tasks.msg.exportFilenamePrefix')}${Date.now()}.${command}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
-      this.$message.success('导出成功')
+      this.$message.success(this.$t('tasks.msg.exportSuccess'))
     } catch (error) {
       console.error('导出日志失败:', error)
-      this.$message.error('导出失败，请稍后重试')
+      this.$message.error(this.$t('tasks.msg.exportFailed'))
     }
   }
 
@@ -2034,16 +2028,16 @@ export default class TaskManage extends Vue {
         keep_error: this.logCleanupForm.keep_error
       })
       if (res.code === '200') {
-        this.$message.success(res.msg || '日志清理完成')
+        this.$message.success(this.$t('tasks.msg.cleanupDone'))
         this.logCleanupDialogVisible = false
         await this.fetchLogStatistics()
         await this.fetchLogList()
       } else {
-        this.$message.error(res.msg || '清理失败')
+        this.$message.error(apiResponseMessage(res, this.$t('tasks.msg.cleanupFailed')))
       }
     } catch (error) {
       console.error('清理日志失败:', error)
-      this.$message.error('清理失败，请稍后重试')
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.cleanupRetry')))
     } finally {
       this.logCleanupLoading = false
     }
@@ -2052,18 +2046,18 @@ export default class TaskManage extends Vue {
   // 日志批量删除处理（对接 deleteTaskLogs，传 log_ids）
   private async handleLogBatchDelete() {
     if (this.logMultipleSelection.length === 0) {
-      this.$message.warning('请选择要删除的日志')
+      this.$message.warning(this.$t('tasks.msg.selectLogsToDelete'))
       return
     }
 
     try {
-      await this.$confirm(`确定要删除选中的 ${this.logMultipleSelection.length} 条日志吗？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tasks.msg.logDeleteConfirm', { count: this.logMultipleSelection.length }), this.$t('tasks.dialog.notice'), {
+        confirmButtonText: this.$t('tasks.dialog.confirm'),
+        cancelButtonText: this.$t('tasks.dialog.cancel'),
         type: 'warning'
       })
     } catch {
-      this.$message.info('已取消删除')
+      this.$message.info(this.$t('tasks.msg.logDeleteCancelled'))
       return
     }
 
@@ -2071,16 +2065,16 @@ export default class TaskManage extends Vue {
       const ids = this.logMultipleSelection.map((log: BTDeckTypes.TaskLog) => log.logId)
       const res = await deleteTaskLogs({ log_ids: ids })
       if (res.code === '200') {
-        this.$message.success(res.msg || `成功删除 ${this.logMultipleSelection.length} 条日志`)
+        this.$message.success(this.$t('tasks.msg.logDeleteSuccess', { count: this.logMultipleSelection.length }))
         this.logMultipleSelection = []
         await this.fetchLogStatistics()
         await this.fetchLogList()
       } else {
-        this.$message.error(res.msg || '删除失败')
+        this.$message.error(apiResponseMessage(res, this.$t('tasks.msg.logDeleteFailed')))
       }
     } catch (error) {
       console.error('批量删除日志失败:', error)
-      this.$message.error('删除失败，请稍后重试')
+      this.$message.error(apiErrorMessage(error, this.$t('tasks.msg.logDeleteRetry')))
     }
   }
 
@@ -2097,7 +2091,7 @@ export default class TaskManage extends Vue {
     const selectedLog = this.selectedLog
     const message = this.$message
     if (!selectedLog?.logDetail) {
-      message.warning('暂无内容可复制')
+      message.warning(this.$t('tasks.logDetail.copyEmpty'))
       return
     }
 
@@ -2105,21 +2099,21 @@ export default class TaskManage extends Vue {
       // 构建复制内容（执行结果优先使用 outcome 六态文案，旧日志回退 success 布尔两态）
       const outcomeText = resolveTaskOutcomeMeta(
         (selectedLog as BTDeckTypes.TaskLog & { outcome?: TaskOutcome | null }).outcome
-      )?.text ?? (selectedLog.success ? '成功' : '失败')
+      )?.text ?? (selectedLog.success ? this.$t('tasks.logDetail.success') : this.$t('tasks.logDetail.failed'))
 
-      const content = `任务名称：${selectedLog.taskName}
-开始时间：${selectedLog.startTime}
-结束时间：${selectedLog.endTime}
-执行结果：${outcomeText}
-执行耗时：${selectedLog.duration}s
-执行详情：
+      const content = `${this.$t('tasks.logDetail.copyTaskName')}${selectedLog.taskName}
+${this.$t('tasks.logDetail.copyStart')}${selectedLog.startTime}
+${this.$t('tasks.logDetail.copyEnd')}${selectedLog.endTime}
+${this.$t('tasks.logDetail.copyResult')}${outcomeText}
+${this.$t('tasks.logDetail.copyDuration')}${selectedLog.duration}s
+${this.$t('tasks.logDetail.copyDetail')}
 ${selectedLog.logDetail}`
 
       await copyTextToClipboard(content)
-      message.success('内容已复制到剪贴板')
+      message.success(this.$t('tasks.logDetail.copyDone'))
     } catch (error) {
       console.error('复制失败:', error)
-      message.error('复制失败，请手动复制内容')
+      message.error(this.$t('tasks.logDetail.copyFailed'))
     }
   }
 
@@ -2143,7 +2137,7 @@ ${selectedLog.logDetail}`
         this.showPreviewDialog(response.data)
       } else {
         // 更友好的错误提示
-        const errorMsg = response.msg || '预览失败，请稍后重试'
+        const errorMsg = apiResponseMessage(response, this.$t('tasks.msg.previewFailed'))
         this.$message.error({
           message: errorMsg,
           duration: 5000,
@@ -2157,10 +2151,10 @@ ${selectedLog.logDetail}`
     } catch (error) {
       // 更友好的异常处理
       console.error('清理预览请求异常:', error)
-      const errorMessage = (error as Error).message || '网络异常，请检查连接'
+      const errorMessage = (error as Error).message || this.$t('tasks.msg.networkError')
 
       this.$message.error({
-        message: `预览失败：${errorMessage}`,
+        message: this.$t('tasks.msg.previewFailedWithReason', { message: errorMessage }),
         duration: 5000,
         showClose: true
       })

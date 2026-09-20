@@ -23,6 +23,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+# 双语 P6-4a 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段），
+# 动态 str(e)/task_id/任务值不进 msg（诊断只进日志），前端按 errors.byCode 本地化。
+def _tasks_error(reason_code: str, msg: str, code: str) -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
+
+
 class CronTaskCreate(BaseModel):
     """创建定时任务请求模型"""
 
@@ -211,21 +217,17 @@ BUILTIN_TASK_TYPES = {4, 5, 6}
 
 def _custom_script_error() -> CommonResponse:
     """自定义脚本任务默认关闭，避免通过定时任务入口执行任意命令。"""
-    return CommonResponse(
-        status="error",
-        msg="自定义脚本任务已被安全策略禁用；如确需启用，请设置 BTDECK_ALLOW_CUSTOM_SCRIPTS=True",
-        code="403",
-        data=None,
+    return _tasks_error(
+        "TASKS_CUSTOM_SCRIPTS_DISABLED",
+        "自定义脚本任务已被安全策略禁用；如确需启用，请设置 BTDECK_ALLOW_CUSTOM_SCRIPTS=True",
+        "403",
     )
 
 
 def _platform_unsupported_error() -> CommonResponse:
     """android-server 形态下自定义脚本unsupported 的统一降级响应（矩阵第 3 节）。"""
-    return CommonResponse(
-        status="error",
-        msg="当前主机形态（Android 服务端）不支持自定义脚本任务",
-        code="403",
-        data=None,
+    return _tasks_error(
+        "TASKS_CUSTOM_SCRIPTS_HOST_UNSUPPORTED", "当前主机形态（Android 服务端）不支持自定义脚本任务", "403"
     )
 
 
@@ -248,19 +250,13 @@ def _validate_task_type_allowed(task_type: int) -> Optional[CommonResponse]:
         if settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
             return None
         return _custom_script_error()
-    return CommonResponse(status="error", msg=f"不支持的任务类型: {task_type}", code="400", data=None)
+    logger.info(f"不支持的任务类型: {task_type}")
+    return _tasks_error("TASKS_UNSUPPORTED_TASK_TYPE", "不支持的任务类型", "400")
 
 
 def _type4_executor_error(executor: str) -> CommonResponse:
-    return CommonResponse(
-        status="error",
-        msg=(
-            "task_type=4 的 executor 仅允许 app.tasks. 命名空间下的内置类路径"
-            "（如 app.tasks.scheduler.downloader_cache_sync.CachedDownloaderSyncTask）"
-        ),
-        code="400",
-        data=None,
-    )
+    logger.info(f"type4 executor 白名单拒绝: {executor}")
+    return _tasks_error("TASKS_EXECUTOR_NOT_ALLOWED", "executor 类路径不在允许范围内", "400")
 
 
 def _validate_type4_executor(task_type: int, executor: Optional[str]) -> Optional[CommonResponse]:
@@ -551,10 +547,13 @@ async def create_cron_task(
                 status="success", msg="创建定时任务成功", code="200", data=camel_case_data.model_dump()
             )
         else:
-            return CommonResponse(status="error", msg=result.message, code="400", data=None)
+            # CRUD 业务失败（编码/名称冲突等）：明细属诊断信息只进日志，前端按 reasonCode 本地化
+            logger.info(f"创建定时任务被拒: {result.message}")
+            return _tasks_error("TASKS_TASK_CONFLICT", "任务编码或名称已存在，请修改后重试", "400")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"创建定时任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"创建定时任务失败: {str(e)}")
+        return _tasks_error("TASKS_CREATE_FAILED", "创建定时任务失败，请稍后重试", "500")
 
 
 @router.get("/list", response_model=CommonResponse)
@@ -586,7 +585,8 @@ async def get_cron_tasks(
             return CommonResponse(status="error", msg=result.message, code="500", data=None)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"获取定时任务列表失败: {str(e)}", code="500", data=None)
+        logger.error(f"获取定时任务列表失败: {str(e)}")
+        return _tasks_error("TASKS_LIST_FAILED", "获取任务列表失败，请稍后重试", "500")
 
 
 @router.get("/logs", response_model=CommonResponse)
@@ -619,7 +619,8 @@ async def get_task_logs(
             return CommonResponse(status="error", msg=result.message, code="500", data=None)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"获取任务日志失败: {str(e)}", code="500", data=None)
+        logger.error(f"获取任务日志失败: {str(e)}")
+        return _tasks_error("TASKS_LOG_LIST_FAILED", "获取任务日志失败，请稍后重试", "500")
 
 
 @router.get("/logs/statistics", response_model=CommonResponse)
@@ -645,7 +646,8 @@ async def get_task_logs_statistics(_user=Depends(require_authenticated_user), db
             return CommonResponse(status="error", msg=result.message, code="500", data=None)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"获取任务日志统计失败: {str(e)}", code="500", data=None)
+        logger.error(f"获取任务日志统计失败: {str(e)}")
+        return _tasks_error("TASKS_LOG_STATS_FAILED", "获取日志统计失败，请稍后重试", "500")
 
 
 @router.delete("/logs/delete", response_model=CommonResponse)
@@ -680,7 +682,8 @@ async def delete_task_logs(
             return CommonResponse(status="error", msg=result.message, code="400", data=None)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"删除任务日志失败: {str(e)}", code="500", data=None)
+        logger.error(f"删除任务日志失败: {str(e)}")
+        return _tasks_error("TASKS_LOG_DELETE_FAILED", "删除任务日志失败，请稍后重试", "500")
 
 
 @router.get("/logs/export")
@@ -733,7 +736,8 @@ async def export_task_logs(
         )
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"导出任务日志失败: {str(e)}", code="500", data=None)
+        logger.error(f"导出任务日志失败: {str(e)}")
+        return _tasks_error("TASKS_LOG_EXPORT_FAILED", "导出任务日志失败，请稍后重试", "500")
 
 
 @router.post("/logs/cleanup", response_model=CommonResponse)
@@ -760,9 +764,9 @@ async def cleanup_task_logs(
         keep_error = bool(payload.get("keep_error", False))
 
         if days is None and not keep_success and not keep_error:
-            return CommonResponse(status="error", msg="请至少指定一个清理条件", code="400", data=None)
+            return _tasks_error("TASKS_CLEANUP_CONDITION_REQUIRED", "请至少指定一个清理条件", "400")
         if days is not None and days < 0:
-            return CommonResponse(status="error", msg="days 必须大于等于 0", code="400", data=None)
+            return _tasks_error("TASKS_CLEANUP_DAYS_INVALID", "days 必须大于等于 0", "400")
 
         result = TaskLogsCRUD.cleanup_task_logs(db, days=days, keep_success=keep_success, keep_error=keep_error)
 
@@ -777,9 +781,11 @@ async def cleanup_task_logs(
             return CommonResponse(status="error", msg=result.message, code="400", data=None)
 
     except (TypeError, ValueError) as e:
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="422", data=None)
+        logger.error(f"清理日志参数错误: {str(e)}")
+        return _tasks_error("TASKS_CLEANUP_INVALID_PARAMS", "请求参数有误，请检查后重试", "422")
     except Exception as e:
-        return CommonResponse(status="error", msg=f"清理任务日志失败: {str(e)}", code="500", data=None)
+        logger.error(f"清理任务日志失败: {str(e)}")
+        return _tasks_error("TASKS_LOG_CLEANUP_FAILED", "清理任务日志失败，请稍后重试", "500")
 
 
 # 参数路径接口 - 必须在固定路径之后定义
@@ -801,12 +807,14 @@ async def get_cron_task(task_id: int, _user=Depends(require_authenticated_user),
                 status="success", msg="获取定时任务成功", code="200", data=camel_case_data.model_dump()
             )
         elif not result.success and result.error_code == DatabaseError.NOT_FOUND.value:
-            return CommonResponse(status="error", msg="定时任务不存在", code="404", data=None)
+            return _tasks_error("TASKS_NOT_FOUND", "定时任务不存在", "404")
         else:
-            return CommonResponse(status="error", msg=result.message, code="500", data=None)
+            logger.info(f"获取定时任务失败: {result.message}")
+            return _tasks_error("TASKS_GET_FAILED", "获取定时任务失败，请稍后重试", "500")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"获取定时任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"获取定时任务失败: {str(e)}")
+        return _tasks_error("TASKS_GET_FAILED", "获取定时任务失败，请稍后重试", "500")
 
 
 @router.put("/{task_id}", response_model=CommonResponse)
@@ -835,12 +843,14 @@ async def update_cron_task(
                 status="success", msg="更新定时任务成功", code="200", data=camel_case_data.model_dump()
             )
         elif not result.success and result.error_code == DatabaseError.NOT_FOUND.value:
-            return CommonResponse(status="error", msg="定时任务不存在", code="404", data=None)
+            return _tasks_error("TASKS_NOT_FOUND", "定时任务不存在", "404")
         else:
-            return CommonResponse(status="error", msg=result.message, code="400", data=None)
+            logger.info(f"更新定时任务被拒: {result.message}")
+            return _tasks_error("TASKS_TASK_CONFLICT", "任务编码或名称已存在，请修改后重试", "400")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"更新定时任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"更新定时任务失败: {str(e)}")
+        return _tasks_error("TASKS_UPDATE_FAILED", "更新定时任务失败，请稍后重试", "500")
 
 
 @router.delete("/{task_id}", response_model=CommonResponse)
@@ -857,12 +867,14 @@ async def delete_cron_task(task_id: int, _user=Depends(require_authenticated_use
 
             return CommonResponse(status="success", msg="删除定时任务成功", code="200", data=None)
         elif not result.success and result.error_code == DatabaseError.NOT_FOUND.value:
-            return CommonResponse(status="error", msg="定时任务不存在", code="404", data=None)
+            return _tasks_error("TASKS_NOT_FOUND", "定时任务不存在", "404")
         else:
-            return CommonResponse(status="error", msg=result.message, code="400", data=None)
+            logger.info(f"删除定时任务被拒: {result.message}")
+            return _tasks_error("TASKS_DELETE_FAILED", "删除定时任务失败，请稍后重试", "400")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"删除定时任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"删除定时任务失败: {str(e)}")
+        return _tasks_error("TASKS_DELETE_FAILED", "删除定时任务失败，请稍后重试", "500")
 
 
 @router.post("/{task_id}/start", response_model=CommonResponse)
@@ -878,7 +890,7 @@ async def start_task_immediately(
         if success:
             return CommonResponse(status="success", msg="任务启动成功", code="200", data=None)
         else:
-            return CommonResponse(status="error", msg="任务启动失败", code="400", data=None)
+            return _tasks_error("TASKS_EXECUTE_FAILED", "启动任务失败，请稍后重试", "400")
 
     except PlatformCapabilityUnsupportedError:
         raise
@@ -886,7 +898,8 @@ async def start_task_immediately(
         # 业务逻辑异常，返回具体错误信息
         return CommonResponse(status="error", msg=str(e), code="400", data=None)
     except Exception as e:
-        return CommonResponse(status="error", msg=f"启动任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"启动任务失败: {str(e)}")
+        return _tasks_error("TASKS_EXECUTE_FAILED", "启动任务失败，请稍后重试", "500")
 
 
 @router.post("/{task_id}/pause", response_model=CommonResponse)
@@ -900,10 +913,11 @@ async def pause_task(task_id: int, _user=Depends(require_authenticated_user), db
         if success:
             return CommonResponse(status="success", msg="任务暂停成功", code="200", data=None)
         else:
-            return CommonResponse(status="error", msg="任务暂停失败", code="400", data=None)
+            return _tasks_error("TASKS_PAUSE_FAILED", "暂停任务失败，请稍后重试", "400")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"暂停任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"暂停任务失败: {str(e)}")
+        return _tasks_error("TASKS_PAUSE_FAILED", "暂停任务失败，请稍后重试", "500")
 
 
 @router.post("/{task_id}/resume", response_model=CommonResponse)
@@ -917,10 +931,11 @@ async def resume_task(task_id: int, _user=Depends(require_authenticated_user), d
         if success:
             return CommonResponse(status="success", msg="任务恢复成功", code="200", data=None)
         else:
-            return CommonResponse(status="error", msg="任务恢复失败", code="400", data=None)
+            return _tasks_error("TASKS_RESUME_FAILED", "恢复任务失败，请稍后重试", "400")
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"恢复任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"恢复任务失败: {str(e)}")
+        return _tasks_error("TASKS_RESUME_FAILED", "恢复任务失败，请稍后重试", "500")
 
 
 @router.post("/{task_id}/interrupt", response_model=CommonResponse)
@@ -941,11 +956,12 @@ async def interrupt_task(
             return CommonResponse(status="success", msg="任务中断成功", code="200", data=None)
         else:
             await _audit_task_interrupt(request, current_user.username, task_id, "failed", db)
-            return CommonResponse(status="error", msg="任务中断失败", code="400", data=None)
+            return _tasks_error("TASKS_INTERRUPT_FAILED", "中断任务失败，请稍后重试", "400")
 
     except Exception as e:
         await _audit_task_interrupt(request, current_user.username, task_id, "failed", db, error_message=str(e))
-        return CommonResponse(status="error", msg=f"中断任务失败: {str(e)}", code="500", data=None)
+        logger.error(f"中断任务失败: {str(e)}")
+        return _tasks_error("TASKS_INTERRUPT_FAILED", "中断任务失败，请稍后重试", "500")
 
 
 async def _audit_task_interrupt(
@@ -1016,7 +1032,8 @@ async def validate_script_syntax(
             data={"valid": True, "errors": [], "message": "基础校验通过"},
         )
     except Exception as e:
-        return CommonResponse(status="error", msg=f"脚本语法校验失败: {str(e)}", code="500", data=None)
+        logger.error(f"脚本语法校验失败: {str(e)}")
+        return _tasks_error("TASKS_SYNTAX_VALIDATE_FAILED", "脚本语法校验失败，请稍后重试", "500")
 
 
 @router.post("/validation/cron", response_model=CommonResponse)
@@ -1045,7 +1062,8 @@ async def validate_cron_expression(
             data={"valid": True, "message": "基础校验通过", "description": "基础校验，无法计算执行时间"},
         )
     except Exception as e:
-        return CommonResponse(status="error", msg=f"Cron表达式校验失败: {str(e)}", code="500", data=None)
+        logger.error(f"Cron表达式校验失败: {str(e)}")
+        return _tasks_error("TASKS_CRON_VALIDATE_FAILED", "Cron 表达式校验失败，请稍后重试", "500")
 
 
 @router.post("/validation/python-class", response_model=CommonResponse)
@@ -1092,7 +1110,8 @@ async def validate_python_class(
             data={"valid": True, "exists": True, "message": "基础校验通过", "classInfo": None},
         )
     except Exception as e:
-        return CommonResponse(status="error", msg=f"Python类路径验证失败: {str(e)}", code="500", data=None)
+        logger.error(f"Python类路径验证失败: {str(e)}")
+        return _tasks_error("TASKS_PYTHON_CLASS_FAILED", "Python 类路径验证失败，请稍后重试", "500")
 
 
 @router.get("/config/task-types", response_model=CommonResponse)
@@ -1198,7 +1217,8 @@ async def get_task_type_config(_user=Depends(require_authenticated_user)):
         return CommonResponse(status="success", msg="获取任务类型配置成功", code="200", data=response_data.model_dump())
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"获取任务类型配置失败: {str(e)}", code="500", data=None)
+        logger.error(f"获取任务类型配置失败: {str(e)}")
+        return _tasks_error("TASKS_TYPE_CONFIG_FAILED", "获取任务类型配置失败，请稍后重试", "500")
 
 
 # ========== 清理任务相关端点 ==========
@@ -1232,7 +1252,8 @@ async def preview_cleanup(
         return CommonResponse(status="success", msg="预览清理成功", code="200", data=preview)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"预览清理失败: {str(e)}", code="500", data=None)
+        logger.error(f"预览清理失败: {str(e)}")
+        return _tasks_error("TASKS_CLEANUP_PREVIEW_FAILED", "预览清理失败，请稍后重试", "500")
 
 
 @router.post("/cleanup/execute", response_model=CommonResponse)
@@ -1263,4 +1284,5 @@ async def execute_cleanup(
         return CommonResponse(status="success", msg="清理任务执行成功", code="200", data=result)
 
     except Exception as e:
-        return CommonResponse(status="error", msg=f"执行清理失败: {str(e)}", code="500", data=None)
+        logger.error(f"执行清理失败: {str(e)}")
+        return _tasks_error("TASKS_CLEANUP_EXECUTE_FAILED", "执行清理失败，请稍后重试", "500")

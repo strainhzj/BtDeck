@@ -19,7 +19,8 @@ describe('任务类型降级接线（源码契约）', () => {
   })
 
   it('禁用项显示形态说明', () => {
-    expect(source).toContain('当前主机形态不支持')
+    // 双语 P6-4a：禁用说明走 tasks.form.typeUnsupportedHint 键（zh 值含该文案，由语言包钉住）
+    expect(source).toContain("$t('tasks.form.typeUnsupportedHint')")
   })
 
   it('提交前兜底拦截（与服务端判定同款）', () => {

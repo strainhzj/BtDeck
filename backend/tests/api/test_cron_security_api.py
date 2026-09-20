@@ -111,7 +111,8 @@ class TestValidateTaskTypeAllowed:
             resp = _validate_task_type_allowed(bad_type)
             assert resp is not None
             assert resp.code == "400", f"未知类型 {bad_type} 须返回 400"
-            assert str(bad_type) in resp.msg
+            # 双语 P6-4a：类型值不再进 msg（只进日志），改按 reasonCode 稳定标识断言
+            assert resp.data == {"reasonCode": "TASKS_UNSUPPORTED_TASK_TYPE"}
 
     def test_unknown_type_400_even_when_scripts_enabled(self):
         """开关开启时未知类型仍返回 400（开关只放行 0-3，不放行未知）。"""

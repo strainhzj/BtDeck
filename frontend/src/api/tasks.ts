@@ -1,5 +1,7 @@
 /* eslint-disable camelcase */
 import request from '@/utils/request'
+// 双语 P6-4a：outcome 六态与 stale tooltip 是桌面/移动共享展示层，走 i18n（zh 与原内联逐字节一致）
+import { translate } from '@/i18n'
 
 export interface TaskParameters {
   [key: string]: any
@@ -192,22 +194,32 @@ export type TaskOutcome =
   | 'no_action'
   | 'cancelled'
 
-/** 六态对应的展示元信息（el-tag type + 中文文案） */
+/** 六态对应的展示元信息（el-tag type + 文案；文案由 getTaskOutcomeMeta 调用期翻译） */
 export interface TaskOutcomeMeta {
   /** el-tag type 取值 */
   type: 'success' | 'warning' | 'info' | 'danger'
-  /** 中文文案 */
+  /** 展示文案（当前语言） */
   text: string
 }
 
-/** 六态 → 展示元信息映射表（唯一事实来源） */
-const TASK_OUTCOME_META: Record<TaskOutcome, TaskOutcomeMeta> = {
-  success: { type: 'success', text: '成功' },
-  partial: { type: 'warning', text: '部分成功' },
-  skipped: { type: 'info', text: '已跳过' },
-  failed: { type: 'danger', text: '失败' },
-  no_action: { type: 'info', text: '无变化' },
-  cancelled: { type: 'info', text: '已取消' }
+/** 六态 → el-tag type 映射表（唯一事实来源；文案走 tasks.outcome.* 键） */
+const TASK_OUTCOME_TAG_TYPES: Record<TaskOutcome, TaskOutcomeMeta['type']> = {
+  success: 'success',
+  partial: 'warning',
+  skipped: 'info',
+  failed: 'danger',
+  no_action: 'info',
+  cancelled: 'info'
+}
+
+/** 六态值 → tasks.outcome.* 语言键位（值与键位仅 no_action/noAction 不同形） */
+const OUTCOME_MESSAGE_KEYS: Record<TaskOutcome, string> = {
+  success: 'success',
+  partial: 'partial',
+  skipped: 'skipped',
+  failed: 'failed',
+  no_action: 'noAction',
+  cancelled: 'cancelled'
 }
 
 /**
@@ -218,8 +230,13 @@ export function getTaskOutcomeMeta(outcome?: TaskOutcome | string | null): TaskO
   if (!outcome) {
     return null
   }
-  const meta = TASK_OUTCOME_META[outcome as TaskOutcome]
-  return meta || null
+  const tagType = TASK_OUTCOME_TAG_TYPES[outcome as TaskOutcome]
+  if (!tagType) {
+    return null
+  }
+  // 双语 P6-4a：text 按稳定 outcome 值取 tasks.outcome.* 键（no_action 蛇形值 → noAction 键位）
+  const key = OUTCOME_MESSAGE_KEYS[outcome as TaskOutcome] || 'success'
+  return { type: tagType, text: translate(`tasks.outcome.${key}`) }
 }
 
 /**
@@ -247,12 +264,12 @@ export function getStaleTooltipText(
   lastAttemptAt?: string | null
 ): string {
   if (lastAttemptAt && !lastSuccessfulDataAt) {
-    return `任务自 ${lastAttemptAt} 起已有执行尝试，但尚无成功数据更新（数据陈旧）`
+    return translate('tasks.stale.attemptOnly', { time: lastAttemptAt })
   }
   if (lastSuccessfulDataAt) {
-    return `数据陈旧：最后数据更新时间为 ${lastSuccessfulDataAt}`
+    return translate('tasks.stale.lastSuccess', { time: lastSuccessfulDataAt })
   }
-  return '数据陈旧：最近一次数据更新距今过久'
+  return translate('tasks.stale.generic')
 }
 
 export interface TaskLogListData {
@@ -357,7 +374,7 @@ export function deleteTasks(data: TaskDeleteRequest): Promise<ApiResponse<any>> 
 
     return {
       status: allSuccess ? 'success' : 'error',
-      msg: allSuccess ? '删除成功' : `${failureCount}个任务删除失败`,
+      msg: allSuccess ? translate('tasks.msg.deleteSuccess') : translate('tasks.msg.batchDeleteFailedCount', { count: failureCount }),
       code: allSuccess ? '200' : '400',
       data: null
     }

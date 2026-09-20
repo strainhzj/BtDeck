@@ -92,7 +92,13 @@ const AUDITED_FILES = [
   'src/views/tracker/components/KeywordTagCard.vue',
   'src/views/tracker/components/MatchTimeline.vue',
   'src/views/tracker/components/TestResultSummary.vue',
-  'src/utils/tracker.ts'
+  'src/utils/tracker.ts',
+  // P6-4a（定时任务域）新增扫描面
+  'src/views/tasks/index.vue',
+  'src/components/tasks/CronEditor.vue',
+  'src/components/tasks/MonacoEditor.vue',
+  'src/components/tasks/PythonClassSelector.vue',
+  'src/api/tasks.ts'
 ]
 
 /**
@@ -135,6 +141,160 @@ const ALLOWLIST: Array<{ file: string, contains: string, reason: string }> = [
     file: 'src/utils/tracker.ts',
     contains: "throw new Error('JSON格式不正确')",
     reason: 'parseJSON 内部异常消息：调用方（test.vue 历史加载）捕获后仅进日志，不进入任何用户提示'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "task.taskStatusName === '运行中' || task.taskStatusName === '空闲'",
+    reason: '后端 taskStatusName 中文值**数据匹配**（可执行性判定口径，非展示文案）；'
+      + '展示已按 taskStatus 稳定码位走 tasks.status.* 键'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "task.taskStatusName === '已暂停'",
+    reason: '同上：后端状态名数据匹配（isTaskInterruptible 口径）'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "task.taskStatusName === '失败' || task.taskStatusName === '已完成'",
+    reason: '同上：后端状态名数据匹配'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'等待运行': 'info',",
+    reason: '状态名→el-tag 类型映射的**键**为后端中文状态名（数据值匹配），值是颜色非文案；'
+      + '展示走 getStatusName 码位键'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'运行中': 'success',",
+    reason: '同上：状态名数据键映射'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'空闲': 'info',",
+    reason: '同上：状态名数据键映射'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'已暂停': 'warning',",
+    reason: '同上：状态名数据键映射'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'已停止': 'info',",
+    reason: '同上：状态名数据键映射'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'已完成': 'success',",
+    reason: '同上：状态名数据键映射'
+  },
+  {
+    file: 'src/views/tasks/index.vue',
+    contains: "'失败': 'danger'",
+    reason: '同上：状态名数据键映射（map 末项，无尾逗号形态）'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: 'value="基础"',
+    reason: '筛选 value 为模板 category 中文数据值（匹配语义），label 已走 tasks.cronEditor.category.* 键'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: 'value="小时"',
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: 'value="日常"',
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: 'value="工作日"',
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: 'value="周末"',
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "category: '基础'",
+    reason: '内置模板 category 中文数据值（筛选匹配 + CSS 类名 template-category-* + tag 类型映射），'
+      + '名称/描述展示已走 templates.* 键（key 身份）'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "category: '小时'",
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "category: '日常'",
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "category: '工作日'",
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "category: '周末'",
+    reason: '同上：category 数据值'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "'基础': 'primary'",
+    reason: 'category→el-tag 类型映射键（数据值匹配），值是类型非文案'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "'小时': 'success'",
+    reason: '同上：category 数据键映射'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "'日常': 'info'",
+    reason: '同上：category 数据键映射'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "'工作日': 'warning'",
+    reason: '同上：category 数据键映射'
+  },
+  {
+    file: 'src/components/tasks/CronEditor.vue',
+    contains: "'周末': 'danger'",
+    reason: '同上：category 数据键映射'
+  },
+  {
+    file: 'src/components/tasks/PythonClassSelector.vue',
+    contains: "'备份': 'warning'",
+    reason: '类目→el-tag 类型映射键（后端历史 category 中文数据值），值是颜色非文案；'
+      + '预定义类列表已改由后端 type-config 驱动（描述 Q02 原文透传）'
+  },
+  {
+    file: 'src/components/tasks/PythonClassSelector.vue',
+    contains: "'自定义': 'primary'",
+    reason: '同上：类目数据键映射（map 末项）'
+  },
+  {
+    file: 'src/components/tasks/PythonClassSelector.vue',
+    contains: "'清理': 'info'",
+    reason: '同上：类目数据键映射'
+  },
+  {
+    file: 'src/components/tasks/PythonClassSelector.vue',
+    contains: "'同步': 'success'",
+    reason: '同上：类目数据键映射'
+  },
+  {
+    file: 'src/components/tasks/PythonClassSelector.vue',
+    contains: "'监控': 'danger'",
+    reason: '同上：类目数据键映射'
   }
 ]
 
