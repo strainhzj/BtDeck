@@ -1,5 +1,6 @@
 /* eslint-disable camelcase */
 import { NotificationFailureItem } from '@/api/notification'
+import { translate } from '@/i18n'
 
 /**
  * 通知内容 Markdown-lite 渲染：桌面通知详情弹窗与移动通知详情共用，保证两端文本渲染一致。
@@ -93,7 +94,7 @@ export function plainNotificationContent(content: string): string {
     .trim()
 }
 
-/** 失败明细展示目标名：按文件名/路径字段依次回退，缺省显示记录 id */
+/** 失败明细展示目标名：按文件名/路径字段依次回退，缺省显示记录 id（P6-5 双语） */
 export function notificationFailureTarget(item: NotificationFailureItem): string {
-  return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')
+  return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? translate('common.notifications.failureRecord', { id: String(item.id) }) : translate('common.notifications.failureUnknown'))
 }

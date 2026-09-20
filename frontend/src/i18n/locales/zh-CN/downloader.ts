@@ -38,6 +38,27 @@ export const downloader = {
     deleteSuccess: '删除成功',
     deleteFailed: '删除失败'
   },
+  /** 同步任务终态提示（P6-5 遗漏扫描补译：sync-task.ts 共享层，桌面/移动同源；detail 为后端数据原文） */
+  sync: {
+    cancelled: '{name} 同步已取消',
+    partial: '{name} 同步部分完成',
+    failed: '{name} 同步失败',
+    done: '{name} 同步完成',
+    /** 终态附带的后端 detail 拼接（：detail） */
+    detailSuffix: '：{detail}'
+  },
+  /** Vuex action 错误兜底（P6-5：后端 msg 缺失时的当前语言提示） */
+  store: {
+    getSettingsFailed: '获取设置失败',
+    updateSettingsFailed: '更新设置失败',
+    getCapabilitiesFailed: '获取能力信息失败',
+    getTemplatesFailed: '获取模板列表失败',
+    getTemplateDetailFailed: '获取模板详情失败',
+    createTemplateFailed: '创建模板失败',
+    updateTemplateFailed: '更新模板失败',
+    deleteTemplateFailed: '删除模板失败',
+    applyTemplateFailed: '应用模板失败'
+  },
   page: {
     management: '下载器管理',
     filters: '下载器筛选与操作',

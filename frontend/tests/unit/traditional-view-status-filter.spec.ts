@@ -10,7 +10,7 @@ describe('TraditionalView 状态过滤器', () => {
     const items = buildTraditionalStatusFilterItems([
       { icon: '⬆️', label: '做种中', value: 'seeding' },
       { icon: '⬇️', label: '下载中', value: 'downloading' }
-    ])
+    ], { allLabel: '全部', activeLabel: '活动中' })
 
     expect(items.slice(0, 3).map(item => item.label)).toEqual([
       '全部',

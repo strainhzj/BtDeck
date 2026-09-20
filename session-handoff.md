@@ -1,3 +1,27 @@
+## 2026-09-20 交接：桌面双语 P6-5 收口批完成（全绿未提交，p6 保持 in_progress 待 R06 签认）
+
+### 已完成（用户确认四决策：三部分全做/死代码删除/banner 翻译/p6 不标 done）
+
+- **遗漏扫描修补**：桌面 199 生产文件预扫描 522 处中文命中逐一分类——真实漏译 ~40 条入键（404 联系支持 toast、ThemeSwitcher+theme.ts nameKey/descriptionKey、DemoModeBanner 四条、downloaderSettings store 九键、error-normalize 兑底、clipboard 两态、sync-task 四态终态通知（桌面/移动共享层）、notification-markdown 兑底、traditionalStatusFilter「全部/活动中」）；死代码删除 CompactTable.vue（零消费方，Options API 债 3→2）+ types 死数组 + theme-manager displayName + allThemes write-only。
+- **审计门禁翻转**：i18n-leftover-guard 由正向 65 面→**全桌面负向排除**（排 mobile/layout-mobile/i18n/nested/tree/demo/*.generated.ts/__tests__），白名单 60 条；扫描器增行内注释剔除。新建桌面文件默认入扫描。
+- **R06 清单**：PLANS/bilingual/orphan-files-review.md（37 条 zh/en + 6 议题，术语表钉死清理/彻底删除/删除副本三态不混译）**待用户签认**；R01～R05 见 delete-level-review.md 同样待签。
+- **C01 抽查**：新 p6-c01-mobile-chinese-regression.spec.ts 15 例 + 19 移动套件 293 例绿。
+- **验证全绿**：typecheck/lint 三项/build/全量 Jest 124 套 1814 例；后端零改动；根 ./init.sh 通过；roadmap 八处同步。
+
+### 下一步
+
+1. **P7（M2 收口）**：中英文完整回归、浏览器视觉验收（V01/V02）、R01～R06 人工签认（两份审校清单）、英文人工审校汇总、feature/roadmap/handoff 收口。
+2. P5/P6 均保持 in_progress，签认完成后再定 done 时机。
+3. Android 嵌入服务未同步 P4 之后的后端契约，下次出 APK 前重跑 stage-server.py。
+4. 本批未提交 Git（待用户指令）。
+
+### 坑位（下会话注意）
+
+- 无分号代码中行首 `(document as any)` 会被 ASI 粘连到上一行函数调用——行首括号语句前加 `;`。
+- sync-task 的 `SyncTaskStatusData` 只从 '@/api/downloader' 导入。
+- 审计白名单 contains 是行内子串匹配：同一字符串可覆盖多行；末项无尾逗号形态（`unknown: '未知'`）必须按实际写。
+
+---
 ## 2026-09-19（P6-2 下载器域收尾）：8 组件全量双语 + 设置模板 preset_key 迁移（全绿未提交）
 
 ## 2026-09-19（存量 CI 修复批）：远端后端 6 红已修（三类根因）+ head 防漂移门禁

@@ -1284,7 +1284,12 @@ export default class extends mixins(
         icon: getStatusIcon(opt.value),
         label: opt.label,
         value: opt.value
-      }))
+      })),
+      // 双语 P6-5：固定项（全部/活动中）同样按当前语言，不再硬编码中文
+      {
+        allLabel: this.$t('torrent.list.filters.all').toString(),
+        activeLabel: this.$t('torrent.list.filters.activeStatus').toString()
+      }
     )
   }
 

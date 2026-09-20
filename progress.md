@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-20（P6-5 收口批）：遗漏扫描修补 + 审计门禁翻转全桌面负向排除 + R06 清单 + C01 抽查（全绿未提交）
+
+- **范围（用户确认四决策）**：①三部分全做（遗漏扫描修补 / M2 门禁核查 / 移动中文回归抽查）；②CompactTable 与 types 死数组删除；③DemoModeBanner 翻译（demo fixtures 排除）；④p6 保持 in_progress（R06 签认前不 done）。
+- **遗漏扫描（预扫描桌面 199 生产文件 522 处中文命中，逐一分类）**：真实漏译 ~40 条全量入键——404.vue 联系支持 toast（common.notFound.supportComing）、ThemeSwitcher 切换 toast + theme.ts ThemeConfig name/description→nameKey/descriptionKey（common.theme.* 三套）、DemoModeBanner 四条（common.demo.*）、downloaderSettings store 16 处 throw 兑底（downloader.store 九键）、error-normalize 五处（errors.paramValidation/requestError，复用 errors.generic）、clipboard 两态（common.clipboard.*）、sync-task buildSyncTaskNotice 四态+detailSuffix（downloader.sync.*，桌面/移动共享层）、notification-markdown 兑底两键、traditionalStatusFilter「全部/活动中」改调用方传键（P6-1 域内真漏）；死代码删除——CompactTable.vue（零消费方，Options API 债 3→2）+ types/components.ts TASK_STATUS/TASK_TYPE_OPTIONS 死数组 + theme-manager displayName 死字段 + torrents/index allThemes write-only 字段。
+- **审计门禁翻转**：i18n-leftover-guard AUDITED_FILES 正向 65 面→全桌面负向排除（EXCLUDED_DIRS：views/mobile、layout/mobile、i18n、views/nested、views/tree、demo；EXCLUDED_FILE_PATTERNS：*.generated.ts、__tests__；逐项附理由）；扫描器增行内 HTML 注释与行尾块注释剔除；白名单 37→60 条（新增：router.ts meta.title zh 数据身份、status-config label 八条、advancedSearchFields label 兑底十三条、advancedSearchState 条件组回退名 T01）；防空转断言扫描集 >150 文件。新建桌面文件自此默认入扫描。
+- **M2 门禁核查（机器可核部分）**：routes-inventory §1 十八路由 + 壳层清单逐项核对全部在扫描集内且门禁绿；R06 审校清单产出 PLANS/bilingual/orphan-files-review.md（37 条 zh/en 对照 + 6 条议题 + 术语表钉死清理/彻底删除/删除副本三态不混译，**待用户签认**）；E03 核查无遗漏。
+- **C01 移动中文回归抽查**：新 tests/unit/p6-c01-mobile-chinese-regression.spec.ts 15 例（本批共享层 zh 逐字节 + en 切换：sync-task/notification-markdown/clipboard/error-normalize/traditionalStatusFilter/store 九键/主题/404+demo）；19 个移动套件全量 293 例绿。
+- **验证**：前端 typecheck、lint 三项、build、全量 Jest **124 套 1814 例全绿**（基线 123/1799）；后端零改动；根 ./init.sh 通过。roadmap 八处同步（根 README 功能域+元信息、entry i18n、components-layout 四行、utils-types 四行、store、views 三行、test-coverage 两行、risks）。
+- **坑**：①无分号代码中行首 `(document as any)` 括号表达式会被 ASI 粘连到上一行函数调用（setLocale('zh')
+(document...) → TS2349「Type void has no callable signatures」）——行首括号语句前加 `;`；②sync-task 的 SyncTaskStatusData 类型只从 '@/api/downloader' 导入（sync-task.ts 内 import 未 re-export）；③theme.ts 改 nameKey 后 shared-utils 契约断言同步改键引用 + i18n.t zh 字节锁。
+- **待办**：P7（完整回归 + 视觉验收 + 交接；含 R01～R06 人工签认——delete-level-review.md 与 orphan-files-review.md 两份待签）；Android 嵌入服务下次出 APK 前重跑 stage-server.py。未执行 Git 提交。
+
+---
 ## 2026-09-20（P6-4b 审计日志/孤儿文件域）：两页全量双语 + audit_logs/orphan_files 全端点 reasonCode 契约（全绿未提交）
 
 - **范围（沿用 P6-4a 已确认决策：契约随批）**：views/logs/audit.vue（198 中文行）+ views/orphan-files/index.vue（349 中文行）+ 后端 audit_logs.py（18 条 msg）/orphan_files.py（31 条 msg）。

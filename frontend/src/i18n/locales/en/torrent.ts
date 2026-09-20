@@ -38,7 +38,9 @@ export const torrent = {
       downloader: 'Downloader',
       trackerDomain: 'Tracker domain',
       category: 'Category',
-      tags: 'Tags'
+      tags: 'Tags',
+      /** Traditional-view virtual status filter items (P6-5 leftover fix: traditionalStatusFilter prepends) */
+      activeStatus: 'Active'
     },
     selectedPrefix: 'Selected',
     selectedSuffix: '',

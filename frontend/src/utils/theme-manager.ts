@@ -5,7 +5,6 @@ export type { ThemeType } from './theme'
 
 export interface ThemeConfig {
   name: string
-  displayName: string
   primary: string
   primaryLight: string
   primaryHover: string
@@ -24,7 +23,6 @@ export interface ThemeConfig {
 export const THEMES: Record<ThemeType, ThemeConfig> = {
   emerald: {
     name: 'emerald',
-    displayName: '翡翠绿',
     primary: '#10B981',
     primaryLight: '#34D399',
     primaryHover: '#047857',
@@ -41,7 +39,6 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
   },
   orange: {
     name: 'orange',
-    displayName: '活力橙',
     primary: '#F97316',
     primaryLight: '#FB923C',
     primaryHover: '#C2410C',
@@ -58,7 +55,6 @@ export const THEMES: Record<ThemeType, ThemeConfig> = {
   },
   graphite: {
     name: 'graphite',
-    displayName: '石墨灰',
     primary: '#6366F1',
     primaryLight: '#8B5CF6',
     primaryHover: '#4F46E5',

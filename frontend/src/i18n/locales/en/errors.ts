@@ -42,6 +42,9 @@ export const errors = {
     '503': 'Service unavailable'
   },
   httpFallback: 'Request failed ({status})',
+  /** P6-5 leftover fix: request-layer normalization fallbacks (error-normalize, E01 current-language fallback) */
+  paramValidation: 'Invalid request parameters',
+  requestError: 'Request error',
   /** E17: 422 field validation mapped by pydantic type (field is the last loc segment identifier) */
   validation: {
     missing: 'Missing required field: {field}',

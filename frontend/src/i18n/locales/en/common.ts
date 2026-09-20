@@ -39,7 +39,9 @@ export const common = {
     back: 'Go back',
     home: 'Home',
     helpTitle: 'Need help?',
-    contactSupport: 'Contact support'
+    contactSupport: 'Contact support',
+    /** P6-5 leftover fix: placeholder toast for the support entry */
+    supportComing: 'This feature is not available yet. Stay tuned.'
   },
   notifications: {
     title: 'Notifications',
@@ -56,6 +58,9 @@ export const common = {
     filterUnread: 'Unread',
     filterUpdate: 'Updates',
     filterSystem: 'System',
+    /** Failure-detail target fallbacks (notification-markdown): record id / placeholder when all fields are missing */
+    failureRecord: 'record {id}',
+    failureUnknown: 'unknown item',
     typeVersionUpdate: 'Version update',
     typeSystem: 'System',
     /** Event localization (bilingual P4 / E03): mapped by extra_data.event; unknown events fall back to raw text */
@@ -120,5 +125,31 @@ export const common = {
     expand: 'Expand page size options',
     collapse: 'Collapse page size options',
     options: 'Page size presets'
+  },
+  /** Theme switcher (P6-5 leftover fix: theme.ts config now uses nameKey/descriptionKey) */
+  theme: {
+    names: {
+      emerald: 'Emerald',
+      orange: 'Vibrant Orange',
+      graphite: 'Graphite'
+    },
+    descriptions: {
+      emerald: 'Natural flow + stable & reliable + efficient transfer',
+      orange: 'Vibrant energy + alert highlights + efficient management',
+      graphite: 'Professional & composed + minimal tech + efficient steward'
+    },
+    switchedTo: 'Switched to {name} theme'
+  },
+  /** Demo mode banner (P6-5: the banner is shell UI; demo fixture data stays out of scope) */
+  demo: {
+    badge: 'Demo Mode',
+    notice: 'Data is simulated locally — no backend side effects',
+    reset: 'Reset Data',
+    resetDone: 'Demo data has been reset'
+  },
+  /** Shared clipboard util (P6-5 leftover fix) */
+  clipboard: {
+    unsupported: 'Clipboard copy is not supported in this environment',
+    denied: 'The browser refused the copy command'
   }
 }

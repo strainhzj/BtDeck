@@ -45,7 +45,9 @@ export const torrent = {
       downloader: '下载器',
       trackerDomain: 'Tracker主域名',
       category: '分类',
-      tags: '标签'
+      tags: '标签',
+      /** 传统视图状态筛选虚拟项（P6-5 遗漏扫描补译：traditionalStatusFilter 前两项） */
+      activeStatus: '活动中'
     },
     selectedPrefix: '已选',
     selectedSuffix: '个',

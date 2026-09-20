@@ -39,7 +39,9 @@ export const common = {
     back: '返回上一页',
     home: '返回首页',
     helpTitle: '需要帮助？',
-    contactSupport: '联系支持团队'
+    contactSupport: '联系支持团队',
+    /** P6-5 遗漏扫描补译：联系支持入口的占位提示 */
+    supportComing: '支持功能开发中，敬请期待'
   },
   notifications: {
     title: '通知中心',
@@ -56,6 +58,9 @@ export const common = {
     filterUnread: '未读',
     filterUpdate: '更新',
     filterSystem: '系统',
+    /** 失败明细目标名兜底（notification-markdown）：字段全缺时显示记录 id / 占位 */
+    failureRecord: '记录 {id}',
+    failureUnknown: '未知项',
     typeVersionUpdate: '版本更新',
     typeSystem: '系统通知',
     /** 事件本地化（双语 P4 / E03）：按 extra_data.event 映射，未登记事件原文展示 */
@@ -120,5 +125,31 @@ export const common = {
     expand: '展开分页大小选项',
     collapse: '收起分页大小选项',
     options: '分页大小预设'
+  },
+  /** 主题切换器（P6-5 遗漏扫描补译：theme.ts 配置改 nameKey/descriptionKey） */
+  theme: {
+    names: {
+      emerald: '翡翠绿',
+      orange: '活力橙',
+      graphite: '石墨灰'
+    },
+    descriptions: {
+      emerald: '自然流动 + 稳定可靠 + 高效传输',
+      orange: '活力能量 + 警示提醒 + 高效管理',
+      graphite: '专业沉稳 + 极简科技 + 高效管家'
+    },
+    switchedTo: '已切换到{name}主题'
+  },
+  /** 演示模式横幅（P6-5：banner 属壳层 UI；demo fixtures 数据范围另立项） */
+  demo: {
+    badge: '演示模式',
+    notice: '数据为本地模拟，不产生后端副作用',
+    reset: '重置数据',
+    resetDone: '演示数据已重置'
+  },
+  /** 剪贴板共享工具（P6-5 遗漏扫描补译） */
+  clipboard: {
+    unsupported: '当前环境不支持剪贴板复制',
+    denied: '浏览器拒绝复制命令'
   }
 }

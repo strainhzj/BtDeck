@@ -1,11 +1,11 @@
 <template>
   <div v-if="demoEnabled" class="demo-mode-banner" role="status" aria-live="polite">
     <lucide-icon name="flask-conical" :size="15" :stroke-width="2" />
-    <strong>演示模式</strong>
-    <span>数据为本地模拟，不产生后端副作用</span>
+    <strong>{{ $t('common.demo.badge') }}</strong>
+    <span>{{ $t('common.demo.notice') }}</span>
     <button type="button" class="demo-mode-banner__reset" @click.stop="resetDemoData">
       <lucide-icon name="rotate-ccw" :size="13" :stroke-width="2" />
-      重置数据
+      {{ $t('common.demo.reset') }}
     </button>
   </div>
 </template>
@@ -16,6 +16,7 @@ import { Message } from 'element-ui'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import { emitDemoReset, isDemoMode } from '@/demo/config'
 import { demoStore } from '@/demo/demo-store'
+import i18n from '@/i18n'
 
 export default Vue.extend({
   name: 'DemoModeBanner',
@@ -29,7 +30,7 @@ export default Vue.extend({
     resetDemoData(): void {
       demoStore.reset()
       emitDemoReset()
-      Message.success('演示数据已重置')
+      Message.success(i18n.t('common.demo.resetDone').toString())
       if (typeof window !== 'undefined') window.location.reload()
     }
   }

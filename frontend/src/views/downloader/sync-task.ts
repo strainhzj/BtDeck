@@ -2,6 +2,7 @@ import {
   getSyncTaskStatus,
   SyncTaskStatusData
 } from '@/api/downloader'
+import { translate } from '@/i18n'
 
 const TERMINAL_SYNC_STATES = new Set(['success', 'failed', 'cancelled'])
 
@@ -25,23 +26,23 @@ interface SyncTaskTrackingOptions {
   onError: (error: unknown) => void
 }
 
-/** 将后台任务终态转换为下载器页面可直接展示的提示。 */
+/** 将后台任务终态转换为下载器页面可直接展示的提示（P6-5 双语：桌面/移动同源共享层）。 */
 export function buildSyncTaskNotice(task: SyncTaskStatusData, fallbackName: string): SyncTaskNotice {
   const name = task.downloader_nickname || fallbackName
   const outcome = task.result?.outcome || ''
   const detail = task.result?.message || task.error || ''
-  const suffix = detail ? `：${detail}` : ''
+  const suffix = detail ? translate('downloader.sync.detailSuffix', { detail }) : ''
 
   if (task.status === 'cancelled' || outcome === 'cancelled') {
-    return { level: 'warning', message: `${name} 同步已取消${suffix}` }
+    return { level: 'warning', message: translate('downloader.sync.cancelled', { name }) + suffix }
   }
   if (outcome === 'partial') {
-    return { level: 'warning', message: `${name} 同步部分完成${suffix}` }
+    return { level: 'warning', message: translate('downloader.sync.partial', { name }) + suffix }
   }
   if (task.status === 'failed' || task.result?.status === 'failed') {
-    return { level: 'error', message: `${name} 同步失败${suffix}` }
+    return { level: 'error', message: translate('downloader.sync.failed', { name }) + suffix }
   }
-  return { level: 'success', message: `${name} 同步完成${suffix}` }
+  return { level: 'success', message: translate('downloader.sync.done', { name }) + suffix }
 }
 
 /**

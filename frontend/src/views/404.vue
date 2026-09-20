@@ -88,7 +88,7 @@ export default class extends Vue {
    * 联系支持
    */
   private contactSupport() {
-    this.$message.info('支持功能开发中，敬请期待')
+    this.$message.info(this.$t('common.notFound.supportComing').toString())
   }
 }
 </script>

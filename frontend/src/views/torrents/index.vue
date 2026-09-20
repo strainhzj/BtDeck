@@ -1003,7 +1003,6 @@ export default class extends mixins(
 
   // 主题相关
   private currentTheme: ThemeType = 'emerald'
-  private allThemes = ThemeManager.getAllThemes()
 
   // 数据状态
   private list: any[] = []

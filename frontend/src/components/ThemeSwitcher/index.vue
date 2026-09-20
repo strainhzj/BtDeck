@@ -18,8 +18,8 @@
             :style="{backgroundColor: theme.color}"
           ></div>
           <div class="theme-info">
-            <span class="theme-label">{{ theme.name }}</span>
-            <span class="theme-desc">{{ theme.description }}</span>
+            <span class="theme-label">{{ $t(theme.nameKey) }}</span>
+            <span class="theme-desc">{{ $t(theme.descriptionKey) }}</span>
           </div>
           <LucideIcon
             v-if="theme.value === currentTheme"
@@ -50,7 +50,7 @@ export default class ThemeSwitcher extends Vue {
   }
 
   get currentThemeName() {
-    return THEMES.find(t => t.value === this.currentTheme)?.name || ''
+    return this.$t(THEMES.find(t => t.value === this.currentTheme)?.nameKey || '').toString()
   }
 
   get currentThemeColor() {
@@ -60,7 +60,8 @@ export default class ThemeSwitcher extends Vue {
   private handleThemeChange(theme: ThemeType) {
     this.currentTheme = theme
     setTheme(theme)
-    this.$message.success(`已切换到${THEMES.find(t => t.value === theme)?.name}主题`)
+    const name = this.$t(THEMES.find(t => t.value === theme)?.nameKey || '').toString()
+    this.$message.success(this.$t('common.theme.switchedTo', { name }).toString())
   }
 
   private mounted() {

@@ -38,6 +38,27 @@ export const downloader = {
     deleteSuccess: 'Deleted successfully',
     deleteFailed: 'Delete failed'
   },
+  /** Sync task terminal notices (P6-5 leftover fix: shared sync-task.ts layer, desktop/mobile; detail is raw backend data) */
+  sync: {
+    cancelled: 'Sync cancelled for {name}',
+    partial: 'Sync partially completed for {name}',
+    failed: 'Sync failed for {name}',
+    done: 'Sync completed for {name}',
+    /** Backend detail appended to terminal notices (: detail) */
+    detailSuffix: ': {detail}'
+  },
+  /** Vuex action fallbacks (P6-5: current-language message when backend msg is missing) */
+  store: {
+    getSettingsFailed: 'Failed to load settings',
+    updateSettingsFailed: 'Failed to update settings',
+    getCapabilitiesFailed: 'Failed to load capability info',
+    getTemplatesFailed: 'Failed to load the template list',
+    getTemplateDetailFailed: 'Failed to load template details',
+    createTemplateFailed: 'Failed to create the template',
+    updateTemplateFailed: 'Failed to update the template',
+    deleteTemplateFailed: 'Failed to delete the template',
+    applyTemplateFailed: 'Failed to apply the template'
+  },
   page: {
     management: 'Downloader Management',
     filters: 'Downloader filters and actions',

@@ -2,6 +2,9 @@
  * 下载器设置管理 - Vuex 状态管理模块
  */
 import { Module } from 'vuex'
+
+// 双语 P6-5：后端 msg 缺失时的错误兜底走 i18n（原内联中文逐字节入键）
+import { translate as t } from '@/i18n'
 import {
   DownloaderSettings,
   DownloaderCapabilities,
@@ -129,10 +132,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           })
           return response.data
         } else {
-          throw new Error(response.msg || '获取设置失败')
+          throw new Error(response.msg || t('downloader.store.getSettingsFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '获取设置失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.getSettingsFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -154,10 +157,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           })
           return response.data
         } else {
-          throw new Error(response.msg || '更新设置失败')
+          throw new Error(response.msg || t('downloader.store.updateSettingsFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '更新设置失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.updateSettingsFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -178,7 +181,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           })
           return response.data
         } else {
-          throw new Error(response.msg || '获取能力信息失败')
+          throw new Error(response.msg || t('downloader.store.getCapabilitiesFailed'))
         }
       } catch (error: any) {
         console.error('获取下载器能力失败:', error)
@@ -222,10 +225,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           commit('SET_TEMPLATES', response.data.list)
           return response.data.list
         } else {
-          throw new Error(response.msg || '获取模板列表失败')
+          throw new Error(response.msg || t('downloader.store.getTemplatesFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '获取模板列表失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.getTemplatesFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -240,7 +243,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
         if (response.code === '200') {
           return response.data
         } else {
-          throw new Error(response.msg || '获取模板详情失败')
+          throw new Error(response.msg || t('downloader.store.getTemplateDetailFailed'))
         }
       } catch (error) {
         throw error
@@ -257,10 +260,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           commit('ADD_TEMPLATE', response.data)
           return response.data
         } else {
-          throw new Error(response.msg || '创建模板失败')
+          throw new Error(response.msg || t('downloader.store.createTemplateFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '创建模板失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.createTemplateFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -278,10 +281,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           commit('UPDATE_TEMPLATE', response.data)
           return response.data
         } else {
-          throw new Error(response.msg || '更新模板失败')
+          throw new Error(response.msg || t('downloader.store.updateTemplateFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '更新模板失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.updateTemplateFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -299,10 +302,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           commit('DELETE_TEMPLATE', templateId)
           return true
         } else {
-          throw new Error(response.msg || '删除模板失败')
+          throw new Error(response.msg || t('downloader.store.deleteTemplateFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '删除模板失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.deleteTemplateFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {
@@ -329,10 +332,10 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
           })
           return response.data
         } else {
-          throw new Error(response.msg || '应用模板失败')
+          throw new Error(response.msg || t('downloader.store.applyTemplateFailed'))
         }
       } catch (error: any) {
-        const errorMsg = error?.response?.data?.msg || error?.message || '应用模板失败'
+        const errorMsg = error?.response?.data?.msg || error?.message || t('downloader.store.applyTemplateFailed')
         commit('SET_ERROR', errorMsg)
         throw error
       } finally {

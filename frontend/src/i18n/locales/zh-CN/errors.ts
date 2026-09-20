@@ -42,6 +42,9 @@ export const errors = {
     '503': '服务不可用'
   },
   httpFallback: '请求失败 ({status})',
+  /** P6-5 遗漏扫描补译：请求层归一化兜底（error-normalize，E01 未识别错误当前语言兜底） */
+  paramValidation: '参数校验失败',
+  requestError: '请求错误',
   /** E17：422 字段校验按 pydantic type 字典化（field 为 loc 末段标识符） */
   validation: {
     missing: '必填参数缺失：{field}',

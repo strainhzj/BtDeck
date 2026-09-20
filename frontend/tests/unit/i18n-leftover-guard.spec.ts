@@ -1,16 +1,18 @@
 /**
- * 双语遗留审计门禁 + 遗留补译行为契约（2026-09-19 清扫批）。
+ * 双语遗留审计门禁 + 遗留补译行为契约（2026-09-19 清扫批；P6-5 翻转为全桌面负向排除）。
  *
  * 背景：P1～P5 分批交付后，部分「已声明完成」的桌面面仍残留未译的**用户可见中文**
  * （壳层侧栏按钮、PWA 更新提示、主机能力面板、下载器控制台操作反馈、共享错误提取器、
  * 高级搜索请求构造校验、user store 抛出文案）——分批验收时未覆盖，属静默漏译。
  *
  * 本 spec 提供两类保护：
- * A. 审计门禁：对「已声明完成」的桌面面做机器扫描，**非注释/非 console 行**出现中文即红
- *    （白名单仅 6 条，逐条注明理由）。新增漏译会在此直接暴露，不再依赖人工发现。
- *    注：P6 计划内的文件（传统视图、孤儿文件、任务、Tracker 管理域、下载器各设置页签、
- *    全局替换弹窗、设置页 MCP/MoviePilot 页签、移动端页面）不在扫描集内——它们按计划
- *    尚未翻译，不属漏译。
+ * A. 审计门禁（P6-5 起为**负向排除**）：扫描全部桌面 src（除下方排除清单），
+ *    **非注释/非 console 行**出现中文即红；白名单逐条注明理由。
+ *    P6 收口前审计集是正向清单（65 面），新增文件忘登记就漏拦——P6-5 翻转后
+ *    新建桌面文件默认入扫描，无需登记。
+ *    排除范围（每项附理由）：移动端页面（C01：移动保持中文，另立项）、i18n 语言包
+ *    （zh-CN 本体）、vue-element-admin 模板残留（nested/tree，未路由）、demo 模式
+ *    （P0 定为另立项未确认）、后端生成契约（*.generated.ts，禁直改）、同目录测试。
  * B. 行为契约：锁定本批补译的共享层（错误提取、请求校验、同源校验）中英双语输出。
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
@@ -30,79 +32,44 @@ import i18n, { setLocale, translate } from '@/i18n'
 // A. 审计门禁：已声明完成的桌面面不得残留用户可见中文
 // ====================================================================
 
-/** P1～P5 已声明完成的桌面面（P6 计划内文件有意不列入） */
-const AUDITED_FILES = [
-  'src/layout/components/Navbar/index.vue',
-  'src/layout/components/Sidebar/index.vue',
-  'src/layout/components/NotificationDrawer/index.vue',
-  'src/layout/index.vue',
-  'src/views/login/index.vue',
-  'src/views/downloader/index.vue',
-  'src/views/torrents/index.vue',
-  'src/views/dashboard/index.vue',
-  'src/views/query-templates/index.vue',
-  'src/views/recycle-bin/index.vue',
-  'src/views/torrents/components/TorrentAddDialog.vue',
-  'src/views/torrents/components/TrackerOperationDialog.vue',
-  'src/views/torrents/components/TrackerDetailCard.vue',
-  'src/views/torrents/components/BatchOperationDialog.vue',
-  'src/components/torrents/QuickDeleteDuplicatesDialog.vue',
-  'src/components/torrents/AdvancedMultiSelect.vue',
-  'src/components/torrents/AdvancedSearchBuilder.vue',
-  'src/components/torrents/ConditionValueInput.vue',
-  'src/components/torrents/PageSizeCombobox.vue',
-  'src/components/BatchButton/index.vue',
-  'src/components/common/RefreshPrompt.vue',
-  'src/components/settings/PlatformCapabilityPanel.vue',
-  'src/components/CollapsiblePanel.vue',
-  'src/utils/formatters.ts',
-  'src/utils/request.ts',
-  'src/store/modules/user.ts',
-  'src/store/modules/app.ts',
-  'src/views/torrents/utils/torrentBatch.ts',
-  'src/views/torrents/mixins/torrentBatch.ts',
-  // P6-1（种子域收尾）新增扫描面
-  'src/views/torrents/TraditionalView.vue',
-  'src/views/torrents/components/TransferDialog.vue',
-  'src/views/torrents/components/BatchTransferDialog.vue',
-  'src/views/torrents/components/SetLocationDialog.vue',
-  'src/views/torrents/FileManagement.vue',
-  'src/views/torrents/components/GlobalReplaceTrackerDialog.vue',
-  // P6-2（下载器域收尾）新增扫描面
-  'src/views/downloader/components/DownloaderSettingsDialog.vue',
-  'src/views/downloader/components/SpeedSettingsTab.vue',
-  'src/views/downloader/components/AdvancedSettingsTab.vue',
-  'src/views/downloader/components/PathManagementTab.vue',
-  'src/views/downloader/components/PathMappingTab.vue',
-  'src/views/downloader/components/DownloaderPathManagement.vue',
-  'src/views/downloader/components/TagManagementTab.vue',
-  'src/views/downloader/components/TemplateSelectionDialog.vue',
-  'src/views/downloader/template-presets.ts',
-  // P6-3（Tracker 管理域）新增扫描面
-  'src/views/tracker/keywords-board.vue',
-  'src/views/tracker/keywords-search.vue',
-  'src/views/tracker/reannounce-config.vue',
-  'src/views/tracker/test.vue',
-  'src/views/tracker/components/AddKeywordDialog.vue',
-  'src/views/tracker/components/ApiLogViewer.vue',
-  'src/views/tracker/components/ImportKeywordsDialog.vue',
-  'src/views/tracker/components/KeywordCard.vue',
-  'src/views/tracker/components/KeywordListModal.vue',
-  'src/views/tracker/components/KeywordQuickActionDialog.vue',
-  'src/views/tracker/components/KeywordTagCard.vue',
-  'src/views/tracker/components/MatchTimeline.vue',
-  'src/views/tracker/components/TestResultSummary.vue',
-  'src/utils/tracker.ts',
-  // P6-4a（定时任务域）新增扫描面
-  'src/views/tasks/index.vue',
-  'src/components/tasks/CronEditor.vue',
-  'src/components/tasks/MonacoEditor.vue',
-  'src/components/tasks/PythonClassSelector.vue',
-  'src/api/tasks.ts',
-  // P6-4b（审计日志/孤儿文件域）新增扫描面
-  'src/views/logs/audit.vue',
-  'src/views/orphan-files/index.vue'
+/**
+ * P6-5：负向排除扫描集——扫描全部桌面 src，仅排除下列范围（逐项附理由）。
+ * 翻转前为正向 65 面清单（P1～P6 分批登记），新文件漏登记即漏拦。
+ */
+const EXCLUDED_DIRS: Array<{ dir: string, reason: string }> = [
+  { dir: 'src/views/mobile', reason: '移动端 /m/* 保持中文（主计划 C01：不要求移动全英文，另立项）' },
+  { dir: 'src/layout/mobile', reason: '移动版壳层（MobileLayout：底 Tab/抽屉菜单），同上属移动范围' },
+  { dir: 'src/i18n', reason: '语言包本体（zh-CN 文案即数据）' },
+  { dir: 'src/views/nested', reason: 'vue-element-admin 模板残留，未在路由表登记' },
+  { dir: 'src/views/tree', reason: '同上：模板残留' },
+  { dir: 'src/demo', reason: 'Demo 模式数据/编排（P0 定为另立项未确认范围；壳层横幅已单独双语）' }
 ]
+
+const EXCLUDED_FILE_PATTERNS: Array<{ pattern: RegExp, reason: string }> = [
+  { pattern: /\.generated\.ts$/, reason: '后端生成契约（禁直改；展示层按稳定值双取 label/labelEn）' },
+  { pattern: /__tests__\//, reason: '同目录测试（非运行时代码）' }
+]
+
+/** 收集扫描集：全部桌面 src 下 .vue/.ts，减去排除范围 */
+function collectAuditedFiles(): string[] {
+  const root = resolve(__dirname, '../../src')
+  const files: string[] = []
+  const walk = (dir: string): void => {
+    readdirSync(dir).forEach(name => {
+      const p = join(dir, name)
+      if (statSync(p).isDirectory()) walk(p)
+      else if (/\.(vue|ts)$/.test(p)) files.push(p)
+    })
+  }
+  walk(root)
+  return files
+    .map(p => p.replace(root, 'src'))
+    .filter(file => {
+      if (EXCLUDED_DIRS.some(e => file.startsWith(e.dir + '/'))) return false
+      if (EXCLUDED_FILE_PATTERNS.some(e => e.pattern.test(file))) return false
+      return true
+    })
+}
 
 /**
  * 白名单：允许出现中文的行（逐条注明理由）。匹配为「文件 + 行内容子串 + 理由」。
@@ -298,6 +265,125 @@ const ALLOWLIST: Array<{ file: string, contains: string, reason: string }> = [
     file: 'src/components/tasks/PythonClassSelector.vue',
     contains: "'监控': 'danger'",
     reason: '同上：类目数据键映射'
+  },
+  // ============ P6-5 翻转新增：数据身份 / 范围外登记 ============
+  {
+    file: 'src/router.ts',
+    contains: "title: '",
+    reason: '路由 meta.title 为 zh 数据身份（P1 titleKey 方案：resolvePageTitle 优先 titleKey，'
+      + '桌面 21 处已键化；/m/* 移动路由无 titleKey 属移动范围另立项）。行内 title'
+      + ' 不直出用户界面，新桌面路由必须带 titleKey 才有英文（i18n-locale spec 钉行为）'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '做种中',
+    reason: '状态选项 label 为 zh 数据身份：所有展示位均经 localizedStatusOptions/getStatusText 键化（做种中/下载中同串两处）'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '下载中',
+    reason: '同上：状态 label 数据身份（STATUS_OPTIONS 与 statusTextMap 两处）'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '已暂停',
+    reason: '同上：状态 label 数据身份'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '下载队列',
+    reason: '同上：状态 label 数据身份'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '错误',
+    reason: '同上：状态 label/映射数据身份（label 与 statusTextMap 两处）'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '检查中',
+    reason: '同上：状态 label 数据身份'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '已完成',
+    reason: '同上：statusTextMap 数据身份'
+  },
+  {
+    file: 'src/constants/status-config.ts',
+    contains: '未知',
+    reason: '同上：statusTextMap 未知码兑底（展示走 getStatusText 键）'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '标签'",
+    reason: '高级搜索字段 label 为键缺失兑底数据（searchFieldLabel：localized || label，防新增字段漏登键时渲染空）'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: 'Tracker 信息'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '种子名称'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '种子大小'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '保存路径'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '状态'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '下载器'",
+    reason: '同上：字段 label 兑底数据（动态候选选项为后端数据 B03）'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '分类'",
+    reason: '同上：字段 label 兑底数据（动态候选选项为后端数据 B03）'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '超级做种'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '添加时间'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '完成时间'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '比率'",
+    reason: '同上：字段 label 兑底数据（比率/比率限制同串前缀）'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchFields.ts',
+    contains: "label: '比率限制'",
+    reason: '同上：字段 label 兑底数据'
+  },
+  {
+    file: 'src/components/torrents/advancedSearchState.ts',
+    contains: 'name: group.name || `条件组${groupIndex + 1}`',
+    reason: 'T01 冻结：回退组名进入 API 载荷（groups[].name 业务参数），与后端预设组名同语义层，'
+      + '两语言 groups 保持一致（行内已有注释钉住）'
   }
 ]
 
@@ -305,7 +391,11 @@ function isAllowlisted(file: string, line: string): boolean {
   return ALLOWLIST.some(entry => entry.file === file && line.includes(entry.contains))
 }
 
-/** 提取「非注释、非 console、非样式段」的行；返回违规行（含中文且不在白名单）。 */
+/** 提取「非注释、非 console、非样式段」的行；返回违规行（含中文且不在白名单）。
+ *
+ * P6-5 增强：①行内 HTML 注释（`</div> <!-- ... -->`）整段剔除；
+ * ②行尾开启的块注释（`code /* ...`）不再误报并进入块注释态。
+ */
 function findChineseViolations(file: string): string[] {
   const absolute = resolve(__dirname, '../../', file)
   if (!existsSync(absolute)) return [`MISSING: ${file}`]
@@ -345,7 +435,15 @@ function findChineseViolations(file: string): string[] {
       previousWasConsole = false
       return
     }
-    const code = line.replace(/\/\/.*$/, '')
+    let code = line.replace(/\/\/.*$/, '')
+    // 行内 HTML 注释（含跨 `<a <!-- --> b` 的单行形态）整段剔除
+    code = code.replace(/<!--[\s\S]*?-->/g, '')
+    // 行内自闭块注释剔除；行尾开启的块注释则截断并进入块注释态
+    const blockOpen = code.indexOf('/*')
+    if (blockOpen >= 0) {
+      code = code.slice(0, blockOpen)
+      inBlockComment = true
+    }
     if (!/[\u4e00-\u9fff]/.test(code)) return
     const entry = `${file}:${index + 1} ${trimmed}`
     if (!isAllowlisted(file, trimmed)) violations.push(entry)
@@ -354,9 +452,12 @@ function findChineseViolations(file: string): string[] {
   return violations
 }
 
-describe('双语遗留审计门禁（已声明完成的桌面面零漏译）', () => {
-  it('扫描集中无未列入白名单的用户可见中文', () => {
-    const violations = AUDITED_FILES.flatMap(findChineseViolations)
+describe('双语遗留审计门禁（P6-5 起全桌面负向排除，零漏译）', () => {
+  it('扫描集（全桌面减排除清单）无未列入白名单的用户可见中文', () => {
+    const files = collectAuditedFiles()
+    // 防空转：确认扫描集规模合理（当前约 190+ 桌面文件）
+    expect(files.length).toBeGreaterThan(150)
+    const violations = files.flatMap(findChineseViolations)
     expect(violations).toEqual([])
   })
 
