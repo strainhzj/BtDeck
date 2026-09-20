@@ -16,7 +16,7 @@
 | Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标 |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
 | PWA 更新提示 refresh-prompt | `RefreshPrompt.vue` | 监听 Service Worker 更新事件，提供用户确认后刷新提示（桌面/移动布局共用）；✨2026-09-19 遗留清扫：三条文案走 common.pwa.*（发现新版本/立即刷新/暂不刷新 aria） |
-| Demo 模式提示 demo-banner | `DemoModeBanner.vue` | Demo 构建固定顶部提示“数据为本地模拟”，提供本地 store 重置并刷新当前页面 |
+| Demo 模式提示 demo-banner | `DemoModeBanner.vue` | Demo 构建固定顶部提示“数据为本地模拟”，提供本地 store 重置并刷新当前页面；2026-09-20 P6-5 双语（common.demo.* 四键，demo fixtures 数据范围另立项未译） |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
 
@@ -31,7 +31,7 @@
 | 可折叠面板 collapsible-panel | `CollapsiblePanel.vue` | 通用可折叠面板（management-panel 风格标题区 + Lucide 折叠箭头，`aria-expanded`/`aria-controls` 无障碍）：折叠状态按 `storageKey` prop 经 getStorage/setStorage 持久化 |
 | 侧边栏折叠 hamburger | `Hamburger/index.vue` | 侧边栏折叠按钮 |
 | 分页 pagination | `Pagination/index.vue` | 分页组件封装 |
-| 主题切换 theme-switcher | `ThemeSwitcher/index.vue` | 主题切换器（明/暗），触发器与选项图标统一使用 Lucide |
+| 主题切换 theme-switcher | `ThemeSwitcher/index.vue` | 主题色切换器（翡翠绿/活力橙/石墨灰），触发器与选项图标统一使用 Lucide；2026-09-20 P6-5 双语：主题名/描述/切换 toast 走 common.theme.*（theme.ts 改 nameKey/descriptionKey） |
 
 #### components/tasks/（3 个文件，任务专用组件）
 
@@ -51,7 +51,6 @@
 | 条件值输入 condition-value | `ConditionValueInput.vue`（889 行） | 搜索条件值输入（`ConditionValueInput`）；状态/下载器使用不可创建多选，空值操作符显示“无需填写”，`currentFieldOptions` 为超级做种提供是/否/不支持三态下拉；日期范围定宽类化（桌面 180px 不变），768px 下两个时间选择器弹性对分整行（窄屏防溢出）；✨2026-09-06 起被移动端条件编辑弹层（ConditionEditSheet）同源复用；2026-09-21 P3-2 双语：placeholder/范围标签/布尔与正则开关走 search.valueInput.*，兑底选项 getter 化（超级做种三态与共享层同源） |
 | 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应；2026-08-15 新增 `placeholder` prop 定制未选提示语（种子页筛选下拉：下载器/种子状态/tracker） |；2026-09-21 P3-1 双语（common.multiSelect，分隔符示例绕开 vue-i18n 竖线按 locale 常量直出）
 | 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（741 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；兼容旧模板的多选、标签 token 与超级做种布尔值；构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反；2026-09-21 P3-2 校验消息 52 处 translate 化（search.validation.*，zh 输出与原内联逐字节一致；`buildAdvancedSearchParams` 回退组名保持内联中文——属 API 载荷非展示文案，T01 两语言 groups 一致） |
-| 紧凑表格视图 compact-table | `CompactTable.vue` | ⚠ **Options API**（L301 `export default {`，`CompactTable`）：紧凑表格视图 |
 | 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |；2026-09-21 P3-1 双语
 | 大小过滤 size-range | `SizeRangeFilter.vue` | 种子大小范围过滤器（`SizeRangeFilter` class）；2026-09-21 P3-2 双语：标签/占位/快捷预设 label 改 search.sizeRange.*（预设 key 化） |
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
@@ -59,7 +58,7 @@
 | 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |；2026-09-21 P3-1 双语（common.pageSize）
 | 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 578）/ AdvancedSearchBuilder（686）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（245）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2637 行 |
 
-> ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
+> ⚠ 2026-09-20 P6-5：`CompactTable.vue`（全仓零消费方死代码，70 处中文）已删除；全仓 Options API 技术债剩余 2 处。
 
 ### layout/ — 布局骨架
 
@@ -96,7 +95,7 @@
 
 ## 关键观察
 
-- **范式分布**：本分支仍以 class-component 为主；`components/torrents/CompactTable.vue` 是本分支唯一的 Options API（全仓库 3 处之一）
+- **范式分布**：本分支仍以 class-component 为主（原唯一 Options API `CompactTable.vue` 已于 2026-09-20 P6-5 作为零消费方死代码删除）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
 - **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2637 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态/下载器多选、稳定 ID、超级做种三态、空值控件、按钮视觉与多条件组均有回归守卫
 

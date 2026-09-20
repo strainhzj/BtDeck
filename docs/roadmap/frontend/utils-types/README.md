@@ -13,16 +13,16 @@
 |--------|------|-----------|
 | 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`、**相对时间七档走 i18n（`translate/translateChoice`，双语 P1）**（L610 默认导出聚合） |
 | Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`poolLabel`/`poolOptions`（池名共享，tracker.pools.* 键化）、`getLanguageLabel`（tracker.lang.* 键化，未登记码原文回退 Q02）、`debounce`/`extractErrorMessage`（默认兜底与 422 拼接走 tracker.errors.* 键，msg 原文透传）/`parseJSON`；✨2026-09-20 双语 P6-3 死代码删除（LANGUAGE_LABELS/KEYWORD_TYPE_OPTIONS/PRIORITY_RANGE/getKeywordTypeLabel/getPriorityTagType/getOccurrenceCountTagType/formatDateTime/downloadJSON/validateKeywordData 均零生产消费方） |
-| 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
-| 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
+| 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`（P6-5 改 nameKey/descriptionKey，展示经 common.theme.* 键）、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
+| 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调板；P6-5 删除无消费方 displayName 字段）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L75） |
 | axios 封装 request | `request.ts` | 🔵 axios 封装（详见下方） |
 | 会话维护 session | `session.ts` ✨2026-08-17 | 🔵 双令牌会话主动维护（纯逻辑为主，便于单测）：`getTokenExp`/`isTokenExpired`（JWT exp 解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 模式登录跳转 URL）、`syncTokenFromCookie`（标签页可见时 cookie→内存快照回同步）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录） |
 | 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-18 三态 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次刷新批，三态结果（renewed/rejected/transient，`isDefiniteFailure` 判定后端明确 401 才判死），definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3 次） |
-| 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑（无副作用，便于单测）：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError` |
+| 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError`；P6-5 兑底文案走 i18n（errors.paramValidation/requestError/generic，E01 未识别错误当前语言兑底） |
 | 部署恢复 deployment-recovery | `deployment-recovery.ts` | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | 下载器类型 downloader-type | `downloaderType.ts` | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
 | 存储 cookies | `cookies.ts` | sidebar status / 双令牌 access+refresh token（cookie） / userId（localStorage） + 通用 `getStorage`/`setStorage` |
-| 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
+| 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制）；P6-5 双语：两种失败 throw 走 common.clipboard.* 键 |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 | 通知事件展示 notification-display | `notification-display.ts` ✨2026-09-21 | 双语 P4（E03）系统通知事件展示层：按 `extra_data.event`（torrent_batch_add_completed/orphan_scan_completed/version_update/welcome）+ 参数本地化 title/content（`notificationDisplayTitle/Content`，经 i18n translate + formatFileSize），未登记事件/无 extra_data 历史通知原文兜底（旧内容不改写） |
 
@@ -53,7 +53,7 @@
 | 通用工具类型 common | `common.ts` | 通用工具类型：`Partial/Required/Pick/Omit/DeepReadonly/DeepPartial/ReturnType/Parameters/UnwrapPromise` 等高阶类型 + `KeyValuePair/ID/Timestamp/SortConfig/UploadFile` |
 | 统一入口 index | `index.ts` | 统一入口：`BTDeckTypes` 命名空间（L21-99）+ re-export api/scheduled-tasks/task-logs/components/common（⚠ 不 re-export torrent/dashboard） |
 | 定时任务类型 scheduled-tasks | `scheduled-tasks.ts` | 定时任务类型：`TaskType`/`TaskStatus` enum、`ScheduledTask`、CRUD 请求、清理配置/预览/执行；✨2026-09-20 双语 P6-4a：TaskTypeOption 重塑（label→labelKey 展示键，description/language 死字段删除） |
-| 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard` + `TASK_STATUS_OPTIONS`/`TASK_TYPE_OPTIONS` 常量 |
+| 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard`（P6-5 删除零消费方死数组 TASK_STATUS_OPTIONS/TASK_TYPE_OPTIONS 及 scheduled-tasks 导入） |
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |
 | 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等 |

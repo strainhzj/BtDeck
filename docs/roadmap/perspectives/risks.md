@@ -46,10 +46,9 @@
 | class-component（`export default class` + `@Component`） | **89**（src 全口径，85 个 `.vue` + 4 个 `.ts`） | 85/88 ≈ 96.6% |
 | Options API（`export default {`） | **3** | 3/88 ≈ 3.4% |
 
-3 个 Options API 文件：
+2 个 Options API 文件（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 作为零消费方死代码删除）：
 - [views/recycle-bin/index.vue:373](../../frontend/src/views/recycle-bin/index.vue)
 - [views/tracker/reannounce-config.vue:299](../../frontend/src/views/tracker/reannounce-config.vue)
-- [components/torrents/CompactTable.vue:301](../../frontend/src/components/torrents/CompactTable.vue)
 
 **差距**：约束文档的措辞（"Options API"）与实际主流范式（class-component，基于 `vue-class-component` + `vue-property-decorator`）不一致。class-component 是第三种范式，既非 Composition API 也非传统 Options API。
 

@@ -1,6 +1,6 @@
 # frontend/views — 页面视图
 
-> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 76 个，含子组件/mixin）；views 分支仅 2 处 Options API，另 1 处技术债位于 `components/torrents/CompactTable.vue`。
+> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 76 个，含子组件/mixin）；views 分支仅 2 处 Options API（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 删除）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/views/README.md`，命中行即含模块入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -56,7 +56,7 @@
 | `mixins/errorTooltipDismiss.ts` | 错误原因 tooltip 收起 mixin（50 行）：window 捕获阶段监听 scroll/wheel，滚动时关闭两视图 `torrentErrorTooltips` 引用；beforeDestroy 成对解绑，避免全局监听残留 |
 | `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测）；✨2026-08-20 展示对齐判定新增共享 helper：`hasTrackerError` L747、`showTrackerErrorTag` L768（error 状态不打标）、`getTorrentErrorReason` L778（errorReason → tracker 消息 → 兜底回退链，两视图委托调用）；✨2026-08-27 新增 `countMatchedTrackerRows` L757（统计含 tracker 域名筛选命中标记的行数，供两视图 `[tracker-filter]` 观察日志）；✨2026-08-29 新增 `buildSpeedSnapshot` L636 的 200/206 增量合并与终态归一、`collectRuntimeStateReconcileCandidates` L551 的复合键连续未命中候选收敛；✨2026-08-30 新增 `RuntimeListMembershipTracker` L358 / `refresh()` L432，以完整快照建立分页外基线、206 增量合并并串行触发权威列表刷新；✨2026-09-11 新键判定加 30s 滞回宽限（`REAPPEAR_GRACE_MS` L349）：键掉出快照后宽限内再出现判为快照抖动不触发刷新，超宽限回归才重判新键，lastSeenAt 仅完整快照轮回收防泄漏；✨2026-09-06 新增 `TerminalReloadTracker` L471（终态整表刷新按 downloader_id+hash 复合键去重，缺 downloaderId 退化 hash 键有界双触发）与 `isTorrentRowEffectivelyComplete` L623（行级终态保守谓词：完成证据优先、折叠后状态仅 completed/seeding 命中，刻意不等于 reconcile 候选口径反向），供两视图 `applySpeedUpdates` 转移判定与终态触发门控 |；2026-09-21 P3-2 Tracker 异常展示段（getTorrentErrorReason 兜底文案）translate 化走 tracker.errorReason.*；✨2026-09-19 双语 P5：删除链路纯函数 i18n（buildDeleteConfirmMessage 按等级独立成键/parseDeleteTaskResult/parseSyncDeleteResponse/buildFileMissingDetail，名称拼接 common.listSeparator 随语言切换），deleteTorrentsBatch 死封装删除（零生产消费方） |
 | `utils/traditionalTorrentIdentity.ts` | 任务行标识（infoId + downloaderId + hash） |
-| `utils/traditionalStatusFilter.ts` | 传统视图状态筛选 |
+| `utils/traditionalStatusFilter.ts` | 传统视图状态筛选；P6-5 双语：固定项（全部/活动中）文案改由调用方传入（TraditionalView 按 torrent.list.filters.* 键翻译） |
 | `utils/traditionalVirtualList.ts` | 传统视图虚拟滚动窗口计算 |
 | `utils/traditionalPagination.ts` | 传统视图分页常量与归一化 |
 | `utils/__tests__/traditionalStatusFilter.spec.ts` | traditionalStatusFilter 回归测试：钉死「全部/活动中」固定项 icon 为 Lucide 图标名（emoji→Lucide 改造契约）并覆盖三个状态筛选映射函数 |
@@ -68,7 +68,7 @@
 | 文件 | 一句话职责 |
 |------|-----------|
 | `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效；`handleSync()` L772 只将 sync-single 返回视为“已受理”，由任务跟踪器在真实终态提示成功/部分/失败/取消并释放占用 |
-| `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L29 统一终态文案，`trackSyncTaskStatus()` L53 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
+| `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L30 统一终态文案（P6-5 双语：downloader.sync.* 四态 + detailSuffix，桌面/移动同源），`trackSyncTaskStatus()` L54 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
 | `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询；✨2026-09-10 新增/编辑弃用旧 6 字段弹窗，统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页承载全部页签） |
 | `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列）；✨2026-09-18 桌面双语 P2：basic 页签（连接/认证/测试/开关/存储/路径映射）i18n 化 |
 | `components/PathMappingTab.vue` | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
@@ -129,7 +129,6 @@
 |------|------|------|
 | `recycle-bin/index.vue` | L373 `export default {` | 回收站页面 |
 | `tracker/reannounce-config.vue` | L299 `export default {` | Tracker 重宣告配置页 |
-| `components/torrents/CompactTable.vue` | L301 `export default {` | 紧凑表格视图（在 components 分支） |
 
 > 详见 [../../perspectives/risks.md](../../perspectives/risks.md) "文档/代码漂移" 章节。
 

@@ -22,12 +22,12 @@
 ### 1. 组件范式：class-component 为主
 
 - **class-component**（`export default class` + `@Component`）：src 下 `.vue` 仍以该范式为主；同内容排查直接复用两种现有种子视图
-- **Options API**（`export default {`，无装饰器）：全仓库仅 **3 处** .vue（技术债候选）
+- **Options API**（`export default {`，无装饰器）：全仓库仅 **2 处** .vue（技术债候选）
   - `views/recycle-bin/index.vue`（L369）
   - `views/tracker/reannounce-config.vue`（L299）
-  - `components/torrents/CompactTable.vue`（L301）
+  （原第 3 处 `components/torrents/CompactTable.vue` 已于 2026-09-20 P6-5 作为零消费方死代码删除）
 
-> `.vue` 总数实测 88（class 85 + Options 3），class-component 占比 85/88 ≈ 96.6%。
+> `.vue` 总数实测 87（class 85 + Options 2），class-component 占比 85/87 ≈ 97.7%。
 
 > ⚠ 注意：根目录 `frontend/CLAUDE.md` 与 `AGENTS.md` 约束写的是"必须使用 Options API，禁止 Composition API 和 `<script setup>`"，但**实际代码库以 class-component 为主**。这是文档/代码漂移点，路线图如实记录，详见 [../perspectives/risks.md](../perspectives/risks.md)。
 
