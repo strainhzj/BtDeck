@@ -9,7 +9,7 @@
 |--------|--------|-----------|
 | 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |；2026-09-21 P3-1 双语：筛选/排查条/工具栏/列头/分页/列设置/视图切换与操作反馈（删除确认与结果链路留 P5），columnSettings 去 label 改键渲染
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化；✨2026-09-19 遗留清扫：控制台操作反馈 17 条键化（测试连接三态/同步链路/启停/删除确认走 downloader.msg.*，禁 response.msg 中文兜底）；✨2026-09-19 P6-2：设置弹窗页签骨架与速度/高级/路径管理/路径映射/路径维护/标签/模板八子树全量键化（含键化数据数组与 template-presets 预设展示映射），BasicSettingsTab.vue 死代码删除 |
-| Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API） |
+| Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API）；✨2026-09-20 双语 P6-3：全域全量 i18n（错误展示接 apiErrorMessage/apiResponseMessage） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控；✨2026-09-19 双语 P5 全量双语（recycleBin 模块 78 键：筛选/工具栏/表格/清理预览/手动上传弹窗/危险确认链路/三态结果；错误展示走 apiErrorMessage/apiResponseMessage 禁中文 msg 直读） |
@@ -90,19 +90,19 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `reannounce-config.vue` | ⚠ **Options API**（L299 `export default {`）：重新宣告配置页 |
-| `keywords-board.vue` | 关键词看板主页面（`TrackerKeywordsBoard`） |
-| `test.vue` | Tracker 连通性测试页 |
-| `keywords-search.vue` | 关键词搜索页（`KeywordsSearchPage`） |
-| `components/KeywordListModal.vue` | 关键词列表弹窗（搜索框右侧含快捷操作入口） |
-| `components/ImportKeywordsDialog.vue` | 批量导入关键词对话框 |
-| `components/AddKeywordDialog.vue` | 添加关键词对话框 |
-| `components/KeywordCard.vue` | 单个关键词卡片 |
-| `components/KeywordTagCard.vue` | 关键词标签卡片 |
-| `components/KeywordQuickActionDialog.vue` | 关键词快捷操作（左匹配）对话框，看板与详情弹窗共用（预览→二次确认→批量删除/移动） |
-| `components/ApiLogViewer.vue` | API 调用日志查看器 |
-| `components/MatchTimeline.vue` | 匹配时间线组件 |
-| `components/TestResultSummary.vue` | 测试结果汇总 |
+| `reannounce-config.vue` | ⚠ **Options API**（L299 `export default {`）：重新宣告配置页；✨2026-09-20 双语 P6-3：模板/表单/批量编辑浮窗/危险确认链路全量走 reannounce.* 键（校验规则消息随语言切换），批量部分失败明细转 console（E01），错误展示接 apiResponseMessage/apiErrorMessage |
+| `keywords-board.vue` | 关键词看板主页面（`TrackerKeywordsBoard`）；✨2026-09-20 双语 P6-3：池名走共享 poolLabel（label 字段移除）、拖拽移动/删除/候选池门禁提示全量走键 |
+| `test.vue` | Tracker 连通性测试页（关键词匹配判断测试）；✨2026-09-20 双语 P6-3：输入/结果/历史/时间线（timeline.* 含高亮标记结构）/复制/添加关键词 prompt 全量走键，res.msg 直读改 apiResponseMessage |
+| `keywords-search.vue` | 关键词搜索页（`KeywordsSearchPage`）；✨2026-09-20 双语 P6-3：筛选/表格/操作全量走键；不再直显后端中文 pool_label 字段（getPoolLabel 本地化） |
+| `components/KeywordListModal.vue` | 关键词列表弹窗（搜索框右侧含快捷操作入口）；✨2026-09-20 双语 P6-3：搜索/时间排序筛选/批量操作/移动删除链路全量走键，池名走 poolLabel/poolOptions |
+| `components/ImportKeywordsDialog.vue` | 批量导入关键词对话框；✨2026-09-20 双语 P6-3：上传/文本输入/进度/取消/成功统计全量走键 |
+| `components/AddKeywordDialog.vue` | 添加关键词对话框；✨2026-09-20 双语 P6-3：表单/校验/结果全量走键，错误展示接 apiResponseMessage（移动端复用面 zh 零回归） |
+| `components/KeywordCard.vue` | 单个关键词卡片；✨2026-09-20 双语 P6-3：类型标签/元信息走 keywordCard.* 键，语言名走 getLanguageLabel（tracker.lang.*） |
+| `components/KeywordTagCard.vue` | 关键词标签卡片（无文案，纳入审计面） |
+| `components/KeywordQuickActionDialog.vue` | 关键词快捷操作（左匹配）对话框，看板与详情弹窗共用（预览→二次确认→批量删除/移动）；✨2026-09-20 双语 P6-3：POOL_LABELS 中文常量删除（poolLabel 共享）、确认文案/门禁提示全量走键，预览失败接 apiResponseMessage、catch 接 apiErrorMessage |
+| `components/ApiLogViewer.vue` | API 调用日志查看器；✨2026-09-20 双语 P6-3：标题/展开收起走 apiLog.* 键 |
+| `components/MatchTimeline.vue` | 匹配时间线组件；✨2026-09-20 双语 P6-3：标题走 timeline.* 键（步骤数据由 test.vue 传入已本地化） |
+| `components/TestResultSummary.vue` | 测试结果汇总；✨2026-09-20 双语 P6-3：结果标签与描述走 resultSummary.* 键 |
 
 ## 其余单文件模块
 

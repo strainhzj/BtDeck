@@ -143,6 +143,8 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
+| `p6-tracker-domain-i18n.spec.ts` ✨2026-09-20 | P6-3 Tracker 管理域双语（26 例）：tracker 十五子树 zh 逐字节与 en 插值（池子/看板/搜索/汇报配置/测试工具时间线/四弹窗/关键词卡）、reasonCode 本地化（18 新键 camelCase 映射 + 未知码回退 fallback）、utils/tracker 共享层（poolLabel/poolOptions/getLanguageLabel/extractErrorMessage 双语与 Q02 回退）、源码契约（pool_label 后端中文字段不直显、POOL_LABELS 常量不回流、错误展示接线、批量明细只进日志）、挂载冒烟（移动端复用 AddKeywordDialog） |
+| `tests/api/test_reason_contract_p6.py` ✨2026-09-20 | Tracker 关键词池/汇报配置/匹配测试 reasonCode 契约（26 例）：四端点失败路径 reasonCode 矩阵 + msg 固定无 str(e)/无池名/无合法值清单泄漏、reannounce not-found 结构化 error_code 判定（禁中文子串匹配回流）、成功路径 data 形状钉住（preview/search-all/batch 部分成功/match 驼峰字段）、reasonCode 清单完整性（源码扫描 vs 登记集） |
 | `p6-downloader-domain-i18n.spec.ts` ✨2026-09-19 | P6-2 下载器域收尾双语（26 例）：downloader.tabs/speed/advanced/pathMapping/pathMaintenance/tag/template 七子树 zh 逐字节 + en 插值、键化数据数组（星期 labelKey/高级字段 labelKey+hintKey/映射类型三键）、内置模板 preset_key 展示映射（zh 与后端存储值一致/en/Q02 原文回退/camel 兼容）、源码契约与死代码移除 |
 | `tests/core/test_setting_template_preset_key.py` ✨2026-09-19 | 设置模板 preset_key 迁移与幂等（13 例）：旧库按中文名回填、用户模板占名不写 key、name 唯一约束不变量（同名多行不可能）、重复升级幂等、downgrade 回环、init 五种幂等场景、to_dict 透出、P0 冻结键名一致性 |
 | `p6-torrent-domain-i18n.spec.ts` ✨2026-09-19 | P6-1 种子域收尾双语（16 例）：transfer/fileManagement/tracker.replace/torrent 传统视图键 zh 逐字节与 en 插值、危险语义（数据保留/不可逆）、四级删除菜单与 P5 确认框同键、状态筛选 localizedStatusOptions、列设置 labelKey 12 列、源码契约（6 文件键接线与旧中文不回流） |

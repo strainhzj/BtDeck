@@ -12,7 +12,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`、**相对时间七档走 i18n（`translate/translateChoice`，双语 P1）**（L610 默认导出聚合） |
-| Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`LANGUAGE_LABELS`/`KEYWORD_TYPE_OPTIONS`/`PRIORITY_RANGE`、语言/类型/优先级标签、`debounce`/`formatDateTime`/`extractErrorMessage`/`downloadJSON`/`parseJSON`/`validateKeywordData` |
+| Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`poolLabel`/`poolOptions`（池名共享，tracker.pools.* 键化）、`getLanguageLabel`（tracker.lang.* 键化，未登记码原文回退 Q02）、`debounce`/`extractErrorMessage`（默认兜底与 422 拼接走 tracker.errors.* 键，msg 原文透传）/`parseJSON`；✨2026-09-20 双语 P6-3 死代码删除（LANGUAGE_LABELS/KEYWORD_TYPE_OPTIONS/PRIORITY_RANGE/getKeywordTypeLabel/getPriorityTagType/getOccurrenceCountTagType/formatDateTime/downloadJSON/validateKeywordData 均零生产消费方） |
 | 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
 | 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
 | axios 封装 request | `request.ts` | 🔵 axios 封装（详见下方） |
