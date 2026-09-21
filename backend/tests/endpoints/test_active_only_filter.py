@@ -13,6 +13,7 @@ get_torrent_infos 的 active_keys 过滤单元测试
 import asyncio
 import sqlite3
 import time
+from datetime import datetime
 from typing import Set, Tuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -428,7 +429,10 @@ class TestActiveSpeedEndpointWiring:
                     "app.api.endpoints.torrent_speed._gather_active_speeds",
                     new=AsyncMock(return_value=gathered),
                 ),
-                patch("app.api.endpoints.torrent_speed._ttl_queue.get_disappeared", return_value={}),
+                patch(
+                    "app.api.endpoints.torrent_speed._ttl_queue.get_disappeared",
+                    return_value=({}, []),
+                ),
                 patch(
                     "app.api.endpoints.torrent_speed._sync_torrents_to_db",
                     new=AsyncMock(),
@@ -524,3 +528,77 @@ async def test_sync_realtime_progress_is_scoped_by_downloader_and_hash():
     assert second.progress == 35.0
     assert session.commit_count == 1
     assert scope.entered is True
+
+
+@pytest.mark.asyncio
+async def test_sync_realtime_terminal_state_sets_progress_and_completion_date():
+    """实时终态证据优先于速度，必须把进度收敛到 100 并写入完成时间。"""
+    torrent = MagicMock(
+        downloader_id="dl_a",
+        hash="done-hash",
+        progress=96.0,
+        status="downloading",
+        completed_date=None,
+    )
+    session = _AsyncSessionContext([torrent])
+    scope = _AsyncScope()
+
+    with (
+        patch("app.api.endpoints.torrent_speed.AsyncSessionLocal", return_value=session),
+        patch.object(admission_controller, "db_write_scope", return_value=scope),
+    ):
+        await _sync_torrents_to_db(
+            [
+                {
+                    "downloader_id": "dl_a",
+                    "hash": "done-hash",
+                    "progress": 96.0,
+                    "status": "downloading",
+                    "downloadComplete": True,
+                }
+            ]
+        )
+
+    assert torrent.progress == 100.0
+    assert torrent.status == "completed"
+    assert torrent.completed_date is not None
+    assert session.commit_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("completion_guard", ["progress", "status", "completed_date"])
+async def test_sync_realtime_stale_snapshot_cannot_regress_completed_torrent(completion_guard):
+    """任一已落库完成证据都必须独立阻止旧轮询快照回退状态。"""
+    completed_at = datetime.now() if completion_guard == "completed_date" else None
+    torrent = MagicMock(
+        downloader_id="dl_a",
+        hash="done-hash",
+        progress=100.0 if completion_guard == "progress" else 87.0,
+        status="completed" if completion_guard == "status" else "seeding",
+        completed_date=completed_at,
+    )
+    original_progress = torrent.progress
+    original_status = torrent.status
+    session = _AsyncSessionContext([torrent])
+    scope = _AsyncScope()
+
+    with (
+        patch("app.api.endpoints.torrent_speed.AsyncSessionLocal", return_value=session),
+        patch.object(admission_controller, "db_write_scope", return_value=scope),
+    ):
+        await _sync_torrents_to_db(
+            [
+                {
+                    "downloader_id": "dl_a",
+                    "hash": "done-hash",
+                    "progress": 96.0,
+                    "status": "downloading",
+                    "downloadComplete": False,
+                }
+            ]
+        )
+
+    assert torrent.progress == original_progress
+    assert torrent.status == original_status
+    assert torrent.completed_date == completed_at
+    assert session.commit_count == 0

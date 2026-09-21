@@ -1,9 +1,12 @@
 import { shallowMount, mount, createLocalVue } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import ElementUI from 'element-ui'
 import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 
 // 创建本地Vue实例
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.use(ElementUI)
 
 // 选项接口
@@ -33,6 +36,7 @@ describe('AdvancedMultiSelect组件', () => {
   beforeEach(() => {
     wrapper = shallowMount(AdvancedMultiSelect, {
       localVue,
+      i18n,
       propsData: {
         options: mockOptions,
         value: []
@@ -501,6 +505,7 @@ describe('AdvancedMultiSelect组件', () => {
     const buildWrapper = (props: Record<string, unknown> = {}) =>
       mount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: { options: iconOptions, value: [], ...props },
         stubs: {
           'virtual-scroll-list': true,

@@ -59,7 +59,7 @@ def _patch_runtime_call():
         # 保持异常透传语义：func 抛什么异常就原样抛什么（与 runtime 行为一致）
         return func(*args, **(kwargs or {}))
 
-    with patch("app.api.endpoints.torrent_crud.call_downloader_api", side_effect=fake_call):
+    with patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call):
         yield
 
 
@@ -144,11 +144,10 @@ async def test_transmission_value_error_is_caught():
 
     assert result.code == "500"
     assert result.status == "failed"
-    # 友好 msg 必须同时含异常类型与原始消息，便于运维定位
-    assert "ValueError" in result.msg
-    assert "invalid download_dir" in result.msg
+    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
     # 关键：没有冒泡（如果冒泡会直接抛出而非 return）
-    assert result.data is None
 
 
 @pytest.mark.asyncio
@@ -182,8 +181,12 @@ async def test_transmission_type_error_is_caught():
     )
 
     assert result.code == "500"
-    assert "TypeError" in result.msg
-    assert "Object of type ValueError is not JSON serializable" in result.msg
+    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
+    # 双语 P4：msg 固定（异常细节只进日志）；fail-closed 语义由 reasonCode 承载
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
 
 
 @pytest.mark.asyncio
@@ -245,8 +248,12 @@ async def test_qbittorrent_value_error_is_caught():
     )
 
     assert result.code == "500"
-    assert "ValueError" in result.msg
-    assert "bad save_path" in result.msg
+    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
+    # 双语 P4：msg 固定（异常细节只进日志）；fail-closed 语义由 reasonCode 承载
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
 
 
 @pytest.mark.asyncio
@@ -275,7 +282,9 @@ async def test_qbittorrent_type_error_is_caught():
     )
 
     assert result.code == "500"
-    assert "TypeError" in result.msg
+    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
 
 
 @pytest.mark.asyncio
@@ -424,7 +433,9 @@ async def test_qb_bad_added_on_field_does_not_bubble(real_db_session):
     assert result.status == "failed"
     # 关键：不再冒泡（如果冒泡会直接 raise 而非 return result）
     assert "添加种子失败" in result.msg
-    assert "TypeError" in result.msg
+    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
+    assert result.msg == "添加种子失败，请稍后重试"
+    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
 
 
 @pytest.mark.asyncio

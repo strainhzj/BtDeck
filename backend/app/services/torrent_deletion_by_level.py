@@ -22,11 +22,12 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from fastapi import Request
 
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
+from app.core.platform_capabilities import require_capability
+from app.services.audit_context import AuditContext
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.auxiliary_seed_count_service import (
@@ -43,35 +44,35 @@ class TorrentDeletionByLevelService:
     # 等级4标签名称
     LEVEL4_TAG = "pending_delete"
 
-    def __init__(self, db: Session, request: Optional[Request] = None):
+    def __init__(
+        self,
+        db: Session,
+        store: Any = None,
+        audit_context: Optional[AuditContext] = None,
+    ):
         """
         初始化删除服务
 
         Args:
             db: 数据库会话
-            request: FastAPI Request 对象（用于访问 app.state.store）
+            store: 下载器缓存（app.state.store；由端点或 MCP 运行时显式注入）
+            audit_context: 协议无关审计上下文（HTTP 端点经 AuditContext.from_request 构造）
         """
         self.db = db
-        self.request = request
+        self.store = store
+        self.audit_context = audit_context
         self._adapters: Dict[str, Any] = {}  # 适配器缓存
-        self._audit_info: Optional[Dict[str, Any]] = None  # 惰性提取：extract_audit_info_from_request(request)
 
     def _audit_request_info(self) -> Dict[str, Any]:
-        """惰性提取请求审计信息（ip_address/user_agent/request_id/session_id）。
+        """审计上下文展开（ip_address/user_agent/request_id/session_id）。
 
-        端点持有 Request 但服务层不接收：此处直接从 request 提取，
+        端点持有 Request 但服务层不接收：由调用方构造 AuditContext 注入，
         修复删除审计日志缺 IP（verified-bugfix-remediation W7）。
+        未注入时返回空字典，审计信息缺失不影响删除主流程。
         """
-        if self._audit_info is None:
-            self._audit_info = {}
-            if self.request is not None:
-                try:
-                    from app.services.audit_service import extract_audit_info_from_request
-
-                    self._audit_info = extract_audit_info_from_request(self.request)
-                except Exception as e:  # noqa: BLE001 - 审计信息缺失不影响删除主流程
-                    logger.warning(f"提取请求审计信息失败: {e}")
-        return self._audit_info
+        if self.audit_context is None:
+            return {}
+        return self.audit_context.as_dict()
 
     def _get_adapter(self, downloader: BtDownloaders):
         """
@@ -90,16 +91,12 @@ class TorrentDeletionByLevelService:
         if downloader.downloader_id in self._adapters:
             return self._adapters[downloader.downloader_id]
 
-        # 检查 request 和 app.state.store
-        if not self.request:
-            raise ValueError("Request 对象未初始化")
-
-        app = self.request.app
-        if not hasattr(app.state, "store"):
-            raise ValueError("app.state.store 未初始化")
+        # 检查缓存中是否已注入下载器 store
+        if self.store is None:
+            raise ValueError("下载器缓存未初始化")
 
         # 获取缓存的下载器列表
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
 
         # 从缓存中查找对应的下载器
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
@@ -179,6 +176,8 @@ class TorrentDeletionByLevelService:
         Returns:
             删除结果字典
         """
+        if delete_level == 3:
+            require_capability("level3_recycle", "torrent_deletion.level3")
         try:
             # 查询种子信息
             torrent = (
@@ -213,7 +212,8 @@ class TorrentDeletionByLevelService:
         支持所有4个等级的删除
         - Level 1: 删除任务和数据
         - Level 2: 删除任务保留数据
-        - Level 3: 移到回收站（备份失败时自动降级为等级4）
+        - Level 3: 移到回收站（备份失败时自动降级为等级4；
+          未找到种子文件时跳过文件操作，种子数据直接入回收站并记录到 level3_file_missing）
         - Level 4: 添加"待删除"标签
 
         Args:
@@ -225,10 +225,13 @@ class TorrentDeletionByLevelService:
         Returns:
             批量删除结果字典
         """
+        if delete_level == 3:
+            require_capability("level3_recycle", "torrent_deletion.level3.batch")
         total = len(torrent_info_ids)
         level1_success = []  # 等级1删除成功
         level2_success = []  # 等级2删除成功
         level3_success = []  # 等级3删除成功
+        level3_file_missing = []  # 等级3删除成功但未找到种子文件（跳过了文件操作）
         level4_downgraded = []  # 降级到等级4的种子
         level4_success = []  # 等级4删除成功
         failed = []  # 完全失败的种子
@@ -269,6 +272,13 @@ class TorrentDeletionByLevelService:
                     level2_success.append(torrent_id)
                 elif delete_level == 3:
                     level3_success.append(torrent_id)
+                    if result.get("file_missing"):
+                        level3_file_missing.append(
+                            {
+                                "torrent_id": torrent_id,
+                                "torrent_name": result.get("torrent_name", ""),
+                            }
+                        )
                 elif delete_level == 4:
                     level4_success.append(torrent_id)
             else:
@@ -280,6 +290,7 @@ class TorrentDeletionByLevelService:
             "level1_success": level1_success,
             "level2_success": level2_success,
             "level3_success": level3_success,
+            "level3_file_missing": level3_file_missing,
             "level4_downgraded": level4_downgraded,
             "level4_success": level4_success,
             "failed": failed,
@@ -938,6 +949,17 @@ class TorrentDeletionByLevelService:
                     "rolled_back": True,
                 }
 
+            # 文件缺失/已移动时 move 返回 success + skipped，种子数据仍已入回收站
+            file_missing = bool(move_result.get("file_missing"))
+            already_moved = bool(move_result.get("already_moved"))
+            if file_missing:
+                logger.warning(
+                    f"[等级3删除] 种子文件不存在，已跳过文件操作，仅将种子移入回收站: "
+                    f"{torrent.name} (save_path={torrent.save_path})"
+                )
+            elif already_moved:
+                logger.info(f"[等级3删除] 种子文件此前已移至 .pending_delete，跳过移动: {torrent.name}")
+
             # 文件移动成功后才扣减辅种数量，避免后续回滚时影响仍然有效的分组。
             decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
@@ -959,7 +981,11 @@ class TorrentDeletionByLevelService:
                         "backup_file_path": backup_file_path if backup_success else None,
                         "file_list_obtained": original_file_list is not None,
                         "file_count": len(original_file_list) if original_file_list else 0,
-                        "torrent_moved": True,
+                        "torrent_moved": not file_missing and not already_moved,
+                        "file_missing": file_missing,
+                        "skip_reason": (
+                            "file_missing" if file_missing else ("already_moved" if already_moved else None)
+                        ),
                         "torrent_type": move_result.get("torrent_type"),
                         "is_directory": move_result.get("is_directory"),
                         "original_name": move_result.get("original_name"),
@@ -988,12 +1014,23 @@ class TorrentDeletionByLevelService:
                 "operation": "delete_level3",
                 "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
                 "original_filename": torrent.original_filename,
-                "torrent_moved": True,
+                "torrent_name": torrent.name,
+                "torrent_moved": not file_missing and not already_moved,
+                "file_missing": file_missing,
+                "already_moved": already_moved,
                 "torrent_type": move_result.get("torrent_type"),
                 "is_directory": move_result.get("is_directory"),
                 "original_name": move_result.get("original_name"),
                 "new_name": move_result.get("new_name"),
-                "message": f"已移至回收站 ({move_result.get('torrent_type')})",
+                "message": (
+                    "未找到种子文件，已跳过文件操作，仅将种子移入回收站"
+                    if file_missing
+                    else (
+                        f"种子文件已在回收站，跳过移动 ({move_result.get('torrent_type')})"
+                        if already_moved
+                        else f"已移至回收站 ({move_result.get('torrent_type')})"
+                    )
+                ),
             }
 
         except Exception as e:
@@ -1032,20 +1069,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1094,20 +1123,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1191,20 +1212,12 @@ class TorrentDeletionByLevelService:
         self, downloader: BtDownloaders, torrent_hash: str, delete_data: bool
     ) -> Tuple[bool, Optional[str]]:
         """从qBittorrent删除种子（使用 app.state.store 缓存的客户端连接）"""
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1241,20 +1254,12 @@ class TorrentDeletionByLevelService:
             torrent_hash: 种子哈希值（SHA1），Transmission API必需参数
             delete_data: 是否删除数据文件
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1296,20 +1301,12 @@ class TorrentDeletionByLevelService:
         Returns:
             (成功标志, 相对路径列表, 错误消息)
         """
-        # 步骤1: 获取 app 对象并检查缓存初始化
-        if not self.request:
-            return False, None, "Request 对象未初始化"
-
-        app = self.request.app if hasattr(self.request, "app") else None
-        if not app:
-            return False, None, "无法获取 app 对象"
-
-        # 检查缓存是否已初始化（避免 AttributeError）
-        if not hasattr(app.state, "store"):
+        # 步骤1: 检查下载器缓存是否已注入（store 由端点/MCP 运行时显式传入）
+        if self.store is None:
             return False, None, "下载器缓存未初始化"
 
         # 步骤2: 从缓存获取下载器
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        cached_downloaders = self.store.get_snapshot_sync()
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
         # 步骤3: 检查下载器是否在缓存中
@@ -1405,14 +1402,9 @@ class TorrentDeletionByLevelService:
 
                 logger.info(f"[单文件重命名] {torrent_name} -> {new_name}")
 
-                # 检查原文件是否存在
+                # 原文件不存在：已移动过（幂等跳过）或无文件可操作（file_missing 跳过）
                 if not os.path.exists(original_path):
-                    return {"success": False, "error": f"单文件不存在: {original_path}", "torrent_type": torrent_type}
-
-                # 🔥 幂等性检测：检查目标是否已存在
-                if os.path.exists(new_path):
-                    # 原文件不存在 → 已移动，跳过
-                    if not os.path.exists(original_path):
+                    if os.path.exists(new_path):
                         logger.warning(
                             f"[幂等性处理] 检测到单文件已移动到 .pending_delete，" f"跳过移动操作: {new_name}"
                         )
@@ -1425,10 +1417,27 @@ class TorrentDeletionByLevelService:
                             "new_name": new_name,
                             "torrent_type": torrent_type,
                             "skipped": True,  # 🔥 标记为跳过
+                            "already_moved": True,
                         }
-                    else:
-                        # 原文件仍在 → 目标文件冲突
-                        return {"success": False, "error": f"目标文件已存在: {new_path}", "torrent_type": torrent_type}
+                    logger.warning(
+                        f"[文件缺失] 单文件与 .pending_delete 目标均不存在，" f"跳过文件操作: {original_path}"
+                    )
+                    return {
+                        "success": True,
+                        "original_path": original_path,
+                        "new_path": new_path,
+                        "is_directory": False,
+                        "original_name": torrent_name,
+                        "new_name": new_name,
+                        "torrent_type": torrent_type,
+                        "skipped": True,
+                        "already_moved": False,
+                        "file_missing": True,  # 🔥 无可操作文件，由调用方提醒
+                    }
+
+                # 🔥 幂等性检测：原文件仍在但目标已存在 → 目标文件冲突
+                if os.path.exists(new_path):
+                    return {"success": False, "error": f"目标文件已存在: {new_path}", "torrent_type": torrent_type}
 
                 # 执行重命名
                 loop = asyncio.get_event_loop()
@@ -1455,18 +1464,9 @@ class TorrentDeletionByLevelService:
 
                 logger.info(f"[多文件移动] {torrent_name}/ -> {new_folder_name}/")
 
-                # 检查原文件夹是否存在
+                # 原文件夹不存在：已移动过（幂等跳过）或无文件可操作（file_missing 跳过）
                 if not os.path.exists(original_folder):
-                    return {
-                        "success": False,
-                        "error": f"原文件夹不存在: {original_folder}",
-                        "torrent_type": torrent_type,
-                    }
-
-                # 🔥 幂等性检测 + 智能合并：检查目标文件夹是否已存在
-                if os.path.exists(new_folder):
-                    # 原文件夹不存在 → 已移动，跳过
-                    if not os.path.exists(original_folder):
+                    if os.path.exists(new_folder):
                         logger.warning(
                             f"[幂等性处理] 检测到多文件文件夹已移动到 .pending_delete，"
                             f"跳过移动操作: {new_folder_name}/"
@@ -1480,8 +1480,26 @@ class TorrentDeletionByLevelService:
                             "new_name": new_folder_name,
                             "torrent_type": torrent_type,
                             "skipped": True,  # 🔥 标记为跳过
+                            "already_moved": True,
                         }
+                    logger.warning(
+                        f"[文件缺失] 原文件夹与 .pending_delete 目标均不存在，" f"跳过文件操作: {original_folder}"
+                    )
+                    return {
+                        "success": True,
+                        "original_path": original_folder,
+                        "new_path": new_folder,
+                        "is_directory": True,
+                        "original_name": torrent_name,
+                        "new_name": new_folder_name,
+                        "torrent_type": torrent_type,
+                        "skipped": True,
+                        "already_moved": False,
+                        "file_missing": True,  # 🔥 无可操作文件，由调用方提醒
+                    }
 
+                # 🔥 幂等性检测 + 智能合并：原文件夹仍在，检查目标文件夹是否已存在
+                if os.path.exists(new_folder):
                     # 原文件夹仍在 → 智能合并逻辑
                     try:
                         new_folder_contents = set(os.listdir(new_folder))

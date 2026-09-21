@@ -62,8 +62,6 @@ export namespace BTDeckTypes {
   export import ScriptValidationResult = ComponentsTypes.ScriptValidationResult
   export import ValidationError = ComponentsTypes.ValidationError
   export import ValidationWarning = ComponentsTypes.ValidationWarning
-  export import TASK_STATUS_OPTIONS = ComponentsTypes.TASK_STATUS_OPTIONS
-  export import TASK_TYPE_OPTIONS = ComponentsTypes.TASK_TYPE_OPTIONS
 
   // 重新导出通用工具类型
   export import KeyValuePair = CommonTypes.KeyValuePair

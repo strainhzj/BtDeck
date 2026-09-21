@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（180 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（59 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（236 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（124 套，spec 文件 128 个：unit 112 + 组件内嵌 12 + e2e/mobile 4；2026-09-21 实测）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（63 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（76 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -22,10 +22,11 @@
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 48 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard 运行时契约单独覆盖） |
-| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2637 行）+ LucideIcon.spec.ts（185 行） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 112 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard） |
+| 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 4 个 spec（移动端端到端场景，与 unit 分目录组织） |
+| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 12 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤各 1 个 |
 
-## backend/tests/（180 个 test_*.py + 支持文件）
+## backend/tests/（236 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -60,7 +61,7 @@
 ```bash
 cd backend && pytest                          # 全量
 cd backend && pytest tests/services/ -v       # 按目录
-cd backend && pytest tests/api/               # API 层（63 个 test_*.py）
+cd backend && pytest tests/api/               # API 层（76 个 test_*.py）
 ```
 
 ## frontend/tests/
@@ -71,10 +72,14 @@ cd backend && pytest tests/api/               # API 层（63 个 test_*.py）
 
 - `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
 - `file-management-contract.spec.ts`：覆盖备份列表当前 nickname、单次列表加载与 management-page 筛选区契约。
-- `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip 与 Tracker 卡片错误原因展示。
-- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖辅种数量列、Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
+- `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因展示。
+- `torrent-error-tooltip-dismiss.spec.ts`：7 个运行时用例覆盖监听参数与对称解绑、数组/单例/空及 DOM ref、window/非冒泡后代滚动、销毁重挂载，以及真实 Element UI Tooltip 的滚轮关闭闭环。
+- `torrent-loading-mask.spec.ts`：使用真实 Element UI Loading 指令验证 fullscreen mask 挂 body、页面滚动锁定/释放、隐藏状态与加载中销毁清理。
+- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖辅种数量列、Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；通过共享 loading directive probe 验证两视图编译后的 fullscreen/lock modifiers 与请求异常后的 `listLoading` 复位；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；新增活动复合键会重拉数据库列表并立即应用同轮速度，`batch-complete` 会补一次列表与速度刷新；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
+- `torrent-add-dialog.spec.ts`：覆盖批量添加 202 响应保留 `task_id`、精确完成通知触发 `batch-complete`，以及组件销毁清理轮询计时器。
 - `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
 - `management-pages-ui.spec.ts`：管理页布局与信息层级契约；覆盖任务日志与孤儿文件统计摘要接入 `CollapsiblePanel`、独立 localStorage 键和折叠状态持久化入口。
+- `sidebar-collapse-lucide.spec.ts`：真实挂载 `SidebarItem + Element UI + LucideIcon` 并编译组件实际 SCSS，覆盖种子管理/Tracker 管理多子菜单折叠态主图标可见、标题与箭头隐藏、展开态恢复、单子项不回归及禁止广泛 `> span` 选择器。
 
 ### 组件内嵌测试
 
@@ -88,6 +93,7 @@ cd backend && pytest tests/api/               # API 层（63 个 test_*.py）
   - `FilterGroup.spec.ts`（97 行）
   - `QuickDeleteDuplicatesDialog.spec.ts`（176 行）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
+  - `AppLogo.spec.ts`（品牌资源与变体契约）
   - `LucideIcon.spec.ts`（185 行）
 - `frontend/src/components/BatchButton/__tests__/`
   - `BatchButton.spec.ts`（90 行）
@@ -106,7 +112,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 180 个 test_*.py，按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 236 个 test_*.py（2026-09-21 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
@@ -117,6 +123,9 @@ cd frontend && npm run test:unit    # jest
 - **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1` 与清理删除诊断；2026-08-15 起副本位置改为定时预扫描落库 + 接口只读（模块级断言交互链路不再 import 遍历函数，覆盖待扫描/扫描时间/结果读取失败降级）；新增 `test_orphan_hardlink_copy_scan.py`（742 行 23 用例：限时遍历 deadline/受控时钟中途截止/截断优先级/游标推进回绕/幂等更新/保留期清理/单链接不遍历/stat 预算部分进度/resolved 跳过/新鲜度排序/budget 落行/任务注册契约/护栏默认值/包装器）；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts`（当前定向 102 项）覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示，并额外守卫扁平/文件夹模式展开列动态切换、普通文件行展开标记与懒加载事件、子表隐藏表头但保留可见数据/选择事件；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
 - **种子备份补偿回归（2026-08-15，回归加固后 12 用例）**：`test_torrent_file_backup_reconcile.py` 守卫 info/full 同步后 `reconcile_missing_backups` 的限量批次、幂等收敛、qB 纯 hash 与 Transmission `name.hash.torrent` 源文件名、逻辑删除墓碑不自动重建、源目录不可用一次性上报、文件复用双路径、复制失败不落库、commit 失败回滚清理、目标筛选与 added_date 倒序、路径映射回退；UUID 类型链（仓储字符串过滤/schema 空串拒绝/store str 归一匹配）；`test_sync_coordinator.py`（29 用例）另守卫 full 触发/tracker 不触发/补偿失败不阻断信息同步；`test_db_migration.py` 新增 `b6e1c4d9a2f7` UUID 类型升级/降级用例（含不可无损转换数据时 downgrade 拒绝回滚）；`torrent-list-view-component.spec.ts` 守卫种子页三个筛选下拉提示语
 - **2026-08-20 辅种数量回归加固**：新增无效 `name/size` 键、31 条同名同大小且 45 个不同 `.torrent` 文件的全量重算快照；等级 1/2/3 删除（等级 3 移动失败回滚）、回收站还原、种子转移源删除均验证有效分组数量；同步任务覆盖 success/partial/failed 与数量校正异常不掩盖同步结果；列表 API 锁定 `auxiliarySeedCount` camelCase 输出。定向后端回归合计 118 passed（服务/转移 24、删除/回收站 42、同步/列表 52）。
+- **2026-08-29 种子实时终态回归（加固后新增 36 例）**：`test_torrent_speed_regression.py` 增加 TTL 补查退避/恢复/公平轮转/完成移除、qB/Transmission 完成状态矩阵及显式未完成优先级；`test_active_torrents_endpoint.py` 以“先有速度、再零速完成”的两轮端点闭环验证最后一个 100% 快照、响应前同步与 TTL 移除，并覆盖 206 下健康下载器终态仍交付；`test_active_only_filter.py` 独立验证完成时间/完成状态/100% 三种落库证据均阻止旧快照回退。`torrent-batch.spec.ts`（1415 行）覆盖 200/206、终态矩阵、异常数值、连续未命中复合键与 100 项上限；`api-contracts.spec.ts` 锁定核验 POST 复合键载荷；列表/传统/移动三视图组件回归覆盖核验、同 hash 跨下载器隔离和筛选刷新。加固验证：后端定向 110 passed；前端定向 237 passed、全量 1258 passed。
+- **2026-08-30 种子列表成员自愈回归（新增 12 例）**：`torrent-batch.spec.ts`（1496 行）新增首次完整快照基线、206 增量、同 hash 跨下载器、刷新后重建基线与并发刷新单飞；列表/传统/移动三视图验证数据库已入库但页面尚未展示时自动重拉并立即呈现同轮进度；两种桌面视图验证批量添加完成信号补拉列表与速度；新增 `torrent-add-dialog.spec.ts`（125 行）覆盖 202 task_id 完成通知和销毁清理。验证：相关 5 suites / 204 passed；前端全量 90 suites / 1297 passed。
+- **2026-08-30 下载器手动同步异步生命周期回归**：新增 `test_background_task_manager.py`（96 行）覆盖 pending 原子防重、结构化失败终态和 runner 强引用释放；`test_sync_governance_integration.py`（313 行）用受控协调器验证 HTTP 立即返回、运行期 409 复用 task_id 且仅执行一次 full/manual；新增 `downloader-sync-task.spec.ts`（134 行）并扩展 API/桌面/移动页契约，覆盖终态前持续轮询、销毁取消、查询失败上限、partial/failed 文案及移动端占用不提前释放。
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)
 

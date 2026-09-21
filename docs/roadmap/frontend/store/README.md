@@ -9,9 +9,9 @@
 |--------|------|-----------|
 | store 空壳 index | `index.ts` | 先建空 store，由各 module 动态注册（L17 注释明示） |
 | 用户认证 user | `modules/user.ts` | 用户认证（Login/LogOut/GetUserInfo/ResetToken/SetToken 双令牌/SetTwoFactorFlag/SetMustChangePassword/ExpireSession 被动登出保留共享 cookie——refresh 防轮换竞态、access 防跨标签级联误杀；GetUserInfo 网络 '0' 与业务 5xx ApiError 原样上抛供守卫分流）；`@Module` 动态注册 |
-| 下载器设置 downloader-settings | `modules/downloaderSettings.ts` | ⚠ 传统 `namespaced: true` Module（`export default`）：下载器设置/能力/模板 CRUD（fetchSettings/updateSettings/fetchTemplates/applyTemplate 等） |
+| 下载器设置 downloader-settings | `modules/downloaderSettings.ts` | ⚠ 传统 `namespaced: true` Module（`export default`）：下载器设置/能力/模板 CRUD（fetchSettings/updateSettings/fetchTemplates/applyTemplate 等）；P6-5 双语：16 处后端 msg 缺失时的 throw 兑底走 downloader.store.* 九键（原内联中文逐字节入键） |
 | 通知抽屉 notification | `modules/notification.ts` | 通知抽屉（ToggleDrawer/FetchUnreadCount/MarkAsRead 等）；`@Module` 动态注册 |
-| 应用 UI app | `modules/app.ts` | 应用 UI 状态（ToggleSideBar/CloseSideBar/ToggleDevice）；`@Module` 动态注册 |
+| 应用 UI app | `modules/app.ts` | 应用 UI 状态 + 界面语言（ToggleSideBar/CloseSideBar/ToggleDevice/**SetLanguage** 委托 i18n 层持久化，双语 P1）；`@Module` 动态注册 |
 | 视图模式 view-mode | `modules/viewMode.ts` | 视图模式（setViewMode/toggleFilterPanel）；`@Module` 动态注册 |
 
 ---
@@ -31,7 +31,7 @@
 `ToggleDrawer`、`FetchUnreadCount`、`FetchNotifications`、`RefreshNotifications`、`MarkAsRead`、`MarkAllAsRead`、`MarkAsUnread`、`DeleteNotification`
 
 ### app.ts（L18 `@Module`）
-`ToggleSideBar`、`CloseSideBar`、`ToggleDevice`
+`ToggleSideBar`、`CloseSideBar`、`ToggleDevice`、`SetLanguage`（L64，language 状态镜像 + 委托 `i18n.setLocale`）
 
 ### viewMode.ts（L15 `@Module`）
 `setViewMode`、`toggleFilterPanel`、`setFilterPanelCollapsed`

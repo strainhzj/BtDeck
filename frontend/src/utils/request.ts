@@ -5,7 +5,10 @@ import { setRefreshToken, getRefreshToken } from '@/utils/cookies'
 import { refreshAccessToken } from '@/api/users'
 import { refreshTokensOnce, type TokenPair, type RefreshOutcome } from '@/utils/token-refresh'
 import { buildLoginRedirectTarget } from '@/utils/session'
+import { translate } from '@/i18n'
 import { ApiError } from '@/types/api'
+import { isDemoMode } from '@/demo/config'
+import { demoRequest } from '@/demo/demo-request'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -30,6 +33,12 @@ export interface ApiEnvelope<T = unknown> {
 
 export interface RequestClient {
   <T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T>
+  get<T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = ApiEnvelope<unknown>>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  put<T = ApiEnvelope<unknown>>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  delete<T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T>
+  /** 兼容需要注入 Axios adapter 的集成测试与调试工具。 */
+  defaults: typeof service.defaults
 }
 
 /**
@@ -93,7 +102,7 @@ export function redirectToLogin(): void {
     return
   }
   redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
-  Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
+  Message({ message: translate('common.sessionExpired'), type: 'warning', duration: 3000 })
   // ExpireSession 保留共享 cookie（access + refresh）：多标签共享 cookie 下，
   // "确证死亡"判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效
   // 令牌一并杀死（access cookie 被删还会经 syncTokenFromCookie 级联误杀
@@ -162,6 +171,54 @@ async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unk
   return Promise.reject(fallbackError)
 }
 
+// ====== 幂等 GET 瞬态失败自动重试（mobile-ux-fixes 2026-09） ======
+
+/**
+ * 重试触发窗口（毫秒）。高负载（全量同步/多客户端轮询）下的网络错误与网关
+ * 502/503/504 多为瞬态，稍候重发即可恢复。
+ */
+const TRANSIENT_RETRY_DELAY_MS = 800
+
+/** 视为瞬态可重试的网关/服务端状态码（404/5xx 其它属确定性失败，不重试） */
+const TRANSIENT_RETRY_STATUSES = new Set([502, 503, 504])
+
+/** 与 401 重放的 _retried 同思路：标记防重试循环 */
+type TransientRetryConfig = AxiosRequestConfig & { _transientRetried?: boolean }
+
+/**
+ * 幂等 GET 瞬态失败重试资格：仅 GET（写操作绝不重放）；网络层错误（请求已
+ * 发出但无响应）或 HTTP 502/503/504 触发；超时（ECONNABORTED，timeout 已
+ * 20s）不重试——重试只会把等待翻倍；每个请求最多重试一次。
+ *
+ * 这是高负载失败（伴侣模式红色 toast）的对症缓解：重试期间静默（不弹网络
+ * 错误提示），重试用尽仍失败才走节流 toast；负载根源（单 Worker 串行 IO）
+ * 由后端另行治理。
+ */
+function isTransientRetryEligible(error: unknown): boolean {
+  const err = error as {
+    config?: TransientRetryConfig
+    request?: unknown
+    response?: { status?: number }
+    code?: string
+  }
+  const config = err.config
+  if (!config || config._transientRetried) return false
+  if (String(config.method || '').toLowerCase() !== 'get') return false
+  if (err.code === 'ECONNABORTED') return false
+  if (err.response) {
+    const status = err.response.status
+    return status !== undefined && TRANSIENT_RETRY_STATUSES.has(status)
+  }
+  // 请求已发出但无响应 = 网络层错误；仅构建阶段失败（无 request）不可重试
+  return Boolean(err.request)
+}
+
+async function retryTransientRequest(config: TransientRetryConfig): Promise<never> {
+  config._transientRetried = true
+  await new Promise((resolve) => { setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS) })
+  return await service.request(config) as never
+}
+
 // Request interceptors
 service.interceptors.request.use(
   (config) => {
@@ -212,7 +269,7 @@ service.interceptors.response.use(
       // 207 保留部分成功的 warning 提示（业务依赖此行为）
       if (res.code === '207') {
         Message({
-          message: res.msg || '部分操作成功',
+          message: res.msg || translate('common.partialSuccess'),
           type: 'warning',
           duration: 5 * 1000
         })
@@ -231,11 +288,17 @@ service.interceptors.response.use(
     return Promise.reject(apiError)
   },
   (error) => {
+    // 幂等 GET 瞬态失败（网络错误/502/503/504）：静默重试一次，成功即无感返回；
+    // 重试用尽的失败会带 _transientRetried 标记再次进入本分支走下方归一化
+    if (isTransientRetryEligible(error)) {
+      return retryTransientRequest((error as { config: TransientRetryConfig }).config)
+    }
+
     // 无 response：网络层错误（请求未发出/无响应）
     if (!error.response) {
       const message = error.request
-        ? '网络连接失败，请检查网络连接'
-        : error.message || '网络错误'
+        ? translate('errors.network.unavailable')
+        : error.message || translate('errors.network.generic')
       // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）；
       // 3 秒同文案节流防轮询洪泛
       notifyNetworkError(message)
@@ -260,4 +323,33 @@ service.interceptors.response.use(
   }
 )
 
-export default service as unknown as RequestClient
+const requestClient = (<T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T> => {
+  if (isDemoMode()) {
+    return demoRequest<T>(config)
+  }
+  return service.request(config) as unknown as Promise<T>
+}) as RequestClient
+
+// 保留旧默认导出作为 Axios 实例时可观察到的 defaults 引用；真实模式仍由
+// service.request 执行，Demo 模式只在上面的分流函数内返回本地 Promise。
+requestClient.defaults = service.defaults
+
+requestClient.get = <T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T> =>
+  requestClient<T>({ ...(config || {}), url, method: 'get' })
+
+requestClient.post = <T = ApiEnvelope<unknown>>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> => requestClient<T>({ ...(config || {}), url, method: 'post', data })
+
+requestClient.put = <T = ApiEnvelope<unknown>>(
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> => requestClient<T>({ ...(config || {}), url, method: 'put', data })
+
+requestClient.delete = <T = ApiEnvelope<unknown>>(url: string, config?: AxiosRequestConfig): Promise<T> =>
+  requestClient<T>({ ...(config || {}), url, method: 'delete' })
+
+export default requestClient

@@ -50,6 +50,9 @@ export interface Torrent {
 
   // 进度信息(可能为null)
   progress?: number | null
+  /** 实时速度接口在终态核验时提供的完成证据。 */
+  downloadComplete?: boolean | null
+  download_complete?: boolean | null
   ratio: number | null
   ratioLimit: number | null
   ratio_limit?: number | null

@@ -40,6 +40,30 @@ if not os.path.isdir(FRONTEND_ASSETS):
 datas.append((FRONTEND_DIST, 'frontend_dist'))
 print(f"[INFO] Including frontend dist: {FRONTEND_DIST}")
 
+# === 发布身份（release-artifact-equivalence-gate W2 / G1 / G5）===
+# 嵌入 build-info 与双 manifest；staging 缺失即失败（fail-closed）。
+# 构建脚本（dev 与 release 模式）都会先运行 scripts/release/generate_build_info.py
+# 生成 release/build/linux-binary/ 再进入 PyInstaller。
+RELEASE_STAGING = os.environ.get(
+    'BTDECK_RELEASE_STAGING',
+    os.path.join(PROJECT_ROOT, 'release', 'build', 'linux-binary'),
+)
+
+def _staged(name):
+    path = os.path.join(RELEASE_STAGING, name)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"release staging 缺少 {name}: {path}\n"
+            "请先运行: python scripts/release/generate_build_info.py "
+            "--artifact-kind linux-binary [--allow-dirty]"
+        )
+    return path
+
+datas.append((_staged('build-info.json'), '.'))
+datas.append((_staged('source-manifest.json'), '.'))
+datas.append((_staged('frontend-asset-manifest.json'), '.'))
+print(f"[INFO] Including release identity from: {RELEASE_STAGING}")
+
 # 隐式导入（PyInstaller 可能检测不到的模块）
 hiddenimports = [
     # === ASGI / 服务器 ===
@@ -102,7 +126,7 @@ hiddenimports = [
     'qrcode',
     'qrcode.image',
     'qrcode.image.pil',
-    # 审计日志 Excel 导出用 pandas.to_excel(engine='openpyxl')，openpyxl 为延迟导入
+    # 审计日志 Excel 导出用 openpyxl 直写（延迟导入），PyInstaller 静态分析检测不到
     'openpyxl',
     # === app 包及其子包（确保 PyInstaller 收集所有子模块）===
     'app',
@@ -162,7 +186,10 @@ a = Analysis(
         'scipy',
         # 注意：以下模块不能排除——
         # PIL (Pillow): qrcode 生成二维码图片时依赖它
-        # pandas / numpy: 审计日志 Excel 导出依赖 pandas + openpyxl
+        # pandas/numpy 已随 dual-mode-client Phase 1.3 移除（Excel 导出改
+        # openpyxl 直写，全仓零 import 已核实），显式排除防止传递依赖回流
+        'pandas',
+        'numpy',
         'PyQt5',
         'PyQt6',
         'pytest',
@@ -212,5 +239,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # TODO: 添加应用图标
+    # Linux ELF 无内嵌应用图标约定（PyInstaller icon 参数仅 Windows/macOS 生效）：
+    # 品牌图标经 build-linux.sh Step 5 的 hicolor 图标 + .desktop 随 deb/rpm 交付，
+    # Web UI 内品牌资产随 frontend_dist 数据打入，二进制本身保持无图标。
+    icon=None,
 )

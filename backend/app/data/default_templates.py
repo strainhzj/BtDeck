@@ -156,6 +156,7 @@ NIGHT_UNLIMITED_CONFIG = {
 DEFAULT_TEMPLATES = [
     {
         "name": "qBittorrent标准模板",
+        "preset_key": "qb_standard",
         "description": "适合家庭用户的默认配置，适中的速度限制（1MB/s下载，512KB/s上传），500个全局连接数",
         "downloader_type": 0,  # qBittorrent
         "template_config": QB_STANDARD_CONFIG,
@@ -164,6 +165,7 @@ DEFAULT_TEMPLATES = [
     },
     {
         "name": "qBittorrent高性能模板",
+        "preset_key": "qb_highperf",
         "description": "高带宽、高连接数配置，不限速，1000个全局连接数，最多20个并发任务",
         "downloader_type": 0,  # qBittorrent
         "template_config": QB_HIGH_PERFORMANCE_CONFIG,
@@ -172,6 +174,7 @@ DEFAULT_TEMPLATES = [
     },
     {
         "name": "Transmission标准模板",
+        "preset_key": "tr_standard",
         "description": "适合家庭用户的默认配置，适中的速度限制（1MB/s下载，512KB/s上传），500个全局连接数",
         "downloader_type": 1,  # Transmission
         "template_config": TR_STANDARD_CONFIG,
@@ -180,6 +183,7 @@ DEFAULT_TEMPLATES = [
     },
     {
         "name": "Transmission高性能模板",
+        "preset_key": "tr_highperf",
         "description": "高带宽、高连接数配置，不限速，1000个全局连接数，最多20个并发任务",
         "downloader_type": 1,  # Transmission
         "template_config": TR_HIGH_PERFORMANCE_CONFIG,
@@ -188,6 +192,7 @@ DEFAULT_TEMPLATES = [
     },
     {
         "name": "夜间不限速模板",
+        "preset_key": "night_unlimited",
         "description": "分时段速度配置示例：工作日白天限速（512KB/s下载），晚上和周末不限速。适用于qBittorrent",
         "downloader_type": 0,  # qBittorrent
         "template_config": NIGHT_UNLIMITED_CONFIG,
@@ -215,17 +220,46 @@ def init_default_templates(db_session) -> int:
     """
     import json
     from datetime import datetime
+    from sqlalchemy import text as sql_text
     from app.models.setting_templates import SettingTemplate
 
     try:
         created_count = 0
 
-        for template_data in DEFAULT_TEMPLATES:
-            # 检查模板是否已存在
-            existing = db_session.query(SettingTemplate).filter_by(name=template_data["name"]).first()
+        # 双语 P6-2：身份按 preset_key（与名称解耦）；旧库历史行按中文名自愈回填。
+        # preset_key（新库）与中文名（旧库兼容判定）双读。
+        # 注意：setting_templates.name 带 UNIQUE 约束（uq_setting_templates_name），
+        # 同名只可能有一行——用户模板占用预设名时不得插入（否则 IntegrityError），
+        # 且用户行一律不写 preset_key（B02 用户数据保护）。
+        existing_rows = db_session.execute(
+            sql_text("SELECT name, preset_key, is_system_default FROM setting_templates")
+        ).fetchall()
+        existing_keys = {row[1] for row in existing_rows if row[1]}
+        existing_names = [row[0] for row in existing_rows if row[0]]
+        system_names = {row[0] for row in existing_rows if row[2]}
 
-            if existing:
-                logger.info(f"系统默认模板已存在，跳过: {template_data['name']}")
+        for template_data in DEFAULT_TEMPLATES:
+            preset_key = template_data.get("preset_key")
+            name = template_data["name"]
+
+            # 1) 稳定身份已存在 → 跳过
+            if preset_key and preset_key in existing_keys:
+                logger.info(f"系统默认模板已存在（preset_key={preset_key}），跳过")
+                continue
+
+            # 2) 名称已被占用（同名唯一约束）：仅系统行且回填遗漏时原地补身份
+            if name in existing_names:
+                if name in system_names and preset_key:
+                    db_session.execute(
+                        sql_text(
+                            "UPDATE setting_templates SET preset_key = :key "
+                            "WHERE is_system_default = 1 AND preset_key IS NULL AND name = :name"
+                        ),
+                        {"key": preset_key, "name": name},
+                    )
+                    logger.info(f"系统默认模板按旧中文名回填身份: {name} -> {preset_key}")
+                else:
+                    logger.warning(f"系统默认模板名称已被用户模板占用，跳过插入（不写入 preset_key）: {name}")
                 continue
 
             # 创建新模板
@@ -239,6 +273,7 @@ def init_default_templates(db_session) -> int:
 
             template = SettingTemplate(
                 name=template_data["name"],
+                preset_key=template_data.get("preset_key"),
                 description=template_data["description"],
                 downloader_type=template_data["downloader_type"],
                 template_config=template_config_json,

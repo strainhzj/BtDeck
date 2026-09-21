@@ -567,7 +567,8 @@ class AuditLogService:
             return False
 
     async def export_logs_to_excel(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
-        """导出审计日志为Excel格式
+        """导出审计日志为Excel格式（openpyxl 直写，dual-mode-client Phase 1.3 依赖瘦身，
+        替代 pandas.DataFrame.to_excel——减少 pandas/numpy 打包体积与 Android wheel 压力）
 
         Args:
             logs: 审计日志字典列表
@@ -577,46 +578,62 @@ class AuditLogService:
             成功返回True，失败返回False
         """
         try:
-            import pandas as pd
+            from openpyxl import Workbook
 
-            # 转换为DataFrame
-            data = []
+            # 与历史 pandas 版本一致的列头与列序
+            headers = [
+                "日志ID",
+                "种子ID",
+                "操作类型",
+                "操作人",
+                "操作时间",
+                "操作结果",
+                "错误信息",
+                "下载器ID",
+                "IP地址",
+                "User-Agent",
+                "请求ID",
+                "会话ID",
+                "操作详情",
+                "旧值",
+                "新值",
+            ]
+            keys = [
+                "log_id",
+                "torrent_info_id",
+                "operation_type",
+                "operator",
+                "operation_time",
+                "operation_result",
+                "error_message",
+                "downloader_id",
+                "ip_address",
+                "user_agent",
+                "request_id",
+                "session_id",
+                "operation_detail",
+                "old_value",
+                "new_value",
+            ]
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "审计日志"
+            sheet.append(headers)
             for log_dict in logs:
                 # 安全的字典访问
                 if not isinstance(log_dict, dict):
                     logger.warning(f"跳过非字典类型的日志项: {type(log_dict)}")
                     continue
+                sheet.append([log_dict.get(key, "") for key in keys])
 
-                data.append(
-                    {
-                        "日志ID": log_dict.get("log_id", ""),
-                        "种子ID": log_dict.get("torrent_info_id", ""),
-                        "操作类型": log_dict.get("operation_type", ""),
-                        "操作人": log_dict.get("operator", ""),
-                        "操作时间": log_dict.get("operation_time", ""),
-                        "操作结果": log_dict.get("operation_result", ""),
-                        "错误信息": log_dict.get("error_message", ""),
-                        "下载器ID": log_dict.get("downloader_id", ""),
-                        "IP地址": log_dict.get("ip_address", ""),
-                        "User-Agent": log_dict.get("user_agent", ""),
-                        "请求ID": log_dict.get("request_id", ""),
-                        "会话ID": log_dict.get("session_id", ""),
-                        "操作详情": log_dict.get("operation_detail", ""),
-                        "旧值": log_dict.get("old_value", ""),
-                        "新值": log_dict.get("new_value", ""),
-                    }
-                )
-
-            df = pd.DataFrame(data)
-
-            # 导出为Excel
-            df.to_excel(output_path, index=False, engine="openpyxl")
+            workbook.save(output_path)
 
             logger.info(f"审计日志导出Excel成功: {output_path}")
             return True
 
         except ImportError:
-            logger.error("导出Excel失败: 缺少 pandas 或 openpyxl 库")
+            logger.error("导出Excel失败: 缺少 openpyxl 库")
             return False
         except Exception as e:
             logger.error(f"导出审计日志Excel失败: {str(e)}")

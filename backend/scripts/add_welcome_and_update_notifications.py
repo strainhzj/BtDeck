@@ -125,7 +125,8 @@ async def add_notifications():
             content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
             priority="info",
             is_read=False,
-            extra_data=None,
+            # 双语 P4（E03）：稳定事件键，前端按事件本地化；历史通知无 event 键则原文展示
+            extra_data={"event": "welcome"},
             created_at=datetime.utcnow()
         )
         db.add(welcome_notification)
@@ -141,6 +142,8 @@ async def add_notifications():
             priority="info",
             is_read=False,
             extra_data={
+                # 双语 P4（E03）：稳定事件键，前端按事件本地化；历史通知无 event 键则原文展示
+                "event": "version_update",
                 "version": "1.0.4",
                 "previous_version": "1.0.3",
                 "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.4"

@@ -25,6 +25,7 @@ sync_observability 单测（W4-1：结构化观测工具模块 + run_id 贯穿 +
 import asyncio
 import logging
 import sqlite3
+import sys
 import time
 from unittest.mock import MagicMock, patch
 
@@ -93,6 +94,58 @@ class TestLogEvent:
         assert "max_ms=3.0" in msg
         assert "rss_mb" not in msg, "非白名单字段不应输出"
         assert "secret_extra" not in msg, "非白名单字段不应输出"
+
+    def test_task_lifecycle_progress_stalled_whitelisted(self):
+        """【2026-08-25 回归】EVENT_TASK_LIFECYCLE 专属字段 progress_stalled 在
+        白名单内落盘——白名单外字段被 format_event_line 静默丢弃，漏登记会让
+        停滞告警只提级日志级别而丢失机器可读标记。"""
+        msg = self._log_msg(
+            obs.EVENT_TASK_LIFECYCLE,
+            state="heartbeat",
+            task_id=7,
+            task_code="tracker_sync_598b784c",
+            elapsed_ms=31502273.1,
+            last_progress_ms=31507202.7,
+            execution_mode="async",
+            timeout_exceeded=True,
+            timeout_seconds=3600.0,
+            progress_stalled=True,
+        )
+        assert "event=task_lifecycle" in msg
+        assert "state=heartbeat" in msg
+        assert "progress_stalled=True" in msg, "停滞标记必须在白名单内，否则被静默丢弃"
+        assert "timeout_exceeded=True" in msg
+
+    def test_sync_error_event_exposes_suppression_context(self):
+        """同步异常事件保留阶段/继续语义，但不把未白名单原始字段写入结构化日志。"""
+        msg = self._log_msg(
+            obs.EVENT_SYNC_ERROR,
+            run_id="run_tracker",
+            sync_type="tracker",
+            downloader_id="dl1",
+            phase="tracker_batch_commit",
+            stage="tracker_batch_commit",
+            operation="sync_trackers_batch_async",
+            error_type="OperationalError",
+            suppressed=True,
+            continue_after_error=False,
+            error_message="database is locked",
+        )
+        for token in (
+            "event=sync_error",
+            "run_id=run_tracker",
+            "sync_type=tracker",
+            "downloader_id=dl1",
+            "phase=tracker_batch_commit",
+            "stage=tracker_batch_commit",
+            "operation=sync_trackers_batch_async",
+            "error_type=OperationalError",
+            "suppressed=True",
+            "continue_after_error=False",
+        ):
+            assert token in msg, f"缺少字段 {token}: {msg}"
+        assert "error_message" not in msg
+        assert "database is locked" not in msg
 
     def test_unknown_event_only_common_fields(self):
         """未知事件名只输出公共字段（不崩溃）。"""
@@ -535,3 +588,216 @@ class TestLifecycleMount:
                 pass
         messages = [c.args[1] for c in mock_log.call_args_list]
         assert any(m.startswith("event=wal_snapshot") for m in messages), "WAL 快照事件应周期性发射"
+
+    async def test_wal_snapshot_loop_offloads_blocking_probe(self, monkeypatch):
+        """回归（2026-09-07 诊断 RCA）：WAL 快照探测含 PASSIVE checkpoint
+        （大 WAL 单轮数百 ms，生产 Docker 实测 p99 lag 尖峰来源），必须在
+        工作线程执行。判别用事件总序而非墙钟：探测协程须在阻塞探测「仍
+        在等待期间」完成（同步实现下逻辑不可能——循环线程困在探测里）；
+        随后放行探测并以 events 顺序固化。变异验证：还原同步调用后必败。"""
+        import threading
+
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_wal_snapshot_loop
+
+        monkeypatch.setattr(_settings, "SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS", 5.0)
+        probe_entered = threading.Event()
+        probe_release = threading.Event()
+        returned = threading.Event()
+        events: list = []
+
+        def _blocking_snapshot(db_path):
+            probe_entered.set()
+            # 有界等待：同步阻塞实现下 2s 后自行放行避免测试死锁
+            probe_release.wait(timeout=2.0)
+            events.append("snapshot_returned")
+            returned.set()
+            return {"wal_bytes": 42, "busy_count": 0, "checkpoint_busy": False}
+
+        monkeypatch.setattr(obs, "snapshot_wal_stats", _blocking_snapshot)
+        app = MagicMock()
+        task = asyncio.create_task(run_wal_snapshot_loop(app))
+        try:
+            await asyncio.to_thread(probe_entered.wait, 5.0)
+
+            async def _probe_coroutine():
+                await asyncio.sleep(0.01)
+                events.append("probe_ran")
+
+            probe_task = asyncio.create_task(_probe_coroutine())
+            done, _pending = await asyncio.wait({probe_task}, timeout=0.5)
+            assert probe_task in done, "探测协程未在阻塞期内完成（事件循环疑似被阻塞）"
+            probe_release.set()
+            await asyncio.to_thread(returned.wait, 5.0)
+            assert events.index("probe_ran") < events.index(
+                "snapshot_returned"
+            ), "WAL 快照探测阻塞了事件循环（必须 to_thread 化）"
+        finally:
+            probe_release.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+class TestProcessMemoryObservability:
+    """OOM 治理（2026-09-05 批次 5）：进程 RSS 采样与事件白名单。"""
+
+    def test_event_process_memory_whitelisted(self):
+        """rss_mb 仅在 process_memory 专属白名单中输出（不进 COMMON_FIELDS）。"""
+        with patch.object(obs.logger, "log") as mock_log:
+            obs.log_event(obs.EVENT_PROCESS_MEMORY, rss_mb=123.4, sample_interval_seconds=300.0)
+        message = mock_log.call_args.args[1]
+        assert "event=process_memory" in message
+        assert "rss_mb=123.4" in message
+        assert "sample_interval_seconds=300.0" in message
+
+    def test_rss_mb_still_dropped_on_other_events(self):
+        """护栏回归：rss_mb 在其它事件（如 loop_lag）仍被白名单丢弃——
+        test_non_whitelist_fields_dropped 以 rss_mb 作反例，本用例固化该行为
+        不因新事件登记而漂移。"""
+        with patch.object(obs.logger, "log") as mock_log:
+            obs.log_event(obs.EVENT_LOOP_LAG, lag_ms=5.0, rss_mb=123.4)
+        message = mock_log.call_args.args[1]
+        assert "rss_mb" not in message
+        assert "lag_ms=5.0" in message
+
+    def test_get_process_rss_mb_platform_positive_or_none(self):
+        """当前平台采集：Linux/Windows 返回正 float 且刷新 last-sample；macOS None。"""
+        rss = obs.get_process_rss_mb()
+        if sys.platform.startswith("darwin"):
+            assert rss is None
+            return
+        assert rss is not None and rss > 0.0
+        assert obs.get_last_rss_mb() == rss
+
+    def test_get_process_rss_mb_failure_returns_none(self, monkeypatch):
+        """采集异常静默降级为 None（观测不破坏主流程）。"""
+
+        def _boom():
+            raise OSError("no proc")
+
+        monkeypatch.setattr(obs, "_LAST_RSS_MB", 7.7)
+        monkeypatch.setattr("builtins.open", _boom)
+        # Windows 分支不走 open；用平台无关方式强制异常
+        with patch.object(obs.sys, "platform", "linux"):
+            with patch("builtins.open", _boom):
+                assert obs.get_process_rss_mb() is None
+        # 采样失败不覆盖已有 last-sample
+        assert obs.get_last_rss_mb() == 7.7
+
+    async def test_process_memory_loop_emits_and_cancels(self, monkeypatch):
+        """周期采样循环：周期性发射 process_memory；cancel 后干净退出（照 WAL 模式）。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        app = MagicMock()
+        with patch.object(obs.logger, "log") as mock_log:
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any(m.startswith("event=process_memory") for m in messages), "process_memory 事件应周期性发射"
+
+    async def test_process_memory_loop_calls_trim_and_emits_flag(self, monkeypatch):
+        """分配器归还联动：采样后调用 release_free_heap_memory，事件携带 heap_trimmed。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        trim_spy = MagicMock(return_value=True)
+        app = MagicMock()
+        with (
+            patch.object(obs, "release_free_heap_memory", trim_spy),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        assert trim_spy.called, "采样循环应调用分配器归还钩子"
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any("heap_trimmed=True" in m for m in messages), "事件应携带 heap_trimmed 结果"
+
+    async def test_process_memory_loop_trim_disabled_by_config(self, monkeypatch):
+        """回滚开关：SYNC_PROCESS_MEMORY_TRIM_ENABLED=False 时不调用归还。"""
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 0.05)
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_TRIM_ENABLED", False)
+        trim_spy = MagicMock(return_value=True)
+        app = MagicMock()
+        with (
+            patch.object(obs, "release_free_heap_memory", trim_spy),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            task = asyncio.create_task(run_process_memory_loop(app))
+            await asyncio.sleep(0.12)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        assert not trim_spy.called
+        messages = [c.args[1] for c in mock_log.call_args_list]
+        assert any("heap_trimmed=False" in m for m in messages)
+
+    async def test_process_memory_loop_offloads_blocking_sampling(self, monkeypatch):
+        """回归（2026-09-07 诊断 RCA 同批）：RSS 采集/malloc_trim（可达数十 ms）
+        与 WAL 快照同批 to_thread 化。判别同 WAL 用例：事件顺序（探测协程
+        完成先于阻塞采样返回）；变异验证：还原同步调用后本用例必须失败。"""
+        import threading
+
+        from app.core.config import settings as _settings
+        from app.startup.lifecycle import run_process_memory_loop
+
+        monkeypatch.setattr(_settings, "SYNC_PROCESS_MEMORY_SAMPLE_SECONDS", 5.0)
+        probe_entered = threading.Event()
+        probe_release = threading.Event()
+        returned = threading.Event()
+        events: list = []
+
+        def _blocking_rss():
+            probe_entered.set()
+            # 有界等待：同步阻塞实现下 2s 后放行避免死锁
+            probe_release.wait(timeout=2.0)
+            events.append("sampling_returned")
+            returned.set()
+            return 123.4
+
+        monkeypatch.setattr(obs, "get_process_rss_mb", _blocking_rss)
+        monkeypatch.setattr(obs, "release_free_heap_memory", lambda: False)
+        app = MagicMock()
+        task = asyncio.create_task(run_process_memory_loop(app))
+        try:
+            await asyncio.to_thread(probe_entered.wait, 5.0)
+
+            async def _probe_coroutine():
+                await asyncio.sleep(0.01)
+                events.append("probe_ran")
+
+            probe_task = asyncio.create_task(_probe_coroutine())
+            done, _pending = await asyncio.wait({probe_task}, timeout=0.5)
+            assert probe_task in done, "探测协程未在阻塞期内完成（事件循环疑似被阻塞）"
+            probe_release.set()
+            await asyncio.to_thread(returned.wait, 5.0)
+            assert events.index("probe_ran") < events.index(
+                "sampling_returned"
+            ), "RSS 采样阻塞了事件循环（必须 to_thread 化）"
+        finally:
+            probe_release.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass

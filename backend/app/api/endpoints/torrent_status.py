@@ -122,6 +122,7 @@ async def pause_torrents(
         result.status = "failed"
         result.msg = "参数错误：hashes列表不能为空"
         result.code = "400"
+        result.data = {"reasonCode": "TORRENT_HASHES_REQUIRED"}
         return result
 
     try:
@@ -131,6 +132,7 @@ async def pause_torrents(
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CACHE_UNAVAILABLE"}
             return result
 
         # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
@@ -143,6 +145,7 @@ async def pause_torrents(
             result.status = "failed"
             result.msg = f"下载器不在缓存中 [downloader_id={downloader_id}]"
             result.code = "404"
+            result.data = {"reasonCode": "DOWNLOADER_NOT_FOUND"}
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
@@ -150,6 +153,7 @@ async def pause_torrents(
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
+            result.data = {"reasonCode": "DOWNLOADER_OFFLINE"}
             return result
 
         # 获取缓存的客户端连接
@@ -158,6 +162,7 @@ async def pause_torrents(
             result.status = "failed"
             result.msg = f"下载器客户端连接不存在 [downloader_id={downloader_id}]"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CONNECTION_MISSING"}
             return result
 
         # ========== 查询种子信息 ==========
@@ -176,6 +181,7 @@ async def pause_torrents(
             result.status = "failed"
             result.msg = "未找到任何种子记录"
             result.code = "404"
+            result.data = {"reasonCode": "TORRENT_RECORDS_NOT_FOUND"}
             return result
 
         # 提取hash列表
@@ -253,6 +259,7 @@ async def pause_torrents(
             result.msg = f"暂停失败：{error_detail}"
             result.code = "500"
             result.data = {
+                "reasonCode": "TORRENT_OPERATION_FAILED",
                 "success_count": 0,
                 "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
@@ -291,8 +298,9 @@ async def pause_torrents(
         logger.error(f"暂停种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
-        result.msg = f"操作异常：{error_detail}"
+        result.msg = "操作异常，请稍后重试"
         result.code = "500"
+        result.data = {"reasonCode": "TORRENT_OPERATION_INTERNAL"}
 
     return result
 
@@ -354,6 +362,7 @@ async def resume_torrents(
         result.status = "failed"
         result.msg = "参数错误：hashes列表不能为空"
         result.code = "400"
+        result.data = {"reasonCode": "TORRENT_HASHES_REQUIRED"}
         return result
 
     try:
@@ -363,6 +372,7 @@ async def resume_torrents(
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CACHE_UNAVAILABLE"}
             return result
 
         # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
@@ -375,6 +385,7 @@ async def resume_torrents(
             result.status = "failed"
             result.msg = f"下载器不在缓存中 [downloader_id={downloader_id}]"
             result.code = "404"
+            result.data = {"reasonCode": "DOWNLOADER_NOT_FOUND"}
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
@@ -382,6 +393,7 @@ async def resume_torrents(
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
+            result.data = {"reasonCode": "DOWNLOADER_OFFLINE"}
             return result
 
         # 获取缓存的客户端连接
@@ -390,6 +402,7 @@ async def resume_torrents(
             result.status = "failed"
             result.msg = f"下载器客户端连接不存在 [downloader_id={downloader_id}]"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CONNECTION_MISSING"}
             return result
 
         # ========== 查询种子信息 ==========
@@ -408,6 +421,7 @@ async def resume_torrents(
             result.status = "failed"
             result.msg = "未找到任何种子记录"
             result.code = "404"
+            result.data = {"reasonCode": "TORRENT_RECORDS_NOT_FOUND"}
             return result
 
         # 提取hash列表
@@ -493,6 +507,7 @@ async def resume_torrents(
             result.msg = f"恢复失败：{error_detail}"
             result.code = "500"
             result.data = {
+                "reasonCode": "TORRENT_OPERATION_FAILED",
                 "success_count": 0,
                 "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
@@ -531,8 +546,9 @@ async def resume_torrents(
         logger.error(f"恢复种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
-        result.msg = f"操作异常：{error_detail}"
+        result.msg = "操作异常，请稍后重试"
         result.code = "500"
+        result.data = {"reasonCode": "TORRENT_OPERATION_INTERNAL"}
 
     return result
 
@@ -594,6 +610,7 @@ async def recheck_torrents(
         result.status = "failed"
         result.msg = "参数错误：hashes列表不能为空"
         result.code = "400"
+        result.data = {"reasonCode": "TORRENT_HASHES_REQUIRED"}
         return result
 
     # Transmission并发限制（用户自定义：每次最多3个）
@@ -606,6 +623,7 @@ async def recheck_torrents(
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CACHE_UNAVAILABLE"}
             return result
 
         # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
@@ -618,6 +636,7 @@ async def recheck_torrents(
             result.status = "failed"
             result.msg = f"下载器不在缓存中 [downloader_id={downloader_id}]"
             result.code = "404"
+            result.data = {"reasonCode": "DOWNLOADER_NOT_FOUND"}
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
@@ -625,6 +644,7 @@ async def recheck_torrents(
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
+            result.data = {"reasonCode": "DOWNLOADER_OFFLINE"}
             return result
 
         # 获取缓存的客户端连接
@@ -633,6 +653,7 @@ async def recheck_torrents(
             result.status = "failed"
             result.msg = f"下载器客户端连接不存在 [downloader_id={downloader_id}]"
             result.code = "500"
+            result.data = {"reasonCode": "DOWNLOADER_CONNECTION_MISSING"}
             return result
 
         # ========== 查询种子信息 ==========
@@ -651,6 +672,7 @@ async def recheck_torrents(
             result.status = "failed"
             result.msg = "未找到任何种子记录"
             result.code = "404"
+            result.data = {"reasonCode": "TORRENT_RECORDS_NOT_FOUND"}
             return result
 
         # Transmission并发限制检查
@@ -740,6 +762,7 @@ async def recheck_torrents(
             result.msg = f"重检失败：{error_detail}"
             result.code = "500"
             result.data = {
+                "reasonCode": "TORRENT_OPERATION_FAILED",
                 "success_count": 0,
                 "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
@@ -778,8 +801,9 @@ async def recheck_torrents(
         logger.error(f"重新检查种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
-        result.msg = f"操作异常：{error_detail}"
+        result.msg = "操作异常，请稍后重试"
         result.code = "500"
+        result.data = {"reasonCode": "TORRENT_OPERATION_INTERNAL"}
 
     return result
 
@@ -803,7 +827,12 @@ async def reannounce_torrents(
 
     # 支持 hashes 或 info_ids 任一方式
     if not hashes and not info_ids:
-        return CommonResponse(status="error", msg="参数错误：hashes或info_ids列表不能为空", code="400")
+        return CommonResponse(
+            status="error",
+            msg="参数错误：hashes或info_ids列表不能为空",
+            code="400",
+            data={"reasonCode": "TORRENT_HASHES_REQUIRED"},
+        )
 
     try:
         from app.services.reannounce_service import execute_reannounce
@@ -832,7 +861,12 @@ async def reannounce_torrents(
             )
 
         if not torrent_records:
-            return CommonResponse(status="error", msg="未找到任何种子记录", code="404")
+            return CommonResponse(
+                status="error",
+                msg="未找到任何种子记录",
+                code="404",
+                data={"reasonCode": "TORRENT_RECORDS_NOT_FOUND"},
+            )
 
         result = await execute_reannounce(
             app=request.app,
@@ -879,7 +913,13 @@ async def reannounce_torrents(
         user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"Tracker汇报异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
-        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
+        # 双语 P4 错误契约：动态 error_detail 只进日志（上方已 logger.error），msg 固定
+        return CommonResponse(
+            status="error",
+            msg="操作异常，请稍后重试",
+            code="500",
+            data={"reasonCode": "TORRENT_OPERATION_INTERNAL"},
+        )
 
 
 @router.post(
@@ -907,7 +947,12 @@ async def reannounce_by_downloader(
         )
 
         if not torrent_records:
-            return CommonResponse(status="error", msg="该下载器下没有种子", code="404")
+            return CommonResponse(
+                status="error",
+                msg="该下载器下没有种子",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NO_TORRENTS"},
+            )
 
         result = await execute_reannounce(
             app=request.app,
@@ -954,7 +999,13 @@ async def reannounce_by_downloader(
         logger.error(
             f"Tracker汇报（按下载器）异常 [user_id={user_id}, downloader_id={req_data.downloader_id}]: {error_detail}"
         )
-        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
+        # 双语 P4 错误契约：动态 error_detail 只进日志（上方已 logger.error），msg 固定
+        return CommonResponse(
+            status="error",
+            msg="操作异常，请稍后重试",
+            code="500",
+            data={"reasonCode": "TORRENT_OPERATION_INTERNAL"},
+        )
 
 
 @router.post("/reannounce-all", description="Tracker汇报（全局）", response_model=CommonResponse[Dict[str, Any]])
@@ -1004,4 +1055,10 @@ async def reannounce_all(request: Request, _user=Depends(require_authenticated_u
         user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"全局Tracker汇报异常 [user_id={user_id}]: {error_detail}")
-        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
+        # 双语 P4 错误契约：动态 error_detail 只进日志（上方已 logger.error），msg 固定
+        return CommonResponse(
+            status="error",
+            msg="操作异常，请稍后重试",
+            code="500",
+            data={"reasonCode": "TORRENT_OPERATION_INTERNAL"},
+        )

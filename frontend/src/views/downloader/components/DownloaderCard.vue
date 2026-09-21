@@ -41,21 +41,21 @@
 
       <dl class="node-counters">
         <div>
-          <dt>下载中</dt>
+          <dt>{{ $t('downloader.card.downloading') }}</dt>
           <dd>{{ displayValue(status.downloading_count) }}</dd>
         </div>
         <div>
-          <dt>做种中</dt>
+          <dt>{{ $t('downloader.card.seeding') }}</dt>
           <dd>{{ displayValue(status.seeding_count) }}</dd>
         </div>
         <div>
-          <dt>延迟</dt>
+          <dt>{{ $t('downloader.card.latency') }}</dt>
           <dd>{{ latencyText }}</dd>
         </div>
       </dl>
     </div>
 
-    <div class="node-meta" aria-label="下载器连接详情">
+    <div class="node-meta" :aria-label="$t('downloader.card.connectionDetail')">
       <span>
         <LucideIcon name="database" :size="13" :stroke-width="1.8" />
         {{ downloaderTypeLabel }}
@@ -66,11 +66,11 @@
       </span>
       <span :class="{'is-positive': searchEnabled}">
         <LucideIcon name="search" :size="13" :stroke-width="1.8" />
-        {{ searchEnabled ? '可搜索' : '未搜索' }}
+        {{ searchEnabled ? $t('downloader.card.searchable') : $t('downloader.card.notSearchable') }}
       </span>
       <span>
         <LucideIcon name="clock" :size="13" :stroke-width="1.8" />
-        {{ isOnline ? '实时遥测' : (status.connection_msg || '等待连接') }}
+        {{ isOnline ? $t('downloader.card.liveTelemetry') : (status.connection_msg || $t('downloader.card.waitingConnection')) }}
       </span>
     </div>
 
@@ -78,12 +78,12 @@
       <label class="node-enable">
         <el-switch
           :value="isEnabled"
-          :aria-label="`${info.nickname}启用状态`"
+          :aria-label="$t('downloader.card.enabledToggle', {name: info.nickname})"
           @input="$emit('toggle-enable', info)"
         />
         <span>
-          <strong>{{ isEnabled ? '节点启用' : '节点停用' }}</strong>
-          <small>{{ isEnabled ? '参与自动任务' : '仅保留配置' }}</small>
+          <strong>{{ isEnabled ? $t('downloader.card.nodeEnabled') : $t('downloader.card.nodeDisabled') }}</strong>
+          <small>{{ isEnabled ? $t('downloader.card.nodeEnabledHint') : $t('downloader.card.nodeDisabledHint') }}</small>
         </span>
       </label>
 
@@ -92,8 +92,8 @@
           type="button"
           class="node-action"
           :disabled="isTesting"
-          :aria-label="`测试 ${info.nickname} 的连接`"
-          title="测试连接"
+          :aria-label="$t('downloader.card.testLabel', {name: info.nickname})"
+          :title="$t('downloader.card.testTitle')"
           @click="$emit('test', downloaderId)"
         >
           <LucideIcon
@@ -102,14 +102,14 @@
             :stroke-width="1.9"
             :class="{'is-pulsing': isTesting}"
           />
-          <span>{{ isTesting ? '测试中' : '测试' }}</span>
+          <span>{{ isTesting ? $t('downloader.card.testing') : $t('downloader.card.test') }}</span>
         </button>
         <button
           type="button"
           class="node-action"
           :disabled="isSyncing"
-          :aria-label="`同步 ${info.nickname}`"
-          title="同步种子"
+          :aria-label="$t('downloader.card.syncLabel', {name: info.nickname})"
+          :title="$t('downloader.card.syncTitle')"
           @click="$emit('sync', downloaderId)"
         >
           <LucideIcon
@@ -118,22 +118,22 @@
             :stroke-width="1.9"
             :class="{'is-spinning': isSyncing}"
           />
-          <span>{{ isSyncing ? '同步中' : '同步' }}</span>
+          <span>{{ isSyncing ? $t('downloader.card.syncing') : $t('downloader.card.sync') }}</span>
         </button>
         <button
           type="button"
           class="node-action node-action--settings"
-          :aria-label="`打开 ${info.nickname} 的设置`"
+          :aria-label="$t('downloader.card.settingsLabel', {name: info.nickname})"
           @click="$emit('settings', info)"
         >
           <LucideIcon name="settings" :size="15" :stroke-width="1.9" />
-          <span>设置</span>
+          <span>{{ $t('downloader.card.settings') }}</span>
         </button>
         <button
           type="button"
           class="node-action node-action--danger"
-          :aria-label="`删除 ${info.nickname}`"
-          title="删除下载器"
+          :aria-label="$t('downloader.card.deleteLabel', {name: info.nickname})"
+          :title="$t('downloader.card.deleteTitle')"
           @click="$emit('delete', info)"
         >
           <LucideIcon name="trash-2" :size="15" :stroke-width="1.9" />
@@ -170,7 +170,7 @@ export default class DownloaderCard extends Vue {
     if (type === 1) return 'Transmission'
 
     // 未知类型兜底
-    return '未知类型'
+    return this.$t('downloader.card.unknownType')
   }
 
   // 计算属性：在线状态（优先使用 online，降级到 connection_status）
@@ -198,13 +198,13 @@ export default class DownloaderCard extends Vue {
   get statusText(): string {
     switch (this.onlineStatus) {
       case OnlineStatus.ONLINE:
-        return '在线'
+        return this.$t('downloader.card.statusOnline')
       case OnlineStatus.OFFLINE:
-        return '离线'
+        return this.$t('downloader.card.statusOffline')
       case OnlineStatus.TESTING:
-        return '测试中'
+        return this.$t('downloader.card.statusTesting')
       default:
-        return '未知'
+        return this.$t('downloader.card.statusUnknown')
     }
   }
 

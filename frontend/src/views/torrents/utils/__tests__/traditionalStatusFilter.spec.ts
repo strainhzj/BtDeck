@@ -23,9 +23,12 @@ const statusItems = [
 
 describe('traditionalStatusFilter —— emoji→Lucide 改造契约', () => {
   describe('buildTraditionalStatusFilterItems', () => {
-    const built = buildTraditionalStatusFilterItems(statusItems)
+    const built = buildTraditionalStatusFilterItems(statusItems, {
+      allLabel: '全部',
+      activeLabel: '活动中'
+    })
 
-    it('应在最前方插入「全部」项，icon 为 inbox（非 emoji 📥）', () => {
+    it('应在最前方插入调用方传入的「全部」项，icon 为 inbox（非 emoji 📥）', () => {
       const first = built[0]
       expect(first.label).toBe('全部')
       expect(first.value).toBe('')
@@ -33,7 +36,7 @@ describe('traditionalStatusFilter —— emoji→Lucide 改造契约', () => {
       expect(first.icon).not.toMatch(EMOJI_PATTERN)
     })
 
-    it('应在第二位插入「活动中」项，icon 为 activity（非 emoji ⚡），value 为活动哨兵', () => {
+    it('应在第二位插入调用方传入的「活动中」项，icon 为 activity（非 emoji ⚡），value 为活动哨兵', () => {
       const second = built[1]
       expect(second.label).toBe('活动中')
       expect(second.icon).toBe('activity')

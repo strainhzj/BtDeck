@@ -35,6 +35,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import json
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -763,3 +765,244 @@ class TestFirstRunHydrationLenient:
         assert len(inserted) == 1
         assert inserted[0]["name"] == "完整名称"
         assert inserted[0]["added_date"] is not None, "首轮水合后 added_date 必须非空"
+
+
+# ==================== 8. OOM 治理（2026-09-05）：TR base 瘦身 + detail 边拉边处理 ====================
+
+
+class TestTrInfoBaseFieldsMinimalSet:
+    """TR_INFO_BASE_FIELDS 防退化：满足活跃窗口过滤最小集，且不含体积大头 trackerStats。"""
+
+    def test_info_base_fields_contents(self):
+        assert set(torrents_async.TR_INFO_BASE_FIELDS) == {"id", "hashString", "activityDate", "error", "errorString"}
+
+    def test_base_fields_not_shrunk(self):
+        """共享常量 TR_BASE_FIELDS 不得被瘦身（full-sync 基座与 tracker-only 依赖 trackerStats）。"""
+        assert "trackerStats" in torrents_async.TR_BASE_FIELDS
+
+
+class TestTrDetailBatchOrdering:
+    """detail 批结果按 hashString 重排：TR 服务端按 id 序返回，处理序必须是 hash 字典序。"""
+
+    async def test_detail_batches_resorted_to_hash_order(self, monkeypatch):
+        """id 与 hash 反序分配 + 伪客户端按 id 降序返回 → 写入顺序仍为 hash 升序。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_DB_READ_PAGE_SIZE", 500)
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10**7)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 2)
+
+        count = 5
+        seeds = []
+        for i in range(count):
+            # id 与 hash 反序：id 越小 hash 越大，服务端 id 序返回 = hash 降序
+            seeds.append(_tr_seed(100 - i, f"trh{i:06d}", f"name-{i}"))
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                # slim base 阶段：真实客户端会按请求字段裁剪，这里返回全量对象即可
+                return list(by_id.values())
+            # 对抗形态：按 id 降序返回（比请求序更恶劣）
+            return [by_id[i] for i in sorted(ids, reverse=True)]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            await torrents_async.tr_add_torrents_info_only_async(db, [_tr_downloader()], client=client)
+
+        inserted_hashes = [row["hash"] for row in bulk_mock.await_args.args[1]]
+        assert inserted_hashes == sorted(
+            inserted_hashes
+        ), f"处理序必须是 hash 字典序（游标前缀依赖），实际: {inserted_hashes}"
+        assert inserted_hashes == [f"trh{i:06d}" for i in range(count)]
+
+    async def test_budget_stops_fetching_further_detail_batches(self, monkeypatch):
+        """预算到期后不再拉取后续 detail 批（最多多拉当前一批）。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 2)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 2)
+
+        seeds = [_tr_seed(100 - i, f"trh{i:06d}", f"name-{i}") for i in range(6)]
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                return list(by_id.values())
+            return [by_id[i] for i in sorted(ids, reverse=True)]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            result = await torrents_async.tr_add_torrents_info_only_async(
+                db, [_tr_downloader()], client=client, progress_callback=AsyncMock()
+            )
+
+        detail_calls = [c for c in client.get_torrents.call_args_list if c.kwargs.get("ids") is not None]
+        slim_calls = [c for c in client.get_torrents.call_args_list if c.kwargs.get("ids") is None]
+        assert len(slim_calls) == 1
+        # 6 种子 / 批 2 = 3 批：预算在批 2 处理中到期 → 批 3 不再拉取
+        assert len(detail_calls) == 2, f"预算到期后不应拉取第 3 批，实际 detail 调用 {len(detail_calls)} 次"
+        inserted = bulk_mock.await_args.args[1]
+        assert len(inserted) == 2
+        assert result["partial"] is True
+        assert result["processed"] == 2
+
+    async def test_pending_count_from_active_filtered_base(self, monkeypatch):
+        """pending 计数取活跃窗口过滤后的 slim base（旧种子不进分母）。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10**7)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "TR_BATCH_SIZE", 10)
+
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        recent = _dt.now() - _td(hours=1)
+        stale = _dt.now() - _td(days=3)
+        seeds = [
+            _tr_seed(1, "trh000001", "recent-1"),
+            _tr_seed(2, "trh000002", "recent-2"),
+        ]
+        seeds.append(_tr_seed(3, "trh000003", "stale"))
+        for seed in seeds:
+            seed.activity_date = stale if seed.name == "stale" else recent
+        by_id = {s.id: s for s in seeds}
+        client = MagicMock()
+
+        def get_torrents(**kwargs):
+            ids = kwargs.get("ids")
+            if ids is None:
+                return list(by_id.values())
+            return [by_id[i] for i in ids]
+
+        client.get_torrents = MagicMock(side_effect=get_torrents)
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {"dl-tr": True}),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {"dl-tr": _dt.now().timestamp()}),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            result = await torrents_async.tr_add_torrents_info_only_async(
+                db, [_tr_downloader()], client=client, progress_callback=AsyncMock()
+            )
+
+        inserted = bulk_mock.await_args.args[1]
+        assert [row["hash"] for row in inserted] == ["trh000001", "trh000002"]
+        assert result["total"] == 2
+        assert result["cycle_complete"] is True
+
+
+# ==================== 9. 全量快照标记持久化（2026-09-05 移动端治理） ====================
+
+
+class TestFullSyncMarkerPersistence:
+    """三标记（_QB_LAST_FULL_SYNC/_TR_LAST_FULL_SYNC/_TR_FULL_SYNC_DONE）落盘：
+    重启后恢复全量节奏，避免 Android 进程重启白付整库快照峰值。"""
+
+    @pytest.fixture(autouse=True)
+    def isolated_state_file(self, tmp_path, monkeypatch):
+        """标记文件指到临时目录；用例前后清空三 dict 隔离。"""
+        state_file = tmp_path / "full_sync_state.json"
+        monkeypatch.setattr(torrents_async, "_FULL_SYNC_STATE_FILE", state_file)
+        torrents_async._QB_LAST_FULL_SYNC.clear()
+        torrents_async._TR_LAST_FULL_SYNC.clear()
+        torrents_async._TR_FULL_SYNC_DONE.clear()
+        yield state_file
+        torrents_async._QB_LAST_FULL_SYNC.clear()
+        torrents_async._TR_LAST_FULL_SYNC.clear()
+        torrents_async._TR_FULL_SYNC_DONE.clear()
+
+    def test_marker_roundtrip_survives_restart(self, isolated_state_file):
+        torrents_async._mark_qb_full_sync("dl-a", 1000.5)
+        torrents_async._mark_tr_full_sync("dl-b", 2000.25)
+        torrents_async._mark_tr_full_sync("dl-c", None)  # 非强制轮：只置 done
+
+        # 模拟重启：进程内 dict 清零后从文件恢复
+        torrents_async._QB_LAST_FULL_SYNC.clear()
+        torrents_async._TR_LAST_FULL_SYNC.clear()
+        torrents_async._TR_FULL_SYNC_DONE.clear()
+        torrents_async._load_full_sync_state()
+
+        assert torrents_async._QB_LAST_FULL_SYNC == {"dl-a": 1000.5}
+        assert torrents_async._TR_LAST_FULL_SYNC == {"dl-b": 2000.25}
+        assert torrents_async._TR_FULL_SYNC_DONE == {"dl-b": True, "dl-c": True}
+
+    def test_corrupted_state_file_falls_back_empty(self, isolated_state_file):
+        isolated_state_file.write_text("{not valid json", encoding="utf-8")
+        torrents_async._load_full_sync_state()  # 不抛异常
+        assert not torrents_async._QB_LAST_FULL_SYNC
+        assert not torrents_async._TR_LAST_FULL_SYNC
+        assert not torrents_async._TR_FULL_SYNC_DONE
+
+    def test_save_failure_swallowed_and_old_file_intact(self, isolated_state_file):
+        """原子写失败（tmp 落盘受阻）静默吞掉，旧文件内容原样保留（2026-09-06）。
+
+        语义约束：持久化失败不得把成功轮变失败轮（写库已成功、仅标记落盘失败），
+        也不得留下半截 JSON 让重启解析失败——半截文件最多导致重启多付一次全量。
+        """
+        torrents_async._mark_qb_full_sync("dl-old", 111.0)
+        # 让 tmp 写失败：同目录预置同名目录 → write_text 抛错（Windows 为 PermissionError）
+        (isolated_state_file.parent / "full_sync_state.json.tmp").mkdir()
+        torrents_async._mark_qb_full_sync("dl-new", 222.0)  # 不抛
+
+        # 内存标记仍推进（下次成功保存会带上），旧文件完好
+        assert torrents_async._QB_LAST_FULL_SYNC["dl-new"] == 222.0
+        data = json.loads(isolated_state_file.read_text(encoding="utf-8"))
+        assert data["qb_last_full"] == {"dl-old": 111.0}, "原子写失败不得破坏旧文件"
+
+    def test_successful_save_leaves_no_tmp_file(self, isolated_state_file):
+        """成功路径：tmp 被原子替换消费，目录里无残留临时文件。"""
+        torrents_async._mark_qb_full_sync("dl-a", 1000.5)
+        assert not (isolated_state_file.parent / "full_sync_state.json.tmp").exists()
+        assert json.loads(isolated_state_file.read_text(encoding="utf-8"))["qb_last_full"] == {"dl-a": 1000.5}
+
+    def test_restart_no_longer_forces_full_snapshot(self, isolated_state_file, monkeypatch):
+        """核心语义：TR 完成强制全量后重启 → 恢复的时间戳使 force_full_sync=False。"""
+        recent_ts = datetime.now().timestamp()
+        torrents_async._mark_tr_full_sync("dl-tr", recent_ts)
+        torrents_async._TR_LAST_FULL_SYNC.clear()
+        torrents_async._TR_FULL_SYNC_DONE.clear()
+        torrents_async._load_full_sync_state()
+
+        now_ts = datetime.now().timestamp()
+        force_full = (
+            now_ts - torrents_async._TR_LAST_FULL_SYNC.get("dl-tr", 0)
+        ) >= torrents_async.TR_FULL_SYNC_INTERVAL_SECONDS
+        assert force_full is False, "重启后恢复的近期时间戳不应再触发强制全量"
+
+    async def test_tr_info_sync_full_path_persists_marker(self, isolated_state_file, monkeypatch):
+        """info-only 强制全量跑完 cycle → 标记落盘（写点经 _mark_tr_full_sync 路由）。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10**7)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+
+        seeds, _rows = _tr_pairs(3)
+        client = _make_tr_client(seeds)
+        db = _empty_db()
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()),
+        ):
+            result = await torrents_async.tr_add_torrents_info_only_async(
+                db, [_tr_downloader()], client=client, progress_callback=AsyncMock()
+            )
+
+        assert result["cycle_complete"] is True
+        assert isolated_state_file.exists(), "全量节奏标记应落盘"
+        state = json.loads(isolated_state_file.read_text(encoding="utf-8"))
+        assert state["tr_full_done"].get("dl-tr") is True
+        assert "dl-tr" in state["tr_last_full"]

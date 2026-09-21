@@ -3,20 +3,64 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { Message } from 'element-ui'
 import { Route } from 'vue-router'
+import { resolvePageTitle, translate } from '@/i18n'
 import { UserModule } from '@/store/modules/user'
 import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
 import { ApiError } from '@/types/api'
+import { currentUiMode, loginPathForMode, toMobilePath } from '@/utils/ui-mode'
+import { isDemoMode } from '@/demo/config'
+import {
+  isCapabilityAvailable,
+  isCapabilityUnknown,
+  loadPlatformCapabilities
+} from '@/api/platform-capabilities'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login']
+/** 登录页路径集合（桌面/移动双入口，Phase 4 M1） */
+const loginPaths = ['/login', '/m/login']
+
+/**
+ * UI 模式重定向（Phase 4 M1）：认证检查之前按用户偏好/视口分流。
+ * - 移动模式访问桌面顶层页（/、/dashboard、/torrents*）→ 对应移动页；
+ * - 桌面模式访问 /m/* → 对应桌面页（通知无独立桌面页，落仪表盘）；
+ * - 移动模式的 /m/login 与桌面模式的 /login 均放行，交由下方认证逻辑处理。
+ * 不以 UA 作为唯一依据（与安卓壳的模式判定原则一致）。
+ */
+const uiModeRedirectPath = (to: Route): string | null => {
+  if (currentUiMode() === 'mobile') {
+    // 已移动化的桌面顶层页统一分流（M2 后含回收站/日志；M3 含定时任务整页与 Tracker 看板/搜索两子页；
+    // M4 含孤儿文件整页；后续系统设置整页移动化，查询模板裁撤后由 toMobilePath 落 /m/search）
+    if (
+      to.path === '/' || to.path === '/dashboard' || to.path === '/torrents' || to.path.startsWith('/torrents/') ||
+      to.path === '/recycle-bin' || to.path.startsWith('/recycle-bin/') ||
+      to.path === '/logs' || to.path.startsWith('/logs/') ||
+      to.path === '/query-templates' || to.path.startsWith('/query-templates/') ||
+      to.path === '/tasks' || to.path.startsWith('/tasks/') ||
+      to.path === '/orphan-files' || to.path.startsWith('/orphan-files/') ||
+      to.path === '/settings' || to.path.startsWith('/settings/') ||
+      to.path === '/tracker' || to.path === '/tracker/keywords-board' || to.path === '/tracker/keywords-search'
+    ) {
+      return toMobilePath(to.path)
+    }
+    return null
+  }
+  if (to.path.startsWith('/m/')) {
+    if (to.path === '/m/login') return null
+    if (to.path.startsWith('/m/torrents')) return '/torrents'
+    if (to.path.startsWith('/m/settings')) return '/settings'
+    return '/dashboard'
+  }
+  return null
+}
 
 // 强制改密放行白名单（安全修复 W9）：mustChangePassword 时只允许访问
 // 改密页。真实页面挂在子路由 /settings/index（父路由 redirect 前置解析
 // 后守卫不会再见到 '/settings'，防御性保留）——此前白名单写父路径导致
 // 落点内容区空白、真实路径又被弹回，改密表单不可达形成死锁（生产事故）
-const forceChangeAllowedPaths = ['/settings/index', '/settings']
+// 移动模式落点为 /m/settings（整页复用桌面设置组件，同样必须放行）
+const forceChangeAllowedPaths = ['/settings/index', '/settings', '/m/settings']
 
 const isForceChangeBlocked = (to: Route): boolean =>
   UserModule.mustChangePassword && !forceChangeAllowedPaths.includes(to.path)
@@ -26,16 +70,20 @@ const isForceChangeBlocked = (to: Route): boolean =>
 const FORCE_CHANGE_HINT_INTERVAL_MS = 3000
 let lastForceChangeHintAt = 0
 
+/** 强制改密拦截落点按 UI 模式选择（移动模式落 /m/settings，桌面落 /settings/index） */
+const forceChangeTargetPath = (): string =>
+  currentUiMode() === 'mobile' ? '/m/settings' : '/settings/index'
+
 const forceChangeRedirect = (next: any): void => {
   const now = Date.now()
   if (now - lastForceChangeHintAt >= FORCE_CHANGE_HINT_INTERVAL_MS) {
     lastForceChangeHintAt = now
     Message.warning({
-      message: '请先修改密码：完成修改前仅可访问系统设置页',
+      message: translate('common.forceChangeHint'),
       duration: 3000
     })
   }
-  next({ path: '/settings/index', query: { forceChange: '1' }, replace: true })
+  next({ path: forceChangeTargetPath(), query: { forceChange: '1' }, replace: true })
   NProgress.done()
 }
 
@@ -55,7 +103,7 @@ const isTransientError = (err: unknown): boolean =>
  */
 const abortNavigation = (next: any): void => {
   Message.warning({
-    message: '服务暂时不可用，请稍后重试',
+    message: translate('common.serviceUnavailable'),
     duration: 3000
   })
   next(false)
@@ -81,13 +129,55 @@ const registerTransientAbort = (): boolean => {
 const fallbackToLogout = (next: any, to: Route): void => {
   consecutiveTransientAborts = 0
   UserModule.ExpireSession()
-  next(`/login?redirect=${encodeURIComponent(to.path)}`)
+  next(loginPathForMode(to.path))
   NProgress.done()
+}
+
+/** 受限页面统一由服务端能力矩阵门控；矩阵失败时对文件系统能力闭锁。 */
+const enforceRouteCapability = async(to: Route, next: any): Promise<boolean> => {
+  const requiredCapability = to.matched
+    .map(route => route.meta && route.meta.requiredCapability)
+    .find(Boolean) as string | undefined
+  if (!requiredCapability) return false
+
+  await loadPlatformCapabilities()
+  if (isCapabilityAvailable(requiredCapability)) return false
+
+  const message = isCapabilityUnknown(requiredCapability)
+    ? translate('common.capabilityUnknown')
+    : translate('common.capabilityBlocked')
+  Message.warning({ message, duration: 4500 })
+  next({ path: currentUiMode() === 'mobile' ? '/m/dashboard' : '/dashboard', replace: true })
+  NProgress.done()
+  return true
 }
 
 router.beforeEach(async(to: Route, from: Route, next: any) => {
   // Start progress bar
   NProgress.start()
+
+  // UI 模式分流（Phase 4 M1）：认证前的布局选择，重定向不改变 redirect 语义
+  const modeRedirect = uiModeRedirectPath(to)
+  if (modeRedirect) {
+    next({ path: modeRedirect, replace: true })
+    NProgress.done()
+    return
+  }
+
+  if (isDemoMode()) {
+    if (loginPaths.indexOf(to.path) !== -1) {
+      const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : ''
+      const targetPath = redirect || (currentUiMode() === 'mobile' ? '/m/dashboard' : '/dashboard')
+      next({ path: targetPath, replace: true })
+    } else {
+      if (!UserModule.token) {
+        UserModule.InitializeDemoSession()
+      }
+      next()
+    }
+    NProgress.done()
+    return
+  }
 
   // Determine whether the user has logged in
   if (UserModule.token) {
@@ -111,16 +201,16 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         // ExpireSession 保留 refresh cookie：防跨标签轮换竞态清掉他标签
         // 刚换得的有效令牌（死 token 残留无害，重登录时覆盖）
         UserModule.ExpireSession()
-        if (to.path === '/login') {
+        if (loginPaths.indexOf(to.path) !== -1) {
           next()
         } else {
-          next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+          next(loginPathForMode(to.fullPath))
         }
         NProgress.done()
         return
       }
     }
-    if (to.path === '/login') {
+    if (loginPaths.indexOf(to.path) !== -1) {
       // 已登录用户访问登录页时，读取redirect参数并重定向
       const redirect = to.query.redirect as string
       const targetPath = redirect ? decodeURIComponent(redirect) : '/'
@@ -135,7 +225,7 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         try {
           // 🔧 防御性检查：确保 token 有效才调用 API
           if (!UserModule.token || UserModule.token.trim() === '') {
-            throw new Error('Token为空，请重新登录')
+            throw new Error(translate('auth.tokenMissing'))
           }
 
           // Get user info, including roles
@@ -143,8 +233,11 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
           // 用户信息获取成功后按强制改密标志决定放行——此分支正是登录后
           // /F5 后的首次导航路径（Login 不填充 roles）：若不在此检查，
           // 强制改密用户的首次导航会先落到业务页一次才被拦
+          await loadPlatformCapabilities()
           if (isForceChangeBlocked(to)) {
             forceChangeRedirect(next)
+          } else if (await enforceRouteCapability(to, next)) {
+            return
           } else {
             next()
           }
@@ -163,16 +256,19 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
           // Token无效或过期：ExpireSession 保留 refresh cookie（401 链路的
           // redirectToLogin 已按同语义处理，这里不重置为全清防竞态误杀）
           UserModule.ExpireSession()
-          next(`/login?redirect=${encodeURIComponent(to.path)}`)
+          next(loginPathForMode(to.path))
           NProgress.done()
         }
       } else {
         // 已有用户信息，直接放行
+        await loadPlatformCapabilities()
         // 强制改密拦截（安全修复 W9）：mustChangePassword 时只允许访问
         // 改密页（/settings/index），优先于 redirect 参数——仅靠登录页
         // 跳转可被直接改 URL 绕过，必须由守卫统一强制
         if (isForceChangeBlocked(to)) {
           forceChangeRedirect(next)
+        } else if (await enforceRouteCapability(to, next)) {
+          return
         } else {
           next()
         }
@@ -180,12 +276,12 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
     }
   } else {
     // Has no token
-    if (whiteList.indexOf(to.path) !== -1) {
+    if (loginPaths.indexOf(to.path) !== -1) {
       // In the free login whitelist, go directly
       next()
     } else {
       // Other pages that do not have permission to access are redirected to the login page.
-      next(`/login?redirect=${encodeURIComponent(to.path)}`)
+      next(loginPathForMode(to.path))
       NProgress.done()
     }
   }
@@ -198,6 +294,8 @@ router.afterEach((to: Route) => {
   // 导航成功即清零瞬时中止计数（连续计数只针对"一直失败到不了任何页面"）
   consecutiveTransientAborts = 0
 
-  // set page title
-  document.title = to.meta?.title || 'BtDeck'
+  // set page title（titleKey 优先走双语键，移动路由无 titleKey 保持中文）
+  // 语言切换后的标题刷新由切换入口（Navbar/登录页）显式调用 resolvePageTitle，
+  // 因为 vue-i18n@8 无公开的 locale 订阅 API。
+  document.title = resolvePageTitle(to)
 })

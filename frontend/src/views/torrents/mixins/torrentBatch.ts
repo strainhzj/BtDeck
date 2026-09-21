@@ -13,8 +13,8 @@
  */
 import Component from 'vue-class-component'
 import { Vue } from 'vue-property-decorator'
+import { translate, apiResponseMessage } from '@/i18n'
 import {
-  deleteTorrents,
   resumeTorrents,
   pauseTorrents,
   recheckTorrents,
@@ -25,7 +25,6 @@ import {
 } from '@/api/torrents'
 import {
   groupTorrentsByDownloader,
-  deleteTorrentsBatch,
   runBatchAction,
   sortByActive,
   resetSelection,
@@ -33,9 +32,7 @@ import {
   buildDeleteConfirmMessage,
   parseDeleteTaskResult,
   parseSyncDeleteResponse,
-  DELETE_LEVEL_NAMES,
-  type BatchActionResult,
-  type BatchDeleteResult
+  type BatchActionResult
 } from '@/views/torrents/utils/torrentBatch'
 
 @Component({ name: 'TorrentBatchMixin' })
@@ -54,22 +51,34 @@ export default class TorrentBatchMixin extends Vue {
 
   /**
    * 批量开始/暂停/重检 的通用入口
-   * @param actionLabel 操作名（'开始' / '暂停' / '重检'），用于提示文案
+   * @param actionKey 操作键（'start' / 'pause' / 'recheck'，映射 torrent.batch.action.* 文案）
    * @returns 批量操作结果（调用方可据此做额外处理）
    */
   protected async runTorrentBatchAction(
     apiFn: (p: { downloader_id: string, hashes: string[] }) => Promise<ApiResponse<any>>,
-    actionLabel: string
+    actionKey: 'start' | 'pause' | 'recheck'
   ): Promise<BatchActionResult> {
     const result = await runBatchAction(this.multipleSelection, apiFn)
+    const actionLabel = translate(`torrent.batch.action.${actionKey}`)
 
     // 统一文案（对齐列表模式 index.vue），消除两视图漂移
     if (result.failed > 0) {
       this.$message.warning(
-        `批量${actionLabel}部分完成：成功${result.succeeded}个下载器，失败${result.failed}个下载器（共${result.total}个种子）`
+        translate('torrent.batch.partial', {
+          action: actionLabel,
+          succeeded: result.succeeded,
+          failed: result.failed,
+          total: result.total
+        })
       )
     } else {
-      this.$message.success(`批量${actionLabel}成功(${result.total}个种子, ${result.downloaderCount}个下载器)`)
+      this.$message.success(
+        translate('torrent.batch.success', {
+          action: actionLabel,
+          total: result.total,
+          downloaderCount: result.downloaderCount
+        })
+      )
     }
 
     await this.getList()
@@ -80,10 +89,10 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchStart(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(resumeTorrents, '开始')
+      await this.runTorrentBatchAction(resumeTorrents, 'start')
     } catch (error) {
       console.error('批量开始失败:', error)
-      this.$message.error('批量开始失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.start'))
     }
   }
 
@@ -91,10 +100,10 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchPause(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(pauseTorrents, '暂停')
+      await this.runTorrentBatchAction(pauseTorrents, 'pause')
     } catch (error) {
       console.error('批量暂停失败:', error)
-      this.$message.error('批量暂停失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.pause'))
     }
   }
 
@@ -102,25 +111,14 @@ export default class TorrentBatchMixin extends Vue {
   protected async handleBatchRecheck(): Promise<void> {
     if (this.multipleSelection.length === 0) return
     try {
-      await this.runTorrentBatchAction(recheckTorrents, '重检')
+      await this.runTorrentBatchAction(recheckTorrents, 'recheck')
     } catch (error) {
       console.error('批量重检失败:', error)
-      this.$message.error('批量重检失败，请查看控制台')
+      this.$message.error(translate('torrent.batch.failed.recheck'))
     }
   }
 
-  // ====== 删除（批量 + 单条，统一对齐列表模式） ======
-
-  /**
-   * 批量删除内部逻辑（调用纯函数 deleteTorrentsBatch，注入真实 deleteTorrents）
-   * 防回归 Bug#1（计数）、Bug#4（参数 info_id/delete_data/id_recycle）
-   */
-  protected async deleteTorrentsInternal(
-    torrents: any[],
-    deleteData: number
-  ): Promise<BatchDeleteResult> {
-    return deleteTorrentsBatch(torrents, deleteData, deleteTorrents)
-  }
+  // ====== 删除（单点收敛：双语 P5 起两视图共用四级删除链路，见下方 P2-I 分层） ======
 
   // ====== 排序与选中状态（抽自视图，行为单点） ======
 
@@ -149,15 +147,15 @@ export default class TorrentBatchMixin extends Vue {
     const levelNum = typeof level === 'string' ? parseInt(level, 10) : level
     const message = buildDeleteConfirmMessage(levelNum, 1)
     try {
-      await this.$confirm(message, '确认删除', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(message, translate('torrent.deleteLevel.confirm.titleSingle'), {
+        confirmButtonText: translate('torrent.deleteLevel.confirm.confirmButton'),
+        cancelButtonText: translate('torrent.deleteLevel.confirm.cancelButton'),
         type: levelNum === 1 ? 'error' : 'warning'
       })
       await this.executeDeleteByLevel([torrent], levelNum)
     } catch (error: any) {
       if (error !== 'cancel') {
-        this.$message.error(error?.message || '删除失败')
+        this.$message.error(error?.message || translate('torrent.deleteLevel.msg.deleteFailed'))
       }
     }
   }
@@ -165,21 +163,21 @@ export default class TorrentBatchMixin extends Vue {
   /** 批量种子按等级删除命令 */
   protected async handleBatchDeleteByLevelCommand(level: string | number): Promise<void> {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请先选择要删除的种子')
+      this.$message.warning(translate('torrent.deleteLevel.msg.selectFirst'))
       return
     }
     const levelNum = typeof level === 'string' ? parseInt(level, 10) : level
     const message = buildDeleteConfirmMessage(levelNum, this.multipleSelection.length)
     try {
-      await this.$confirm(message, '批量删除确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(message, translate('torrent.deleteLevel.confirm.titleBatch'), {
+        confirmButtonText: translate('torrent.deleteLevel.confirm.confirmButton'),
+        cancelButtonText: translate('torrent.deleteLevel.confirm.cancelButton'),
         type: levelNum === 1 ? 'error' : 'warning'
       })
       await this.executeDeleteByLevel(this.multipleSelection, levelNum)
     } catch (error: any) {
       if (error !== 'cancel') {
-        this.$message.error(error?.message || '批量删除失败')
+        this.$message.error(error?.message || translate('torrent.deleteLevel.msg.batchDeleteFailed'))
       }
     }
   }
@@ -196,17 +194,22 @@ export default class TorrentBatchMixin extends Vue {
       if (torrents.length >= 2) {
         const response = await deleteBatchAsync(req)
         if (response.code !== '200') {
-          throw new Error(response.msg || '提交删除任务失败')
+          // 双语 P5：优先 data.reasonCode 本地化，未契约化路径回退固定文案
+          throw new Error(
+            apiResponseMessage(response, translate('torrent.deleteLevel.msg.submitFailed'))
+          )
         }
         const taskId = response.data?.task_id
         if (!taskId) {
-          this.$message.info(response.msg || '所选种子均已在删除任务中处理')
+          this.$message.info(
+            apiResponseMessage(response, translate('torrent.deleteLevel.msg.alreadyProcessed'))
+          )
           await this.getList()
           return
         }
         const skippedCount = response.data?.skipped_count || 0
         if (skippedCount > 0) {
-          this.$message.warning(`已跳过 ${skippedCount} 个正在处理的种子`)
+          this.$message.warning(translate('torrent.deleteLevel.msg.skipped', { count: skippedCount }))
         }
         // 提交成功即刷新；后端列表会排除 pending/running 任务里的种子。
         await this.getList()
@@ -214,17 +217,32 @@ export default class TorrentBatchMixin extends Vue {
       } else {
         const response = await deleteTorrentsWithLevel(req)
         if (response.code !== '200') {
-          throw new Error(response.msg || '删除失败')
+          throw new Error(
+            apiResponseMessage(response, translate('torrent.deleteLevel.msg.deleteFailed'))
+          )
         }
         const parsed = parseSyncDeleteResponse(response.data, level)
         this.$message[parsed.type](parsed.message)
         if (parsed.downgradeDetail) {
-          this.$notify.warning({ title: '降级详情', message: parsed.downgradeDetail, duration: 5000 })
+          this.$notify.warning({
+            title: translate('torrent.deleteLevel.notify.downgradeTitle'),
+            message: parsed.downgradeDetail,
+            duration: 5000
+          })
+        }
+        if (parsed.fileMissingDetail) {
+          this.$notify.warning({
+            title: translate('torrent.deleteLevel.notify.fileMissingTitle'),
+            message: parsed.fileMissingDetail,
+            duration: 5000
+          })
         }
       }
       await this.getList()
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.msg ?? error?.message ?? '删除失败，请稍后重试'
+      const errorMessage = error?.response?.data?.msg ??
+                           error?.message ??
+                           translate('torrent.deleteLevel.msg.retryLater')
       console.error('[删除异常]', { level, error: errorMessage })
       this.$message.error(errorMessage)
     }
@@ -241,7 +259,7 @@ export default class TorrentBatchMixin extends Vue {
 
     this.deleteLoadingInstance = this.$loading({
       lock: true,
-      text: '批量删除中，请稍候...',
+      text: translate('torrent.deleteLevel.progress.loading'),
       spinner: 'el-icon-loading',
       background: 'rgba(0, 0, 0, 0.7)'
     })
@@ -250,20 +268,36 @@ export default class TorrentBatchMixin extends Vue {
       while (pollAttempts < maxPollAttempts) {
         const response = await getBatchDeleteStatus(taskId)
         if (response.code !== '200') {
-          throw new Error(response.msg || '查询任务状态失败')
+          throw new Error(
+            apiResponseMessage(response, translate('torrent.deleteLevel.msg.statusQueryFailed'))
+          )
         }
         const taskData = response.data
 
         if (taskData.status === 'running' && this.deleteLoadingInstance) {
           const progress = taskData.success_count + taskData.failed_count
-          this.deleteLoadingInstance.text = `批量删除中... (${progress}/${taskData.total_count})`
+          this.deleteLoadingInstance.text = translate('torrent.deleteLevel.progress.running', {
+            done: progress,
+            total: taskData.total_count
+          })
         }
 
         if (['completed', 'failed', 'partial'].includes(taskData.status)) {
           const parsed = parseDeleteTaskResult(taskData, this.list)
           this.$message[parsed.type](parsed.message)
           if (parsed.failedDetail) {
-            this.$notify.warning({ title: '删除失败详情', message: parsed.failedDetail, duration: 5000 })
+            this.$notify.warning({
+              title: translate('torrent.deleteLevel.notify.failedTitle'),
+              message: parsed.failedDetail,
+              duration: 5000
+            })
+          }
+          if (parsed.fileMissingDetail) {
+            this.$notify.warning({
+              title: translate('torrent.deleteLevel.notify.fileMissingTitle'),
+              message: parsed.fileMissingDetail,
+              duration: 5000
+            })
           }
           break
         }
@@ -273,7 +307,7 @@ export default class TorrentBatchMixin extends Vue {
       }
 
       if (pollAttempts >= maxPollAttempts) {
-        this.$message.warning('批量删除任务执行时间过长，请稍后查看任务状态')
+        this.$message.warning(translate('torrent.deleteLevel.progress.timeout'))
       }
     } finally {
       this.closeDeleteLoading()
@@ -298,10 +332,5 @@ export default class TorrentBatchMixin extends Vue {
    */
   protected beforeDestroy(): void {
     this.closeDeleteLoading()
-  }
-
-  /** 等级名称映射（供视图 dropdown 菜单文案） */
-  protected get deleteLevelNames(): Record<number, string> {
-    return DELETE_LEVEL_NAMES
   }
 }

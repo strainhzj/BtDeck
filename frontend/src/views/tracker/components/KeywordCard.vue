@@ -7,11 +7,11 @@
       <span class="keyword-content">"{{ keyword.keyword }}"</span>
     </div>
     <div class="keyword-meta">
-      优先级: {{ keyword.priority }}
-      <span v-if="keyword.language"> | 语言: {{ languageLabel }}</span>
+      {{ $t('tracker.keywordCard.priority') }}: {{ keyword.priority }}
+      <span v-if="keyword.language"> | {{ $t('tracker.keywordCard.language') }}: {{ languageLabel }}</span>
     </div>
     <div v-if="keyword.description" class="keyword-desc">
-      说明: {{ keyword.description }}
+      {{ $t('tracker.keywordCard.description') }}: {{ keyword.description }}
     </div>
   </div>
 </template>
@@ -51,16 +51,17 @@ export default class KeywordCard extends Vue {
   }
 
   /**
-   * 获取标签文字
+   * 获取标签文字（双语 P6-3：tracker.keywordCard.type* 键；类型值本身是数据，不译）
    */
   get getTagLabel(): string {
-    const typeMap: Record<string, string> = {
-      success: '成功',
-      failed: '失败',
-      candidate: '候选',
-      ignored: '忽略'
+    const keyMap: Record<string, string> = {
+      success: 'tracker.keywordCard.typeSuccess',
+      failed: 'tracker.keywordCard.typeFailed',
+      candidate: 'tracker.keywordCard.typeCandidate',
+      ignored: 'tracker.keywordCard.typeIgnored'
     }
-    return typeMap[this.keyword.keyword_type] || this.keyword.keyword_type
+    const key = keyMap[this.keyword.keyword_type]
+    return key ? this.$t(key) : this.keyword.keyword_type
   }
 
   /**

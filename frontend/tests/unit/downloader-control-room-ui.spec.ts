@@ -26,7 +26,6 @@ const lucideOnlySurfaces = [
   'views/downloader/index.vue',
   'views/downloader/components/DownloaderCard.vue',
   'views/downloader/components/DownloaderSettingsDialog.vue',
-  'views/downloader/components/BasicSettingsTab.vue',
   'views/downloader/components/AdvancedSettingsTab.vue',
   'views/downloader/components/SpeedSettingsTab.vue',
   'views/downloader/components/PathManagementTab.vue',
@@ -47,7 +46,7 @@ describe('下载器控制台视觉骨架', () => {
     expect(downloaderPage).toContain('class="downloader-control-room"')
     expect(downloaderPage).toContain('class="command-deck"')
     expect(downloaderPage).toContain('class="downloader-grid"')
-    expect(downloaderPage).toContain('状态链路已建立')
+    expect(downloaderPage).toContain("$t('downloader.page.statusEstablished')")
     expect(downloaderPage).not.toContain('class="control-hero"')
     expect(downloaderPage).not.toContain('class="control-metrics"')
     expect(downloaderPage).toContain('@media (max-width: 680px)')
@@ -62,12 +61,24 @@ describe('下载器控制台视觉骨架', () => {
     expect(downloaderCard).toContain("$emit('delete'")
     expect(downloaderCard).toContain("$emit('toggle-enable'")
   })
+
+  it('同步按钮跟踪后台 task_id 到真实终态，并在销毁时取消状态轮询', () => {
+    expect(downloaderPage).toContain('const taskId = response.data?.task_id')
+    expect(downloaderPage).toContain('startTracking(validId, taskId, nickname)')
+    expect(downloaderPage).toContain('trackSyncTaskStatus(taskId')
+    expect(downloaderPage).toContain('buildSyncTaskNotice(task, nickname)')
+    expect(downloaderPage).toContain('this.syncTaskTrackers.forEach(tracker => tracker.cancel())')
+    expect(downloaderPage).not.toContain("Message.success('执行成功')")
+  })
 })
 
 describe('下载器设置工作台', () => {
   it('使用自定义标题、左侧模式导航和紧凑基础信息网格', () => {
     expect(settingsDialog).toContain('class="workspace-header"')
-    expect(settingsDialog).toContain('tab-position="left"')
+    // mobile-ux-fixes 2026-09：tab-position 改为响应式绑定（≤780 顶部横向页签，
+    // 宽屏仍为 left）——断言绑定式而非固定字面量
+    expect(settingsDialog).toContain(':tab-position="tabsPosition"')
+    expect(settingsDialog).toContain("matchMedia('(max-width: 780px)')")
     expect(settingsDialog).toContain('class="workspace-basic-form"')
     expect(settingsDialog).toContain('label-position="top"')
     expect(settingsDialog).toContain('label-width="auto"')
@@ -120,7 +131,8 @@ describe('下载器设置工作台', () => {
     expect(pathMappingTab).toContain('generateExternalPathFromRules(internalPath, rulesText)')
     expect(pathMappingTab).toContain('const processedMappings = this.mappings.map(mapping => {')
     expect(pathMappingTab).toContain('external: generatedExternal')
-    expect(pathMappingTab).toContain('外部路径不能为空（无法根据 path_mapping_rules 自动生成，请手动填写）')
+    // 双语 P6-2：文案迁入语言包，源码契约改断言键（zh 值由 parity/键门禁守护）
+    expect(pathMappingTab).toContain("downloader.pathMapping.msg.rowExternalRequiredManual")
     expect(settingsDialog).toMatch(/const pathMappingData[\s\S]*basicData\['path_mapping'\] = pathMappingData/)
   })
 

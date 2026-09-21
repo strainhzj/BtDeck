@@ -1,48 +1,48 @@
 <template>
   <el-dialog
-    title="种子详情"
+    :title="$t('torrent.detail.title')"
     :visible.sync="visible"
     width="800px"
   >
     <el-descriptions v-if="torrent" :column="2" border>
-      <el-descriptions-item label="种子名称">{{ torrent.name }}</el-descriptions-item>
-      <el-descriptions-item label="状态">
+      <el-descriptions-item :label="$t('torrent.detail.nameLabel')">{{ torrent.name }}</el-descriptions-item>
+      <el-descriptions-item :label="$t('torrent.detail.status')">
         <el-tag :type="getStatusType(torrent.status)">{{ torrent.status }}</el-tag>
       </el-descriptions-item>
 
-      <el-descriptions-item label="文件大小">
+      <el-descriptions-item :label="$t('torrent.detail.size')">
         {{ formatSize(torrent.size) }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="进度">
+      <el-descriptions-item :label="$t('torrent.detail.progress')">
         <el-progress :percentage="getProgress(torrent)" />
       </el-descriptions-item>
 
-      <el-descriptions-item label="下载速度">
+      <el-descriptions-item :label="$t('torrent.detail.downloadSpeed')">
         {{ formatSpeed(torrent.downloadSpeed) }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="上传速度">
+      <el-descriptions-item :label="$t('torrent.detail.uploadSpeed')">
         {{ formatSpeed(torrent.uploadSpeed) }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="添加时间">
+      <el-descriptions-item :label="$t('torrent.detail.addedDate')">
         {{ formatDate(torrent.addedDate) }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="完成时间">
-        {{ torrent.completedDate ? formatDate(torrent.completedDate) : '未完成' }}
+      <el-descriptions-item :label="$t('torrent.detail.completedDate')">
+        {{ torrent.completedDate ? formatDate(torrent.completedDate) : $t('torrent.detail.notCompleted') }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="分享比率">
+      <el-descriptions-item :label="$t('torrent.detail.ratio')">
         {{ formatRatio(torrent.ratio) }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="保存路径" :span="2">
+      <el-descriptions-item :label="$t('torrent.detail.savePath')" :span="2">
         {{ torrent.savePath }}
       </el-descriptions-item>
 
-      <el-descriptions-item label="标签" :span="2">
+      <el-descriptions-item :label="$t('torrent.detail.tags')" :span="2">
         <el-tag v-for="(tag, index) in tags" :key="index" size="small" style="margin-right: 5px">
           {{ tag }}
         </el-tag>
@@ -52,14 +52,14 @@
     <el-divider />
 
     <div class="tracker-info">
-      <h4>Tracker信息</h4>
+      <h4>{{ $t('torrent.detail.trackerSection') }}</h4>
       <el-table :data="torrent.trackerInfo" size="small" max-height="300">
-        <el-table-column prop="trackerName" label="名称" />
+        <el-table-column prop="trackerName" :label="$t('torrent.detail.trackerColName')" />
         <el-table-column prop="trackerUrl" label="URL" show-overflow-tooltip />
-        <el-table-column label="状态">
+        <el-table-column :label="$t('torrent.detail.trackerColStatus')">
           <template slot-scope="scope">
             <el-tag :type="scope.row.lastAnnounceSucceeded === 'True' ? 'success' : 'danger'" size="small">
-              {{ scope.row.lastAnnounceSucceeded === 'True' ? '正常' : '异常' }}
+              {{ scope.row.lastAnnounceSucceeded === 'True' ? $t('torrent.detail.statusNormal') : $t('torrent.detail.statusAbnormal') }}
             </el-tag>
           </template>
         </el-table-column>
@@ -67,11 +67,11 @@
     </div>
 
     <span slot="footer" class="dialog-footer">
-      <el-button type="primary" @click="handleTransfer">
+      <el-button v-if="seedTransferAvailable" type="primary" @click="handleTransfer">
         <i class="el-icon-sort" />
-        转移
+        {{ $t('torrent.detail.transfer') }}
       </el-button>
-      <el-button @click="$emit('update:visible', false)">关闭</el-button>
+      <el-button @click="$emit('update:visible', false)">{{ $t('common.close') }}</el-button>
     </span>
 
     <!-- 转移对话框 -->
@@ -86,6 +86,7 @@
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import TransferDialog from './TransferDialog.vue'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 
 @Component({
   components: {
@@ -98,6 +99,10 @@ export default class TorrentDetailDialog extends Vue {
 
   // 转移对话框显示状态
   transferDialogVisible = false
+
+  get seedTransferAvailable(): boolean {
+    return isCapabilityAvailable('seed_transfer')
+  }
 
   get tags() {
     return this.torrent?.tags?.split(',').filter(Boolean) || []
@@ -149,6 +154,7 @@ export default class TorrentDetailDialog extends Vue {
   }
 
   handleTransfer() {
+    if (!this.seedTransferAvailable) return
     this.transferDialogVisible = true
   }
 

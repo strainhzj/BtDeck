@@ -3,8 +3,8 @@
     <!-- 头部 -->
     <div class="dashboard-header">
       <div class="dashboard-header-info">
-        <h1 class="dashboard-title">数据仪表盘</h1>
-        <p class="dashboard-subtitle">今天是 {{ currentDate }}</p>
+        <h1 class="dashboard-title">{{ $t('dashboard.title') }}</h1>
+        <p class="dashboard-subtitle">{{ $t('dashboard.subtitle', {date: currentDate}) }}</p>
       </div>
       <div class="dashboard-actions">
         <!-- <el-button @click="refreshData">刷新数据</el-button> -->
@@ -19,11 +19,11 @@
         @click="navigateTo('/downloader/index')"
         role="button"
         tabindex="0"
-        aria-label="查看下载器管理"
+        :aria-label="$t('dashboard.aria.viewDownloaders')"
         @keypress.enter="navigateTo('/downloader/index')"
       >
         <div class="stat-card-header">
-          <span class="stat-card-title">下载器</span>
+          <span class="stat-card-title">{{ $t('dashboard.card.downloaders') }}</span>
           <div class="stat-card-icon primary">📡</div>
         </div>
         <div class="stat-card-value">{{ formatRatio(dashboard.downloaders.online, dashboard.downloaders.total) }}</div>
@@ -34,8 +34,8 @@
           class="stat-card-trend"
           :class="{up: hasDashboardData && dashboard.downloaders.online === dashboard.downloaders.total}"
         >
-          <span v-if="hasDashboardData && dashboard.downloaders.total > 0 && dashboard.downloaders.online === dashboard.downloaders.total">全部在线</span>
-          <span v-else-if="hasDashboardData">{{ dashboard.downloaders.online }} 在线</span>
+          <span v-if="hasDashboardData && dashboard.downloaders.total > 0 && dashboard.downloaders.online === dashboard.downloaders.total">{{ $t('dashboard.allOnline') }}</span>
+          <span v-else-if="hasDashboardData">{{ $t('dashboard.onlineCount', {count: dashboard.downloaders.online}) }}</span>
           <span v-else>--</span>
         </div>
       </div>
@@ -45,11 +45,11 @@
         @click="navigateTo('/torrents/index')"
         role="button"
         tabindex="0"
-        aria-label="查看种子管理"
+        :aria-label="$t('dashboard.aria.viewTorrents')"
         @keypress.enter="navigateTo('/torrents/index')"
       >
         <div class="stat-card-header">
-          <span class="stat-card-title">活跃种子</span>
+          <span class="stat-card-title">{{ $t('dashboard.card.activeTorrents') }}</span>
           <div class="stat-card-icon success">📥</div>
         </div>
         <div class="stat-card-value">{{ formatStatValue(dashboard.torrents.active) }}</div>
@@ -63,11 +63,11 @@
         @click="navigateTo('/tasks/index')"
         role="button"
         tabindex="0"
-        aria-label="查看定时任务"
+        :aria-label="$t('dashboard.aria.viewTasks')"
         @keypress.enter="navigateTo('/tasks/index')"
       >
         <div class="stat-card-header">
-          <span class="stat-card-title">定时任务</span>
+          <span class="stat-card-title">{{ $t('dashboard.card.tasks') }}</span>
           <div class="stat-card-icon warning">⏰</div>
         </div>
         <div class="stat-card-value">{{ formatRatio(dashboard.tasks.running, dashboard.tasks.total) }}</div>
@@ -75,13 +75,13 @@
           <div class="stat-card-progress-bar" :style="{width: taskProgress + '%'}"></div>
         </div>
         <div class="stat-card-trend">
-          <span>运行中</span>
+          <span>{{ $t('dashboard.running') }}</span>
         </div>
       </div>
 
       <div class="stat-card">
         <div class="stat-card-header">
-          <span class="stat-card-title">系统状态</span>
+          <span class="stat-card-title">{{ $t('dashboard.card.system') }}</span>
           <div class="stat-card-icon info">✓</div>
         </div>
         <div class="stat-card-value">{{ systemTotalSpeed }}</div>
@@ -90,7 +90,7 @@
         </div>
         <div class="stat-card-trend up stat-card-trend--column">
           <span>{{ systemSpeedDetail }}</span>
-          <span class="stat-card-trend-uptime">运行时间 {{ systemUptime }}</span>
+          <span class="stat-card-trend-uptime">{{ $t('dashboard.uptime', {duration: systemUptime}) }}</span>
         </div>
       </div>
     </div>
@@ -100,8 +100,8 @@
       <!-- 下载器状态 -->
       <div class="content-card">
         <div class="content-card-header">
-          <h2 class="content-card-title">下载器状态</h2>
-          <el-link type="primary" @click="navigateTo('/downloader/index')">管理 →</el-link>
+          <h2 class="content-card-title">{{ $t('dashboard.section.downloaderStatus') }}</h2>
+          <el-link type="primary" @click="navigateTo('/downloader/index')">{{ $t('dashboard.section.manage') }}</el-link>
         </div>
         <div class="downloader-grid">
           <div
@@ -111,7 +111,7 @@
             @click="viewDownloader(downloader)"
             role="button"
             tabindex="0"
-            :aria-label="`查看${downloader.nickname}详情`"
+            :aria-label="$t('dashboard.aria.viewDownloaderDetail', {name: downloader.nickname})"
             @keypress.enter="viewDownloader(downloader)"
           >
             <div class="downloader-card-header">
@@ -121,31 +121,31 @@
               </div>
               <div class="downloader-status-badge" :class="downloader.status">
                 <span>●</span>
-                <span>{{ downloader.status === 'online' ? '在线' : '离线' }}</span>
+                <span>{{ downloader.status === 'online' ? $t('dashboard.online') : $t('dashboard.offline') }}</span>
               </div>
             </div>
             <div v-if="downloader.status === 'online'" class="downloader-card-stats">
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">{{ formatStatValue(downloader.downloading) }}</div>
-                <div class="downloader-mini-stat-label">下载中</div>
+                <div class="downloader-mini-stat-label">{{ $t('dashboard.downloading') }}</div>
               </div>
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">{{ formatStatValue(downloader.seeding) }}</div>
-                <div class="downloader-mini-stat-label">做种中</div>
+                <div class="downloader-mini-stat-label">{{ $t('dashboard.seeding') }}</div>
               </div>
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.download_speed) }}</div>
-                <div class="downloader-mini-stat-label">下载速度</div>
+                <div class="downloader-mini-stat-label">{{ $t('dashboard.downloadSpeed') }}</div>
               </div>
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.upload_speed) }}</div>
-                <div class="downloader-mini-stat-label">上传速度</div>
+                <div class="downloader-mini-stat-label">{{ $t('dashboard.uploadSpeed') }}</div>
               </div>
             </div>
             <div v-else class="downloader-card-stats">
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">-</div>
-                <div class="downloader-mini-stat-label">离线</div>
+                <div class="downloader-mini-stat-label">{{ $t('dashboard.offline') }}</div>
               </div>
             </div>
           </div>
@@ -156,11 +156,11 @@
             @click="navigateTo('/downloader/index')"
             role="button"
             tabindex="0"
-            aria-label="添加下载器"
+            :aria-label="$t('dashboard.aria.addDownloader')"
             @keypress.enter="navigateTo('/downloader/index')"
           >
             <div class="add-icon">➕</div>
-            <div class="add-text">添加下载器</div>
+            <div class="add-text">{{ $t('dashboard.quick.addDownloader') }}</div>
           </div>
         </div>
       </div>
@@ -168,11 +168,11 @@
       <!-- 活动时间线 -->
       <div class="content-card">
         <div class="content-card-header">
-          <h2 class="content-card-title">最近活动</h2>
-          <el-link type="primary" @click="viewAllActivities">查看全部 →</el-link>
+          <h2 class="content-card-title">{{ $t('dashboard.section.recentActivity') }}</h2>
+          <el-link type="primary" @click="viewAllActivities">{{ $t('dashboard.section.viewAll') }}</el-link>
         </div>
         <div class="activity-timeline">
-          <div v-if="dashboard.activities.length === 0" class="activity-empty">暂无活动记录</div>
+          <div v-if="dashboard.activities.length === 0" class="activity-empty">{{ $t('dashboard.noActivities') }}</div>
           <div v-else>
             <div v-for="(activity, index) in dashboard.activities" :key="index" class="activity-item">
               <div class="activity-time">{{ activity.time }}</div>
@@ -187,7 +187,7 @@
 
     <div class="content-card quick-actions-section">
       <div class="content-card-header">
-        <h2 class="content-card-title">快捷操作</h2>
+        <h2 class="content-card-title">{{ $t('dashboard.section.quickActions') }}</h2>
       </div>
       <div class="quick-actions">
         <div
@@ -195,44 +195,44 @@
           @click="navigateTo('/downloader/index')"
           role="button"
           tabindex="0"
-          aria-label="添加下载器"
+          :aria-label="$t('dashboard.aria.addDownloader')"
           @keypress.enter="navigateTo('/downloader/index')"
         >
           <div class="quick-action-icon">➕</div>
-          <div class="quick-action-label">添加下载器</div>
+          <div class="quick-action-label">{{ $t('dashboard.quick.addDownloader') }}</div>
         </div>
         <div
           class="quick-action-item"
           @click="navigateTo('/tasks/index')"
           role="button"
           tabindex="0"
-          aria-label="新建任务"
+          :aria-label="$t('dashboard.aria.newTask')"
           @keypress.enter="navigateTo('/tasks/index')"
         >
           <div class="quick-action-icon">📥</div>
-          <div class="quick-action-label">新建任务</div>
+          <div class="quick-action-label">{{ $t('dashboard.quick.newTask') }}</div>
         </div>
         <div
           class="quick-action-item"
           @click="navigateTo('/torrents/index')"
           role="button"
           tabindex="0"
-          aria-label="搜索种子"
+          :aria-label="$t('dashboard.aria.searchTorrents')"
           @keypress.enter="navigateTo('/torrents/index')"
         >
           <div class="quick-action-icon">🔍</div>
-          <div class="quick-action-label">搜索种子</div>
+          <div class="quick-action-label">{{ $t('dashboard.quick.searchTorrents') }}</div>
         </div>
         <div
           class="quick-action-item"
           @click="viewLogs"
           role="button"
           tabindex="0"
-          aria-label="查看日志"
+          :aria-label="$t('dashboard.aria.viewLogs')"
           @keypress.enter="viewLogs()"
         >
           <div class="quick-action-icon">📝</div>
-          <div class="quick-action-label">查看日志</div>
+          <div class="quick-action-label">{{ $t('dashboard.quick.viewLogs') }}</div>
         </div>
       </div>
     </div>
@@ -245,6 +245,7 @@ import { UserModule } from '@/store/modules/user'
 import { getDashboardData } from '@/api/dashboard'
 import { DashboardData, DownloaderListItem } from '@/types/dashboard'
 import { formatSpeed } from '@/utils/formatters'
+import { getLocale } from '@/i18n'
 import { debounce } from 'lodash-es'
 import { Message } from 'element-ui'
 
@@ -277,7 +278,8 @@ export default class extends Vue {
   get currentDate() {
     const now = new Date()
     const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }
-    return now.toLocaleDateString('zh-CN', options)
+    // 日期格式随界面语言（zh-CN / en-US），语言与时区独立、不改动业务时间语义
+    return now.toLocaleDateString(getLocale() === 'en' ? 'en-US' : 'zh-CN', options)
   }
 
   get dashboard(): DashboardData {
@@ -398,13 +400,13 @@ export default class extends Vue {
     try {
       await this.fetchDashboardData()
       Message({
-        message: '数据刷新成功',
+        message: this.$t('dashboard.msg.refreshSuccess'),
         type: 'success',
         duration: 2000
       })
     } catch (error) {
       Message({
-        message: '数据刷新失败',
+        message: this.$t('dashboard.msg.refreshFailed'),
         type: 'error',
         duration: 2000
       })
@@ -414,7 +416,7 @@ export default class extends Vue {
   // 导出报告
   private exportReport() {
     Message({
-      message: '报告导出功能开发中',
+      message: this.$t('dashboard.msg.exportWip'),
       type: 'info',
       duration: 2000
     })
@@ -424,7 +426,7 @@ export default class extends Vue {
   private viewDownloader(downloader: DownloaderListItem) {
     if (downloader.status === 'offline') {
       Message({
-        message: '下载器离线，无法查看',
+        message: this.$t('dashboard.msg.offlineNoView'),
         type: 'warning',
         duration: 2000
       })
@@ -436,7 +438,7 @@ export default class extends Vue {
   // 查看全部活动
   private viewAllActivities() {
     Message({
-      message: '活动详情功能开发中',
+      message: this.$t('dashboard.msg.activitiesWip'),
       type: 'info',
       duration: 2000
     })

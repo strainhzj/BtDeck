@@ -18,7 +18,7 @@
         <el-input
           v-model="searchKeyword"
           class="ams__search-input"
-          placeholder="搜索选项..."
+          :placeholder="$t('common.multiSelect.searchPlaceholder')"
           size="small"
           ref="searchInput"
           @input="handleSearch"
@@ -35,7 +35,7 @@
             @click="handleCreateNewOption"
           >
             <LucideIcon name="plus" :size="14" />
-            <span>创建 "{{ searchKeyword.trim() }}"</span>
+            <span>{{ $t('common.multiSelect.createOption', {keyword: searchKeyword.trim()}) }}</span>
           </button>
         </transition>
       </div>
@@ -54,7 +54,7 @@
               @click="setSelectedMode('include')"
             >
               <LucideIcon name="check-check" :size="13" />
-              <span>包含</span>
+              <span>{{ $t('common.multiSelect.include') }}</span>
             </button>
             <button
               type="button"
@@ -63,7 +63,7 @@
               @click="setSelectedMode('exclude')"
             >
               <LucideIcon name="square" :size="13" />
-              <span>排除</span>
+              <span>{{ $t('common.multiSelect.exclude') }}</span>
             </button>
           </div>
 
@@ -71,7 +71,7 @@
             <span class="ams__selected-count" :class="`is-${selectedMode}`">
               {{ selectedItems.length }}
             </span>
-            <span class="ams__selected-label">项已选</span>
+            <span class="ams__selected-label">{{ $t('common.multiSelect.selectedLabel') }}</span>
           </div>
 
           <button
@@ -81,7 +81,7 @@
             @click="clearSelected"
           >
             <LucideIcon name="x" :size="14" />
-            <span>清空</span>
+            <span>{{ $t('common.multiSelect.clear') }}</span>
           </button>
         </div>
 
@@ -103,7 +103,7 @@
               type="button"
               class="ams__chip-remove"
               @click="removeSelectedItem(index)"
-              :title="`移除 ${getSelectedLabel(item)}`"
+              :title="$t('common.multiSelect.removeItem', {label: getSelectedLabel(item)})"
             >
               <LucideIcon name="x" :size="12" />
             </button>
@@ -111,7 +111,7 @@
         </transition-group>
 
         <div v-if="selectedItems.length === 0" class="ams__empty-hint">
-          从下方选项中选择，或直接搜索创建
+          {{ $t('common.multiSelect.emptyHint') }}
         </div>
       </div>
     </transition>
@@ -195,29 +195,29 @@
         </div>
         <div v-if="filteredOptions.length === 0" class="ams__no-match">
           <LucideIcon name="search" :size="22" />
-          <span>无匹配选项</span>
+          <span>{{ $t('common.multiSelect.noMatch') }}</span>
         </div>
       </div>
     </div>
 
     <!-- 快捷操作（Lucide 图标按钮组） -->
     <div class="ams__actions">
-      <el-tooltip content="选择当前可见项" placement="top" :open-delay="300">
+      <el-tooltip :content="$t('common.multiSelect.selectVisible')" placement="top" :open-delay="300">
         <button type="button" class="ams__action-btn" @click="selectAllVisible">
           <LucideIcon name="check-check" :size="15" />
         </button>
       </el-tooltip>
-      <el-tooltip content="取消当前可见项" placement="top" :open-delay="300">
+      <el-tooltip :content="$t('common.multiSelect.deselectVisible')" placement="top" :open-delay="300">
         <button type="button" class="ams__action-btn" @click="deselectAllVisible">
           <LucideIcon name="square" :size="15" />
         </button>
       </el-tooltip>
-      <el-tooltip content="选择全部选项" placement="top" :open-delay="300">
+      <el-tooltip :content="$t('common.multiSelect.selectAll')" placement="top" :open-delay="300">
         <button type="button" class="ams__action-btn" @click="selectAll">
           <LucideIcon name="list-checks" :size="15" />
         </button>
       </el-tooltip>
-      <el-tooltip content="清空所有选择" placement="top" :open-delay="300">
+      <el-tooltip :content="$t('common.multiSelect.clearAll')" placement="top" :open-delay="300">
         <button type="button" class="ams__action-btn is-danger" @click="deselectAll">
           <LucideIcon name="trash" :size="15" />
         </button>
@@ -232,7 +232,7 @@
         :append-to-body="false"
       >
         <div class="ams__paste">
-          <div class="ams__paste-title">批量粘贴</div>
+          <div class="ams__paste-title">{{ $t('common.multiSelect.pasteTitle') }}</div>
           <textarea
             v-model="inputText"
             class="ams__paste-area"
@@ -241,14 +241,14 @@
             @input="handleInputChange"
           />
           <div v-if="parsedInput.length > 0" class="ams__paste-preview">
-            <span class="ams__paste-count">解析 {{ parsedInput.length }} 项</span>
+            <span class="ams__paste-count">{{ $t('common.multiSelect.parsedCount', {count: parsedInput.length}) }}</span>
             <div class="ams__paste-tags">
               <span v-for="(t, i) in parsedInput" :key="i" class="ams__paste-tag">{{ t }}</span>
             </div>
           </div>
           <div class="ams__paste-actions">
-            <el-button size="mini" @click="clearParsedInput">清空</el-button>
-            <el-button size="mini" type="primary" @click="applyParsedInput">应用</el-button>
+            <el-button size="mini" @click="clearParsedInput">{{ $t('common.multiSelect.clear') }}</el-button>
+            <el-button size="mini" type="primary" @click="applyParsedInput">{{ $t('common.multiSelect.apply') }}</el-button>
           </div>
         </div>
         <button slot="reference" type="button" class="ams__action-btn">
@@ -266,11 +266,11 @@
       >
         <div class="ams__advanced">
           <div class="ams__advanced-row">
-            <label>启用虚拟滚动</label>
+            <label>{{ $t('common.multiSelect.virtualScroll') }}</label>
             <el-switch v-model="useVirtualScroll" @change="handleVirtualScrollChange" />
           </div>
           <div class="ams__advanced-row">
-            <label>显示选项数量</label>
+            <label>{{ $t('common.multiSelect.showCount') }}</label>
             <el-input-number
               v-model="maxVisibleItems"
               :min="10"
@@ -280,10 +280,10 @@
             />
           </div>
           <div class="ams__advanced-row">
-            <label>自定义分隔符</label>
+            <label>{{ $t('common.multiSelect.customSeparators') }}</label>
             <el-input
               v-model="customSeparators"
-              placeholder="如: |,~,##"
+              :placeholder="separatorExample"
               size="mini"
               @input="handleSeparatorsChange"
             />
@@ -303,7 +303,7 @@
         :class="{'is-open': panelVisible, 'has-value': selectedItems.length > 0}"
         :aria-expanded="panelVisible ? 'true' : 'false'"
         aria-haspopup="listbox"
-        aria-label="选择多个条件值"
+        :aria-label="$t('common.multiSelect.ariaSelect')"
         :title="triggerLabel"
       >
         <span
@@ -321,8 +321,8 @@
           role="button"
           tabindex="0"
           class="ams__trigger-clear"
-          aria-label="清空已选条件值"
-          title="清空"
+          :aria-label="$t('common.multiSelect.ariaClear')"
+          :title="$t('common.multiSelect.clear')"
           @click.stop.prevent="clearSelected"
           @keypress.enter.prevent="clearSelected"
           @keypress.space.prevent="clearSelected"
@@ -338,6 +338,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import VirtualScrollList from './VirtualScrollList.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
+import { getLocale, translate } from '@/i18n'
 
 // 选项接口
 export interface SelectOption {
@@ -371,7 +372,7 @@ export default class AdvancedMultiSelect extends Vue {
   @Prop({ default: true }) showModeToggle!: boolean
   @Prop({ default: 10000 }) virtualScrollThreshold!: number
   @Prop({ default: 200 }) listHeight!: number
-  @Prop({ default: '请选择' }) placeholder!: string
+  @Prop({ default: '' }) placeholder!: string
 
   // Data
   // 不在字段初始化阶段读取 props；vue-class-component 尚未完成 props 代理，
@@ -434,8 +435,15 @@ export default class AdvancedMultiSelect extends Vue {
   }
 
   get inputPlaceholder(): string {
-    const separators = this.getAllSeparators().map(s => s === ' ' ? '空格' : s).join('、')
-    return `使用${separators}分隔多个值`
+    const separators = this.getAllSeparators()
+      .map(s => s === ' ' ? translate('common.multiSelect.spaceSeparator') : s)
+      .join(translate('common.multiSelect.separatorJoin'))
+    return translate('common.multiSelect.useSeparators', { separators })
+  }
+
+  /** 分隔符示例占位（含 | 字符，避开 vue-i18n 复数分隔符，直接按语言取常量） */
+  get separatorExample(): string {
+    return getLocale() === 'en' ? 'e.g. |,~,##' : '如: |,~,##'
   }
 
   get canCreateOption(): boolean {
@@ -444,13 +452,17 @@ export default class AdvancedMultiSelect extends Vue {
 
   get triggerLabel(): string {
     if (this.selectedItems.length === 0) {
-      return this.placeholder
+      // 遗留补译：默认占位走 i18n 键（显式传入的 placeholder 优先）
+      return this.placeholder || this.$t('common.multiSelect.placeholder').toString()
     }
 
     const firstLabel = this.getSelectedLabel(this.selectedItems[0])
     return this.selectedItems.length === 1
       ? firstLabel
-      : `${firstLabel} 等 ${this.selectedItems.length} 项`
+      : translate('common.multiSelect.multiSelected', {
+        first: firstLabel,
+        count: this.selectedItems.length
+      })
   }
 
   // Watchers
@@ -1455,6 +1467,16 @@ export default class AdvancedMultiSelect extends Vue {
   .ams__option-label-icon {
     color: var(--color-text-tertiary, #9ca3af);
     flex-shrink: 0;
+  }
+}
+
+/* 手机适配（mobile-ux-fixes 2026-09）：内层批量粘贴/高级选项 popover 是
+   append-to-body=false 的嵌套浮层，width prop 内联 320/280px 在窄屏（≤375px）
+   会溢出外层弹壳——统一按视口钳制（外层 .ams__dropdown-popper 已有同款 max-width）。 */
+@media (max-width: 768px) {
+  .ams__dropdown-popper .el-popover {
+    max-width: calc(100vw - 48px);
+    box-sizing: border-box;
   }
 }
 </style>

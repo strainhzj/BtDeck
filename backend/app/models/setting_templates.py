@@ -144,6 +144,13 @@ class SettingTemplate(Base):
 
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="模板描述")
 
+    # 双语（P6-2，P0 冻结方案 PLANS/bilingual/system-content.md §2）：
+    # 系统预设稳定身份键（如 qb_standard）；用户自定义模板恒为 NULL。
+    # 展示层按 key 取本地化名称/描述，不改用户可见的存储值（Q02）。
+    preset_key: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True, comment="系统预设稳定身份键（用户模板为 NULL）"
+    )
+
     # 下载器类型（使用Integer存储枚举值）
     downloader_type: Mapped[int] = mapped_column(
         Integer, nullable=False, index=True, comment="下载器类型：0=qBittorrent, 1=Transmission"
@@ -274,6 +281,7 @@ class SettingTemplate(Base):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "preset_key": self.preset_key,
             "downloaderType": downloader_type_value,
             "downloaderTypeName": downloader_type_name,
             "template_config": self.get_config_dict(),

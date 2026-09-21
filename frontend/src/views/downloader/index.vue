@@ -1,7 +1,7 @@
 <template>
   <main
     class="downloader-control-room"
-    aria-label="下载器管理"
+    :aria-label="$t('downloader.page.management')"
     @pointermove="handlePointerMove"
     @pointerleave="resetPointerGlow"
   >
@@ -13,12 +13,12 @@
       <div class="control-orbit control-orbit--two" />
     </div>
 
-    <section class="command-deck" aria-label="下载器筛选与操作">
+    <section class="command-deck" :aria-label="$t('downloader.page.filters')">
       <div class="command-deck__signal">
         <span class="signal-beacon" aria-hidden="true" />
         <div>
-          <strong>状态链路已建立</strong>
-          <span>每 5 秒同步一次节点遥测</span>
+          <strong>{{ $t('downloader.page.statusEstablished') }}</strong>
+          <span>{{ $t('downloader.page.syncTelemetry') }}</span>
         </div>
       </div>
 
@@ -26,8 +26,8 @@
         <el-input
           v-model="searchKeyword"
           class="control-search"
-          placeholder="按别名筛选节点"
-          aria-label="按下载器别名筛选"
+          :placeholder="$t('downloader.page.filterPlaceholder')"
+          :aria-label="$t('downloader.page.filterLabel')"
           @input="handleSearchInput"
         >
           <template slot="prefix">
@@ -37,7 +37,7 @@
             <button
               type="button"
               class="control-search__clear"
-              aria-label="清空搜索"
+              :aria-label="$t('downloader.page.clearSearch')"
               @mousedown.prevent
               @click="handleSearchClear"
             >
@@ -47,7 +47,7 @@
         </el-input>
 
         <span v-if="isSearching" class="search-result-tip" aria-live="polite">
-          {{ filteredDownloaderList.length }} / {{ downloaderList.length }} 节点
+          {{ $t('downloader.page.nodeCount', {shown: filteredDownloaderList.length, total: downloaderList.length}) }}
         </span>
 
         <el-button
@@ -61,11 +61,11 @@
             :stroke-width="1.8"
             :class="{'is-spinning': listLoading}"
           />
-          <span>刷新</span>
+          <span>{{ $t('common.refresh') }}</span>
         </el-button>
         <el-button class="control-action control-action--primary" type="primary" @click="handleAdd">
           <LucideIcon name="plus" :size="17" :stroke-width="2" />
-          <span>接入节点</span>
+          <span>{{ $t('downloader.page.connectNode') }}</span>
         </el-button>
       </div>
     </section>
@@ -74,16 +74,16 @@
       <div class="nodes-section__header">
         <div>
           <div class="section-index">01 / NODE MATRIX</div>
-          <h2 id="downloader-node-heading">下载器节点</h2>
+          <h2 id="downloader-node-heading">{{ $t('downloader.page.heading') }}</h2>
         </div>
-        <div class="nodes-section__legend" aria-label="状态图例">
-          <span><i class="legend-dot legend-dot--online" />在线 {{ onlineDownloaderCount }}</span>
-          <span><i class="legend-dot legend-dot--offline" />离线 {{ offlineDownloaderCount }}</span>
-          <span><i class="legend-dot legend-dot--pending" />待响应 {{ pendingDownloaderCount }}</span>
+        <div class="nodes-section__legend" :aria-label="$t('downloader.page.legend')">
+          <span><i class="legend-dot legend-dot--online" />{{ $t('downloader.page.online', {count: onlineDownloaderCount}) }}</span>
+          <span><i class="legend-dot legend-dot--offline" />{{ $t('downloader.page.offline', {count: offlineDownloaderCount}) }}</span>
+          <span><i class="legend-dot legend-dot--pending" />{{ $t('downloader.page.pending', {count: pendingDownloaderCount}) }}</span>
         </div>
       </div>
 
-      <div v-if="listLoading && downloaderList.length === 0" class="node-skeleton-grid" aria-label="正在加载下载器">
+      <div v-if="listLoading && downloaderList.length === 0" class="node-skeleton-grid" :aria-label="$t('downloader.page.loadingSkeleton')">
         <div v-for="index in 3" :key="index" class="node-skeleton" aria-hidden="true">
           <span />
           <span />
@@ -100,11 +100,11 @@
           <LucideIcon name="search-x" :size="30" :stroke-width="1.5" />
         </div>
         <div>
-          <strong>没有匹配的节点</strong>
-          <span>更换关键词，或清空筛选查看全部下载器。</span>
+          <strong>{{ $t('downloader.page.noMatchTitle') }}</strong>
+          <span>{{ $t('downloader.page.noMatchDesc') }}</span>
         </div>
         <button type="button" @click="handleSearchClear">
-          清空筛选
+          {{ $t('downloader.page.clearFilter') }}
           <LucideIcon name="x" :size="14" :stroke-width="2" />
         </button>
       </div>
@@ -130,10 +130,10 @@
           <span class="downloader-card-add__icon">
             <LucideIcon name="plus" :size="24" :stroke-width="1.7" />
           </span>
-          <span class="downloader-card-add__title">接入新的下载器</span>
-          <span class="downloader-card-add__copy">配置连接、认证、路径与速率策略</span>
+          <span class="downloader-card-add__title">{{ $t('downloader.page.addTitle') }}</span>
+          <span class="downloader-card-add__copy">{{ $t('downloader.page.addDesc') }}</span>
           <span class="downloader-card-add__action">
-            开始配置
+            {{ $t('downloader.page.startConfig') }}
             <LucideIcon name="chevron-right" :size="15" :stroke-width="2" />
           </span>
         </button>
@@ -162,6 +162,12 @@ import {
   testConnection,
   syncDownloader
 } from '@/api/downloader'
+import { extractErrorMessage } from '@/utils/formatters'
+import {
+  buildSyncTaskNotice,
+  trackSyncTaskStatus
+} from './sync-task'
+import type { SyncTaskTrackingHandle } from './sync-task'
 import {
   Downloader,
   DownloaderStatus,
@@ -209,6 +215,7 @@ export default class DownloaderManager extends Vue {
 
   // 同步状态
   private syncingIds: string[] = []
+  private syncTaskTrackers: Map<string, SyncTaskTrackingHandle> = new Map()
 
   // 状态轮询相关（批量轮询）
   private continueGetStatus = true
@@ -253,6 +260,8 @@ export default class DownloaderManager extends Vue {
     // 组件销毁时清理轮询定时器
     this.continueGetStatus = false
     this.clearPollingTimer()
+    this.syncTaskTrackers.forEach(tracker => tracker.cancel())
+    this.syncTaskTrackers.clear()
     if (this.searchDebounceTimer !== null) {
       clearTimeout(this.searchDebounceTimer)
       this.searchDebounceTimer = null
@@ -316,7 +325,7 @@ export default class DownloaderManager extends Vue {
       // 只处理最新的请求错误
       if (currentSeq === this.requestSequence) {
         console.error('获取下载器列表失败:', error)
-        Message.error('获取下载器列表失败')
+        Message.error(this.$t('downloader.page.getListFailed'))
       }
       // 失败后不重启轮询，保持清理状态
     } finally {
@@ -400,7 +409,7 @@ export default class DownloaderManager extends Vue {
       downloading_count: apiStatus.downloadingCount,
       seeding_count: apiStatus.seedingCount,
       connection_status: apiStatus.connectStatus === 'connected' ? 'success' : 'error',
-      connection_msg: apiStatus.connectStatus === 'connected' ? '连接成功' : '连接失败',
+      connection_msg: apiStatus.connectStatus === 'connected' ? this.$t('downloader.card.connected') : this.$t('downloader.card.disconnected'),
       last_online: undefined
     }
   }
@@ -526,7 +535,7 @@ export default class DownloaderManager extends Vue {
             ...mappedStatus,
             online: apiStatus.connectStatus === 'connected',
             connection_status: apiStatus.connectStatus === 'connected' ? 'success' : 'error',
-            connection_msg: apiStatus.connectStatus === 'connected' ? '连接成功' : '连接失败',
+            connection_msg: apiStatus.connectStatus === 'connected' ? this.$t('downloader.card.connected') : this.$t('downloader.card.disconnected'),
             // 保留其他可能未定义的字段
             last_online: downloader.status.last_online
           }
@@ -580,7 +589,7 @@ export default class DownloaderManager extends Vue {
             ...downloader.status,
             online: false,
             connection_status: 'offline',
-            connection_msg: '离线',
+            connection_msg: this.$t('downloader.card.offline'),
             delay: undefined
           }
         }
@@ -608,7 +617,7 @@ export default class DownloaderManager extends Vue {
           ...downloader.status,
           online: false,
           connection_status: 'offline',
-          connection_msg: '离线',
+          connection_msg: this.$t('downloader.card.offline'),
           delay: undefined
         }
       }
@@ -682,7 +691,7 @@ export default class DownloaderManager extends Vue {
 
       // 验证响应数据结构
       if (!response?.data) {
-        throw new Error('响应数据格式异常')
+        throw new Error(this.$t('downloader.msg.responseInvalid').toString())
       }
 
       const { data } = response
@@ -697,24 +706,24 @@ export default class DownloaderManager extends Vue {
             online: true,
             delay: data.delay,
             connection_status: 'success',
-            connection_msg: '连接成功'
+            connection_msg: this.$t('downloader.card.connected').toString()
           }
-          Message.success(`连接成功，延迟 ${data.delay || 0}ms`)
+          Message.success(this.$t('downloader.msg.connectionOk', { delay: data.delay || 0 }).toString())
         } else {
           downloader.status = {
             ...downloader.status,
             online: false,
             connection_status: 'error',
-            connection_msg: data.message || '连接失败'
+            connection_msg: data.message || this.$t('downloader.card.disconnected').toString()
           }
-          Message.error(data.message || '连接失败')
+          Message.error(data.message || this.$t('downloader.card.disconnected').toString())
         }
       }
     } catch (error: any) {
       console.error('测试连接失败:', error)
 
       // 提供更详细的错误信息
-      const errorMsg = error?.response?.data?.msg || error?.message || '测试连接失败'
+      const errorMsg = error?.response?.data?.msg || error?.message || this.$t('downloader.msg.testFailed').toString()
       Message.error(errorMsg)
     } finally {
       // 从测试列表移除
@@ -724,69 +733,79 @@ export default class DownloaderManager extends Vue {
       }
     }
   }
-    // 同步下载器种子
+  private stopSyncTaskTracking(downloaderId: string): void {
+    const tracker = this.syncTaskTrackers.get(downloaderId)
+    if (tracker) {
+      tracker.cancel()
+      this.syncTaskTrackers.delete(downloaderId)
+    }
+    const index = this.syncingIds.indexOf(downloaderId)
+    if (index > -1) {
+      this.syncingIds.splice(index, 1)
+    }
+  }
+
+  private startSyncTaskTracking(downloaderId: string, taskId: string, nickname: string): void {
+    const previousTracker = this.syncTaskTrackers.get(downloaderId)
+    if (previousTracker) previousTracker.cancel()
+
+    const tracker = trackSyncTaskStatus(taskId, {
+      onTerminal: (task) => {
+        const notice = buildSyncTaskNotice(task, nickname)
+        this.stopSyncTaskTracking(downloaderId)
+        Message[notice.level](notice.message)
+        void this.getList()
+      },
+      onTimeout: () => {
+        this.stopSyncTaskTracking(downloaderId)
+        Message.info(this.$t('downloader.msg.syncStillRunning', { name: nickname }).toString())
+      },
+      onError: (error) => {
+        this.stopSyncTaskTracking(downloaderId)
+        Message.error(this.$t('downloader.msg.syncStatusQueryFailed', { error: extractErrorMessage(error) }).toString())
+      }
+    })
+    this.syncTaskTrackers.set(downloaderId, tracker)
+  }
+
+  // 同步下载器种子
   private async handleSync(id: string) {
     // 参数验证
     if (!id || typeof id !== "string" || id.trim() === "") {
-      Message.error("下载器ID无效")
+      Message.error(this.$t('downloader.msg.invalidId').toString())
       return
     }
 
     const validId = id.trim()
+    const nickname = this.downloaderMap.get(validId)?.info.nickname || validId
+    const syncingIds = this.syncingIds
+    const startTracking = this.startSyncTaskTracking.bind(this)
+    const stopTracking = this.stopSyncTaskTracking.bind(this)
 
     // 防止重复调用（竞态条件保护）
-    if (this.syncingIds.includes(validId)) {
+    if (syncingIds.includes(validId)) {
       console.warn(`下载器 ${validId} 正在同步中，忽略重复请求`)
       return
     }
 
     // 添加到同步列表
-    this.syncingIds.push(validId)
+    syncingIds.push(validId)
+    let trackingStarted = false
 
     try {
       const response = await syncDownloader(validId)
+      const taskId = response.data?.task_id
+      if (!taskId) throw new Error(this.$t('downloader.msg.syncResponseInvalid').toString())
 
-      // 验证响应数据结构
-      if (!response?.data) {
-        throw new Error('响应数据格式异常')
-      }
-
-      const { code } = response
-
-      if (code === '200') {
-        Message.success('执行成功')
-
-        // 同步成功后，批量轮询会自动更新状态（无需手动触发）
-      } else {
-        Message.error('执行失败')
-      }
+      Message.success(response.msg || this.$t('downloader.msg.syncStarted', { name: nickname }).toString())
+      startTracking(validId, taskId, nickname)
+      trackingStarted = true
     } catch (error: unknown) {
       console.error('同步下载器失败:', error)
-
-      // 提供更详细的错误信息（类型守卫）
-      let errorMsg = '同步失败'
-      if (error && typeof error === 'object') {
-        if ('response' in error) {
-          const err = error as { response?: { data?: { msg?: string } } }
-          if (err.response?.data?.msg) {
-            errorMsg = String(err.response.data.msg)
-          }
-        } else if ('message' in error) {
-          const err = error as { message?: string }
-          if (err.message) {
-            errorMsg = String(err.message)
-          }
-        }
-      } else if (error && typeof error === 'string') {
-        errorMsg = error
-      }
-      Message.error(errorMsg)
+      Message.error(extractErrorMessage(error) || this.$t('downloader.msg.syncFailed').toString())
     } finally {
-      // 从同步列表移除
-      const index = this.syncingIds.indexOf(validId)
-      if (index > -1) {
-        this.syncingIds.splice(index, 1)
-      }
+      // 请求提交失败时立即释放；受理成功后由真实后台任务终态释放。
+      if (!trackingStarted) stopTracking(validId)
     }
   }
 
@@ -802,36 +821,40 @@ export default class DownloaderManager extends Vue {
     downloader.enabled = newEnabled
 
     try {
-      await upDownloader({ ...downloader, enabled: newEnabled })
-      Message.success(newEnabled === '1' ? '已启用' : '已停用')
+      // 只传 id+enabled 的最小部分更新：列表行是 camelCase 且不含 SSL 字段，
+      // 整行展开会缺 is_search/is_ssl 触发 422（后端缺省字段保持原值）
+      await upDownloader({ id: downloader.id, enabled: newEnabled })
+      Message.success(newEnabled === '1'
+        ? this.$t('downloader.msg.enabled').toString()
+        : this.$t('downloader.msg.disabled').toString())
     } catch (error) {
       console.error('更新状态失败:', error)
       // 失败回滚
       downloader.enabled = originalEnabled
-      Message.error('操作失败，已恢复原状态')
+      Message.error(this.$t('downloader.msg.toggleFailedRolledBack').toString())
     }
   }
 
   // 删除下载器
   private handleDelete(downloader: Downloader) {
     MessageBox.confirm(
-      `确定要删除下载器"${downloader.nickname}"吗？`,
-      '删除确认',
+      this.$t('downloader.msg.deleteConfirm', { name: downloader.nickname }).toString(),
+      this.$t('downloader.msg.deleteTitle').toString(),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: this.$t('downloader.msg.confirmButton').toString(),
+        cancelButtonText: this.$t('common.cancel').toString(),
         type: 'warning'
       }
     ).then(async() => {
       try {
         await deleteDownloader(downloader.id)
-        Message.success('删除成功')
+        Message.success(this.$t('downloader.msg.deleteSuccess').toString())
 
         // getList 会重新初始化轮询，无需手动清理
         await this.getList()
       } catch (error) {
         console.error('删除失败:', error)
-        Message.error('删除失败')
+        Message.error(this.$t('downloader.msg.deleteFailed').toString())
       }
     }).catch(() => {
       // 取消删除

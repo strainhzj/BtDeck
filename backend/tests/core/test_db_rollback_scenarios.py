@@ -20,6 +20,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from app.core.migration import migrate_database, _read_db_version
+from tests.core.alembic_head import current_head
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
@@ -28,7 +29,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "975dad435c03"  # 当前 head（torrent_info 辅种数量列）
+REV_HEAD = current_head()  # 动态读取（曾硬编码 c1d2e3f4a5b6，迁移新增后漂移致 CI 红）
 
 
 def _make_cfg(db_path: str) -> Config:

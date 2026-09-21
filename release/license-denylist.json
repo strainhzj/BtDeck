@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "description": "W5 许可证禁用清单（release-artifact-equivalence-gate task .9 / G9）。命中即不可豁免阻断（计划 §12.2）；新增条目须附法务/负责人理由。",
+  "denied": ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "AGPL-1.0", "SSPL-1.0"]
+}

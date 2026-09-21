@@ -1,0 +1,29 @@
+# BtDeck 静态 Demo 运行镜像
+# 先在 frontend 目录执行 npm run build:demo，再构建本镜像。
+# 本文件只接收 dist，不包含后端、数据库、迁移或下载器配置。
+
+FROM nginx:1.25-alpine@sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00
+
+LABEL maintainer="BTDeck Team"
+LABEL description="BTDeck 前端静态展示 Demo"
+
+RUN addgroup -g 1001 -S nginx-group && \
+    adduser -S -D -H -u 1001 -h /usr/share/nginx/html -s /sbin/nologin -G nginx-group nginx-user && \
+    rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf && \
+    mkdir -p /var/cache/nginx /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx-user:nginx-group /usr/share/nginx/html /var/cache/nginx /var/log/nginx /var/run/nginx.pid
+
+COPY dist /usr/share/nginx/html
+COPY nginx.demo.conf /etc/nginx/nginx.conf
+
+RUN chown -R nginx-user:nginx-group /usr/share/nginx/html
+
+USER nginx-user
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应性图标前景层：白色单色 btdeck 标志（D 形轨道 + 三条甲板线 + 连接节点）。
+     几何与 frontend/public/img/brand/btdeck-mark.svg 同源（viewBox 64），
+     组变换把 64 空间内容中心 (29.125,32) 缩放 1.1 后对齐到 108dp 画布中心 (54,54)；
+     笔画端点最远距中心 28.9dp，处于 33dp 安全区内（不被启动器蒙版裁切）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.1"
+        android:scaleY="1.1"
+        android:translateX="21.96"
+        android:translateY="18.8">
+        <path
+            android:pathData="M10,14 L28,14 A18,18 0 0 1 28,50 L10,50"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M12,24 L34,24 M12,32 L39,32 M12,40 L34,40"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M40.5,32 a5.5,5.5 0 1 0 11,0 a5.5,5.5 0 1 0 -11,0"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>

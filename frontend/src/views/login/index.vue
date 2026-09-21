@@ -7,8 +7,30 @@
       <div class="bg-circle bg-circle-3"></div>
     </div>
 
-    <!-- 主题切换器 -->
-    <div class="theme-selector">
+    <!-- 顶栏：语言 + 主题切换（flex 并排，避免与主题胶囊重叠） -->
+    <div class="login-topbar">
+      <!-- 语言切换（与登录后 Navbar 同款胶囊下拉；选项用语言自名，不随界面语言翻译；切换后刷新页面标题） -->
+      <el-dropdown class="lang-selector" trigger="click" @command="handleLanguageSelect">
+        <div
+          class="lang-wrapper"
+          :aria-label="$t('navigation.navbar.language')"
+          :title="$t('navigation.navbar.language')"
+        >
+          <LucideIcon name="languages" :size="18" :stroke-width="1.8" />
+          <span class="lang-current">{{ localeLabels[activeLocale] }}</span>
+          <LucideIcon name="chevron-down" :size="12" :stroke-width="1.8" class="lang-chevron" />
+        </div>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item
+            v-for="locale in supportedLocales"
+            :key="locale"
+            :command="locale"
+            :class="{'lang-active': locale === activeLocale}"
+          >
+            {{ localeLabels[locale] }}
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
       <theme-switcher />
     </div>
 
@@ -17,10 +39,9 @@
       <!-- Logo和标题 -->
       <div class="login-header">
         <div class="logo-container">
-          <svg-icon name="dashboard" class="logo-icon" />
+          <AppLogo variant="full" class="login-logo" />
         </div>
-        <h1 class="login-title">BtDeck</h1>
-        <p class="login-subtitle">统一管理您的下载器</p>
+        <p class="login-subtitle">{{ $t('auth.subtitle') }}</p>
       </div>
 
       <!-- 登录表单 -->
@@ -37,7 +58,7 @@
           <el-input
             ref="username"
             v-model="loginForm.username"
-            placeholder="用户名"
+                        :placeholder="$t('auth.usernamePlaceholder')"
             name="username"
             type="text"
             autocomplete="username"
@@ -53,7 +74,7 @@
             ref="password"
             v-model="loginForm.password"
             :type="passwordType"
-            placeholder="密码"
+            :placeholder="$t('auth.passwordPlaceholder')"
             name="password"
             autocomplete="current-password"
             prefix-icon="el-icon-lock"
@@ -74,7 +95,7 @@
           <el-input
             ref="twofa"
             v-model="loginForm.twofa_code"
-            placeholder="双因素验证码（如有设置必须填写）"
+            :placeholder="$t('auth.twofaPlaceholder')"
             name="twofa_code"
             type="text"
             maxlength="6"
@@ -86,8 +107,8 @@
 
         <!-- 记住我 & 忘记密码 -->
         <div class="login-options">
-          <el-checkbox v-model="rememberMe">记住我</el-checkbox>
-          <el-link type="primary" :underline="false">忘记密码？</el-link>
+          <el-checkbox v-model="rememberMe">{{ $t('auth.rememberMe') }}</el-checkbox>
+          <el-link type="primary" :underline="false">{{ $t('auth.forgotPassword') }}</el-link>
         </div>
 
         <!-- 登录按钮 -->
@@ -98,15 +119,24 @@
           class="login-button"
           native-type="submit"
         >
-          {{ loading ? '登录中...' : '登录' }}
+          {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
         </el-button>
       </el-form>
+
+      <el-button
+        v-if="demoMode"
+        type="text"
+        class="demo-entry-button"
+        @click="enterDemoMode"
+      >
+        {{ $t('auth.enterDemo') }}
+      </el-button>
 
       <!-- 底部链接 -->
       <div class="login-footer">
         <p class="footer-text">
-          还没有账号？
-          <el-link type="primary" :underline="false">立即注册</el-link>
+          {{ $t('auth.noAccount') }}
+          <el-link type="primary" :underline="false">{{ $t('auth.registerNow') }}</el-link>
         </p>
       </div>
     </div>
@@ -124,12 +154,18 @@ import { Route } from 'vue-router'
 import { Dictionary } from 'vue-router/types/router'
 import { Form as ElForm, Input } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
+import { AppModule } from '@/store/modules/app'
 import { isValidUsername } from '@/utils/validate'
+import { isDemoMode } from '@/demo/config'
+import AppLogo from '@/components/common/AppLogo.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
+import { LOCALE_AUTONYMS, Locale, SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/types'
+import { apiErrorMessage, resolvePageTitle } from '@/i18n'
 
 @Component({
   name: 'Login',
   components: {
+    AppLogo,
     ThemeSwitcher
   }
 })
@@ -138,6 +174,27 @@ export default class extends Vue {
     username: '',
     password: '',
     twofa_code: ''
+  }
+
+  private get activeLocale(): Locale {
+    return AppModule.language
+  }
+
+  private get supportedLocales(): readonly Locale[] {
+    return SUPPORTED_LOCALES
+  }
+
+  private get localeLabels(): Record<Locale, string> {
+    return LOCALE_AUTONYMS
+  }
+
+  /** 登录页语言入口：与 Navbar 同一动作源（store SetLanguage），切换后同步页面标题 */
+  private handleLanguageSelect(locale: string) {
+    if (!isSupportedLocale(locale) || locale === this.activeLocale) {
+      return
+    }
+    AppModule.SetLanguage(locale)
+    document.title = resolvePageTitle(this.$route)
   }
 
   private loginRules = {
@@ -150,6 +207,9 @@ export default class extends Vue {
   private loading = false
   private rememberMe = false
   private redirect?: string
+  get demoMode(): boolean {
+    return isDemoMode()
+  }
   private isLoggingIn = false  // 防止重复提交的标志
   private isDestroyed = false  // 组件销毁标志，防止状态更新错误
 
@@ -160,7 +220,7 @@ export default class extends Vue {
       return
     }
     if (!/^\d{6}$/.test(value)) {
-      callback(new Error('双因素验证码必须是6位数字'))
+      callback(new Error(this.$t('auth.validation.twofaDigits')))
       return
     }
     callback()
@@ -168,7 +228,7 @@ export default class extends Vue {
 
   private validateUsername = (rule: any, value: string, callback: Function) => {
     if (!isValidUsername(value)) {
-      callback(new Error('请输入正确的用户名'))
+      callback(new Error(this.$t('auth.validation.username')))
     } else {
       callback()
     }
@@ -176,7 +236,7 @@ export default class extends Vue {
 
   private validatePassword = (rule: any, value: string, callback: Function) => {
     if (value.length < 5) {
-      callback(new Error('密码长度不能少于5位'))
+      callback(new Error(this.$t('auth.validation.passwordMin')))
     } else {
       callback()
     }
@@ -208,14 +268,14 @@ export default class extends Vue {
           // 先显示成功消息，确保用户能看到反馈
           // 检查组件是否已销毁，避免在销毁的组件上更新状态
           if (!this.isDestroyed) {
-            this.$message.success('登录成功')
+            this.$message.success(this.$t('auth.loginSuccess'))
           }
           // 登录成功后主动触发路由导航，让路由守卫处理重定向逻辑
           // 路由守卫会检测到token存在，并自动跳转到redirect参数或首页
           await this.$router.push(this.redirect || '/')
         } catch (error) {
-          // 显示后端返回的错误消息
-          const errorMessage = error instanceof Error ? error.message : '登录失败，请重试'
+          // 错误契约：reasonCode 命中 errors.byCode.* 时本地化；未契约化路径保留原始信息
+          const errorMessage = apiErrorMessage(error, this.$t('auth.loginFailed'))
           if (!this.isDestroyed) {
             this.$message.error(errorMessage)
           }
@@ -229,6 +289,12 @@ export default class extends Vue {
         }
       }
     })
+  }
+
+  private enterDemoMode(): void {
+    UserModule.InitializeDemoSession()
+    this.$message.success(this.$t('auth.demoEntered'))
+    this.$router.replace(this.redirect || '/dashboard').catch(() => undefined)
   }
 
   @Watch('$route', { immediate: true })
@@ -315,12 +381,48 @@ export default class extends Vue {
   }
 }
 
-// 主题切换器
-.theme-selector {
+// 顶栏（右上角语言 + 主题并排；flex 布局天然防重叠，替代旧绝对定位魔法偏移）
+.login-topbar {
   position: absolute;
   top: var(--spacing-lg);
   right: var(--spacing-lg);
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+}
+
+// 语言切换器（与登录后 Navbar 同款胶囊形态）
+.lang-selector {
+  cursor: pointer;
+}
+
+.lang-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 20px;
+  color: var(--color-text-secondary, #6B7280);
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    background: var(--color-bg-hover, #F3F4F6);
+    color: var(--color-text-primary, #1F2937);
+  }
+}
+
+.lang-current {
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lang-chevron {
+  color: var(--color-text-tertiary, #9CA3AF);
 }
 
 // 登录卡片
@@ -358,25 +460,14 @@ export default class extends Vue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-  border-radius: var(--radius-lg);
+  width: 320px;
+  height: 79px;
   margin-bottom: var(--spacing-md);
-  box-shadow: var(--shadow-lg);
 }
 
-.logo-icon {
-  width: 36px;
-  height: 36px;
-  color: white;
-}
-
-.login-title {
-  font-size: var(--font-size-3xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-sm);
+.login-logo {
+  width: 320px;
+  height: 79px;
 }
 
 .login-subtitle {
@@ -469,6 +560,13 @@ export default class extends Vue {
 }
 
 // 底部
+.demo-entry-button {
+  display: block;
+  width: 100%;
+  margin-top: var(--spacing-sm);
+  color: var(--color-primary);
+}
+
 .login-footer {
   margin-top: var(--spacing-xl);
   text-align: center;
@@ -513,13 +611,13 @@ export default class extends Vue {
   }
 
   .logo-container {
-    width: 56px;
-    height: 56px;
+    width: 280px;
+    height: 69px;
   }
 
-  .logo-icon {
-    width: 32px;
-    height: 32px;
+  .login-logo {
+    width: 280px;
+    height: 69px;
   }
 
   .action-buttons {

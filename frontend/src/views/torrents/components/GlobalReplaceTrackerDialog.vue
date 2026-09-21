@@ -1,64 +1,64 @@
 <template>
   <el-dialog
-    title="全局替换Tracker"
+    :title="$t('tracker.replace.title')"
     :visible.sync="dialogVisible"
     width="600px"
     :close-on-click-modal="false"
     @close="handleClose"
   >
     <el-alert
-      title="操作说明"
+      :title="$t('tracker.replace.helpTitle')"
       type="warning"
       :closable="false"
       show-icon
       style="margin-bottom: 20px;"
     >
       <template>
-        <div>此功能将全局替换所有种子中匹配的tracker地址，操作不可撤销！</div>
-        <div style="margin-top: 5px;">请确保您输入的tracker地址正确无误。</div>
+        <div>{{ $t('tracker.replace.warning') }}</div>
+        <div style="margin-top: 5px;">{{ $t('tracker.replace.warningHint') }}</div>
       </template>
     </el-alert>
 
     <el-form :model="form" :rules="rules" ref="form" label-width="140px">
-      <el-form-item label="被替换的Tracker" prop="oldTrackerUrl">
+      <el-form-item :label="$t('tracker.replace.oldLabel')" prop="oldTrackerUrl">
         <el-input
           v-model="form.oldTrackerUrl"
-          placeholder="输入要被替换的tracker地址，例如: https://tracker.old.com/announce"
+          :placeholder="$t('tracker.replace.oldPlaceholder')"
           clearable
         />
         <div class="form-tip">
           <i class="el-icon-info"></i>
-          将被完全匹配替换的tracker地址
+          {{ $t('tracker.replace.oldHint') }}
         </div>
       </el-form-item>
 
-      <el-form-item label="新Tracker地址" prop="newTrackerUrl">
+      <el-form-item :label="$t('tracker.replace.newLabel')" prop="newTrackerUrl">
         <el-input
           v-model="form.newTrackerUrl"
-          placeholder="输入新的tracker地址，例如: https://tracker.new.com/announce"
+          :placeholder="$t('tracker.replace.newPlaceholder')"
           clearable
         />
         <div class="form-tip">
           <i class="el-icon-info"></i>
-          将用于替换的新tracker地址
+          {{ $t('tracker.replace.newHint') }}
         </div>
       </el-form-item>
 
       <el-form-item>
         <el-button type="primary" @click="handleSubmit" :loading="submitting" icon="el-icon-refresh">
-          执行替换
+          {{ $t('tracker.replace.submit') }}
         </el-button>
-        <el-button @click="handleClose">取消</el-button>
+        <el-button @click="handleClose">{{ $t('common.cancel') }}</el-button>
       </el-form-item>
     </el-form>
 
     <!-- 操作示例 -->
-    <el-divider>操作示例</el-divider>
+    <el-divider>{{ $t('tracker.replace.exampleTitle') }}</el-divider>
     <div class="example-section">
       <el-steps :active="exampleStep" process-status="success" align-center>
-        <el-step title="输入旧tracker" description="https://tracker.old.com/announce"></el-step>
-        <el-step title="输入新tracker" description="https://tracker.new.com/announce"></el-step>
-        <el-step title="全局替换" description="所有种子自动更新"></el-step>
+        <el-step :title="$t('tracker.replace.exampleStep1')" description="https://tracker.old.com/announce"></el-step>
+        <el-step :title="$t('tracker.replace.exampleStep2')" description="https://tracker.new.com/announce"></el-step>
+        <el-step :title="$t('tracker.replace.exampleStep3')" :description="$t('tracker.replace.exampleStep3Desc')"></el-step>
       </el-steps>
     </div>
   </el-dialog>
@@ -67,6 +67,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { replaceTracker } from '@/api/torrents'
+import { apiResponseMessage } from '@/i18n'
 
 /**
  * 全局替换Tracker对话框组件
@@ -98,15 +99,15 @@ export default class GlobalReplaceTrackerDialog extends Vue {
   private get rules() {
     return {
       oldTrackerUrl: [
-        { required: true, message: '请输入被替换的tracker地址', trigger: 'blur' },
+        { required: true, message: this.$t('tracker.replace.validate.oldRequired').toString(), trigger: 'blur' },
         {
           validator: (rule: any, value: string, callback: Function) => {
             if (!value || value.trim() === '') {
-              callback(new Error('请输入被替换的tracker地址'))
+              callback(new Error(this.$t('tracker.replace.validate.oldRequired').toString()))
               return
             }
             if (!this.TRACKER_URL_PATTERN.test(value)) {
-              callback(new Error('请输入有效的tracker地址格式'))
+              callback(new Error(this.$t('tracker.replace.validate.invalidUrl').toString()))
             } else {
               callback()
             }
@@ -115,15 +116,15 @@ export default class GlobalReplaceTrackerDialog extends Vue {
         }
       ],
       newTrackerUrl: [
-        { required: true, message: '请输入新的tracker地址', trigger: 'blur' },
+        { required: true, message: this.$t('tracker.replace.validate.newRequired').toString(), trigger: 'blur' },
         {
           validator: (rule: any, value: string, callback: Function) => {
             if (!value || value.trim() === '') {
-              callback(new Error('请输入新的tracker地址'))
+              callback(new Error(this.$t('tracker.replace.validate.newRequired').toString()))
               return
             }
             if (!this.TRACKER_URL_PATTERN.test(value)) {
-              callback(new Error('请输入有效的tracker地址格式'))
+              callback(new Error(this.$t('tracker.replace.validate.invalidUrl').toString()))
             } else {
               callback()
             }
@@ -195,20 +196,20 @@ export default class GlobalReplaceTrackerDialog extends Vue {
 
       if (response.code === '200') {
         this.exampleStep = 2
-        this.$message.success('全局替换Tracker成功')
+        this.$message.success(this.$t('torrent.msg.globalReplaceSuccess'))
         this.$emit('success')
         setTimeout(() => {
           this.handleClose()
         }, 1500)
       } else {
-        this.$message.error(response.msg || '全局替换Tracker失败')
+        this.$message.error(apiResponseMessage(response, this.$t('torrent.msg.globalReplaceFailed')))
         this.exampleStep = 0
       }
     } catch (error: any) {
       console.error('全局替换Tracker失败:', error)
       if (error !== 'cancel') {
         // 修复：显示实际的错误消息，而不是硬编码
-        this.$message.error(error.message || '全局替换Tracker失败')
+        this.$message.error(error.message || this.$t('torrent.msg.globalReplaceFailed'))
       }
       this.exampleStep = 0
     } finally {

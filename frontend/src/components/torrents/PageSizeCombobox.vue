@@ -13,8 +13,8 @@
       class="page-size-input"
       type="text"
       inputmode="numeric"
-      aria-label="每页数量"
-      title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
+      :aria-label="$t('common.pageSize.ariaLabel')"
+      :title="$t('common.pageSize.inputHint')"
       @input="handleInput"
       @focus="$emit('focus')"
       @keyup.enter="handleApply"
@@ -24,7 +24,7 @@
       type="button"
       class="page-size-toggle"
       :class="expanded ? 'el-icon-arrow-down' : 'el-icon-arrow-up'"
-      :aria-label="expanded ? '收起分页大小选项' : '展开分页大小选项'"
+      :aria-label="expanded ? $t('common.pageSize.collapse') : $t('common.pageSize.expand')"
       :aria-expanded="String(expanded)"
       @mousedown.prevent.stop
       @click.stop="$emit('toggle')"
@@ -38,7 +38,7 @@
       class="page-size-options"
       :class="{'page-size-options--floating': isFloating}"
       role="listbox"
-      aria-label="分页大小预设"
+      :aria-label="$t('common.pageSize.options')"
     >
       <li
         v-for="size in options"

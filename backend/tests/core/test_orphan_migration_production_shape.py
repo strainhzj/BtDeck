@@ -13,10 +13,12 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
+from tests.core.alembic_head import current_head
+
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 PREVIOUS_HEAD = "4c1d8e7a2b90"
-EXPECTED_HEAD = "975dad435c03"
+EXPECTED_HEAD = current_head()  # 动态读取（曾硬编码，迁移新增后漂移）
 
 
 def _config(db_path: Path) -> Config:

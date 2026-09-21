@@ -14,10 +14,10 @@
     <div class="result-info">
       <div class="result-title">
         <span class="result-icon-emoji">{{ result === 'success' ? '✅' : '❌' }}</span>
-        <span>判断结果: {{ result === 'success' ? '成功' : '失败' }}</span>
+        <span>{{ $t('tracker.resultSummary.resultLabel', {result: result === 'success' ? $t('tracker.resultSummary.success') : $t('tracker.resultSummary.failed')}) }}</span>
       </div>
       <div class="result-desc">
-        {{ result === 'success' ? '该消息判定为成功状态' : '该消息判定为失败状态（失败优先）' }}
+        {{ result === 'success' ? $t('tracker.resultSummary.successDesc') : $t('tracker.resultSummary.failedDesc') }}
       </div>
     </div>
   </div>

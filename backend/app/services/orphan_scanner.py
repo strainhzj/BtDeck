@@ -55,6 +55,7 @@ from app.services.orphan_manifest import (
     normalize_path,
     resolve_external_path,
 )
+from app.core.platform_capabilities import require_capability
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,7 @@ class OrphanScanner:
         Returns:
             扫描结果摘要字典
         """
+        require_capability("orphan_files", "orphan_files.scan")
         scan_id = scan_id or str(uuid.uuid4())
         scan_time = datetime.utcnow()
 

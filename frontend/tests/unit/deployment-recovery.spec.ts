@@ -89,8 +89,9 @@ describe('deployment recovery', () => {
     expect(replaceState).toHaveBeenCalledWith('/?redirect=%2Flogin#/orphan-files/index')
   })
 
-  it('retires only the BtDeck root worker and BtDeck Workbox caches', async() => {
-    const rootUnregister = jest.fn<Promise<boolean>, []>().mockResolvedValue(true)
+  it('retires unmarked root workers and template-prefixed caches, keeps marked ones', async() => {
+    const legacyUnregister = jest.fn<Promise<boolean>, []>().mockResolvedValue(true)
+    const markedUnregister = jest.fn<Promise<boolean>, []>().mockResolvedValue(true)
     const otherUnregister = jest.fn<Promise<boolean>, []>().mockResolvedValue(true)
     const deleteCache = jest.fn<Promise<boolean>, [string]>().mockResolvedValue(true)
 
@@ -99,20 +100,43 @@ describe('deployment recovery', () => {
       deleteCache,
       getCacheNames: async() => [
         'vue-typescript-admin-template-precache-v2-http://btdeck.test/',
+        'btdeck-precache-v2-http://btdeck.test/',
         'another-app-cache'
       ],
       getRegistrations: async() => [
-        { scope: 'http://btdeck.test/', unregister: rootUnregister },
-        { scope: 'http://btdeck.test/other/', unregister: otherUnregister }
+        // 模板时代遗留：裸脚本地址（无标记）
+        { scope: 'http://btdeck.test/', scriptUrl: 'http://btdeck.test/service-worker.js', unregister: legacyUnregister },
+        // 本版注册：带 src=btdeck 标记，不得注销
+        { scope: 'http://btdeck.test/', scriptUrl: 'http://btdeck.test/service-worker.js?src=btdeck', unregister: markedUnregister },
+        // 其它 scope：不碰
+        { scope: 'http://btdeck.test/other/', scriptUrl: 'http://btdeck.test/service-worker.js', unregister: otherUnregister }
       ]
     })
 
     expect(result).toEqual({ cachesDeleted: 1, registrationsRemoved: 1 })
-    expect(rootUnregister).toHaveBeenCalledTimes(1)
+    expect(legacyUnregister).toHaveBeenCalledTimes(1)
+    expect(markedUnregister).not.toHaveBeenCalled()
     expect(otherUnregister).not.toHaveBeenCalled()
+    expect(deleteCache).toHaveBeenCalledTimes(1)
     expect(deleteCache).toHaveBeenCalledWith(
       'vue-typescript-admin-template-precache-v2-http://btdeck.test/'
     )
+  })
+
+  it('registration without any worker instance counts as legacy (empty script url)', async() => {
+    const unregister = jest.fn<Promise<boolean>, []>().mockResolvedValue(true)
+
+    const result = await retireLegacyServiceWorkers({
+      appScope: 'http://btdeck.test/',
+      deleteCache: async() => true,
+      getCacheNames: async() => [],
+      getRegistrations: async() => [
+        { scope: 'http://btdeck.test/', scriptUrl: '', unregister }
+      ]
+    })
+
+    expect(result.registrationsRemoved).toBe(1)
+    expect(unregister).toHaveBeenCalledTimes(1)
   })
 
   it('caches only fingerprinted assets immutably in Nginx', () => {

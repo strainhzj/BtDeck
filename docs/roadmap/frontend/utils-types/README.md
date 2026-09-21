@@ -5,29 +5,34 @@
 
 ## 关键词速查
 
-### utils/（13 个 .ts 文件）
+### utils/（16 个 .ts 文件，实测 2026-09-21）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`（L595 默认导出聚合） |
-| Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`LANGUAGE_LABELS`/`KEYWORD_TYPE_OPTIONS`/`PRIORITY_RANGE`、语言/类型/优先级标签、`debounce`/`formatDateTime`/`extractErrorMessage`/`downloadJSON`/`parseJSON`/`validateKeywordData` |
-| 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
-| 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
+| 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`、**相对时间七档走 i18n（`translate/translateChoice`，双语 P1）**（L610 默认导出聚合） |
+| Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`poolLabel`/`poolOptions`（池名共享，tracker.pools.* 键化）、`getLanguageLabel`（tracker.lang.* 键化，未登记码原文回退 Q02）、`debounce`/`extractErrorMessage`（默认兜底与 422 拼接走 tracker.errors.* 键，msg 原文透传）/`parseJSON`；✨2026-09-20 双语 P6-3 死代码删除（LANGUAGE_LABELS/KEYWORD_TYPE_OPTIONS/PRIORITY_RANGE/getKeywordTypeLabel/getPriorityTagType/getOccurrenceCountTagType/formatDateTime/downloadJSON/validateKeywordData 均零生产消费方） |
+| 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`（P6-5 改 nameKey/descriptionKey，展示经 common.theme.* 键）、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
+| 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调板；P6-5 删除无消费方 displayName 字段）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L75） |
 | axios 封装 request | `request.ts` | 🔵 axios 封装（详见下方） |
 | 会话维护 session | `session.ts` ✨2026-08-17 | 🔵 双令牌会话主动维护（纯逻辑为主，便于单测）：`getTokenExp`/`isTokenExpired`（JWT exp 解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 模式登录跳转 URL）、`syncTokenFromCookie`（标签页可见时 cookie→内存快照回同步）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录） |
 | 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-18 三态 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次刷新批，三态结果（renewed/rejected/transient，`isDefiniteFailure` 判定后端明确 401 才判死），definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3 次） |
-| 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑（无副作用，便于单测）：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError` |
+| 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError`；P6-5 兑底文案走 i18n（errors.paramValidation/requestError/generic，E01 未识别错误当前语言兑底） |
 | 部署恢复 deployment-recovery | `deployment-recovery.ts` | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | 下载器类型 downloader-type | `downloaderType.ts` | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
 | 存储 cookies | `cookies.ts` | sidebar status / 双令牌 access+refresh token（cookie） / userId（localStorage） + 通用 `getStorage`/`setStorage` |
-| 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
+| 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制）；P6-5 双语：两种失败 throw 走 common.clipboard.* 键 |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
+| 通知事件展示 notification-display | `notification-display.ts` ✨2026-09-21 | 双语 P4（E03）系统通知事件展示层：按 `extra_data.event`（torrent_batch_add_completed/orphan_scan_completed/version_update/welcome）+ 参数本地化 title/content（`notificationDisplayTitle/Content`，经 i18n translate + formatFileSize），未登记事件/无 extra_data 历史通知原文兜底（旧内容不改写） |
 
-#### request.ts 关键（axios 封装，L1-263）
+| 通知渲染 notification-markdown ✨2026-09-21 补录 | `notification-markdown.ts` | 通知 Markdown-lite 渲染：`renderNotificationContent()`（按行分块：标题 #/##/###、分隔线、无序列表、段落，输入先 HTML 转义再内联替换粗体/行内代码防注入）、`plainNotificationContent()` 摘要纯文本化（记号剥离）、`notificationFailureTarget()` 失败明细目标回退链（P6-5 兑底走 common.notifications.*）；桌面/移动通知详情同源 |
+| UI 模式 ui-mode ✨2026-09-21 补录 | `ui-mode.ts` | 移动/桌面视图选择（dual-mode-client Phase 4 M1）：`resolveUiMode()`——偏好持久化（localStorage）优先、auto 按视口 `MOBILE_VIEWPORT_BREAKPOINT=768` 判定、伴侣 App WebView（UA 含 App 注入标记）恒 mobile（2026-09-12 用户决策，顺带覆盖旧 APK 写入的 desktop 偏好） |
 
-- L17 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
+#### request.ts 关键（axios/Demo 分流封装，L1-300）
+
+- L20 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
+- L179~ 幂等 GET 瞬态失败自动重试（✨2026-09-10）：`isTransientRetryEligible` 仅 GET + 网络错误/502/503/504 触发、超时（ECONNABORTED）与写操作不重试，重试落响应拦截器内静默一次（800ms 延迟），用尽才走 toast——高负载伴侣模式的红色 toast 缓解
 - L49 `NETWORK_TOAST_THROTTLE_MS` + L54 `notifyNetworkError`：网络错误 toast 3 秒同文案节流（断网+1 秒轮询不洪泛，窗口到期复位）
 - L108 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，`isDefiniteFailure` = ApiError code '401' 才判死）
 - L90 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；改用 `UserModule.ExpireSession()`（保留共享 cookie——refresh 防跨标签轮换竞态、access 防他标签 syncTokenFromCookie 级联误杀）
@@ -35,7 +40,7 @@
 - L145 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
 - L166 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
 - L201 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误（节流 toast）/ HTTP 错误
-- L263 `export default service as unknown as RequestClient`
+- L271-280 `requestClient`：Demo 开关打开时转本地 `demoRequest`，真实模式走 Axios；L280 保留 `service.defaults` 兼容 adapter 注入，L300 导出统一请求客户端
 
 #### error-normalize.ts 关键
 
@@ -47,11 +52,11 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理类型 torrent | `torrent.ts` | 🔵 种子管理类型（最大）：`TorrentStatus` enum、`Torrent`/`TrackerInfo`/`Downloader`、列表参数/响应、`AdvancedSearchParams`/`ConditionGroup`/`Condition`、`TorrentAuditLog`、`AuditOperationType`/`AuditOperationResult`/`DeleteLevel` enum、回收站/清理参数 |
+| 种子管理类型 torrent | `torrent.ts` | 🔵 种子管理类型（最大）：`TorrentStatus` enum、`Torrent`/`TrackerInfo`/`Downloader`、列表参数/响应（含实时 `downloadComplete` 完成证据）、`AdvancedSearchParams`/`ConditionGroup`/`Condition`、`TorrentAuditLog`、`AuditOperationType`/`AuditOperationResult`/`DeleteLevel` enum、回收站/清理参数 |
 | 通用工具类型 common | `common.ts` | 通用工具类型：`Partial/Required/Pick/Omit/DeepReadonly/DeepPartial/ReturnType/Parameters/UnwrapPromise` 等高阶类型 + `KeyValuePair/ID/Timestamp/SortConfig/UploadFile` |
 | 统一入口 index | `index.ts` | 统一入口：`BTDeckTypes` 命名空间（L21-99）+ re-export api/scheduled-tasks/task-logs/components/common（⚠ 不 re-export torrent/dashboard） |
-| 定时任务类型 scheduled-tasks | `scheduled-tasks.ts` | 定时任务类型：`TaskType`/`TaskStatus` enum、`ScheduledTask`、CRUD 请求、清理配置/预览/执行 |
-| 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard` + `TASK_STATUS_OPTIONS`/`TASK_TYPE_OPTIONS` 常量 |
+| 定时任务类型 scheduled-tasks | `scheduled-tasks.ts` | 定时任务类型：`TaskType`/`TaskStatus` enum、`ScheduledTask`、CRUD 请求、清理配置/预览/执行；✨2026-09-20 双语 P6-4a：TaskTypeOption 重塑（label→labelKey 展示键，description/language 死字段删除） |
+| 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard`（P6-5 删除零消费方死数组 TASK_STATUS_OPTIONS/TASK_TYPE_OPTIONS 及 scheduled-tasks 导入） |
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |
 | 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等 |
@@ -60,7 +65,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子状态配置 status-config | `status-config.ts` ✨2026-08-16 | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates）；`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 含 completed/unknown 文案与图标兜底 |
+| 种子状态配置 status-config | `status-config.ts` ✨2026-08-16 | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates）；`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 含 completed/unknown 文案与图标兜底 |；2026-09-21 P3-1：getStatusText 走 torrent.status.* 键（回退原映射）+ localizedStatusOptions()
 | 状态配置测试 status-config-test | `__tests__/status-config.spec.ts` | status-config 回归测试：守住 emoji→Lucide 改造契约——`StatusOption.icon` 必填 Lucide 图标名、label 纯文本无 emoji 前缀、`STATUS_ICON_MAP`/`getStatusIcon` 返回图标名并以 `help-circle` 兜底 |
 
 ### directive/waves/

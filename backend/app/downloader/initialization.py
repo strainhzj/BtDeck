@@ -248,6 +248,21 @@ def _clean_host_url(host: str) -> str:
     return host.strip()
 
 
+def _qb_host_with_scheme(host: str, is_ssl: Any) -> str:
+    """qb 客户端 host 补全 scheme 前缀（配合 FORCE_SCHEME_FROM_HOST=True 跳过探测）。
+
+    背景（2026-08-25 生产案件根因）：_clean_host_url 剥掉 scheme 后，qbittorrentapi
+    的 detect_scheme 会在每次上下文重建/重试轮做 HTTP→HTTPS 双方案探测；qb WebUI
+    异常时每段 30s×urllib3 重试，单次 API 调用被放大到 ~6 分钟。显式 scheme +
+    FORCE_SCHEME_FROM_HOST=True 彻底消除探测路径；is_ssl 兼容 bool 与 "1"/"0"
+    字符串两种 DB 形态（与 tr 构造的判定口径一致）。
+    """
+    if "://" in host:
+        return host
+    https = (isinstance(is_ssl, bool) and is_ssl) or str(is_ssl) == "1"
+    return f"{'https' if https else 'http'}://{host}"
+
+
 async def check_port_connectivity(host: str, port: int, timeout: float = 3.0, max_retries: int = 3) -> bool:
     """
     检查端口连通性（使用 socket.connect）
@@ -390,7 +405,19 @@ async def _check_qbittorrent_auth_with_retry(downloader_info: Dict[str, Any], at
 
     try:
         logger.debug(f"创建 qBittorrent 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = qbClient(host=f"http://{host}:{port}", username=username, password=password)
+        # REQUESTS_ARGS timeout 与缓存客户端构造对齐：外层 wait_for 只放弃等待，
+        # 缺 requests 超时会让 to_thread 线程挂在无超时 socket 上永久泄漏。
+        # FORCE_SCHEME_FROM_HOST + 显式 scheme 跳过 detect_scheme 探测（与缓存
+        # 客户端一致，见 _qb_host_with_scheme 注释）；HTTPADAPTER_ARGS 关闭
+        # urllib3 层重试，避免双层重试放大。
+        client = qbClient(
+            host=f"http://{host}:{port}",
+            username=username,
+            password=password,
+            REQUESTS_ARGS={"timeout": 30},
+            FORCE_SCHEME_FROM_HOST=True,
+            HTTPADAPTER_ARGS={"max_retries": 0},
+        )
 
         # 尝试获取应用版本（验证认证）
         logger.debug(f"验证 qBittorrent 认证... (尝试 {attempt}/{max_retries})")
@@ -426,7 +453,8 @@ async def _check_transmission_auth_with_retry(downloader_info: Dict[str, Any], a
 
     try:
         logger.debug(f"创建 Transmission 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = trClient(host=host or "", port=int(port or 0), username=username, password=password)
+        # timeout 与缓存客户端构造对齐，防 to_thread 线程挂在无超时 socket 上
+        client = trClient(host=host or "", port=int(port or 0), username=username, password=password, timeout=30.0)
 
         # 尝试获取会话统计（验证认证）
         logger.debug(f"验证 Transmission 认证... (尝试 {attempt}/{max_retries})")
@@ -1322,12 +1350,18 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
                 client: Union[qbClient, trClient]
                 if downloader_type_int == 0:
                     client = qbClient(
-                        host=downloader_data["host"],
+                        host=_qb_host_with_scheme(downloader_data["host"], downloader_data.get("is_ssl")),
                         port=port_int,
                         username=downloader_data.get("username"),
                         password=decrypted_password,
                         VERIFY_WEBUI_CERTIFICATE=False,
                         REQUESTS_ARGS={"timeout": 30},
+                        # 2026-08-25：跳过 detect_scheme 探测（异常 WebUI 下双方案
+                        # 探测×重试把单次调用放大到 ~6 分钟）；关闭 urllib3 层重试
+                        # （外层 call_downloader_api/任务预算已有自己的超时治理，
+                        # 双层重试是纯放大器）
+                        FORCE_SCHEME_FROM_HOST=True,
+                        HTTPADAPTER_ARGS={"max_retries": 0},
                     )
                 elif downloader_type_int == 1:
                     protocol: Literal["http", "https"] = "https" if downloader_data.get("is_ssl") == "1" else "http"
@@ -1549,7 +1583,8 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
         bool: 更新是否成功
     """
     import time
-    import ping3
+
+    from app.utils import connectivity
 
     try:
         downloader_type = getattr(downloader, "downloader_type", None)
@@ -1564,40 +1599,18 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
         start_time = time.time()
 
         # ========== 1. 测试网络延迟（每次都测试） ==========
+        # 统一探测入口（dual-mode-client Phase 1.1）：loopback 短路 → ICMP（桌面
+        # 可选，失败/无权限自动回退）→ TCP connect 计时；安卓环境不依赖 raw
+        # socket 或系统 ping 命令。probe 返回 float 毫秒或 None。
         try:
-            if "127.0.0.1" in host or "localhost" in host:
-                delay = 1.0  # 本地固定为1ms
-            else:
-                # 异步执行ping操作，超时3秒
-                delay_result = await asyncio.to_thread(ping3.ping, host, 3, "ms", "0.0.0.0", seq=2)
-
-                # ✅ P1-2修复: 更安全地转换延迟值，处理所有可能的异常情况（避免panic）
-                try:
-                    if delay_result is None or delay_result is False:
-                        delay = None
-                    elif isinstance(delay_result, (int, float)):
-                        # 验证延迟值在合理范围内
-                        delay = float(delay_result)
-                        # 检查延迟值是否合理（0-30秒）
-                        if delay < 0 or delay > 30000:
-                            print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
-                            delay = None
-                    else:
-                        # 尝试转换其他类型（如字符串）
-                        delay = float(delay_result)
-                        # 再次验证范围
-                        if delay < 0 or delay > 30000:
-                            print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
-                            delay = None
-                except (ValueError, TypeError, OverflowError) as e:
-                    # 处理各种转换异常
-                    print(
-                        f"[状态更新] {nickname}: ⚠️ 延迟值转换失败: {e}, 原始值: {delay_result}, 类型: {type(delay_result)}"
-                    )
-                    delay = None
+            delay = await connectivity.probe_delay(host, port, timeout_s=3.0)
+            if delay is not None and not (0 <= delay <= connectivity.MAX_REASONABLE_DELAY_MS):
+                print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
+                delay = None
             downloader.delay = delay
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 延迟探测失败不影响后续端口检查
             print(f"[状态更新] {nickname}: 延迟测试失败 - {e}")
+            delay = None
             downloader.delay = None
 
         # ========== 2. 检查端口连通性（判断是否在线） ==========
@@ -1659,6 +1672,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
             if update_cold:
                 downloader.downloading_count = status_data.get("downloading_count", 0) or 0
                 downloader.seeding_count = status_data.get("seeding_count", 0) or 0
+                downloader.paused_count = status_data.get("paused_count", 0) or 0
 
             downloader.last_update = time.time()
 
@@ -1674,6 +1688,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                     f"下载={status_data.get('download_speed')} KB/s, "
                     f"下载中={status_data.get('downloading_count')}, "
                     f"做种中={status_data.get('seeding_count')}, "
+                    f"已暂停={status_data.get('paused_count')}, "
                     f"耗时={elapsed:.2f}秒"
                 )
             else:
@@ -1721,14 +1736,15 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         downloader: 下载器对象
         force_full_sync: 强制全量统计
 
-    Returns:
-        统计结果：{
-            'downloading_count': int,
-            'seeding_count': int,
-            'sync_mode': 'full' | 'incremental',
-            'elapsed': float,
-            'from_cache': bool
-        }
+        Returns:
+            统计结果：{
+                'downloading_count': int,
+                'seeding_count': int,
+                'paused_count': int,
+                'sync_mode': 'full' | 'incremental',
+                'elapsed': float,
+                'from_cache': bool
+            }
     """
     from app.downloader.torrent_fetcher import TorrentFetcher
 
@@ -1890,6 +1906,7 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         return {
             "downloading_count": stats["downloading"],
             "seeding_count": stats["seeding"],
+            "paused_count": stats["paused"],
             "sync_mode": sync_mode,
             "elapsed": elapsed_total,
             "from_cache": False,
@@ -1909,6 +1926,7 @@ async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = Fa
         return {
             "downloading_count": stats["downloading"],
             "seeding_count": stats["seeding"],
+            "paused_count": stats["paused"],
             "sync_mode": "cache",
             "elapsed": elapsed_total,
             "from_cache": True,
@@ -1943,12 +1961,14 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
 
             result["downloading_count"] = stats_result.get("downloading_count", 0)
             result["seeding_count"] = stats_result.get("seeding_count", 0)
+            result["paused_count"] = stats_result.get("paused_count", 0)
 
             # 添加调试信息
             logger.debug(
                 f"  └─ qBittorrent冷数据获取: "
                 f"下载中={result['downloading_count']}, "
                 f"做种中={result['seeding_count']}, "
+                f"已暂停={result['paused_count']}, "
                 f"模式={stats_result.get('sync_mode', 'unknown')}, "
                 f"耗时={stats_result.get('elapsed', 0):.2f}秒"
             )
@@ -1956,6 +1976,7 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
             result["downloading_count"] = 0
             result["seeding_count"] = 0
+            result["paused_count"] = 0
 
         return result
 
@@ -1995,12 +2016,14 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
 
             result["downloading_count"] = stats_result.get("downloading_count", 0)
             result["seeding_count"] = stats_result.get("seeding_count", 0)
+            result["paused_count"] = stats_result.get("paused_count", 0)
 
             # 添加调试信息
             logger.debug(
                 f"  └─ Transmission冷数据获取: "
                 f"下载中={result['downloading_count']}, "
                 f"做种中={result['seeding_count']}, "
+                f"已暂停={result['paused_count']}, "
                 f"模式={stats_result.get('sync_mode', 'unknown')}, "
                 f"耗时={stats_result.get('elapsed', 0):.2f}秒"
             )
@@ -2008,6 +2031,7 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
             result["downloading_count"] = 0
             result["seeding_count"] = 0
+            result["paused_count"] = 0
 
         return result
 

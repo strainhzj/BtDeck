@@ -11,6 +11,40 @@ import type {
   TemplateListResponse
 } from '@/views/downloader/types'
 
+export type SyncTaskState = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+
+export interface SyncTaskSubmission {
+  task_id: string
+  downloader_id: string
+  nickname: string
+  status: 'pending' | 'running'
+  query_url: string
+  message: string
+}
+
+export interface SyncTaskExecutionResult {
+  status?: string
+  message?: string
+  outcome?: string
+  run_id?: string
+  duration_ms?: number
+}
+
+export interface SyncTaskStatusData {
+  task_id: string
+  task_type: string
+  downloader_id: string
+  downloader_nickname: string
+  status: SyncTaskState
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  progress: number
+  result: SyncTaskExecutionResult | null
+  error: string | null
+  execution_time: number | null
+}
+
 export const getList = (data?: any) =>
   request({
     url: '/downloader/getList',
@@ -47,7 +81,27 @@ export const addDownloader = (data: object) =>
     data
   })
 
-export const upDownloader = (data: {id:string}) =>
+/**
+ * 下载器更新 payload：id 必填，其余字段缺省表示"不修改"
+ * （后端按 case when :x is not null 部分更新，列表启停开关只传 enabled 即可）
+ */
+export interface DownloaderUpdatePayload {
+  id: string
+  nickname?: string
+  host?: string
+  username?: string
+  password?: string
+  old_password?: string
+  is_search?: boolean | '0' | '1'
+  enabled?: boolean | '0' | '1'
+  downloader_type?: number
+  port?: number | null
+  is_ssl?: boolean | '0' | '1'
+  path_mapping_rules?: string | null
+  torrent_save_path?: string | null
+}
+
+export const upDownloader = (data: DownloaderUpdatePayload) =>
   request({
     url: '/downloader/update/' + data.id,
     method: 'post',
@@ -69,10 +123,17 @@ export const testConnection = (id: string) =>
 
 // 同步单个下载器种子
 export const syncDownloader = (downloaderId: string) =>
-  request({
+  request<ApiEnvelope<SyncTaskSubmission>>({
     url: '/torrents/sync-single',
     method: 'post',
     data: { downloader_id: downloaderId }
+  })
+
+// 查询单个下载器异步种子同步任务状态
+export const getSyncTaskStatus = (taskId: string) =>
+  request<ApiEnvelope<SyncTaskStatusData>>({
+    url: `/torrents/sync-status/${encodeURIComponent(taskId)}`,
+    method: 'get'
   })
 
 // ============================================================

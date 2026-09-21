@@ -6,10 +6,12 @@
 export type ThemeType = 'emerald' | 'orange' | 'graphite'
 
 export interface ThemeConfig {
-  name: string
+  /** 展示名键（P6-5：common.theme.names.*；不再存中文文本） */
+  nameKey: string
   value: ThemeType
   color: string
-  description: string
+  /** 描述键（P6-5：common.theme.descriptions.*） */
+  descriptionKey: string
 }
 
 /**
@@ -24,22 +26,22 @@ export interface ThemeChangeEventDetail {
  */
 export const THEMES: ThemeConfig[] = [
   {
-    name: '翡翠绿',
+    nameKey: 'common.theme.names.emerald',
     value: 'emerald',
     color: '#059669',
-    description: '自然流动 + 稳定可靠 + 高效传输'
+    descriptionKey: 'common.theme.descriptions.emerald'
   },
   {
-    name: '活力橙',
+    nameKey: 'common.theme.names.orange',
     value: 'orange',
     color: '#EA580C',
-    description: '活力能量 + 警示提醒 + 高效管理'
+    descriptionKey: 'common.theme.descriptions.orange'
   },
   {
-    name: '石墨灰',
+    nameKey: 'common.theme.names.graphite',
     value: 'graphite',
     color: '#374151',
-    description: '专业沉稳 + 极简科技 + 高效管家'
+    descriptionKey: 'common.theme.descriptions.graphite'
   }
 ]
 

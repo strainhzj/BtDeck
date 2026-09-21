@@ -17,7 +17,7 @@ GET /api/v1/torrents/active-torrents 端点级回归测试。
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -29,13 +29,16 @@ from app.auth.dependencies import require_authenticated_user
 from app.services.downloader_api_runtime import DownloadLane
 
 URL = "/api/v1/torrents/active-torrents"
+RECONCILE_URL = "/api/v1/torrents/runtime-state/reconcile"
 
-# 前端 ActiveTorrentSpeed 接口声明的 6 个字段（torrents.ts:1188-1195）
+# 前端 ActiveTorrentSpeed 接口声明的实时字段（torrents.ts）
 EXPECTED_SPEED_FIELDS = {
     "hash",
     "downloadSpeed",
     "uploadSpeed",
     "progress",
+    "status",
+    "downloadComplete",
     "num_seeds",
     "num_leechs",
 }
@@ -104,9 +107,11 @@ def _reset_speed_globals():
     """
     torrent_speed._active_keys_cache.reset()
     torrent_speed._ttl_queue._store.clear()
+    torrent_speed._ttl_queue._group_cursors.clear()
     yield
     torrent_speed._active_keys_cache.reset()
     torrent_speed._ttl_queue._store.clear()
+    torrent_speed._ttl_queue._group_cursors.clear()
 
 
 def _real_call_downloader_api():
@@ -264,6 +269,268 @@ class TestSpeedFieldContract:
         assert core_fields == EXPECTED_SPEED_FIELDS
         assert data[0]["progress"] == 25.0
         assert data[0]["downloadSpeed"] == 200
+
+
+class TestCompletionConvergence:
+    """验证真实故障路径：任务停止产生速度后仍必须返回最后一个终态快照。"""
+
+    def test_active_then_zero_speed_terminal_converges_to_100_and_leaves_ttl(self, client):
+        """先下载中、再零速做种时，第二轮必须同步返回 100% 且不再重复补查。"""
+        dl = _make_qb_downloader()
+        active_rounds = 0
+
+        def torrents_info(**kwargs):
+            nonlocal active_rounds
+            if kwargs.get("status_filter") == "active":
+                active_rounds += 1
+                if active_rounds == 1:
+                    return [
+                        {
+                            "hash": "done-hash",
+                            "dlspeed": 4096,
+                            "upspeed": 0,
+                            "progress": 0.9937,
+                            "state": "downloading",
+                        }
+                    ]
+                return []
+            if kwargs.get("hashes") == "done-hash":
+                return [
+                    {
+                        "hash": "done-hash",
+                        "dlspeed": 0,
+                        "upspeed": 0,
+                        # 模拟下载器完成瞬间进度字段仍有尾差；终态证据必须覆盖它。
+                        "progress": 0.9937,
+                        "state": "seeding",
+                    }
+                ]
+            raise AssertionError(f"unexpected qB query: {kwargs}")
+
+        dl.client.torrents_info.side_effect = torrents_info
+        _set_store(client.app, [dl])
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ) as sync_mock,
+        ):
+            active_response = client.get(URL).json()
+            assert active_response["data"][0] == {
+                "hash": "done-hash",
+                "downloadSpeed": 4096.0,
+                "uploadSpeed": 0.0,
+                "progress": 99.37,
+                "status": "downloading",
+                "downloadComplete": False,
+                "num_seeds": 0,
+                "num_leechs": 0,
+                "downloader_id": "dl_qb",
+                "downloader_type": 0,
+            }
+            assert ("dl_qb", "done-hash") in torrent_speed._ttl_queue._store
+
+            terminal_response = client.get(URL).json()
+
+        assert terminal_response["code"] == "200"
+        assert terminal_response["data"] == [
+            {
+                "hash": "done-hash",
+                "downloadSpeed": 0,
+                "uploadSpeed": 0,
+                "progress": 100.0,
+                "num_seeds": 0,
+                "num_leechs": 0,
+                "status": "seeding",
+                "downloadComplete": True,
+                "downloader_id": "dl_qb",
+                "downloader_type": 0,
+            }
+        ]
+        assert ("dl_qb", "done-hash") not in torrent_speed._ttl_queue._store
+        terminal_syncs = [
+            call.args[0]
+            for call in sync_mock.await_args_list
+            if any(item.get("downloadComplete") for item in call.args[0])
+        ]
+        assert terminal_syncs == [terminal_response["data"]]
+        assert dl.client.torrents_info.call_args_list[-1].kwargs == {"hashes": "done-hash"}
+
+    def test_partial_snapshot_still_delivers_terminal_result_from_healthy_downloader(self, client):
+        """另一下载器失败导致 206 时，已成功核验的完成态不能被整批丢弃。"""
+        healthy = _make_qb_downloader(dl_id="dl_ok")
+
+        def torrents_info(**kwargs):
+            if kwargs.get("status_filter") == "active":
+                return []
+            if kwargs.get("hashes") == "done-hash":
+                return [{"hash": "done-hash", "progress": 1, "state": "pausedUP"}]
+            raise AssertionError(f"unexpected qB query: {kwargs}")
+
+        healthy.client.torrents_info.side_effect = torrents_info
+        failed = _make_qb_downloader(dl_id="dl_failed", fail_time=1)
+        _set_store(client.app, [healthy, failed])
+        torrent_speed._ttl_queue.put("dl_ok", 0, "done-hash")
+
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ) as sync_mock,
+        ):
+            body = client.get(URL).json()
+
+        assert body["code"] == "206"
+        assert body["status"] == "partial"
+        assert body["data"][0]["progress"] == 100.0
+        assert body["data"][0]["status"] == "pausedUP"
+        assert body["data"][0]["downloadComplete"] is True
+        assert ("dl_ok", "done-hash") not in torrent_speed._ttl_queue._store
+        sync_mock.assert_awaited_once_with(body["data"])
+
+
+# ============ 断速振荡回归（speed-snapshot-flap-suppression） ============
+
+
+class TestBackoffCacheFillOscillation:
+    """断速种子快照振荡端点闭环回归（2026-09-11 双修复方案 A）。
+
+    用户实证场景：断续下载的种子速度归零后，若退避期轮次从快照缺席，前端
+    完整快照基线被替换、回归轮被误判"新出现的未展示键"，反复触发整表
+    getList（~5s 一次）。守护核心性质：断速种子在退避期内仍持续出现在
+    响应 data 中，且不再对下载器发起补查查询（不查但在场）。
+    """
+
+    def _count_supplement_queries(self, dl):
+        return sum(1 for call in dl.client.torrents_info.call_args_list if call.kwargs.get("hashes") is not None)
+
+    def test_flapping_seed_stays_in_snapshot_during_backoff_without_query(self, client):
+        dl = _make_qb_downloader()
+        # 主体查询可变状态：第 1 轮有速度，第 2 轮起速度归零
+        active_rows = [{"hash": "h1", "dlspeed": 1024, "upspeed": 0, "progress": 0.4, "state": "downloading"}]
+
+        def torrents_info(**kwargs):
+            if kwargs.get("status_filter") == "active":
+                return list(active_rows)
+            if kwargs.get("hashes") == "h1":
+                # 补查：断速但仍未完成
+                return [{"hash": "h1", "dlspeed": 0, "upspeed": 0, "progress": 0.4, "state": "stalledDL"}]
+            raise AssertionError(f"unexpected qB query: {kwargs}")
+
+        dl.client.torrents_info.side_effect = torrents_info
+        _set_store(client.app, [dl])
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ),
+        ):
+            # 第 1 轮：主体有速度，TTL 队列登记
+            first = client.get(URL).json()
+            assert first["code"] == "200"
+            assert [t["hash"] for t in first["data"]] == ["h1"]
+            assert first["data"][0]["downloadSpeed"] == 1024.0
+
+            # 第 2 轮：速度归零 → 实际补查一次，快照仍含该种子（速度 0）
+            active_rows.clear()
+            second = client.get(URL).json()
+            assert second["code"] == "200"
+            assert [t["hash"] for t in second["data"]] == ["h1"]
+            assert second["data"][0]["downloadSpeed"] == 0.0
+            assert self._count_supplement_queries(dl) == 1
+
+            # 第 3、4 轮（退避期内）：零补查查询，但快照成员不缺席（缓存填充）
+            third = client.get(URL).json()
+            fourth = client.get(URL).json()
+            assert [t["hash"] for t in third["data"]] == ["h1"]
+            assert [t["hash"] for t in fourth["data"]] == ["h1"]
+            assert self._count_supplement_queries(dl) == 1
+            # 缓存条目携带完整复合身份（前端按 downloader_id+hash 对账）；
+            # stalledDL 已在补查时被 _normalize_runtime_state 归一为 downloading
+            assert third["data"][0]["downloader_id"] == "dl_qb"
+            assert third["data"][0]["progress"] == 40.0
+            assert third["data"][0]["status"] == "downloading"
+
+    def test_speed_recovery_discards_cache_and_reverts_to_live_data(self, client):
+        """速度恢复轮回到主体实时数据，缓存被丢弃，不再产生补查。"""
+        dl = _make_qb_downloader()
+        active_rows = [{"hash": "h1", "dlspeed": 1024, "upspeed": 0, "progress": 0.4, "state": "downloading"}]
+
+        def torrents_info(**kwargs):
+            if kwargs.get("status_filter") == "active":
+                return list(active_rows)
+            if kwargs.get("hashes") == "h1":
+                return [{"hash": "h1", "dlspeed": 0, "upspeed": 0, "progress": 0.4, "state": "stalledDL"}]
+            raise AssertionError(f"unexpected qB query: {kwargs}")
+
+        dl.client.torrents_info.side_effect = torrents_info
+        _set_store(client.app, [dl])
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ),
+        ):
+            client.get(URL)  # 有速度
+            active_rows.clear()
+            client.get(URL)  # 断速，补查写缓存
+            entry = torrent_speed._ttl_queue._store[("dl_qb", "h1")]
+            assert entry["last_supplement"] is not None
+
+            # 速度恢复（进度推进）：put 清缓存，主体数据回归
+            active_rows.append({"hash": "h1", "dlspeed": 2048, "upspeed": 0, "progress": 0.6, "state": "downloading"})
+            recovered = client.get(URL).json()
+            assert recovered["data"][0]["downloadSpeed"] == 2048.0
+            assert recovered["data"][0]["progress"] == 60.0
+            assert torrent_speed._ttl_queue._store[("dl_qb", "h1")]["last_supplement"] is None
+
+
+class TestRuntimeStateReconcile:
+    """终态核验必须在速度为 0 时仍返回完成证据，并报告未找到项。"""
+
+    def test_reconcile_returns_terminal_state_and_missing_keys(self, client):
+        dl = _make_qb_downloader(
+            torrents=[
+                {
+                    "hash": "done-hash",
+                    "dlspeed": 0,
+                    "upspeed": 0,
+                    "progress": 0.75,
+                    "num_seeds": 0,
+                    "num_leechs": 0,
+                    "state": "seeding",
+                }
+            ]
+        )
+        _set_store(client.app, [dl])
+        with (
+            _real_call_downloader_api(),
+            patch(
+                "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                new_callable=AsyncMock,
+            ) as sync_mock,
+        ):
+            response = client.post(
+                RECONCILE_URL,
+                json={
+                    "items": [
+                        {"downloader_id": "dl_qb", "hash": "done-hash"},
+                        {"downloader_id": "missing-dl", "hash": "missing-hash"},
+                    ]
+                },
+            )
+
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"]["list"][0]["progress"] == 100.0
+        assert body["data"]["list"][0]["downloadComplete"] is True
+        assert body["data"]["list"][0]["status"] == "seeding"
+        assert body["data"]["missing"] == [{"downloader_id": "missing-dl", "hash": "missing-hash"}]
+        sync_mock.assert_awaited_once()
 
 
 # ============ runtime 必经守护（sync-resource-governance） ============

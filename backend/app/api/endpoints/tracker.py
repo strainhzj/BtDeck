@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, Request, Query, BackgroundTasks
 import json
 from pathlib import Path
+from pydantic import BaseModel, Field
 
 from app.api.responseVO import CommonResponse
 from sqlalchemy import text, distinct, select
@@ -39,7 +40,14 @@ class _DownloaderUnavailableError(Exception):
 
     对应 create_torrent 的 app.state.store 样板语义（404/503/500），
     在端点循环内以既有"单条失败计数 + 失败审计日志"方式上报，不改变 HTTP 契约。
+
+    reason_code 为双语 P4 错误契约的稳定原因标识（msg 保持原文，前端按
+    data.reasonCode 本地化，禁止按中文 msg 匹配）。
     """
+
+    def __init__(self, message: str, reason_code: str = "DOWNLOADER_CACHE_UNAVAILABLE"):
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 async def _get_downloader_vo_map(req: Request) -> Dict[str, Any]:
@@ -51,7 +59,7 @@ async def _get_downloader_vo_map(req: Request) -> Dict[str, Any]:
     """
     app = req.app
     if not hasattr(app.state, "store"):
-        raise _DownloaderUnavailableError("下载器缓存未初始化")
+        raise _DownloaderUnavailableError("下载器缓存未初始化", "DOWNLOADER_CACHE_UNAVAILABLE")
     cached_downloaders = await app.state.store.get_snapshot()
     return {d.downloader_id: d for d in cached_downloaders if getattr(d, "downloader_id", None)}
 
@@ -64,13 +72,16 @@ def _require_downloader_vo(downloader_vo_map: Dict[str, Any], downloader_id: str
     """
     downloader_vo = downloader_vo_map.get(downloader_id)
     if not downloader_vo:
-        raise _DownloaderUnavailableError(f"下载器不在缓存中 [downloader_id={downloader_id}]")
+        raise _DownloaderUnavailableError(f"下载器不在缓存中 [downloader_id={downloader_id}]", "DOWNLOADER_NOT_FOUND")
     if getattr(downloader_vo, "fail_time", 0) > 0:
         raise _DownloaderUnavailableError(
-            f"下载器已失效 [downloader_id={downloader_id}, nickname={getattr(downloader_vo, 'nickname', '')}]"
+            f"下载器已失效 [downloader_id={downloader_id}, nickname={getattr(downloader_vo, 'nickname', '')}]",
+            "DOWNLOADER_OFFLINE",
         )
     if not getattr(downloader_vo, "client", None):
-        raise _DownloaderUnavailableError(f"下载器客户端连接不存在 [downloader_id={downloader_id}]")
+        raise _DownloaderUnavailableError(
+            f"下载器客户端连接不存在 [downloader_id={downloader_id}]", "DOWNLOADER_CONNECTION_MISSING"
+        )
     return downloader_vo
 
 
@@ -113,7 +124,7 @@ async def add_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"添加tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     for torrent_info_id in torrent_info_id_list:
         try:
@@ -239,7 +250,9 @@ async def replace_tracker(
     tracker_info_list = result.scalars().all()
 
     if not tracker_info_list:
-        return CommonResponse(status="error", msg="未找到要替换的tracker", code="404", data=None)
+        return CommonResponse(
+            status="error", msg="未找到要替换的tracker", code="404", data={"reasonCode": "TRACKER_NOT_FOUND"}
+        )
 
     affected_torrents = []
     for tracker_info in tracker_info_list:
@@ -284,7 +297,7 @@ async def replace_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"替换tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     # 成功/失败计数（与 modify_tracker:321-322 对齐）
     success_count = 0
@@ -433,7 +446,7 @@ async def modify_tracker(
         downloader_vo_map = await _get_downloader_vo_map(req)
     except _DownloaderUnavailableError as e:
         logging.error(f"修改tracker失败: {str(e)}")
-        return CommonResponse(status="error", msg=str(e), code="500", data=None)
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
 
     for torrent_info_id in torrent_info_id_list:
         try:
@@ -528,6 +541,152 @@ async def modify_tracker(
         msg=f"修改Tracker成功，成功: {success_count}，失败: {failed_count}",
         code="200",
         data={"success_count": success_count, "failed_count": failed_count},
+    )
+
+
+class TrackerByDownloaderRequest(BaseModel):
+    """Tracker批量操作请求（按下载器触发，服务端解析种子范围）"""
+
+    downloader_id: str = Field(..., description="下载器ID")
+    trackers: str = Field(..., description="tracker地址列表，多个以;分隔")
+
+
+async def _apply_tracker_op_by_downloader(
+    req: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession,
+    downloader_id: str,
+    tracker_list: List[str],
+    operation: str,
+) -> CommonResponse:
+    """对指定下载器下全部种子批量添加/替换 tracker 的共享执行体。
+
+    与 addTracker/modifyTracker 的差异仅在种子范围解析：按 downloader_id 服务端
+    查全量（torrentInfoModel.dr=0），前端不传种子列表——移动端无多选的触发形态，
+    同时免除 torrentInfoIds 走 Query 参数的 URL 长度上限。执行体复用既有
+    per-torrent qb/tr helper；客户端连接强制走 app.state.store 缓存
+    （backend/docs/constraints/downloader-connection.md）。
+    审计采用单条汇总（同 reannounce-by-downloader），避免千级种子逐条刷审计日志。
+    """
+    if not tracker_list:
+        return CommonResponse(
+            status="error", msg="tracker地址列表不能为空", code="400", data={"reasonCode": "TRACKER_URL_REQUIRED"}
+        )
+
+    # 下载器行存在性校验（类型判定依据；不存在即整体失败）
+    dl_result = await db.execute(
+        select(BtDownloaders).where(BtDownloaders.dr == 0, BtDownloaders.downloader_id == downloader_id)
+    )
+    downloader_row = dl_result.scalars().first()
+    if not downloader_row:
+        return CommonResponse(
+            status="error",
+            msg=f"下载器不存在: downloader_id={downloader_id}",
+            code="404",
+            data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+        )
+
+    # 获取下载器缓存快照（禁止自建客户端连接；一次获取，循环内复用）
+    try:
+        downloader_vo_map = await _get_downloader_vo_map(req)
+        downloader_vo = _require_downloader_vo(downloader_vo_map, downloader_id)
+    except _DownloaderUnavailableError as e:
+        logging.error(f"按下载器{'添加' if operation == 'add' else '修改'}tracker失败: {str(e)}")
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
+
+    ti_result = await db.execute(
+        select(torrentInfoModel).where(torrentInfoModel.downloader_id == downloader_id, torrentInfoModel.dr == 0)
+    )
+    torrents = ti_result.scalars().all()
+    if not torrents:
+        return CommonResponse(
+            status="error", msg="该下载器下没有种子", code="404", data={"reasonCode": "DOWNLOADER_NO_TORRENTS"}
+        )
+
+    success_count = 0
+    failed_count = 0
+    for torrent in torrents:
+        try:
+            if operation == "add":
+                if downloader_row.is_qbittorrent:
+                    await qb_add_torrents_tracker(db, downloader_vo, tracker_list, torrent.torrent_id, torrent.info_id)
+                if downloader_row.is_transmission:
+                    await tr_add_torrents_tracker(
+                        db, downloader_vo, tracker_list, int(torrent.torrent_id or 0), torrent.info_id
+                    )
+            else:
+                if downloader_row.is_qbittorrent:
+                    await qb_change_torrents_tracker(db, downloader_vo, tracker_list, torrent.torrent_id)
+                if downloader_row.is_transmission:
+                    await tr_change_torrents_tracker(db, downloader_vo, tracker_list, int(torrent.torrent_id or 0))
+            success_count += 1
+        except Exception as e:  # noqa: BLE001 单条失败不断整体循环（与 addTracker 口径一致）
+            failed_count += 1
+            logging.error(
+                f"按下载器{'添加' if operation == 'add' else '修改'}tracker单条失败 "
+                f"[downloader_id={downloader_id}, info_id={torrent.info_id}]: {str(e)}"
+            )
+
+    # 汇总审计（后台任务）：一条记录携带范围与计数，替代 per-torrent 刷库
+    audit_info = extract_audit_info_from_request(req) or {}
+    background_tasks.add_task(
+        _write_tracker_audit_log_async,
+        operation_type=AuditOperationType.ADD_TRACKER if operation == "add" else AuditOperationType.UPDATE_TRACKER,
+        operator="admin",
+        torrent_info_id=None,
+        operation_detail={
+            "operation": f"{operation}_by_downloader",
+            "downloader_id": downloader_id,
+            "torrent_count": len(torrents),
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "trackers": tracker_list,
+            "tracker_count": len(tracker_list),
+        },
+        new_value={"trackers": tracker_list},
+        operation_result=(
+            AuditOperationResult.SUCCESS
+            if failed_count == 0
+            else AuditOperationResult.PARTIAL if success_count > 0 else AuditOperationResult.FAILED
+        ),
+        downloader_id=downloader_id,
+        audit_info=audit_info,
+    )
+
+    op_label = "添加" if operation == "add" else "修改"
+    return CommonResponse(
+        status="success",
+        msg=f"按下载器{op_label}Tracker完成，成功: {success_count}，失败: {failed_count}",
+        code="200",
+        data={"success_count": success_count, "failed_count": failed_count},
+    )
+
+
+@router.post("/addTracker-by-downloader", summary="按下载器添加种子tracker地址", response_model=CommonResponse)
+async def add_tracker_by_downloader(
+    req_data: TrackerByDownloaderRequest,
+    req: Request,
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """对该下载器下全部种子添加 tracker（服务端解析种子范围，无 URL 长度上限）"""
+    tracker_list = [t.strip() for t in req_data.trackers.split(";") if t.strip()]
+    return await _apply_tracker_op_by_downloader(req, background_tasks, db, req_data.downloader_id, tracker_list, "add")
+
+
+@router.post("/modifyTracker-by-downloader", summary="按下载器更改种子tracker地址", response_model=CommonResponse)
+async def modify_tracker_by_downloader(
+    req_data: TrackerByDownloaderRequest,
+    req: Request,
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """对该下载器下全部种子替换 tracker 列表（完全替换语义同 modifyTracker，服务端解析种子范围）"""
+    tracker_list = [t.strip() for t in req_data.trackers.split(";") if t.strip()]
+    return await _apply_tracker_op_by_downloader(
+        req, background_tasks, db, req_data.downloader_id, tracker_list, "modify"
     )
 
 

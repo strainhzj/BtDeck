@@ -1,5 +1,7 @@
 import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import OrphanFiles from '@/views/orphan-files/index.vue'
 import {
@@ -66,6 +68,8 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-4b：页面文案走 $t（orphanFiles.*），挂载安装 i18n 单例（基准语言 zh-CN）
+localVue.use(VueI18n)
 localVue.directive('loading', {})
 
 const mockGetOrphanList = getOrphanList as jest.MockedFunction<typeof getOrphanList>
@@ -421,6 +425,7 @@ async function flushLifecycle(): Promise<void> {
 function mountView(): Wrapper<Vue> {
   return shallowMount(OrphanFiles, {
     localVue,
+    i18n,
     mocks: {
       $message: message,
       $confirm: confirm
@@ -1255,7 +1260,8 @@ describe('orphan files atomic page state', () => {
     expect(mockGetOrphanList).toHaveBeenCalled()
   })
 
-  it('忽视全部失败时展示后端逐项失败原因而不是成功提示', async() => {
+  it('忽视全部失败时提示失败计数且后端原因只进控制台（E01）', async() => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     mockSetIgnored.mockResolvedValueOnce({
       code: '200',
       msg: '忽视完成: 成功 0 个，失败 1 个',
@@ -1278,13 +1284,21 @@ describe('orphan files atomic page state', () => {
 
     await vm.handleRowIgnore(orphanItem(1), true)
 
-    expect(message.error).toHaveBeenCalledWith(
-      '忽视失败：当前候选状态不存在或已失效'
-    )
+    // 双语 P6-4b（E01）：用户提示按计数键，逐项原因转 console
+    expect(message.error).toHaveBeenCalledWith('忽视失败：1 个文件未处理')
+    expect(consoleSpy).toHaveBeenCalledWith('忽视失败明细:', [
+      {
+        id: 1,
+        file_path: '/data/1.bin',
+        reason: '当前候选状态不存在或已失效'
+      }
+    ])
     expect(message.success).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
   })
 
-  it('忽视部分失败时展示成功数、失败数和后端原因', async() => {
+  it('忽视部分失败时展示成功数与失败数（原因转控制台，E01）', async() => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     mockSetIgnored.mockResolvedValueOnce({
       code: '200',
       msg: '忽视完成: 成功 1 个，失败 1 个',
@@ -1301,10 +1315,12 @@ describe('orphan files atomic page state', () => {
 
     await vm.handleRowIgnore(orphanItem(1), true)
 
-    expect(message.warning).toHaveBeenCalledWith(
-      '忽视部分完成：成功 1 个，失败 1 个；候选已进入清理流程'
-    )
+    expect(message.warning).toHaveBeenCalledWith('忽视部分完成：成功 1 个，失败 1 个')
+    expect(consoleSpy).toHaveBeenCalledWith('忽视部分失败明细:', [
+      { id: 2, reason: '候选已进入清理流程' }
+    ])
     expect(message.success).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
   })
 
   it('混选不同状态时批量按钮禁用', async() => {
@@ -1420,6 +1436,7 @@ describe('orphan files quick action (prefix match)', () => {
     mockPrefixMatchPreview.mockResolvedValueOnce(
       prefixPreviewRejected('最新扫描已完成新批次，当前快照已过期')
     )
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -1432,9 +1449,15 @@ describe('orphan files quick action (prefix match)', () => {
       path_prefix: '/data/leak/',
       scan_id: 'scan-completed'
     })
-    expect(message.error).toHaveBeenCalledWith('最新扫描已完成新批次，当前快照已过期')
+    // 双语 P6-4b（E01）：拒绝原因只进控制台，用户提示用固定键
+    expect(message.error).toHaveBeenCalledWith('当前扫描快照不允许操作')
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '前缀匹配预览被拒绝:',
+      '最新扫描已完成新批次，当前快照已过期'
+    )
     expect(vm.quickActionDialogVisible).toBe(true)
     expect(vm.quickActionLoading).toBe(false)
+    consoleSpy.mockRestore()
   })
 
   it('命中数为 0 时提示无匹配且保留对话框', async() => {
@@ -1587,6 +1610,7 @@ describe('orphan files quick action (prefix match)', () => {
       }
     })
     mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -1595,10 +1619,13 @@ describe('orphan files quick action (prefix match)', () => {
 
     await vm.handleQuickActionConfirm()
 
-    expect(message.warning).toHaveBeenCalledWith(
-      '忽视部分完成：成功 1 个，失败 1 个；候选已进入清理流程'
-    )
+    // 双语 P6-4b（E01）：部分失败提示计数，原因转控制台
+    expect(message.warning).toHaveBeenCalledWith('忽视部分完成：成功 1 个，失败 1 个')
+    expect(consoleSpy).toHaveBeenCalledWith('快捷忽视部分失败明细:', [
+      { id: 9, reason: '候选已进入清理流程' }
+    ])
     expect(message.success).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
   })
 
   it('用户取消二次确认时复位 loading 且保留对话框与前缀', async() => {
@@ -1606,6 +1633,7 @@ describe('orphan files quick action (prefix match)', () => {
     const cancelConfirm = jest.fn(() => Promise.reject(new Error('cancel')))
     const wrapper = shallowMount(OrphanFiles, {
       localVue,
+      i18n,
       mocks: { $message: message, $confirm: cancelConfirm },
       stubs: {
         'el-button': ButtonStub,
@@ -1988,6 +2016,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     return shallowMount(OrphanFiles, {
       localVue,
+      i18n,
       mocks: { $message: message, $confirm: confirm },
       stubs: {
         'el-button': ButtonStub,
@@ -2528,7 +2557,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(vm.isHardlinkCopyDeleting(linked.id, '/library/a.mkv')).toBe(false)
   })
 
-  it('逐项失败原因展示且失败时不重查弹窗', async() => {
+  it('逐项失败提示固定文案且原因只进控制台（E01），失败时不重查弹窗', async() => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
     const wrapper = mountFolderView([linked])
     await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
@@ -2550,11 +2580,17 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
     await flushLifecycle()
 
-    expect(message.error).toHaveBeenCalledWith(expect.stringContaining('种子目录'))
+    // 双语 P6-4b（E01）：用户提示用固定键，逐条原因转 console
+    expect(message.error).toHaveBeenCalledWith('部分副本删除失败，明细详见控制台日志')
+    expect(consoleSpy).toHaveBeenCalledWith('删除硬链接副本部分失败:', [
+      { copy_path: '/library/a.mkv', reason: '副本位于种子目录内（可能正被引用），已拒绝删除' }
+    ])
     expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+    consoleSpy.mockRestore()
   })
 
-  it('租约互斥的 rejected 载荷直接提示且不重查', async() => {
+  it('租约互斥的 rejected 载荷提示固定键且不重查（原因转控制台，E01）', async() => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
     const wrapper = mountFolderView([linked])
     await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
@@ -2576,8 +2612,13 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
     await flushLifecycle()
 
-    expect(message.error).toHaveBeenCalledWith('另一个孤儿文件维护操作正在运行')
+    expect(message.error).toHaveBeenCalledWith('删除被拒绝')
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '删除硬链接副本被拒绝:',
+      '另一个孤儿文件维护操作正在运行'
+    )
     expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+    consoleSpy.mockRestore()
   })
 
   it('取消确认不发起删除请求', async() => {

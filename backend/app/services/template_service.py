@@ -15,6 +15,7 @@ from app.models.setting_templates import SettingTemplate, DownloaderTypeEnum
 from app.models.downloader_settings import DownloaderSetting
 from app.models.speed_schedule_rules import SpeedScheduleRule
 from app.downloader.models import BtDownloaders
+from app.core.platform_capabilities import capability_level, LEVEL_UNSUPPORTED, require_capability
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ class TemplateService:
         path_mapping_json = None
         path_mapping_data = data.get("path_mapping")
         if path_mapping_data:
+            require_capability("path_mapping", "setting_template.create")
             if not isinstance(path_mapping_data, dict):
                 raise ValueError("路径映射配置必须是JSON对象")
             try:
@@ -490,6 +492,10 @@ class TemplateService:
             logger.error(f"解析模板配置失败: {e}")
             raise ValueError("模板配置格式错误")
 
+        # 在写入下载器设置前就拒绝显式路径映射，避免能力异常导致半提交。
+        if template.path_mapping and apply_path_mapping is True:
+            require_capability("path_mapping", "setting_template.apply_path_mapping")
+
         current_time = datetime.now()
 
         # 检查是否已有配置
@@ -545,6 +551,16 @@ class TemplateService:
         if "schedule_rules" in template_config and template_config["schedule_rules"]:
             self._create_schedule_rules(existing_setting.id, template_config["schedule_rules"])
 
+        path_mapping_skipped = False
+        if (
+            template.path_mapping
+            and apply_path_mapping is None
+            and capability_level("path_mapping") == LEVEL_UNSUPPORTED
+        ):
+            # Android 主服务端仍可应用模板中的速度/调度设置，但不得触碰路径映射。
+            apply_path_mapping = False
+            path_mapping_skipped = True
+
         # 处理路径映射配置（如果存在）
         if template.path_mapping:
             if apply_path_mapping is True:
@@ -593,7 +609,12 @@ class TemplateService:
             success = manager.apply_settings(template_config_for_apply)
 
             if success:
-                return {"success": True, "message": f"模板应用成功: {template.name}", "downloader_id": downloader_id}
+                return {
+                    "success": True,
+                    "message": f"模板应用成功: {template.name}",
+                    "downloader_id": downloader_id,
+                    "path_mapping_skipped_by_capability": path_mapping_skipped,
+                }
             else:
                 return {"success": False, "message": "配置已保存到数据库，但应用失败", "downloader_id": downloader_id}
 

@@ -2,11 +2,11 @@
   <div class="sidebar-container">
     <!-- Logo 区域 -->
     <div class="sidebar-header">
-      <div class="sidebar-logo">
-        <LucideIcon name="orbit" :size="28" :stroke-width="1.65" class="logo-icon" />
-        <span v-show="!isCollapse" class="sidebar-logo-text">
-          BtDeck
-        </span>
+      <div class="sidebar-logo" :class="{'is-collapsed': isCollapse}">
+        <AppLogo
+          :variant="isCollapse ? 'mark' : 'full'"
+          class="sidebar-logo-image"
+        />
       </div>
     </div>
 
@@ -33,11 +33,23 @@
       </el-menu>
     </el-scrollbar>
 
-    <!-- 底部折叠按钮 -->
+    <!-- 底部操作区：移动版入口 + 折叠按钮 -->
     <div class="sidebar-footer">
       <el-button
         class="collapse-button"
-        :aria-label="isCollapse ? '展开侧边栏' : '收起侧边栏'"
+        :aria-label="$t('navigation.sidebar.switchToMobile')"
+        @click="switchToMobile"
+      >
+        <LucideIcon
+          name="smartphone"
+          :size="17"
+          :stroke-width="1.8"
+        />
+        <span v-show="!isCollapse">{{ $t('navigation.sidebar.mobileEntry') }}</span>
+      </el-button>
+      <el-button
+        class="collapse-button"
+        :aria-label="isCollapse ? $t('navigation.sidebar.expand') : $t('navigation.sidebar.collapse')"
         @click="toggleSidebar"
       >
         <LucideIcon
@@ -45,7 +57,7 @@
           :size="17"
           :stroke-width="1.8"
         />
-        <span v-show="!isCollapse">收起侧边栏</span>
+        <span v-show="!isCollapse">{{ $t('navigation.sidebar.collapse') }}</span>
       </el-button>
     </div>
   </div>
@@ -54,11 +66,14 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { AppModule } from '@/store/modules/app'
+import { setStoredUiMode } from '@/utils/ui-mode'
+import AppLogo from '@/components/common/AppLogo.vue'
 import SidebarItem from './SidebarItem.vue'
 
 @Component({
   name: 'SideBar',
   components: {
+    AppLogo,
     SidebarItem
   }
 })
@@ -86,6 +101,16 @@ export default class extends Vue {
 
   private toggleSidebar() {
     AppModule.ToggleSideBar(false)
+  }
+
+  /**
+   * 手动切换移动版（Phase 4 M1 余项）：写 mobile 偏好后进入移动版。
+   * 显式偏好优先于视口（ui-mode 三原则），宽屏桌面也可预览移动版；
+   * 守卫按解析后的模式放行 /m/*，SPA 内直接换壳无需刷新页面。
+   */
+  private switchToMobile() {
+    setStoredUiMode('mobile')
+    this.$router.push('/m/dashboard').catch(() => undefined)
   }
 }
 </script>
@@ -149,18 +174,19 @@ export default class extends Vue {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-.logo-icon {
-  color: var(--color-primary, #059669);
+.sidebar-logo-image {
+  width: 184px;
+  height: 46px;
 }
 
-.sidebar-logo-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary, #1F2937);
-  white-space: nowrap;
+.sidebar-logo.is-collapsed .sidebar-logo-image {
+  width: 32px;
+  height: 32px;
 }
 
 /* 菜单样式 */
@@ -188,11 +214,16 @@ export default class extends Vue {
   }
 }
 
-/* 底部折叠按钮区域 */
+/* 底部操作按钮区域（移动版入口 + 折叠按钮） */
 .sidebar-footer {
   padding: var(--spacing-md, 16px);
   border-top: 1px solid var(--color-border-secondary, #F3F4F6);
   flex-shrink: 0;
+
+  .collapse-button + .collapse-button {
+    margin-top: var(--spacing-sm, 8px);
+    margin-left: 0; /* 覆盖 Element 相邻按钮默认左间距 */
+  }
 }
 
 .collapse-button {

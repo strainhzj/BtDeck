@@ -1,0 +1,423 @@
+package com.btdeck.companion.ui
+
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.net.http.SslError
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
+import android.view.MenuItem
+import android.view.View
+import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebStorage
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.util.Log
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.appcompat.app.ActionBar
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import com.btdeck.companion.R
+import com.btdeck.companion.data.CredentialVault
+import com.btdeck.companion.data.HealthClient
+import com.btdeck.companion.data.ServerProfile
+import com.btdeck.companion.data.ServerProfileStore
+import com.btdeck.companion.data.buildAutoLoginScript
+import com.btdeck.companion.net.LanHostPolicy
+import com.btdeck.companion.net.TrustScope
+import com.btdeck.companion.util.Hosts
+import kotlinx.coroutines.launch
+
+/**
+ * 远程同源 WebView（计划 Phase 2）：
+ * - 直接加载服务器自带前端，不把前端 API/store 复制进 APK；
+ * - 切换 profile 时清除全部 cookie/localStorage（CookieManager 进程级单例，
+ *   无法按 profile 分区——清除即隔离，access/refresh token 不跨服务器复用）；
+ * - 自签证书必须用户显式信任并把指纹记录在该 profile（禁止无条件 proceed）；
+ * - 加载超时/失败可重试返回；副标题展示服务端版本提示（/health/ready）。
+ */
+class WebViewActivity : AppCompatActivity() {
+
+    private lateinit var store: ServerProfileStore
+    private lateinit var credentials: CredentialVault
+    private lateinit var profile: ServerProfile
+    private lateinit var webView: WebView
+    private lateinit var errorOverlay: LinearLayout
+    private lateinit var errorText: TextView
+    /** action bar 自定义标题区两行文本（原生 title/subtitle 已隐藏，写入走这里）。 */
+    private var headerTitle: TextView? = null
+    private var headerSubtitle: TextView? = null
+
+    private val timeoutHandler = Handler(Looper.getMainLooper())
+    private var loadFinished = false
+    private var autoLoginStarted = false
+    private val healthClient = HealthClient()
+
+    // ============ 文件选择器（<input type="file">，添加种子 .torrent 入口） ============
+
+    /** 当前待决的 WebView 文件回调；同一时刻 WebView 只允许一个待决选择器。 */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    /**
+     * 选择器结果通道（须在 onCreate 前注册）：回调恰好投递一次——取出即清空
+     * 引用，取消/非 OK 收敛为 null；不投递或双重投递都会让 WebView 永久
+     * 拒绝后续 onShowFileChooser（表现为此后点击文件框无反应）。
+     */
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooser
+            pendingFileChooser = null
+            callback?.onReceiveValue(
+                FileChooser.parseResult(result.resultCode, FileChooser.urisFromIntent(result.data))
+            )
+        }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_web)
+
+        store = ServerProfileStore(this)
+        credentials = CredentialVault(this)
+        val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
+        profile = profileId?.let { store.find(it) } ?: run {
+            finish()
+            return
+        }
+        setupActionBar()
+
+        webView = findViewById(R.id.web_view)
+        errorOverlay = findViewById(R.id.error_overlay)
+        errorText = findViewById(R.id.error_text)
+        findViewById<Button>(R.id.btn_retry).setOnClickListener { load() }
+
+        webView.settings.apply {
+            javaScriptEnabled = true          // SPA 前端必需
+            domStorageEnabled = true          // localStorage 会话状态
+            // 桌面管理页兜底（原生移动 UI 是 Phase 4 交付）：按页面设计视口
+            // 布局 + 首屏按屏宽缩放 + 捏合缩放，保证宽表格基本可用
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false
+            allowFileAccess = false           // 禁本地文件面
+            // 只门控「页面内引用 content:// 资源」（iframe/img 等）；文件选择器
+            // 上传读取走 ContentResolver + SAF 给本 activity 的临时读授权，
+            // 不经该门。维持 false（默认拒绝）；若真机验收上传失败（个别 ROM
+            // 行为差异），放宽为 true 的安全取舍：文件 URI 始终来自用户显式
+            // 选择，增量攻击面仅页面内 content:// 引用，可接受。
+            allowContentAccess = false
+            cacheMode = WebSettings.LOAD_DEFAULT
+            // APK 全程移动端（2026-09-12 用户决策）：UA 追加伴侣 App 标记，
+            // 前端 ui-mode/wide-viewport 据此强制移动端并永不渲染桌面版出口
+            // （平板/横屏 ≥768px 也不出）；桌面浏览器访问服务器前端无此标记，
+            // 宽视口逃生出口不受影响
+            userAgentString = "$userAgentString BtDeckCompanion"
+        }
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
+        webView.webViewClient = CompanionWebViewClient()
+        // 无 WebChromeClient 时 WebView 对 <input type="file"> 点击静默忽略
+        // （此前添加种子的根因）；SAF MIME 陷阱与意图构造见 FileChooser。
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView?,
+                callback: ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams,
+            ): Boolean {
+                // 新选择器请求到达时旧回调必须先作废（取消语义），否则 WebView
+                // 认为仍有待决选择器而锁死后续触发
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = callback
+                // 入口 Toast 兼做真机诊断：SAF 免存储权限（ACTION_GET_CONTENT 走
+                // 系统 DocumentsUI），不弹选择器时凭此 Toast 区分「原生层未触发
+                // （旧 APK / 手势链）」与「launch 后 ROM 特例」
+                android.widget.Toast.makeText(
+                    this@WebViewActivity, "正在打开文件选择器…", android.widget.Toast.LENGTH_SHORT
+                ).show()
+                Log.d(TAG, "onShowFileChooser mode=${params.mode} acceptTypes=${params.acceptTypes?.contentToString()}")
+                return try {
+                    fileChooserLauncher.launch(
+                        FileChooser.buildPickerIntent(FileChooser.pickerParams(params.mode))
+                    )
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    // 无可用文件管理器：同样须投递一次 null 解锁后续选择
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("未找到可用的文件管理器，无法选择种子文件")
+                    false
+                } catch (e: SecurityException) {
+                    // 个别 ROM 对 GET_CONTENT 声明的权限异常：同投 null 解锁并提示
+                    pendingFileChooser = null
+                    callback.onReceiveValue(null)
+                    showError("文件选择器被系统拒绝（${e.message}）")
+                    false
+                }
+            }
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) webView.goBack() else finish()
+            }
+        })
+
+        // 策略兜底：NSC 构建变体或数据被改动后仍拒绝违规明文地址
+        when (val verdict = LanHostPolicy.check(profile.baseUrl, profile.cleartextAllowed)) {
+            is LanHostPolicy.Verdict.Reject -> {
+                showError(rejectText(verdict))
+                return
+            }
+            is LanHostPolicy.Verdict.Ok -> Unit
+        }
+
+        prepareSession {
+            refreshVersionHint()
+            load()
+        }
+    }
+
+    override fun onDestroy() {
+        // Activity 终止而选择器仍在途：结果通道随 activity 失效，补投 null
+        // 保持「每个待决回调恰好一次」
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
+        timeoutHandler.removeCallbacksAndMessages(null)
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    // ============ 返回来源页（2026-09-13 用户反馈补齐） ============
+    // WebView 内此前只有系统返回键一条路，且被 WebView 历史优先占用——用户
+    // 无法主动回到模式选择（向导）/服务器选择页。现给 action bar 配左上角
+    // 返回箭头，并让「名称」整体可点（原生 title TextView 无公开点击 API，
+    // 以 custom view 承载两行文本实现）。两条入口都直接 finish 回退到启动
+    // 本页的来源 activity：伴侣模式=服务器列表，本机模式=向导。
+
+    private fun setupActionBar() {
+        val actionBar = supportActionBar ?: return
+        actionBar.setDisplayHomeAsUpEnabled(true)
+        actionBar.setDisplayShowTitleEnabled(false)
+        actionBar.setDisplayShowCustomEnabled(true)
+        val titleArea = layoutInflater.inflate(R.layout.action_bar_web_title, null)
+        headerTitle = titleArea.findViewById(R.id.action_bar_title)
+        headerSubtitle = titleArea.findViewById(R.id.action_bar_subtitle)
+        headerTitle?.text = profile.displayName
+        headerSubtitle?.text = profile.baseUrl
+        titleArea.setOnClickListener { exitToSourcePage() }
+        // 默认 custom view 居中：贴齐返回箭头左侧起点并垂直居中
+        actionBar.setCustomView(
+            titleArea,
+            ActionBar.LayoutParams(
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                ActionBar.LayoutParams.WRAP_CONTENT,
+                Gravity.START or Gravity.CENTER_VERTICAL,
+            ),
+        )
+    }
+
+    /** 返回来源页：直接 finish，不带 WebView 历史（与系统返回键语义区分）。 */
+    private fun exitToSourcePage() {
+        finish()
+    }
+
+    /** 返回箭头：禁走 super——默认会落到 onBackPressed，先被 WebView 历史耗掉。 */
+    override fun onSupportNavigateUp(): Boolean {
+        exitToSourcePage()
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            exitToSourcePage()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+
+    private fun load() {
+        loadFinished = false
+        autoLoginStarted = false
+        hideError()
+        timeoutHandler.postDelayed({
+            if (!loadFinished && !isDestroyed) showError(getString(R.string.load_timeout))
+        }, LOAD_TIMEOUT_MS)
+        webView.loadUrl(profile.baseUrl)
+    }
+
+    /** profile 切换即清除凭据：cookie + localStorage 全量清（进程级单例的隔离手段）。 */
+    private fun prepareSession(onReady: () -> Unit) {
+        if (lastLoadedProfileId == profile.id) {
+            onReady()
+            return
+        }
+        val cookieManager = CookieManager.getInstance()
+        // removeAllCookies 是异步 API；必须等待回调后再加载新 profile，避免旧 token
+        // 与新页面竞态复用。WebStorage 没有回调，调用后再继续即可。
+        cookieManager.removeAllCookies {
+            runOnUiThread {
+                cookieManager.flush()
+                WebStorage.getInstance().deleteAllData()
+                lastLoadedProfileId = profile.id
+                onReady()
+            }
+        }
+    }
+
+    /** 服务端版本提示：后台健康检查，副标题展示 v{version} · 状态。 */
+    private fun refreshVersionHint() {
+        lifecycleScope.launch {
+            val report = healthClient.check(profile.baseUrl, profile.trustedCertFingerprints.toSet())
+            profile.healthState = report.state
+            profile.serverVersion = report.version ?: profile.serverVersion
+            profile.lastHealthCheckedAt = System.currentTimeMillis()
+            store.upsert(profile)
+            if (!isDestroyed) {
+                val version = report.version?.let { "v$it" } ?: "版本未知"
+                // 原生 subtitle 已随 setDisplayShowTitleEnabled(false) 隐藏，
+                // 健康提示必须写 custom view 内 TextView 才可见
+                headerSubtitle?.text = "$version · ${report.detail}"
+            }
+        }
+    }
+
+    private fun showError(message: String) {
+        errorText.text = message
+        errorOverlay.visibility = View.VISIBLE
+    }
+
+    private fun hideError() {
+        errorOverlay.visibility = View.GONE
+    }
+
+    private fun rejectText(verdict: LanHostPolicy.Verdict.Reject): String = when (verdict.reason) {
+        LanHostPolicy.Reason.MALFORMED_URL -> "服务器地址无效"
+        LanHostPolicy.Reason.SCHEME_NOT_ALLOWED -> "仅支持 http/https 地址"
+        LanHostPolicy.Reason.HTTP_PUBLIC_HOST -> "明文 HTTP 仅允许私有局域网地址，公网地址请使用 HTTPS"
+        LanHostPolicy.Reason.HTTP_LAN_WITHOUT_CONSENT -> "该服务器未记录明文风险确认，请在服务器列表重新添加"
+    }
+
+    // ============ WebViewClient ============
+
+    private inner class CompanionWebViewClient : WebViewClient() {
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            loadFinished = true
+            timeoutHandler.removeCallbacksAndMessages(null)
+            maybeAutoLogin(view, url)
+            if (url != null && isSameOrigin(url)) {
+                profile.lastConnectedAt = System.currentTimeMillis()
+                store.upsert(profile)
+            }
+            hideError()
+        }
+
+        private fun maybeAutoLogin(view: WebView?, url: String?) {
+            if (view == null || url == null || !isSameOrigin(url) || autoLoginStarted) return
+            val record = credentials.get(profile.id) ?: return
+            if (profile.username.isBlank() || record.password.isEmpty()) return
+            val cookie = CookieManager.getInstance().getCookie(profile.baseUrl).orEmpty()
+            if (cookie.contains("vue_typescript_admin_access_token=")) return
+            autoLoginStarted = true
+            view.evaluateJavascript(buildAutoLoginScript(profile.id, profile.username, record.password), null)
+        }
+
+        /** 主框架错误 → 覆盖层提示（可重试/返回）。 */
+        override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?,
+        ) {
+            if (request?.isForMainFrame == true) {
+                loadFinished = true
+                timeoutHandler.removeCallbacksAndMessages(null)
+                showError("加载失败：${error?.description ?: "未知错误"}")
+            }
+        }
+
+        /** 站内同源继续加载；外部 http(s) 链接交给系统浏览器；其它 scheme 拦截。 */
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            val url = request?.url?.toString() ?: return false
+            val scheme = request.url.scheme?.lowercase() ?: return false
+            if (scheme != "http" && scheme != "https") return true
+            return if (isSameOrigin(url)) false else {
+                startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                true
+            }
+        }
+
+        /**
+         * 自签证书处理（计划红线：禁止无条件 proceed）：
+         * 1. 指纹已在 profile 中 → proceed（作用域=本 profile）；
+         * 2. 否则弹窗说明风险 → 用户确认后记录指纹再 proceed；拒绝则 cancel。
+         */
+        override fun onReceivedSslError(
+            view: WebView?,
+            handler: SslErrorHandler?,
+            error: SslError?,
+        ) {
+            val certificate = error?.certificate
+            if (handler == null || certificate == null) {
+                handler?.cancel()
+                showError("证书错误且无法读取证书信息，已拒绝连接")
+                return
+            }
+            val fingerprint = TrustScope.sha256Fingerprint(certificate)
+            if (fingerprint != null && fingerprint in profile.trustedCertFingerprints) {
+                handler.proceed()
+                return
+            }
+            val host = Hosts.parse(profile.baseUrl)?.host ?: profile.baseUrl
+            AlertDialog.Builder(this@WebViewActivity)
+                .setTitle("不受信任的证书")
+                .setMessage(
+                    "服务器 ${host} 使用自签证书。\n\n" +
+                        "指纹（SHA-256）：\n${fingerprint ?: "（无法计算）"}\n\n" +
+                        "信任后将记录在本服务器的配置中；证书更换后需重新确认。中间人攻击同样会呈现该提示，请核对指纹来源。"
+                )
+                .setPositiveButton("信任该证书") { _, _ ->
+                    if (fingerprint != null) {
+                        profile.trustedCertFingerprints.add(fingerprint)
+                        store.upsert(profile)
+                        handler.proceed()
+                    } else {
+                        handler.cancel()
+                        showError("无法计算证书指纹，已拒绝连接")
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> handler.cancel() }
+                .setOnCancelListener { handler.cancel() }
+                .show()
+        }
+
+        private fun isSameOrigin(url: String): Boolean {
+            val target = Hosts.parse(url) ?: return false
+            val base = Hosts.parse(profile.baseUrl) ?: return false
+            return target.scheme == base.scheme && target.host == base.host && target.port == base.port
+        }
+    }
+
+    companion object {
+        const val EXTRA_PROFILE_ID = "profile_id"
+        private const val TAG = "WebViewActivity"
+        private const val LOAD_TIMEOUT_MS = 20_000L
+
+        /** 上一个加载的 profile：切换时先异步清 cookie/storage，再加载新会话。 */
+        private var lastLoadedProfileId: String? = null
+    }
+}

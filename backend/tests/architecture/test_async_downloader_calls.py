@@ -74,6 +74,13 @@ _ENDPOINT_RULES = {
         # get_transmission_torrent_info（torrent_helpers，轮询 30 次内的封装调用）。
         "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
     },
+    # /add 主体 2026-09-05 抽取至服务层：规则随之迁移，确保 add/轮询继续经
+    # call_downloader_api(INTERACTIVE) 执行、helper 调用点带 await。
+    "app/services/torrent_add_service.py": {
+        "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
+        "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),
+        "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
+    },
     "app/api/endpoints/torrent_status.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),

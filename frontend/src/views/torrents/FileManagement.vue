@@ -3,21 +3,21 @@
     <!-- 页面标题（BEM 范式，对齐 orphan-files） -->
     <div class="management-page__header">
       <h2 class="management-page__title">
-        <LucideIcon name="folder" :size="20" />种子文件管理
+        <LucideIcon name="folder" :size="20" />{{ $t('fileManagement.title') }}
       </h2>
-      <p class="management-page__subtitle">管理种子文件备份，支持去重、导出、导入操作</p>
+      <p class="management-page__subtitle">{{ $t('fileManagement.subtitle') }}</p>
     </div>
 
     <!-- ========== 筛选区域（BEM 范式，复用 management-list-page.scss 全局样式） ========== -->
-    <section class="management-panel" aria-label="种子文件筛选条件">
+    <section class="management-panel" :aria-label="$t('fileManagement.filter.aria')">
       <div class="management-filter">
         <div class="management-filter__field">
-          <label class="management-filter__label" for="file-search">任务名称 / Info Hash</label>
+          <label class="management-filter__label" for="file-search">{{ $t('fileManagement.filter.searchLabel') }}</label>
           <el-input
             id="file-search"
             v-model="listQuery.search"
             class="management-filter__control"
-            placeholder="搜索任务名称或Info Hash..."
+            :placeholder="$t('fileManagement.filter.searchPlaceholder')"
             prefix-icon="el-icon-search"
             clearable
             @keyup.enter.native="handleFilter"
@@ -26,12 +26,12 @@
         </div>
 
         <div class="management-filter__field">
-          <label class="management-filter__label" for="file-downloader">下载器</label>
+          <label class="management-filter__label" for="file-downloader">{{ $t('fileManagement.filter.downloaderLabel') }}</label>
           <el-select
             id="file-downloader"
             v-model="listQuery.downloader_id"
             class="management-filter__control"
-            placeholder="全部下载器"
+            :placeholder="$t('fileManagement.filter.downloaderPlaceholder')"
             clearable
             @change="handleFilter"
           >
@@ -45,14 +45,14 @@
         </div>
 
         <div class="management-filter__field management-filter__field--wide">
-          <label class="management-filter__label" for="file-date">创建时间</label>
+          <label class="management-filter__label" for="file-date">{{ $t('fileManagement.filter.dateLabel') }}</label>
           <el-date-picker
             id="file-date"
             v-model="dateRange"
             type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            :range-separator="$t('fileManagement.filter.dateSeparator')"
+            :start-placeholder="$t('fileManagement.filter.dateStart')"
+            :end-placeholder="$t('fileManagement.filter.dateEnd')"
             class="management-filter__control"
             value-format="yyyy-MM-dd"
             clearable
@@ -61,8 +61,8 @@
         </div>
 
         <div class="management-filter__actions">
-          <el-button type="primary" icon="el-icon-search" @click="handleFilter">搜索</el-button>
-          <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+          <el-button type="primary" icon="el-icon-search" @click="handleFilter">{{ $t('fileManagement.filter.search') }}</el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">{{ $t('fileManagement.filter.reset') }}</el-button>
         </div>
       </div>
     </section>
@@ -73,7 +73,7 @@
       <batch-button
         type="warning"
         icon="el-icon-delete"
-        tooltip="去重"
+        :tooltip="$t('fileManagement.toolbar.dedupe')"
         :disabled="selectedItems.length === 0"
         @click="handleDeduplicate"
       />
@@ -82,7 +82,7 @@
       <batch-button
         type="success"
         icon="el-icon-download"
-        tooltip="导出"
+        :tooltip="$t('fileManagement.toolbar.export')"
         :disabled="selectedItems.length === 0"
         @click="handleExport"
       />
@@ -91,7 +91,7 @@
       <batch-button
         type="primary"
         icon="el-icon-upload2"
-        tooltip="导入"
+        :tooltip="$t('fileManagement.toolbar.import')"
         @click="handleImport"
       />
     </section>
@@ -100,7 +100,7 @@
     <el-table
       v-loading="listLoading"
       :data="list"
-      element-loading-text="加载中..."
+      :element-loading-text="$t('fileManagement.table.loading')"
       border
       fit
       highlight-current-row
@@ -109,7 +109,7 @@
     >
       <el-table-column type="selection" width="55" />
 
-      <el-table-column label="任务名称" min-width="200" show-overflow-tooltip>
+      <el-table-column :label="$t('fileManagement.table.name')" min-width="200" show-overflow-tooltip>
         <template slot-scope="{row}">
           <span>{{ row.task_name || row.torrent_name || '-' }}</span>
         </template>
@@ -121,27 +121,27 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="下载器" width="150" show-overflow-tooltip>
+      <el-table-column :label="$t('fileManagement.table.downloader')" width="150" show-overflow-tooltip>
         <template slot-scope="{row}">
           <span>{{ getBackupDownloaderName(row) }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="上传时间" width="160" align="center">
+      <el-table-column :label="$t('fileManagement.table.uploadedAt')" width="160" align="center">
         <template slot-scope="{row}">
           <span>{{ formatTime(row.created_at) }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="最后更新" width="160" align="center">
+      <el-table-column :label="$t('fileManagement.table.updatedAt')" width="160" align="center">
         <template slot-scope="{row}">
           <span>{{ formatTime(row.updated_at) }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="150" align="center" fixed="right">
+      <el-table-column :label="$t('fileManagement.table.actions')" width="150" align="center" fixed="right">
         <template slot-scope="{row}">
-          <el-tooltip content="详情" placement="top">
+          <el-tooltip :content="$t('fileManagement.table.detail')" placement="top">
             <el-button
               type="info"
               size="mini"
@@ -150,7 +150,7 @@
               @click="handleDetail(row)"
             />
           </el-tooltip>
-          <el-tooltip content="下载" placement="top">
+          <el-tooltip :content="$t('fileManagement.table.download')" placement="top">
             <el-button
               type="success"
               size="mini"
@@ -159,7 +159,7 @@
               @click="handleDownload(row)"
             />
           </el-tooltip>
-          <el-tooltip content="删除" placement="top">
+          <el-tooltip :content="$t('fileManagement.table.delete')" placement="top">
             <el-button
               type="danger"
               size="mini"
@@ -183,51 +183,51 @@
 
     <!-- ========== 详情对话框 ========== -->
     <el-dialog
-      title="种子文件详情"
+      :title="$t('fileManagement.detailDialog.title')"
       :visible.sync="detailDialogVisible"
       width="600px"
     >
       <el-descriptions :column="1" border>
-        <el-descriptions-item label="任务名称">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.name')">
           {{ currentDetail.task_name || currentDetail.torrent_name || '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="Info Hash">
           <span style="font-family: monospace;">{{ currentDetail.info_hash }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="下载器">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.downloader')">
           {{ getBackupDownloaderName(currentDetail) }}
         </el-descriptions-item>
-        <el-descriptions-item label="文件路径">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.filePath')">
           {{ currentDetail.file_path || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="上传时间">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.uploadedAt')">
           {{ formatTime(currentDetail.created_at) }}
         </el-descriptions-item>
-        <el-descriptions-item label="最后更新">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.updatedAt')">
           {{ formatTime(currentDetail.updated_at) }}
         </el-descriptions-item>
-        <el-descriptions-item label="上传用户">
+        <el-descriptions-item :label="$t('fileManagement.detailDialog.uploadedBy')">
           {{ currentDetail.uploader_username || '-' }}
         </el-descriptions-item>
       </el-descriptions>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="handleDownload(currentDetail)">下载文件</el-button>
+        <el-button @click="detailDialogVisible = false">{{ $t('fileManagement.detailDialog.close') }}</el-button>
+        <el-button type="primary" @click="handleDownload(currentDetail)">{{ $t('fileManagement.detailDialog.download') }}</el-button>
       </div>
     </el-dialog>
 
     <!-- ========== 导入对话框 ========== -->
     <el-dialog
-      title="批量导入种子文件"
+      :title="$t('fileManagement.importDialog.title')"
       :visible.sync="importDialogVisible"
       width="500px"
     >
       <el-form :model="importForm" label-width="100px">
-        <el-form-item label="目标下载器">
+        <el-form-item :label="$t('fileManagement.importDialog.downloaderLabel')">
           <el-select
             v-model="importForm.downloader_id"
-            placeholder="请选择下载器"
+            :placeholder="$t('fileManagement.importDialog.downloaderPlaceholder')"
             style="width: 100%;"
           >
             <el-option
@@ -239,7 +239,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="种子文件">
+        <el-form-item :label="$t('fileManagement.importDialog.fileLabel')">
           <el-upload
             ref="upload"
             :action="uploadUrl"
@@ -255,19 +255,19 @@
           >
             <i class="el-icon-upload"></i>
             <div class="el-upload__text">
-              将文件拖到此处，或<em>点击上传</em>
+              {{ $t('fileManagement.importDialog.dropPrefix') }}<em>{{ $t('fileManagement.importDialog.dropAction') }}</em>
             </div>
             <div slot="tip" class="el-upload__tip">
-              只能上传 .torrent 文件，支持批量上传
+              {{ $t('fileManagement.importDialog.tip') }}
             </div>
           </el-upload>
         </el-form-item>
       </el-form>
 
       <div slot="footer" class="dialog-footer">
-        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button @click="importDialogVisible = false">{{ $t('fileManagement.importDialog.cancel') }}</el-button>
         <el-button type="primary" :loading="importLoading" @click="handleConfirmImport">
-          确定导入
+          {{ $t('fileManagement.importDialog.confirm') }}
         </el-button>
       </div>
     </el-dialog>
@@ -477,10 +477,10 @@ export default class FileManagement extends Vue {
     try {
       const res = await deduplicateTorrentBackup()
       if (res.code === '200') {
-        this.$message.success(res.msg || '操作成功')
+        this.$message.success(res.msg || this.$t('fileManagement.msg.operationSuccess').toString())
         this.fetchList()
       } else {
-        this.$message.error(res.msg || res.data?.msg || '去重失败')
+        this.$message.error(res.msg || res.data?.msg || this.$t('fileManagement.msg.dedupeFailed').toString())
       }
     } catch (error) {
       console.error('去重失败:', error)
@@ -491,7 +491,7 @@ export default class FileManagement extends Vue {
   // 导出
   async handleExport() {
     if (this.selectedItems.length === 0) {
-      this.$message.warning('请先选择要导出的种子文件')
+      this.$message.warning(this.$t('fileManagement.msg.selectExport').toString())
       return
     }
 
@@ -507,7 +507,7 @@ export default class FileManagement extends Vue {
       link.click()
       document.body.removeChild(link)
 
-      this.$message.success('导出成功')
+      this.$message.success(this.$t('fileManagement.msg.exportSuccess').toString())
     } catch (error) {
       console.error('导出失败:', error)
       this.$message.error('导出失败')
@@ -530,12 +530,12 @@ export default class FileManagement extends Vue {
   // 确认导入
   async handleConfirmImport() {
     if (!this.importForm.downloader_id) {
-      this.$message.warning('请选择目标下载器')
+      this.$message.warning(this.$t('fileManagement.msg.selectDownloader').toString())
       return
     }
 
     if (this.fileList.length === 0) {
-      this.$message.warning('请选择要导入的种子文件')
+      this.$message.warning(this.$t('fileManagement.msg.selectImportFiles').toString())
       return
     }
 
@@ -545,11 +545,11 @@ export default class FileManagement extends Vue {
         .map(f => f?.raw)
         .filter(Boolean) as File[]
       if (files.length === 0) {
-        this.$message.error('请选择有效文件')
+        this.$message.error(this.$t('fileManagement.msg.invalidFile').toString())
         return
       }
       if (this.importForm.downloader_id === undefined) {
-        this.$message.error('请选择下载器')
+        this.$message.error(this.$t('fileManagement.msg.selectDownloader').toString())
         return
       }
       const res = await importTorrentBackup(this.importForm.downloader_id, files)
@@ -564,13 +564,13 @@ export default class FileManagement extends Vue {
         if (Array.isArray(failedItems) && failedItems.length > 0) {
           const failedList = failedItems.map((item: any) => `${item.filename}: ${item.reason}`).join('\n')
           this.$message.warning({
-            message: `部分文件导入失败:\n${failedList}`,
+            message: this.$t('fileManagement.msg.importPartialFailed', { list: failedList }).toString(),
             duration: 5000,
             showClose: true
           } as any)
         }
       } else {
-        this.$message.error(res.msg || '导入失败')
+        this.$message.error(res.msg || this.$t('fileManagement.msg.importFailed').toString())
       }
     } catch (error) {
       console.error('导入失败:', error)
@@ -593,7 +593,7 @@ export default class FileManagement extends Vue {
     if (error && error.status === 401) {
       const outcome = await trySilentRefresh()
       if (outcome.status === 'renewed') {
-        this.$message.warning('登录已续期，请重新上传')
+        this.$message.warning(this.$t('fileManagement.msg.sessionRenewed').toString())
         return
       }
       if (outcome.status === 'rejected') {
@@ -601,10 +601,10 @@ export default class FileManagement extends Vue {
         return
       }
       // transient：网络/服务端瞬时故障，保留现场交由全局网络提示
-      this.$message.error('上传失败，请稍后重试')
+      this.$message.error(this.$t('fileManagement.msg.uploadFailedRetry').toString())
       return
     }
-    this.$message.error('上传失败')
+    this.$message.error(this.$t('fileManagement.msg.uploadFailed').toString())
   }
 
   // 详情
@@ -642,7 +642,7 @@ export default class FileManagement extends Vue {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(blobUrl)
 
-      this.$message.success('下载成功')
+      this.$message.success(this.$t('fileManagement.msg.downloadSuccess').toString())
     } catch (error: any) {
       console.error('下载失败:', error)
 
@@ -651,40 +651,40 @@ export default class FileManagement extends Vue {
         // 服务器返回了错误状态码
         const status = error.response.status
         if (status === 401) {
-          this.$message.error('认证失败，请重新登录')
+          this.$message.error(this.$t('fileManagement.msg.authFailed').toString())
         } else if (status === 404) {
-          this.$message.error('种子文件不存在')
+          this.$message.error(this.$t('fileManagement.msg.fileNotFound').toString())
         } else {
-          this.$message.error(`下载失败: ${status}`)
+          this.$message.error(this.$t('fileManagement.msg.downloadFailedWithStatus', { status }).toString())
         }
       } else if (error.request) {
         // 请求已发出但没有收到响应
-        this.$message.error('网络错误，请检查网络连接')
+        this.$message.error(this.$t('fileManagement.msg.networkError').toString())
       } else {
         // 其他错误
-        this.$message.error('下载失败，请稍后重试')
+        this.$message.error(this.$t('fileManagement.msg.downloadFailedRetry').toString())
       }
     }
   }
 
   // 删除
   handleDelete(row: TorrentBackup) {
-    this.$confirm('确认删除该种子文件备份吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('fileManagement.msg.deleteConfirm').toString(), this.$t('fileManagement.msg.confirmTitle').toString(), {
+      confirmButtonText: this.$t('fileManagement.msg.confirmButton').toString(),
+      cancelButtonText: this.$t('fileManagement.msg.cancelButton').toString(),
       type: 'warning'
     }).then(async() => {
       try {
         const res = await deleteTorrentBackup(row.info_hash)
         if (res.code === '200') {
-          this.$message.success('删除成功')
+          this.$message.success(this.$t('fileManagement.msg.deleteSuccess').toString())
           this.fetchList()
         } else {
-          this.$message.error(res.msg || res.data?.msg || '删除失败')
+          this.$message.error(res.msg || res.data?.msg || this.$t('fileManagement.msg.deleteFailed').toString())
         }
       } catch (error) {
         console.error('删除失败:', error)
-        this.$message.error('删除失败')
+        this.$message.error(this.$t('fileManagement.msg.deleteFailed').toString())
       }
     }).catch(() => {
       // 用户取消

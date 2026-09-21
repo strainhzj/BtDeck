@@ -29,8 +29,18 @@ build/
 *.log
 *.tmp
 *.temp
+.tmp-*
 *.bak
 *.backup
+# 发布门禁证据链例外：release/evidence/ 下的探针日志必须可提交
+# （release-artifact-equivalence-gate G0～G10 证据可追溯性要求）
+!release/evidence/**/*.log
+
+# 发布生成物（按制品本地生成，不入库；正式制品与 manifest 由 CI 产出并归档）
+release/build-info.json
+release/source-manifest.json
+release/frontend-asset-manifest.json
+release/release-manifest.json
 
 # ================================
 # Python
@@ -55,11 +65,10 @@ node_modules/
 # ================================
 # Docker 数据
 # ================================
-data/
-
-# 例外：backend/app/data/ 是代码目录（预设数据初始化模块），非运行时数据
-!backend/app/data/
-!backend/app/data/*
+# 2026-08-24：删除 data/ 忽略规则（用户确认不再需要）。
+# 该规则曾静默忽略 android/app/src/main/java/com/btdeck/companion/data/
+# Kotlin 源码包，导致 a2f4e72 漏提交三文件、干净检出无法编译。
+# 部署挂载目录请依赖 deploy 配置自身的路径约定，不要重新引入此规则。
 
 # 子项目保留各自的 .gitignore 处理细节规则
 
@@ -81,6 +90,34 @@ import io;*/
 .claude/
 
 # ================================
-# 部署凭据（build-and-export-images.bat 从此未跟踪文件读取，严禁入库）
+# 部署凭据（build-and-export-images.sh 从此未跟踪文件读取，严禁入库；
+# .bat.example 为本地个人模板，2026-09-19 起一并移出仓库跟踪）
 # ================================
 .btdeck-deploy-credentials.bat
+.btdeck-deploy-credentials.sh
+.btdeck-deploy-credentials.bat.example
+
+# ================================
+# 个人构建/部署脚本（含私有部署目标默认值，勿入库；Linux/macOS 版
+# 替代已删除的 build-and-export-images.bat）
+# ================================
+build-and-export-images.sh
+
+# Windows→Linux 迁移包遗留（本地参考文件，勿入库；根目录锚定避免误伤同名子目录文件）
+/MIGRATE-README.txt
+/SHA256SUMS.txt
+
+# W2 发布构建生成物（由构建脚本生成进上下文/暂存区，不入库）
+backend/build-info.json
+frontend/build-info.json
+release/build/
+
+# 门禁证据目录（脚本/CI 运行时输出，2026-09-05 起不入库；权威留档=CI run artifact）
+release/evidence/
+
+# Demo dist 本地恢复产物（演示环境回滚用 zip，勿入库；2026-09-06 曾被 git add frontend/ 误带入后剔除）
+frontend/BtDeck-demo-dist-*.zip
+
+# 2026-09-21：本地构建工具链（用户要求忽略）：容器镜像定义与 ISCC 包装脚本
+deploy/docker/
+deploy/iscc

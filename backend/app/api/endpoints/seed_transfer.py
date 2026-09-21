@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.auth.dependencies import require_authenticated_user
 from app.services.seed_transfer_service import SeedTransferService
 from app.schemas.seed_transfer import (
@@ -38,7 +39,7 @@ from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(capability_dependency("seed_transfer", "seed_transfer.api"))])
 
 
 async def _log_transfer_audit(

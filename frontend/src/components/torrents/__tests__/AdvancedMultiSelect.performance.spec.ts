@@ -1,9 +1,12 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import ElementUI from 'element-ui'
 import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 
 // 创建本地Vue实例
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.use(ElementUI)
 
 describe('AdvancedMultiSelect性能测试', () => {
@@ -38,6 +41,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -78,6 +82,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -118,6 +123,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -165,6 +171,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -217,6 +224,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -261,6 +269,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: largeOptions,
           value: []
@@ -308,6 +317,7 @@ describe('AdvancedMultiSelect性能测试', () => {
 
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: generateLargeOptions(10000),
           value: []
@@ -346,6 +356,7 @@ describe('AdvancedMultiSelect性能测试', () => {
     it('应该正确清理缓存数据', async() => {
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: generateLargeOptions(10000),
           value: []
@@ -390,6 +401,7 @@ describe('AdvancedMultiSelect性能测试', () => {
     it('应该能在50ms内解析包含10,000个值的输入文本', () => {
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: generateLargeOptions(10000),
           value: []
@@ -432,6 +444,7 @@ describe('AdvancedMultiSelect性能测试', () => {
     it('应该能正确处理复杂的分隔符组合', async() => {
       wrapper = shallowMount(AdvancedMultiSelect, {
         localVue,
+        i18n,
         propsData: {
           options: [],
           value: []

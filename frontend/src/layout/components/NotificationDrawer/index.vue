@@ -13,7 +13,7 @@
     <!-- 自定义头部 -->
     <template slot="title">
       <div class="drawer-header">
-        <span class="drawer-title"><LucideIcon name="bell" :size="16" />通知中心</span>
+        <span class="drawer-title"><LucideIcon name="bell" :size="16" />{{ $t('common.notifications.title') }}</span>
         <div class="drawer-header-actions">
           <el-button
             v-if="unreadCount > 0"
@@ -21,9 +21,9 @@
             size="small"
             @click="handleReadAll"
           >
-            全部已读
+            {{ $t('common.notifications.markAllRead') }}
           </el-button>
-          <button type="button" class="drawer-close" aria-label="关闭通知中心" @click="handleClose">
+          <button type="button" class="drawer-close" :aria-label="$t('common.notifications.closeLabel')" @click="handleClose">
             <LucideIcon name="x" :size="15" />
           </button>
         </div>
@@ -60,14 +60,14 @@
           @view="handleView"
         />
         <div v-if="hasMore" class="load-more">
-          <el-button type="text" size="small" @click="loadMore">加载更多</el-button>
+          <el-button type="text" size="small" @click="loadMore">{{ $t('common.loadMore') }}</el-button>
         </div>
       </template>
 
       <!-- 空状态 -->
       <div v-else class="drawer-empty">
         <LucideIcon name="bell" :size="34" :stroke-width="1.35" />
-        <p>暂无通知</p>
+        <p>{{ $t('common.notifications.empty') }}</p>
       </div>
     </div>
   </el-drawer>
@@ -84,7 +84,7 @@
     <template #title>
       <div class="detail-dialog-header">
         <span>{{ detailTitle }}</span>
-        <button type="button" aria-label="关闭通知详情" @click="detailVisible = false">
+        <button type="button" :aria-label="$t('common.notifications.closeDetail')" @click="detailVisible = false">
           <LucideIcon name="x" :size="15" />
         </button>
       </div>
@@ -95,7 +95,7 @@
     </div>
     <div class="detail-content" v-html="detailHtml" />
     <div v-if="detailFailureList.length > 0" class="detail-failures">
-      <h4>失败明细</h4>
+      <h4>{{ $t('common.notifications.failedDetail') }}</h4>
       <ul>
         <li v-for="(item, index) in detailFailureList" :key="failureItemKey(item, index)">
           <span class="detail-failure-target">{{ failureItemTarget(item) }}</span>：{{ item.reason }}
@@ -104,7 +104,7 @@
     </div>
     <div v-if="detailReleaseUrl" class="detail-footer">
       <a :href="detailReleaseUrl" target="_blank" class="detail-link">
-        <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
+        <LucideIcon name="external-link" :size="13" /> {{ $t('common.notifications.viewRelease') }}
       </a>
     </div>
   </el-dialog>
@@ -115,6 +115,9 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
 import { NotificationFailureItem, NotificationExtraData, NotificationItem } from '@/api/notification'
+import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
+import { notificationDisplayContent, notificationDisplayTitle } from '@/utils/notification-display'
+import { getLocale, translate } from '@/i18n'
 import NotificationItemComp from './NotificationItem.vue'
 
 @Component({
@@ -130,17 +133,22 @@ export default class extends Vue {
   // 详情弹窗状态
   private detailVisible = false
   private detailTitle = ''
-  private detailContent = ''
+  private detailNotification: NotificationItem | null = null
   private detailType = ''
   private detailCreatedAt = ''
   private detailExtraData: NotificationExtraData | null = null
 
-  private tabs = [
-    { label: '全部', value: 'all' },
-    { label: '未读', value: 'unread' },
-    { label: '更新', value: 'version_update' },
-    { label: '系统', value: 'system' }
-  ]
+  private tabsValue = ['all', 'unread', 'version_update', 'system']
+
+  /** 筛选页签文案经计算属性生成：语言切换后响应式更新（不在字段初始化时固化译文） */
+  private get tabs() {
+    return [
+      { label: this.$t('common.notifications.filterAll'), value: this.tabsValue[0] },
+      { label: this.$t('common.notifications.filterUnread'), value: this.tabsValue[1] },
+      { label: this.$t('common.notifications.filterUpdate'), value: this.tabsValue[2] },
+      { label: this.$t('common.notifications.filterSystem'), value: this.tabsValue[3] }
+    ]
+  }
 
   get drawerVisible() {
     return NotificationModule.drawerVisible
@@ -223,7 +231,10 @@ export default class extends Vue {
   // --- 详情弹窗 ---
 
   private get detailTypeLabel(): string {
-    return this.detailType === 'version_update' ? '版本更新' : '系统通知'
+    // 详情弹窗类型标签：与筛选页签同源翻译（computed 内取值，语言切换后响应式更新）
+    return this.detailType === 'version_update'
+      ? translate('common.notifications.typeVersionUpdate')
+      : translate('common.notifications.typeSystem')
   }
 
   private get detailTypeTag(): string {
@@ -233,71 +244,19 @@ export default class extends Vue {
   private get detailTime(): string {
     if (!this.detailCreatedAt) return ''
     const date = new Date(this.detailCreatedAt)
-    return date.toLocaleString('zh-CN', {
+    // 集中日期格式化：随界面语言切换 locale（中英均 2 位数字形态，仅 locale 标签不同）
+    return date.toLocaleString(getLocale() === 'en' ? 'en-GB' : 'zh-CN', {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit'
     })
   }
 
   private get detailHtml(): string {
-    if (!this.detailContent) return ''
-    // 按 Markdown 规则分块处理：先拆成行，逐行转换，再合并
-    const lines = this.detailContent.split('\n')
-    const html: string[] = []
-    let inList = false
-
-    for (const raw of lines) {
-      const line = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const trimmed = line.trim()
-
-      // 空行
-      if (trimmed === '') {
-        if (inList) { html.push('</ul>'); inList = false }
-        continue
-      }
-
-      // 标题
-      if (trimmed.startsWith('### ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h4>${trimmed.slice(4)}</h4>`)
-        continue
-      }
-      if (trimmed.startsWith('## ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h3>${trimmed.slice(3)}</h3>`)
-        continue
-      }
-      if (trimmed.startsWith('# ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h2>${trimmed.slice(2)}</h2>`)
-        continue
-      }
-
-      // 分隔线
-      if (trimmed === '---') {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push('<hr />')
-        continue
-      }
-
-      // 列表项
-      if (trimmed.startsWith('- ')) {
-        if (!inList) { html.push('<ul>'); inList = true }
-        html.push(`<li>${trimmed.slice(2)}</li>`)
-        continue
-      }
-
-      // 普通段落
-      if (inList) { html.push('</ul>'); inList = false }
-      html.push(`<p>${trimmed}</p>`)
-    }
-    if (inList) html.push('</ul>')
-
-    // 内联格式：粗体、行内代码（在结构化输出上做替换）
-    return html
-      .join('\n')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
+    // 渲染逻辑抽至 utils/notification-markdown，与移动端通知详情共用；
+    // 正文先经事件本地化（双语 P4 / E03），未知事件回退原始 content；
+    // 详情未打开（detailNotification=null）时渲染空串（computed 首次求值即发生）
+    if (!this.detailNotification) return ''
+    return renderNotificationContent(notificationDisplayContent(this.detailNotification))
   }
 
   private get detailReleaseUrl(): string {
@@ -309,7 +268,7 @@ export default class extends Vue {
   }
 
   private failureItemTarget(item: NotificationFailureItem): string {
-    return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')
+    return notificationFailureTarget(item)
   }
 
   private failureItemKey(item: NotificationFailureItem, index: number): string {
@@ -317,8 +276,8 @@ export default class extends Vue {
   }
 
   private handleView(notification: NotificationItem) {
-    this.detailTitle = notification.title
-    this.detailContent = notification.content || ''
+    this.detailNotification = notification
+    this.detailTitle = notificationDisplayTitle(notification)
     this.detailType = notification.type
     this.detailCreatedAt = notification.created_at
     this.detailExtraData = notification.extra_data
@@ -332,8 +291,7 @@ export default class extends Vue {
 
   private handleDetailClose() {
     this.detailVisible = false
-    this.detailTitle = ''
-    this.detailContent = ''
+    this.detailNotification = null
     this.detailType = ''
     this.detailCreatedAt = ''
     this.detailExtraData = null

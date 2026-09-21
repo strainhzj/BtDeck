@@ -31,11 +31,10 @@ _TEST_LOGIN_SECRET = "test-login-secret"
 
 def _create_valid_token() -> str:
     from app.auth.utils import create_access_token
+
     mock_s = _mock_settings()
     with patch("app.auth.utils.settings", mock_s):
-        return create_access_token(
-            {"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET}
-        )
+        return create_access_token({"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET})
 
 
 def _create_expired_token() -> str:
@@ -64,6 +63,7 @@ def _mock_settings():
 
 def _create_test_app() -> FastAPI:
     from app.api.api import api_router
+
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
     return app
@@ -83,6 +83,7 @@ def _get_client_and_patches():
 
 # ==================== pytest fixtures ====================
 
+
 @pytest.fixture(scope="module")
 def client_setup():
     client, sp, sp2, dbp, stp = _get_client_and_patches()
@@ -98,6 +99,7 @@ def client_setup():
 
 
 # ==================== 辅助断言 ====================
+
 
 def _is_auth_rejected(response) -> bool:
     """判断认证是否被拒绝"""
@@ -169,9 +171,14 @@ class TestTagManagementAuth:
         assert _is_auth_passed(response)
 
     def test_create_tag_no_token_returns_401(self):
-        response = self.client.post("/api/v1/tags/create", json={
-            "downloader_id": "test-id", "tag_name": "test", "tag_type": "tag",
-        })
+        response = self.client.post(
+            "/api/v1/tags/create",
+            json={
+                "downloader_id": "test-id",
+                "tag_name": "test",
+                "tag_type": "tag",
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_update_tag_no_token_returns_401(self):
@@ -187,15 +194,24 @@ class TestTagManagementAuth:
         assert _is_auth_rejected(response)
 
     def test_assign_tags_no_token_returns_401(self):
-        response = self.client.post("/api/v1/tags/torrent/assign", json={
-            "downloader_id": "t", "torrent_hash": "abc", "tag_ids": ["t1"],
-        })
+        response = self.client.post(
+            "/api/v1/tags/torrent/assign",
+            json={
+                "downloader_id": "t",
+                "torrent_hash": "abc",
+                "tag_ids": ["t1"],
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_remove_tags_no_token_returns_401(self):
-        response = self.client.post("/api/v1/tags/torrent/remove", json={
-            "torrent_hash": "abc", "tag_ids": ["t1"],
-        })
+        response = self.client.post(
+            "/api/v1/tags/torrent/remove",
+            json={
+                "torrent_hash": "abc",
+                "tag_ids": ["t1"],
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_category_support_no_token_returns_401(self):
@@ -436,9 +452,13 @@ class TestTorrentBackupAuth:
         assert _is_auth_rejected(response)
 
     def test_create_backup_no_token_returns_401(self):
-        response = self.client.post("/api/v1/torrents/backup", json={
-            "downloader_id": "test-id", "info_hashes": ["abc"],
-        })
+        response = self.client.post(
+            "/api/v1/torrents/backup",
+            json={
+                "downloader_id": "test-id",
+                "info_hashes": ["abc"],
+            },
+        )
         assert _is_auth_rejected(response)
 
 
@@ -450,17 +470,25 @@ class TestSeedTransferAuth:
         self.client = client_setup
 
     def test_transfer_no_token_returns_401(self):
-        response = self.client.post("/api/v1/torrents/transfer", json={
-            "source_downloader_id": "s", "target_downloader_id": "t",
-            "torrent_hashes": ["abc"],
-        })
+        response = self.client.post(
+            "/api/v1/torrents/transfer",
+            json={
+                "source_downloader_id": "s",
+                "target_downloader_id": "t",
+                "torrent_hashes": ["abc"],
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_batch_transfer_no_token_returns_401(self):
-        response = self.client.post("/api/v1/torrents/batch-transfer", json={
-            "source_downloader_id": "s", "target_downloader_id": "t",
-            "torrent_hashes": ["abc"],
-        })
+        response = self.client.post(
+            "/api/v1/torrents/batch-transfer",
+            json={
+                "source_downloader_id": "s",
+                "target_downloader_id": "t",
+                "torrent_hashes": ["abc"],
+            },
+        )
         assert _is_auth_rejected(response)
 
 
@@ -518,28 +546,66 @@ class TestTrackerAuthBypass:
         self.client = client_setup
 
     def test_add_tracker_no_token_should_return_401(self):
-        response = self.client.post("/api/v1/tracker/addTracker", json={
-            "downloader_id": "test", "tracker_url": "http://t.example.com/announce",
-        })
+        response = self.client.post(
+            "/api/v1/tracker/addTracker",
+            json={
+                "downloader_id": "test",
+                "tracker_url": "http://t.example.com/announce",
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_replace_tracker_no_token_should_return_401(self):
-        response = self.client.post("/api/v1/tracker/replaceTracker", json={
-            "downloader_id": "test", "old_url": "http://old", "new_url": "http://new",
-        })
+        response = self.client.post(
+            "/api/v1/tracker/replaceTracker",
+            json={
+                "downloader_id": "test",
+                "old_url": "http://old",
+                "new_url": "http://new",
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_modify_tracker_no_token_should_return_401(self):
-        response = self.client.post("/api/v1/tracker/modifyTracker", json={
-            "downloader_id": "test", "tracker_url": "http://t.example.com/announce",
-        })
+        response = self.client.post(
+            "/api/v1/tracker/modifyTracker",
+            json={
+                "downloader_id": "test",
+                "tracker_url": "http://t.example.com/announce",
+            },
+        )
+        assert _is_auth_rejected(response)
+
+    def test_add_tracker_by_downloader_no_token_should_return_401(self):
+        response = self.client.post(
+            "/api/v1/tracker/addTracker-by-downloader",
+            json={
+                "downloader_id": "test",
+                "trackers": "http://t.example.com/announce",
+            },
+        )
+        assert _is_auth_rejected(response)
+
+    def test_modify_tracker_by_downloader_no_token_should_return_401(self):
+        response = self.client.post(
+            "/api/v1/tracker/modifyTracker-by-downloader",
+            json={
+                "downloader_id": "test",
+                "trackers": "http://t.example.com/announce",
+            },
+        )
         assert _is_auth_rejected(response)
 
     def test_add_tracker_valid_token_passes_auth(self):
         token = _create_valid_token()
-        response = self.client.post("/api/v1/tracker/addTracker", json={
-            "downloader_id": "test", "tracker_url": "http://t.example.com/announce",
-        }, headers={"x-access-token": token})
+        response = self.client.post(
+            "/api/v1/tracker/addTracker",
+            json={
+                "downloader_id": "test",
+                "tracker_url": "http://t.example.com/announce",
+            },
+            headers={"x-access-token": token},
+        )
         assert _is_auth_passed(response)
 
 
@@ -656,9 +722,13 @@ class TestTagManagementAuthBypass:
 
     def test_batch_assign_no_token_returns_non200_or_401(self):
         """batch-assign空assignments可能触发422参数校验"""
-        response = self.client.post("/api/v1/tags/torrent/batch-assign", json={
-            "downloader_id": "t", "assignments": [],
-        })
+        response = self.client.post(
+            "/api/v1/tags/torrent/batch-assign",
+            json={
+                "downloader_id": "t",
+                "assignments": [],
+            },
+        )
         # 非认证绕过：422参数校验或401认证拒绝均可
         assert response.status_code in (200, 422) or _is_auth_rejected(response)
 

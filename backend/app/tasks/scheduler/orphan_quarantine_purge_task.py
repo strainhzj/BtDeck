@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from app.database import AsyncSessionLocal
 from app.services.orphan_file_service import OrphanFileService
+from app.core.platform_capabilities import require_capability
 
 
 class OrphanQuarantinePurgeTask:
@@ -13,6 +14,7 @@ class OrphanQuarantinePurgeTask:
     version = "1.0.0"
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
+        require_capability("orphan_files", "orphan_files.scheduled_quarantine_purge")
         app = kwargs.get("app")
         store = getattr(getattr(app, "state", None), "store", None)
         async with AsyncSessionLocal() as db:

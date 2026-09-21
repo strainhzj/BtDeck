@@ -3,7 +3,6 @@
  * 统一管理组件Props和事件类型定义
  */
 
-import { TaskType, TaskStatus } from './scheduled-tasks'
 
 // 表格列配置
 export interface TableColumn {
@@ -83,24 +82,6 @@ export interface StatisticCard {
   precision?: number                   // 小数位数
   formatter?: (value: number) => string  // 格式化函数
 }
-
-// 任务状态标签映射
-export const TASK_STATUS_OPTIONS = [
-  { label: '等待运行', value: TaskStatus.WAITING, type: 'info' },
-  { label: '运行中', value: TaskStatus.RUNNING, type: 'warning' },
-  { label: '空闲', value: TaskStatus.SUCCESS, type: 'success' },
-  { label: '失败', value: TaskStatus.FAILED, type: 'danger' },
-  { label: '暂停', value: TaskStatus.PAUSED, type: 'info' }
-]
-
-// 任务类型选项映射
-export const TASK_TYPE_OPTIONS = [
-  { label: 'shell脚本', value: TaskType.SHELL, icon: 'el-icon-document' },
-  { label: 'cmd脚本', value: TaskType.BATCH, icon: 'el-icon-document-copy' },
-  { label: 'powershell脚本', value: TaskType.POWERSHELL, icon: 'el-icon-setting' },
-  { label: 'python脚本', value: TaskType.PYTHON, icon: 'el-icon-cpu' },
-  { label: 'python内部类', value: TaskType.PYTHON_INTERNAL, icon: 'el-icon-connection' }
-]
 
 // 脚本验证结果
 export interface ScriptValidationResult {

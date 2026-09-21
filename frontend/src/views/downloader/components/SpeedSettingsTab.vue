@@ -4,13 +4,13 @@
     <div class="form-section form-section--limits">
       <div class="form-section-title">
         <span class="section-title-icon"><LucideIcon name="gauge" :size="15" /></span>
-        <span>全局速度限制</span>
+        <span>{{ $t('downloader.speed.globalSection') }}</span>
         <span class="section-index">01</span>
       </div>
       <el-form :model="formData" label-position="top" label-width="auto" class="speed-limit-form">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="下载速度限制">
+            <el-form-item :label="$t('downloader.speed.downloadLimit')">
               <div class="speed-input-group">
                 <el-input-number
                   v-model="formData.download_speed_limit"
@@ -24,11 +24,11 @@
                   <el-option label="MB/s" :value="1" />
                 </el-select>
               </div>
-              <p class="form-hint">设置为 0 表示不限制</p>
+              <p class="form-hint">{{ $t('downloader.speed.zeroUnlimited') }}</p>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="上传速度限制">
+            <el-form-item :label="$t('downloader.speed.uploadLimit')">
               <div class="speed-input-group">
                 <el-input-number
                   v-model="formData.upload_speed_limit"
@@ -42,7 +42,7 @@
                   <el-option label="MB/s" :value="1" />
                 </el-select>
               </div>
-              <p class="form-hint">设置为 0 表示不限制</p>
+              <p class="form-hint">{{ $t('downloader.speed.zeroUnlimited') }}</p>
             </el-form-item>
           </el-col>
         </el-row>
@@ -53,11 +53,11 @@
     <div class="form-section form-section--schedule">
       <div class="form-section-title">
         <span class="section-title-icon"><LucideIcon name="clock" :size="15" /></span>
-        <span>分时段限速</span>
+        <span>{{ $t('downloader.speed.scheduleSection') }}</span>
         <span class="section-index">02</span>
       </div>
       <div class="switch-item">
-        <span class="switch-label">启用分时段限速</span>
+        <span class="switch-label">{{ $t('downloader.speed.scheduleSwitch') }}</span>
         <el-switch
           v-model="enableScheduling"
           active-color="#059669"
@@ -70,7 +70,7 @@
     <div class="form-section form-section--rules">
       <div class="form-section-title">
         <span class="section-title-icon"><LucideIcon name="list-checks" :size="15" /></span>
-        <span>限速规则</span>
+        <span>{{ $t('downloader.speed.rulesSection') }}</span>
         <span class="section-count">{{ scheduleRules.length }} RULES</span>
       </div>
 
@@ -82,7 +82,7 @@
           class="rule-card"
         >
           <div class="rule-header">
-            <span class="rule-title">{{ rule.name || `规则 ${index + 1}` }}</span>
+            <span class="rule-title">{{ rule.name || $t('downloader.speed.ruleName', {index: index + 1}) }}</span>
             <div class="rule-actions">
               <el-button
                 size="mini"
@@ -90,7 +90,7 @@
                 @click="moveRuleUp(index)"
               >
                 <LucideIcon name="arrow-up" :size="13" />
-                上移
+                {{ $t('downloader.speed.moveUp') }}
               </el-button>
               <el-button
                 size="mini"
@@ -98,7 +98,7 @@
                 @click="moveRuleDown(index)"
               >
                 <LucideIcon name="arrow-down" :size="13" />
-                下移
+                {{ $t('downloader.speed.moveDown') }}
               </el-button>
               <el-switch
                 v-model="rule.enabled"
@@ -111,34 +111,34 @@
                 @click="removeRule(index)"
               >
                 <LucideIcon name="trash-2" :size="13" />
-                删除
+                {{ $t('downloader.speed.remove') }}
               </el-button>
             </div>
           </div>
           <div class="rule-content">
             <div class="rule-field">
-              <label class="field-label">开始时间</label>
+              <label class="field-label">{{ $t('downloader.speed.startTime') }}</label>
               <el-time-picker
                 v-model="rule.start_time"
                 format="HH:mm"
                 value-format="HH:mm"
-                placeholder="选择时间"
+                :placeholder="$t('downloader.speed.timePlaceholder')"
                 style="width: 100%;"
               />
             </div>
             <div class="rule-field">
-              <label class="field-label">结束时间</label>
+              <label class="field-label">{{ $t('downloader.speed.endTime') }}</label>
               <el-time-picker
                 v-model="rule.end_time"
                 format="HH:mm"
                 value-format="HH:mm"
-                placeholder="选择时间"
+                :placeholder="$t('downloader.speed.timePlaceholder')"
                 style="width: 100%;"
               />
             </div>
           </div>
           <div class="rule-weekdays">
-            <label class="field-label">适用星期</label>
+            <label class="field-label">{{ $t('downloader.speed.daysLabel') }}</label>
             <div class="weekday-selector">
               <el-checkbox
                 v-for="day in weekdays"
@@ -147,14 +147,14 @@
                 :label="day.value"
                 class="weekday-checkbox"
               >
-                {{ day.label }}
+                {{ $t(day.labelKey) }}
               </el-checkbox>
             </div>
           </div>
           <div class="rule-speed">
             <div class="speed-block">
               <div class="speed-title">
-                <span>下载限速</span>
+                <span>{{ $t('downloader.speed.downloadLimitShort') }}</span>
                 <el-switch v-model="rule.download.enabled" active-color="#059669" inactive-color="#d1d5db" />
               </div>
               <div class="speed-input-group">
@@ -178,7 +178,7 @@
             </div>
             <div class="speed-block">
               <div class="speed-title">
-                <span>上传限速</span>
+                <span>{{ $t('downloader.speed.uploadLimitShort') }}</span>
                 <el-switch v-model="rule.upload.enabled" active-color="#059669" inactive-color="#d1d5db" />
               </div>
               <div class="speed-input-group">
@@ -211,7 +211,7 @@
         @click="addRule"
       >
         <LucideIcon class="button-icon" name="plus" :size="15" />
-        添加限速规则
+        {{ $t('downloader.speed.addRule') }}
       </el-button>
     </div>
   </div>
@@ -256,14 +256,15 @@ export default class SpeedSettingsTab extends Vue {
   private scheduleRules: (SpeedScheduleRule & { name?: string })[] = []
 
   // 星期选项
+  // 双语 P6-2：labelKey 由模板按当前语言渲染（语言切换响应式）
   private weekdays = [
-    { label: '周一', value: 0 },
-    { label: '周二', value: 1 },
-    { label: '周三', value: 2 },
-    { label: '周四', value: 3 },
-    { label: '周五', value: 4 },
-    { label: '周六', value: 5 },
-    { label: '周日', value: 6 }
+    { labelKey: 'downloader.speed.weekday.mon', value: 0 },
+    { labelKey: 'downloader.speed.weekday.tue', value: 1 },
+    { labelKey: 'downloader.speed.weekday.wed', value: 2 },
+    { labelKey: 'downloader.speed.weekday.thu', value: 3 },
+    { labelKey: 'downloader.speed.weekday.fri', value: 4 },
+    { labelKey: 'downloader.speed.weekday.sat', value: 5 },
+    { labelKey: 'downloader.speed.weekday.sun', value: 6 }
   ]
 
   // 计算属性：下载器类型
@@ -315,7 +316,7 @@ export default class SpeedSettingsTab extends Vue {
           return {
             ...rule,
             id: rule.id,
-            name: `规则 ${index + 1}`,
+            name: this.$t('downloader.speed.ruleName', { index: index + 1 }).toString(),
             sort_order: rule.sort_order ?? index,
             start_time: rule.start_time || '09:00',
             end_time: rule.end_time || '18:00',
@@ -370,7 +371,7 @@ export default class SpeedSettingsTab extends Vue {
   private addRule() {
     const newRule: SpeedScheduleRule & { name: string } = {
       id: undefined,
-      name: `规则 ${this.scheduleRules.length + 1}`,
+      name: this.$t('downloader.speed.ruleName', { index: this.scheduleRules.length + 1 }).toString(),
       sort_order: this.scheduleRules.length,
       start_time: '09:00',
       end_time: '18:00',
@@ -418,7 +419,7 @@ export default class SpeedSettingsTab extends Vue {
 
   private refreshRuleOrder() {
     this.scheduleRules.forEach((rule, idx) => {
-      rule.name = `规则 ${idx + 1}`
+      rule.name = this.$t('downloader.speed.ruleName', { index: idx + 1 }).toString()
       rule.sort_order = idx
     })
   }
@@ -955,6 +956,51 @@ export default class SpeedSettingsTab extends Vue {
 @media (max-width: 680px) {
   .rule-speed {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 手机适配（mobile-ux-fixes 2026-09-12）：下载/上传双列折单列、
+   限速输入+单位组可换行（inline width:100px 的单位下拉以 !important 收窄）、
+   规则卡头部标题与操作组分行、时间字段纵排、星期选择换行 */
+@media (max-width: 768px) {
+  .speed-limit-form .el-col {
+    width: 100%;
+  }
+
+  .speed-input-group {
+    flex-wrap: wrap;
+  }
+
+  .speed-input-group .el-select {
+    width: 96px !important;
+  }
+
+  .speed-input-group .el-input-number {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .rule-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rule-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .rule-actions .el-button + .el-button {
+    margin-left: 0;
+  }
+
+  .rule-actions .el-button {
+    min-height: 34px;
+  }
+
+  .rule-content {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 </style>

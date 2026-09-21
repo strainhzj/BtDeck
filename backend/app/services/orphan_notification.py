@@ -116,6 +116,8 @@ async def notify_scan_completed(
         "scan_type": scan_type,
         "orphan_count": orphan_count,
         "orphan_size": orphan_size,
+        # 双语 P4（E03）：护栏标志结构化，前端按事件本地化时还原追加提示语义
+        "orphan_count_warning": bool(orphan_count_warning),
         "route": NOTIF_ROUTE,
     }
 

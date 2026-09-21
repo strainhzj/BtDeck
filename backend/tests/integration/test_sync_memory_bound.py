@@ -830,7 +830,8 @@ async def test_incremental_failure_falls_back_to_paged_full_sync(monkeypatch):
     1. 回退告警日志存在（"incremental failed, fallback to batch"）；
     2. 回退走分页全量（fetch 调用 operation=qb_torrents_info_only，≥2 次）；
     3. 回退受单轮预算限制（插入 100、partial=True、budget_reason=count）；
-    4. 不确认 RID（pending_rid 已被清空，缓存保持空）。
+    4. 不确认 RID（pending_rid 已被清空，缓存保持空）；
+    5. partial 轮不落全量标记（标记时序修复回归锚点，2026-09-06）。
     """
     _patch_incremental_run_config(monkeypatch)
     monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 100)
@@ -840,6 +841,9 @@ async def test_incremental_failure_falls_back_to_paged_full_sync(monkeypatch):
 
     confirm_calls: List[tuple] = []
     monkeypatch.setattr(torrents_async, "_confirm_qb_sync_rid", lambda d, r: confirm_calls.append((d, r)))
+
+    mark_calls: List[tuple] = []
+    monkeypatch.setattr(torrents_async, "_mark_qb_full_sync", lambda d, t: mark_calls.append((d, t)))
 
     client = _make_qb_client(seeds=_qb_seeds(500, prefix="f"), sync_maindata_raises=True)
     db = _empty_db()
@@ -871,5 +875,125 @@ async def test_incremental_failure_falls_back_to_paged_full_sync(monkeypatch):
     # 4) 不确认 RID：增量失败清空 pending_rid，缓存保持空
     assert confirm_calls == [], f"增量失败回退不应确认 RID: {confirm_calls}"
     assert torrents_async._QB_SYNC_RID_CACHE.get("dl-1") is None
-    # 回退完成后记录全量时间戳（下一轮按增量调度）
-    assert torrents_async._QB_LAST_FULL_SYNC.get("dl-1") is not None
+    # 5) partial 回退轮不落全量标记（2026-09-06 时序修复）：全量标记只在数据
+    #    durable 写库成功且 cycle_complete 后推进；本轮 budget_reason=count 未完成
+    #    周期。旧断言 is not None 因 fixture 预置新鲜时间戳而恒真，约束不了行为。
+    assert mark_calls == [], f"partial 回退轮不应落全量标记: {mark_calls}"
+
+
+async def test_full_sync_marker_not_persisted_when_write_fails(mem_db, monkeypatch):
+    """失败注入（2026-09-06 标记时序修复回归）：全量拉取成功但写库失败 →
+    全量完成标记不得落盘/推进。
+
+    【场景】标记时间戳为空（间隔到期 → force_full_sync）→ 分页拉取成功 →
+    最终 bulk_upsert 抛异常 → 回滚上抛。旧实现在拉取后立即 _mark_qb_full_sync：
+    写库失败后标记已持久化，"重启"时保留的有效 RID + 远端空增量会跳过必要的
+    全量重试却报告周期完成（0 拉取 0 处理 cycle_complete=True）。
+    【断言】
+    1. 写库异常上抛（同步轮失败）；
+    2. 全量分页拉取确实已执行（失败发生在写库阶段而非拉取阶段）；
+    3. _mark_qb_full_sync 未被调用、内存标记未推进。
+    """
+    _patch_incremental_run_config(monkeypatch)
+    monkeypatch.setattr(torrents_async, "_QB_LAST_FULL_SYNC", {})  # 间隔到期 → 强制全量
+
+    session = mem_db.factory()
+
+    async def failing_bulk(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("模拟写库失败")
+
+    monkeypatch.setattr(torrents_async, "bulk_upsert_with_retry", failing_bulk)
+
+    mark_calls: List[tuple] = []
+    monkeypatch.setattr(torrents_async, "_mark_qb_full_sync", lambda d, t: mark_calls.append((d, t)))
+
+    client = _make_qb_client(seeds=_qb_seeds(10, prefix="w"))
+    try:
+        with pytest.raises(RuntimeError, match="模拟写库失败"):
+            await torrents_async.qb_add_torrents_info_only_async(session, [_qb_downloader()], client=client)
+
+        # 1) 拉取已发生（失败在写库阶段）
+        fetch_ops = [rec for rec in CALL_RECORD if rec[0] == "qb_torrents_info_only"]
+        assert fetch_ops, "全量拉取应已执行"
+        # 2) 标记未推进（写库失败后不得落标记）
+        assert mark_calls == [], f"写库失败时不应落全量标记: {mark_calls}"
+        assert torrents_async._QB_LAST_FULL_SYNC.get("dl-1") is None
+    finally:
+        await session.rollback()
+        await session.close()
+
+
+async def test_restart_after_failed_full_sync_retries_full_snapshot(mem_db, monkeypatch):
+    """重启场景（2026-09-06 标记时序修复回归）：写库失败的全量轮不落标记 →
+    "重启"后（新会话 + 保留有效 RID + 远端空增量）必须重试全量拉取并处理数据，
+    且完成标记在最终写库成功之后才推进。
+
+    【两阶段】
+    Phase-1 失败轮：强制全量 + 写库失败 → 标记未落（上一测试的注入在进程内复现）；
+    Phase-2 模拟重启：全新 DB 会话，RID 缓存仍是上一确认值（50，有效），标记为空。
+    若旧 bug 存在（失败轮提前落标记），Phase-2 会因"标记新鲜"走空增量 →
+    0 次全量拉取即报告周期完成；修复后必须重试全量。
+    【断言】
+    1. Phase-2 发生 torrents_info 全量分页拉取（≥1 次）且处理全部 10 行；
+    2. _mark_qb_full_sync 恰好一次，且调用时刻 ≥ 最后一次写库完成时刻。
+    """
+    _patch_incremental_run_config(monkeypatch)
+    monkeypatch.setattr(torrents_async, "_QB_LAST_FULL_SYNC", {})
+    monkeypatch.setattr(torrents_async, "_QB_SYNC_RID_CACHE", {"dl-1": 50})  # 上一轮确认的有效 RID
+
+    # ---------- Phase-1：失败的全量轮 ----------
+    failing_session = mem_db.factory()
+
+    async def failing_bulk(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("模拟写库失败")
+
+    monkeypatch.setattr(torrents_async, "bulk_upsert_with_retry", failing_bulk)
+    client = _make_qb_client(
+        seeds=_qb_seeds(10, prefix="r"),
+        # 陷阱载荷：rid 与缓存一致且无变更——若标记被错误提前落盘，重启后会
+        # 走这条空增量并 0 拉取报周期完成
+        sync_payload=_qb_sync_payload(rid=50, seeds=[]),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="模拟写库失败"):
+            await torrents_async.qb_add_torrents_info_only_async(failing_session, [_qb_downloader()], client=client)
+    finally:
+        await failing_session.rollback()
+        await failing_session.close()
+    assert torrents_async._QB_LAST_FULL_SYNC.get("dl-1") is None, "失败轮不应落全量标记"
+
+    # ---------- Phase-2：模拟重启（新会话，模块缓存维持失败轮后的状态） ----------
+    CALL_RECORD.clear()
+    bulk_state: Dict[str, Any] = {"active": 0, "peak": 0, "calls": 0, "sizes": []}
+    real_bulk = _make_recording_bulk(bulk_state)
+    write_done: List[float] = []
+
+    async def timing_bulk(db: Any, to_insert: Any, to_update: Any, **kwargs: Any) -> Any:
+        result = await real_bulk(db, to_insert, to_update, **kwargs)
+        write_done.append(time.monotonic())
+        return result
+
+    monkeypatch.setattr(torrents_async, "bulk_upsert_with_retry", timing_bulk)
+
+    mark_calls: List[tuple] = []
+
+    def recording_mark(downloader_id: str, now_ts: float) -> None:
+        mark_calls.append((downloader_id, now_ts, time.monotonic()))
+
+    monkeypatch.setattr(torrents_async, "_mark_qb_full_sync", recording_mark)
+
+    session = mem_db.factory()
+    try:
+        await torrents_async.qb_add_torrents_info_only_async(session, [_qb_downloader()], client=client)
+
+        # 1) 重试了全量分页拉取，并处理了全部种子
+        fetch_ops = [rec for rec in CALL_RECORD if rec[0] == "qb_torrents_info_only"]
+        assert fetch_ops, "重启后必须重试全量拉取（不得走空增量 0 拉取报完成）"
+        assert sum(bulk_state["sizes"]) == 10, f"应处理全部 10 行: {bulk_state['sizes']}"
+        # 2) 完成标记恰好一次，且在最后一次写库完成之后
+        assert len(mark_calls) == 1, f"完成轮应恰好落一次全量标记: {mark_calls}"
+        assert mark_calls[0][:2][0] == "dl-1"
+        assert write_done, "应发生写库"
+        assert mark_calls[0][2] >= max(write_done), "全量标记必须在最终写库成功之后"
+    finally:
+        await session.close()

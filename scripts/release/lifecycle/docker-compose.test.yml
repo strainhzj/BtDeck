@@ -1,0 +1,56 @@
+# docker-compose 生命周期测试模板（release-artifact-equivalence-gate task .7 / G6）
+# 由 scripts/release/lifecycle/docker.sh 驱动；镜像经环境变量注入（禁止 latest 作为测试身份）。
+#
+# 说明：
+# - 服务名固定 btdeck-backend（前端 nginx upstream 按该 DNS 名代理）。
+# - 卷独立于开发 compose，避免污染本地数据。
+# - 测试期间通过 BTDECK_BACKEND_IMAGE 切换 v1.0.5/v1.0.6 实现升级场景。
+
+services:
+  btdeck-backend:
+    image: ${BTDECK_BACKEND_IMAGE:?must pin explicit version tag}
+    container_name: w3-life-backend
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+      - DEV=true
+      - LOG_LEVEL=INFO
+    volumes:
+      - w3life_backend_data:/app/data
+      - w3life_backend_logs:/app/logs
+      - w3life_backend_config:/app/config
+      - w3life_backend_backup:/app/backup
+    networks:
+      - w3life_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+  btdeck-frontend:
+    image: ${BTDECK_FRONTEND_IMAGE:?must pin explicit version tag}
+    container_name: w3-life-frontend
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "18081:80"
+    volumes:
+      - w3life_frontend_cache:/var/cache/nginx
+      - w3life_frontend_logs:/var/log/nginx
+    networks:
+      - w3life_net
+    restart: unless-stopped
+
+networks:
+  w3life_net:
+
+volumes:
+  w3life_backend_data:
+  w3life_backend_logs:
+  w3life_backend_config:
+  w3life_backend_backup:
+  w3life_frontend_cache:
+  w3life_frontend_logs:

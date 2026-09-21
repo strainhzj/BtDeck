@@ -6,6 +6,8 @@
  */
 
 import { ApiError } from '@/types/api'
+// 双语 P6-5：兜底文案走 i18n（E01：未识别错误按当前语言兜底；zh 与原内联逐字节一致）
+import { translate } from '@/i18n'
 
 /**
  * 业务成功码白名单。
@@ -40,7 +42,7 @@ export function extractFromDetail(
     const first = detail[0] as Record<string, unknown> | undefined
     const message =
       (first && ((first.msg as string) || (first.message as string))) ||
-      '参数校验失败'
+      translate('errors.paramValidation')
     return { code: '422', message }
   }
   if (detail && typeof detail === 'object') {
@@ -49,15 +51,15 @@ export function extractFromDetail(
     if ('code' in d || 'msg' in d || 'message' in d) {
       return {
         code: String(d.code ?? httpStatus),
-        message: (d.msg as string) || (d.message as string) || '请求错误'
+        message: (d.msg as string) || (d.message as string) || translate('errors.requestError')
       }
     }
     return { code: String(httpStatus), message: JSON.stringify(detail) }
   }
   if (typeof detail === 'string') {
-    return { code: String(httpStatus), message: detail || '请求错误' }
+    return { code: String(httpStatus), message: detail || translate('errors.requestError') }
   }
-  return { code: String(httpStatus), message: '请求错误' }
+  return { code: String(httpStatus), message: translate('errors.requestError') }
 }
 
 /**
@@ -107,7 +109,7 @@ export function buildBusinessError(
   rawResponse?: unknown
 ): ApiError {
   const code = String(res?.code ?? '500')
-  const message = res?.msg || '操作失败'
+  const message = res?.msg || translate('errors.generic')
   return new ApiError(message, { code, httpStatus, rawResponse })
 }
 

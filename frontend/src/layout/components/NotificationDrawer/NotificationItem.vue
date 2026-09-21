@@ -8,17 +8,17 @@
     <!-- 内容区域 -->
     <div class="notification-content" @click.stop="$emit('view', notification)">
       <div class="notification-header">
-        <span class="notification-title">{{ notification.title }}</span>
+        <span class="notification-title">{{ displayTitle }}</span>
         <span class="notification-time">{{ formattedTime }}</span>
       </div>
-      <div v-if="notification.content" class="notification-body">
-        {{ notification.content }}
+      <div v-if="plainContent" class="notification-body">
+        {{ plainContent }}
       </div>
     </div>
 
     <!-- 操作按钮 -->
     <div class="notification-ops">
-      <el-tooltip :content="notification.is_read ? '标记未读' : '标记已读'" placement="top">
+      <el-tooltip :content="notification.is_read ? $t('common.notifications.markUnread') : $t('common.notifications.markRead')" placement="top">
         <el-button
           type="text"
           size="mini"
@@ -28,7 +28,7 @@
           <LucideIcon :name="notification.is_read ? 'refresh-cw' : 'check'" :size="14" />
         </el-button>
       </el-tooltip>
-      <el-tooltip content="删除" placement="top">
+      <el-tooltip :content="$t('common.notifications.remove')" placement="top">
         <el-button type="text" size="mini" class="btn-delete" @click.stop="$emit('delete', notification.id)">
           <LucideIcon name="trash-2" :size="14" />
         </el-button>
@@ -40,10 +40,24 @@
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import { NotificationItem } from '@/api/notification'
+import { plainNotificationContent } from '@/utils/notification-markdown'
+import { notificationDisplayContent, notificationDisplayTitle } from '@/utils/notification-display'
+import { formatRelativeTime } from '@/utils/formatters'
 
 @Component({ name: 'NotificationItem' })
 export default class extends Vue {
   @Prop({ required: true }) private notification!: NotificationItem
+
+  // 通知标题：已知事件按 extra_data.event 本地化，未知/历史通知原文（E03）
+  get displayTitle(): string {
+    return notificationDisplayTitle(this.notification)
+  }
+
+  // 列表摘要走共享纯文本化（与移动列表同源）：剥离 Markdown 记号，未打开详情前不裸露 ## 等字符；
+  // 正文先经事件本地化（双语 P4 / E03），未知事件回退原始 content
+  get plainContent(): string {
+    return plainNotificationContent(notificationDisplayContent(this.notification))
+  }
 
   get iconName(): string {
     const map: Record<string, string> = {
@@ -64,17 +78,8 @@ export default class extends Vue {
 
   get formattedTime(): string {
     if (!this.notification.created_at) return ''
-    const date = new Date(this.notification.created_at)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const minutes = Math.floor(diff / 60000)
-    if (minutes < 1) return '刚刚'
-    if (minutes < 60) return `${minutes}分钟前`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}小时前`
-    const days = Math.floor(hours / 24)
-    if (days < 30) return `${days}天前`
-    return date.toLocaleDateString('zh-CN')
+    // 复用共享相对时间格式化（P1 已 i18n 化，随语言切换；替掉本组件的中文硬编码副本）
+    return formatRelativeTime(this.notification.created_at)
   }
 }
 </script>

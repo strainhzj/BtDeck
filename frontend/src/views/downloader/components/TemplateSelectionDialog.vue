@@ -12,9 +12,9 @@
         <span class="template-dialog-header__mark"><LucideIcon name="layout-template" :size="19" /></span>
         <div>
           <span class="template-dialog-header__eyebrow">CONFIGURATION LIBRARY</span>
-          <h3>从模板选择配置</h3>
+          <h3>{{ $t('downloader.template.title') }}</h3>
         </div>
-        <button type="button" aria-label="关闭模板库" @click="handleClose">
+        <button type="button" :aria-label="$t('downloader.template.closeAria')" @click="handleClose">
           <LucideIcon name="x" :size="16" />
         </button>
       </div>
@@ -22,7 +22,7 @@
     <div class="dialog-body">
       <div v-if="loading" class="template-loading">
         <LucideIcon class="is-spinning" name="refresh-cw" :size="20" />
-        <span>正在同步模板索引</span>
+        <span>{{ $t('downloader.template.syncing') }}</span>
       </div>
       <!-- 模板卡片网格 -->
       <div v-else-if="templateList.length > 0" class="template-grid">
@@ -32,9 +32,9 @@
           :class="['template-card', {selected: selectedTemplate?.id === template.id}]"
           @click="selectTemplate(template)"
         >
-          <!-- 系统默认徽章 -->
+          <!-- {{ $t('downloader.template.systemDefault') }}徽章 -->
           <div v-if="template.is_system_default" class="system-badge">
-            系统默认
+            {{ $t('downloader.template.systemDefault') }}
           </div>
 
           <!-- 单选按钮 -->
@@ -46,7 +46,7 @@
               <LucideIcon name="zap" :size="20" />
             </div>
             <div class="card-title-section">
-              <div class="card-title">{{ template.name }}</div>
+              <div class="card-title">{{ templateDisplayName(template) }}</div>
               <div class="card-type">
                 <LucideIcon name="clock" :size="11" />
                 {{ getDownloaderTypeLabel(template.downloader_type) }}
@@ -55,8 +55,8 @@
           </div>
 
           <!-- 卡片描述 -->
-          <div class="card-description" :title="template.description">
-            {{ template.description }}
+          <div class="card-description" :title="templateDisplayDescription(template)">
+            {{ templateDisplayDescription(template) }}
           </div>
         </div>
       </div>
@@ -64,26 +64,26 @@
       <!-- 空状态 -->
       <div v-else class="template-empty">
         <LucideIcon name="inbox" :size="38" :stroke-width="1.4" />
-        <span>暂无可用模板</span>
+        <span>{{ $t('downloader.template.empty') }}</span>
       </div>
     </div>
 
     <div slot="footer" class="dialog-footer">
       <div class="footer-info">
-        已选择: <strong>{{ selectedTemplate?.name || '未选择' }}</strong>
+        {{ $t('downloader.template.selectedPrefix') }} <strong>{{ selectedTemplate ? templateDisplayName(selectedTemplate) : $t('downloader.template.notSelected') }}</strong>
       </div>
       <div class="footer-actions">
         <el-button @click="handleClose">
           <LucideIcon class="button-icon" name="x" :size="14" />
-          取消
+          {{ $t('downloader.template.cancel') }}
         </el-button>
         <el-button type="warning" :disabled="!selectedTemplate" @click="handleApplyDirect">
           <LucideIcon class="button-icon" name="download" :size="14" />
-          直接应用
+          {{ $t('downloader.template.applyDirect') }}
         </el-button>
         <el-button type="primary" :disabled="!selectedTemplate" @click="handleApplyWithPreview">
           <LucideIcon class="button-icon" name="check" :size="14" />
-          确定
+          {{ $t('downloader.template.confirm') }}
         </el-button>
       </div>
     </div>
@@ -97,8 +97,8 @@
     >
       <template #title>
         <div class="template-confirm-header">
-          <span>确认直接应用模板</span>
-          <button type="button" aria-label="关闭确认框" @click="confirmDialogVisible = false">
+          <span>{{ $t('downloader.template.confirmTitle') }}</span>
+          <button type="button" :aria-label="$t('downloader.template.closeConfirmAria')" @click="confirmDialogVisible = false">
             <LucideIcon name="x" :size="15" />
           </button>
         </div>
@@ -108,14 +108,14 @@
           <LucideIcon name="alert-triangle" :size="30" :stroke-width="1.5" />
         </div>
         <div class="confirm-message">
-          即将应用模板 <strong>{{ selectedTemplate?.name }}</strong
+          {{ $t('downloader.template.applyingPrefix') }} <strong>{{ templateDisplayName(selectedTemplate) }}</strong
           ><br />
-          直接应用将覆盖当前下载器配置，是否继续？
+          {{ $t('downloader.template.overwriteWarning') }}
         </div>
       </div>
       <div slot="footer" class="confirm-actions">
-        <el-button @click="confirmDialogVisible = false" style="flex: 1">取消</el-button>
-        <el-button type="warning" @click="confirmApply" style="flex: 1">确认应用</el-button>
+        <el-button @click="confirmDialogVisible = false" style="flex: 1">{{ $t('downloader.template.cancel') }}</el-button>
+        <el-button type="warning" @click="confirmApply" style="flex: 1">{{ $t('downloader.template.confirmApply') }}</el-button>
       </div>
     </el-dialog>
   </el-dialog>
@@ -125,6 +125,10 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { SettingTemplate } from '../types'
 import { getTemplateList, applyTemplate } from '@/api/downloader'
+import {
+  templateDisplayDescription,
+  templateDisplayName
+} from '../template-presets'
 
 interface ApiErrorLike {
   response?: { data?: { msg?: string } }
@@ -147,6 +151,10 @@ export default class TemplateSelectionDialog extends Vue {
 
   // 选中的模板
   private selectedTemplate: SettingTemplate | null = null
+
+  // 双语 P6-2：系统预设按 preset_key 本地化展示（用户模板保留原文，Q02）
+  private templateDisplayName = templateDisplayName
+  private templateDisplayDescription = templateDisplayDescription
 
   // 确认对话框显示状态
   private confirmDialogVisible = false
@@ -198,7 +206,7 @@ export default class TemplateSelectionDialog extends Vue {
     this.confirmDialogVisible = true
   }
 
-  // 确认应用
+  // {{ $t('downloader.template.confirmApply') }}
   private async confirmApply() {
     if (!this.selectedTemplate) return
 
@@ -206,7 +214,7 @@ export default class TemplateSelectionDialog extends Vue {
       // ✅ 使用prop传递的downloaderId，避免深层parent访问
       const downloaderId = this.downloaderId
       if (!downloaderId || typeof downloaderId !== 'string' || downloaderId.trim() === '') {
-        this.$message.error('下载器ID无效，已取消模板应用')
+        this.$message.error(this.$t('downloader.template.msg.invalidId').toString())
         this.confirmDialogVisible = false
         return
       }
@@ -217,7 +225,7 @@ export default class TemplateSelectionDialog extends Vue {
       )
 
       if (response.code === '200') {
-        this.$message.success('模板应用成功')
+        this.$message.success(this.$t('downloader.template.msg.success').toString())
         this.$emit('template-selected', this.selectedTemplate)
         this.confirmDialogVisible = false
         this.handleClose()
@@ -225,7 +233,7 @@ export default class TemplateSelectionDialog extends Vue {
     } catch (error: unknown) {
       console.error('应用模板失败:', error)
       const apiError = error as ApiErrorLike
-      const errorMsg = apiError.response?.data?.msg || apiError.message || '应用模板失败'
+      const errorMsg = apiError.response?.data?.msg || apiError.message || this.$t('downloader.template.msg.failed').toString()
       this.$message.error(errorMsg)
     }
   }
@@ -248,7 +256,7 @@ export default class TemplateSelectionDialog extends Vue {
   private getDownloaderTypeLabel(type: number): string {
     if (type === 0) return 'qBittorrent'
     if (type === 1) return 'Transmission'
-    return '通用'
+    return this.$t('downloader.template.unknownType').toString()
   }
 }
 </script>
@@ -319,7 +327,7 @@ export default class TemplateSelectionDialog extends Vue {
   }
 }
 
-// 系统默认徽章
+// {{ $t('downloader.template.systemDefault') }}徽章
 .system-badge {
   position: absolute;
   top: 12px;

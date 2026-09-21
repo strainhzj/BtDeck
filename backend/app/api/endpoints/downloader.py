@@ -3,13 +3,13 @@ import logging
 import uuid
 from typing import Annotated, Any, Dict, List, Optional
 
-import ping3
 import urllib3
 from fastapi import APIRouter, Depends, Request, Path, Query
 from pydantic import BaseModel
 from app.api.responseVO import CommonResponse
 from app.api.schemas.path_mapping import PathMappingTestRequest
 from app.auth.dependencies import require_authenticated_user
+from app.core.platform_capabilities import PlatformCapabilityUnsupportedError, require_capability
 from app.database import get_db
 from app.downloader import models
 from app.downloader.models import BtDownloaders
@@ -18,6 +18,7 @@ from app.downloader.responseVO import DownloaderListVO, DownloaderVO, Downloader
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.path_mapping_validation import validate_path_mapping_directories
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.utils import connectivity
 from app.utils.encryption import encrypt_password, decrypt_password
 from requests.exceptions import ConnectionError
 from sqlalchemy import text
@@ -28,6 +29,19 @@ from transmission_rpc import TransmissionAuthError
 logger = logging.getLogger(__name__)  # Fixed for proper response handling
 router = APIRouter()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _reject_android_path_payload(
+    path_mapping: Any, path_mapping_rules: Optional[str], torrent_save_path: Optional[str]
+) -> None:
+    """Android 主服务端兼容旧客户端空字段，但拒绝真正的路径配置。"""
+
+    mappings = getattr(path_mapping, "mappings", None) if path_mapping is not None else None
+    default_mapping = getattr(path_mapping, "default_mapping", None) if path_mapping is not None else None
+    has_mapping = bool(mappings) or bool(default_mapping)
+    if has_mapping or any(str(value or "").strip() for value in (path_mapping_rules, torrent_save_path)):
+        require_capability("path_mapping", "downloader.path_fields")
+
 
 # 降级路径单次下载器调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
 _DETAIL_CALL_TIMEOUT = 10.0
@@ -69,6 +83,11 @@ async def add(
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
+    _reject_android_path_payload(
+        downloader_request.path_mapping,
+        downloader_request.path_mapping_rules,
+        downloader_request.torrent_save_path,
+    )
     # 密码在 ORM 构造点加密落库（与 update 端点对齐）——历史缺陷：add 明文
     # 直写、update 才加密，decrypt 对非 sm4: 前缀静默透传掩盖了明文存储
     downloader = models.BtDownloaders(
@@ -120,7 +139,13 @@ async def add(
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        return CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
+        # 错误契约（双语 P2）：添加链路认证/连接失败的稳定标识，前端本地化展示
+        return CommonResponse(
+            status="error",
+            msg="用户名或密码错误",
+            code="400",
+            data={"reasonCode": "DOWNLOADER_AUTH_FAILED"},
+        )
 
 
 @router.post("/update/{downloader_id}", summary="更新下载器明细", response_model=CommonResponse)
@@ -137,6 +162,11 @@ async def update(
         # 读取原始请求数据以检测 path_mapping 是否被明确传递
         raw_data = await req.json()
         path_mapping_in_request = "path_mapping" in raw_data
+        _reject_android_path_payload(
+            downloader_request.path_mapping,
+            downloader_request.path_mapping_rules,
+            downloader_request.torrent_save_path,
+        )
 
         # ========== 原密码验证逻辑 ==========
         # 获取当前下载器的信息
@@ -146,7 +176,12 @@ async def update(
         ).fetchone()
 
         if not current_downloader:
-            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="下载器不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         current_username = current_downloader[0]
         current_password_encrypted = current_downloader[1]
@@ -162,20 +197,40 @@ async def update(
         if need_verify_old_password:
             # 必须提供原密码
             if not downloader_request.old_password or downloader_request.old_password.strip() == "":
-                return CommonResponse(status="error", msg="修改用户名或密码时必须提供原密码", code="400", data=None)
+                return CommonResponse(
+                    status="error",
+                    msg="修改用户名或密码时必须提供原密码",
+                    code="400",
+                    data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_REQUIRED"},
+                )
 
             # 验证原密码是否正确
             if current_password_encrypted:
                 try:
                     decrypted_password = decrypt_password(current_password_encrypted)
                     if decrypted_password != downloader_request.old_password:
-                        return CommonResponse(status="error", msg="原密码错误", code="400", data=None)
+                        return CommonResponse(
+                            status="error",
+                            msg="原密码错误",
+                            code="400",
+                            data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_INVALID"},
+                        )
                 except Exception as e:
                     logger.error(f"解密密码失败: {str(e)}")
-                    return CommonResponse(status="error", msg="验证原密码失败", code="500", data=None)
+                    return CommonResponse(
+                        status="error",
+                        msg="验证原密码失败",
+                        code="500",
+                        data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_UNVERIFIED"},
+                    )
             else:
                 # 数据库中没有密码记录（异常情况）
-                return CommonResponse(status="error", msg="无法验证原密码", code="500", data=None)
+                return CommonResponse(
+                    status="error",
+                    msg="无法验证原密码",
+                    code="500",
+                    data={"reasonCode": "DOWNLOADER_ORIG_PASSWORD_UNVERIFIED"},
+                )
         # ========== 原密码验证逻辑结束 ==========
 
         # 构建 SQL UPDATE 语句
@@ -264,6 +319,8 @@ async def update(
         db.commit()
 
         return CommonResponse(status="success", msg="修改成功", code="200", data=None)
+    except PlatformCapabilityUnsupportedError:
+        raise
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
@@ -536,7 +593,12 @@ async def get_status(
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="该下载器已被删除或不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         # 只取第一个下载器（单下载器查询）
         row = downloaders[0]
@@ -599,13 +661,23 @@ async def test_connection(
         # 查询下载器信息
         downloader_result = query_downloader_list(db, [downloader_id])
         if not downloader_result.success:
+            # 错误契约（双语 P2）：动态拼接只进日志，前端按 reasonCode 本地化
+            logger.error("测试连接数据库查询失败: %s", downloader_result.message)
             return CommonResponse(
-                status="error", msg=f"数据库查询失败: {downloader_result.message}", code="500", data=None
+                status="error",
+                msg="数据库查询失败",
+                code="500",
+                data={"reasonCode": "DOWNLOADER_DB_QUERY_FAILED"},
             )
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
+            return CommonResponse(
+                status="error",
+                msg="该下载器已被删除或不存在",
+                code="404",
+                data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
+            )
 
         # 获取下载器信息
         row = downloaders[0]
@@ -642,11 +714,12 @@ async def test_connection(
         )
     except Exception as e:
         logger.error(f"测试连接失败: {str(e)}")
+        # 错误契约（双语 P2）：str(e) 只进日志，msg 固定，前端按 reasonCode 本地化
         return CommonResponse(
             status="error",
-            msg=f"测试连接失败: {str(e)}",
+            msg="测试连接失败",
             code="500",
-            data={"success": False, "delay": None, "message": str(e)},
+            data={"reasonCode": "DOWNLOADER_TEST_FAILED", "success": False, "delay": None},
         )
 
 
@@ -940,14 +1013,15 @@ def safe_delay_value(delay) -> float | None:
 
 
 async def get_delay_async(downloader):
-    """异步版本的延迟检测"""
+    """异步版本的延迟检测
+
+    统一走 utils.connectivity 探测：loopback 短路 → ICMP（桌面可选）→
+    TCP connect 计时；安卓环境自动禁用 ICMP（dual-mode-client Phase 1.1）。
+    返回值语义保持历史约定：float 毫秒 / None 或 False 表示失败。
+    """
     try:
-        if "127.0.0.1" in downloader.host:
-            delay = 1
-        else:
-            # 使用线程池执行ping操作，避免阻塞
-            delay = await asyncio.to_thread(ping3.ping, downloader.host, 3, "ms", "0.0.0.0", seq=2)
-    except Exception as e:
+        delay = await connectivity.probe_delay(downloader.host, downloader.port, timeout_s=3.0)
+    except Exception as e:  # noqa: BLE001 - 探测意外异常按未连接处理
         print(f"连接下载器时出错: {e}")
         delay = False
     return delay
@@ -956,16 +1030,8 @@ async def get_delay_async(downloader):
 def get_delay(downloader):
     """同步版本的延迟检测（保持兼容性）"""
     try:
-        if "127.0.0.1" in downloader.host:
-            delay = 1
-        else:
-            # 使用线程池执行ping操作，避免阻塞
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(ping3.ping, downloader.host, 3000, "ms", "0.0.0.0", seq=2)
-                delay = future.result(timeout=4)  # 4秒超时
-    except Exception as e:
+        delay = connectivity.probe_delay_sync(downloader.host, downloader.port, timeout_s=3.0)
+    except Exception as e:  # noqa: BLE001 - 探测意外异常按未连接处理
         print(f"连接下载器时出错: {e}")
         delay = False
     return delay
@@ -1222,6 +1288,7 @@ def get_path_mappings(downloader_id: str, _user=Depends(require_authenticated_us
     Returns:
         CommonResponse: 包含路径映射配置的响应
     """
+    require_capability("path_mapping", "downloader.path_mapping.get")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1273,6 +1340,7 @@ def add_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.add")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1327,6 +1395,7 @@ def remove_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.remove")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
@@ -1389,6 +1458,7 @@ async def test_path_mapping(
     Returns:
         CommonResponse: 测试结果
     """
+    require_capability("path_mapping", "downloader.path_mapping.test")
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:

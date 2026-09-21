@@ -2,12 +2,13 @@
 """
 种子列表查询 GET /api/v1/torrents/getList 的 API 级回归测试
 
-覆盖范围（29 个测试）：
+覆盖范围（40 个测试）：
 - 认证拒绝 / 空数据
 - 基础查询 + 软删除过滤（回收站 deleted_at + 逻辑删除 dr=1）
 - status 复合条件（error 命中 has_tracker_error==True）
 - 空多选 panic 防护（downloader_id="," / status=","）
 - 过滤条件（多选/单值/LIKE/size区间/size单位/completed_date/tracker子查询/字段大小写契约）
+- tracker 筛选语义（tracker_like 空结果返回空；tracker_domain ANY 命中 + matched_domain 标记；like 字面量转义）
 - 排序（指定字段/默认/非法字段静默忽略）
 - 分页（skip/limit / 超范围）
 - 参数验证 422（skip/limit/sort_order）
@@ -31,6 +32,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
+from app.api.endpoints import torrent_crud as torrent_crud_module
+from app.api.endpoints.torrent_crud import reset_tracker_domains_cache
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
@@ -463,20 +466,16 @@ class TestFilters:
         assert body["code"] == "200"
         assert _info_ids(body) == {"i1"}
 
-    def test_tracker_like_empty_result_no_filter(self, client, db_session):
-        """tracker_like 子查询空结果时 → 不加过滤（total 等于无 tracker 条件的 total）。"""
+    def test_tracker_like_empty_result_returns_no_torrents(self, client, db_session):
+        """tracker_like 子查询空结果时 → 返回空列表（修复前会静默放宽为返回全部）。"""
         make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
         make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="h2", name="t2")
 
-        # 无 tracker 条件的 total
-        r_all = client.get(URL)
-        total_all = r_all.json()["data"]["total"]
-
-        # tracker_like 不存在的关键字 → 子查询空 → 不加过滤 → total 应相等
         r = client.get(URL, params={"tracker_like": "zzznope"})
         body = r.json()
         assert body["code"] == "200"
-        assert body["data"]["total"] == total_all, "tracker 子查询空结果时不应过滤掉任何种子"
+        assert body["data"]["total"] == 0
+        assert body["data"]["list"] == []
 
     def test_tracker_domain_filter_matches_hostname_without_port(self, client, db_session):
         first = make_torrent(
@@ -534,7 +533,150 @@ class TestFilters:
         assert body["code"] == "200"
         assert _info_ids(body) == {"domain-match"}
 
+    def _make_multi_tracker_torrent(self, db_session):
+        """构造一个挂 a/b 两站 tracker 的种子（ANY 语义 + matched 标记测试公共数据）。"""
+        torrent = make_torrent(
+            db_session,
+            info_id="multi-tracker",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h-multi-tracker",
+            name="multi-tracker",
+            size=1024,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        db_session.add_all(
+            [
+                TrackerInfo(
+                    tracker_id="trk-a",
+                    torrent_info_id=torrent.info_id,
+                    tracker_name="a",
+                    tracker_url="https://tracker.a.example.com/announce",
+                    tracker_host="tracker.a.example.com",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+                TrackerInfo(
+                    tracker_id="trk-b",
+                    torrent_info_id=torrent.info_id,
+                    tracker_name="b",
+                    tracker_url="https://tracker.b.example.com:2710/announce",
+                    tracker_host="tracker.b.example.com:2710",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+            ]
+        )
+        db_session.commit()
+        return torrent
+
+    @staticmethod
+    def _matched_domains_by_url(body):
+        """从响应提取 trackerInfo 内 url → matched_domain 的映射（内层保持 snake_case）。"""
+        rows = body["data"]["list"][0]["trackerInfo"]
+        return {row["tracker_url"]: row.get("matched_domain") for row in rows}
+
+    def test_tracker_domain_marks_matched_tracker_rows(self, client, db_session):
+        """ANY 语义：挂 a+b 两站 tracker 的种子筛 a → 整行返回，仅 a 行带 matched_domain 标记。"""
+        self._make_multi_tracker_torrent(db_session)
+
+        response = client.get(URL, params={"tracker_domain": "tracker.a.example.com"})
+        body = response.json()
+
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"multi-tracker"}
+        matched = self._matched_domains_by_url(body)
+        assert matched["https://tracker.a.example.com/announce"] == "tracker.a.example.com"
+        assert matched["https://tracker.b.example.com:2710/announce"] is None
+
+    def test_tracker_domain_multi_select_marks_each_match(self, client, db_session):
+        """多选 a,b → 行内两个 tracker 各自标记命中的域名。"""
+        self._make_multi_tracker_torrent(db_session)
+
+        response = client.get(URL, params={"tracker_domain": "tracker.a.example.com,tracker.b.example.com"})
+        body = response.json()
+
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"multi-tracker"}
+        matched = self._matched_domains_by_url(body)
+        assert matched["https://tracker.a.example.com/announce"] == "tracker.a.example.com"
+        assert matched["https://tracker.b.example.com:2710/announce"] == "tracker.b.example.com"
+
+    def test_tracker_domain_without_filter_omits_matched_marks(self, client, db_session):
+        """未启用 tracker_domain 筛选时 → 所有 tracker 行 matched_domain 均为 None。"""
+        self._make_multi_tracker_torrent(db_session)
+
+        response = client.get(URL)
+        body = response.json()
+
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"multi-tracker"}
+        matched = self._matched_domains_by_url(body)
+        assert set(matched.values()) == {None}
+
+    def test_with_trackers_false_omits_tracker_details(self, client, db_session):
+        """with_trackers=false（移动端列表瘦身）：行内 trackerInfo 为空数组，其余字段不受影响。"""
+        self._make_multi_tracker_torrent(db_session)
+
+        slim = client.get(URL, params={"with_trackers": "false"})
+        assert slim.json()["code"] == "200"
+        slim_row = slim.json()["data"]["list"][0]
+        assert _info_ids(slim.json()) == {"multi-tracker"}
+        assert slim_row["trackerInfo"] == []
+        # 基础字段仍在（瘦身只裁 tracker 明细）
+        assert slim_row["name"] == "multi-tracker"
+
+        default = client.get(URL)
+        default_row = default.json()["data"]["list"][0]
+        assert len(default_row["trackerInfo"]) == 2
+
+    def test_tracker_domain_like_underscore_is_literal(self, client, db_session):
+        """like 已转义：筛 myXtracker.example.com 不得经 `_` 单字符通配命中 my_tracker 行。"""
+        torrent = make_torrent(
+            db_session,
+            info_id="underscore-host",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h-underscore",
+            name="underscore-host",
+            size=1024,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        db_session.add(
+            TrackerInfo(
+                tracker_id="trk-underscore",
+                torrent_info_id=torrent.info_id,
+                tracker_name="u",
+                tracker_url="https://my_tracker.example.com/announce",
+                tracker_host="my_tracker.example.com",
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
+        db_session.commit()
+
+        wrong = client.get(URL, params={"tracker_domain": "myXtracker.example.com"})
+        assert wrong.json()["code"] == "200"
+        assert wrong.json()["data"]["total"] == 0, "转义后 `_` 应按字面量匹配，不得通配命中"
+
+        exact = client.get(URL, params={"tracker_domain": "my_tracker.example.com"})
+        body = exact.json()
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"underscore-host"}
+        matched = self._matched_domains_by_url(body)
+        assert matched["https://my_tracker.example.com/announce"] == "my_tracker.example.com"
+
     def test_tracker_domains_endpoint_returns_sorted_synced_domains(self, client, db_session):
+        reset_tracker_domains_cache()
         torrent = make_torrent(
             db_session,
             info_id="domain-list",
@@ -577,6 +719,51 @@ class TestFilters:
 
         assert body["code"] == "200"
         assert body["data"] == ["a.example.com", "z.example.com"]
+
+    def test_tracker_domains_ttl_cache_serves_within_window_and_refreshes_after(self, client, db_session):
+        """60s TTL 缓存：窗口内命中缓存（DB 新增不可见），过期后重扫（新域名出现）。"""
+        reset_tracker_domains_cache()
+        torrent = make_torrent(
+            db_session,
+            info_id="ttl-cache",
+            downloader_id="dl-a",
+            hash_="h-ttl-cache",
+            name="ttl-cache",
+            size=1024,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+
+        def _add_tracker(tracker_id: str, host: str) -> None:
+            db_session.add(
+                TrackerInfo(
+                    tracker_id=tracker_id,
+                    torrent_info_id=torrent.info_id,
+                    tracker_url=f"https://{host}/announce",
+                    tracker_host=host,
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                )
+            )
+            db_session.commit()
+
+        _add_tracker("trk-ttl-first", "first.example.com")
+        first = client.get(TRACKER_DOMAINS_URL)
+        assert first.json()["data"] == ["first.example.com"]
+
+        # 窗口内：DB 新增域名被缓存屏蔽（TTL 语义）
+        _add_tracker("trk-ttl-second", "second.example.com")
+        cached = client.get(TRACKER_DOMAINS_URL)
+        assert cached.json()["data"] == ["first.example.com"]
+
+        # 过期（模拟时间推进）：重扫拿到全部域名
+        torrent_crud_module._tracker_domains_cache["at"] = 0.0
+        refreshed = client.get(TRACKER_DOMAINS_URL)
+        assert refreshed.json()["code"] == "200"
+        assert refreshed.json()["data"] == ["first.example.com", "second.example.com"]
+        reset_tracker_domains_cache()
 
     def test_single_error_filter_requires_global_content_uniqueness(self, client, db_session):
         make_torrent(

@@ -10,7 +10,11 @@ export type AdvancedSearchFieldKind =
 
 export interface AdvancedSearchOperatorConfig {
   value: string
+  /** 中文展示名（契约源，运行时按 locale 二选一展示） */
   label: string
+  /** 英文展示名（契约源，桌面双语 P3-1 起与 label 成对出现） */
+  labelEn: string
+  /** 后端稳定操作符标识 */
   backendValue: string
 }
 
@@ -299,36 +303,43 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "contains",
       "label": "包含",
+      "labelEn": "Contains",
       "backendValue": "contains"
     },
     {
       "value": "not_contains",
       "label": "不包含",
+      "labelEn": "Does not contain",
       "backendValue": "not_contains"
     },
     {
       "value": "equals",
       "label": "等于",
+      "labelEn": "Equals",
       "backendValue": "eq"
     },
     {
       "value": "not_equals",
       "label": "不等于",
+      "labelEn": "Does not equal",
       "backendValue": "ne"
     },
     {
       "value": "starts_with",
       "label": "开头是",
+      "labelEn": "Starts with",
       "backendValue": "starts_with"
     },
     {
       "value": "ends_with",
       "label": "结尾是",
+      "labelEn": "Ends with",
       "backendValue": "ends_with"
     },
     {
       "value": "regex",
       "label": "正则匹配",
+      "labelEn": "Regex match",
       "backendValue": "regex"
     }
   ],
@@ -336,46 +347,55 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "equals",
       "label": "等于",
+      "labelEn": "Equals",
       "backendValue": "eq"
     },
     {
       "value": "not_equals",
       "label": "不等于",
+      "labelEn": "Does not equal",
       "backendValue": "ne"
     },
     {
       "value": "greater_than",
       "label": "大于",
+      "labelEn": "Greater than",
       "backendValue": "gt"
     },
     {
       "value": "less_than",
       "label": "小于",
+      "labelEn": "Less than",
       "backendValue": "lt"
     },
     {
       "value": "greater_equal",
       "label": "大于等于",
+      "labelEn": "Greater than or equal",
       "backendValue": "gte"
     },
     {
       "value": "less_equal",
       "label": "小于等于",
+      "labelEn": "Less than or equal",
       "backendValue": "lte"
     },
     {
       "value": "between",
       "label": "介于",
+      "labelEn": "Between",
       "backendValue": "between"
     },
     {
       "value": "is_null",
       "label": "未设置",
+      "labelEn": "Not set",
       "backendValue": "is_null"
     },
     {
       "value": "is_not_null",
       "label": "已设置",
+      "labelEn": "Is set",
       "backendValue": "is_not_null"
     }
   ],
@@ -383,51 +403,61 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "equals",
       "label": "等于",
+      "labelEn": "Equals",
       "backendValue": "eq"
     },
     {
       "value": "not_equals",
       "label": "不等于",
+      "labelEn": "Does not equal",
       "backendValue": "ne"
     },
     {
       "value": "greater_than",
       "label": "晚于",
+      "labelEn": "After",
       "backendValue": "gt"
     },
     {
       "value": "less_than",
       "label": "早于",
+      "labelEn": "Before",
       "backendValue": "lt"
     },
     {
       "value": "greater_equal",
       "label": "不早于",
+      "labelEn": "On or after",
       "backendValue": "gte"
     },
     {
       "value": "less_equal",
       "label": "不晚于",
+      "labelEn": "On or before",
       "backendValue": "lte"
     },
     {
       "value": "last_days",
       "label": "最近N天",
+      "labelEn": "Last N days",
       "backendValue": "last_days"
     },
     {
       "value": "date_range",
       "label": "日期范围",
+      "labelEn": "Date range",
       "backendValue": "date_range"
     },
     {
       "value": "is_null",
       "label": "未设置",
+      "labelEn": "Not set",
       "backendValue": "is_null"
     },
     {
       "value": "is_not_null",
       "label": "已设置",
+      "labelEn": "Is set",
       "backendValue": "is_not_null"
     }
   ],
@@ -435,21 +465,25 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "equals",
       "label": "等于",
+      "labelEn": "Equals",
       "backendValue": "eq"
     },
     {
       "value": "not_equals",
       "label": "不等于",
+      "labelEn": "Does not equal",
       "backendValue": "ne"
     },
     {
       "value": "in",
       "label": "在列表中",
+      "labelEn": "In list",
       "backendValue": "in"
     },
     {
       "value": "not_in",
       "label": "不在列表中",
+      "labelEn": "Not in list",
       "backendValue": "not_in"
     }
   ],
@@ -457,31 +491,37 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "in",
       "label": "包含任意",
+      "labelEn": "Match any",
       "backendValue": "in"
     },
     {
       "value": "not_in",
       "label": "不包含任意",
+      "labelEn": "Match none",
       "backendValue": "not_in"
     },
     {
       "value": "contains_any",
       "label": "包含任意",
+      "labelEn": "Contains any",
       "backendValue": "contains_any"
     },
     {
       "value": "not_contains_any",
       "label": "不包含任意",
+      "labelEn": "Contains none",
       "backendValue": "not_contains_any"
     },
     {
       "value": "is_null",
       "label": "未设置",
+      "labelEn": "Not set",
       "backendValue": "is_null"
     },
     {
       "value": "is_not_null",
       "label": "已设置",
+      "labelEn": "Is set",
       "backendValue": "is_not_null"
     }
   ],
@@ -489,11 +529,13 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
     {
       "value": "equals",
       "label": "等于",
+      "labelEn": "Equals",
       "backendValue": "eq"
     },
     {
       "value": "not_equals",
       "label": "不等于",
+      "labelEn": "Does not equal",
       "backendValue": "ne"
     }
   ]

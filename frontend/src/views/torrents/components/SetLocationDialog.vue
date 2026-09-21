@@ -1,15 +1,17 @@
 <template>
-  <div>
-    <el-dialog
-      :title="`修改保存路径（已选择${torrents.length}个种子）`"
-      :visible.sync="dialogVisible"
-      width="650px"
-      :before-close="handleClose"
-      :close-on-click-modal="false"
-    >
+  <!-- 根节点即 el-dialog（曾用 div 包裹：调用方透传的 custom-class 经 $attrs
+       落到外层 div，移动端收窄从未生效——勿回退为 div 包裹） -->
+  <el-dialog
+    :title="$t('transfer.setLocation.title', {count: torrents.length})"
+    :visible.sync="dialogVisible"
+    width="650px"
+    custom-class="set-location-dialog"
+    :before-close="handleClose"
+    :close-on-click-modal="false"
+  >
       <!-- 当前路径信息 -->
       <div class="current-path-section">
-        <div class="section-title">当前路径：</div>
+        <div class="section-title">{{ $t('transfer.currentPaths') }}</div>
         <div class="path-info">
           <el-tag type="info" size="medium">
             <i class="el-icon-folder" />
@@ -28,19 +30,19 @@
         @submit.native.prevent
       >
         <!-- 目标路径输入/选择 -->
-        <el-form-item label="目标路径:" prop="target_path">
+        <el-form-item :label="$t('transfer.targetPath')" prop="target_path">
           <el-autocomplete
             v-model="formData.target_path"
             :fetch-suggestions="queryPathSuggestions"
-            placeholder="请输入或选择目标路径"
+            :placeholder="$t('transfer.targetPathPlaceholder')"
             style="width: 100%"
             @select="handlePathSelect"
           >
             <template slot-scope="{item}">
               <div class="path-suggestion">
                 <span class="path-value">{{ item.value }}</span>
-                <span v-if="item.path_type === 'default'" class="path-type">默认路径</span>
-                <span class="torrent-count">({{ item.torrent_count }}个种子)</span>
+                <span v-if="item.path_type === 'default'" class="path-type">{{ $t('transfer.pathTypeDefault') }}</span>
+                <span class="torrent-count">{{ $t('transfer.torrentCount', {count: item.torrent_count}) }}</span>
               </div>
             </template>
           </el-autocomplete>
@@ -49,9 +51,9 @@
         <!-- 是否移动文件选项 -->
         <el-form-item>
           <el-checkbox v-model="formData.move_files">
-            移动已下载的文件
+            {{ $t('transfer.setLocation.moveFiles') }}
             <el-tooltip
-              content="勾选后会将已下载的文件移动到新路径，否则仅修改保存路径不影响现有文件"
+              :content="$t('transfer.setLocation.moveFilesHint')"
               placement="top"
             >
               <i class="el-icon-question" />
@@ -61,13 +63,12 @@
       </el-form>
 
       <span slot="footer" class="dialog-footer">
-        <el-button @click="handleClose">取消</el-button>
+        <el-button @click="handleClose">{{ $t('transfer.cancel') }}</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          {{ submitting ? '提交中...' : '确定' }}
+          {{ submitting ? $t('transfer.setLocation.submitting') : $t('transfer.submit') }}
         </el-button>
       </span>
     </el-dialog>
-  </div>
 </template>
 
 <script lang="ts">
@@ -99,7 +100,7 @@ export default class SetLocationDialog extends Vue {
   // 表单验证规则
   formRules = {
     target_path: [
-      { required: true, message: '请输入目标路径', trigger: 'blur' }
+      { required: true, message: this.$t('transfer.validate.targetPathRequired').toString(), trigger: 'blur' }
     ]
   }
 
@@ -215,13 +216,13 @@ export default class SetLocationDialog extends Vue {
 
     // 二次确认
     const confirmMsg = this.formData.move_files
-      ? `确认将 ${this.torrents.length} 个种子移动到新路径？\n这将移动已下载的文件到: ${this.formData.target_path}`
-      : `确认修改 ${this.torrents.length} 个种子的保存路径？\n仅修改路径，不移动文件。`
+      ? this.$t('transfer.setLocation.confirmMove', { count: this.torrents.length, path: this.formData.target_path }).toString()
+      : this.$t('transfer.setLocation.confirmChange', { count: this.torrents.length }).toString()
 
     try {
-      await this.$confirm(confirmMsg, '确认操作', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(confirmMsg, this.$t('transfer.confirmActionTitle').toString(), {
+        confirmButtonText: this.$t('transfer.submit').toString(),
+        cancelButtonText: this.$t('transfer.cancel').toString(),
         type: 'warning'
       })
 
@@ -250,7 +251,7 @@ export default class SetLocationDialog extends Vue {
         // 显示提示消息（不阻塞）
         if (success) {
           this.$message.success({
-            message: `成功提交${moved_count}个种子路径修改请求，正在后台处理...`,
+            message: this.$t('transfer.setLocation.submitted', { moved: moved_count }).toString(),
             duration: 3000
           })
 
@@ -262,13 +263,13 @@ export default class SetLocationDialog extends Vue {
           this.$emit('success')
         } else {
           this.$message.error({
-            message: res.data.error_message || '修改路径失败',
+            message: res.data.error_message || this.$t('transfer.setLocation.failed').toString(),
             duration: 5000
           })
         }
       } else {
         this.$message.error({
-          message: res.msg || '修改路径失败',
+          message: res.msg || this.$t('transfer.setLocation.failed').toString(),
           duration: 5000
         })
       }
@@ -337,6 +338,127 @@ export default class SetLocationDialog extends Vue {
     margin-left: 8px;
     color: #9CA3AF;
     font-size: 12px;
+  }
+}
+
+// ========================================
+// 移动端适配（≤768）内部布局：表单标签上堆、底部按钮/路径建议行触控目标
+// ========================================
+@media (max-width: 768px) {
+  // 当前路径 el-tag 长路径横向溢出
+  .path-info ::v-deep .el-tag {
+    display: block;
+    white-space: normal;
+    height: auto;
+    min-height: 32px;
+    padding: 4px 10px;
+    line-height: 1.5;
+  }
+
+  .section-title {
+    margin-bottom: 8px;
+  }
+
+  // 桌面 label-width 110px 左右布局 → 标签上堆、内容全宽
+  ::v-deep .el-form-item__label {
+    display: block;
+    width: auto !important;
+    text-align: left;
+  }
+
+  ::v-deep .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  // 「移动已下载的文件」复选框行放大触控（桌面行高手指难命中）
+  ::v-deep .el-checkbox {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    white-space: normal;
+
+    .el-checkbox__label {
+      line-height: 1.5;
+    }
+  }
+
+  // 底部双钮等宽 + ≥44px 触控高
+  .dialog-footer {
+    display: flex;
+
+    .el-button {
+      flex: 1;
+      min-height: 44px;
+      margin-left: 0;
+    }
+
+    .el-button + .el-button {
+      margin-left: 12px;
+    }
+  }
+
+  // 路径建议行触控目标（桌面 12px 徽标手指难命中）
+  .path-suggestion {
+    min-height: 36px;
+
+    .path-type,
+    .torrent-count {
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+/* 移动端 ≤768 弹窗骨架 + UI 移动化（非 scoped：custom-class 打在 el-dialog 根上，
+   类名组件专属，不影响其它页面弹窗）。宽度 prop 生成内联 style，须
+   !important 覆盖（此前 650px 原样怼手机屏的根因即收窄规则从未命中）。
+   2026-09-12 复验补强：不止收窄尺寸——头部/关闭钮/内边距/间距按移动触控重制。 */
+@media (max-width: 768px) {
+  .set-location-dialog {
+    width: 94vw !important;
+    margin-top: 5vh !important;
+    border-radius: 12px;
+
+    .el-dialog__header {
+      padding: 14px 16px 10px;
+    }
+
+    .el-dialog__title {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    // 关闭钮触控区 36px（Element 默认 20×20 指尖难命中）
+    .el-dialog__headerbtn {
+      top: 8px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+    }
+
+    .el-dialog__body {
+      padding: 12px 14px;
+      max-height: 64vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .el-dialog__footer {
+      padding: 10px 14px 16px;
+    }
+
+    // 桌面 divider/表单间距在 375 屏过于松散
+    .el-divider {
+      margin: 10px 0;
+    }
+
+    .el-form-item {
+      margin-bottom: 14px;
+    }
   }
 }
 </style>

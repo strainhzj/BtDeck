@@ -32,6 +32,7 @@ export interface DownloaderListItem {
   status: 'online' | 'offline'
   downloading: number
   seeding: number
+  paused: number
   download_speed: number
   upload_speed: number
 }

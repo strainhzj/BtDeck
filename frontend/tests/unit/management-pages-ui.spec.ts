@@ -56,19 +56,20 @@ describe('查询模板管理页操作分组', () => {
     const header = queryTemplatesSource.match(/<header[\s\S]*?<\/header>/)?.[0] || ''
     const filterPanel = queryTemplatesSource.match(/<!-- 筛选条件 -->[\s\S]*?<\/section>/)?.[0] || ''
 
-    expect(header).toContain('刷新')
-    expect(header).toContain('新建模板')
-    expect(filterPanel).toContain('搜索')
-    expect(filterPanel).not.toContain('新建模板')
+    // 双语化（P3-2）：页头/筛选文案走 i18n 键，锚定键引用而非中文字面量
+    expect(header).toContain("$t('common.refresh')")
+    expect(header).toContain("$t('queryTemplate.list.create')")
+    expect(filterPanel).toContain("$t('queryTemplate.list.search')")
+    expect(filterPanel).not.toContain("$t('queryTemplate.list.create')")
   })
 
   it('表格右侧操作列使用可访问的简约 Lucide 图标并保护系统模板', () => {
-    expect(queryTemplatesSource).toContain('<el-table-column label="操作" width="138"')
+    expect(queryTemplatesSource).toContain('<el-table-column :label="$t(\'queryTemplate.list.colActions\')" width="138"')
     expect(queryTemplatesSource).toContain('class="template-row-actions"')
     expect(queryTemplatesSource).toContain('<LucideIcon name="play" :size="15" />')
     expect(queryTemplatesSource).toContain('<LucideIcon name="pencil" :size="15" />')
     expect(queryTemplatesSource).toContain('<LucideIcon name="trash" :size="15" />')
-    expect(queryTemplatesSource).toContain('aria-label="应用模板"')
+    expect(queryTemplatesSource).toContain(':aria-label="$t(\'queryTemplate.list.applyTip\')"')
     expect(queryTemplatesSource.match(/:disabled="scope\.row\.is_default"/g)).toHaveLength(2)
     expect(queryTemplatesSource).not.toContain('icon="el-icon-video-play"')
     expect(queryTemplatesSource).not.toContain('icon="el-icon-edit"')
@@ -81,13 +82,14 @@ describe('孤儿文件管理页信息层级', () => {
     expect(orphanFilesSource).toContain('class="management-stats-grid"')
     expect(orphanFilesSource).toContain('class="management-stat-card"')
     expect(orphanFilesSource).toContain('<CollapsiblePanel')
-    expect(orphanFilesSource).toContain('title="扫描统计"')
+    // 双语 P6-4b：面板/计数文案走 i18n 键，锚定键引用而非中文字面量
+    expect(orphanFilesSource).toContain(":title=\"$t('orphanFiles.stats.title')\"")
     expect(orphanFilesSource).toContain('storage-key="btdeck_orphan_file_stats_collapsed"')
-    expect(orphanFilesSource).toContain('已选择 {{ selectedCount }} 项')
+    expect(orphanFilesSource).toContain("$t('orphanFiles.list.selected', {count: selectedCount})")
     expect(orphanFilesSource).toContain('management-pagination')
 
     const listPanel = orphanFilesSource.match(/<!-- 孤儿文件列表 -->[\s\S]*?<\/section>/)?.[0] || ''
-    expect(listPanel).toContain('清理选中')
+    expect(listPanel).toContain("$t('orphanFiles.list.cleanupSelected')")
   })
 
   it('隔离区表格复用孤儿列表的共享表头样式', () => {
@@ -101,7 +103,8 @@ describe('孤儿文件管理页信息层级', () => {
 describe('任务日志统计摘要', () => {
   it('统计卡片使用可折叠面板并独立持久化折叠状态', () => {
     expect(scheduledTasksSource).toContain('<CollapsiblePanel')
-    expect(scheduledTasksSource).toContain('title="日志统计"')
+    // 双语 P6-4a：统计面板标题走 tasks.logs.statsTitle 键
+    expect(scheduledTasksSource).toContain(":title=\"$t('tasks.logs.statsTitle')\"")
     expect(scheduledTasksSource).toContain('storage-key="btdeck_task_log_stats_collapsed"')
     expect(scheduledTasksSource).toContain('class="log-stats-compact"')
     expect(scheduledTasksSource).not.toContain('storage-key="btdeck_orphan_file_stats_collapsed"')
@@ -158,5 +161,32 @@ describe('共享管理页样式', () => {
     expect(sharedStyles).toContain('@media (max-width: 768px)')
     expect(sharedStyles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
     expect(sharedStyles).toContain('grid-template-columns: 1fr;')
+  })
+})
+
+// ============ 双语 P5：回收站页 i18n 源码契约 ============
+
+describe('回收站页双语（P5）', () => {
+  it('模板文案全部走 recycleBin.* 键，无硬编码中文残留', () => {
+    // 模板段（<template> 到 </template>）不允许出现中文字符（注释除外）
+    const templateStart = recycleBinSource.indexOf('<template>')
+    const templateEnd = recycleBinSource.indexOf('</template>')
+    const templateSource = recycleBinSource.slice(templateStart, templateEnd)
+    const withoutComments = templateSource.replace(/<!--[\s\S]*?-->/g, '')
+    const chineseMatches = withoutComments.match(/[\u4e00-\u9fff]/g)
+    expect(chineseMatches).toBeNull()
+  })
+
+  it('错误展示走 apiErrorMessage/apiResponseMessage，禁中文 msg 直读', () => {
+    expect(recycleBinSource).toContain("import { apiErrorMessage, apiResponseMessage } from '@/i18n'")
+    expect(recycleBinSource).not.toContain("response.msg || '")
+    expect(recycleBinSource).not.toContain('extractErrorMessage')
+  })
+
+  it('危险确认链路（批量删除/单条删除/清空）走 confirmDialog 键并携带计数/名称插值', () => {
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.batchDeleteMessage', { count: count })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.deleteMessage', { name: item.name })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.clearAllDetail', { count: count })")
+    expect(recycleBinSource).toContain("this.$t('recycleBin.confirmDialog.cleanupDetail', { size:")
   })
 })

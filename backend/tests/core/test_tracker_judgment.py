@@ -9,7 +9,8 @@ Tracker判断引擎单元测试
 - 缓存统计信息
 """
 
-import threading
+import re
+from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -181,9 +182,7 @@ class TestJudgeStatus:
     def test_失败优先于成功(self, engine_with_keywords):
         """消息同时包含失败和成功关键词时，失败优先"""
         # "timeout" 在 failed 中, "success" 在 success 中
-        result = engine_with_keywords.judge_status(
-            "工作中", "timeout but success in message"
-        )
+        result = engine_with_keywords.judge_status("工作中", "timeout but success in message")
         assert result == TrackerStatus.FAILED
 
     def test_忽略池也算失败(self, engine_with_keywords):
@@ -193,23 +192,17 @@ class TestJudgeStatus:
 
     def test_指定语言池匹配(self, engine_with_language_keywords):
         """指定 language 时使用对应语言池的关键词"""
-        result = engine_with_language_keywords.judge_status(
-            "工作中", "连接超时", language="zh_CN"
-        )
+        result = engine_with_language_keywords.judge_status("工作中", "连接超时", language="zh_CN")
         assert result == TrackerStatus.FAILED
 
     def test_指定语言池匹配成功关键词(self, engine_with_language_keywords):
         """指定语言时匹配成功关键词"""
-        result = engine_with_language_keywords.judge_status(
-            "未联系", "announce 成功", language="zh_CN"
-        )
+        result = engine_with_language_keywords.judge_status("未联系", "announce 成功", language="zh_CN")
         assert result == TrackerStatus.WORKING
 
     def test_指定语言池不存在时使用通用池(self, engine_with_language_keywords):
         """指定的语言不存在时回退到通用池"""
-        result = engine_with_language_keywords.judge_status(
-            "未联系", "Download success", language="fr_FR"
-        )
+        result = engine_with_language_keywords.judge_status("未联系", "Download success", language="fr_FR")
         assert result == TrackerStatus.WORKING
 
     def test_不指定语言使用通用池(self, engine_with_language_keywords):
@@ -399,3 +392,50 @@ class TestManualCache:
             result = engine.refresh_cache()
             assert result is True
             mock_load.assert_called_once()
+
+
+# ============================================================
+# 回归：import 期禁止数据库访问（W4 B2 全新安装实证）
+# ============================================================
+
+
+class TestImportTimeNoDbAccess:
+    """模块级单例曾以 auto_load=True 在 import 期预加载关键词——本模块被
+    端点/服务在应用组装期导入，早于 startup 的 Alembic 迁移，全新安装时
+    tracker_keyword_config 尚不存在，必报 OperationalError（no such table）。
+    存量库一直掩盖该缺陷；修复为 auto_load=False + 首次调用懒加载。"""
+
+    def test_module_reload_does_not_touch_db(self):
+        """reload 模块时任何 SessionLocal 调用都视为失败（import 期禁 DB）。"""
+        import importlib
+
+        import app.core.tracker_judgment as tj
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("import 期不得访问数据库（迁移尚未运行）")
+
+        with patch("app.database.SessionLocal", side_effect=_boom):
+            importlib.reload(tj)
+        # 懒加载语义：单例构造后缓存未加载，等首次 judge_status 触发
+        assert tj.judgment_engine.last_cache_update is None
+
+    def test_singleton_is_lazy(self):
+        """模块级 judgment_engine 必须以 auto_load=False 构造（源级契约）。"""
+        import app.core.tracker_judgment as tj
+
+        source = Path(tj.__file__).read_text(encoding="utf-8")
+        assert re.search(
+            r"^judgment_engine = TrackerJudgmentEngine\(auto_load=False\)$", source, re.M
+        ), "模块级单例必须显式 auto_load=False"
+
+    def test_ensure_cache_loaded_lazy_on_demand(self, engine):
+        """auto_load=False 构造后，_ensure_cache_loaded 按需加载（双检锁路径）。"""
+        from datetime import datetime as _dt
+
+        assert engine.last_cache_update is None
+        fake_db = MagicMock()
+        fake_db.query.return_value.filter.return_value.all.return_value = []
+        with patch("app.core.tracker_judgment.SessionLocal", return_value=fake_db):
+            engine._ensure_cache_loaded()
+        assert isinstance(engine.last_cache_update, _dt)
+        fake_db.close.assert_called()

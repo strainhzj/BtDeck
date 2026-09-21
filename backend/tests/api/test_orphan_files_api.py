@@ -617,7 +617,8 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         body = response.json()
         assert body["code"] == "200"
-        assert body["data"] == payload
+        # P6-4b 契约：rejected 双形态（200 包裹）追加 reasonCode，其余字段不变
+        assert body["data"] == {**payload, "reasonCode": "ORPHAN_HARDLINK_DELETE_REJECTED"}
         assert "维护操作" in body["msg"]
 
     @pytest.mark.parametrize(

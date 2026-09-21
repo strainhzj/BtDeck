@@ -1,8 +1,24 @@
 import logging
 import os
+import sys
 import threading
 import time
 import urllib.request
+
+# Windows 编码兜底（W3 CI 第十轮实测拦截）：西文/CI runner 的控制台默认
+# cp1252，任何含中文的 print（yamlConfig 首启"配置文件不存在"警告等）会
+# UnicodeEncodeError 直接崩溃启动链。必须在下方 app.* 导入（会触发
+# yamlConfig.load）之前重配置标准流。
+#
+# 可观测性兜底（W3 CI 第十七轮实测拦截）：windowed（console=False）打包下
+# PyInstaller 不给应用传 stdout 句柄，sys.stdout 为 None——print 全部静默
+# 丢弃（lifespan 启动序列的一半日志在 NSSM 服务下不可见，启动卡点无从
+# 诊断）。stderr 句柄存在（NSSM AppStderr 重定向）时把 stdout 接过去。
+if sys.stdout is None and sys.stderr is not None:
+    sys.stdout = sys.stderr
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 import uvicorn
 import webview
@@ -14,6 +30,10 @@ from uvicorn import Config
 # 桌面版无环境变量注入机制，JWT 密钥由 config.py 的随机生成兜底；
 # 生产安全加固（显式 SECRET_KEY/ALLOWED_HOSTS/DEV=false）留给外层部署
 # （systemd 单元已按此模式配置，见 deploy/btdeck.service）。
+#
+# 双模式入口（dual-mode-client task .6）：窗口环境下先经 desktop_companion
+# 启动器解析模式（BTDECK_MODE > 记录 > 一次性向导，默认服务端）；
+# 服务端模式行为与本文件历史语义完全一致。
 os.environ.setdefault("ALLOWED_HOSTS", '["http://127.0.0.1:5001", "http://localhost:5001"]')
 
 from app.core.config import settings
@@ -90,6 +110,30 @@ def should_start_desktop_window() -> bool:
 
 def main() -> None:
     configure_logging()
+
+    if should_start_desktop_window():
+        # 桌面双模式对齐（dual-mode-client task .6）：启动器先解析模式
+        # （BTDECK_MODE 环境变量 > desktop_mode.json 记录）；未决时弹一次
+        # 向导（默认高亮服务端模式）；companion 直接进管理页流程。
+        from app.desktop_companion.launcher import (
+            MODE_COMPANION,
+            DesktopLauncher,
+            resolve_launch_mode,
+        )
+
+        mode = resolve_launch_mode()
+        if mode is None or mode == MODE_COMPANION:
+            launcher = DesktopLauncher()
+            chosen = launcher.launch()
+            if chosen == MODE_COMPANION:
+                return
+    else:
+        # 无桌面环境（Windows 服务等）：伴侣模式不可用，落回服务端模式
+        from app.desktop_companion.launcher import MODE_COMPANION, resolve_launch_mode
+
+        if resolve_launch_mode() == MODE_COMPANION:
+            logger.warning("无桌面环境，忽略 BTDECK_MODE=companion，按服务端模式启动")
+
     initialize_app_data()
 
     if not should_start_desktop_window():

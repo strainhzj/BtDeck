@@ -2,30 +2,30 @@
   <div class="tracker-test-container">
     <!-- 页面标题 -->
     <div class="page-header">
-      <h1><span class="page-icon">🧪</span>Tracker判断测试工具</h1>
-      <p>测试tracker消息的匹配结果，帮助理解判断逻辑</p>
+      <h1><span class="page-icon">🧪</span>{{ $t('tracker.testTool.title') }}</h1>
+      <p>{{ $t('tracker.testTool.description') }}</p>
     </div>
 
     <!-- 测试输入区域 -->
     <el-card class="test-input-card input-card">
       <div slot="header" class="card-header input">
-        <span class="card-title">输入测试消息</span>
+        <span class="card-title">{{ $t('tracker.testTool.inputCardTitle') }}</span>
       </div>
       <el-form ref="testForm" :model="testForm" label-position="top">
-        <el-form-item label="Tracker地址" prop="tracker_host" required>
+        <el-form-item :label="$t('tracker.testTool.trackerAddr')" prop="tracker_host" required>
           <el-input
             v-model="testForm.tracker_host"
-            placeholder="例如: http://tracker.example.com:8080"
+            :placeholder="$t('tracker.testTool.trackerAddrPlaceholder')"
             clearable
             class="form-input"
           />
         </el-form-item>
-        <el-form-item label="返回消息" prop="msg" required>
+        <el-form-item :label="$t('tracker.testTool.msgLabel')" prop="msg" required>
           <el-input
             v-model="testForm.msg"
             type="textarea"
             :rows="5"
-            placeholder="请输入tracker返回的消息内容..."
+            :placeholder="$t('tracker.testTool.msgPlaceholder')"
             maxlength="1000"
             show-word-limit
             class="form-textarea"
@@ -43,7 +43,7 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="M21 21l-4.35-4.35"></path>
               </svg>
-              测试匹配
+              {{ $t('tracker.testTool.testButton') }}
             </el-button>
             <el-button
               @click="handleClear"
@@ -53,7 +53,7 @@
                 <path d="M3 6h18"></path>
                 <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
               </svg>
-              清空
+              {{ $t('tracker.testTool.clearButton') }}
             </el-button>
           </div>
         </el-form-item>
@@ -64,7 +64,7 @@
     <transition name="result-fade">
       <el-card v-if="testResult" class="test-result-card result-card">
         <div slot="header" class="card-header result">
-          <span class="card-title">匹配结果</span>
+          <span class="card-title">{{ $t('tracker.testTool.resultCardTitle') }}</span>
         </div>
 
         <!-- 判断结果 -->
@@ -72,7 +72,7 @@
 
         <!-- 匹配详情 -->
         <div class="match-details">
-          <div class="detail-title">匹配详情：</div>
+          <div class="detail-title">{{ $t('tracker.testTool.detailTitle') }}</div>
 
           <!-- 匹配到的关键词 -->
           <div v-if="testResult.matched_keywords && testResult.matched_keywords.length > 0" class="matched-keywords">
@@ -86,9 +86,9 @@
           <!-- 未匹配原因 -->
           <div v-else class="unmatched-reason">
             <el-alert
-              title="未匹配到关键词"
+              :title="$t('tracker.testTool.unmatchedTitle')"
               type="warning"
-              :description="testResult.unmatched_reason || '该消息不包含任何成功或失败关键词'"
+              :description="testResult.unmatched_reason || $t('tracker.testTool.unmatchedFallback')"
               :closable="false"
               show-icon
             />
@@ -117,7 +117,7 @@
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
-            添加到失败关键词池
+            {{ $t('tracker.testTool.addToFailedPool') }}
           </el-button>
           <el-button
             v-if="testResult.result === 'success' && (!testResult.matched_keywords || testResult.matched_keywords.length === 0)"
@@ -130,7 +130,7 @@
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
-            添加到成功关键词池
+            {{ $t('tracker.testTool.addToSuccessPool') }}
           </el-button>
           <el-button
             type="info"
@@ -142,7 +142,7 @@
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
             </svg>
-            复制结果
+            {{ $t('tracker.testTool.copyResult') }}
           </el-button>
         </div>
       </el-card>
@@ -151,11 +151,11 @@
     <!-- 测试历史 -->
     <el-card class="test-history-card history-card">
       <div slot="header" class="card-header history">
-        <span class="card-title">测试历史</span>
+        <span class="card-title">{{ $t('tracker.testTool.historyCardTitle') }}</span>
         <div class="history-toolbar">
           <el-input
             v-model="historySearchKeyword"
-            placeholder="搜索历史记录..."
+            :placeholder="$t('tracker.testTool.historySearch')"
             prefix-icon="el-icon-search"
             size="small"
             class="history-search"
@@ -171,7 +171,7 @@
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
             </svg>
-            清空历史
+            {{ $t('tracker.testTool.clearHistory') }}
           </el-button>
         </div>
       </div>
@@ -183,20 +183,20 @@
         max-height="400"
         class="history-table"
       >
-        <el-table-column prop="tracker_host" label="Tracker地址" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="msg" label="消息内容" min-width="250" show-overflow-tooltip />
-        <el-table-column prop="result" label="结果" width="100" align="center">
+        <el-table-column prop="tracker_host" :label="$t('tracker.testTool.colTracker')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="msg" :label="$t('tracker.testTool.colMsg')" min-width="250" show-overflow-tooltip />
+        <el-table-column prop="result" :label="$t('tracker.testTool.colResult')" width="100" align="center">
           <template slot-scope="scope">
             <el-tag v-if="scope.row.result === 'success'" type="success" size="mini">
-              成功
+              {{ $t('tracker.testTool.resultSuccess') }}
             </el-tag>
             <el-tag v-else type="danger" size="mini">
-              失败
+              {{ $t('tracker.testTool.resultFailed') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="timestamp" label="测试时间" width="160" align="center" />
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column prop="timestamp" :label="$t('tracker.testTool.colTime')" width="160" align="center" />
+        <el-table-column :label="$t('tracker.testTool.colActions')" width="100" align="center">
           <template slot-scope="scope">
             <el-button
               size="mini"
@@ -208,7 +208,7 @@
                 <polyline points="23 4 23 10 17 10"></polyline>
                 <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"></path>
               </svg>
-              重新测试
+              {{ $t('tracker.testTool.retest') }}
             </el-button>
           </template>
         </el-table-column>
@@ -216,7 +216,7 @@
 
       <!-- 分页器 -->
       <div v-if="testHistory.length > 0" class="pagination-wrapper">
-        <span class="pagination-info">共 {{ testHistory.length }} 条记录</span>
+        <span class="pagination-info">{{ $t('tracker.testTool.totalRecords', {count: testHistory.length}) }}</span>
       </div>
     </el-card>
   </div>
@@ -230,6 +230,7 @@ import {
   extractErrorMessage,
   parseJSON
 } from '@/utils/tracker'
+import { getLocale } from '@/i18n'
 import TestResultSummary from './components/TestResultSummary.vue'
 import KeywordCard from './components/KeywordCard.vue'
 import MatchTimeline from './components/MatchTimeline.vue'
@@ -320,18 +321,24 @@ export default class TrackerTest extends Vue {
   get timelineSteps(): Array<{title: string, description: string}> {
     if (!this.testResult) return []
 
+    const resultWord = this.testResult.result === 'success'
+      ? this.$t('tracker.testTool.resultSuccess')
+      : this.$t('tracker.testTool.resultFailed')
     return [
       {
-        title: '接收消息',
-        description: `消息长度: <span class="highlight">${this.testForm.msg.length} bytes</span>`
+        title: this.$t('tracker.testTool.timeline.step1Title'),
+        description: this.$t('tracker.testTool.timeline.step1Desc', { length: this.testForm.msg.length })
       },
       {
-        title: '关键词匹配',
-        description: `匹配到 <span class="highlight">${this.testResult.matched_keywords?.length || 0} 个</span>${this.testResult.result === 'success' ? '成功' : '失败'}关键词`
+        title: this.$t('tracker.testTool.timeline.step2Title'),
+        description: this.$t('tracker.testTool.timeline.step2Desc', {
+          count: this.testResult.matched_keywords?.length || 0,
+          type: resultWord
+        })
       },
       {
-        title: '判定结果',
-        description: `最终判定: <span class="highlight">${this.testResult.result === 'success' ? '成功' : '失败'}</span>`
+        title: this.$t('tracker.testTool.timeline.step3Title'),
+        description: this.$t('tracker.testTool.timeline.step3Desc', { result: resultWord })
       }
     ]
   }
@@ -351,11 +358,11 @@ export default class TrackerTest extends Vue {
    */
   private async handleTest() {
     if (!this.testForm.tracker_host) {
-      this.$message.warning('请输入tracker地址')
+      this.$message.warning(this.$t('tracker.testTool.requireTracker'))
       return
     }
     if (!this.testForm.msg) {
-      this.$message.warning('请输入消息内容')
+      this.$message.warning(this.$t('tracker.testTool.requireMsg'))
       return
     }
 
@@ -366,13 +373,13 @@ export default class TrackerTest extends Vue {
         this.testResult = res.data
         this.apiLogExpanded = false // 重置日志折叠状态
         this.addToHistory(res.data)
-        this.$message.success('测试完成')
+        this.$message.success(this.$t('tracker.testTool.testDone'))
       } else {
-        this.$message.error(res.msg || '测试失败')
+        this.$message.error(apiResponseMessage(res, this.$t('tracker.testTool.testFailed')))
       }
     } catch (error: any) {
       console.error('测试失败:', error)
-      const errorMsg = extractErrorMessage(error, '测试失败')
+      const errorMsg = extractErrorMessage(error, this.$t('tracker.testTool.testFailed'))
       this.$message.error(errorMsg)
     } finally {
       this.testing = false
@@ -402,7 +409,8 @@ export default class TrackerTest extends Vue {
       tracker_host: this.testForm.tracker_host,
       msg: this.testForm.msg,
       result: response.result,
-      timestamp: new Date().toLocaleString('zh-CN'),
+      // 双语 P6-3：历史时间列随界面语言本地化（原硬编码 zh-CN）
+      timestamp: new Date().toLocaleString(getLocale() === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
       response: response
     }
 
@@ -446,15 +454,15 @@ export default class TrackerTest extends Vue {
    */
   private async handleClearHistory() {
     try {
-      await this.$confirm('确定要清空测试历史吗?', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      await this.$confirm(this.$t('tracker.testTool.clearHistoryConfirm'), this.$t('tracker.pools.dialog.notice'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
         type: 'warning'
       })
       this.testHistory = []
       this.historySearchKeyword = ''
       localStorage.removeItem('tracker_test_history')
-      this.$message.success('已清空历史记录')
+      this.$message.success(this.$t('tracker.testTool.clearedHistory'))
     } catch (error) {}
   }
 
@@ -478,10 +486,10 @@ export default class TrackerTest extends Vue {
    */
   private async handleAddToFailureKeywords() {
     try {
-      const { value } = await this.$prompt('请输入关键词说明（可选）', '添加到失败关键词池', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputPlaceholder: '例如: 超时错误'
+      const { value } = await this.$prompt(this.$t('tracker.testTool.promptDesc'), this.$t('tracker.testTool.promptFailedTitle'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
+        inputPlaceholder: this.$t('tracker.testTool.promptPlaceholderFailed')
       })
       this.addKeyword('failure', value)
     } catch (error) {}
@@ -493,10 +501,10 @@ export default class TrackerTest extends Vue {
    */
   private async handleAddToSuccessKeywords() {
     try {
-      const { value } = await this.$prompt('请输入关键词说明（可选）', '添加到成功关键词池', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputPlaceholder: '例如: 下载成功'
+      const { value } = await this.$prompt(this.$t('tracker.testTool.promptDesc'), this.$t('tracker.testTool.promptSuccessTitle'), {
+        confirmButtonText: this.$t('tracker.pools.dialog.confirm'),
+        cancelButtonText: this.$t('tracker.pools.dialog.cancel'),
+        inputPlaceholder: this.$t('tracker.testTool.promptPlaceholderSuccess')
       })
       this.addKeyword('success', value)
     } catch (error) {}
@@ -518,13 +526,13 @@ export default class TrackerTest extends Vue {
       })
 
       if (res.code === '200') {
-        this.$message.success('添加成功')
+        this.$message.success(this.$t('tracker.testTool.addSuccess'))
       } else {
-        this.$message.error(res.msg || '添加失败')
+        this.$message.error(apiResponseMessage(res, this.$t('tracker.testTool.addFailed')))
       }
     } catch (error: any) {
       console.error('添加关键词失败:', error)
-      const errorMsg = extractErrorMessage(error, '添加失败')
+      const errorMsg = extractErrorMessage(error, this.$t('tracker.testTool.addFailed'))
       this.$message.error(errorMsg)
     }
   }
@@ -537,14 +545,21 @@ export default class TrackerTest extends Vue {
   private handleCopyResult() {
     if (!this.testResult) return
 
-    const text = `判断结果: ${this.testResult.result === 'success' ? '成功' : '失败'}
-匹配关键词: ${this.testResult.matched_keywords?.map(k => k.keyword).join(', ') || '无'}
-未匹配原因: ${this.testResult.unmatched_reason || '无'}`
+    const resultWord = this.testResult.result === 'success'
+      ? this.$t('tracker.testTool.resultSuccess')
+      : this.$t('tracker.testTool.resultFailed')
+    const keywords = this.testResult.matched_keywords?.map(k => k.keyword).join(', ') || this.$t('tracker.testTool.none')
+    const reason = this.testResult.unmatched_reason || this.$t('tracker.testTool.none')
+    const text = [
+      this.$t('tracker.testTool.copyResultLine', { result: resultWord }),
+      this.$t('tracker.testTool.copyKeywordsLine', { keywords }),
+      this.$t('tracker.testTool.copyReasonLine', { reason })
+    ].join('\n')
 
     navigator.clipboard.writeText(text).then(() => {
-      this.$message.success('已复制到剪贴板')
+      this.$message.success(this.$t('tracker.testTool.copied'))
     }).catch(() => {
-      this.$message.error('复制失败')
+      this.$message.error(this.$t('tracker.testTool.copyFailed'))
     })
   }
 }

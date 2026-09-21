@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
+from app.core.platform_capabilities import LEVEL_UNSUPPORTED, capability_level, require_capability
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo
 
@@ -98,21 +99,30 @@ class CleanupTaskExecutor:
         # 使用类级别锁，防止多个清理任务同时执行
         async with CleanupTaskExecutor._cleanup_lock:
             result: Dict[str, Any] = {"level3_cleaned": 0, "level4_cleaned": 0, "total_size_freed": 0, "errors": []}
+            result["skipped_operations"] = []
 
             try:
                 logger.info(f"开始执行清理任务，操作人: {operator}, 配置: {task_config}")
 
                 # 清理等级3（回收站）
                 if task_config.get("cleanup_level_3", False):
-                    logger.info("开始清理等级3数据（回收站）")
-                    level3_result = await self.cleanup_level3(
-                        days_threshold=task_config.get("days_threshold", 30),
-                        operator=operator,
-                        audit_service=audit_service,
-                    )
-                    result["level3_cleaned"] = level3_result.get("success_count", 0)
-                    result["total_size_freed"] += level3_result.get("size_freed", 0)
-                    result["errors"].extend(level3_result.get("errors", []))
+                    if capability_level("level3_recycle") == LEVEL_UNSUPPORTED:
+                        result["skipped_operations"].append(
+                            {
+                                "operation": "cleanup_level_3",
+                                "reasonCode": "PLATFORM_CAPABILITY_UNSUPPORTED",
+                            }
+                        )
+                    else:
+                        logger.info("开始清理等级3数据（回收站）")
+                        level3_result = await self.cleanup_level3(
+                            days_threshold=task_config.get("days_threshold", 30),
+                            operator=operator,
+                            audit_service=audit_service,
+                        )
+                        result["level3_cleaned"] = level3_result.get("success_count", 0)
+                        result["total_size_freed"] += level3_result.get("size_freed", 0)
+                        result["errors"].extend(level3_result.get("errors", []))
 
                 # 清理等级4（待删除标签）
                 if task_config.get("cleanup_level_4", False):
@@ -162,22 +172,28 @@ class CleanupTaskExecutor:
                 "total_size_gb": 0.0,
                 "level3_items": [],
                 "level4_items": [],
+                "skipped_operations": [],
             }
 
             # 查询等级3种子
             if task_config.get("cleanup_level_3", False):
-                level3_torrents = self._query_level3_torrents(days_threshold=task_config.get("days_threshold", 30))
-                result["level3_count"] = len(level3_torrents)
-                result["level3_items"] = [
-                    {
-                        "info_id": t.info_id,
-                        "name": t.name,
-                        "size": t.size,
-                        "deleted_at": t.deleted_at.isoformat() if t.deleted_at else None,
-                        "save_path": t.save_path,
-                    }
-                    for t in level3_torrents
-                ]
+                if capability_level("level3_recycle") == LEVEL_UNSUPPORTED:
+                    result["skipped_operations"].append(
+                        {"operation": "cleanup_level_3", "reasonCode": "PLATFORM_CAPABILITY_UNSUPPORTED"}
+                    )
+                else:
+                    level3_torrents = self._query_level3_torrents(days_threshold=task_config.get("days_threshold", 30))
+                    result["level3_count"] = len(level3_torrents)
+                    result["level3_items"] = [
+                        {
+                            "info_id": t.info_id,
+                            "name": t.name,
+                            "size": t.size,
+                            "deleted_at": t.deleted_at.isoformat() if t.deleted_at else None,
+                            "save_path": t.save_path,
+                        }
+                        for t in level3_torrents
+                    ]
 
             # 查询等级4种子
             if task_config.get("cleanup_level_4", False):
@@ -233,6 +249,7 @@ class CleanupTaskExecutor:
                 "errors": List[str]
             }
         """
+        require_capability("level3_recycle", "cleanup_task.level3")
         result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
 
         # 收集所有要处理的种子

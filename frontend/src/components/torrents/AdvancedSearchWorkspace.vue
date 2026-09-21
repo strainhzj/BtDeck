@@ -1,29 +1,29 @@
 <template>
   <div class="advanced-search-workspace">
-    <aside class="saved-search-sidebar" aria-label="已保存高级搜索">
+    <aside class="saved-search-sidebar" :aria-label="$t('search.workspace.sidebarAria')">
       <div class="saved-search-sidebar__header">
         <div class="saved-search-sidebar__heading">
           <LucideIcon name="layout-template" :size="16" />
-          <span>已保存搜索</span>
+          <span>{{ $t('search.workspace.savedTitle') }}</span>
           <span class="saved-search-sidebar__count">{{ advancedTemplates.length }}</span>
         </div>
         <div class="saved-search-sidebar__header-actions">
-          <el-tooltip content="新建搜索配置" placement="top" :open-delay="200">
+          <el-tooltip :content="$t('search.workspace.newConfig')" placement="top" :open-delay="200">
             <el-button
               type="text"
               class="saved-search-icon-btn"
-              aria-label="新建搜索配置"
+              :aria-label="$t('search.workspace.newConfig')"
               @click="startNewSearch"
             >
               <LucideIcon name="plus" :size="15" />
             </el-button>
           </el-tooltip>
-          <el-tooltip content="刷新已保存搜索" placement="top" :open-delay="200">
+          <el-tooltip :content="$t('search.workspace.refreshSaved')" placement="top" :open-delay="200">
             <el-button
               type="text"
               class="saved-search-icon-btn"
               :loading="templatesLoading"
-              aria-label="刷新已保存搜索"
+              :aria-label="$t('search.workspace.refreshSaved')"
               @click="loadSavedSearches"
             >
               <LucideIcon name="refresh-cw" :size="14" />
@@ -37,7 +37,7 @@
         class="saved-search-sidebar__filter"
         size="small"
         prefix-icon="el-icon-search"
-        placeholder="筛选已保存搜索"
+        :placeholder="$t('search.workspace.filterPlaceholder')"
         clearable
       />
 
@@ -55,12 +55,12 @@
             <LucideIcon name="list-filter" :size="15" />
           </span>
           <span class="saved-search-item__content">
-            <span class="saved-search-item__name" :title="template.name">{{ template.name }}</span>
+            <span class="saved-search-item__name" :title="templateDisplayName(template)">{{ templateDisplayName(template) }}</span>
             <span class="saved-search-item__meta">
-              <span v-if="template.is_default">系统</span>
-              <span v-else-if="template.is_public">公开</span>
-              <span v-else>个人</span>
-              <span>使用 {{ template.usage_count || 0 }} 次</span>
+              <span v-if="template.is_default">{{ $t('search.workspace.tagSystem') }}</span>
+              <span v-else-if="template.is_public">{{ $t('search.workspace.tagPublic') }}</span>
+              <span v-else>{{ $t('search.workspace.tagPrivate') }}</span>
+              <span>{{ $t('search.workspace.usageCount', {count: template.usage_count || 0}) }}</span>
             </span>
           </span>
           <LucideIcon class="saved-search-item__chevron" name="chevron-right" :size="14" />
@@ -68,7 +68,7 @@
 
         <div v-if="!templatesLoading && filteredTemplates.length === 0" class="saved-search-empty">
           <LucideIcon name="search-x" :size="24" />
-          <span>{{ templateKeyword ? '没有匹配的已保存搜索' : '暂无已保存高级搜索' }}</span>
+          <span>{{ templateKeyword ? $t('search.workspace.emptyNoMatch') : $t('search.workspace.emptyNone') }}</span>
         </div>
       </div>
 
@@ -84,7 +84,7 @@
               @click="updateSelectedTemplate"
             >
               <LucideIcon name="save" :size="14" />
-              <span>保存更改</span>
+              <span>{{ $t('search.workspace.saveChanges') }}</span>
             </el-button>
           </span>
         </el-tooltip>
@@ -97,14 +97,14 @@
               @click="deleteSelectedTemplate"
             >
               <LucideIcon name="trash" :size="14" />
-              <span>删除</span>
+              <span>{{ $t('search.workspace.delete') }}</span>
             </el-button>
           </span>
         </el-tooltip>
       </div>
     </aside>
 
-    <section class="advanced-search-workspace__builder" aria-label="高级搜索条件配置">
+    <section class="advanced-search-workspace__builder" :aria-label="$t('search.workspace.builderAria')">
       <AdvancedSearchBuilder
         ref="builder"
         :searching="searching"
@@ -130,6 +130,7 @@ import {
 } from '@/api/torrents'
 import { UserModule } from '@/store/modules/user'
 import { extractErrorMessage } from '@/utils/formatters'
+import { presetDisplayName, presetGroupName } from './advancedSearchFields'
 import type {
   AdvancedSearchGroupState,
   AdvancedSearchTemplateDraft
@@ -190,17 +191,22 @@ export default class AdvancedSearchWorkspace extends Vue {
   }
 
   get selectedManageHint(): string {
-    if (!this.selectedTemplate) return '请先选择一个个人搜索配置'
-    if (this.selectedTemplate.is_default) return '系统搜索配置不可修改'
-    if (!this.canManageSelected) return '公开搜索配置仅创建者可修改'
-    return '用当前条件覆盖已选择的搜索配置'
+    if (!this.selectedTemplate) return this.$t('search.workspace.editHintSelect').toString()
+    if (this.selectedTemplate.is_default) return this.$t('search.workspace.editHintSystem').toString()
+    if (!this.canManageSelected) return this.$t('search.workspace.editHintPublic').toString()
+    return this.$t('search.workspace.editHintOk').toString()
   }
 
   get selectedDeleteHint(): string {
-    if (!this.selectedTemplate) return '请先选择一个个人搜索配置'
-    if (this.selectedTemplate.is_default) return '系统搜索配置不可删除'
-    if (!this.canManageSelected) return '公开搜索配置仅创建者可删除'
-    return '删除已选择的搜索配置'
+    if (!this.selectedTemplate) return this.$t('search.workspace.deleteHintSelect').toString()
+    if (this.selectedTemplate.is_default) return this.$t('search.workspace.deleteHintSystem').toString()
+    if (!this.canManageSelected) return this.$t('search.workspace.deleteHintPublic').toString()
+    return this.$t('search.workspace.deleteHintOk').toString()
+  }
+
+  /** 侧栏名称：系统预设按 preset_key 本地化，未识别保留原文（Q01/Q02） */
+  private templateDisplayName(template: SearchTemplate): string {
+    return presetDisplayName(template)
   }
 
   private get builder(): AdvancedSearchBuilderRef | undefined {
@@ -237,7 +243,7 @@ export default class AdvancedSearchWorkspace extends Vue {
       const response = await getSearchTemplates({ is_public: true })
       if (requestSequence !== this.templateRequestSequence) return
       if (response.code !== '200') {
-        message.error(response.msg || '获取已保存搜索失败')
+        message.error(response.msg || this.$t('search.workspace.loadFailed'))
         return
       }
 
@@ -259,7 +265,7 @@ export default class AdvancedSearchWorkspace extends Vue {
       }
     } catch (error) {
       if (requestSequence === this.templateRequestSequence) {
-        message.error(extractErrorMessage(error) || '获取已保存搜索失败')
+        message.error(extractErrorMessage(error) || this.$t('search.workspace.loadFailed'))
       }
     } finally {
       if (requestSequence === this.templateRequestSequence) {
@@ -271,19 +277,24 @@ export default class AdvancedSearchWorkspace extends Vue {
   private selectTemplate(template: SearchTemplate) {
     const groups = template.conditions.condition_groups
     if (!groups || groups.length === 0) {
-      this.$message.warning('该搜索配置没有有效的高级搜索条件')
+      this.$message.warning(this.$t('search.workspace.applyInvalid'))
       return
     }
 
     try {
-      this.builder?.applyTemplateGroups(groups, {
+      // 预设内置组名入口翻译（按稳定组 id 识别，用户组保持原文；仅写 Builder 内存态）
+      const localizedGroups = groups.map(group => ({
+        ...group,
+        name: presetGroupName(group)
+      }))
+      this.builder?.applyTemplateGroups(localizedGroups, {
         sort_by: template.conditions.sort_by,
         sort_order: template.conditions.sort_order
       })
       this.selectedTemplateId = template.id
       this.$emit('template-loaded', template.conditions)
     } catch (error) {
-      this.$message.error(extractErrorMessage(error) || '加载搜索配置失败')
+      this.$message.error(extractErrorMessage(error) || this.$t('search.workspace.loadConfigFailed'))
     }
   }
 
@@ -314,14 +325,14 @@ export default class AdvancedSearchWorkspace extends Vue {
         is_public: false
       })
       if (response.code !== '200') {
-        message.error(response.msg || '模板保存失败')
+        message.error(response.msg || this.$t('search.workspace.templateSaveFailed'))
         return
       }
       this.selectedTemplateId = response.data.id
       await this.loadSavedSearches()
-      message.success('模板保存成功')
+      message.success(this.$t('search.workspace.templateSaved'))
     } catch (error) {
-      message.error(extractErrorMessage(error) || '模板保存失败')
+      message.error(extractErrorMessage(error) || this.$t('search.workspace.templateSaveFailed'))
     } finally {
       this.templateActionLoading = false
     }
@@ -336,7 +347,7 @@ export default class AdvancedSearchWorkspace extends Vue {
     try {
       groups = builder.getTemplateGroupsSnapshot()
     } catch (error) {
-      this.$message.warning(extractErrorMessage(error) || '当前搜索条件无效')
+      this.$message.warning(extractErrorMessage(error) || this.$t('search.workspace.conditionsInvalid'))
       return
     }
 
@@ -346,13 +357,13 @@ export default class AdvancedSearchWorkspace extends Vue {
     try {
       const response = await updateSearchTemplate(template.id, { conditions })
       if (response.code !== '200') {
-        message.error(response.msg || '保存更改失败')
+        message.error(response.msg || this.$t('search.workspace.saveChangesFailed'))
         return
       }
       await this.loadSavedSearches()
-      message.success('搜索配置已更新')
+      message.success(this.$t('search.workspace.configUpdated'))
     } catch (error) {
-      message.error(extractErrorMessage(error) || '保存更改失败')
+      message.error(extractErrorMessage(error) || this.$t('search.workspace.saveChangesFailed'))
     } finally {
       this.templateActionLoading = false
     }
@@ -365,11 +376,15 @@ export default class AdvancedSearchWorkspace extends Vue {
     const message = this.$message
     const confirm = this.$confirm
     try {
-      await confirm(`确认删除搜索配置“${template.name}”吗？`, '删除搜索配置', {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+      await confirm(
+        this.$t('search.workspace.confirmDelete', { name: template.name }).toString(),
+        this.$t('search.workspace.confirmDeleteTitle').toString(),
+        {
+          confirmButtonText: this.$t('search.workspace.confirmDeleteBtn').toString(),
+          cancelButtonText: this.$t('common.cancel').toString(),
+          type: 'warning'
+        }
+      )
     } catch {
       return
     }
@@ -378,14 +393,14 @@ export default class AdvancedSearchWorkspace extends Vue {
     try {
       const response = await deleteSearchTemplate(template.id)
       if (response.code !== '200') {
-        message.error(response.msg || '删除搜索配置失败')
+        message.error(response.msg || this.$t('search.workspace.deleteFailed'))
         return
       }
       this.selectedTemplateId = ''
       await this.loadSavedSearches()
-      message.success('搜索配置已删除')
+      message.success(this.$t('search.workspace.configDeleted'))
     } catch (error) {
-      message.error(extractErrorMessage(error) || '删除搜索配置失败')
+      message.error(extractErrorMessage(error) || this.$t('search.workspace.deleteFailed'))
     } finally {
       this.templateActionLoading = false
     }

@@ -34,6 +34,7 @@ from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.core.platform_capabilities import require_capability
 from app.services.auxiliary_seed_count_service import (
     decrement_auxiliary_seed_count_async,
     get_auxiliary_seed_key,
@@ -138,6 +139,7 @@ class SeedTransferService:
                 "target_path": str
             }
         """
+        require_capability("seed_transfer", "seed_transfer.transfer")
         start_time = time.time()
         # 显式 Dict[str, Any]：字面量推断会把 success(bool)/error_message(str) 等
         # 收窄成联合类型，污染全函数 result.get() 的返回类型

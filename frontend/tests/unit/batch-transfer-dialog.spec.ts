@@ -1,5 +1,7 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
 import BatchTransferDialog from '@/views/torrents/components/BatchTransferDialog.vue'
+import i18n from '@/i18n'
 import { transferSeedsBatch } from '@/api/torrents'
 import { ApiError } from '@/types/api'
 
@@ -23,10 +25,13 @@ jest.mock('element-ui', () => ({
 }))
 
 const localVue = createLocalVue()
+// 双语 P6-1：校验/结果文案走 $t（transfer.*），挂载安装 i18n 单例
+localVue.use(VueI18n)
 
 const makeWrapper = () => {
   const wrapper = shallowMount(BatchTransferDialog, {
     localVue,
+    i18n,
     mocks: {
       $message: { success: jest.fn(), error: jest.fn() },
       $loading: jest.fn(() => ({ close: jest.fn() })),

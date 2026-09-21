@@ -5,6 +5,10 @@ import '@/permission'
 import { UserModule } from '@/store/modules/user'
 import { getUserInfo, refreshAccessToken } from '@/api/users'
 import { getUserId, removeRefreshToken } from '@/utils/cookies'
+import {
+  setPlatformCapabilityCacheForTesting,
+  resetPlatformCapabilityCache
+} from '@/api/platform-capabilities'
 import { ApiError } from '@/types/api'
 
 /**
@@ -79,6 +83,16 @@ const pushQuietly = (to: RawLocation): Promise<void> =>
   )
 
 beforeEach(async() => {
+  // 守卫对 requiredCapability 路由（如 /recycle-bin 的 level3_recycle）做
+  // fail-closed 门控：矩阵未加载时会重定向仪表盘（且重定向目标导航仍在途）。
+  // 注入 desktop+supported 还原"能力已就绪"的健康态（矩阵批次落地时未同步本 spec）
+  setPlatformCapabilityCacheForTesting({
+    schemaVersion: 1,
+    platform: 'desktop',
+    capabilities: { level3_recycle: { label: '三级回收', level: 'supported' } },
+    degradedCount: 0,
+    unsupportedCount: 0
+  })
   // 先复位会话（内部会调用 cookies mock 的 remove*），再清调用记录——
   // 否则"removeRefreshToken 未被调用"断言会吃到复位期间的调用
   UserModule.ResetToken()
@@ -93,6 +107,10 @@ beforeEach(async() => {
   // 统一回登录页复位导航状态：避免连续 push 同一路由触发
   // NavigationDuplicated（router.ts 会吞掉该错误，守卫不执行导致假绿）
   await pushQuietly('/login')
+})
+
+afterEach(() => {
+  resetPlatformCapabilityCache()
 })
 
 describe('守卫主动过期检查（真实路由导航）', () => {

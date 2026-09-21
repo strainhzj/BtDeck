@@ -15,6 +15,10 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+# PyInstaller onefile 需要可写解压目录；ProtectSystem=strict 下 /tmp 只读，
+# 必须提供私有可写 tmp（W3 生命周期实测拦截：否则 bootloader 报
+# "Could not create temporary directory!" 并进入 restart 循环）
+PrivateTmp=true
 ReadWritePaths=/opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup /opt/btdeck/torrents
 
 # 环境变量

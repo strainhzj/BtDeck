@@ -2,29 +2,29 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 180 个 test_*.py）
+## 后端测试分布（共 236 个 test_*.py，2026-09-21 重测）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 63 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 50 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 18 | `app/tasks/` | 🟡 部分覆盖（18 对 34） |
-| `tests/core/` | 21 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/api/` | 76 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归；双语 P2~P6b reasonCode 契约六批 |
+| `tests/services/` | 52 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
+| `tests/tasks/` | 24 | `app/tasks/` | 🟡 部分覆盖；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
+| `tests/core/` | 28 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
-| `tests/utils/` | 5 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
-| `tests/auth/` | 5 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
+| `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
+| `tests/auth/` | 6 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
-| `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
-| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 37，仅 `test_active_only_filter.py`） |
-| `tests/architecture/` | 1 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
+| `tests/downloader/` | 5 | `app/downloader/` | ⚠ 薄弱（5 对 9） |
+| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 39，仅 `test_active_only_filter.py`） |
+| `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **180** 个 test_*.py。
+> 合计：当前实测 **236** 个 test_*.py（2026-09-21 重测；2026-09-05 后新增双语 P2/P4/P5/P6/P6b/P6_tasks reasonCode 契约六批等）。
 
-> 注：`tests/api/`（63 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（76 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -44,7 +44,7 @@
 | 新增测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/core/test_path_mapping_unicode.py` | 553 | `app/core/path_mapping.py`（路径映射 unicode：空格/中文边界） |
-| `tests/api/test_torrent_batch_add_api.py` | 116 | `app/api/endpoints/torrent_crud.py` + `app/services/torrent_batch_add_service.py`（异步批量添加） |
+| `tests/api/test_torrent_batch_add_api.py` | 439 | `app/api/endpoints/torrent_crud.py` + `app/services/torrent_batch_add_service.py`（异步批量添加；2026-09-06 增锁治理回归 6 例：根修顺序断言/重试成功/重试耗尽错误码透传/非锁不重试/锁判定矩阵/非 OperationalError 忽略；同日加固 +4：真实 SQLite 会话 expunge 语义（全新会话验证 durable 落库）/qB 分支共享重试接线/线性退避契约/四结构点源码契约，变异验证 3/4/6/2 全检出） |
 | `tests/api/test_downloader_path_mapping_update.py` | 141 | `app/api/endpoints/downloader.py` + `app/api/schemas/path_mapping.py`（设置稳定化后的路径映射更新） |
 
 ### 2026-08-09 异步操作占用回归
@@ -63,7 +63,7 @@
 | `tests/api/test_transmission_error_sync.py` | 394 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空、旧 RPC 兼容及 legacy/async Tracker 0–4 状态写入 |
 | `tests/api/test_tracker_migration.py` | 730 | qB/Transmission Tracker 手动新增、修改、删除路径；Transmission announce/scrape 独立状态码持久化 |
 | `tests/services/test_tracker_status_sync.py` | 972 | Tracker 行级 Working + `None`/空白消息历史 error 恢复；announce/scrape 状态边界、非空关键词优先、未知逐行保留、双消息、幂等、host 跨种子隔离及 zimiao 359 行快照形态 |
-| `tests/services/test_sync_coordinator.py` | 870 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；info/full 同步后调用备份增量补偿（full 同样触发、tracker 不触发、补偿失败不阻断信息同步） |
+| `tests/services/test_sync_coordinator.py` | 1039 | 统一同步协调、准入/取消/检查点/观测；活动运行 phase/last-progress 与阶段事件；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；Tracker 下载器级硬超时、部分成功与关闭开关；info/full 同步后调用备份增量补偿（full 同样触发、tracker 不触发、补偿失败不阻断信息同步） |
 | `tests/tasks/test_torrent_tracker_status_judge.py` | 546 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
@@ -87,6 +87,23 @@
 |------------|------|-----------|
 | `tests/services/test_orphan_hardlink_copy_scan.py` | 742 | `orphan_hardlink_scan_service.py` + `orphan_quarantine.py::find_hardlink_paths_bounded`：过期 deadline 部分结果+budget_exceeded、单目标路径截断不影响其它目标、无界对等、walk 限量 deferral、游标推进/回绕、幂等更新、保留期清理、单链接轮不遍历、stat 预算停止保进度、受控时钟中途截止/截断优先级、resolved/无指针跳过、新鲜度排序、budget 落行、任务注册/heavy_sync/护栏默认值契约与 execute 包装器 |
 | `tests/services/test_torrent_file_backup_reconcile.py` | 162 | `torrent_file_backup_manager.py`：`reconcile_missing_backups` 限量批次、幂等收敛、qB/Transmission 常见源文件名、逻辑删除墓碑不再自动重建与源目录不可用一次性上报 |
+
+### 2026-08-26 Tracker 状态同步健壮性回归加固
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/api/test_torrents_async_tracker_budget.py` | 765 | `app/api/endpoints/torrents_async.py`：有界队列预算、producer 哨兵重试、全部哨兵丢失时 worker 轮询自愈、取消后的 producer/worker 子任务清理及稳定顺序 |
+| `tests/services/test_sync_coordinator.py` | 1039 | `app/services/sync_coordinator.py`：Tracker 原始同步、行级状态同步顺序、下载器级硬超时/部分成功/关闭开关及取消语义 |
+| `tests/downloader/test_auth_client_timeout.py` | 143 | `app/downloader/initialization.py`：qB/Transmission 客户端请求超时、scheme 归一、关闭 SDK 探测与 urllib3 重试，以及缓存客户端实际构造参数 |
+
+### 2026-08-30 下载器手动同步异步生命周期回归
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/core/test_background_task_manager.py` | 96 | `app/core/background_task_manager.py`：pending/running 原子占用、结构化 failed 结果终态映射、runner 执行期强引用与完成释放 |
+| `tests/api/test_sync_governance_integration.py` | 313 | `app/api/endpoints/torrent_sync.py`：sync-single 立即返回 task_id、真实后台运行、同下载器重复提交 409，且仅调用一次 `SyncCoordinator(full/manual)` |
+| `frontend/tests/unit/downloader-sync-task.spec.ts` | 134 | `api/downloader.ts` + `views/downloader/sync-task.ts`：pending/running 轮询、success/partial/failed/cancelled 终态文案、销毁取消与连续查询失败上限 |
+| `frontend/tests/unit/downloader-control-room-ui.spec.ts` / `mobile-downloader.spec.ts` / `api-contracts.spec.ts` | 166 / 237 / 974 | 桌面与移动同步占用保持到真实终态、task_id 跟踪、状态查询 URL 编码契约 |
 
 ### 关键源文件测试覆盖抽样
 
@@ -114,14 +131,42 @@
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 
+### 2026-08-29 实时终态收敛回归
+
+| 新增/扩展测试文件 | 覆盖源文件 | 覆盖内容 |
+|------------|-----------|---------|
+| `tests/api/test_torrent_speed_regression.py`（1012 行） | `app/api/endpoints/torrent_speed.py` | TTL 补查退避/恢复、超过 20 条任务的公平轮转、完成移除、退避期缓存填充与写回安全跳过（2026-09-11）；2026-09-12 加固 +5 性质用例：缓存填充不受查询配额限制、完成移除不复活缓存、TTL 过期不填充、active_keys 短路防双条目、填充条目拷贝隔离；qB/Transmission 完成状态矩阵、100% 优先级、异常进度与错误终态 |
+| `tests/api/test_active_torrents_endpoint.py`（632 行） | `app/api/endpoints/torrent_speed.py` | status/downloadComplete 契约；“下载中有速度→零速完成”两轮闭环强制 100%、响应前同步与 TTL 移除；206 仍交付健康下载器终态；核验 list/missing；断速振荡端点闭环（2026-09-12）：断速种子退避期连续多轮在场且零补查查询（不查但在场）、速度恢复弃缓存回归实时数据 |
+| `tests/endpoints/test_active_only_filter.py`（601 行） | `app/api/endpoints/torrent_speed.py` | 终态证据同步进度 100、状态与 completed_date；完成时间/完成状态/100% 三种数据库证据分别阻止异步旧快照回退 |
+
+### 2026-09-21 双语 P4 错误契约与通知事件（后端）
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `p6-c01-mobile-chinese-regression.spec.ts` ✨2026-09-20 | P6-5 C01 移动中文回归抽查（15 例）：共享层 zh 逐字节 + en 切换——sync-task 四态终态通知（含 detailSuffix 拼接与 fallbackName 回退）、notification-markdown 兑底（记录 {id}/未知项，字段存在时数据优先 B03）、clipboard 两态 throw、error-normalize 兑底（422 array/envelope/空串/业务码）、traditionalStatusFilter 固定项（全部/活动中）、downloader.store 九键与主题三套名/描述、404 占位与演示横幅四条 zh 字节冻结 |
+| `p6-logs-orphan-domain-i18n.spec.ts` ✨2026-09-20 | P6-4b 审计日志/孤儿文件域双语（22 例）：auditLogs/orphanFiles 子树 zh 逐字节与 en 插值（筛选/统计/表头/详情与归档弹窗/危险链路三要素/快捷操作 strong 分片重组/扫描状态三态）；操作类型 19 项短/长双形态映射 + 未知值回退（Q02）+ 结果三态；AUDIT_LOG_*/ORPHAN_* reasonCode 本地化（camelCase + 未知码回退）；源码契约（msg 直读清零/E01 诊断转 console/B03 扫描上下文原文透传/选项数组键化/task_id 分支提示）+ 挂载冒烟 |
+| `tests/api/test_reason_contract_p6b.py` ✨2026-09-20 | 审计日志/孤儿文件域 reasonCode 契约（36 例）：audit-logs 失败路径（参数 400/查询/统计/归档/导出空/导出失败/操作类型 500，msg 固定无 str(e) 泄漏；归档业务失败 message 透传 + reasonCode 追加；download-export 保持真 HTTPException）；orphan-files 全端点 17 端点失败矩阵（latest/scan 404·500/guardrail 400·500/list/folders/hardlink 查询·删除 500/rejected 双形态 200+reasonCode/scan 提交/清理预览·提交/忽视/前缀预览/隔离区列表·恢复·purge/job 404·500）；源码级 reasonCode 清单双向完整性 + 动态 msg/detail 禁回流 |
+| `p6-tasks-domain-i18n.spec.ts` ✨2026-09-20 | P6-4a 任务域双语（22 例）：tasks 子树 zh 逐字节与 en 插值（页签/类型状态码位映射/危险批量确认/表单/清理配置/语法错误/Cron 编辑器字段与内置模板/Python 选择器/monaco）、TASKS_* reasonCode 本地化（camelCase 映射 + 未知码回退）、api/tasks 共享层六态与 stale tooltip 双语（C01）、源码契约（模板身份 key 化不回流/假类树不回流/getTaskTypeConfig 接线/msg 直读清零/taskStatusName 直显清零/Monaco 死字段不回流）、挂载冒烟 |
+| `tests/api/test_reason_contract_p6_tasks.py` ✨2026-09-20 | 定时任务域 reasonCode 契约（20 例）：策略 403（自定义脚本禁用/主机形态）、类型与 type4 白名单拒绝、CRUD 冲突 TASKS_TASK_CONFLICT（CRUD 原文明细不进 msg）/NOT_FOUND 404/异常 500 固定 msg 无 str(e)、日志统计/清理校验（CONDITION_REQUIRED/DAYS_INVALID/422 INVALID_PARAMS）、校验器与 type-config 失败、成功路径 data 形状（taskTypes+pythonClasses）、源码级 reasonCode 清单双向完整性 + 动态 msg 禁回流 + P4 能力矩阵 reasonCode 保留 |
+| `p6-tracker-domain-i18n.spec.ts` ✨2026-09-20 | P6-3 Tracker 管理域双语（26 例）：tracker 十五子树 zh 逐字节与 en 插值（池子/看板/搜索/汇报配置/测试工具时间线/四弹窗/关键词卡）、reasonCode 本地化（18 新键 camelCase 映射 + 未知码回退 fallback）、utils/tracker 共享层（poolLabel/poolOptions/getLanguageLabel/extractErrorMessage 双语与 Q02 回退）、源码契约（pool_label 后端中文字段不直显、POOL_LABELS 常量不回流、错误展示接线、批量明细只进日志）、挂载冒烟（移动端复用 AddKeywordDialog） |
+| `tests/api/test_reason_contract_p6.py` ✨2026-09-20 | Tracker 关键词池/汇报配置/匹配测试 reasonCode 契约（26 例）：四端点失败路径 reasonCode 矩阵 + msg 固定无 str(e)/无池名/无合法值清单泄漏、reannounce not-found 结构化 error_code 判定（禁中文子串匹配回流）、成功路径 data 形状钉住（preview/search-all/batch 部分成功/match 驼峰字段）、reasonCode 清单完整性（源码扫描 vs 登记集） |
+| `p6-downloader-domain-i18n.spec.ts` ✨2026-09-19 | P6-2 下载器域收尾双语（26 例）：downloader.tabs/speed/advanced/pathMapping/pathMaintenance/tag/template 七子树 zh 逐字节 + en 插值、键化数据数组（星期 labelKey/高级字段 labelKey+hintKey/映射类型三键）、内置模板 preset_key 展示映射（zh 与后端存储值一致/en/Q02 原文回退/camel 兼容）、源码契约与死代码移除 |
+| `tests/core/test_setting_template_preset_key.py` ✨2026-09-19 | 设置模板 preset_key 迁移与幂等（13 例）：旧库按中文名回填、用户模板占名不写 key、name 唯一约束不变量（同名多行不可能）、重复升级幂等、downgrade 回环、init 五种幂等场景、to_dict 透出、P0 冻结键名一致性 |
+| `p6-torrent-domain-i18n.spec.ts` ✨2026-09-19 | P6-1 种子域收尾双语（16 例）：transfer/fileManagement/tracker.replace/torrent 传统视图键 zh 逐字节与 en 插值、危险语义（数据保留/不可逆）、四级删除菜单与 P5 确认框同键、状态筛选 localizedStatusOptions、列设置 labelKey 12 列、源码契约（6 文件键接线与旧中文不回流） |
+| `i18n-leftover-guard.spec.ts` ✨2026-09-19，2026-09-20 P6-5 翻转 | 双语遗留审计门禁与补译契约（20 例）：P6-5 起扫描集由正向 65 面翻转为**全桌面负向排除**（排 mobile/layout-mobile/i18n/nested/tree/demo/*.generated.ts/__tests__，逐项附理由；防空转断言扫描集 >150 文件），扫描器增行内 HTML 注释与行尾块注释剔除；白名单 60 条逐条附理由 + 腐化守卫 + 全仓键可达性门禁；extractErrorMessage/showErrorToast 中英切换、高级搜索请求校验 zh 逐字节 + en 编号插值、assertSameDownloader 双语、T01 参数不变性、壳层/控制台/store/formatters 源码键契约 |
+| `tests/api/test_reason_contract_p5.py` ✨2026-09-19 | 删除链路/回收站 reasonCode 契约：E14 双形态（ACCEPTED/ALREADY_PROCESSED，code=200 冻结）、提交失败/状态查询 404+500、delete-with-level 400/500、旧 /delete 下载器分支（缓存缺失/适配器失败/删除失败计数）、E16 手动还原 501、回收站四端点 500 固定 msg 无 str(e)、源码级 reasonCode 清单与 msg 无动态拼接 |
+| `tests/api/test_reason_contract_p4.py` ✨2026-09-21 | 552 | 种子操作（pause/resume/recheck/reannounce×3）失败路径 reasonCode 矩阵、Tracker by-downloader/replace 错误分支、查询模板 CRUD（含 E17 422 data.errors 形态与服务层直调）、单添加/批量添加 fail-closed 链路（E13）、E02 历史双形态钉住（getList 缓存缺失 success+200+data=[]）、E03 通知事件键（orphan extra_data 含 orphan_count_warning、version_update event 键） |
+
 ## 前端测试分布
 
-### `frontend/tests/unit/`（48 个 spec）
+### `frontend/tests/unit/`（112 个 spec，实测 2026-09-21）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
-| `api-contracts.spec.ts` | API 契约一致性 |
+| `api-contracts.spec.ts` ✨2026-08-29 | API 契约一致性；回收站响应类型源码锁定；终态核验 POST `/torrents/runtime-state/reconcile` 按 downloader_id+hash 复合键提交 `{items}` |
 | `clipboard.spec.ts` ✨v1.0.6.36 | `utils/clipboard.ts`（剪贴板复制回退：Clipboard API / execCommand 降级） |
+| `column-resize-mixin.spec.ts` | 表格列宽调整 mixin 契约 |
+| `column-resize-regression.spec.ts` | 列宽调整回归 |
 | `downloader-settings.spec.ts` | 下载器设置 store |
 | `downloader-control-room-ui.spec.ts` ✨v1.0.6.30 | 下载器控制室 UI（节点矩阵/筛选操作台/遥测卡片交互） |
 | `downloader-regressions.spec.ts` ✨v1.0.6.33 | 下载器设置工作流回归 |
@@ -132,40 +177,104 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
+| `mobile-delete-level-dialog.spec.ts` ✨2026-09-05 | 移动四级删除对话框：四选项语义与顺序、桌面同款确认文案（等级1 error）、取消不 emit、成功文案单源；挂载级 UI（选项渲染/is-danger/点击链/busy 禁用） |
+| `mobile-dashboard.spec.ts` ✨2026-08-26 | 移动仪表盘：字段映射契约（torrents/downloaders/system，旧键负例锁死）、bytes/s 速度换算、下载器卡片与穿透 /m/downloader、已暂停统计展示 |
+| `mobile-downloader.spec.ts` ✨2026-08-24 | 移动下载器监控页：卡片/在线徽标/测试连接 data.success 契约 |
+| `mobile-downloader-settings.spec.ts` ✨2026-08-24 | 移动下载器设置页：整页复用桌面 DownloaderSettingsDialog 的挂载与返回 |
+| `mobile-logs.spec.ts` ✨2026-08-24 | 移动审计日志：结果筛选值契约（success/failed/partial）与三态展示 |
+| `mobile-notifications.spec.ts` ✨2026-08-27 | 移动通知中心：摘要剥离 Markdown 记号纯文本三行截断（共享 plainNotificationContent）、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲；✨2026-09-05 WindowInfiniteScroll 接入与失控根修性质（首屏 1 次/静默刷新零追加/已翻页轮询只同步角标） |
+| `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
+| `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用按来源分流（简单→/m/torrents，高级→/m/search）、系统模板只可应用不可删除 |
+| `mobile-recycle-bin.spec.ts` ✨2026-08-27 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除、载荷必须传 info_id（≠torrent_id 契约锁）、守卫按 info_id、失败提示展示 reason 与兜底、按钮禁用态契约、源码契约锁定 |
+| `mobile-search.spec.ts` ✨2026-08-26 | 移动高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索同源）、简单搜索迁出负例锁死、高级模板回填执行/简单模板转种子页、下拉刷新重放 |
+| `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
+| `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
+| `mobile-torrent-detail.spec.ts` ✨2026-08-24 ✨2026-09-05 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新；四级删除（等级 4/1 语义与 busy 复位） |
+| `mobile-torrents.spec.ts` ✨2026-08-30 | 移动种子页简单搜索（自搜索页迁入）、筛选/刷新/空态；连续两个完整快照未命中后核验零速终态并收敛到 100%，下载中筛选启用时重新拉表移除不匹配行；新活动复合键未展示时重载列表并立即应用同轮进度与速度；✨2026-09-05 四级删除（DeleteLevelDialog+deleteTorrentsWithLevel）、reload 原子替换、终态 reload hash 去重、WindowInfiniteScroll 接入与失控根修核心性质（高内容仅 1 页/多轮速度轮询零 getList/reload 不链式补页） |
+| `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
+| `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
+| `notification-drawer-detail.spec.ts` ✨2026-08-27，2026-09-21 扩 P4 | 桌面通知渲染：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、NotificationItem 列表摘要共享纯文本化（禁模板直塞原始 content）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停；P4 扩展：事件本地化挂载（批量添加标题/正文按参数渲染、未知事件原文兜底）+ NotificationItem 事件接线源码契约（17 例） |
+| `notification-display.spec.ts` ✨2026-09-21 | 双语 P4（E03）事件展示层：四事件（批量添加/孤儿扫描含护栏标志/版本更新 title 参数化 Release 原文透传/欢迎）zh/en 双语参数插值、未登记 event/无 extra_data 原文兜底 |
+| `api-error-message-p4.spec.ts` ✨2026-09-21 | 双语 P4 错误契约前端入口：19 个新 reasonCode zh/en 本地化矩阵、未知码 fallback、E17 422 按 type/loc 字典化（missing/too_short/value_error/未知 type 回退/前 2 条拼接/reasonCode 优先）、apiResponseMessage resolved 响应分支 |
+| `notification-markdown.spec.ts` ✨2026-08-27 | `utils/notification-markdown.ts`：Markdown-lite 分块渲染（标题/列表/粗体/行内代码/分隔线/CRLF/转义防注入）、摘要纯文本化 plainNotificationContent（记号剥离/语法严格性/分隔线丢弃/跨行内联合并/不做 HTML 转义）与失败明细目标回退链，桌面/移动同源行为锁 |
+| `pwa-manifest.spec.ts` ✨2026-08-26 | 完整 `BtDeck` 字标、微型 mark 资源、favicon/PWA manifest 与图标生成源契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接、清理/隔离工作流，以及扁平/文件夹模式展开列切换、普通行展开保护、子表表头/数据/选择事件契约 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
-| `shared-utils.spec.ts` | 共享工具 |
-| `store-modules.spec.ts` | Vuex modules |
-| `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
-| `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
+| `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定） |
+| `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支 |
+| `pull-to-refresh.spec.ts` ✨2026-08-24 ✨2026-09-05 | 下拉刷新 mixin：阻尼/阈值/滚动容器判定与横向主导中止（与 Tab 滑动互斥）；容器可滚亚像素边界（1px 忽略/2px 采用）、`.mobile-content` 缺失回落文档滚动、文档滚动布局中部下滑不误触发（12→16 例） |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
+| `refresh-prompt.spec.ts` ✨2026-08-25 | `RefreshPrompt.vue` PWA 更新提示：SW updated 事件、确认刷新 postMessage SKIP_WAITING |
+| `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路 |
+| `router-navigation-failure.spec.ts` | 路由导航失败（重复导航/重定向中止）处理契约 |
+| `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定、hash 登录跳转 URL 构造、cookie→内存快照回同步 |
+| `shared-utils.spec.ts` | 共享工具 |
+| `sidebar-collapse-lucide.spec.ts` ✨2026-08-29 | `layout/components/Sidebar/SidebarItem.vue`：真实 Element UI/Lucide 组件与实际 SCSS 回归；种子管理/Tracker 管理多子菜单折叠仅隐藏语义标题/箭头并保留父图标，兼顾展开态、单子项与选择器防退化 |
+| `sidebar-mobile-entry.spec.ts` ✨2026-08-24 | 桌面侧栏「移动版」入口：写显式偏好并跳 /m/dashboard |
+| `store-modules.spec.ts` | Vuex modules |
+| `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储 |
+| `speed-polling.spec.ts` | 种子速度轮询契约 |
+| `window-infinite-scroll.spec.ts` ✨2026-09-05 | window 驱动无限滚动 mixin：滚动到底触发/阈值外不触发/门禁禁用/短内容补页/scrollY 优先/销毁移除/滚动风暴重入门禁（替代 Element v-infinite-scroll，失控根修） |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
-| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种列表模式在筛选/退出时发送 `single_error_only`；同内容列表模式在筛选、排序、分页大小、切页、刷新期间保持列表数据源，并在重复查询/高级搜索/模板/显式退出时清理 |
-| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留 Tracker 查询、错误单种/同内容排查、重复查询、查询条件、分页和选择状态 |
+| `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
+| `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
+| `torrent-add-dialog.spec.ts` ✨2026-08-30 | `views/torrents/components/TorrentAddDialog.vue`：202 响应 task_id 跟踪、完成通知精确匹配并发出 `batch-complete`、销毁清理轮询计时器 |
+| `torrent-batch.spec.ts` ✨2026-09-19（增 P5 双语契约：确认文案 zh 逐字节/en 三要素/未知等级回退/名称拼接随语言切换/收敛源码契约；删死封装 3 用例） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限；运行态列表成员首次完整快照基线、206 增量、刷新重建基线及并发单飞） |
+| `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
+| `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
+| `torrent-loading-mask.spec.ts` ✨2026-08-27 | Element UI 2.15.13 真实 Loading 指令：fullscreen mask 挂 body、lock/unlock、隐藏状态与加载中销毁清理 |
+| `torrent-list-view-component.spec.ts` ✨2026-08-30 | 列表视图异步删除与分页/排序、Tracker 筛选、错误单种/同内容数据源；连续完整快照未命中后核验零速终态并把主列表行收敛到 100%；数据库已入库但页面未展示的新活动键触发拉表并补同轮速度，批量添加完成信号再次刷新 |
+| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留查询/分页/选择状态 |
+| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归 |
+| `tracker-operation-dialog-contract.spec.ts` | Tracker 操作对话框契约 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤、错误单种快捷入口与退出；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换；静态契约锁定列表/传统父模板共用 `TrackerDetailCard.vue`、`list`/`traditional` layout 与完整弹框定位，以及共享组件的 Tracker 卡片结构、状态语义和 `_tracker-table.scss` 视觉样式 |
-| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归：完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段、错误提示、中性状态、汇报事件和 loading |
+| `traditional-view-component.spec.ts` ✨2026-08-30 | 传统视图组件、Tracker 主域名过滤与快捷入口、共用 TrackerDetailCard；终态核验按 downloader_id+hash 精确更新同 hash 任务，missing 下载器不串写；新增未展示活动键自愈拉表与批量添加完成刷新 |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
-| `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定（畸形不误杀）、hash 登录跳转 URL 构造、cookie→内存快照回同步三分支、initSessionWatch 可见/聚焦触发同步与登出 |
-| `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路：redirectToLogin hash 跳转与 3 秒防抖自愈、trySilentRefresh 三态、axios adapter 注入的拦截器集成（续期重放携带新 Bearer/重放仍 401 防循环登出/无 refresh 直接登出/`/auth/refresh` 豁免/HTTP 200 业务码 401 同链路） |
-| `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支：过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底登出 |
-| `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排（并发共享/失败返回 null） |
-| `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储：Login 持久化/缺 refresh 清残留、SetToken、ResetToken、LogOut 容忍空 token |
-| `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转：Login 解析（true/显式 false/缺省）/改密清标志/ResetToken 清标志/GetUserInfo 四态（wrapped true、扁平 true、显式 false 覆盖、字段缺失保持原值防滚动部署误清） |
-| `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧）：成功双解锁（清 store 标志 + 清 URL forceChange query 且保留其他参数）、无 query 不多余跳转、API 失败不提前解锁、两次输入不一致前置校验不发起 API |
-| `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定）：拦截落点 `/settings/index?forceChange=1` 且改密页渲染可达、拦截弹"请先修改密码"提示（Message.warning）、首导航（GetUserInfo 分支）拦截、手输父路径经 redirect 解析内容非空、手动直达放行、改密成功闭环、提示 3 秒节流（可控假时钟）、flag=false 对照 |
+| `ui-mode.spec.ts` ✨2026-08-23 | `utils/ui-mode.ts`：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流 |
+| `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转 |
+| `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧） |
+| `settings-twofa-manual-entry.spec.ts` ✨2026-09-04 | `views/settings/index.vue` 2FA 二维码缺失降级手动录入（secret+复制+重置+源码契约） |
+| `advanced-search-contract.spec.ts` ✨2026-09-04 | `scripts/generate-advanced-search-contract.js` 行尾规范化（LF/CRLF 检出双形态 current、内容变异双形态 stale、纯 LF 写出、幂等） |
 | `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |
 | `collapsible-panel.spec.ts` | 通用折叠面板（W8） |
 | `keyword-list-modal.spec.ts` ✨2026-08-16 | Tracker 关键词列表弹窗与快捷操作入口 |
 | `keyword-quick-action-dialog.spec.ts` ✨2026-08-16 | 关键词快捷删除/移动：preview→确认→执行→emit success |
 | `keywords-board.spec.ts` ✨2026-08-16 | 关键词看板：快捷操作打开对话框与成功后精准刷新 |
-| `speed-polling.spec.ts` | 种子速度轮询契约 |
-| `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2637 行）
+### 补录：历史批次未收录的 unit spec（2026-09-21 全量对齐，23 行）
+
+> 以下 spec 已存在于仓库但此前未入表，本批补录；创建批次已知的一幵标注。
+
+| 测试文件 | 覆盖范围 |
+|---------|---------|
+| `api-torrent-detail-contract.spec.ts` ✨2026-09-06 批，2026-09-21 补录 | 详情明细 API 契约：`/torrents/detail/{hash}/files\|peers` 信封与归一化字段 |
+| `condition-edit-sheet.spec.ts` ✨2026-09-06，2026-09-21 补录 | ConditionEditSheet 底部弹层：草稿克隆/确认回写、字段操作符联动 |
+| `core-demo-flow.spec.ts` 2026-09-21 补录 | Demo 核心页面流（内存 fixture 渲染与导航） |
+| `demo-auth.spec.ts` 2026-09-21 补录 | Demo 构建认证旁路（不访问后端） |
+| `demo-config.spec.ts` 2026-09-21 补录 | Demo 配置（`VUE_APP_DEMO_MODE` 分流） |
+| `demo-request.spec.ts` 2026-09-21 补录 | Demo request 分流层（fixture 响应形态） |
+| `demo-store.spec.ts` 2026-09-21 补录 | Demo 内存状态仓库（重置/读写） |
+| `detail-tabs-data.spec.ts` ✨2026-09-06，2026-09-21 补录 | TrackerDetailDataMixin：文件页签懒加载+键控缓存、Peers 5s 链式轮询与生命周期 |
+| `downloader-settings-dialog-init.spec.ts` 2026-09-21 补录 | DownloaderSettingsDialog 整页复用初始化契约（visible 初始 true） |
+| `downloader-settings-mobile-layout.spec.ts` 2026-09-21 补录 | PathMappingTab ≤780 / TagManagementTab ≤640 移动布局源码契约 |
+| `extended-demo-flow.spec.ts` 2026-09-21 补录 | Demo 扩展/只读页面流 |
+| `i18n-locale.spec.ts` ✨2026-09-18 P1，2026-09-21 补录 | L01 语言解析顺序 + L02 持久化与安全回退 + L05/F01 |
+| `i18n-message-parity.spec.ts` ✨2026-09-18 P1，2026-09-21 补录 | L05 中英消息树一致性门禁：键集合/插值/复数支数/空串，el vendor 子树排除 |
+| `mobile-advanced-search.spec.ts` ✨2026-09-06，2026-09-21 补录 | MobileAdvancedSearch 构建器：已保存搜索胶囊/条件组摘要/AND/OR/请求构造 |
+| `mobile-settings.spec.ts` 2026-09-21 补录 | MobileSettings 整页复用桌面设置（挂载与返回） |
+| `mobile-tasks-capability-hint.spec.ts` 2026-09-21 补录 | 移动任务页降级提示条（能力矩阵驱动显隐） |
+| `navbar-language-switcher.spec.ts` ✨2026-09-18 P2，2026-09-21 补录 | Navbar 语言切换器 + 登录页语言入口源码契约（2026-09-21 胶囊统一后锚点保持） |
+| `request-transient-retry.spec.ts` ✨2026-09-10，2026-09-21 补录 | 幂等 GET 瞬态失败静默重试一次（注入 axios adapter；超时/写操作不重试） |
+| `search-shared-layer-i18n.spec.ts` ✨2026-09-21 P3-1 | 契约源 label/labelEn 成对完整、操作符展示名按 locale 解析（稳定值映射，禁中文匹配） |
+| `settings-diagnosis-export.spec.ts` ✨2026-09-07，2026-09-21 补录 | 设置页状态诊断导出（blob 下载与文件名生成） |
+| `tasks-capability-wiring.spec.ts` 2026-09-21 补录 | 任务类型降级接线源码契约（P6-4a 曾迁移其断言语义） |
+| `tracker-operation-dialog.spec.ts` ✨2026-09-12，2026-09-21 补录 | TrackerOperationDialog：常规模式（selectedTorrents）桌面行为不变 + 按下载器触发模式 |
+| `transfer-set-location-dialogs.spec.ts` ✨2026-09-12，2026-09-21 补录 | TransferDialog/SetLocationDialog 移动端适配与移动种子页透传清理源码契约 |
+
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2775 行，2026-09-21 重测）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
@@ -181,6 +290,7 @@
 
 | 测试文件 | 行数 | 覆盖组件/模块 |
 |---------|------|---------|
+| `components/common/__tests__/AppLogo.spec.ts` | 16 | `AppLogo.vue` 的 full/mark/micro 与 brand/inverse 资源选择 |
 | `components/common/__tests__/LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
 | `components/BatchButton/__tests__/BatchButton.spec.ts` | 90 | `BatchButton.vue` |
 | `constants/__tests__/status-config.spec.ts` | 102 | `constants/status-config.ts` |
@@ -202,3 +312,11 @@
 ## 相关文档
 
 - 测试组织总览 → [../tests/README.md](../tests/README.md)
+
+
+### 2026-09-07 Android 主服务端能力验收
+
+- `test_platform_capabilities_api.py`：schemaVersion=2、20 项、5 degraded/9 unsupported；六个真实路由的 403 信封。
+- `test_startup_migration_guard.py`：Android lifespan 无扫描/dispatcher；真实 SQLite 历史任务仅收敛未完成状态、幂等且目标文件保留。
+- `platform-capabilities-api.spec.ts` / `platform-capability-panel.spec.ts`：未知能力闭锁、远端 desktop 矩阵不受 Android UA 覆盖、刷新失败撤销旧授权及闭锁提示。
+- `LocalServerAndroidTest.kt`：AVD HTTP 登录、矩阵、五类 403、dispatcher 状态、健康/静态首页与停止重启。

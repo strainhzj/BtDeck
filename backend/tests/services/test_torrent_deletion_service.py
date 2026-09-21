@@ -601,16 +601,14 @@ class TestDeletionAuditContext:
 
 
 class TestByLevelAuditInfoExtraction:
-    """TorrentDeletionByLevelService 从 request 提取审计信息。"""
+    """TorrentDeletionByLevelService 经 AuditContext 注入审计信息。"""
 
     def test_extracts_ip_and_user_agent_from_request(self):
+        """AuditContext.from_request 提取 IP/UA，服务注入后 _audit_request_info 展开。"""
+        from app.services.audit_context import AuditContext
         from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
 
-        app = SimpleNamespace()
-        app.state = SimpleNamespace(store=MagicMock())
-
         request = MagicMock()
-        request.app = app
         request.client.host = "10.0.0.5"
 
         def _header(name, default=None):
@@ -618,13 +616,44 @@ class TestByLevelAuditInfoExtraction:
 
         request.headers.get.side_effect = _header
 
-        service = TorrentDeletionByLevelService(db=MagicMock(), request=request)
+        audit_context = AuditContext.from_request(request)
+        service = TorrentDeletionByLevelService(db=MagicMock(), audit_context=audit_context)
         info = service._audit_request_info()
 
         assert info["ip_address"] == "10.0.0.5"
         assert info["user_agent"] == "pytest-ua"
 
-    def test_no_request_returns_empty(self):
+    def test_audit_context_extraction_direct(self):
+        """from_request 的 X-Forwarded-For 优先级与 request_id 提取。"""
+        from app.services.audit_context import AuditContext
+
+        request = MagicMock()
+        request.client.host = "10.0.0.5"
+
+        def _header(name, default=None):
+            table = {
+                "X-Forwarded-For": "203.0.113.9, 10.0.0.1",
+                "User-Agent": "pytest-ua",
+                "X-Request-ID": "req-42",
+            }
+            return table.get(name, default)
+
+        request.headers.get.side_effect = _header
+        request.cookies.get.return_value = None
+
+        ctx = AuditContext.from_request(request)
+        assert ctx.ip_address == "203.0.113.9"
+        assert ctx.user_agent == "pytest-ua"
+        assert ctx.request_id == "req-42"
+        assert ctx.session_id == ""
+        assert ctx.as_dict() == {
+            "ip_address": "203.0.113.9",
+            "user_agent": "pytest-ua",
+            "request_id": "req-42",
+            "session_id": "",
+        }
+
+    def test_no_audit_context_returns_empty(self):
         from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
 
         service = TorrentDeletionByLevelService(db=MagicMock())

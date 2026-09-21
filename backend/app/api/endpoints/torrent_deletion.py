@@ -9,10 +9,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
+from app.core.platform_capabilities import require_capability
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db, AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.audit_context import AuditContext
 from app.services.audit_service import get_audit_service
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -174,7 +176,12 @@ async def delete_torrent(
 
                 # 检查缓存是否已初始化
                 if not hasattr(app.state, "store"):
-                    return CommonResponse(code="500", msg="下载器缓存未初始化", status="error", data=None)
+                    return CommonResponse(
+                        code="500",
+                        msg="下载器缓存未初始化",
+                        status="error",
+                        data={"reasonCode": "DOWNLOADER_CACHE_UNAVAILABLE"},
+                    )
 
                 # 从缓存获取下载器快照（使用异步版本）
                 cached_downloaders = await app.state.store.get_snapshot()
@@ -186,7 +193,10 @@ async def delete_torrent(
                 if not downloader_vo:
                     logger.warning(f"下载器{torrent_info.downloader_id}不在缓存中")
                     return CommonResponse(
-                        code="404", msg=f"下载器{torrent_info.downloader_id}不在缓存中", status="error", data=None
+                        code="404",
+                        msg=f"下载器{torrent_info.downloader_id}不在缓存中",
+                        status="error",
+                        data={"reasonCode": "DOWNLOADER_NOT_FOUND"},
                     )
 
                 # 验证下载器是否有效（fail_time=0 表示有效）
@@ -195,7 +205,10 @@ async def delete_torrent(
                         f"下载器已失效 [downloader_id={downloader_vo.downloader_id}, nickname={downloader_vo.nickname}]"
                     )
                     return CommonResponse(
-                        code="503", msg=f"下载器已失效 [nickname={downloader_vo.nickname}]", status="error", data=None
+                        code="503",
+                        msg=f"下载器已失效 [nickname={downloader_vo.nickname}]",
+                        status="error",
+                        data={"reasonCode": "DOWNLOADER_OFFLINE"},
                     )
 
                 # 获取缓存的客户端连接
@@ -204,7 +217,12 @@ async def delete_torrent(
                 # 验证客户端是否存在
                 if not client:
                     logger.error(f"下载器客户端连接不存在 [downloader_id={downloader_vo.downloader_id}]")
-                    return CommonResponse(code="500", msg="下载器客户端连接不存在", status="error", data=None)
+                    return CommonResponse(
+                        code="500",
+                        msg="下载器客户端连接不存在",
+                        status="error",
+                        data={"reasonCode": "DOWNLOADER_CONNECTION_MISSING"},
+                    )
 
                 try:
                     # 🔧 关键修复：统一下载器类型字符串（用于适配器创建）
@@ -233,12 +251,16 @@ async def delete_torrent(
                             code="400",
                             msg=f"不支持的下载器类型: {downloader_vo.downloader_type}",
                             status="error",
-                            data=None,
+                            data={"reasonCode": "DOWNLOADER_UNSUPPORTED_TYPE"},
                         )
                 except Exception as e:
                     logger.error(f"注册下载器适配器失败: {str(e)}")
+                    # 双语 P5：动态 str(e) 不进 msg（诊断只进日志），前端按 reasonCode 本地化
                     return CommonResponse(
-                        code="500", msg=f"下载器适配器初始化失败: {str(e)}", status="error", data=None
+                        code="500",
+                        msg="下载器适配器初始化失败",
+                        status="error",
+                        data={"reasonCode": "DOWNLOADER_ADAPTER_INIT_FAILED"},
                     )
             else:
                 logger.warning(f"种子{info_id}不存在或已删除")
@@ -262,6 +284,7 @@ async def delete_torrent(
                     msg=f"删除失败：{result.failed_count}个",
                     status="error",
                     data={
+                        "reasonCode": "TORRENT_DELETE_FAILED",
                         "success_count": result.success_count,
                         "failed_count": result.failed_count,
                         "skipped_count": result.skipped_count,
@@ -282,10 +305,14 @@ async def delete_torrent(
             )
 
     except ValueError as e:
-        return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)
+        # 双语 P5：动态 str(e) 不进 msg（诊断只进日志），前端按 reasonCode 本地化
+        logger.warning(f"删除种子参数错误: {str(e)}")
+        return CommonResponse(
+            code="400", msg="参数错误", status="error", data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"}
+        )
     except Exception as e:
         logger.error(f"删除种子失败: {str(e)}")
-        return CommonResponse(code="500", msg="服务器内部错误", status="error", data=None)
+        return CommonResponse(code="500", msg="服务器内部错误", status="error", data={"reasonCode": "INTERNAL_ERROR"})
 
 
 # ==================== 批量删除功能 ====================
@@ -403,10 +430,14 @@ async def preview_bulk_torrent_deletion(
             return CommonResponse(code="200", msg="删除预览成功", data=response_data.__dict__, status="success")
 
     except ValueError as e:
-        return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        logger.warning(f"删除预览参数错误: {str(e)}")
+        return CommonResponse(
+            code="400", msg="参数错误", status="error", data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"}
+        )
     except Exception as e:
         logger.error(f"删除预览失败: {str(e)}")
-        return CommonResponse(code="500", msg="服务器内部错误", status="error", data=None)
+        return CommonResponse(code="500", msg="服务器内部错误", status="error", data={"reasonCode": "INTERNAL_ERROR"})
 
 
 @router.post("/delete/bulk")
@@ -486,10 +517,14 @@ async def bulk_delete_torrents(
             )
 
     except ValueError as e:
-        return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        logger.warning(f"批量删除种子参数错误: {str(e)}")
+        return CommonResponse(
+            code="400", msg="参数错误", status="error", data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"}
+        )
     except Exception as e:
         logger.error(f"批量删除种子失败: {str(e)}")
-        return CommonResponse(code="500", msg="服务器内部错误", status="error", data=None)
+        return CommonResponse(code="500", msg="服务器内部错误", status="error", data={"reasonCode": "INTERNAL_ERROR"})
 
 
 # 辅助函数
@@ -667,6 +702,8 @@ async def delete_torrent_with_level(
     Returns:
         删除结果
     """
+    if delete_level == 3:
+        require_capability("level3_recycle", "torrent_deletion.level3")
     # 将逗号分隔的字符串转换为列表（认证已迁移至 require_authenticated_user 依赖）
     torrent_info_id_list = [id.strip() for id in torrent_info_ids.split(",") if id.strip()]
 
@@ -677,8 +714,12 @@ async def delete_torrent_with_level(
         # 导入删除服务
         from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
 
-        # 创建删除服务（传递 request 对象用于访问 app.state.store）
-        deletion_service = TorrentDeletionByLevelService(db, request)
+        # 创建删除服务（注入 store 与审计上下文，服务层不接收 Request）
+        deletion_service = TorrentDeletionByLevelService(
+            db,
+            store=getattr(request.app.state, "store", None),
+            audit_context=AuditContext.from_request(request),
+        )
 
         # 获取审计日志服务
         audit_service = None
@@ -707,10 +748,13 @@ async def delete_torrent_with_level(
             elif delete_level == 3:
                 level3_count = len(result.get("level3_success", []))
                 level4_count = len(result.get("level4_downgraded", []))
+                file_missing_count = len(result.get("level3_file_missing", []))
                 if level3_count > 0:
                     msg_parts.append(f"等级3删除成功{level3_count}个")
                 if level4_count > 0:
                     msg_parts.append(f"降级为等级4删除{level4_count}个")
+                if file_missing_count > 0:
+                    msg_parts.append(f"{file_missing_count}个种子未找到文件，已跳过文件操作直接移入回收站")
                 msg = "、".join(msg_parts) if msg_parts else "删除完成"
             else:  # delete_level == 4
                 msg = f"等级4删除完成，成功{len(result.get('level4_success', []))}个"
@@ -724,6 +768,7 @@ async def delete_torrent_with_level(
                     "level1_success": result.get("level1_success", []),
                     "level2_success": result.get("level2_success", []),
                     "level3_success": result.get("level3_success", []),
+                    "level3_file_missing": result.get("level3_file_missing", []),
                     "level4_downgraded": result.get("level4_downgraded", []),
                     "level4_success": result.get("level4_success", []),
                     "failed": result.get("failed", []),
@@ -741,10 +786,13 @@ async def delete_torrent_with_level(
             if delete_level == 3:
                 level3_count = len(result.get("level3_success", []))
                 level4_count = len(result.get("level4_downgraded", []))
+                file_missing_count = len(result.get("level3_file_missing", []))
                 if level3_count > 0:
                     msg_parts.append(f"等级3删除成功{level3_count}个")
                 if level4_count > 0:
                     msg_parts.append(f"降级为等级4删除{level4_count}个")
+                if file_missing_count > 0:
+                    msg_parts.append(f"{file_missing_count}个种子未找到文件，已跳过文件操作直接移入回收站")
             elif delete_level == 4:
                 level4_count = len(result.get("level4_success", []))
                 if level4_count > 0:
@@ -762,6 +810,7 @@ async def delete_torrent_with_level(
                 data={
                     "total": result["total"],
                     "level3_success": result.get("level3_success", []),
+                    "level3_file_missing": result.get("level3_file_missing", []),
                     "level4_downgraded": result.get("level4_downgraded", []),
                     "level4_success": result.get("level4_success", []),
                     "failed": result.get("failed", []),
@@ -772,13 +821,18 @@ async def delete_torrent_with_level(
     # P2 修复: 区分不同类型的异常
     except SQLAlchemyError as e:
         logger.error(f"数据库操作失败: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg="数据库操作失败", code="500", data=None)
+        return CommonResponse(
+            status="error", msg="数据库操作失败", code="500", data={"reasonCode": "DB_OPERATION_FAILED"}
+        )
     except ValueError as e:
-        logger.warning(f"参数验证失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        logger.warning(f"按等级删除参数验证失败: {str(e)}")
+        return CommonResponse(
+            status="error", msg="参数错误", code="400", data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"}
+        )
     except Exception as e:
         logger.error(f"未知错误: {str(e)}", exc_info=True)
-        return CommonResponse(status="error", msg="系统内部错误", code="500", data=None)
+        return CommonResponse(status="error", msg="系统内部错误", code="500", data={"reasonCode": "INTERNAL_ERROR"})
 
 
 # ==================== 异步批量删除接口 ====================
@@ -816,6 +870,8 @@ async def delete_batch_async(
     Returns:
         任务ID
     """
+    if delete_request.delete_level == 3:
+        require_capability("level3_recycle", "torrent_deletion.level3.async")
     try:
         from app.database import SessionLocal
         from app.services.deletion_task_manager import get_deletion_task_manager
@@ -849,13 +905,18 @@ async def delete_batch_async(
                     "skipped_count": submission.skipped_count,
                     "skipped_info_ids": submission.skipped_info_ids,
                     "delete_level": delete_request.delete_level,
+                    "reasonCode": "TORRENT_DELETE_ALREADY_PROCESSED",
                 },
             )
 
         task_id = submission.task_id
 
-        # 创建执行器并启动异步任务
-        executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
+        # 创建执行器并启动异步任务（注入 store 与审计上下文，执行器不接收 Request）
+        executor = AsyncDeletionExecutor(
+            db_session_factory=SessionLocal,
+            store=getattr(request.app.state, "store", None),
+            audit_context=AuditContext.from_request(request),
+        )
 
         # 在后台执行删除任务（不等待完成）
         asyncio.create_task(
@@ -864,7 +925,6 @@ async def delete_batch_async(
                 torrent_info_ids=submission.accepted_info_ids,
                 delete_level=delete_request.delete_level,
                 operator=effective_operator,
-                request=request,
             )
         )
 
@@ -888,12 +948,20 @@ async def delete_batch_async(
                 "skipped_count": submission.skipped_count,
                 "skipped_info_ids": submission.skipped_info_ids,
                 "delete_level": delete_request.delete_level,
+                # 双语 P5（E14）：202 受理语义不报「已完成」，前端按此码提示后台执行中
+                "reasonCode": "TORRENT_DELETE_ACCEPTED",
             },
         )
 
     except Exception as e:
         logger.error(f"提交批量删除任务失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"提交任务失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="提交删除任务失败",
+            code="500",
+            data={"reasonCode": "TORRENT_DELETE_SUBMIT_FAILED"},
+        )
 
 
 @router.get("/delete-batch-status/{task_id}", response_model=CommonResponse)
@@ -918,7 +986,10 @@ async def get_batch_delete_status(task_id: str, user_info: AuthenticatedUserInfo
         task = await task_manager.get_task(task_id)
 
         if not task:
-            return CommonResponse(status="error", msg=f"任务不存在: {task_id}", code="404", data=None)
+            # 双语 P5：任务 ID 不进 msg（只进日志），前端按 reasonCode 本地化
+            return CommonResponse(
+                status="error", msg="任务不存在", code="404", data={"reasonCode": "TORRENT_DELETE_TASK_NOT_FOUND"}
+            )
 
         # 构建响应数据
         data = {
@@ -958,4 +1029,10 @@ async def get_batch_delete_status(task_id: str, user_info: AuthenticatedUserInfo
 
     except Exception as e:
         logger.error(f"查询任务状态失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="查询任务状态失败",
+            code="500",
+            data={"reasonCode": "TORRENT_DELETE_STATUS_QUERY_FAILED"},
+        )

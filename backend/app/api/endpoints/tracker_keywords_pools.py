@@ -20,6 +20,14 @@ from app.torrents.models import TrackerKeywordConfig
 from app.auth.dependencies import require_authenticated_user
 
 logger = logging.getLogger(__name__)
+
+
+# 双语 P6-3 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段），
+# 动态 str(e)/合法值清单不进 msg（诊断只进日志），前端按 errors.byCode 本地化。
+def _keyword_error(reason_code: str, msg: str, code: str = "400") -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
+
+
 router = APIRouter()
 
 
@@ -67,9 +75,8 @@ def get_pool_keywords(
 
     # 验证池子类型
     if pool_type not in VALID_POOL_TYPES:
-        return CommonResponse(
-            status="error", msg=f"无效的池子类型，必须是: {', '.join(VALID_POOL_TYPES)}", code="400", data=None
-        )
+        logger.info(f"无效的池子类型，合法值: {', '.join(VALID_POOL_TYPES)}")
+        return _keyword_error("KEYWORD_INVALID_POOL_TYPE", "无效的池子类型")
 
     try:
         # 构建查询
@@ -108,7 +115,7 @@ def get_pool_keywords(
         )
     except Exception as e:
         logger.error(f"查询池子关键词失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/move", summary="移动关键词到指定池子")
@@ -127,13 +134,12 @@ def move_keyword_to_pool(request_data: dict, _user=Depends(require_authenticated
     target_pool = request_data.get("target_pool")
 
     if not keyword_id or not target_pool:
-        return CommonResponse(status="error", msg="缺少必要参数: keyword_id 和 target_pool", code="400", data=None)
+        return _keyword_error("KEYWORD_PARAMS_REQUIRED", "缺少必要参数: keyword_id 和 target_pool")
 
     # 验证池子类型
     if target_pool not in VALID_POOL_TYPES:
-        return CommonResponse(
-            status="error", msg=f"无效的目标池子类型，必须是: {', '.join(VALID_POOL_TYPES)}", code="400", data=None
-        )
+        logger.info(f"无效的目标池子类型，合法值: {', '.join(VALID_POOL_TYPES)}")
+        return _keyword_error("KEYWORD_INVALID_POOL_TYPE", "无效的池子类型")
 
     try:
         # 查找关键词
@@ -144,7 +150,7 @@ def move_keyword_to_pool(request_data: dict, _user=Depends(require_authenticated
         )
 
         if not keyword:
-            return CommonResponse(status="error", msg="关键词不存在", code="404", data=None)
+            return _keyword_error("KEYWORD_NOT_FOUND", "关键词不存在", code="404")
 
         # 更新池子类型
         old_pool_type = keyword.keyword_type
@@ -160,7 +166,7 @@ def move_keyword_to_pool(request_data: dict, _user=Depends(require_authenticated
     except Exception as e:
         db.rollback()
         logger.error(f"移动关键词失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"移动失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/batch-move", summary="批量移动关键词到指定池子")
@@ -179,16 +185,15 @@ def batch_move_keywords(request_data: dict, _user=Depends(require_authenticated_
     target_pool = request_data.get("target_pool")
 
     if not keyword_ids or not target_pool:
-        return CommonResponse(status="error", msg="缺少必要参数: keyword_ids 和 target_pool", code="400", data=None)
+        return _keyword_error("KEYWORD_PARAMS_REQUIRED", "缺少必要参数: keyword_ids 和 target_pool")
 
     if not isinstance(keyword_ids, list):
-        return CommonResponse(status="error", msg="keyword_ids 必须是列表", code="400", data=None)
+        return _keyword_error("KEYWORD_IDS_MUST_BE_LIST", "keyword_ids 必须是列表")
 
     # 验证池子类型
     if target_pool not in VALID_POOL_TYPES:
-        return CommonResponse(
-            status="error", msg=f"无效的目标池子类型，必须是: {', '.join(VALID_POOL_TYPES)}", code="400", data=None
-        )
+        logger.info(f"无效的目标池子类型，合法值: {', '.join(VALID_POOL_TYPES)}")
+        return _keyword_error("KEYWORD_INVALID_POOL_TYPE", "无效的池子类型")
 
     try:
         # 查找关键词
@@ -199,7 +204,7 @@ def batch_move_keywords(request_data: dict, _user=Depends(require_authenticated_
         )
 
         if not keywords:
-            return CommonResponse(status="error", msg="未找到有效关键词", code="404", data=None)
+            return _keyword_error("KEYWORD_NOT_FOUND", "关键词不存在", code="404")
 
         # 批量更新
         for keyword in keywords:
@@ -219,7 +224,7 @@ def batch_move_keywords(request_data: dict, _user=Depends(require_authenticated_
     except Exception as e:
         db.rollback()
         logger.error(f"批量移动关键词失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"批量移动失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.get("/pool/statistics", summary="获取所有池子的统计信息")
@@ -258,7 +263,7 @@ def get_pool_statistics(_user=Depends(require_authenticated_user), db: Session =
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询池子统计信息失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.get("/pool/search-all", summary="全局搜索所有池子的关键词")
@@ -301,9 +306,8 @@ def search_all_pools(
             # 验证池子类型
             invalid_types = [pt for pt in pool_type_list if pt not in VALID_POOL_TYPES]
             if invalid_types:
-                return CommonResponse(
-                    status="error", msg=f"无效的池子类型: {', '.join(invalid_types)}", code="400", data=None
-                )
+                logger.info(f"无效的池子类型: {', '.join(invalid_types)}")
+                return _keyword_error("KEYWORD_INVALID_POOL_TYPE", "无效的池子类型")
         else:
             pool_type_list = VALID_POOL_TYPES  # 默认搜索所有池子
 
@@ -374,7 +378,7 @@ def search_all_pools(
         )
     except Exception as e:
         logger.error(f"全局搜索关键词失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"搜索失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")
 
 
 @router.post("/pool/prefix-match-preview", summary="按前缀左匹配预览池内关键词")
@@ -405,16 +409,12 @@ def prefix_match_preview(request_data: dict, _user=Depends(require_authenticated
 
     # 校验池子类型
     if pool_type not in VALID_POOL_TYPES:
-        return CommonResponse(
-            status="error",
-            msg=f"无效的池子类型，必须是: {', '.join(VALID_POOL_TYPES)}",
-            code="400",
-            data=None,
-        )
+        logger.info(f"无效的池子类型，合法值: {', '.join(VALID_POOL_TYPES)}")
+        return _keyword_error("KEYWORD_INVALID_POOL_TYPE", "无效的池子类型")
 
     # 校验前缀非空
     if not prefix:
-        return CommonResponse(status="error", msg="前缀不能为空", code="400", data=None)
+        return _keyword_error("KEYWORD_PREFIX_REQUIRED", "前缀不能为空")
 
     try:
         # 左匹配转义：先 \ 再 % 再 _（顺序关键，避免二次转义），尾追 % 做前缀匹配
@@ -442,4 +442,4 @@ def prefix_match_preview(request_data: dict, _user=Depends(require_authenticated
         )
     except Exception as e:
         logger.error(f"左匹配预览失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+        return _keyword_error("DB_OPERATION_FAILED", "数据库操作失败", code="500")

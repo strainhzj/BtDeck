@@ -303,6 +303,37 @@ class Settings(BaseSettings):
     # snapshot_wal_stats 读取 -wal 文件字节数并发射 EVENT_WAL_SNAPSHOT；
     # <=0 时不启动周期快照任务（观测关闭不影响同步治理）
     SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS: float = 60.0
+    # Python 内部类执行观测心跳间隔（秒）；<=0 时只保留 start/end，不发心跳。
+    # 心跳只写结构化日志，不写数据库，也不改变任务取消/超时语义。
+    SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS: float = 30.0
+    # cron 层超时强制终止（2026-08-25）：True 时 task_type=4 内部类任务超过自身
+    # timeout_seconds 会被 wait_for 强制终止（async 模式取消协程；thread 模式放弃
+    # 等待、底层线程继续跑完但不再占用 heavy_sync 令牌）。False 回落到仅观测
+    # （timeout_warning 心跳打标）。仅覆盖 task_type=4；脚本/清理/审计导出不受约束。
+    CRON_TASK_TIMEOUT_ENFORCE: bool = True
+    # 心跳进度停滞告警阈值（秒）：last_progress_ms 超过该值仍未推进时，心跳提升为
+    # WARNING 并附 progress_stalled=True（首次触发时输出全线程栈辅助定位挂死现场）。
+    # 0 关闭。
+    SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS: float = 300.0
+    # cron 脚本任务（task_type 0-3，需 BTDECK_ALLOW_CUSTOM_SCRIPTS 开启）子进程
+    # stdout/stderr 的单流字节上限（OOM 加固 2026-09-05）：旧实现 communicate()
+    # 整缓冲，疯狂输出的脚本会打爆内存；超限后继续 drain 丢弃并附截断标记。
+    # 默认 64KB；<=0 视为不限（回落旧语义）。
+    CRON_SCRIPT_OUTPUT_MAX_BYTES: int = 65536
+    # 下载器级硬熔断（2026-08-25 用户决策）：tracker 同步对单个下载器的强制超时。
+    # enrich 内部预算（QB_TRACKER_RUN_BUDGET_SECONDS 等）是协作式检查点，worker
+    # 挂死在某个 await 上时全部失效（生产 8.75h 案例形态）；此边界用 wait_for
+    # 强制取消该下载器的同步并放行其余下载器，不依赖内层自律也不等 cron 兜底。
+    # 0 关闭。默认 1800s（半小时）。
+    TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS: float = 1800.0
+    # 进程 RSS 周期采样间隔（秒，OOM 治理 2026-09-05）：>0 时启动采样循环，周期
+    # 发射 process_memory 结构化事件并刷新 last-sample（/sync 健康端点透出）；
+    # 0 关闭。macOS 不采当前 RSS（ru_maxrss 语义陷阱，见 get_process_rss_mb）。
+    SYNC_PROCESS_MEMORY_SAMPLE_SECONDS: float = 300.0
+    # 采样后是否触发分配器空闲归还（glibc malloc_trim / Android bionic M_PURGE）：
+    # 把同步分批循环的 RSS 高水位棘轮变锯齿（移动端 2.2GB 漂移的主成分）。
+    # 毫秒级空闲时机调用，不触碰同步热路径；线上异常时置 false 回滚。
+    SYNC_PROCESS_MEMORY_TRIM_ENABLED: bool = True
 
     # 健康检查配置（W4-2）：readiness 只执行有界只读探针，不执行写探针。
     # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查

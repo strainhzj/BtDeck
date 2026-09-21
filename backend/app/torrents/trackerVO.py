@@ -16,6 +16,11 @@ class TrackerInfoVO(BaseModel):
     last_announce_msg: Optional[str] = Field(default=None, description="announce消息字符串", examples=["Success"])
     last_scrape_succeeded: Optional[str] = Field(default=None, description="scrape状态字符串", examples=["1"])
     last_scrape_msg: Optional[str] = Field(default=None, description="scrape消息字符串", examples=["Success"])
+    matched_domain: Optional[str] = Field(
+        default=None,
+        description="命中当前tracker域名筛选的域名；未启用筛选或未命中时为None",
+        examples=["tracker.example.com"],
+    )
 
     def __init__(
         self,
@@ -26,6 +31,7 @@ class TrackerInfoVO(BaseModel):
         last_announce_msg=None,
         last_scrape_succeeded=None,
         last_scrape_msg=None,
+        matched_domain=None,
         **kwargs,
     ):
         super().__init__(
@@ -36,5 +42,6 @@ class TrackerInfoVO(BaseModel):
             last_announce_msg=last_announce_msg,
             last_scrape_succeeded=last_scrape_succeeded,
             last_scrape_msg=last_scrape_msg,
+            matched_domain=matched_domain,
             **kwargs,
         )

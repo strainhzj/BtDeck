@@ -1,7 +1,8 @@
 # BTDeck 前端 Dockerfile（简化版）
 # 适用于快速构建和部署
 
-FROM node:18.20.1-slim
+# Node 22 线（与 Dockerfile.prod/regression.yml 统一，W0 实测 22.23.2），digest 固定（W1/G2）
+FROM node:22-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 前端应用"
@@ -19,7 +20,7 @@ WORKDIR /app
 # 安装构建依赖
 # 同时替换 deb.debian.org 和 security.debian.org（Bookworm deb822 格式）；APT_MIRROR 为空则跳过
 RUN if [ -n "$APT_MIRROR" ]; then \
-        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+        sed -i "s|security.debian.org/debian-security|${APT_MIRROR}/debian-security|g; s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     git \

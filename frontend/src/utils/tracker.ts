@@ -1,83 +1,51 @@
 /**
- * Tracker管理相关的工具函数和常量
+ * Tracker 管理相关的工具函数（P6-3 双语化同步收敛）。
+ *
+ * 双语边界：
+ * - extractErrorMessage 的 data.msg/error/detail/message 原文透传（后端原始数据，E03）；
+ * - getLanguageLabel 已登记语言码走 tracker.lang.* 键，未登记码原文回退（Q02）；
+ * - parseJSON 抛出的内部异常消息不进入用户提示（调用方捕获后仅日志）；
+ * - 死代码清理（2026-09-19 P6-3）：KEYWORD_TYPE_OPTIONS / getKeywordTypeLabel /
+ *   PRIORITY_RANGE / getPriorityTagType / getOccurrenceCountTagType / formatDateTime /
+ *   downloadJSON / validateKeywordData 均为零生产消费方导出，随双语化删除（不为其落键）。
  */
+import i18n from '@/i18n'
+import { translate } from '@/i18n'
+import { DEFAULT_LOCALE } from '@/i18n/types'
 
-/**
- * 语言代码到中文标签的映射
- */
-export const LANGUAGE_LABELS: Record<string, string> = {
-  'zh_CN': '中文',
-  'en_US': '英文',
-  'ru_RU': '俄语',
-  'ja_JP': '日语',
-  '': '通用'
+/** tracker 语言包内已登记键存在性检查（键名动态拼接，无法走静态枚举门禁，故此处自检） */
+function hasKey(key: string): boolean {
+  return i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)
 }
 
 /**
- * 关键词类型选项
+ * 池子类型显示名（关键词看板/搜索/列表弹窗/快捷操作弹窗同源消费）
+ * @param poolType - 池子类型（'candidate' | 'ignored' | 'success' | 'failed' 或其它原始值）
+ * @returns 当前语言的池子名；未登记类型原文回退（Q02）
  */
-export const KEYWORD_TYPE_OPTIONS = [
-  { label: '成功', value: 'success' },
-  { label: '失败', value: 'failure' }
-]
-
-/**
- * 优先级范围配置
- */
-export const PRIORITY_RANGE = {
-  MIN: 1,
-  MAX: 1000,
-  DEFAULT: 100,
-  HIGH: 800,  // 高优先级阈值
-  MEDIUM: 500 // 中优先级阈值
+export function poolLabel(poolType: string): string {
+  const key = `tracker.pools.${poolType}`
+  return hasKey(key) ? (i18n.t(key) as string) : poolType
 }
 
 /**
- * 获取语言的中文标签
- * @param language - 语言代码（如 'zh_CN', 'en_US'）
- * @returns 语言的中文标签，如果未找到则返回原语言代码
+ * 池子下拉选项列表（排除指定池子；标签随语言切换响应式）
+ * @param excludePoolTypes - 需要排除的池子类型
+ */
+export function poolOptions(excludePoolTypes: string[] = []): { value: string, label: string }[] {
+  return (['candidate', 'ignored', 'success', 'failed'] as string[])
+    .filter(poolType => !excludePoolTypes.includes(poolType))
+    .map(poolType => ({ value: poolType, label: poolLabel(poolType) }))
+}
+
+/**
+ * 获取语言的显示名
+ * @param language - 语言代码（如 'zh_CN', 'en_US'；空串表示通用）
+ * @returns 当前语言的显示名，未登记的语言码原文回退（Q02）
  */
 export function getLanguageLabel(language: string): string {
-  return LANGUAGE_LABELS[language] || language
-}
-
-/**
- * 获取关键词类型的标签
- * @param keywordType - 关键词类型（'success' | 'failure'）
- * @returns 关键词类型的中文标签
- */
-export function getKeywordTypeLabel(keywordType: 'success' | 'failure'): string {
-  return keywordType === 'success' ? '成功' : '失败'
-}
-
-/**
- * 获取优先级标签类型（用于Element UI的Tag组件）
- * @param priority - 优先级数值
- * @returns Element UI的Tag类型
- */
-export function getPriorityTagType(priority: number): 'success' | 'warning' | 'info' | 'danger' {
-  if (priority >= PRIORITY_RANGE.HIGH) {
-    return 'danger'
-  } else if (priority >= PRIORITY_RANGE.MEDIUM) {
-    return 'warning'
-  } else {
-    return 'info'
-  }
-}
-
-/**
- * 获取出现次数标签类型（用于Element UI的Tag组件）
- * @param count - 出现次数
- * @returns Element UI的Tag类型
- */
-export function getOccurrenceCountTagType(count: number): 'success' | 'warning' | 'info' | 'danger' {
-  if (count >= 50) {
-    return 'danger'
-  } else if (count >= 20) {
-    return 'warning'
-  } else {
-    return 'info'
-  }
+  const key = language ? `tracker.lang.${language}` : 'tracker.lang.generic'
+  return hasKey(key) ? (i18n.t(key) as string) : language
 }
 
 /**
@@ -104,31 +72,13 @@ export function debounce<T extends(...args: any[]) => any>(
 }
 
 /**
- * 格式化日期时间为本地字符串
- * @param dateString - ISO格式的日期字符串
- * @returns 格式化后的日期时间字符串
+ * 从错误对象中提取用户友好的错误信息（Tracker 管理域共享）
+ * @param error 错误对象
+ * @param defaultMessage 默认错误消息（调用方传翻译键值；缺省走 tracker.errors.operationFailed）
+ * @returns 用户友好的错误消息（后端 msg/message/detail 原文透传）
  */
-export function formatDateTime(dateString: string): string {
-  if (!dateString) return '-'
-
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    })
-  } catch (error) {
-    console.error('日期格式化失败:', error)
-    return dateString
-  }
-}
-
-export function extractErrorMessage(error: any, defaultMessage = '操作失败'): string {
+export function extractErrorMessage(error: any, defaultMessage?: string): string {
+  const fallback = defaultMessage ?? translate('tracker.errors.operationFailed')
   const data = error && error.response && error.response.data
 
   if (data) {
@@ -147,7 +97,7 @@ export function extractErrorMessage(error: any, defaultMessage = '操作失败')
         return loc ? `${loc} : ${msg}` : msg
       }).join('; ')
       if (validationErrors) {
-        return `参数验证失败: ${validationErrors}`
+        return translate('tracker.errors.validationFailed', { message: validationErrors })
       }
     } else if (data.detail) {
       return data.detail
@@ -162,28 +112,7 @@ export function extractErrorMessage(error: any, defaultMessage = '操作失败')
     return error.message
   }
 
-  return defaultMessage
-}
-
-/**
- * 下载JSON文件
- * @param data - 要下载的数据
- * @param filename - 文件名（不包含扩展名）
- */
-export function downloadJSON(data: any, filename: string): void {
-  try {
-    const json = JSON.stringify(data, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${filename}_${new Date().getTime()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  } catch (error) {
-    console.error('下载失败:', error)
-    throw new Error('下载失败')
-  }
+  return fallback
 }
 
 /**
@@ -198,36 +127,5 @@ export function parseJSON<T = any>(jsonString: string): T {
   } catch (error) {
     console.error('JSON解析失败:', error)
     throw new Error('JSON格式不正确')
-  }
-}
-
-/**
- * 验证关键词数据
- * @param data - 关键词数据
- * @returns 验证结果和错误消息
- */
-export function validateKeywordData(data: any): { valid: boolean, errors: string[] } {
-  const errors: string[] = []
-
-  if (!data.keyword_type || !['success', 'failure'].includes(data.keyword_type)) {
-    errors.push('关键词类型必须是success或failure')
-  }
-
-  if (!data.keyword || typeof data.keyword !== 'string') {
-    errors.push('关键词内容必须是非空字符串')
-  } else if (data.keyword.length > 200) {
-    errors.push('关键词内容不能超过200个字符')
-  }
-
-  if (data.priority !== undefined) {
-    const priority = Number(data.priority)
-    if (isNaN(priority) || priority < 1 || priority > 1000) {
-      errors.push('优先级必须是1-1000之间的数字')
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors
   }
 }

@@ -1,6 +1,10 @@
 import { createLocalVue, shallowMount } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
+import fs from 'fs'
+import path from 'path'
 import ConditionValueInput from '../ConditionValueInput.vue'
 import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 
@@ -27,6 +31,7 @@ interface ConditionValueInputVm extends Vue {
 }
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.use(ElementUI)
 
 const categoryOptions: FieldOption[] = [
@@ -66,6 +71,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   ] as const)('multiSelect 分支：field=%s 把 fieldOptions 透传给 AdvancedMultiSelect', (field, options) => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field,
         operator: field === 'tags' ? 'contains_any' : 'in',
@@ -100,6 +106,7 @@ describe('ConditionValueInput 字段选项透传', () => {
       // 改用 v-model 后，子组件 input 载荷会自动回写 inputValue，链条修复。
       const wrapper = shallowMount(ConditionValueInput, {
         localVue,
+    i18n,
         propsData: {
           field,
           operator,
@@ -134,6 +141,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('状态 multiSelect 在空 fieldOptions 时不崩溃且禁止创建自定义状态', () => {
     const multiWrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -151,6 +159,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('handleChange 触发后向父级 emit input 与 change 事件', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -184,6 +193,7 @@ describe('ConditionValueInput 字段选项透传', () => {
     ]
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'status',
         operator: 'in',
@@ -203,6 +213,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('未设置操作符隐藏值输入并显示无需填写提示', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'ratio_limit',
         operator: 'is_null',
@@ -221,6 +232,7 @@ describe('ConditionValueInput 字段选项透传', () => {
   it('超级做种渲染是、否、不支持三态单选', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
+    i18n,
       propsData: {
         field: 'super_seeding',
         operator: 'equals',
@@ -241,5 +253,31 @@ describe('ConditionValueInput 字段选项透传', () => {
     ])
 
     wrapper.destroy()
+  })
+})
+
+/**
+ * 移动端数字输入防裁切源码契约（2026-08-28 UX 改造回归）。
+ *
+ * 构建器断点内把条件行字号 12→14px 后，100px 定宽的数字框末位
+ * （如 "0.00"）被步进按钮裁切——移动端媒体查询将两类数字输入加宽至 130px。
+ * 纯 CSS 行为 jsdom 无法断言，锁源码字符串（范式同 field-types-consistency.spec.ts）。
+ */
+describe('移动端数字输入防裁切（源码契约）', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../ConditionValueInput.vue'), 'utf8')
+  const mediaIndex = source.indexOf('@media (max-width: 768px)')
+  const baseBlock = source.slice(0, mediaIndex)
+  const mediaBlock = source.slice(mediaIndex)
+
+  it('断点内范围/单值两类数字输入一并加宽至 130px（逗号选择器缺一即红）', () => {
+    expect(mediaIndex).toBeGreaterThan(0)
+    expect(mediaBlock).toMatch(
+      /\.size-range-input \.size-input-wrapper \.size-number-input,\s*\.size-with-unit-input \.size-number-input\s*\{[^}]*width:\s*130px\s*;/
+    )
+  })
+
+  it('桌面基准宽度不变：范围 100px、单值 120px', () => {
+    expect(baseBlock).toMatch(/\.size-number-input\s*\{[^}]*width:\s*100px\s*;/)
+    expect(baseBlock).toMatch(/\.size-number-input\s*\{[^}]*width:\s*120px\s*;/)
   })
 })

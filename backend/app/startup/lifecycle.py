@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.core.platform_capabilities import is_android_server
 from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scope
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
@@ -19,11 +20,13 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
     - 每 SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS 秒经 snapshot_wal_stats 读取
       -wal 文件字节数，发射 EVENT_WAL_SNAPSHOT（wal_bytes / wal_growth_bytes /
       busy_count / checkpoint_busy）。
-    - busy_count 非零 → WARNING（计划第 5 节「SQLite busy 每 5 分钟大于 0：
-      warning」）；当前 snapshot_wal_stats 无连接句柄恒为 None，接入 PASSIVE
-      checkpoint 读数后该分支生效。
+    - busy_count 来自 wal_checkpoint(PASSIVE) 读数（2026-09-07 修正注释：
+      PASSIVE 探测已接入，非恒 None）；busy_count 非零 → WARNING。
     - 只读观测：绝不执行 TRUNCATE checkpoint；观测异常吞掉继续下一轮，
       关闭观测不影响同步治理。
+    - PASSIVE checkpoint 会把 WAL 帧拷回主库并 fsync（本机实测 198MiB WAL
+      单轮 ~500ms），必须在工作线程执行——曾经接在事件循环线程上，是周期性
+      loop lag 尖峰（60s 一轮、100-330ms）的直接来源（2026-09-07 诊断 RCA）。
     - 间隔配置 <=0 时由调用方决定不启动本循环。
     """
     from app.services.sync_observability import EVENT_WAL_SNAPSHOT, log_event, snapshot_wal_stats
@@ -32,7 +35,7 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
     last_wal_bytes = 0
     while True:
         try:
-            stats = snapshot_wal_stats(str(settings.DATABASE_PATH))
+            stats = await asyncio.to_thread(snapshot_wal_stats, str(settings.DATABASE_PATH))
             growth = max(0, stats["wal_bytes"] - last_wal_bytes) if last_wal_bytes > 0 else 0
             last_wal_bytes = stats["wal_bytes"]
             busy = stats.get("busy_count")
@@ -49,6 +52,54 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
             raise
         except Exception as exc:
             print(f"[WARN] WAL 快照任务失败: {exc}")
+        await asyncio.sleep(interval)
+
+
+async def run_process_memory_loop(app: FastAPI) -> None:
+    """周期性进程 RSS 采样（OOM 治理 2026-09-05 批次 5）。
+
+    - 每 SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 秒经 get_process_rss_mb 采集一次
+      RSS，发射 EVENT_PROCESS_MEMORY（rss_mb / sample_interval_seconds），并
+      刷新模块级 _LAST_RSS_MB 供 /api/v1/health/diagnosis 读取（last-sample
+      模式，端点不触发采集）。
+    - 平台不可用（如 macOS）时 rss_mb 为 None，仍发射事件留采样心跳，便于
+      区分"未启动循环"与"平台不支持"。
+    - 采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED（默认开）触发分配器空闲归还
+      （glibc malloc_trim / bionic M_PURGE），把同步分批循环造成的 RSS 高水位
+      棘轮变锯齿——移动端实测重启后 819MB 数小时爬到 2.2GB 的主要成分。
+    - 纯只读观测 + 空闲时机归还：异常吞掉继续下一轮，关闭观测不影响任何业务；
+      间隔配置 <=0 时由调用方决定不启动本循环（照 6.6 WAL 门控模式）。
+    """
+    from app.services.sync_observability import (
+        EVENT_PROCESS_MEMORY,
+        get_process_rss_mb,
+        log_event,
+        release_free_heap_memory,
+    )
+
+    interval = float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS)
+    while True:
+        try:
+            # RSS 采集与 malloc_trim/M_PURGE（madvise 扫描空闲页，可达数十 ms）
+            # 都下工作线程：与 WAL 快照同批 to_thread 化，观测不阻塞事件循环。
+            rss_mb = await asyncio.to_thread(get_process_rss_mb)
+            heap_trimmed = (
+                (await asyncio.to_thread(release_free_heap_memory))
+                if settings.SYNC_PROCESS_MEMORY_TRIM_ENABLED
+                else False
+            )
+            level = logging.INFO if rss_mb is not None else logging.DEBUG
+            log_event(
+                EVENT_PROCESS_MEMORY,
+                level=level,
+                rss_mb=rss_mb,
+                sample_interval_seconds=interval,
+                heap_trimmed=heap_trimmed,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] 进程内存采样任务失败: {exc}")
         await asyncio.sleep(interval)
 
 
@@ -258,6 +309,45 @@ async def recover_interrupted_orphan_scans(session_factory: Any = None) -> int:
     return recovered
 
 
+async def finalize_android_orphan_jobs(session_factory: Any = None) -> dict[str, int]:
+    """将 Android 主服务端上的历史孤儿任务收敛为不可执行的终态。
+
+    Android 主服务端无法访问下载器所在主机文件系统。启动时只更新任务状态，
+    不读取、扫描或删除任何路径；历史配置和记录保留，便于切回桌面端继续处理。
+    """
+    from datetime import datetime
+
+    from sqlalchemy import update
+
+    from app.database import AsyncSessionLocal
+    from app.models.orphan_file import OrphanScanResult
+    from app.models.orphan_purge_job import OrphanPurgeJob
+    from app.tasks.resource_guard import admission_controller
+
+    factory = session_factory or AsyncSessionLocal
+    reason = "当前 Android 主服务端不支持孤儿文件能力，任务未执行"
+    now = datetime.utcnow()
+    async with factory() as db:
+        async with admission_controller.db_write_scope():
+            scan_result = await db.execute(
+                update(OrphanScanResult)
+                .where(OrphanScanResult.status.in_(("queued", "running")))
+                .values(status="failed", error_message=reason, updated_at=now)
+            )
+            purge_result = await db.execute(
+                update(OrphanPurgeJob)
+                .where(OrphanPurgeJob.status.in_(("pending", "running")))
+                .values(status="failed", error_message=reason, completed_at=now, updated_at=now)
+            )
+            scan_count = getattr(scan_result, "rowcount", None) or 0
+            purge_count = getattr(purge_result, "rowcount", None) or 0
+            if scan_count or purge_count:
+                await db.commit()
+            else:
+                await db.rollback()
+    return {"scan_count": scan_count, "purge_count": purge_count}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -274,6 +364,10 @@ async def lifespan(app: FastAPI):
     print("Starting up...")
     app.state.start_time = time.time()
     app.state.torrent_stats = {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
+    orphan_purge_dispatcher = None
+    orphan_purge_recovery_task = None
+    orphan_scan_dispatcher = None
+    orphan_scan_recovery_task = None
 
     # 0. 初始化配置文件（必须在所有其他初始化之前）
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用
@@ -340,38 +434,57 @@ async def lifespan(app: FastAPI):
     await init_database_connection()
 
     # 2.5 对账历史隔离候选，避免新读模型重新展示已移走文件。
-    print("=== 对账孤儿文件隔离状态 ===")
-    try:
-        reconciliation = await reconcile_orphan_file_state()
-        print(
-            "[OK] 孤儿文件隔离状态对账完成: "
-            f"更新 {reconciliation['updated_count']} 条，"
-            f"未匹配 {reconciliation['unmatched_count']} 条"
-        )
-    except Exception as e:
-        print(f"[ERROR] 孤儿文件隔离状态对账失败: {e}")
-        import traceback
+    if is_android_server():
+        print("[SKIP] Android 主服务端不执行孤儿文件隔离状态对账")
+    else:
+        print("=== 对账孤儿文件隔离状态 ===")
+        try:
+            reconciliation = await reconcile_orphan_file_state()
+            print(
+                "[OK] 孤儿文件隔离状态对账完成: "
+                f"更新 {reconciliation['updated_count']} 条，"
+                f"未匹配 {reconciliation['unmatched_count']} 条"
+            )
+        except Exception as e:
+            print(f"[ERROR] 孤儿文件隔离状态对账失败: {e}")
+            import traceback
 
-        traceback.print_exc()
-        if not settings.DEV:
-            raise
-        print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
+            print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
 
     # 2.6 恢复残留 running 的孤儿扫描记录（落库分批后崩溃残留的兜底恢复）。
-    print("=== 恢复中断的孤儿扫描记录 ===")
-    try:
-        _recovered_scans = await recover_interrupted_orphan_scans()
-        if _recovered_scans:
-            print(f"[OK] 已恢复 {_recovered_scans} 条残留 running 扫描记录为 failed")
-        else:
-            print("[OK] 无残留 running 扫描记录")
-    except Exception as e:
-        print(f"[ERROR] 孤儿扫描记录恢复失败: {e}")
-        import traceback
+    if is_android_server():
+        print("=== 收敛 Android 主服务端上的孤儿任务 ===")
+        try:
+            finalized = await finalize_android_orphan_jobs()
+            print(
+                "[OK] 已将历史孤儿任务标记为不执行: "
+                f"扫描 {finalized['scan_count']} 条，清理 {finalized['purge_count']} 条"
+            )
+        except Exception as e:
+            print(f"[ERROR] Android 孤儿任务收敛失败: {e}")
+            import traceback
 
-        traceback.print_exc()
-        if not settings.DEV:
-            raise
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
+    else:
+        print("=== 恢复中断的孤儿扫描记录 ===")
+        try:
+            _recovered_scans = await recover_interrupted_orphan_scans()
+            if _recovered_scans:
+                print(f"[OK] 已恢复 {_recovered_scans} 条残留 running 扫描记录为 failed")
+            else:
+                print("[OK] 无残留 running 扫描记录")
+        except Exception as e:
+            print(f"[ERROR] 孤儿扫描记录恢复失败: {e}")
+            import traceback
+
+            traceback.print_exc()
+            if not settings.DEV:
+                raise
 
     # 3. 更新定时任务表数据：将dr=0的数据状态改为空闲
     await update_cron_task_status()
@@ -404,19 +517,20 @@ async def lifespan(app: FastAPI):
     downloader_task = asyncio.create_task(startup_event(app))  # ← 传递正确的 app 实例
     app.state.downloader_task = downloader_task
 
-    # 持久化隔离区彻底删除任务：立即恢复上次进程的 pending/running 任务。
-    from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
+    if not is_android_server():
+        # 持久化隔离区彻底删除任务：立即恢复上次进程的 pending/running 任务。
+        from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
 
-    orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
-    orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
-    app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
+        orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
+        orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
+        app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
 
-    # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
-    from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
+        # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
+        from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
 
-    orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
-    orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
-    app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
+        orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
+        orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
+        app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
 
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
@@ -442,12 +556,17 @@ async def lifespan(app: FastAPI):
         print(f"[WARN] 事件循环 lag 采样器启动失败（不阻断启动）: {e}")
 
     # 6.6 WAL 只读周期快照（W4-1 第二部分）：仅当间隔配置 >0 时启动；
-    # 观测任务失败不阻断应用启动/关闭。
+    # 观测任务失败不阻断应用启动/关闭。移动端 profile（2026-09-05）：
+    # android-server 形态跳过——每分钟一次 SQLite PRAGMA 探测 + 文件 stat
+    # 在手机上诊断价值低，徒增后台 I/O 与分配（服务端形态不受影响）。
     wal_snapshot_task = None
     if float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS) > 0:
-        wal_snapshot_task = asyncio.create_task(run_wal_snapshot_loop(app))
-        app.state.wal_snapshot_task = wal_snapshot_task
-        print("[OK] WAL 只读周期快照任务已启动")
+        if is_android_server():
+            print("[OK] android-server 运行形态：跳过 WAL 只读周期快照（移动端诊断价值低）")
+        else:
+            wal_snapshot_task = asyncio.create_task(run_wal_snapshot_loop(app))
+            app.state.wal_snapshot_task = wal_snapshot_task
+            print("[OK] WAL 只读周期快照任务已启动")
 
     # 6.7 存量 added_date 回填（W3-3）：仅当开关开启时启动（默认关闭）；
     # 失败不阻断应用启动。
@@ -458,6 +577,14 @@ async def lifespan(app: FastAPI):
         added_date_backfill_task = asyncio.create_task(backfill_torrent_added_dates(app))
         app.state.added_date_backfill_task = added_date_backfill_task
         print("[OK] 存量 added_date 回填任务已启动")
+
+    # 6.8 进程 RSS 周期采样（OOM 治理 2026-09-05）：仅当间隔配置 >0 时启动；
+    # 观测任务失败不阻断应用启动/关闭（照 6.6 WAL 门控模式）。
+    process_memory_task = None
+    if float(settings.SYNC_PROCESS_MEMORY_SAMPLE_SECONDS) > 0:
+        process_memory_task = asyncio.create_task(run_process_memory_loop(app))
+        app.state.process_memory_task = process_memory_task
+        print("[OK] 进程 RSS 周期采样任务已启动")
 
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
@@ -480,10 +607,11 @@ async def lifespan(app: FastAPI):
                 print("✅ 隔离区彻底删除恢复任务已取消")
             except Exception as e:
                 print(f"⚠️  取消隔离区彻底删除恢复任务时出错: {e}")
-        try:
-            await orphan_purge_dispatcher.shutdown()
-        except Exception as e:
-            print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
+        if orphan_purge_dispatcher is not None:
+            try:
+                await orphan_purge_dispatcher.shutdown()
+            except Exception as e:
+                print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
 
         if orphan_scan_recovery_task and not orphan_scan_recovery_task.done():
             orphan_scan_recovery_task.cancel()
@@ -493,10 +621,11 @@ async def lifespan(app: FastAPI):
                 pass
             except Exception as e:
                 print(f"⚠️  取消孤儿扫描恢复任务时出错: {e}")
-        try:
-            await orphan_scan_dispatcher.shutdown()
-        except Exception as e:
-            print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
+        if orphan_scan_dispatcher is not None:
+            try:
+                await orphan_scan_dispatcher.shutdown()
+            except Exception as e:
+                print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
 
         if downloader_task and not downloader_task.done():
             print("取消未完成的下载器加载任务...")
@@ -578,6 +707,17 @@ async def lifespan(app: FastAPI):
                 print("✅ added_date 回填任务已取消")
             except Exception as e:
                 print(f"⚠️  取消 added_date 回填任务时出错: {e}")
+
+        # 取消进程 RSS 周期采样任务（OOM 治理 2026-09-05）：异常不阻断关闭。
+        if process_memory_task and not process_memory_task.done():
+            print("取消进程 RSS 采样任务...")
+            process_memory_task.cancel()
+            try:
+                await process_memory_task
+            except asyncio.CancelledError:
+                print("✅ 进程 RSS 采样任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消进程 RSS 采样任务时出错: {e}")
 
         # 关闭事件循环 lag 采样器（W4-1 第二部分）：空句柄 stop() no-op，
         # 异常不阻断关闭。

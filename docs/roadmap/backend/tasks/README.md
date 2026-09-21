@@ -15,12 +15,14 @@
 | 清理执行器 cleanup | `cleanup_executor.py` | 后台执行器 `CleanupTaskExecutor`：自动清理执行器（回收站(L3)+待删除标签(L4)） |
 | 定时任务同步 CRUD cron-crud | `cron_crud.py` | `CronTaskCRUD`/`TaskLogsCRUD`：定时任务同步 CRUD（`DatabaseResult`） |
 | 定时任务异步 CRUD cron-crud-async | `cron_crud_async.py` | 定时任务异步 CRUD |
-| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L120/257/1020）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L295；greenlet 交错治理）；同步 execute 经 to_thread（L745/752） |
+| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心；`load_all_tasks` L431、`add_task_to_scheduler` L538、`_run_task_script` L809 和手动启动入口统一按 `task_capabilities.capability_block_for_task` 门控；Android 对路径/孤儿/等级3任务不入调度器或记录 `platform_capability_unsupported`，不改历史 enabled 配置 |
+| 任务能力门禁 task-capabilities | `task_capabilities.py` | 任务编码→平台能力映射（L14）；动态识别 type=5 的 `cleanup_level_3`，返回稳定 skip reason |
 | 任务结果新鲜度 cron-freshness | `cron_freshness.py` | 定时任务数据新鲜度轻量计算：`compute_freshness`（freshnessSeconds/stale，stale 阈值按 2 个调度周期近似、APScheduler CronTrigger 估算最短间隔，失败回退 `CRON_STALE_THRESHOLD_SECONDS` 默认 7200s） |
+| 按 code 触发 cron-trigger ✨2026-09-05 | `cron_trigger.py` | `trigger_task_by_code(task_code)`（L48）：内置白名单 + task_type 0-3 永拒 + 禁用/运行中前检透传，返回 accepted/task_id/reason；run_id 由执行期 `last_run_id` 承载 |
 | 定时任务表 cron-model | `cron_models.py` | ORM `CronTask`：定时任务表 |
 | 任务日志 logger | `logger.py` | 任务执行日志写入与统计 |
 | 任务日志表 task-log-model | `models.py` | ORM `TaskLogs`：任务日志表 |
-| 资源准入 resource-guard | `resource_guard.py` | 同步任务资源准入控制器 `TaskAdmissionController`（背压，防 DB/下载器/线程池抢占） |
+| 资源准入 resource-guard | `resource_guard.py` | 同步任务资源准入控制器 `TaskAdmissionController`（背压，防 DB/下载器/线程池抢占）；维护 heavy_sync holder 的 task/run/phase/进程快照并发射准入/超时/释放观测（L116/L143/L316/L369） |
 | 任务 profile task-profile | `task_profiles.py` | 重型任务资源 profile 注册表 `TaskProfile` |
 | 任务验证 validation | `validation_service.py` | 任务验证（脚本语法/Cron 表达式/Python 类三套校验） |
 
@@ -31,8 +33,8 @@
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
 | 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
 | 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L16，fail_time 死代码的替代自愈机制） |
-| 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance |
-| 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
+| 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance；`execute` L77 先要求 `path_mapping`，Android 不触发目录/映射读写 |
+| 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知；Android 能力门禁直接跳过 |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
 | 副本预扫描 orphan-hardlink-copy-scan ✨2026-08-15 | `orphan_hardlink_copy_scan_task.py` | 每日 04:00 调 `OrphanHardlinkScanService.run_round`：keyset 游标限量 stat + 限时串行遍历，结果落库供前端只读（性能护栏见 services 分支） |
 | 令牌清理 refresh-token-cleanup ✨2026-08-18 | `refresh_token_cleanup_task.py` | 每日 04:30 调 `auth/token_cleanup.CLEANUP_SQL` 删除过期/已撤销超 30 天保留期的 refresh_tokens 记录（轻量任务不登记 task_profiles，种子经 init_db 增量块对存量库生效） |
@@ -42,7 +44,7 @@
 | tracker 状态判断 torrent-tracker-judge | `torrent_tracker_status_judge.py` | 遍历种子检查 tracker 状态；`evaluate_tracker_error_state()` L70 复用共享策略联合下载器状态码与关键词，Working 且 announce/scrape 消息为空时明确正常，有消息仍按关键词分类；✨2026-08-20 `_load_keywords()` L265 委托共享 `tracker_keyword_map.load_active_keyword_map`（方法名与 to_thread 调用点是写库治理测试锚点，不可改名）；独立 Cron 为 `20,50 * * * *`，在 Tracker 同步后 10 分钟运行 |
 | 候选池填充 candidate-pool | `tracker_candidate_pool.py` | 从 tracker_message_log 读未处理消息填候选池 |
 | tracker 消息入库 tracker-logger | `tracker_message_logger.py` | 定期扫描所有 tracker 返回消息入库 |
-| reannounce 任务 reannounce | `tracker_reannounce_task.py` | 按站点间隔定时对种子执行 tracker 汇报 |
+| reannounce 任务 reannounce | `tracker_reannounce_task.py` | 按站点间隔定时对种子执行 tracker 汇报；✨2026-09-05 OOM 治理：读段改 JOIN+双列包含式 LIKE 超集预过滤 + tracker_id keyset 分页（页 5000）轻量列扫描，命中子集分块（≤500）回查 info_id/hash/torrent_id 轻量列——消除全量 TrackerInfo ORM 加载（10 万种子×5 tracker ≈ 1.3GB 峰值）与巨型 IN 超 SQLite 32766 绑定变量上限隐患；Python 精确匹配（首命中 config + eligible + break）原语义保留 |
 | 状态判断 status-judge | `tracker_status_judge.py` | 扫描未处理消息做状态判断 |
 
 ### scheduler/torrent_sync/ — 同步子模块（4 个文件）
@@ -53,7 +55,7 @@
 |--------|------|-----------|
 | 同步基础类 sync-base | `base.py` | `BaseSyncTask`：种子同步公共基础类 |
 | 基础信息同步 info-sync | `torrent_info_sync_task.py` | 高频同步种子基础信息（名称/大小/进度/状态）；每轮完成后全局按 `name + size` 刷新辅种数量 |
-| tracker 同步 tracker-sync | `tracker_sync_task.py` | 高频同步 tracker 状态（announce/scrape/错误） |
+| tracker 同步 tracker-sync | `tracker_sync_task.py` | 高频同步 tracker 状态（announce/scrape/错误）；任务入口记录有效下载器、Coordinator 结果、错误计数与前 5 条异常摘要，异常边界由下游 `sync_error` 事件追踪 |
 
 ---
 
@@ -62,7 +64,7 @@
 ```
 app/startup/lifecycle.py:lifespan
   └─→ await cron_executor.start()          # 启动 AsyncIOScheduler
-        └─→ AsyncIOScheduler.add_job(...)   # cron_executor.py L120/L257/L1020
+        └─→ AsyncIOScheduler.add_job(...)   # cron_executor.py L376/L513/L1539
               ├─→ scheduler/*_task.py        # 各 job 实现
               ├─→ scheduler/torrent_sync/*   # 拆分后的同步子任务
               └─→ cleanup_executor.py        # 后台清理执行器（非 APScheduler）
@@ -78,4 +80,4 @@ app/startup/lifecycle.py:lifespan
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`cron_executor.py` 1054 行调度核心）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`cron_executor.py` 1573 行调度核心）

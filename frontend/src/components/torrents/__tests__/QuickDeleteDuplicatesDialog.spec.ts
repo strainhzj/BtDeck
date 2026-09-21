@@ -1,4 +1,6 @@
 import { createLocalVue, shallowMount } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import QuickDeleteDuplicatesDialog from '../QuickDeleteDuplicatesDialog.vue'
@@ -59,6 +61,7 @@ jest.mock('@/api/torrents', () => {
 })
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 localVue.use(ElementUI)
 
 interface QuickDeleteDialogVm extends Vue {
@@ -93,6 +96,7 @@ describe('QuickDeleteDuplicatesDialog', () => {
   function mountDialog() {
     const wrapper = shallowMount(QuickDeleteDuplicatesDialog, {
       localVue,
+      i18n,
       propsData: { visible: false },
       stubs: {
         'advanced-multi-select': true,

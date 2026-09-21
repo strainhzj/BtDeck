@@ -19,8 +19,10 @@ import Vue from 'vue'
 
 import 'normalize.css'
 import ElementUI from 'element-ui'
+import ElementLocale from 'element-ui/lib/locale'
 import SvgIcon from 'vue-svgicon'
 
+import i18n from '@/i18n'
 import '@/styles/element-variables.scss'
 import '@/styles/index.scss'
 import '@/styles/management-list-page.scss'
@@ -42,7 +44,12 @@ import {
   retireLegacyServiceWorkers
 } from '@/utils/deployment-recovery'
 import { initSessionWatch } from '@/utils/session'
+import { isDemoMode } from '@/demo/config'
+import { UserModule } from '@/store/modules/user'
 
+// Element UI 内置文案（日期选择器/分页/弹窗按钮等）挂到 vue-i18n 单例：
+// 语言切换时已挂载组件也响应式更新（L04），语言包经 i18n messages 的 el 子树提供。
+ElementLocale.i18n((path: string) => i18n.t(path) as string)
 Vue.use(ElementUI)
 
 // 全局注册 Lucide 图标组件，统一替换界面中的 emoji / el-icon-* / 自绘 SVG。
@@ -60,13 +67,22 @@ Vue.directive('waves', waves)
 
 Vue.config.productionTip = false
 
-// Current builds do not register the generated PWA worker. Remove workers and
-// precaches left by older releases so they cannot pin an obsolete app shell.
-void retireLegacyServiceWorkers()
+if (isDemoMode()) {
+  UserModule.InitializeDemoSession()
+}
+
+// PWA（v1.0.6 移动独有优化）：先退休模板时代的遗留 SW（裸 service-worker.js
+// 无标记注册 + 模板前缀缓存），再注册本版 SW（脚本带 src=btdeck 标记，
+// 二者互不干扰）；skipWaiting=false，新版本经 RefreshPrompt 用户确认后激活。
+void retireLegacyServiceWorkers().finally(() => {
+  import('@/registerServiceWorker').catch(() => undefined)
+})
 
 // 双令牌会话监听（W6 伴随修复）：标签页重新可见时从 cookie 同步最新令牌，
 // 检测到会话已在别处结束时统一走登出跳转
-initSessionWatch()
+if (!isDemoMode()) {
+  initSessionWatch()
+}
 
 // Keep the reload-loop marker until the initial lazy route loaded successfully.
 router.onReady(() => clearChunkRecoveryQuery())
@@ -74,5 +90,6 @@ router.onReady(() => clearChunkRecoveryQuery())
 new Vue({
   router,
   store,
+  i18n,
   render: (h) => h(App)
 }).$mount('#app')

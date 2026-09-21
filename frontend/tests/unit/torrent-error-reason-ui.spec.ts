@@ -23,6 +23,15 @@ const batchSource = readFileSync(
   resolve(__dirname, '../../src/views/torrents/utils/torrentBatch.ts'),
   'utf8'
 )
+// 双语化（P3-2）：回退链文案与错误标题已迁入语言包，锚定键引用 + zh-CN 值（防丢文案）
+const trackerLocaleZhSource = readFileSync(
+  resolve(__dirname, '../../src/i18n/locales/zh-CN/tracker.ts'),
+  'utf8'
+)
+const tooltipDismissSource = readFileSync(
+  resolve(__dirname, '../../src/views/torrents/mixins/errorTooltipDismiss.ts'),
+  'utf8'
+)
 
 describe('种子错误原因展示契约', () => {
   it('API 类型同时兼容 camelCase 与 snake_case', () => {
@@ -41,6 +50,8 @@ describe('种子错误原因展示契约', () => {
   ])('%s 在名称悬浮展示错误原因并透传给 Tracker 详情卡', (_label, source) => {
     expect(source).toContain(':disabled="!getTorrentErrorReason(torrent)"')
     expect(source).toContain(':content="getTorrentErrorReason(torrent)"')
+    expect(source).toContain('ref="torrentErrorTooltips"')
+    expect(source).toContain(':enterable="false"')
     expect(source).toContain(':error-reason="getTorrentErrorReason(currentRow)"')
     // 回退链收敛到共享 helper，视图保留薄包装委托（防回归：不再各自复制实现）
     expect(source).toContain('return sharedErrorReason(torrent)')
@@ -52,7 +63,28 @@ describe('种子错误原因展示契约', () => {
     expect(batchSource).toContain('export function hasTrackerError')
     expect(batchSource).toContain('export function showTrackerErrorTag')
     expect(batchSource).toContain('torrent.status !== \'error\'')
-    expect(batchSource).toContain('Tracker 宣告失败')
+    // 双语化（P3-2）：兑底文案按 tracker.errorReason.* 键本地化，中文值与历史内联一致
+    expect(batchSource).toContain("tracker.errorReason.withMessage")
+    expect(batchSource).toContain("tracker.errorReason.fallback")
+    expect(trackerLocaleZhSource).toContain("withMessage: 'Tracker 宣告失败：{message}'")
+    expect(trackerLocaleZhSource).toContain("fallback: 'Tracker 宣告失败，详见 Tracker 标签页'")
+  })
+
+  it.each([
+    ['列表视图', listSource],
+    ['传统视图', traditionalSource]
+  ])('%s 查询期间使用全屏蒙版并锁定页面滚动', (_label, source) => {
+    expect(source).toContain('v-loading.fullscreen.lock="listLoading"')
+    expect(source).toContain("import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'")
+    expect(source).toContain('TorrentErrorTooltipDismissMixin')
+  })
+
+  it('错误提示收起 mixin 同时监听滚轮与捕获阶段滚动，并在销毁时解绑', () => {
+    expect(tooltipDismissSource).toContain("window.addEventListener('scroll', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain("window.addEventListener('wheel', this.tooltipDismissListener")
+    expect(tooltipDismissSource).toContain("window.removeEventListener('scroll', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain("window.removeEventListener('wheel', this.tooltipDismissListener, true)")
+    expect(tooltipDismissSource).toContain('tooltip.hide()')
   })
 
   it.each([
@@ -65,7 +97,9 @@ describe('种子错误原因展示契约', () => {
 
   it('Tracker 详情卡以统一标题展示错误原因', () => {
     expect(trackerCardSource).toContain('@Prop({ type: String, default: \'\' }) errorReason!: string')
-    expect(trackerCardSource).toContain('title="种子错误原因"')
+    // 双语化（P3-2）：标题走 tracker.detail.errorTitle 键，中文值与历史内联一致
+    expect(trackerCardSource).toContain(":title=\"$t('tracker.detail.errorTitle')\"")
     expect(trackerCardSource).toContain(':description="errorReason"')
+    expect(trackerLocaleZhSource).toContain("errorTitle: '种子错误原因'")
   })
 })

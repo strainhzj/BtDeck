@@ -100,11 +100,9 @@ export interface TaskExecuteRequest {
 // 任务类型选项
 export interface TaskTypeOption {
   value: TaskType                      // 任务类型值
-  label: string                        // 显示标签
+  /** 展示键（tasks.type.*；双语 P6-4a 起替代原中文字面 label） */
+  labelKey: string
   icon: string                         // 图标
-  description: string                  // 描述
-  language: string                     // 脚本语言
-  fileExtension?: string               // 文件扩展名
 }
 
 // Cron验证结果

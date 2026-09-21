@@ -57,6 +57,7 @@ from app.services.orphan_quarantine import (
 from app.tasks.resource_guard import admission_controller
 from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
 from app.core.config import settings
+from app.core.platform_capabilities import require_capability
 from app.utils.datetime_utils import serialize_utc_datetime
 
 logger = logging.getLogger(__name__)
@@ -887,6 +888,7 @@ class OrphanFileService:
             ``copy_count`` 为删除后源文件实时 ``st_nlink - 1``（源不可访问为
             None），供前端就地刷新列表行副本数。
         """
+        require_capability("orphan_files", "orphan_files.delete_hardlink_copies")
         normalized_paths = list(dict.fromkeys(str(path) for path in copy_paths if str(path)))
         if not normalized_paths:
             return {
@@ -1898,6 +1900,7 @@ class OrphanFileService:
 
         新鲜度门禁：最新扫描必须 completed；scan_id 必须是最新批次（否则 stale 拒绝）。
         """
+        require_capability("orphan_files", "orphan_files.cleanup_preview")
         gate = await self._check_cleanup_allowed(scan_id)
         if not gate["allowed"]:
             return {
@@ -1967,6 +1970,7 @@ class OrphanFileService:
         Returns:
             {"success_count": int, "failed_count": int, "failed_list": [...]}
         """
+        require_capability("orphan_files", "orphan_files.cleanup")
         if not _lease_acquired:
             from app.services.orphan_lease import (
                 OrphanLeaseBusyError,
@@ -2241,6 +2245,7 @@ class OrphanFileService:
         Returns:
             {"success_count": int, "failed_count": int, "failed_list": [...]}
         """
+        require_capability("orphan_files", "orphan_files.set_ignored")
         if not orphan_ids:
             return {"success_count": 0, "failed_count": 0, "failed_list": []}
 
@@ -2416,6 +2421,7 @@ class OrphanFileService:
         Returns:
             {"quarantined_count": int, "failed_count": int, "total_size": int}
         """
+        require_capability("orphan_files", "orphan_files.auto_cleanup")
         if not _lease_acquired:
             from app.services.orphan_lease import (
                 OrphanLeaseBusyError,
@@ -2603,6 +2609,7 @@ class OrphanFileService:
 
         只删 status=quarantined AND purge_after < now AND 路径仍在隔离区内的文件。
         """
+        require_capability("orphan_files", "orphan_files.purge_expired_quarantine")
         if not _lease_acquired:
             from app.services.orphan_lease import (
                 OrphanLeaseBusyError,
@@ -2920,6 +2927,7 @@ class OrphanFileService:
         - quarantine_path 必须仍在 quarantine_root 内（防路径篡改）
         - verify_file_identity 身份复核（size/mtime_ns/inode）
         """
+        require_capability("orphan_files", "orphan_files.restore_quarantined")
         if not _lease_acquired:
             from app.services.orphan_lease import (
                 OrphanLeaseBusyError,
@@ -3148,6 +3156,7 @@ class OrphanFileService:
         复用 purge_expired_quarantine 的安全检查全套（manifest 复核/路径校验/身份复核/tombstone），
         唯一区别：不要求 purge_after < now。
         """
+        require_capability("orphan_files", "orphan_files.purge_quarantine_now")
         if not _lease_acquired:
             from app.services.orphan_lease import (
                 OrphanLeaseBusyError,

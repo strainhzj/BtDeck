@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/strainhzj/BtDeck/release/schemas/build-info.schema.json",
+  "title": "BtDeck build-info",
+  "description": "嵌入每个运行制品的构建身份（release-artifact-equivalence-gate G1）。由 scripts/release/generate_build_info.py 生成；运行时由 backend/app/core/build_info.py 读取并经 /health/live|ready 的 build 字段暴露。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "git_sha",
+    "git_tag",
+    "source_date_epoch",
+    "artifact_kind",
+    "target_os",
+    "target_arch",
+    "alembic_head",
+    "frontend_manifest_sha256",
+    "source_manifest_sha256",
+    "dirty"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "product_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "必须与 release/release-config.json candidate.product_version 一致"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "完整 40 位小写十六进制；短 SHA 一律非法"
+    },
+    "git_tag": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "source_date_epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "SOURCE_DATE_EPOCH；同批所有制品必须相同"
+    },
+    "build_id": {
+      "type": ["string", "null"],
+      "description": "CI run id / attempt；本地构建为 null"
+    },
+    "artifact_kind": {
+      "enum": [
+        "windows-exe",
+        "windows-setup",
+        "linux-binary",
+        "linux-deb",
+        "linux-rpm",
+        "docker-backend",
+        "docker-frontend"
+      ]
+    },
+    "target_os": { "enum": ["windows", "linux"] },
+    "target_arch": { "const": "amd64" },
+    "python_version": {
+      "type": ["string", "null"],
+      "pattern": "^3\\.11\\.[0-9]+$",
+      "description": "仅后端制品必填（W2 构建链强制）；生成器当前记录构建环境解释器版本"
+    },
+    "node_version": {
+      "type": ["string", "null"],
+      "description": "仅前端构建步骤填写（如 22.23.2）"
+    },
+    "alembic_head": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{12}$",
+      "description": "单一 head；多 head 或空链在生成阶段即失败"
+    },
+    "frontend_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "frontend-asset-manifest.json 的规范形态 SHA256；四种交付物必须完全一致"
+    },
+    "source_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dependency_manifest_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "W2 构建链从制品真实环境导出依赖清单后回填"
+    },
+    "dirty": {
+      "type": "boolean",
+      "description": "发布制品必须为 false；true 仅允许出现在 --allow-dirty 开发构建"
+    }
+  }
+}

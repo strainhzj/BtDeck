@@ -1,20 +1,33 @@
 import asyncio
+import faulthandler
 import inspect
 import logging
+import os
 import re
+import subprocess
+import sys
+import time
 import uuid
-from datetime import datetime
-from typing import Dict, Any, Optional
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from itertools import islice
+from typing import Dict, Any, Optional, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import text
 
-from app.core.config import settings
+from app.core.config import settings, is_frozen
 from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService
+from app.services.sync_observability import EVENT_TASK_LIFECYCLE, log_event
+from app.tasks.task_capabilities import (
+    PLATFORM_CAPABILITY_SKIP_REASON,
+    capability_block_for_task,
+)
 from app.models import (
     OUTCOME_SUCCESS,
     OUTCOME_PARTIAL,
@@ -68,10 +81,253 @@ SKIP_REASON_RESOURCE_BUSY = "resource_busy"
 SKIP_REASON_ALREADY_RUNNING = "already_running"
 SKIP_REASON_OUTSIDE_BUDGET = "outside_budget"
 SKIP_REASON_DOWNLOADER_OFFLINE = "downloader_offline"
+SKIP_REASON_PLATFORM_CAPABILITY = PLATFORM_CAPABILITY_SKIP_REASON
 
 # 结果 dict 未显式携带 outcome 时，按 success 布尔映射（success 保持原语义：
 # “执行是否成功”；outcome 是业务结果，skipped 时 success 仍为 True 不误判故障）
 _SUCCESS_TO_OUTCOME = {True: OUTCOME_SUCCESS, False: OUTCOME_FAILED}
+
+
+class TaskExecutionTimeoutError(Exception):
+    """task_type=4 内部类任务超过 timeout_seconds 被强制终止（2026-08-25）。
+
+    由 _execute_internal_method_observed 的 wait_for 超时抛出，经
+    _run_python_internal_class 的穿透分支（不可被通用 except Exception 兜底
+    吞成普通失败 dict）传至 _execute_task，落库 outcome=failed 且
+    log_detail 标注超时语义。
+    """
+
+    def __init__(self, timeout_seconds: float):
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"task execution exceeded timeout {timeout_seconds:.1f}s")
+
+
+class _TaskBodyTimeoutError(Exception):
+    """任务体自身抛出的 TimeoutError 包装（区别于 wait_for 强制超时）。
+
+    wait_for 超时与任务体 TimeoutError 都是裸 TimeoutError，无法用异常类型
+    区分（elapsed 判定在 Windows ~15.6ms 时钟粒度下不可靠）；在执行入口把
+    任务体的 TimeoutError 包成本异常后，外层 except asyncio.TimeoutError
+    必然只对应强制超时。本异常走通用异常路径（普通失败）。
+    """
+
+
+def _kill_process_tree(process: Any) -> None:
+    """同步终止整个进程树（2026-09-06 二轮加固）。
+
+    shell 包装（create_subprocess_shell）时真正的脚本是 shell 的子进程：
+    只杀 shell 会留下持管道的孤儿脚本——取消清理会一直等它退出（Windows 实测
+    管道不关、Proactor 读取不可中止，中断操作被拖到脚本自然结束）。
+    - Windows：taskkill /F /T /PID 按父子关系整树终止；
+    - POSIX：spawn 侧 start_new_session 让子进程自成组长，此处整组 SIGKILL；
+    - 同步、无 await 点：清理序不被二次取消打断；任何失败回退单进程 kill。
+    """
+    pid = getattr(process, "pid", None)
+    try:
+        if pid is None:
+            raise OSError("process has no pid")
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                timeout=5,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            import signal
+
+            os.killpg(os.getpgid(int(pid)), signal.SIGKILL)
+    except Exception:
+        try:
+            process.kill()
+        except (ProcessLookupError, OSError):
+            pass
+
+
+# 取消/异常清理路径的单项等待上限（秒）：树杀失败的极端场景（管道不关、
+# Proactor 读取不可中止）不得拖死中断操作，超时放弃等待并告警
+_PROCESS_CLEANUP_TIMEOUT_SECONDS = 5.0
+
+
+async def _communicate_with_output_cap(process: Any, max_bytes: int) -> "tuple[str, str]":
+    """并发读取子进程 stdout/stderr 并施加单流字节上限（OOM 加固 2026-09-05）。
+
+    旧实现 communicate() 整缓冲输出——脚本疯狂输出时内存被打爆，而 TaskLogs
+    .log_detail 是 2000 字符字段，全量输出最终也被截断，毫无价值。现累计到
+    max_bytes 后继续 drain 丢弃直至 EOF（防管道写满导致子进程阻塞死锁），
+    再 wait() 收尸。返回 (stdout_text, stderr_text)：解码 errors=ignore
+    （字节级截断可能切断多字节序列），超限时附截断标记与原始总字节数。
+
+    max_bytes <= 0 视为不限（回落旧语义，读全量）。
+    """
+    effective_cap = max_bytes if max_bytes and max_bytes > 0 else None
+
+    async def _read_capped(stream: Any) -> "tuple[bytes, int]":
+        collected = bytearray()
+        total = 0
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if effective_cap is None or len(collected) < effective_cap:
+                if effective_cap is None:
+                    collected.extend(chunk)
+                else:
+                    collected.extend(chunk[: effective_cap - len(collected)])
+        return bytes(collected), total
+
+    stdout_task = asyncio.create_task(_read_capped(process.stdout))
+    stderr_task = asyncio.create_task(_read_capped(process.stderr))
+    try:
+        stdout_bytes, stdout_total = await stdout_task
+        stderr_bytes, stderr_total = await stderr_task
+        await process.wait()
+    finally:
+        # OOM/资源泄漏加固（2026-09-06；同日二轮：树杀+等待上限）：
+        # 外层取消/异常时的清理顺序——先同步树杀（无 await 点，不可被二次取消
+        # 打断；shell 包装时只杀 shell 会留下持管道的孙进程孤儿）→ 有界等待
+        # 回收读取任务 → 有界收尸。等待设上限：树杀失败的极端场景不得拖死中断。
+        if process.returncode is None:
+            _kill_process_tree(process)
+        for task in (stdout_task, stderr_task):
+            if not task.done():
+                task.cancel()
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(stdout_task, stderr_task, return_exceptions=True),
+                timeout=_PROCESS_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            # 二次取消或管道不关（树杀失败）：不阻塞清理路径
+            pass
+        if process.returncode is None:
+            try:
+                await asyncio.wait_for(process.wait(), timeout=_PROCESS_CLEANUP_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "子进程 %s 清理等待超时 %.0fs，放弃收尸（树杀可能未生效）",
+                    getattr(process, "pid", "?"),
+                    _PROCESS_CLEANUP_TIMEOUT_SECONDS,
+                )
+            except asyncio.CancelledError:
+                pass
+
+    def _render(capped: bytes, total: int) -> str:
+        text = capped.decode("utf-8", errors="ignore")
+        if effective_cap is not None and total > len(capped):
+            text += (
+                f"\n[TRUNCATED] 输出超过 {effective_cap} 字节上限" f"（总 {total} 字节），仅保留前 {len(capped)} 字节"
+            )
+        return text
+
+    return _render(stdout_bytes, stdout_total), _render(stderr_bytes, stderr_total)
+
+
+def _summarize_result_for_log(
+    result: Any,
+    *,
+    max_value_repr: int = 200,
+    max_head_items: int = 3,
+    max_depth: int = 3,
+    max_output: int = 800,
+) -> str:
+    """把内部类任务结果渲染为有界摘要（OOM 加固 2026-09-05；2026-09-06 全程有界重写）。
+
+    第一版仍先对完整 value 执行 repr()、用 list(value) 复制整个容器再截断——
+    输出仅数十字符却随输入规模分配内存（实测百万元素列表额外分配 ~8MB，
+    嵌套大容器也被完整渲染）。现全程有界：
+    - head 用 itertools.islice 取前 max_head_items 项，绝不复制整个容器；
+    - 递归深度超 max_depth 的嵌套容器渲染 <类型 len=N> 不展开；
+    - str/bytes 先切片再 repr；已知有界类型（标量/datetime/date/Decimal/UUID/
+      Enum）保留 repr；未知自定义对象降级 <类型名>（其 __repr__ 可能无界）；
+    - 总输出预算 max_output：顶层 dict 边渲染边 break，超停追加 ...(截断)。
+    格式契约（tests/tasks/test_cron_executor_output_cap.py 锚点）：
+    len= / head= / 含"截断" / 'success' 引号风格 / set 支持。
+    """
+
+    def _clip(text: str) -> str:
+        if len(text) <= max_value_repr:
+            return text
+        return text[:max_value_repr] + "...(截断)"
+
+    def _atom(value: Any) -> str:
+        if isinstance(value, (str, bytes)):
+            return _clip(repr(value[:max_value_repr]))
+        if (
+            value is None
+            or isinstance(value, (bool, float, complex, datetime, date, uuid.UUID))
+            or isinstance(value, Enum)
+        ):
+            return _clip(repr(value))  # 这些类型的 repr 天然有界
+        if isinstance(value, (int, Decimal)):
+            # int/Decimal 位数任意，repr 会先构建完整字符串再截断（10**1_000_000
+            # 这类病态值不得放大内存）：位数超预算时降级位数概览，不做完整 repr。
+            # 注意 Decimal 不可用 as_tuple().digits 取位数——它会按位数构建元组，
+            # 本身就是无界分配；adjusted()（首位数字指数）是 O(1) 代理。
+            if isinstance(value, int):
+                size = value.bit_length()  # 二进制位数，十进制位数的上界近似
+                unit = "bits"
+            else:
+                try:
+                    size = abs(value.adjusted()) + 1
+                except (ValueError, ArithmeticError):
+                    size = 0  # Infinity/NaN 等：repr 本身有界
+                unit = "digits"
+            if size > max_value_repr:
+                return f"<{type(value).__name__} {unit}≈{size}>"
+            return _clip(repr(value))
+        return f"<{type(value).__name__}>"
+
+    def _container(value: Any, depth: int) -> str:
+        summary = f"<{type(value).__name__} len={len(value)}"
+        if value and depth < max_depth:
+            head_parts: list = []
+            if isinstance(value, dict):
+                for key, item in islice(value.items(), max_head_items):
+                    head_parts.append(f"{_atom(key)}: {_render(item, depth + 1)}")
+                summary += " head={" + ", ".join(head_parts) + "}"
+            else:
+                for item in islice(value, max_head_items):
+                    head_parts.append(_render(item, depth + 1))
+                summary += " head=[" + ", ".join(head_parts) + "]"
+        return summary + ">"
+
+    def _render(value: Any, depth: int) -> str:
+        if isinstance(value, (dict, list, tuple, set, frozenset)):
+            return _container(value, depth)
+        return _atom(value)
+
+    if isinstance(result, dict):
+        parts: list = []
+        used = 2  # 两侧花括号
+        for key, value in result.items():
+            remaining = max_output - used
+            if remaining <= 0:
+                parts.append("...(截断)")
+                break
+            # 键与值都按剩余预算先截断再拼接（2026-09-06 二轮：超长 str 键在旧
+            # 实现下先建完整字符串才检查预算，800 万字符键分配 ~38MiB）；
+            # 非 str 键经 _atom 已有界
+            if isinstance(key, str):
+                key_cap = min(remaining, max_value_repr)
+                key_text = key if len(key) <= key_cap else key[:key_cap] + "...(截断)"
+            else:
+                key_text = _atom(key)
+            value_text = _render(value, 1)
+            room = remaining - len(key_text) - 1  # "=" 占 1 字符
+            if len(value_text) > room:
+                keep = max(0, room - 8)  # 预留 "...(截断)" 标记
+                value_text = value_text[:keep] + "...(截断)"
+            part = f"{key_text}={value_text}"
+            parts.append(part)
+            used += len(part) + 2
+            if used >= max_output:
+                parts.append("...(截断)")
+                break
+        return "{" + ", ".join(parts) + "}"
+    return _render(result, 0)
 
 
 class CronTaskExecutor:
@@ -80,6 +336,11 @@ class CronTaskExecutor:
     def __init__(self):
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         self.running_tasks: Dict[int, bool] = {}  # 跟踪正在运行的任务
+        # 运行中执行的协程句柄（_execute_task 内自登记，覆盖 APScheduler 调度与
+        # start_task_immediately 两条入口），interrupt_task 据此真正取消运行实例
+        self.running_task_handles: Dict[int, "asyncio.Task[None]"] = {}
+        # 用户显式中断标记：区分 interrupt 取消与调度器关闭等其它取消来源
+        self.interrupt_requested: set[int] = set()
         self.app = None  # ✅ 新增：存储 FastAPI 应用实例
 
     def set_app(self, app):
@@ -176,14 +437,22 @@ class CronTaskExecutor:
                 if result.success:
                     tasks = result.data
                     rejected: list = []
+                    capability_rejected: list = []
                     for task in tasks:
-                        if self._is_task_allowed_by_policy(task):
+                        block = capability_block_for_task(task)
+                        if block:
+                            capability_rejected.append((task, block))
+                        elif self._is_task_allowed_by_policy(task):
                             await self.add_task_to_scheduler(task)
                         else:
                             rejected.append(task)
-                    logger.info(f"成功加载 {len(tasks) - len(rejected)} 个定时任务")
+                    logger.info(
+                        f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务"
+                    )
                     if rejected:
                         await self._notify_policy_rejected_tasks(db, rejected)
+                    if capability_rejected:
+                        await self._notify_capability_rejected_tasks(db, capability_rejected)
                 else:
                     logger.error(f"加载定时任务失败: {result.message}")
 
@@ -238,10 +507,49 @@ class CronTaskExecutor:
         except Exception as e:
             logger.error(f"写入定时任务安全拦截通知失败: {str(e)}")
 
+    async def _notify_capability_rejected_tasks(self, db, rejected: list) -> None:
+        """记录能力门控任务，不改写历史 enabled 配置。"""
+        try:
+            from app.services.notification_service import NotificationService
+
+            service = NotificationService(db)
+            for task, block in rejected:
+                task_id = task.get("task_id")
+                name = task.get("task_name") or task_id
+                logger.warning(
+                    "定时任务 '%s'(ID:%s) 因主机能力 %s 不可用，未加入调度器",
+                    name,
+                    task_id,
+                    block["capability"],
+                )
+                await service.create_notification(
+                    type="system",
+                    title="定时任务因主机能力被停用",
+                    content=(
+                        f"任务「{name}」(ID: {task_id}) 需要能力「{block['capability']}」，"
+                        "当前主机形态无法访问对应文件系统，任务未加入调度器；切换到桌面/NAS 主服务端后可继续使用。"
+                    ),
+                    priority="warning",
+                    dedupe_key=f"cron_capability_blocked:{task_id}",
+                )
+        except Exception as e:
+            logger.error(f"写入定时任务能力拦截通知失败: {str(e)}")
+
     async def add_task_to_scheduler(self, task: Dict[str, Any]) -> bool:
         """添加任务到调度器"""
         try:
             job_id = f"cron_task_{task['task_id']}"
+
+            block = capability_block_for_task(task)
+            if block:
+                if self.scheduler.get_job(job_id):
+                    self.scheduler.remove_job(job_id)
+                logger.warning(
+                    "任务 %s 因主机能力 %s 不可用，跳过加入调度器",
+                    task.get("task_name") or task.get("task_id"),
+                    block["capability"],
+                )
+                return False
 
             # 如果任务已存在，先移除
             if self.scheduler.get_job(job_id):
@@ -311,6 +619,11 @@ class CronTaskExecutor:
         try:
             # 标记任务为运行中
             self.running_tasks[task_id] = True
+            # 自登记协程句柄（调度触发与 start_task_immediately 两条入口都经过
+            # 此处），interrupt_task 据此对运行实例真正执行 cancel()
+            current_handle = asyncio.current_task()
+            if current_handle is not None:
+                self.running_task_handles[task_id] = current_handle
 
             # 更新任务状态为运行中
             await self._update_task_status(task_id, 1)
@@ -329,6 +642,9 @@ class CronTaskExecutor:
                     return
                 start_time = datetime.now()
                 run_id = self._new_run_id(task_id)
+                # 仅在当前执行上下文传递，不写回 cron_task；用于把资源占用者
+                # 与 Cron 日志/同步 run_id 关联起来。
+                task["cron_run_id"] = run_id
                 await AsyncCronTaskCRUD.update_task_start_time(db, task_id, start_time)
 
             # —— 第二段：任务体（无会话上下文执行）——
@@ -343,12 +659,37 @@ class CronTaskExecutor:
                 success = result["success"]
                 log_detail = result["log_detail"]
 
-                logger.info(f"定时任务执行完成: {task['task_name']}, 成功: {success}")
+                if isinstance(result, dict) and result.get("skipped"):
+                    logger.info(f"定时任务已跳过: {task['task_name']}, 原因: {result.get('skip_reason') or '-'}")
+                else:
+                    logger.info(f"定时任务执行完成: {task['task_name']}, 成功: {success}")
 
+            except asyncio.CancelledError:
+                # 仅吞掉用户显式中断注入的取消并按 cancelled 走完整收尾三写；
+                # 调度器关闭等其它取消来源保持取消语义向上传播。
+                # 捕获后协程不再处于 pending-cancel 状态，收尾段的 await 可正常完成。
+                if task_id in self.interrupt_requested:
+                    success = True  # 对齐 skipped 先例：用户主动行为不误判故障/告警
+                    log_detail = "[INTERRUPTED] 用户中断，运行中的执行已被取消"
+                    result = {
+                        "success": True,
+                        "outcome": OUTCOME_CANCELLED,
+                        "log_detail": log_detail,
+                    }
+                    logger.info(f"定时任务被中断: {task['task_name']} (ID: {task_id})")
+                else:
+                    raise
             except Exception as e:
                 success = False
-                log_detail = f"任务执行异常: {str(e)}"
-                logger.error(f"定时任务执行异常: {task['task_name']}, 错误: {str(e)}", exc_info=True)
+                if isinstance(e, TaskExecutionTimeoutError):
+                    log_detail = f"执行超时强制终止({e.timeout_seconds:.0f}s)"
+                    logger.error(
+                        f"定时任务执行超时被强制终止: {task['task_name']} (ID: {task_id}), "
+                        f"超时: {e.timeout_seconds:.0f}s"
+                    )
+                else:
+                    log_detail = f"任务执行异常: {str(e)}"
+                    logger.error(f"定时任务执行异常: {task['task_name']}, 错误: {str(e)}", exc_info=True)
 
             # —— 第三段：收尾短会话（duration → log → freshness 顺序三写）——
             end_time = datetime.now()
@@ -414,6 +755,9 @@ class CronTaskExecutor:
             await self._update_task_status(task_id, 2)
             # 清除运行标记
             self.running_tasks[task_id] = False
+            # 清除句柄与中断标记（pop/discard 语义：早退路径可能未注册句柄）
+            self.running_task_handles.pop(task_id, None)
+            self.interrupt_requested.discard(task_id)
 
     @staticmethod
     def _new_run_id(task_id: int) -> str:
@@ -467,6 +811,17 @@ class CronTaskExecutor:
         task_type = task["task_type"]
         executor = task["executor"]
 
+        block = capability_block_for_task(task)
+        if block:
+            return {
+                "success": True,
+                "skipped": True,
+                "outcome": OUTCOME_SKIPPED,
+                "skip_reason": SKIP_REASON_PLATFORM_CAPABILITY,
+                "capability": block["capability"],
+                "log_detail": (f"[PLATFORM_CAPABILITY_UNSUPPORTED] {block['message']}，" "未执行任何文件系统操作"),
+            }
+
         # 执行层统一安全闸门：无论任务来自调度器还是"立即启动"（start_task_immediately
         # 不经过 load_all_tasks 的加载期检查），都在此二次校验。
         # 0-3 脚本类型受 BTDECK_ALLOW_CUSTOM_SCRIPTS 开关管控（默认关闭）；
@@ -506,97 +861,256 @@ class CronTaskExecutor:
         except Exception as e:
             return {"success": False, "log_detail": f"脚本执行失败: {str(e)}"}
 
-    async def _run_shell_script(self, script: str) -> Dict[str, Any]:
-        """运行Shell脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                script, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+    async def _run_script_process(
+        self,
+        command: Optional[str],
+        label: str,
+        *,
+        argv: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """四类脚本任务（shell/cmd/powershell/python）的共享执行实现。
 
-            stdout, stderr = await process.communicate()
+        输出经 _communicate_with_output_cap 施加单流字节上限（OOM 加固
+        2026-09-05，CRON_SCRIPT_OUTPUT_MAX_BYTES，默认 64KB）。
+        argv 提供时直接 exec（不经 shell 包装，取消/超时可精确终止目标进程）；
+        POSIX 侧 start_new_session 让子进程自成进程组（取消时整组树杀，
+        2026-09-06 二轮）。
+        """
+        try:
+            spawn_kwargs: Dict[str, Any] = {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+            }
+            if sys.platform != "win32":
+                spawn_kwargs["start_new_session"] = True
+            if argv is not None:
+                process = await asyncio.create_subprocess_exec(*argv, **spawn_kwargs)
+            else:
+                process = await asyncio.create_subprocess_shell(str(command), **spawn_kwargs)
+            stdout_text, stderr_text = await _communicate_with_output_cap(
+                process, settings.CRON_SCRIPT_OUTPUT_MAX_BYTES
+            )
 
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"Shell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
+                    "log_detail": f"{label}脚本执行成功\n输出: {stdout_text}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"Shell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
+                    "log_detail": f"{label}脚本执行失败，返回码: {process.returncode}\n错误: {stderr_text}",
                 }
 
         except Exception as e:
-            return {"success": False, "log_detail": f"Shell脚本执行异常: {str(e)}"}
+            return {"success": False, "log_detail": f"{label}脚本执行异常: {str(e)}"}
+
+    async def _run_shell_script(self, script: str) -> Dict[str, Any]:
+        """运行Shell脚本"""
+        return await self._run_script_process(script, "Shell")
 
     async def _run_cmd_script(self, script: str) -> Dict[str, Any]:
         """运行CMD脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'cmd /c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"CMD脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "log_detail": f"CMD脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"CMD脚本执行异常: {str(e)}"}
+        return await self._run_script_process(f'cmd /c "{script}"', "CMD")
 
     async def _run_powershell_script(self, script: str) -> Dict[str, Any]:
         """运行PowerShell脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'powershell -Command "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"PowerShell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "log_detail": f"PowerShell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"PowerShell脚本执行异常: {str(e)}"}
+        return await self._run_script_process(f'powershell -Command "{script}"', "PowerShell")
 
     async def _run_python_script(self, script: str) -> Dict[str, Any]:
-        """运行Python脚本"""
-        try:
-            process = await asyncio.create_subprocess_shell(
-                f'python -c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        """运行Python脚本。
+
+        2026-09-06 二轮：非 frozen 环境直接 exec 解释器（create_subprocess_exec
+        + sys.executable），绕开 shell 包装——取消/超时时终止的就是脚本进程本身，
+        无需依赖树杀；也顺带消除 shell 引号转义脆弱性。frozen 桌面环境
+        sys.executable 是应用 EXE 自身，回落旧 shell+PATH python 行为。
+        """
+        if is_frozen():
+            return await self._run_script_process(f'python -c "{script}"', "Python")
+        return await self._run_script_process(None, "Python", argv=[sys.executable, "-c", script])
+
+    async def _execute_internal_method_observed(
+        self,
+        execute_method: Any,
+        task: Dict[str, Any],
+        task_code: Optional[str],
+        execution_state: Dict[str, Any],
+    ) -> Any:
+        """执行内部类方法并发射生命周期/心跳观测。
+
+        2026-08-25 起：CRON_TASK_TIMEOUT_ENFORCE 开启且任务配置了正 timeout_seconds
+        时，超过该值强制终止（async 取消协程 / thread 放弃等待），抛
+        TaskExecutionTimeoutError 交由 _execute_task 落库 outcome=failed。
+        """
+        from app.tasks.resource_guard import admission_controller
+
+        started = time.monotonic()
+        execution_mode = "async" if asyncio.iscoroutinefunction(execute_method) else "thread"
+        timeout_seconds: Optional[float] = None
+        raw_timeout = task.get("timeout_seconds")
+        if raw_timeout is not None:
+            try:
+                parsed_timeout = float(raw_timeout)
+                # <=0 视为未设置（不强制终止也不打超时标记）：legacy 行可为 NULL/0，
+                # wait_for(timeout=0) 会立即取消，语义不合理故归一为 None
+                timeout_seconds = parsed_timeout if parsed_timeout > 0 else None
+            except (TypeError, ValueError):
+                timeout_seconds = None
+        # 强制终止开关（2026-08-25）：开启且配置了正超时时，超过 timeout_seconds
+        # 由 wait_for 强制终止——此前超时仅观测打标，运行实例可无限挂起并持续
+        # 占用 heavy_sync 令牌（生产案例 cron-7-20260825111000 挂 8.75h）。
+        # 已知限制：thread 模式超时仅放弃等待，底层线程继续执行至自然结束
+        # （期间仍持有 downloader_api_runtime 的 per-downloader 令牌，见其
+        # downloader_api_runtime.py 中"超时仅放弃等待 future"的设计注释），
+        # 但不再占用 heavy_sync（task_scope 的 finally 在协程层释放）。
+        enforce_timeout = bool(settings.CRON_TASK_TIMEOUT_ENFORCE) and timeout_seconds is not None
+
+        task_id = task.get("task_id")
+        task_name = task.get("task_name")
+        cron_run_id = task.get("cron_run_id")
+        observer_task: Optional[asyncio.Task] = None
+        progress_stall_dumped = False  # 全线程栈转储节流：每次运行至多一次
+
+        def holder_context() -> Dict[str, Any]:
+            snapshot = None
+            if task_code:
+                snapshot = admission_controller.get_holder_snapshot(task_code)
+            context: Dict[str, Any] = {
+                "phase": execution_state.get("phase", "execute"),
+                "sync_run_id": None,
+            }
+            if snapshot is not None:
+                context["phase"] = snapshot.get("phase") or context["phase"]
+                context["sync_run_id"] = snapshot.get("sync_run_id")
+            return context
+
+        def emit_lifecycle(state: str, *, level: int = logging.INFO, error_type: Optional[str] = None) -> None:
+            nonlocal progress_stall_dumped
+            elapsed_ms = (time.monotonic() - started) * 1000.0
+            holder = holder_context()
+            last_progress_ms = max(
+                0.0,
+                (time.monotonic() - float(execution_state.get("last_progress_monotonic", started))) * 1000.0,
             )
+            fields: Dict[str, Any] = {
+                "state": state,
+                "phase": holder["phase"],
+                "elapsed_ms": round(elapsed_ms, 1),
+                "last_progress_ms": round(last_progress_ms, 1),
+                "execution_mode": execution_mode,
+                "timeout_exceeded": bool(timeout_seconds is not None and elapsed_ms >= timeout_seconds * 1000.0),
+            }
+            # 进度停滞检测（2026-08-25）：last_progress_ms 源自 execution_logger
+            # 注入通道（未实现 set_execution_context 的任务恒为启动值），停滞
+            # 超阈值时心跳提级 WARNING；首次触发转储全线程栈——生产案例中
+            # tracker enrich 挂 8.75h 仅剩心跳静默，该转储可自动留下挂死现场
+            # （faulthandler.dump_traceback 为毫秒级同步调用，锁安全）。
+            try:
+                stall_threshold_s = float(settings.SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS)
+            except (TypeError, ValueError):
+                stall_threshold_s = 300.0
+            if state == "heartbeat" and stall_threshold_s > 0 and last_progress_ms >= stall_threshold_s * 1000.0:
+                level = max(level, logging.WARNING)
+                fields["progress_stalled"] = True
+                if not progress_stall_dumped:
+                    progress_stall_dumped = True
+                    logger.warning(
+                        "任务进度停滞 %.0fs 未推进（task=%s, ID=%s），转储全线程栈辅助定位挂死现场：",
+                        last_progress_ms / 1000.0,
+                        task_name or "-",
+                        task_id,
+                    )
+                    try:
+                        faulthandler.dump_traceback()
+                    except Exception:  # noqa: BLE001 - 转储失败不影响观测与任务执行
+                        logger.debug("faulthandler dump_traceback failed", exc_info=True)
+            if task_id is not None:
+                fields["task_id"] = task_id
+            if task_code:
+                fields["task_code"] = task_code
+            if task_name:
+                fields["task_name"] = task_name
+            if cron_run_id:
+                fields["cron_run_id"] = cron_run_id
+            if holder.get("sync_run_id"):
+                fields["sync_run_id"] = holder["sync_run_id"]
+            if timeout_seconds is not None:
+                fields["timeout_seconds"] = timeout_seconds
+            if error_type:
+                fields["error_type"] = error_type
+            try:
+                log_event(EVENT_TASK_LIFECYCLE, level=level, **fields)
+            except Exception:  # noqa: BLE001 - 观测器故障不能改变任务执行
+                logger.debug("task lifecycle structured observation failed", exc_info=True)
 
-            stdout, stderr = await process.communicate()
+        async def heartbeat_loop() -> None:
+            try:
+                interval = float(settings.SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS)
+            except (TypeError, ValueError):
+                interval = 30.0
+            if interval <= 0:
+                return
+            interval = max(interval, 0.05)
+            timeout_warned = False
+            while True:
+                sleep_seconds = interval
+                if timeout_seconds is not None and not timeout_warned:
+                    remaining = timeout_seconds - (time.monotonic() - started)
+                    if remaining > 0:
+                        sleep_seconds = min(sleep_seconds, max(0.05, remaining))
+                    else:
+                        sleep_seconds = 0.05
+                await asyncio.sleep(sleep_seconds)
+                elapsed_seconds = time.monotonic() - started
+                timeout_exceeded = timeout_seconds is not None and elapsed_seconds >= timeout_seconds
+                if timeout_exceeded and not timeout_warned:
+                    timeout_warned = True
+                    emit_lifecycle("timeout_warning", level=logging.WARNING)
+                else:
+                    emit_lifecycle("heartbeat")
 
-            if process.returncode == 0:
-                return {
-                    "success": True,
-                    "log_detail": f"Python脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
-                }
+        emit_lifecycle("start")
+        try:
+            observer_task = asyncio.create_task(heartbeat_loop())
+            if execution_mode == "async":
+                if enforce_timeout and timeout_seconds is not None:
+
+                    async def _execute_async_guard():
+                        try:
+                            return await execute_method(app=self.app)
+                        except asyncio.TimeoutError as exc:
+                            raise _TaskBodyTimeoutError(str(exc) or "task body timeout") from exc
+
+                    result = await asyncio.wait_for(_execute_async_guard(), timeout=timeout_seconds)
+                else:
+                    result = await execute_method(app=self.app)
             else:
-                return {
-                    "success": False,
-                    "log_detail": f"Python脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
-                }
+                if enforce_timeout and timeout_seconds is not None:
 
-        except Exception as e:
-            return {"success": False, "log_detail": f"Python脚本执行异常: {str(e)}"}
+                    def _execute_sync_guard():
+                        try:
+                            return execute_method(app=self.app)
+                        except asyncio.TimeoutError as exc:
+                            raise _TaskBodyTimeoutError(str(exc) or "task body timeout") from exc
+
+                    result = await asyncio.wait_for(asyncio.to_thread(_execute_sync_guard), timeout=timeout_seconds)
+                else:
+                    result = await asyncio.to_thread(execute_method, app=self.app)
+            emit_lifecycle("end")
+            return result
+        except asyncio.TimeoutError:
+            # 任务体自身的 TimeoutError 已被 guard 包装为 _TaskBodyTimeoutError，
+            # 走通用异常路径；此处必然是 wait_for 强制超时（Windows 时钟粒度下
+            # wait_for 可能略早于 timeout 触发，无需也不可用 elapsed 判定）
+            emit_lifecycle("timeout_killed", level=logging.ERROR, error_type="timeout")
+            raise TaskExecutionTimeoutError(timeout_seconds or 0.0)
+        except BaseException as exc:
+            emit_lifecycle("exception", level=logging.WARNING, error_type=type(exc).__name__)
+            raise
+        finally:
+            if observer_task is not None:
+                observer_task.cancel()
+                await asyncio.gather(observer_task, return_exceptions=True)
 
     async def _run_python_internal_class(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """运行Python内部类或代码
@@ -617,16 +1131,27 @@ class CronTaskExecutor:
 
         profile = get_profile(task_code)
         execution_events = []
+        execution_state: Dict[str, Any] = {
+            "phase": "execute",
+            "last_progress_monotonic": time.monotonic(),
+        }
 
         def record_execution_event(message: str) -> None:
             execution_events.append(str(message))
+            execution_state["last_progress_monotonic"] = time.monotonic()
 
         def normalize_internal_result(result: Any) -> Dict[str, Any]:
             """把内部类的业务终态透传给 Cron 日志/新鲜度字段。"""
             if not isinstance(result, dict):
+                # OOM 加固（2026-09-06）：非 dict 结果同样有界（旧实现 str(result)
+                # 全量渲染且不经过任何截断）；str 直接切片保留原文风格，其余走摘要。
+                if isinstance(result, str):
+                    rendered = result[:2000] + ("...(截断)" if len(result) > 2000 else "")
+                else:
+                    rendered = _summarize_result_for_log(result)
                 return {
                     "success": True,
-                    "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
+                    "log_detail": f"Python内部类执行成功\n结果: {rendered}",
                 }
 
             normalized: Dict[str, Any] = dict(result)
@@ -649,11 +1174,25 @@ class CronTaskExecutor:
             phase_lines = result.get("execution_log") or execution_events
             detail = result.get("log_detail")
             if not detail and phase_lines:
-                detail = "\n".join(str(line) for line in phase_lines)
+                # OOM 加固（2026-09-06）：行数（100）与单行长度双上限——10 万行
+                # phase 日志不再先 join 出巨型字符串才被 [:2000] 截断；非 str 行
+                # 走有界摘要（str(line) 对大对象同样无界）。
+                head_lines = list(islice(phase_lines, 100))
+                capped_lines = [
+                    line[:200] if isinstance(line, str) else _summarize_result_for_log(line) for line in head_lines
+                ]
+                try:
+                    total_lines = len(phase_lines)
+                except TypeError:  # 生成器等无 len 的输入：只保留前 100 行
+                    total_lines = len(head_lines)
+                if total_lines > 100:
+                    capped_lines.append(f"（共 {total_lines} 行，略）")
+                detail = "\n".join(capped_lines)
             prefix = "Python内部类执行成功" if success else "Python内部类执行失败"
-            rendered_detail = f"{prefix}\n{detail or ''}\n结果: {str(result)}"
-            # TaskLogs.log_detail 是 2000 字段；保留阶段摘要和结果前缀，避免
-            # hardlink_notes/异常上下文过大时把最终 Cron 日志写入失败。
+            # OOM 加固（2026-09-05）：结果尾巴走有界摘要（旧实现 str(result)
+            # 全量渲染，大结果 dict 会先建巨型字符串再被截断）；phase 行与
+            # [:2000] 截断保持原样（TaskLogs.log_detail 是 2000 字段）。
+            rendered_detail = f"{prefix}\n{detail or ''}\n结果: {_summarize_result_for_log(result)}"
             normalized["log_detail"] = rendered_detail[:2000]
             return normalized
 
@@ -712,7 +1251,16 @@ class CronTaskExecutor:
                     # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
                     # admitted=False 时直接返回 skipped，不调 execute。
                     if profile is not None:
-                        async with admission_controller.task_scope(task_code or "", profile) as admission_result:
+                        from app.tasks.resource_guard import AdmissionOwner
+
+                        owner = AdmissionOwner(
+                            task_id=task.get("task_id"),
+                            task_name=task.get("task_name"),
+                            cron_run_id=task.get("cron_run_id"),
+                        )
+                        async with admission_controller.task_scope(
+                            task_code or "", profile, owner=owner
+                        ) as admission_result:
                             if not admission_result.admitted:
                                 skip_msg = (
                                     f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
@@ -720,7 +1268,12 @@ class CronTaskExecutor:
                                     f"reason={admission_result.skip_reason}, "
                                     f"wait={admission_result.wait_seconds:.3f}s, "
                                     f"running={admission_result.running_count}, "
-                                    f"queued={admission_result.queued_count}"
+                                    f"queued={admission_result.queued_count}, "
+                                    f"blocked_by={admission_result.blocked_by_task_code or '-'}, "
+                                    f"holder_phase={admission_result.blocked_by_phase or '-'}, "
+                                    f"holder_age={admission_result.blocked_by_age_seconds or 0.0:.3f}s, "
+                                    f"holder_cron_run_id={admission_result.blocked_by_cron_run_id or '-'}, "
+                                    f"holder_sync_run_id={admission_result.blocked_by_sync_run_id or '-'}"
                                 )
                                 logger.info(skip_msg)
                                 # skipped=True 区分资源治理跳过 vs 真执行失败：
@@ -736,20 +1289,23 @@ class CronTaskExecutor:
                                     "log_detail": skip_msg,
                                 }
 
-                            # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
-                            # 同步 execute 经 to_thread 执行：直接在事件循环线程上跑会阻塞
-                            # 整个 API（含 active-torrents 轮询），制造全局假超时。
-                            if asyncio.iscoroutinefunction(execute_method):
-                                result = await execute_method(app=self.app)
-                            else:
-                                result = await asyncio.to_thread(execute_method, app=self.app)
+                            # 同步 execute 经 to_thread 执行；观测包装负责生命周期
+                            # 事件与（开关开启时）超时强制终止。
+                            result = await self._execute_internal_method_observed(
+                                execute_method,
+                                task,
+                                task_code,
+                                execution_state,
+                            )
                             return normalize_internal_result(result)
                     else:
                         # 轻量任务：不进入资源背压，走原路径
-                        if asyncio.iscoroutinefunction(execute_method):
-                            result = await execute_method(app=self.app)
-                        else:
-                            result = await asyncio.to_thread(execute_method, app=self.app)
+                        result = await self._execute_internal_method_observed(
+                            execute_method,
+                            task,
+                            task_code,
+                            execution_state,
+                        )
                         return normalize_internal_result(result)
                 else:
                     return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
@@ -762,6 +1318,10 @@ class CronTaskExecutor:
                     "log_detail": f"内置类路径解析失败，已拒绝执行: {executor_code[:80]} ({str(e)})",
                 }
 
+        except TaskExecutionTimeoutError:
+            # 强制超时必须穿透本层兜底：否则被转成普通失败 dict，
+            # _execute_task 将无法识别超时语义（log_detail/outcome 标注）
+            raise
         except Exception as e:
             return {"success": False, "log_detail": f"Python内部类执行异常: {str(e)}"}
 
@@ -789,6 +1349,12 @@ class CronTaskExecutor:
                             f"启动任务失败: {error_msg} (任务ID: {task_id}, 状态: enabled={task.get('enabled')})"
                         )
                         raise ValueError(error_msg)
+
+                    block = capability_block_for_task(task)
+                    if block:
+                        from app.core.platform_capabilities import PlatformCapabilityUnsupportedError
+
+                        raise PlatformCapabilityUnsupportedError(block["capability"], operation="cron.start_task")
 
                     # 检查任务是否已在运行中
                     if self.running_tasks.get(task_id, False):
@@ -858,7 +1424,15 @@ class CronTaskExecutor:
             return False
 
     async def interrupt_task(self, task_id: int) -> bool:
-        """中断任务"""
+        """中断任务：移除调度 + 取消运行中的执行实例。
+
+        2026-08-25 前仅置 running_tasks=False + remove_job，对已在运行的协程
+        无效（该标志只在下一次执行前检查），生产出现运行实例挂 8.75h 且无法
+        停止的案例。现在通过 _execute_task 自登记的协程句柄真正 cancel：
+        执行体进入 CancelledError 分支，按 outcome=cancelled 落库并走收尾三写。
+        等待收尾完成再返回，消除“运行标志已放行而旧协程收尾仍在写 task 行”
+        与用户立即重启的并发窗口（收尾为毫秒级 DB 短事务）。
+        """
         try:
             # 设置任务为不运行状态
             self.running_tasks[task_id] = False
@@ -871,6 +1445,12 @@ class CronTaskExecutor:
             # 更新任务状态
             await self._update_task_status(task_id, 2)
 
+            # 取消运行中的执行实例
+            handle = self.running_task_handles.get(task_id)
+            if handle is not None and not handle.done():
+                self.interrupt_requested.add(task_id)
+                handle.cancel()
+                await asyncio.gather(handle, return_exceptions=True)
             return True
 
         except Exception as e:
@@ -1011,6 +1591,14 @@ class CronTaskExecutor:
 
     def _ensure_version_check_job(self):
         """注册 GitHub 版本检查任务（每天凌晨2点执行）"""
+        from app.core.platform_capabilities import is_android_server
+
+        if is_android_server():
+            # 移动端 profile（2026-09-05）：Android 服务端定位为临时/轻量服务
+            # （平台能力矩阵语义），每日 GitHub 外呼与版本通知落库无意义且
+            # 徒增网络/分配，跳过注册（服务端形态不受影响）。
+            logger.debug("android-server 运行形态：跳过 GitHub 版本检查任务注册")
+            return
         job_id = "github_version_check"
         if self.scheduler.get_job(job_id):
             logger.debug(f"版本检查任务已存在: {job_id}")

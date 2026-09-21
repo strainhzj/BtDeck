@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import request from '@/utils/request'
 import {
   deleteBatchAsync,
@@ -6,7 +8,9 @@ import {
   getBatchDeleteStatus,
   getTorrentList,
   pauseTorrents,
-  resumeTorrents
+  reconcileRuntimeTorrentStates,
+  resumeTorrents,
+  saveSimpleQueryAsTemplate
 } from '@/api/torrents'
 import {
   cleanupOrphans,
@@ -92,9 +96,12 @@ import {
   getDownloaderSettings,
   getStatus as getDownloaderStatus,
   getStatusAll,
+  getSyncTaskStatus,
   syncDownloader,
-  testConnection
+  testConnection,
+  upDownloader
 } from '@/api/downloader'
+import { exportDiagnosisFile } from '@/api/health'
 
 jest.mock('@/utils/request', () => ({
   __esModule: true,
@@ -130,10 +137,126 @@ describe('API 请求契约', () => {
       )
     })
 
+    it('列表多选数组参数归一化为逗号分隔字符串（后端 Optional[str] 契约）', () => {
+      expectRequest(
+        () => getTorrentList({
+          downloader_id: ['d1', 'd2'],
+          status: ['seeding', 'error'],
+          tracker_domain: ['tracker.example.com'],
+          name_like: '关键词',
+          skip: 0,
+          limit: 20
+        }),
+        {
+          url: '/torrents/getList',
+          method: 'get',
+          params: {
+            downloader_id: 'd1,d2',
+            status: 'seeding,error',
+            tracker_domain: 'tracker.example.com',
+            name_like: '关键词',
+            skip: 0,
+            limit: 20
+          }
+        }
+      )
+    })
+
+    it('列表空数组剔除参数键，字符串形态原样透传', () => {
+      expectRequest(
+        () => getTorrentList({
+          downloader_id: [],
+          status: 'paused',
+          skip: 0,
+          limit: 20
+        }),
+        {
+          url: '/torrents/getList',
+          method: 'get',
+          params: {
+            status: 'paused',
+            skip: 0,
+            limit: 20
+          }
+        }
+      )
+    })
+
+    it('saveSimpleQueryAsTemplate 把 tracker_domain 写入 simple 模板 conditions（缺省为空数组）', () => {
+      mockRequest.mockReset()
+      saveSimpleQueryAsTemplate('我的模板', {
+        name_like: '关键词',
+        status: ['seeding'],
+        tracker_domain: ['tracker.a.example.com', 'tracker.b.example.com']
+      })
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/advanced-search/search-templates',
+        method: 'post',
+        data: expect.objectContaining({
+          conditions: {
+            source: 'simple',
+            version: 1,
+            listQuery: expect.objectContaining({
+              tracker_domain: ['tracker.a.example.com', 'tracker.b.example.com']
+            })
+          }
+        })
+      })
+
+      mockRequest.mockReset()
+      saveSimpleQueryAsTemplate('无域名模板', { name_like: '' })
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/advanced-search/search-templates',
+        method: 'post',
+        data: expect.objectContaining({
+          conditions: {
+            source: 'simple',
+            version: 1,
+            listQuery: expect.objectContaining({
+              tracker_domain: []
+            })
+          }
+        })
+      })
+    })
+
+    it('列表数组归一化不修改调用方传入的参数对象', () => {
+      const original = {
+        downloader_id: ['d1', 'd2'],
+        status: ['error'],
+        tracker_domain: [],
+        skip: 0
+      }
+      const snapshot = JSON.parse(JSON.stringify(original))
+      getTorrentList(original)
+      // 归一化必须基于浅拷贝：调用方（桌面 listQuery 拷贝、移动 filters）不感知形态变化
+      expect(original).toEqual(snapshot)
+      expect(Array.isArray(original.downloader_id)).toBe(true)
+      expect(Array.isArray(original.status)).toBe(true)
+    })
+
+    it('列表接口无参调用：params 归一化为 undefined 不抛错', () => {
+      expectRequest(
+        () => getTorrentList(),
+        { url: '/torrents/getList', method: 'get', params: undefined }
+      )
+    })
+
     it('速度快照使用轻量活动接口', () => {
       expectRequest(
         () => getActiveTorrents(),
         { url: '/torrents/active-torrents', method: 'get' }
+      )
+    })
+
+    it('终态核验按下载器与 hash 复合键提交 JSON', () => {
+      const items = [
+        { downloader_id: 'dl-a', hash: 'same-hash' },
+        { downloader_id: 'dl-b', hash: 'same-hash' }
+      ]
+      expectRequest(
+        () => reconcileRuntimeTorrentStates(items),
+        { url: '/torrents/runtime-state/reconcile', method: 'post', data: { items } }
       )
     })
 
@@ -531,6 +654,49 @@ describe('API 请求契约', () => {
     })
   })
 
+  describe('回收站响应类型契约（api/recycle-bin.ts 源码锁定）', () => {
+    const readApiSource = (): string =>
+      fs.readFileSync(path.resolve(__dirname, '../../src/api/recycle-bin.ts'), 'utf-8')
+
+    // 截取单个 interface 声明块（至行首闭合大括号；嵌套 }> 不受影响）
+    const interfaceBlock = (source: string, typeName: string): string => {
+      const start = source.indexOf(`export interface ${typeName} `)
+      expect(start).toBeGreaterThanOrEqual(0)
+      return source.slice(start, source.indexOf('\n}', start))
+    }
+
+    it('RestoreResponse/CleanupResponse 的 failed_list 项声明 reason 与可选 torrent_name，禁止回退 error/name', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreResponse', 'CleanupResponse']) {
+        const block = interfaceBlock(source, typeName)
+        const failedBlock = block.slice(block.indexOf('failed_list'))
+        expect(failedBlock).toContain('torrent_name?: string')
+        expect(failedBlock).toContain('reason: string')
+        expect(failedBlock).not.toContain('error: string')
+        expect(failedBlock).not.toContain('name: string')
+      }
+    })
+
+    it('RestoreResponse/CleanupResponse 的 success_list 项声明必填 torrent_name', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreResponse', 'CleanupResponse']) {
+        const block = interfaceBlock(source, typeName)
+        const successBlock = block.slice(block.indexOf('success_list'), block.indexOf('failed_list'))
+        expect(successBlock).toContain('torrent_name: string')
+      }
+    })
+
+    it('RestoreRequest/CleanupRequest 字段名保持 torrent_ids（后端契约不变式）', () => {
+      const source = readApiSource()
+      for (const typeName of ['RestoreRequest', 'CleanupRequest']) {
+        const block = interfaceBlock(source, typeName)
+        expect(block).toContain('torrent_ids: string[]')
+        expect(block).not.toContain('info_ids')
+        expect(block).not.toContain('record_ids')
+      }
+    })
+  })
+
   describe('定时任务接口', () => {
     it('任务查询、详情、执行和日志查询使用固定路径', () => {
       const listParams = { page: 2, limit: 20, enabled: true }
@@ -784,6 +950,12 @@ describe('API 请求契约', () => {
 
       mockRequest.mockReset()
       expectRequest(
+        () => getSyncTaskStatus('sync/1'),
+        { url: '/torrents/sync-status/sync%2F1', method: 'get' }
+      )
+
+      mockRequest.mockReset()
+      expectRequest(
         () => getDownloaderSettings('dl-1'),
         { url: '/downloaders/dl-1/settings', method: 'get' }
       )
@@ -799,6 +971,31 @@ describe('API 请求契约', () => {
         () => getDownloaderCapabilities('dl-1'),
         { url: '/downloaders/dl-1/capabilities', method: 'get' }
       )
+    })
+
+    it('upDownloader 走 ID 路径且 payload 原样透传（部分更新契约）', () => {
+      // 2026-09-07 422 根修：列表启停开关只传 {id, enabled}，缺省字段后端保持原值
+      expectRequest(
+        () => upDownloader({ id: 'dl-1', enabled: '0' }),
+        { url: '/downloader/update/dl-1', method: 'post', data: { id: 'dl-1', enabled: '0' } }
+      )
+    })
+  })
+
+  describe('诊断导出接口（2026-09-07 /health/sync 改造）', () => {
+    it('exportDiagnosisFile 走 Axios blob 契约（认证头/续期链路），路径锁定 /health/diagnosis', () => {
+      // 旧路径 /health/sync 已移除（后端 404 回归锁），此处锁定前端不再回退旧路径
+      expectRequest(
+        () => exportDiagnosisFile(),
+        { url: '/health/diagnosis', method: 'get', responseType: 'blob' }
+      )
+    })
+
+    it('列表启停开关源码契约：只传最小 payload，禁止整行展开回归', () => {
+      // 回归锚点（2026-09-07 422 事故）：整行 camelCase 展开缺 is_search/is_ssl 必 422
+      const source = fs.readFileSync(path.resolve(__dirname, '../../src/views/downloader/index.vue'), 'utf-8')
+      expect(source).toContain('upDownloader({ id: downloader.id, enabled: newEnabled })')
+      expect(source).not.toContain('upDownloader({ ...downloader, enabled')
     })
   })
 })

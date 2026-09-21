@@ -51,6 +51,7 @@ AUDIT_OPERATION_TYPE_PARAMS = [
     ("scheduled_task_enable", "启用定时任务", "scheduled_task"),
     ("scheduled_task_disable", "禁用定时任务", "scheduled_task"),
     ("scheduled_task_execute", "手动执行定时任务", "scheduled_task"),
+    ("scheduled_task_interrupt", "中断运行中的定时任务", "scheduled_task"),
     # ---- 关键词规则操作 ----
     ("keyword_rule_add", "添加关键词规则", "keyword_rule"),
     ("keyword_rule_delete", "删除关键词规则", "keyword_rule"),
@@ -113,7 +114,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 47  # 含 TRANSFER（W5-4）
+        assert len(AuditOperationType) == 48  # 含 TRANSFER（W5-4）和 SCHEDULED_TASK_INTERRUPT
 
 
 class TestAuditOperationTypeIsValid:

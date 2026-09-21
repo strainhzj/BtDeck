@@ -1,4 +1,2384 @@
-# Session Handoff - BtDeck 全栈项目
+## 2026-09-21 交接：roadmap 全量维护完成（代码零改动，未提交）
+
+### 已完成（用户确认全量方案 A+B+B+ + C1/C2，roadmap-maintain 技能二次确认后实施）
+
+- **13 个 roadmap 文件 +261/-211**：第二层补 9 缺失文件行 + views mobile/ 子树节 15 行、划线 BasicSettingsTab.vue；计数重测 12 处（endpoints 39、前端 api 14、alembic 31、.vue 108、后端测试 236、前端 124 套/128 spec 等）；第三层 2 样例行号全量重测（torrent_crud.md 按服务化后 485 行重写；orphan_file_service.md 72 处 L 声称分段移位 + 6 处冒号定位行补移）；test-coverage 后端 223→236、前端 105→112 + 补录 23 历史未收录 spec 行；android-companion 新增服务端能力矩阵节；根 README 元信息双条目前插。
+- **验证**：双向审计脚本全分支无遗漏/无陈旧；陈旧值清查零命中；torrent_crud.md 行号 9/9 + 定位行 6/6；orphan_file_service.md 抽验 9/9；表格列数标记项均为既有风格非本次引入。
+
+### 下一步
+
+1. 用户浏览器抽查 roadmap 渲染（根 README 元信息两条长行、views mobile/ 新节、test-coverage 补录表）。
+2. 提交建议拆分：docs(roadmap) 单提交（含 progress/handoff），待用户指示；工作区另有用户本地改动（build-images.sh chmod、未跟踪 data/）勿混入。
+3. 既有待办不变：i18n-leftover-guard 存量红（scheduled-tasks.ts:23）、R01～R06 签认、P7 收口、Android 嵌入服务 stage-server.py。
+
+### 坑位（下会话注意）
+
+- orphan_file_service.md 类行号移位要同时覆盖 `L123` 与 `文件.py:123` 两种格式（本次冒号格式首次漏移、二次补移）。
+- 本机 git autocrlf 坑照旧：编辑后跑正则契约前 `sed -i 's/\r$//'`。
+
+---
+## 2026-09-21 交接：两项 UI 修复完成（已提交 59f3fde + a501970；推送由用户自行执行）
+
+### 已完成（用户确认两项假设后实施）
+
+- **移动下载器表单重排**：`DownloaderSettingsDialog.vue` 连接配置卡 ≤780 折单列时顺序改为 昵称→地址→端口→类型→HTTPS（flex column + el-row display:contents + col-* order；卡片水平内边距 12px→4px 补偿 gutter）；桌面双列零变化。
+- **登录页语言切换**：`login/index.vue` 改 Navbar 同款下拉胶囊（languages 图标+当前语言+chevron），语言+主题收进右上角 `.login-topbar` flex 容器，根除旧 52px 魔法偏移与主题胶囊重叠；动作源与 navbar-language-switcher.spec 契约锚点不变。
+- **验证**：typecheck / lint 三项 / build / 全量 Jest 1813/1814（唯一红为 i18n-leftover-guard，stash 对照证实 HEAD 存量，指向 `src/types/scheduled-tasks.ts:23`，待后续会话处理）。
+- **文档**：feature_list 新增 ui-fixes-2026-09-21（done）；progress/roadmap/handoff 已同步。
+
+### 下一步
+
+1. 用户浏览器/手机实测两项 UI 效果（375×812 /m/downloader/settings/new 与桌面 /login 中英切换+主题切换不重叠）。
+2. 存量红：i18n-leftover-guard 的 scheduled-tasks.ts 注释中文命中（P6-5 后某会话引入，与双语审计集翻转相关），需单独批次决定入白名单或键化。
+3. 本批已提交 59f3fde（feat）+ a501970（docs roadmap），未推送；另有前会话遗留未提交改动（frontend/README.md、package.json、serve-demo.mjs 等 demo 相关）一并待用户处置。
+
+### 坑位（下会话注意）
+
+- 本机 git autocrlf：stash/checkout/编辑写入会引入 CRLF，直读源码的正则契约会红——改后需 `sed -i 's/\r$//'` 规范化两文件。
+
+---
+## 2026-09-20 交接：桌面双语 P6-5 收口批完成（已提交 4cbaccc + d1295e2；推送由用户自行执行）
+
+### 已完成（用户确认四决策：三部分全做/死代码删除/banner 翻译/p6 不标 done）
+
+- **遗漏扫描修补**：桌面 199 生产文件预扫描 522 处中文命中逐一分类——真实漏译 ~40 条入键（404 联系支持 toast、ThemeSwitcher+theme.ts nameKey/descriptionKey、DemoModeBanner 四条、downloaderSettings store 九键、error-normalize 兑底、clipboard 两态、sync-task 四态终态通知（桌面/移动共享层）、notification-markdown 兑底、traditionalStatusFilter「全部/活动中」）；死代码删除 CompactTable.vue（零消费方，Options API 债 3→2）+ types 死数组 + theme-manager displayName + allThemes write-only。
+- **审计门禁翻转**：i18n-leftover-guard 由正向 65 面→**全桌面负向排除**（排 mobile/layout-mobile/i18n/nested/tree/demo/*.generated.ts/__tests__），白名单 60 条；扫描器增行内注释剔除。新建桌面文件默认入扫描。
+- **R06 清单**：PLANS/bilingual/orphan-files-review.md（37 条 zh/en + 6 议题，术语表钉死清理/彻底删除/删除副本三态不混译）**待用户签认**；R01～R05 见 delete-level-review.md 同样待签。
+- **C01 抽查**：新 p6-c01-mobile-chinese-regression.spec.ts 15 例 + 19 移动套件 293 例绿。
+- **验证全绿**：typecheck/lint 三项/build/全量 Jest 124 套 1814 例；后端零改动；根 ./init.sh 通过；roadmap 八处同步。
+
+### 下一步
+
+1. **P7（M2 收口）**：中英文完整回归、浏览器视觉验收（V01/V02）、R01～R06 人工签认（两份审校清单）、英文人工审校汇总、feature/roadmap/handoff 收口。
+2. P5/P6 均保持 in_progress，签认完成后再定 done 时机。
+3. Android 嵌入服务未同步 P4 之后的后端契约，下次出 APK 前重跑 stage-server.py。
+4. **已提交**：4cbaccc（feat，33 文件 +717/-1011）+ d1295e2（docs roadmap，9 文件）+ eae6170（handoff 补记）；**推送未完成**——本 piagent 会话无凭据（huangzj 密钥 ACL 不可读/HTTPS 无凭据/gh 未登录，匿名 fetch 可用），用户将在自己终端执行 `git push git@github.com:strainhzj/BtDeck.git dev`（origin/dev 实测在 d382fe6，待推 10 提交：P6-3～P6-5 全部）；**推送后请复核 CI 双 job**（上次全绿为 baaa696）。
+
+### 坑位（下会话注意）
+
+- 无分号代码中行首 `(document as any)` 会被 ASI 粘连到上一行函数调用——行首括号语句前加 `;`。
+- sync-task 的 `SyncTaskStatusData` 只从 '@/api/downloader' 导入。
+- 审计白名单 contains 是行内子串匹配：同一字符串可覆盖多行；末项无尾逗号形态（`unknown: '未知'`）必须按实际写。
+
+---
+## 2026-09-19（P6-2 下载器域收尾）：8 组件全量双语 + 设置模板 preset_key 迁移（全绿未提交）
+
+## 2026-09-19（存量 CI 修复批）：远端后端 6 红已修（三类根因）+ head 防漂移门禁
+
+> 用户指示处理「1（存量 CI 修复）」。**下次推送后请复核 CI 是否双 job 全绿**。
+
+### 修复内容（零 app 代码改动，纯测试+文档）
+
+| 根因 | 影响用例 | 修复 |
+|---|---|---|
+| 「当前 head」硬编码 `c1d2e3f4a5b6`（P3-2 加 `b3e5f7a9c1d2` 后未同步） | 4 | 新增 `tests/core/alembic_head.py`（`current_head()` 动态读链），三处改动态取值；`test_db_migration.EXPECTED_HEAD` 保留为唯一写死点 |
+| 漂移库 fixture 缺 `search_templates`/`setting_templates`（后续迁移要加列） | 2 | fixture 补两表（列集与建表迁移一致） |
+| 进程级共享测试库 + 固定 `/tmp` 扫描根 → 误收其它用例残留候选 | 1 | `TestBatchCommit` 两用例改每次唯一 uuid 专属扫描根 |
+
+新增防漂移门禁 3 例：约束文档 HEAD/计数一致、唯一写死点一致、三既有测试必须用 `current_head()`（防回流）。
+
+### 验证
+
+- CI 同参数全量：`pytest -q --cov=app --cov-fail-under=40` → **4750 passed / 17 skipped / 0 failed**，覆盖率 64.81%
+- 定向（rollback + orphan 四文件）82 passed
+- 已同步：`backend/docs/constraints/database-migration.md` 迁移链与 HEAD、roadmap（revision 29→31、head、新增迁移行）
+
+### 远端 CI 复核（已完成）
+
+- 干净克隆（baaa696）全量 4750 passed / 0 failed；
+- 已推送并复核：**run #292（head baaa696）双 job 全绿**（Frontend ✅ / Backend ✅）。
+
+### 下一步
+
+1. ~~推送并复核远端 CI~~ ✅ 已完成（双 job 全绿）；
+2. 之后回到双语主线：P6-3 Tracker 管理域 → P6-4 任务/日志+低频通知 → P6-5 孤儿文件+settings 尾页；
+3. P5 收口（审校签认 + R01～R05 人工验收）仍待办。
+
+---
+
+
+## 2026-09-19（推送与远端 CI 现状）：12 提交已推送；远端后端 CI 存量 6 红已定位（非本批）
+
+> 用户指示「提交并推送」后执行。**下次会话优先看这里**：远端 CI 后端 job 仍是红的（存量）。
+
+### 已推送
+
+- `6e862c5..dbfd115`（12 提交）已推送 origin/dev（P4 尾/P5/遗留清扫/P6-1/P6-2）。
+- 推送方式：HTTPS 凭据缺失 → 用既有 SSH 密钥 `/home/huangzj/.ssh/id_ed25519`（认证为属主 strainhzj）推 `git@github.com:strainhzj/BtDeck.git`；remote URL 仍为 HTTPS（下次推送需同样处理，或按需改为 SSH）。
+
+### 远端 CI 现状（run #290 / dbfd115）
+
+- Frontend job 全绿；Backend job 在 `Backend regression suite` 红。
+- **干净克隆对照**：`dbfd115` 与推送前 `6e862c5` 产生**完全相同的 6 个失败** → 存量测试债，非本批引入。
+- 6 例：`test_db_rollback_scenarios`×2、`test_orphan_migration_production_shape`×1、`test_orphan_schema_repair_migration`×2、`test_orphan_scanner::TestBatchCommit::test_reconcile_candidates_batch_commits`×1（单独跑通、全量时红 → 顺序/隔离敏感）。
+- 复现：干净克隆 → `cd backend && pytest -q`。
+
+### 下一步候选（优先级）
+
+1. **存量 6 红修复批**（无业务功能风险、直接改善 CI 可信度）：逐例定位是断言过期（旧迁移链形态/墙钟预算）还是环境差异；修完远端 CI 可恢复双 job 全绿。
+2. P6-3 Tracker 管理域 → P6-4 任务/日志 + 低频通知事件 → P6-5 孤儿文件 + settings MCP/MoviePilot。
+3. P5 收口：`PLANS/bilingual/delete-level-review.md` 审校签认 + R01～R05/V02 浏览器人工验收（可与存量修复批并行）。
+
+---
+
+
+> P6-1 提交（f9eb432 + c98420e）后按用户「继续」执行。
+
+### 交付
+
+- **前端 8 组件 ~300 条**：设置弹窗页签骨架 + Speed/Advanced/PathManagement/PathMapping/PathMaintenance/Tag/Template；downloader 模块新增八个子树；键化数据数组（星期/高级字段/映射类型）；相对时间与危险确认链路接 i18n；死代码 BasicSettingsTab.vue 删除。
+- **后端 preset_key（P4 遗留）**：迁移 d1e2f3a4b5c6 + 5 个冻结键 + init 按 key 幂等（含旧中文名自愈）+ to_dict 透出；**关键约束差异**：本表 name 有 UNIQUE 约束 → 无同名多行歧义，但用户占名会阻塞插入（init 已按此分流）。
+- **前端预设展示**：新 `views/downloader/template-presets.ts`（preset_key → 本地化名称/描述，未识别原文回退 Q02）+ 模板选择弹窗四处接线。
+- 测试：后端 13 例 + 前端 26 例；审计集 44 面；门禁全绿（详见 progress.md）。
+
+### 下一步（P6 余批）
+
+1. **P6-3 Tracker 管理域**：keywords-board / keywords-search / reannounce-config / test 工具 + 4 个弹窗组件（~150 条）；
+2. P6-4 任务与日志（tasks/index 123 条 + CronEditor/Monaco/PythonClassSelector + audit 15 条）+ **低频通知事件**（cron 拦截通知后端 event 键）；
+3. P6-5 孤儿文件页（R06 语义审校清单）+ settings 的 MCP/MoviePilot 页签；
+4. P7 全量回归 + 视觉验收收口（含 P2/P3/P5 待做的浏览器人工验收）。
+
+### 本批教训
+
+- **同表约束差异必须先查**：search_templates 允许同名（需歧义保护），setting_templates 带 UNIQUE（需占名分流）——直接照搬参照实现会在 init 时抛 IntegrityError。
+- 块注释中 `/*/` 会提前终结注释（项目已知坑，本批再次命中）。
+
+---
+
+## 2026-09-19（P6-1 种子域收尾）：传统视图 + 转移/改路径/全局替换 + 文件管理全量双语（全绿未提交）
+
+> 遗留清扫批之后、按用户确认启动 P6-1。本批另附带发现并修复 2 个真实产品缺陷（键前缀错导致文案空串）。
+
+### 交付
+
+- **6 文件全量双语**（~340 条）：TraditionalView / TransferDialog / BatchTransferDialog / SetLocationDialog / GlobalReplaceTrackerDialog / FileManagement。
+- **语言包**：新增 `transfer`、`fileManagement` 模块；tracker 扩 `replace` 子树；torrent 扩传统视图键（其余复用 P3 既有键）；4 个模块均 zh+en 成对（parity 门禁）。
+- **新增键可达性门禁**（全仓 1280 键，动态键跳过）——抓出并修复 **Navbar 8 处错前缀（壳层文案/aria 全空）** 与 **SizeRangeFilter 单位占位错路径**；同时修正 navbar 契约测试中锁死错键的断言。
+- 新增 `tests/unit/p6-torrent-domain-i18n.spec.ts`（16 例）；两弹窗套件随迁挂 i18n；审计集扩至 35 面。
+- 验证：Jest 119 套 1704 例 + typecheck + lint + build + `./init.sh` 全绿。
+
+### 下一步（P6 余批）
+
+1. **P6-2 下载器域收尾**：DownloaderSettingsDialog speed/advanced/tag/path 页签 + PathMappingTab + 路径维护/限速/模板选择 + downloader/index 残留 + **后端设置模板 preset_key 迁移**（P4 遗留）；
+2. P6-3 Tracker 管理域；P6-4 任务与日志 + 低频通知事件；P6-5 孤儿文件页（R06 审校）+ settings MCP/MoviePilot 页签。
+
+### 本批教训（后续必读）
+
+- **单测绿 ≠ 模板合法**：P6-1 曾漏写 `<el-form-item` 开标签，jest/typecheck 均过，靠 eslint `vue/no-parsing-error` + 生产 build 拦住 → 每批必须跑 lint+build。
+- 批量替换脚本必须容错式（记录未命中并继续），否则中途 assert 会静默丢掉整个批次的写入。
+
+---
+
+## 2026-09-19（遗留清扫批）：已译面漏译机器审计 + 审计门禁（全绿未提交）
+
+> P5 提交（21c1022 + eb0c784）后按用户指示「先处理遗留项，避免后续未发现」执行的清扫批。
+
+### 交付
+
+- **8 处用户可见漏译修复**（均 zh 逐字节零回归）：Sidebar 移动版/aria、PWA RefreshPrompt、AdvancedMultiSelect 默认占位、PlatformCapabilityPanel 整面板、downloader 控制台操作反馈 17 条、formatters 错误提取（HTTP 表/网络/未知/上下文）、高级搜索请求校验 22 条 + assertSameDownloader 2 条、user store 抛出 4 条。
+- **新增审计门禁** `tests/unit/i18n-leftover-guard.spec.ts`（19 例）：扫描集 29 个已声明完成的桌面面（P6 计划内文件排除并在注释声明）；白名单仅 6 条（每条附理由）+ 腐化守卫；附行为契约（双语切换/参数不变性/源码键契约）。变异验证双向被拦。
+- 验证：Jest 118 套 1687 例 + typecheck + lint + build 全绿。
+
+### 对后续批次的影响
+
+- **P6 必须保持扫描集干净**：P6 翻译完一个文件后应将其加入 `AUDITED_FILES`（审计集随批次增长），否则新漏译不会被拦。
+- P6 完成后可考虑把审计集改为「全桌面目录 + 排除清单」，从正向白名单翻转为负向排除。
+
+---
+
+## 2026-09-19：双语化 P5 代码批完成（链路收敛+回收站+错误契约全绿未提交），待审校签认与人工验收
+
+> 用户确认启动 P5 并拍板三决策：链路收敛到 mixin/删除死代码/移动端不动。本批完成代码+自动化+审校清单；R01～R05/V02 人工验收与英文审校签认留收口批。P5 保持 in_progress。
+
+### 本批交付
+
+- **后端**：E13～E16 全落地（torrent_deletion + recycle_bin reasonCode 14 新键 + 动态 msg 收敛 11 处 + E14 双形态 code=200 冻结 + E16 501）；test_reason_contract_p5.py 18 例；tests/api 全量 1220 passed。
+- **前端**：删除链路收敛 mixin 单点（index.vue 本地 ~340 行删除+模板改挂，列表模式获得文件缺失提醒增强）；deleteLevel 子树 45 键（按等级独立成键，en 三要素/zh 冻结）；回收站页全量双语（recycleBin 模块 78 键）；死代码 ~570 行清理；Jest 117 套 1668 例全绿 + typecheck/lint/build 绿。
+- **审校清单**：PLANS/bilingual/delete-level-review.md（28 条文案 + 9 条议题）**待用户签认**——重点：等级2 "Remove from the downloader" 措辞、等级3 可恢复承诺 vs 备份失败降级、是否需要更强危险警告词。
+
+### 下一步（P5 收口批）
+
+1. 用户签认审校清单（或提修改意见重走 parity+单测）；
+2. 浏览器人工验收 R01～R05（四等级确认/结果/降级/文件缺失/回收站三态，**仅隔离测试数据**）+ V02（危险确认可访问性）；
+3. M1 范围提示（未完成入口英文范围说明——M1 独立发布决策待拍板）；
+4. P5 收口后 M1 里程碑复核（P2/P3 人工验收 A/D/T/Q 系列可与本批同批浏览器验收）。
+
+### 坎位提醒
+
+- 收敛后两视图删除命令统一走 mixin `handleDeleteByLevelCommand`/`handleBatchDeleteByLevelCommand`，新增删除入口不要复制本地链路；
+- buildDeleteConfirmMessage 按等级独立成键，新增等级需同时补 zh/en 两端 confirm.levelN.single/batch + parity 门禁；
+- 名称拼接统一 common.listSeparator（勿硬编码顿号）；
+- 后端新增错误分支必须带 data.reasonCode（源码级清单测试会拦无 reasonCode 的删除链路错误分支）。
+
+---
+
+## 2026-09-18：双语化 P0 盘点 + P1 基础设施完成（p0/p1 done，P2 待授权）
+
+> 用户先后确认 P0（静态盘点）与 P1（i18n 基础设施）。P0 产出五清单；P1 已实现并全门禁绿（未提交 Git）。
+
+### 交接要点
+
+- **P0 产出**（PLANS/bilingual/）：routes-inventory / copy-catalog（唯一 3088，M1 键约 1300～1450）/ error-contract（18 样例）/ system-content（preset_key 迁移提案）/ terminology（辅种=cross-seed ✅）。
+- **P1 已落地**：vue-i18n@8.28.2 钉版 + `src/i18n/` 四文件 + zh-CN/en 消息树；桌面 21 条路由 titleKey/顶栏/相对时间可切换（移动零变化）；双入口 Navbar+登录页；app store SetLanguage；选型风险记录 p1-i18n-decision.md。验证：typecheck/lint/build 绿，全量 Jest 115 套件 1622 用例零回归；roadmap 五处已同步。
+- **下一步（P2 首次使用闭环，需用户确认启动）**：登录页/permission 守卫/账户密码+2FA 设置/下载器连接表单的双语化；依赖 P4 错误契约的 M1 子范围（登录/下载器失败路径 reasonCode）——**P2 与 P4 有交叉，建议 P2 动静态文案、P4 契约同期或先行**。
+- **待用户拍板（沿用 P0 批交接）**：①M1 边界 5 项；②M1 是否独立发布；③查询模板英文定名 saved search vs query template。
+- **P1 坑位（后续批次必读）**：①环境声明 .d.ts 不能含顶层 import（否则退化模块增强报 TS7016）；②v8 无 locale 订阅 API，语言切换后的 document.title 由切换入口显式刷新（Navbar/登录页两处已接，新增切换入口必须照做）；③块注释含 `zh-*/en-*` 类字样会提前终结注释；④i18n-message-parity 排除 el 子树（Element 官方包键漂移 vendor 数据）。
+
+---
+
+## 2026-09-18：双语化 P0 盘点完成（desktop-bilingual-20260918.p0 done），P1 待授权启动
+
+> 用户确认启动双语化，本轮完成 P0 五清单（全部在 `PLANS/bilingual/`，业务代码零改动、未提交 Git）。
+
+### 交接要点
+
+- **产出**：routes-inventory（桌面 19 路由+M1 划定）/ copy-catalog（唯一 3088，M1 键约 1300～1450，重估 22～36 人日）/ error-contract（18 样例+reasonCode 提案）/ system-content（preset_key 迁移提案+通知事件+时间约定冻结）/ terminology（辅种=cross-seed 已确认）。
+- **下一步（P1，需用户确认启动+授权安装依赖）**：vue-i18n@8 选型核验（官方已停维护，需记录维护/安全结论）→ main.ts/store/router/Element locale/formatters 接线 → 键落位从 core 高频组开始。
+- **待用户拍板（不阻塞 P1 启动）**：①M1 边界 5 项（去重双弹窗、转移类弹窗、全局替换 Tracker、状态诊断页签、DownloaderSettingsDialog 页签拆分清单）；②M1 是否独立发布；③查询模板英文定名 saved search vs query template。
+- **P4 必读坑**：error-contract.md §4（动态 str(e) 拼接 / success+200 错误语义 / 422 英文 pydantic msg 字典化双收益）；system-content.md §4（时间语义冻结）。
+
+---
+
+## 2026-09-13：WebView 返回来源页双入口已交付（webview-return-navigation-2026-09-13），待真机验收
+
+> 用户反馈「无法主动返回选择模式/服务器选择页，请在仪表盘设返回按钮、左上角名称加点击事件」——本会话实施+构建完毕，装 0.2.4 包即可验收。
+
+### 交付内容
+
+- **返回双入口（纯安卓，前端零改动）**：`WebViewActivity.setupActionBar()`——① `setDisplayHomeAsUpEnabled(true)` 左上角返回箭头；② 原生 title 无点击 API，custom view（`action_bar_web_title.xml`，名称+地址/版本两行，根节点整体可点）承载左上角名称。两入口都 `exitToSourcePage()`=直接 `finish()` 回启动来源 activity（伴侣模式=服务器列表、本机模式=向导），**不带 WebView 历史**。
+- **两处易错点**（代码注释+契约已钉死）：`onSupportNavigateUp()` 必须直调不走 super（AppCompat 默认落 onBackPressed，先被 WebView 历史耗掉，箭头点了只翻页）；副标题健康提示必须写 custom view TextView（原生 subtitle 已随 `setDisplayShowTitleEnabled(false)` 隐藏，写 `supportActionBar?.subtitle` 静默不可见）。
+- **门禁与交付**：`WebViewActivityContractTest` +2 共 7 用例全绿（变异验证：箭头开关置 false 即红）；versionCode 5→6 / versionName 0.2.4-server(+lan) / bat 0.2.4 同源；双变体 APK 构建签名验证通过 `android/dist/btdeck-companion-0.2.4-{strict,lan-cleartext}-debug.apk`（badging versionCode='6'，classes7.dex 含新方法）。纯原生变更，嵌入服务 staging 无需重跑。
+- **真机验收点**：①左上角出现 ← 箭头，点击回到服务器列表（伴侣）/向导（本机）；②点左上角服务器名同样返回；③名称下方健康提示（v版本·状态）仍正常显示刷新。
+
+---
+
+## 2026-09-12（续10）：真机验收通过 + 回归测试保护补强完毕（mobile-ux-pending-fixes 全 4 任务 done）
+
+> 用户确认「验证通过」后按指示补齐本轮全部修改的回归保护（feature_list task.4）。
+
+### 测试增量
+
+- **安卓**：`WebViewActivityContractTest`（新，4 用例）——前端仓「源码契约」模式移植到 JVM（Intent/ClipData 实例化是 not-mocked stub、无 Robolectric，无法端到端）：接线/回调恰好一次四路径（`onReceiveValue(null)` 恰 4 处）/MIME 陷阱禁回退 createIntent/**APK 版本纪律锚点**（versionCode ≥3 + bat 产物名与 versionName 同源）；`FileChooserTest` +1（mode 显式 opt-in）。
+- **前端**：`transfer-set-location-dialogs.spec.ts` 挂载行为 +4（ElDialog 占位组件读 customClass prop、嵌套确认弹窗结构、两组件打开流程）——与源码契约分工：div 包裹回退由源码契约拦截（挂载用例不敏感）。
+- **变异验证 3/3 检出**（删作废旧回调/bat 版本回退/根 div 回退各自红），还原后生产代码与 b7371df 逐字节一致。
+- **门禁**：安卓全套件绿（8 新用例）；前端全量 111 套件 / 1575 用例绿；typecheck/lint 绿。
+
+### 新坑（下批必读）
+
+- Kotlin 测试里 `?.[1]` 安全索引链曾报「cannot occur after a dot」（原因未深究）——改 `find(text)` 捕获 + `groupValues[1]` 保守写法绕开。
+- jest 环境未装 Element：el-dialog 解析为未知元素，`findComponent({ name: 'ElDialog' })` 落空——注册带 props 的占位组件（无值属性对应 prop 须声明 `{ type: Boolean }` 才转 true）；el-form stub 需打桩 clearValidate/validate。
+- `FileChooserParams.MODE_OPEN_FOLDER` 常量实际不存在（只有 OPEN/OPEN_MULTIPLE/SAVE），勿臆造。
+
+---
+
+## 2026-09-12（续9）：两遗留修复已实施（App 文件选择器 + 转移/修改路径弹窗适配），待真机验收
+
+> 续8 交接的两问题本会话全部实施完成（feature_list `mobile-ux-pending-fixes-2026-09-12`）。JVM/前端门禁全绿；**双变体 APK 构建与真机验收待执行**。
+
+### 问题 1（Android 文件选择器）实施结果
+
+- `WebViewActivity` 补 `WebChromeClient.onShowFileChooser`（L125）+ `fileChooserLauncher`（L72，ActivityResultContracts.StartActivityForResult）：回调恰好投递一次（launcher 取出即清空 / 新请求先作废旧回调投 null / onDestroy 补投 / 无文件管理器 ActivityNotFoundException 也投 null）。
+- 新 `ui/FileChooser.kt` 纯函数 + `FileChooserTest` 3 用例（MIME 恒 `*/*` 钉死禁回退 createIntent / MODE_OPEN_MULTIPLE 多选决策 / 取消与零选中收敛 null）。全套件 `testDebugUnitTest` 绿。
+- `allowContentAccess` **维持 false**：判定它只门控页面内 content:// 资源引用，文件上传读取走 ContentResolver + SAF 给 activity 的临时读授权，不经该门。**若真机上传失败**（个别 ROM 行为差异），按 WebViewActivity.kt L89-94 注释放开为 true（取舍已写明）。
+
+### 问题 2（两弹窗移动适配）实施结果
+
+- `SetLocationDialog` 根节点 div 包裹根修（el-dialog 升模板根）+ 自有 `custom-class="set-location-dialog"`；`TransferDialog` 加 `transfer-dialog`，嵌套删除确认 `transfer-delete-confirm` 88vw。非 scoped ≤768 块（94vw/5vh/64vh 内滚）+ scoped 块（标签上堆/44px 按钮/路径建议触控）。移动页 `torrents.vue` 两处 m-reuse-dialog 透传已移除（该类仅余 Tracker操作/全局替换，契约钉死使用处恰 2）。
+- `transfer-set-location-dialogs.spec.ts` 5 用例（含防 div 包裹回退断言）；typecheck/lint 绿；全量 111 套件 / 1570 用例绿。
+
+### 剩余动作（✅ 全部完成，见续10）
+
+1. ~~双变体 APK 构建~~ **已完成两轮**：最新一轮含复验批（versionCode=3 / versionName 0.2.1，UI 移动化 + Toast 诊断），产物 `android/dist/btdeck-companion-0.2.1-*`。
+2. ~~真机验收~~ **已通过**（用户确认）：装 versionCode=3 新包后文件选择器与弹窗布局均正常。
+3. ~~前端部署~~ **已完成**：双镜像部署 unraid（/health/live gitSha 与 HEAD 一致），真机 App 重进即可见新弹窗。
+4. **权限说明（回应用户「应该申请手机权限」）**：SAF 文件选择器（ACTION_GET_CONTENT）走系统 DocumentsUI，**机制上不需要任何存储权限**；无需也无法通过申请权限解决不弹问题（真机验证已证实：0.2.1 包直接弹出）。
+
+### 本批新坑（后续必读）
+
+- **Kotlin KDoc 内字面 `*/*`**：`*/` 提前终结块注释致编译 Syntax error——注释里写 `*&#47;*`。
+- **安卓 JVM 单测边界**：无 Robolectric/mockito，Intent/ClipData 实例化即抛 stub——可测性靠决策纯函数（PickerParams/isSelectionComplete），装配直译由真机兜底。
+- **前端 node_modules 残缺**（.bin 缺、包 dist 不全）：`npm install` 增量救不回，rm -rf 后 `npm ci`。
+
+---
+
+## 2026-09-12（续8·交接）：用户验收发现两问题，已根因诊断待新会话实施
+
+> 用户明确「将在新对话继续修改」。本条为可直接开工的交接：根因已实锤、方案已定，无需重新调查。
+
+### 问题 1：App 端（Android WebView）添加种子不弹系统文件管理器
+
+- **根因实锤**：`android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt`（288 行）只设置了 `webViewClient`（L92），**完全没有 `webChromeClient`、没有 `onShowFileChooser`**——Android WebView 对 `<input type="file">`（TorrentAddDialog 的隐藏 input + 程序化 .click()）会静默忽略点击。前端无需改动。
+- **实施要点**：
+  1. `onShowFileChooser` 内用 `fileChooserParams.createIntent()`；`isMultiple` 时补 `putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)`（createIntent 不带 multiple）；**回调必须恰好投递一次**（取消也传 null，双重投递会永久锁死后续选择）——用 ActivityResultLauncher（StartActivityForResult）+ `FileChooserParams.parseResult`。
+  2. **accept=".torrent" 的 MIME 陷阱**：SAF 按 MIME 过滤，".torrent" 扩展名 accept 常导致选择器空列表——建议 `type */*`（可选 EXTRA_MIME_TYPES application/x-bittorrent 作候选项），.torrent 校验由前端负责。
+  3. **安全姿态冲突须核实**：现设置 `allowContentAccess = false`（L88，"禁本地文件面"）——WebView 上传 content:// 很可能需要 `allowContentAccess = true`；文件 URI 来自用户显式选择，放宽范围可接受，但要在真机验证并在代码注释里写明取舍。
+  4. 可测性沿仓内模式：意图构造/结果解析抽 `ui/FileChooser.kt` 纯函数 + JVM 单测（参照 HealthClient 可注入 HttpCall 先例），Activity 保持薄。
+  5. 交付：`deploy/build-android.bat`（双变体）+ 真机安装验证（JVM 测不了端到端选择器）。
+- **相关既有坑**：`.bat` 必须 CRLF/ASCII、双击构建前干净检出（见 memory bat 行尾三坑）。
+
+### 问题 2：转移 / 修改路径弹窗无移动端适配
+
+- **根因实锤（比表面深一层）**：
+  - `SetLocationDialog.vue` 模板根节点是普通 `<div>` 包 el-dialog——移动页传的 `custom-class="m-reuse-dialog"` 经 $attrs 落到外层 div，**永远到不了 el-dialog**，94vw 收窄对「修改路径」从未生效（650px 原样怼手机屏）。
+  - `TransferDialog.vue` 根节点即 el-dialog（透传生效、壳已 94vw），但内部 `label-width 120px` 桌面表单、L88 嵌套删除确认 el-dialog（自带宽度）未适配。
+  - 两组件 `@media` 规则数 = 0。
+- **实施要点**（照 TorrentAddDialog 2026-09-12 适配模式，仓内已有源码契约先例）：
+  1. 组件自治而非依赖调用方：各自 el-dialog 上写 `custom-class="transfer-dialog"` / `"set-location-dialog"` + 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、`.el-dialog__body` max-height 64vh 内滚）。
+  2. scoped ≤768 块收内部布局：表单标签上堆（`.el-form-item__label { display:block; width:auto!important; text-align:left }` + `.el-form-item__content { margin-left:0!important }`）、底部按钮 44px 等宽、路径建议行触控目标；TransferDialog 嵌套删除确认弹窗一并收窄。
+  3. 移动页 `torrents.vue` 对这两处删除已失效/将失效的 `custom-class="m-reuse-dialog"` 透传；**注意 SetLocationDialog 的 $attrs 陷阱写进源码契约**（断言 custom-class 在 el-dialog 上，防回退到根 div）。
+  4. 测试：源码契约模式（jsdom 不应用媒体查询）——断言媒体块关键规则 + custom-class 落位；视觉真机兜底。
+- **连带核实（已查）**：TrackerOperationDialog / GlobalReplaceTrackerDialog 模板根节点即 el-dialog，m-reuse-dialog 透传正常——四弹窗中仅 SetLocationDialog 有 div 包裹陷阱。
+
+### 本会话终态（已提交未推送）
+
+- dev HEAD `8b1c253`：mobile-torrents-actions / tracker-op-by-downloader / torrent-add-skip-check-mobile 三批全绿落地；Docker 双镜像已构建部署 unraid（v1.0.6 @8b1c253，/health/live 验证 ok）。
+- 工作区干净（仅未跟踪 data/）。
+
+---
+
+## 2026-09-12（续7）：添加种子跳过校验复选框 + 添加弹窗移动端适配（已提交 e02564e/8b1c253）
+
+### 交付内容（torrent-add-skip-check-mobile-20260912）
+
+- **CheckingDL 根因**：qB 对保存路径已有数据的种子强制校验；后端 skip_hash_check→is_skip_checking 链路通，弹窗硬编码 false。修复=「跳过校验」复选框（用户确认默认关：不完整数据会被当作 100% 完成，须显式 opt-in），透传 addTorrentsBatch，关闭重置不残留；仅 qB 生效（TR add_args 无此参数）。
+- **移动适配**：TorrentAddDialog 是自定义 modal（`.modal-overlay/.modal-dialog`）非 el-dialog——`m-reuse-dialog` el-dialog 宽度覆盖对它无效（上批移动页死 attr 已移除）。≤768 scoped 媒体块：overlay 顶铆+自滚接管（85vh 让位）、dialog 全宽 `!important` 压内联 600px、底部双钮 44px 等宽、文件移除钮 36px。
+- **门禁**：torrent-add-dialog.spec 7 passed（+5）；typecheck/lint/build 绿；全量 110 套件 / 1565 用例绿。
+
+### 关键坑位（下批必读）
+
+- **自定义 modal 弹窗不吃 el-dialog 的 custom-class 收窄方案**——接入移动端前先确认弹窗实现体系（本仓五种复用弹窗四种 el-dialog、一种自定义 modal）。
+- 内联 `style="max-width:600px"` 只能 `!important` 压制；源码契约断言用 `match(/…/s)` dotAll 提取嵌套块。
+- 源码契约数出现次数：`skip_hash_check: false` 恰 2 处（表单默认+关闭重置），`not.toContain('skip_hash_check: false,')` 钉死提交体不再硬编码。
+
+---
+
+## 2026-09-12（续6）：Tracker批量操作按下载器触发——后端双端点 + 弹窗 scopeDownloader 模式（未提交）
+
+### 交付内容（tracker-op-by-downloader-20260912）
+
+- **后端**：`tracker.py` 新增 `/tracker/addTracker-by-downloader`、`/tracker/modifyTracker-by-downloader`（请求体 downloader_id + trackers 分号分隔）；共享执行体 `_apply_tracker_op_by_downloader` 服务端解析该下载器全部种子逐条走既有 qb/tr helper（连接强制 app.state.store），单条失败不断循环；审计单条汇总（by_downloader 口径 + SUCCESS/PARTIAL/FAILED）；校验链 空400/行404/无种子404/缓存不可用500。
+- **弹窗**：`TrackerOperationDialog` 可选 `scopeDownloader` prop（null=桌面零变化）：范围行「下载器「名」全部种子（共 N 个）」/标题/按钮文案切换，提交走 by-downloader 端点带计数提示。修模板 `?.`（buble 不支持，组件首次可 jest 挂载）。
+- **移动端**：选下载器直达弹窗；getList `limit:1` 轻取 total 作计数（失败省略、0 拦截）；删除拉列表与 100 上限路径（源码契约 `TRACKER_OPERATION_MAX_TORRENTS` 禁回流）。
+- **门禁**：后端 8+91 passed、mypy/flake8/black 绿；前端 dialog spec 新增 7 用例、mobile spec 57 passed、typecheck/lint/build 绿、全量 110 套件/1560 用例绿。
+
+### 关键坑位（下批必读）
+
+- **vue-template-es2015-compiler（buble）不支持模板内 `?.`**——此前无 spec 挂载的组件是隐性炸弹，新增挂载即炸 SyntaxError；模板表达式用 `(a[0] && a[0].name) || '-'`。
+- `tests/api/test_health.py` 3 红是**本地脏工作区下 dev-source 身份 fail-closed**（reasonCodes 多 build_identity_invalid），非回归；CI 干净检出即绿，本地勿据此回滚。
+- `AdvancedMultiSelect.performance.spec.ts` L424 `parseTime < 50ms` 为墙钟预算，全量并发下偶发抖动（单跑恒绿）；本批未触碰该组件。
+- 后端审计枚举断言须比对 `AuditOperationResult.PARTIAL` 枚举本体而非字符串 'PARTIAL'（值为小写）。
+
+---
+
+## 2026-09-12（续5）：移动种子页操作补强——辅种数量/转移/修改路径/快捷操作全局组（未提交）
+
+### 交付内容（mobile-torrents-actions-20260912）
+
+- **卡片**：元信息行补「辅种 N」（camel/snake 双读、缺失回退 1 同桌面列口径，>1 `m-torrent-aux-hot` 主题色强调）；操作行补「转移」（`TransferDialog` 单 torrent，`seedTransferAvailable` 能力门控 fail-closed）与「修改路径」（`SetLocationDialog` torrents=[单行]），行经 `normalizeTorrent` 补齐 camelCase；操作行 flex-wrap。
+- **快捷操作全局组**：添加种子（`TorrentAddDialog` + `downloaderRawList`）/ Tracker操作 / Tracker汇报 / 全局替换（`GlobalReplaceTrackerDialog`）。Tracker 操作与汇报移动端无多选，**用户三选一确认「先选下载器再执行」**：原生按钮选择器；汇报 `reannounceByDownloader`/「全部下载器」`reannounceAll`（确认框明示范围+计数）；操作拉该下载器种子（上限 100，Query URL 长度约束，超限 warning 明示）进 `TrackerOperationDialog`。
+- **顺带根修**：下载器选项映射 `d.id`→后端实际字段 `downloader_id`（旧映射筛选值恒 undefined），双字段兼容。
+- **弹窗适配**：五桌面弹窗懒加载；`custom-class="m-reuse-dialog"` ≤768 收窄（94vw !important 覆盖内联 width、体高 64vh 内滚）。
+- **门禁**：mobile-torrents.spec 57 passed（+15）；全量 109 套件 / 1553 用例全绿；typecheck/lint(--no-fix 含 contract:check)/build 全过。
+
+### 关键坑位（下批必读）
+
+- eslint `member-delimiter-style` multiline 配 'none'：多行类型字面量成员**换行无分隔符**（逗号/分号都报错）。
+- 测「全部下载器」汇报须先经 `handleQuickActionCommand('tracker-reannounce')` 置 `pickerMode`（默认 'tracker'，直接调 `onPickerDownloader('')` 会走拉种子分支）。
+- el-dialog `custom-class` 在调用方打标 + 非 scoped 样式块 media 覆盖是复用桌面弹窗做移动适配的最省路径（类名页专属不外泄，宽度内联须 !important）。
+
+---
+
+## 2026-09-12（续4）：路径映射按钮与描述间距 + 移动布局回归保护（未提交→本批提交）
+
+### 交付内容（downloader-settings-mobile-layout 补强）
+
+- **间距**：PathMappingTab ≤780 `.header-actions` 加 `margin-top: 12px`（按钮行此前紧贴描述），375×812 实测间距 15px。
+- **回归保护**：新增 `downloader-settings-mobile-layout.spec.ts` 5 用例源码契约——按钮 40px/13px/flex:1/**必须 ::v-deep**（压制全局紧凑重制的机制本身）、margin-top ≥10px、640 工具栏 flex 并排几何前提（left flex:1 + right flex:0 0 auto + el-input 100% !important）；变异验证删 margin-top 契约即红。
+- **门禁**：lint/typecheck 绿；相关 3 套件 35 用例 + 全量 109 套件 / 1539 用例全绿。
+
+### 关键坑位（下批必读）
+
+- **SCSS 嵌套媒体块的契约提取用花括号计数**，正则截断会被嵌套 `}` 与块尾同形骗到。
+- CSS 媒体查询 jsdom 不生效——布局回归保护走源码契约（本仓既有模式），视觉由 375×812 浏览器实测兜底。
+
+---
+
+## 2026-09-12（续3·并行）：设置页两页签移动布局优化 + 能力缓存响应式根修（未提交）
+
+### 交付内容（feature_list `downloader-settings-mobile-layout-2026-09-12`）
+
+- **布局**：PathMappingTab ≤780 按钮压过紧凑重制（30px/9px）→ 40px 高/13px 字号并排全宽；TagManagementTab ≤640 工具栏纵堆改 flex——搜索撑满 + 新增标签收缩同行。
+- **根修**：能力缓存（platform-capabilities.ts）改 `Vue.observable` 容器——此前 computed 依赖模块级普通变量，首次求值 fail-closed false 后被 Vue 永久缓存，`$forceUpdate` 不重算（demo 快速路径必现、真实慢加载同险）。demo 能力矩阵补全为桌面六能力全 supported。
+- **验证**：375×812 实测按钮 154×40px/13px、搜索与新增同行、页签 3→4；能力 spec 16 用例（+响应式回归 1）；全量 108 套件 / 1534 用例全绿；lint/typecheck/build 绿。
+
+### 关键坑位（下批必读）
+
+- **Vue computed 只认响应式依赖**：模块级单例缓存被 computed 读取必踩冻结坑（`$forceUpdate` 不重算 computed）——`Vue.observable` 化是通用解。
+- **playwright 路由拦截对 demo 模式无效**：demo 在 axios 分流层本地返回，不发网络请求；改 demo 数据形态直接编辑 demo-request.ts。
+- **demo 横幅遮挡弹窗顶栏**：click 被 pointer-events 拦截时用 `evaluate(() => el.click())` 绕。
+- 一次全量出现 2 例偶发失败未捕获用例名，复跑全绿 + 可疑套件三连稳定——存量抖动，非本批引入。
+- **并行会话注意**：本批与 Android 品牌化测试补强批次同期在工作区（其改动 android/* + tests），提交时按目录分批勿混提。
+
+---
+
+## 2026-09-12（续3）：Android 品牌化批次回归测试补强（未提交）
+
+### 交付内容（feature_list `android-native-ui-branding-2026-09-11` evidence 增补）
+
+- **JVM +7 例**（全量 44/44 绿）：`HealthUiTest`（3）——健康文案/语义色映射（抽出纯逻辑 `ui/HealthUi.kt`，四组语义色互异断言）；`BrandThemeSyncTest`（4）——colors.xml token 值锁定、values↔values-v35 主题 item 全集同步（v35 覆盖式继承漏项即静默漂移）、Light 基底 + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对（仓库根不可见 assume 跳过）。
+- **androidTest +6 例** `CompanionBrandingUiTest`（连同 CompanionOfflineUiTest 存量 2 例共 8/8 绿，AVD btdeck-a35）：colorPrimary 运行时解析 #059669；向导 brand_mark/双模式卡；伴侣卡→列表且 btn_add_server 为 MaterialButton；添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错不关框 + 合法输入保存成行；关闭端口→row_health 文案与 row_health_dot 圆点同染 error 红；LAN 勾选联动威胁模型文案。
+- **配套微调**：向导品牌 ImageView 加 `brand_mark` ID；POST_NOTIFICATIONS 经 `uiAutomation.grantRuntimePermission` 预授权（零新依赖、免系统弹窗拦截）。
+
+### 关键坑（下批必读）
+
+- TextInputEditText 直接父容器是 TextInputLayout 内部 inputFrame（FrameLayout）——表单结构断言沿祖先链找 TIL。
+- 资源静态断言别全文 contains（注释里的字面量会误伤），解析属性值（DayNight 检查解析 parent 属性）。
+- Espresso RootMatchers 在 `matcher` 子包：`androidx.test.espresso.matcher.RootMatchers`。
+- connectedDebugAndroidTest 定向跑：`-Pandroid.testInstrumentationRunnerArguments.class=a.B,c.D`。
+
+---
+
+## 2026-09-12：断速振荡双修复回归保护加固（未提交）
+
+### 交付内容（feature_list `speed-snapshot-flap-suppression-2026-09-11` evidence 更新）
+
+- **后端 +7 用例**：_TTLQueue 性质 5 条（缓存填充不受查询配额限制/完成移除不复活/TTL 过期不填充/active_keys 短路防双条目/填充拷贝隔离）+ 端点闭环 `TestBackoffCacheFillOscillation` 2 条（断速种子退避期"不查但在场"连续 4 轮；速度恢复弃缓存回归实时数据）。
+- **前端 +5 用例**：滞回性质 4 条（30_000ms 边界 >= 语义/206 在场计入滞回/回收不误伤在场键/rebaseline 刷新时间戳）+ 振荡循环模拟（8 轮秒级交替零触发、超宽限一次合法触发）。
+- **变异验证 3/3 检出**：退避不收集缓存→4 红；put 不清缓存→2 红；滞回判定回退→6 红。生产代码与 6dd0ae0 逐字节一致。
+- **验证**：后端三文件 119 passed + flake8/black；前端 132 passed + lint 绿。
+- **注意**：qB `stalledDL` 补查时被归一为 `downloading`，断言用归一后值；写振荡模拟测试时间轴时交替间隔必须小于 30s 宽限。
+
+---
+
+## 2026-09-12（续2）：下载器设置与快捷删重三项跟进修复（未提交）
+
+### 交付内容（feature_list `mobile-ux-followups-2026-09-12`）
+
+- **①快捷删重弹窗**：预览改"完成待检测（≥2）+保留（≥1 子集）选择"事件自动触发（250ms 防抖 + previewSeq 过期响应丢弃），删手动预览按钮；确认删除提交成功即 `handleClose()`（移动/桌面一致），后台轮询与结果 toast 不中断。
+- **②移动设置页无数据根修**：整页复用形态弹窗创建即 visible=true，`@Watch('visible')` 不为初始值触发 → initDialog 从未跑 → 表单空白。`mounted()` 开头补 `if (this.visible) this.initDialog()`。注意：09-12 打磨批次 demo 截图里的"8080/qBittorrent"是默认值不是回填——该 bug 当时已在，被默认值掩盖。
+- **③设置弹窗顶部页签**：≤780 隐藏图标盒与副标题，纯文字单行；桌面左侧页签不变。
+
+### 验证
+
+quick-delete spec 6 用例（+4）；新增 downloader-settings-dialog-init.spec 3 用例源码契约；全量 108 套件 / 1528 用例全绿；lint/typecheck/build 绿；浏览器实测 375×812：名称回填「实验室节点 A」、页签图标 computed display none、弹窗无手动按钮。
+
+### 关键坑位（下批必读）
+
+- **Vue watcher 不为初始 prop 值触发**：「以固定 true 创建 + 依赖 watch 初始化」的复用形态必踩——挂载补判 `if (this.visible)`。
+- **DownloaderSettingsDialog SFC 模板含 `?.`，jest buble 编译不了**——无法真挂载单测，用源码契约（downloader-control-room-ui 模式）+ 浏览器实测兜底。
+- **测量 display:none 用 computed style**，querySelectorAll 计数会误报"仍存在"。
+- 移动种子页快捷下拉触发按钮文案是「快捷」不是「快捷操作」。
+
+---
+
+## 2026-09-12（续）：桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（未提交）
+
+### 交付内容（feature_list `mobile-desktop-mode-escape-2026-09-12`）
+
+- **根因**：mobile-ux-fixes.5 移除移动布局全部桌面版入口的回归——桌面侧栏 switchToMobile 写显式偏好 mobile（优先于视口），守卫把桌面页全分流 /m/*，偏好再无写回 desktop 的路径 → 桌面 web 用户单向锁死（ui-mode 不自锁原则被破坏）。
+- **修复**：新建 `wide-viewport.ts` class mixin（matchMedia ≥768 初值+change 监听，matchMedia 缺失兜底隐藏）；移动布局顶栏「桌面版」胶囊按钮与移动登录页「使用桌面版登录」文字链均 `v-if=isWideViewport`——**手机窄屏仍不渲染**（保住「app 不显示桌面版」决策），宽视口点击写 desktop 偏好并回桌面页。
+- **验证**：mobile-shell 36 用例全绿（改写移除契约为窄视口隐藏 + 新增宽视口 2 例）；Playwright 三场景：锁死态点击回 /#/dashboard+偏好 desktop、375px count=0、缩窗即时隐藏；全量 107 套件 1521 全绿；lint/typecheck/build 绿；e2e 补 CI 语境回归守护用例。
+
+### 关键坑位（下批必读）
+
+- **jsdom 无 window.matchMedia**（实测 undefined）：组件必须 typeof 守卫；spec 用 Object.defineProperty 注桩 + finally delete 防污染；mounted 改状态断言 DOM 先 nextTick。
+- **playwright 干净上下文 + 宽视口 = auto 桌面分流**：测移动页须 addInitScript 预置 `btdeck_ui_mode=mobile`；demo 模式自动初始化会话会绕过登录页（登录页 e2e 属 CI 真后端语境）。
+- 上一批下载器设置 CSS 打磨与本批均未提交；两批一起提交时用独立两个 commit（feature_list 条目已分开）。
+
+---
+
+## 2026-09-12：下载器设置页移动端适配优化（未提交）
+
+### 交付内容（feature_list `downloader-settings-mobile-polish-2026-09-12`）
+
+- **问题**：用户反馈设置页手机上难以查看、排布不友好。375×812 实测：页签导航 388px 超容器被裁切、弹窗横向溢出 464>374、速度页签双列挤压、标签三个内嵌弹窗固定 500px 超屏、底栏三按钮拥挤。
+- **修复（5 文件纯 CSS，+190/-10）**：外壳 ≤780 页签横滑（nav-scroll overflow-x:auto + 渐隐 mask）+ 弹窗 100vw 收口 + 底栏纵排全宽 40px 按钮 + 基本表单折行断点 520→780；速度页签 ≤768 折单列（输入组 flex-wrap、规则操作换行）；标签弹窗 custom-class + 非 scoped 块 92% 宽（弹窗挂 body，scoped 够不到）+ 网格单列；路径两组件弹窗 92% + 表格 12px 可读性。
+- **验证**：eslint/typecheck 绿；三套件 36 用例全绿（含 DownloaderDialog 删除的源码契约断言）；build 成功；375×812 截图逐项复验（基本信息/速度含规则卡/标签网格/新增弹窗 left=15 width=345=92%）。
+
+### 关键坑位（下批必读）
+
+- **el-dialog width prop 是内联 style**：移动端覆盖须 custom-class + 媒体查询 !important；且弹窗挂 body，**scoped 样式不生效**，要追加非 scoped 样式块。
+- **同 custom-class 多弹窗**：页面 3 个 tag-mgmt-dialog（未开实例宽 0），测量要取 visible 实例。
+- **设置弹窗的滚动容器是 `.tab-content`**（不是 .el-dialog__body），脚本滚动别找错。
+- demo server（VUE_APP_DEMO_MODE=true :8090）复验用，进程已停。
+
+---
+
+## 2026-09-11（续二）：断速种子快照振荡双修复（未提交）
+
+### 交付内容（feature_list `speed-snapshot-flap-suppression-2026-09-11`）
+
+- **问题**：用户实证桌面端种子列表页放置半小时 65 次 `/torrents/getList`（~5s 一次）。Console 挂桩定位：栈全走 `runtimeListMembership.refresh` 新键路径，`observe` 打印确认为**同一颗断续下载的种子**反复进出 active-torrents 快照。
+- **根因**：补查退避（`_SUPPLEMENT_RETRY_INTERVAL=2s`）让断速种子在退避期轮次从快照缺席 → 前端完整快照基线被替换 → 回归轮被误判"新出现的未展示键" → getList；种子在分页/筛选外恒为未展示 → 循环。加长 TTL 无效（振荡来自退避缺席，非 TTL 过短）。
+- **修复 A（backend）**：`torrent_speed.py` `_TTLQueue` 条目存 `last_supplement` 补查缓存，`get_disappeared` 返回 (待补查分组, 退避期缓存填充) 二元组，端点 `update_supplement_cache()` 写回；`put()` 速度恢复即弃缓存。退避只节流查询、快照成员不缺席。
+- **修复 B（frontend）**：`torrentBatch.ts` `RuntimeListMembershipTracker` 新键判定加 `REAPPEAR_GRACE_MS=30s` 滞回——宽限内回归判为抖动不触发刷新，超宽限才重判新键；`lastSeenAt` 仅完整快照轮回收。
+- **验证**：后端定向三文件 112 passed（新增 2 例），mypy/black/flake8 绿；前端 torrent-batch 127 passed（新增 2 例），lint 绿；`./init.sh` 通过。roadmap 四处已同步（根 README 增量行 / backend api / frontend views 行号 / test-coverage）。
+- **注意**：`get_disappeared` 签名改二元组，存量测试已全量适配；若外部脚本直接调它需同步。
+
+---
+
+## 2026-09-11（续）：Android 原生过渡页品牌化——Material + 翡翠绿（未提交）
+
+### 交付内容（feature_list `android-native-ui-branding-2026-09-11`）
+
+- **问题**：手机 app 模式选择向导 / 服务器地址表单 / 本机服务对话框全是系统默认 UI（程序化 LinearLayout AlertDialog + holo_blue 主题），与前端翡翠绿风格脱节。
+- **改造**：`colors.xml` token 与前端 emerald 同源；主题 DayNight→Light + MaterialAlertDialog 覆盖（colorAccent 让 WebViewActivity 未改码的 appcompat 对话框也变绿）；向导品牌圆标 + 图标化卡片；列表卡片行 + 健康语义色圆点 + MaterialButton；`dialog_add_server.xml` OutlinedBox 表单（校验文案零变更）；本机服务对话框 XML 化 + 圆形进度。Espresso 依赖 ID/文案全保。
+- **文件**：res 新增 10（colors/themes×2/图标×5/新布局 4 + 重写 3）+ Kotlin 2（WizardActivity/ServerListActivity）+ roadmap/desktop-testing 文档。
+
+### 验证
+
+gradle resources+compile+28 JVM 测试+assembleDebug+androidTest 编译全绿；AVD btdeck-a35 无头模式 10 屏视觉冒烟全过（含本机服务真实启动 → WebView 加载前端登录页）。截图 `android/build/ui-smoke/`（gitignored）。
+
+### 待办（下批）
+
+- **真机目检**：模拟器 swiftshader 渲染与真机 GPU 可能有细微色差；如觉得绿色饱和度/卡片阴影不合适，改 `colors.xml`/卡片 elevation 重装即可。
+- **未跑 connectedDebugAndroidTest**（本轮为 UI 视觉冒烟占用模拟器；Espresso 选择器已静态核对 + androidTest 编译通过，下批 CI 或设备闲时复跑）。
+- **APK 制品未重建入 dist/**：UI 变更后如需发布，走 `build-packages.bat --android` 重出双变体。
+
+---
+
+## 2026-09-11：品牌图标补齐 Android/DEB/RPM 打包（未提交）
+
+### 交付内容（feature_list `packaging-brand-icons-2026-09-11`）
+
+- **问题**：Android APK 用系统默认机器人图标 + 系统通知图标；DEB/RPM 无图标无 .desktop；btdeck.spec 挂 icon TODO。Windows EXE 已有 favicon.ico、Docker 无图标概念——均无需改。
+- **风格**：用户确认品牌绿 #059669 底 + 白色单色 btdeck 标志。
+- **Android**：mipmap 全密度（方/圆）+ anydpi-v26 自适应（绿背景 + 白标志矢量前景 + monochrome）+ 通知小图标 ic_stat_btdeck；manifest 与 ServerService 改引用。
+- **DEB/RPM**：deploy/btdeck.desktop + deploy/icons/（svg + hicolor 48-256），build-linux.sh fpm 源列表加 usr。
+- **生成器**：tools/generate_brand_icons.py 入库（btdeck-mark 几何参数化复刻，8x 超采样；产物预生成入库，构建环境零新依赖）。
+
+### 验证
+
+gradle processDebugResources + compileDebugKotlin 绿；merged_manifest 实证图标引用；PNG 像素校验 5 抽样绿；bash -n + XML/SVG 良构绿。
+
+### 待办（下批）
+
+- **制品级验证**：DEB/RPM 下次 Linux 构建后 `dpkg -c`/`rpm -ql` 应含 usr/share 图标与 .desktop；CI G6/G10 矩阵复跑。APK 重构建（versionCode 是否 bump 由发布决定）。
+- **图标视觉效果未真人目检**（像素断言代替）——上机后如觉得绿底太深/标志偏小，改 tools/generate_brand_icons.py 的 mark_ratio / 圆角率重生成即可，矢量前景同步调 group scale。
+
+---
+
+## 2026-09-10（第三批）：GitHub 完整 CI 一轮到绿——rebase origin/dev + 根修远端 19 个存量红（已提交 fbd814f/133066f/294a7e8，已推送）
+
+### 交付内容
+
+- **rebase**：本地两提交（fbd814f/133066f）变基到 origin/dev 新提交 1585638（移动端通知一键已读）之上；四冲突文件（progress/session-handoff/docs/roadmap README/feature_list）双方条目并存合并，JSON 合法性校验通过。
+- **远端 CI 存量红根修（294a7e8）**：`test_recycle_bin_api`×16 + `test_service_close_endpoint`×3 自 2026-09-07 起在 CI 连续 401——回收站路由级 `capability_dependency("level3_recycle")` 内部 `Depends(require_authenticated_user)` 未被测试覆盖（端点参数是 `Depends(get_current_user)`，测试只覆盖了它）。两文件 fixture 改**双符号覆盖**。
+- **CI 终态**：run 34498175790（294a7e84）Backend/Frontend 双 job success——regression workflow 断红三天后首次全绿。
+
+### 关键坑位（下批必读）
+
+- **鉴权覆盖要认依赖链**：路由级 `capability_dependency` 与端点参数可能用不同鉴权符号——覆盖 `get_current_user` 不拦 `require_authenticated_user` 的真实 401；反之只覆盖 `require_authenticated_user` 会让端点参数落到 HTTPBearer 的 "Could not validate credentials"。两个都盖。
+- **本地 8 个 build 身份失败是环境残留**：`release/build-info.json`（gitignore）为 09-03 `--allow-dirty` 打包残留（dirty=true），污染 dev-source 身份测试与 readiness 的 reasonCodes；CI 干净 checkout 不受影响。本地遇同批失败先删/移该文件再判。
+- **GitHub 日志 API 需 admin token**：gh CLI 未装时，`git credential fill`（manager-core）可取到 PAT 供 curl 调 Actions API（runs/jobs/logs）。
+- **远端 regression 连续红不等于"最近改动弄坏"**：先拉上一 run 的 job 日志比对失败集合再定位（本轮 19 个失败在 2192bf3 就存在）。
+
+---
+
+## 2026-09-10（第二批）：存量测试债清偿——5 套件能力 fail-closed 漂移（前端全量 1514 首次全绿，未提交）
+
+### 交付内容（feature_list `test-debt-capability-drift-2026-09-10`）
+
+- **能力矩阵 fail-closed 漂移 ×4**：`mobile-delete-level-dialog`/`permission-guard`/`torrent-list-view-component`/`traditional-view-component`——`level3_recycle` 门控在矩阵未加载时 fail-closed：等级3 选项被裁（组件 `levelOptions` filter + 视图 `v-if="level3Available"`）、`/recycle-bin` 被守卫 `enforceRouteCapability` 重定向（且目标导航在途，断言读中间态 /404）。修复：各 spec beforeEach 注入 `setPlatformCapabilityCacheForTesting({platform:'desktop', capabilities:{level3_recycle:{level:'supported'}}})` + afterEach `resetPlatformCapabilityCache()`。
+- **request mock 缺 default ×1**：`permission-force-change-deadlock` 的 `@/utils/request` mock 只导出 trySilentRefresh，守卫 `loadPlatformCapabilities` 调 default 导出 → `TypeError: (0, request_1.default) is not a function` 炸导航。修复：整体桩 `@/api/platform-capabilities`（load→null/isAvailable→true/isUnknown→false）。
+- **附带消解 Node22 进程崩溃**：`mobile-delete-level-dialog` 的 `at(3)` 因选项缺失抛错 → 测试失败 → 预置 `Promise.reject('cancel')` 无人消费 → unhandled-rejection 杀 jest worker（表现为套件崩溃无失败明细）。
+
+### 验证
+
+前端全量 **107 套件 / 1514 用例首次全绿**（上一批前后均为 12 failed 的基线）；lint 绿；四套件 102 例 + 死锁套件 8 例（46s→7s）全绿。
+
+### 诊断方法沉淀（下批可复用）
+
+- 进程崩溃吞断言：`NODE_OPTIONS=--unhandled-rejections=warn npx jest <spec>` 降级为警告后看真实 ● 明细。
+- 守卫分支定位：诊断 spec 里 `jest.mock('element-ui')` 捕获 `Message.warning` 文案（'无法确认当前服务端能力' = enforceRouteCapability 重定向；'服务暂时不可用' = abortNavigation）。
+- MSYS /tmp worktree 基线不可信（见上一批坑位）；受控基线用 stash push→跑→pop。
+
+---
+
+## 2026-09-10：手机端七问题修复批次 mobile-ux-fixes（全部门禁绿，未提交→已提交 55cff67）
+
+### 交付内容（用户 7 项反馈全闭环，feature_list `mobile-ux-fixes-2026-09` / PLANS/mobile-ux-fixes-2026-09.md）
+
+1. **「版本未知·服务存活检查失败」根修（双端双修）**：`frontend/nginx.conf` `location /health`（前缀匹配）静态返回纯文本 `"healthy\n"` 吞掉 `/health/live`——改 `location = /health`（compose 健康检查 wget /health 精确命中不变）+ 新增 `location /health/` 代理后端；TLS 示例同步。安卓 `HealthClient.kt` `probeWithFallback`（主路径 HttpError/非 JSON 信封 → 回退 `/api/v1/health/*` 免认证别名，网络/TLS 错误不回退、回退失败保留主路径归因）+ 可注入 `HttpCall` 探测点；`desktop_companion/health.py` 同语义。**旧部署不重发 nginx 也修好**（客户端回退）。
+2. **确认弹框手机适配**：`styles/index.scss` 全局 `@media≤768` 覆盖 `.el-message-box`（`92vw !important` 胜 Element 主题类规则 + 双钮等宽全宽 ≥40px 触控），一处覆盖全部 `$confirm` 调用点。
+3. **高负载伴侣红色 toast 缓解**：`request.ts` 幂等 GET 网络错误/502/503/504 静默重试一次（800ms，落响应拦截器内；超时 ECONNABORTED 与写操作不重试；`_transientRetried` 防循环，与 401 重放 `_retried` 触发集不相交）。**定位为缓解**——负载根源（单 Worker SQLite 串行+容器 1C/1G）另行治理。
+4. **种子页提速**：后端 `/torrents/tracker-domains` 60s TTL 缓存（`reset_tracker_domains_cache` 测试钩子）；`getList` 新增 `with_trackers`（helpers `include_trackers` 跳过 tracker 批量预取+关键词池）；移动页 tracker 域名懒加载（首展筛选才拉）+ 列表 `with_trackers=false`（详情页 refreshBase 全量回查补 tracker）+ 卡片 `content-visibility:auto`。
+5. **移动种子页快捷操作**：「快捷」下拉四项与桌面同语义——查找重复任务（`getDuplicateTorrents`，skip/limit→1-based page/pageSize 换算，模式横幅/退出/专属空态）、辅种异常排查（same_content_only）、错误单种排查（single_error_only）、快捷删除重复种子（自包含弹窗）；`reload/fetchPage` 按模式分发（下拉刷新/终态刷新等一切路径自动走对）；QuickDeleteDuplicatesDialog（custom-class+@media 94%）与 AdvancedMultiSelect 嵌套 popover 视口钳制。
+6. **桌面版入口全移除**（用户确认）：顶栏/抽屉完整桌面版/桌面页签分组/登录页/空态链接 5 处 + 6 处文案改「暂未在移动端提供」。**已知取舍：「Tracker 汇报/测试」自此移动端无导航入口**（仅桌面浏览器可达）；≥768px 默认桌面版与桌面侧栏切换保留。
+7. **下载器新增/编辑**：移动页统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页含全部页签，downloader-settings 支持 new=新增模式）；对话框 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏左列不变）；种子空态 CTA 与 `?create=1` 两处连改；**旧 DownloaderDialog.vue 已删除**（零消费方确认）。
+
+### 验证
+
+- 后端 mypy/black/flake8 绿；`test_torrent_list_api.py` 42 passed（TTL×2+with_trackers×1 新增）+ `tests/desktop_companion` 66 passed（health 21 含回退 5，mock 改按 URL 分发）。
+- 前端 lint/typecheck(0 error)/build 绿；全量 1495 passed。安卓 `:app:testDebugUnitTest` 全绿（新增 HealthClientFallbackTest 5 例）。`./init.sh` 通过。
+- e2e：`tests/e2e/mobile/login.spec.ts` 「使用桌面版」断言改 `toHaveCount(0)`；**`npm run test:mobile` 未在本机跑**（需起服务栈），下批补跑或随发布门禁。
+
+### 存量测试债（重要，非本批引入）
+
+`permission-guard`/`permission-force-change-deadlock`/`torrent-list-view-component`/`traditional-view-component`/`mobile-delete-level-dialog` 五套件 **HEAD 即红**（受控 stash 基线对照：批次前后同为 12 failed/88 passed 完全一致；mobile-delete-level-dialog 进程级 unhandled rejection 'cancel' 崩溃）。疑环境/时序（Node 22）——建议独立批次排查，勿算在本批头上。
+
+### 关键坑位（下批必读）
+
+- **Kotlin 块注释可嵌套**：注释里写 `/health/*` 会开一个永不闭合的嵌套注释 → "Unclosed comment" 编译错（HealthClient 与测试文件各踩一次）。
+- **MSYS /tmp 的 Node 子进程路径不可靠**：worktree 基线实验中 `cd /tmp/... && npx jest` 实际读到主树文件（假基线）；受控基线用 `git stash push → 跑 → pop` + 明确校验。
+- **download-control-room-ui 等源码契约断言**：改共享组件模板属性时先 grep `tests/` 里的 `toContain('字面量')`；`DownloaderSettingsDialog` 含 `DownloaderDialog` 子串，断言须用完整导入路径。
+- **重试单测与 3s toast 节流交互**：同文案节流跨用例生效，toast 计数断言会互相干扰（超时用例只断 adapter 次数）。
+- **能力 fail-closed 语义**：`isCapabilityAvailable` 在矩阵未加载时对 FILESYSTEM 能力（level3_recycle/orphan_files）返回 false——mobile-shell 抽屉菜单断言需注入 `setPlatformCapabilityCacheForTesting` 才见 11 项（默认 9 项）。
+
+### 部署提示
+
+- nginx 变更需 `docker compose up -d --build` 重建 frontend 镜像；不重建时安卓/桌面伴侣靠客户端回退同样修复。
+- 安卓端需重出 APK 才携带 HealthClient 回退（本批未出包）。
+
+---
+
+## 2026-09-08：移动端通知一键已读（未提交）
+
+### 交付内容
+
+- `frontend/src/views/mobile/notifications.vue`：通知列表顶部新增未读摘要与“全部已读”按钮，复用 `markAllAsRead()` 调用 `/notifications/read-all`；覆盖全部分页数据，当前已加载卡片立即更新，完成后同步 `NotificationModule.FetchUnreadCount()`。
+- 请求中按钮 loading 且方法级防重复提交；失败提示并保持未读；使用 `markAllVersion` 防止操作期间已经发出的列表请求用旧快照恢复未读状态；按钮触控区最小高度 44px。
+- `frontend/tests/unit/mobile-notifications.spec.ts`：新增成功、重复提交、失败重试与并发旧响应回归。
+- `docs/roadmap/frontend/views/README.md`、`feature_list.json`、`progress.md` 已同步。
+
+### 验证
+
+- `frontend/tests/unit/mobile-notifications.spec.ts`：23 passed。
+- `cd frontend && npm run typecheck`：通过。
+- `cd frontend && npm run lint -- --no-fix`：通过（contract:check、Vue lint、Vuex action lint）。
+- 尚未执行 Git commit；工作区还包含此前未提交的其他批次变更，提交时请按文件范围审阅。
+
+---
+
+## 2026-09-07（续五）：Docker 时区统一 UTC（RCA④ 环境层根治）+ 远端 compose 配置详情（未提交）
+
+### 交付内容
+
+- **仓库侧 5 文件**：backend/Dockerfile（`ARG APP_TZ=UTC` 默认 + `ENV TZ=${APP_TZ}` + `/etc/localtime`、`/etc/timezone` 随 ARG）；frontend/Dockerfile.prod（同 ARG 化）；docker-compose.yml 与 deploy/docker-compose.release.yml 各两处 `TZ=${TZ:-Asia/Shanghai}` → `TZ=${TZ:-UTC}`；.env.example `TZ=UTC`。均附契约注释（naive datetime.now() 写库 + serialize_utc_datetime "naive=UTC" 标 Z 契约）。
+- **安全前提实证**：调度器 `AsyncIOScheduler(timezone="Asia/Shanghai")` 与全部 CronTrigger 显式 timezone（9 文件，无 tzlocal/get_localzone）⟹ cron 触发时刻不受 TZ 切换影响。
+- **验证**：`docker build --check` 两 Dockerfile 无告警；compose YAML 解析确认四服务 TZ=${TZ:-UTC}。
+
+### 远端 unraid compose 必改项（用户已实证存在 `TZ=Asia/Shanghai` 硬编码）
+
+**compose `environment` 优先级高于镜像 `ENV TZ`**——远端不改则镜像默认 UTC 不生效。`/mnt/cache/appdata/docker/btdeck/docker-compose.yml`：backend 与 frontend 两服务的 `- TZ=Asia/Shanghai` 均改 `- TZ=UTC`；同目录若有 `.env` 文件含 `TZ=` 也须改（compose 变量插值/环境同样覆盖）。顺手对齐 RCA③：backend 服务补 healthcheck（若缺失或打的是 /health/live）：
+`test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]`，interval 30s / timeout 10s / retries 3 / start_period 5m。
+
+### 过渡语义（自愈，无需数据迁移）与验收
+
+- 存量 Shanghai 戳：freshness 负值按"新鲜"处理，各任务下次运行重盖 UTC 戳收敛（最多一个调度周期）；业务表时间排序旧行(+8h)在新行之上的窗口最多 8 小时墙钟。
+- 验收：`docker exec btdeck-backend date` 与 `cat /etc/timezone` 均为 UTC；诊断导出 lastSuccessfulDataAt/lastAttemptAt 不再 +8h 超前 generatedAt；desktop/Android 代码层双基准治理仍开放（150+ datetime.now() 写点，RCA4 方案 A/C 未实施）。
+
+---
+
+## 2026-09-07（续四）：Docker 诊断五项 RCA 收敛 + WAL 快照阻塞根修 + 镜像身份注入加固（未提交）
+
+### 交付内容
+
+1. **WAL/RSS 观测循环 to_thread 化（lag 尖峰根修）**：`run_wal_snapshot_loop` 在事件循环线程同步执行 `PRAGMA wal_checkpoint(PASSIVE)` 是 p99 134.6/max 324.6ms 尖峰的直接来源（60s 周期；本机实测 198MiB WAL 单轮 497.8ms）。修复：`snapshot_wal_stats`/`get_process_rss_mb`/`release_free_heap_memory` 三调用全部 `await asyncio.to_thread(...)`；修正两处过时注释（busy_count 恒 None → 已接 PASSIVE 读数；/sync → /api/v1/health/diagnosis）。
+2. **build-and-export-images.bat 身份注入 fail-closed 加固**：新增 `:generate_release_identity` 子程序——`--check-versions` → 严格生成 docker-backend/docker-frontend 身份（**脏树即败**，逃生舱 `BTDECK_ALLOW_DIRTY_IDENTITY=1` 显式放行 dirty 并警告 /health/ready 将 503）→ 拷贝进两 context → 哨兵校验（dirty/40 位 sha/artifact_kind）→ 身份注入 OCI label（对齐 build-images.sh）。身份读取用 env 文件方案（python 写无引号 set 行 + for /f 执行；for /f 反引内联 -c 的双引号会被 cmd /c 撕裂，已实测弃用）。
+
+### RCA 结论（详见 progress.md 续四 / feature_list `docker-diagnosis-rca-fixes-20260907`）
+
+- **lag**：138 样本 ⟹ 导出时进程仅 ~138s（当天重部署）；info checkpoint 159s 前更新早于窗口起点 ⟹ 窗口内无同步批写，用户原旁证反成排除证据；真凶=WAL 快照观测自身（观测器阻塞被观测系统）。
+- **build invalid**：backend/frontend 两份 build-info.json 均为 09-03 W5 批次 `--allow-dirty` 残留（dirty=true）被 bat 原样烧进镜像（bat 从不生成身份）；`BTDECK_BUILD_INFO` 本地复现一致。与 RCA③ 同根：本地部署链路绕过发布门身份校验。
+- **readinessFailureTotal={}**：invalid ⟹ ready 恒 503 ⟹ 若被调必计数；为空 ⟹ ready 0 次被调。仓库 Dockerfile/compose 配置正确；远端（unraid）compose 的 healthcheck 必非 ready 路径（疑 live 或禁用）——`.btdeck-remote-deploy.sh` 等 healthy 才起前端，若打 ready 则每次部署必超时失败。
+- **时间戳双基准**：系统性（datetime.now() 150+ 写点 vs sync_checkpoints UTC 少数派；serialize_utc_datetime docstring 与现实相反）；freshness 数值正确，坏的是 cron 源标 Z（+8h 误标）与 `_latest_datetime` 混基 max。方案 A（全局 UTC）/C（分期治诊断可见面）**待用户定夺**。
+- **full=degraded**：预期态；建议修复部署后低峰触发 manual_sync_full 作整体验收（顺带实测 WAL-lag 解耦）。
+
+### 验证
+
+- 回归 +2（顺序判别：探测协程须在阻塞探测仍等待期间完成）+ 变异验证闭环：修复 2 绿 → sed 还原同步实现 2 红 → 还原后全文件 49 passed；tests/services 全目录 1273 passed/1 skipped；black(24.10.0)/flake8/mypy 绿。
+- bat 链路组件实证：严格模式脏树 exit 1（真实 bat 冒烟：版本一致 PASS → 生成 FAIL → 指引 → 退出，未触达 docker build）；allow-dirty 生成成功；哨兵 hatch-off 拒 dirty/hatch-on 放行（exit 1/0）；env 文件 for /f 在真实 cmd 解析出 VERSION/SHA/CREATED 正确。
+
+### 用户重部署序列（关键）
+
+**先提交本批**（未提交 ⟹ 严格身份生成必败）→ 跑加固 bat → 部署 → unraid 上 `docker inspect --format '{{json .Config.Healthcheck}}' btdeck-backend` 实证远端 healthcheck 并对齐 /health/ready → 二次导出诊断验证 build=ok + lag 尖峰消失。注意：重新生成的身份锚定当前 frontend/dist（**demo 构建**）——若要常规 dist 需先处理（勿直接 npm run build，见 demo dist 坑）。
+
+### 关键坑位（下批必读）
+
+- **`git restore` 抹掉未提交修复**：变异验证必须用文件拷贝备份还原，不能用 git 还原。
+- **PASSIVE checkpoint 基准测试必须持"见证连接"**：最后连接关闭时 SQLite 自动 checkpoint，首测 0.7ms 假阴性（contention-runbook §4 早有记载）。
+- **测试协程在事件循环上，"阻塞期内墙钟测量"不可观测**：阻塞结束后测试才恢复——判别事件循环阻塞只能用事件顺序（探测协程先于阻塞返回）。
+- bat 嵌 python -c：内层字符串只能单引号；双引号嵌套在 for /f 反引形态下被 cmd /c 撕裂（env 文件是唯一稳法）；生成器中文提示在 GBK 控制台须去 `-X utf8`。
+- android `app/src/server` 本机无 staged 树（构建期生成），本批无需手动同步。
+
+---
+
+## 2026-09-07（续二）：/health/sync → /health/diagnosis 故障转储导出 + 下载器更新 422 根修（未提交）
+
+### 交付内容（对应用户报障两项）
+
+1. **诊断导出端点**：`GET /api/v1/health/sync` 改造为 `GET /api/v1/health/diagnosis`——`_build_diagnosis` 聚合 版本/构建身份 + readiness 三检查（只读不计数）+ readinessFailureTotal + 原同步业务健康（并入 `sync` 字段，含 process.rssMb）；成功路径 JSONResponse 带 `Content-Disposition: attachment`（`btdeck-diagnosis-<UTC>.json`，文件即分析文档不包 envelope），超时/异常 503/500 envelope 稳定 reason code；旧路径移除 + 404 回归锁。`api.py` 挂载改 `health.diagnosis_router`。
+2. **前端诊断入口**：settings 新增「状态诊断」页签（一键生成并导出诊断 JSON）；`api/health.ts` blob 走统一 request 客户端（Bearer+401 续期重放）；demo 模式生成前端本地快照（`demo: true`，绕开 demoRequest 无 blob 支持）。
+3. **下载器 422 根修**：根因＝列表启停开关整行展开 camelCase 行对象（isSearch 键不匹配且 getList 不返回 isSsl）+ `UpdateDownloader` 三布尔字段必填。修复＝后端 `is_search/is_ssl/enabled` 改 `bool | None = None`（缺省=不修改，对齐端点 case-when 部分更新 SQL；验证器 None 改透传不再吞成 False）+ 前端开关改 `{id, enabled}` 最小 payload（`upDownloader` 收紧为 `DownloaderUpdatePayload`）。
+4. Android 镜像三文件同步（health.py/api.py/request.py；注意：`android/app/src/server/` 整树为 stage-server.py 构建期从 backend 全量 staged 产物且 gitignored，手动同步只为本地树一致，下次构建自动重生成）。
+
+### 关键坑位（下批必读）
+
+- `tests/release/test_health_build_identity.py` 以**符号** `health.sync_router` 挂载路由（非路径字符串）——按路径 grep "health/sync" 会漏；改名路由符号时须 grep 符号名。首轮全量因此 25 failed（该文件 6 例 + 待复核的关联失败），已改锚 `diagnosis_router` 重跑全量确认。
+- UpdateDownloader 验证器旧注释 "✅修复 None→False" 实为危险语义：显式 null 会被静默写成 False（关闭搜索/停用）。现 None=不修改；新增回归 `test_toggle_enabled_only_keeps_other_fields`。
+- 前端全量 `test:unit --runInBand` 在干净 HEAD 亦崩（FilterGroup.spec 渲染后 UnhandledPromiseRejection "cancel"，单跑通过）——存量套件隔离问题，非本批引入，待专项。
+- **勿跑 `npm run build`**：会覆盖 demo dist（20260907 zip 刚重建）；类型门禁用 `npm run typecheck`。
+
+### 验证
+
+- 加固轮（同日续三）后终态：后端定向 **37 passed**（test_health 15 / downloader_update_partial 4 / update_downloader_request 11 / build_identity 6 / path_mapping 3）+ black/flake8/mypy 绿；前端 **52 passed**（api-contracts 48 含 +2 契约 / settings-diagnosis-export 4 新）+ lint --max-warnings 0 + tsc 零错误。
+- 加固轮抓出并修复一个生产级缺陷：诊断导出异常分支原为 CommonResponse（HTTP 200+业务码 500），blob 下载不解析业务码会把错误信封当诊断文件保存——已改 JSONResponse 显式 HTTP 500（含不回显异常细节断言）。
+- 全量基线：后端 4606 passed + 19 存量回收站失败（a2cb083 干净 HEAD 复现，与本批无关，待专项）；前端全量 test:unit 存量崩溃（FilterGroup 隔离问题）。
+- **用户补充关键信息：导出环境是 Docker 部署** → 诊断 JSON 的 `build.status="invalid"` 语义升级：build_identity_block 三态 ok/dev/invalid（`build_info.py:158`），invalid=身份文件存在但 get_build_info() 抛 BuildInfoError（dev 源码模式才会返回 "dev"）→ Docker 镜像内注入了身份文件但内容非法/缺字段，属发布链路（generate_build_info.py 注入）缺陷线索；且 invalid 在 /health/ready 是 fail-closed 503。
+- **下一对话待办（诊断续）**：①事件循环 lag 根因（p99 134.6/max 324.6ms 超 100ms 阈值，与 info 同步窗口重合旁证：checkpoint 在导出前 159s 更新；对照 sync-stopgap-runbook/sync-contention-runbook 错峰与升级门槛）；②Docker build identity invalid 排查（build_info.locate_build_info + 镜像构建链路 BTDECK_BUILD_INFO 注入）；③readinessFailureTotal={} 与 lag failed 并存 → /health/ready 疑似从未被调用，检查 compose/Dockerfile healthcheck 配置；④时间戳双基准治理（lastSuccessfulDataAt/lastAttemptAt 来自 cron 任务表为本地时间误标 Z（+8h），generatedAt/checkpoint* 为真 UTC；serialize_utc_datetime 对 naive 一律标 Z，修复候选在写入侧统一 UTC，历史"待用户定夺"项）；⑤full 任务 degraded=从未跑过 manual_sync_full 的预期态（可手动触发一次转绿）。
+- 文档：runbook 三处路径、roadmap（根 README 四处 + backend/api README health 行）、feature_list 新 feature（4 tasks done，加固轮 evidence 已追加）、progress.md 续二/续三节。
+- 未执行 Git 提交（等用户确认）。
+
+---
+
+## 2026-09-06（第二批）：OOM 审查二轮两缺口补齐——摘要键/数字有界化 + 脚本取消整树终止（后端全绿）
+
+- **缺口1 摘要**：顶层 str 键/超大 int·Decimal 不再先建完整字符串（8M 键旧实现 ~38MiB）——键值按
+  剩余预算预截断；位数预检降级 `<类型 digits≈N>`（Decimal 用 adjusted() 代理，**as_tuple()
+  .digits 按位数建元组本身无界**，第一版实现踩坑被新 tracemalloc 测试抓出）
+- **缺口2 树杀**：`_kill_process_tree`（win taskkill /F /T；posix start_new_session+killpg；
+  回退单 kill）接管取消清理——旧实现只杀 shell，持管道孙进程存活拖住中断（审查实测等 3.95s）；
+  清理两处等待加 5s 上限；Python 脚本非 frozen 改 exec 直启 sys.executable（frozen 回落 shell）
+- 连带：安全测试 exec 防线粗字符串匹配误伤 create_subprocess_exec( → 精化词边界正则（意图不变）
+- 测试 +8：8M 键/大数字分配上限、树杀三分支、exec/frozen、**真实 spawn 取消集成**（120s 睡眠
+  孙进程秒级回收）；tasks 全目录 475 绿；black/flake8/mypy 绿
+- 坑位：Windows 测试机无 os.getpgid/signal.SIGKILL，monkeypatch 需 raising=False + 常量注入
+
+---
+
+## 2026-09-06：Tracker 详情卡片——底部收起条 + 文件/Peers 页签全栈实现（未提交，等用户确认）
+
+### 交付内容
+
+- 后端新文件 `backend/app/api/endpoints/torrent_detail.py`（endpoints 38 个）：GET /torrents/detail/{hash}/files（可选分页）与 /peers；store 缓存快照+INTERACTIVE lane；qB/TR 原始字段归一化统一 VO（progress 0~1）；TR 经 torrent.get() 原始访问（库 .peers 注解缺陷/get_files KeyError 两个坑由独立审查拦下）；种子不存在独立 404 信封。
+- 前端：api/torrents.ts 两接口+类型；`mixins/detailTabsData.ts`（文件键控懒加载+Peers 5s 链式轮询+页签/currentRow watch+序号守卫+404 停轮询+visibilitychange 门控）；index.vue/TraditionalView.vue 接入；TrackerDetailCard 实现文件/Peers 页签（三态/stale/截断/刷新）与底部整行收起条（同 close 事件、总高 240/180px 不变）。
+- 测试：backend test_torrent_detail_endpoint 13 例（新增）；frontend detail-tabs-data.spec 12 例（新增）+ tracker-detail-card.spec 扩 9 例；门禁全绿（backend tests/api+架构 1131、mypy/black/flake8；frontend lint/1415 单测/typecheck/build）。
+
+### 关键坑位（下批必读）
+
+1. **类字段箭头 handler 幽灵 this（本批生产缺陷）**：vue-class-component 下 mixin 的类字段箭头捕获的是「字段默认值对象」而非组件实例——事件 handler 写 `private foo = () => {...}` 会让暂停/清理写到幽灵对象上且无报错。修法：方法内建闭包+实例字段存引用（detailTabsData.ts visibility 段有注释）。五轮探针二分法（状态→手动调用→分发→getter 计数→假 this→函数源码）已沉淀于 progress.md。
+2. transmission-rpc 7.x 必须经 `torrent.get()` 读原始字段：`.peers` 属性注解 ->int、`get_files()` 需 priorities/wanted（同 orphan_manifest.py 先例）。
+3. qB `sync_torrent_peers(torrent_hash, rid=0)` 每次全量快照，无状态端点正确用法；不要用 client.sync.torrent_peers 的 delta 状态机。
+4. 仓库既有缺口仍open：index.vue 删除当前种子不清 currentRow（本批由 mixin 404 停轮询兜底，根治要补删除路径关闭详情）。
+
+### 后续待办
+
+- Git 提交（等用户确认；建议 feat+fix 分开：卡片功能一枚、幽灵 this 修复可并入）。
+- 可选：卡片标题「Tracker详情」→「种子详情」；文件/Peers 大列表服务端分页 UI 化。
+- roadmap/feature_list/progress/handoff 已同步；init.sh 见下批记录。
+
+---
+
+## 2026-09-06：OOM 治理外部审查四缺陷修复——独立复核全属实+对抗性审查修订后落地（后端 1600+ 全绿）
+
+### 当前状态
+
+- 外部评估 08ee64d..646e742 六提交的 4 项缺陷经三轮独立核实**全部属实**并修复：
+  P1 bionic M_PURGE 写成 101（真值 **-101**，AOSP malloc.h 钉死：M_DECAY_TIME=-100、
+  M_PURGE=-101、value 被忽略；正值命令码 mallopt 返 0 **静默 no-op**）——常量/注释/
+  docstring(API 28+)/测试断言一并修正；
+  P2 摘要先完整 repr/list() 复制再截断——`_summarize_result_for_log` 全程有界重写
+  （islice/深度上限 3/类型白名单/顶层 dict 800 字符预算边渲染边 break；1M 元素列表
+  摘要峰值分配 <256KiB，旧实现 ~8MB）+ 同族加固（非 dict 结果 str() 曾完全无截断、
+  phase 行无行数上限→100 行+每行 200 字符）；
+  P2 qB 全量完成标记早于写库持久化——移到 durable 写库成功且周期完整后（info 路径
+  `_confirm_qb_sync_rid` 旁 / 全量路径主 commit 后锚点；失败注入复现旧缺口：写库失败
+  →重启+有效 RID+空增量→0 拉取报 cycle_complete，修复后被回归测试钉死）+
+  full_sync_state/qb_rid_cache 改 tmp+os.replace 原子写（失败静默语义保留）；
+  P2 取消脚本任务遗留读取协程——`_communicate_with_output_cap` 加 finally 统一回收
+  两读取任务 + **同步 kill 优先于一切 await**（二次取消打不断；取消时子进程原本也不
+  收尸、管道不关协程永挂）。
+- 独立对抗性审查（APPROVE_WITH_AMENDMENTS）抓出计划 3 个 MAJOR 已采纳：示例代码缺
+  import 且 kill 顺序错、1939 路径锚点缺（2150-2151 RID confirm 旁，tracker 阶段不
+  gate info 标记）、存量测试盘点漏（test_sync_memory_bound:874 因 fixture 预置新鲜
+  时间戳而**恒真空转**，已改强断言 partial 轮 mark_calls==[]）
+- 回归：新增/适配 13 项测试（两阶段重启重试/tracemalloc 分配上限/取消清理×2/原子性
+  ×2/深嵌套自引用/未知 __repr__ 不调用等）；tasks+api+integration **1600 passed/
+  6 skipped** + 剩余目录全量；black(24.10.0)/flake8/mypy 全过
+- 修复批次未提交（等用户指示）；真机 RSS 验证与 10 万种子压测留外部验收，
+  "稳态 400-700MB"表述降级为待实测
+
+### Android 真机 RSS 验证 SOP（修复 1 的外部验收步骤）
+
+1. 重打移动端包（btdeck_server profile），启动后 `adb shell pidof btdeck_server` 取 pid
+2. 触发一次大批量同步后等待 RSS 爬升（`adb shell cat /proc/<pid>/status | grep VmRSS`）
+3. 等待采样循环（SYNC_PROCESS_MEMORY_SAMPLE_SECONDS，默认 300s）触发归还，
+   观察 process_memory 事件 `heap_trimmed=true` 且 VmRSS 回落（修复前该字段恒 false）
+4. 多轮同步观察 RSS 呈锯齿而非楼梯（对照旧代码数小时爬回 2.2GiB 的行为）
+
+---
+
+## 2026-09-05（最新+4）：移动验收修复回归加固——单测+12/e2e+1/变异五类全拦截（1380 全绿）
+
+### 当前状态
+
+- 用户真栈验证通过后补回归保护：三层加固完成，前端全量 101 suites/1380 tests、
+  lint/typecheck、e2e 双浏览器全绿；五类回退变异逐一实证被测试拦截后复原
+- 修复批次（二轮 WindowInfiniteScroll + 一轮下拉/四级删除）仍未提交，与加固一并待用户指示
+
+### 加固清单
+
+- pull-to-refresh 16（+4：1px/2px 容差边界两向钉死、容器缺失回落、文档滚动橡胶带）
+- window-infinite-scroll 8（+1：滚动风暴重入门禁）
+- mobile-torrents 39（+2：失控根修核心性质——高内容仅 1 页/轮询零 getList/reload 不链式）
+- mobile-notifications 20（+1：静默刷新零追加/已翻页只角标）
+- mobile-delete-level-dialog 10（+4：挂载级 UI 渲染/点击链/busy）
+- e2e mobile-interactions +1（空闲零 getList/滚动有界追加；数据量≤40 自动跳过）
+
+### 测试工程坑（勿重踩）
+
+- jest documentElement 跨用例共享：scrollTop 残留伪造"已在底部"→ beforeEach 三几何一并重置
+- mockResolvedValue 固定 page 值会让 loadMore 页码回写归位，翻页断言用 Once 序列
+
+---
+
+## 2026-09-05（最新+3）：移动验收二轮——无限加载失控根修 WindowInfiniteScroll（真栈 65s/74请求→0）
+
+### 当前状态
+
+- 用户复验"还在不断触发刷新按钮"→ 真栈复现根因：Element v-infinite-scroll 在 window 滚动布局下
+  几何恒真 + immediate MutationObserver → 页面打开自动连发 loadMore 直到拉满 total
+  （dev 库 22437 条 ≈1122 请求；demo 9 条瞬时返回从未暴露，一轮 demo 探针空闲 0 是真阴性）
+- mobile-fix.4 done（feature_list 已记真栈前后对照 evidence）；全量 101 suites/1368 tests 绿
+- 未提交；8080 demo（已重建含全部修复）/8081 dev+5001 真栈（本轮起的，仍在运行）均可复验
+
+### 修复要点
+
+- 新增 `views/mobile/mixins/window-infinite-scroll.ts`：window scroll + isNearViewportBottom
+  /maybeLoadMore、短内容页加载后补页、原型方法防箭头字段 this 坑
+- `torrents.vue`/`notifications.vue` 移除 v-infinite-scroll 接入 mixin（infiniteDisabled/loadMore
+  改 protected；fetchPage/load/loadMore finally 调 maybeLoadMore）
+
+### 复验指引（用户）
+
+- 真栈：http://127.0.0.1:8081（admin / Btdeck@2026dev）→ 种子页应只加载 2 页 40 条，
+  底部"已加载 40 / 共 22437"，空闲无请求；滚动到底追加一页；中部翻列表不触发刷新；顶部下拉才刷新
+- demo：http://127.0.0.1:8080 已重建（注意 SPA 旧标签页需整页刷新）
+
+### 坑（勿重踩）
+
+- demo 桩瞬时返回 = loading 翻转不渲染：**"demo 上看不到刷新"不能证伪"刷新在发生"**，要看网络层
+- v-infinite-scroll 与 window 滚动布局不兼容是系统性坑：任何移动新页面禁用，统一 WindowInfiniteScroll
+- jsdom scrollHeight/clientHeight 恒 0：无限滚动类用例必须显式 mock 几何，否则假阳性
+
+---
+
+## 2026-09-05（最新+2）：移动端验收修复——下拉刷新误触发根修 + 四级删除补齐 + 刷新体验加固（前端 1357 全绿）
+
+### 当前状态
+
+- mobile-acceptance-fixes-2026-09-05 全 3 子任务 done（feature_list 已记 evidence）
+- 用户报障两项均收口：①种子页"不断刷新"（手势误触发根修）；②四级删除补齐（列表+详情）
+- 分支 dev 未提交（用户未要求 commit）；工作区另有上一会话遗留 backend 改动（MCP 前置批次），本批未触碰
+
+### 本批改动（全部 frontend，8 文件 + 3 新文件）
+
+- **A** `views/mobile/mixins/pull-to-refresh.ts`：滚动容器判定根修——`.mobile-content` 自身确实可滚
+  （scrollHeight>clientHeight+1）才采用，否则回落 window.scrollY（12 个移动页面共用单点）
+- **C** 新增 `views/mobile/components/DeleteLevelDialog.vue`（四等级+桌面同款确认文案、等级1 error）
+  + `views/mobile/delete-level.ts`（成功文案单源）；`torrents.vue`/`torrent-detail.vue` 删除改走
+  `deleteTorrentsWithLevel`（demo 桩路由既有，8080 可直接验收）
+- **B** `torrents.vue`：reload 原子替换（在途保留旧列表防塌陷）；downloading 筛选终态 reload 按
+  hash 去重（terminalReloadedHashes，防库内状态滞后 10s 循环）
+- roadmap：frontend/views README 三行 + 根 README 元信息/增量日志；progress.md 续四节
+
+### 验证
+
+- 前端全量 100 suites / 1357 tests ✓；npm run lint ✓；npm run typecheck ✓
+- pull-to-refresh 12 / mobile-delete-level-dialog 6（新）/ mobile-torrents 35 / mobile-torrent-detail 10
+
+### 坑（勿重踩）
+
+- `.vue` 具名导出会被 shims-vue.d.ts（仅 default）挡 TS2614——共享常量放纯 ts 模块
+- jest mockResolvedValue 返回共享对象引用 + applySpeedUpdates 原地改行 = reload 拿回已突变行，
+  滞后类场景要用 mockImplementation 每次新鲜对象
+- jsdom scrollHeight/clientHeight 恒 0，测"容器可滚"语义需 Object.defineProperty mock
+
+### 待办（用户侧）
+
+- **Demo 验收环境需重打包才含本批修复**：`npm run build:demo` → 重挂 zip / .tmp-serve-demo.py（8080）
+  现跑的是 09-05 上午旧 dist
+- 复验点：列表中部下滑不再触发刷新；删除按钮出四级选项（等级1 红色 error 确认）
+
+---
+
+## 2026-09-05（最新+1）：移动端内存 Tier-1——重启全量持久化+分配器归还+android profile（4555 全绿）
+
+### 当前状态
+
+- oom-peak-governance-20260905 追加 Tier-1 三子任务全 done；后端全量 4555 passed/9 skipped
+- 移动端实测 2.237GiB（旧代码）/重启 15 分钟 819MiB——双放大器已治（棘轮+重启强制全量）
+- 分支 dev 未推送；用户侧待办：重打移动端包验证 process_memory 轨迹（含 heap_trimmed）
+
+### 环境坑（本批新增，勿重踩）
+
+- bionic mallopt 常量：M_DECAY_TIME=-100 / M_PURGE=-101（**命令码均为负值**，AOSP malloc.h
+  实证；2026-09-06 修正——曾误记为正值 100/101 且把代码带错，正值命令码 mallopt 返 0 静默
+  no-op；M_PURGE 的 value 参数被忽略，API 28+ 可用）
+- ctypes 调用 MagicMock 断言时参数是 c_int 包装（args[0].value 取值，不能直接 ==）
+- AsyncIOScheduler 未 start 时 shutdown(wait=False) 会触碰事件循环（NoneType call_soon_threadsafe）——
+  测试里只 remove_job 不 shutdown
+- 移动端判定用 BTDECK_PLATFORM=android-server（btdeck_server.py 深导入前 setdefault 注入），
+  resolve_platform 未设/非法值回落 desktop（fail-safe 方向：能力只多不少）
+
+---
+
+## 2026-09-05（最新）：定时任务 OOM 峰值治理收口——R1-R3 核心 + R5/R6 加固 + RSS 观测（六批次全绿）
+
+### 当前状态
+
+- **oom-peak-governance-20260905：done**（feature_list 6 子任务全 done，evidence 齐全）
+- 分支 dev 工作区未提交（用户要求不主动 commit）
+- 上一批（移动端一致化）状态不变：门禁父项 done / dual-mode 7/8 / .7 四外部阻塞
+
+### 本批战果（详见 progress.md 2026-09-05 节与 PLANS 批准计划 v2）
+
+- **R1** reannounce 读段：JOIN+双列包含式 LIKE 超集预过滤+keyset 分页，50 万 tracker 行 1315MB→5.2MB；
+  修复审查发现的阻断级缺陷（锚定 LIKE 漏检含端口 tracker_host）
+- **R2** qB tracker-only fetch 分页化仅留 hash 轻对象：225MB→33.5MB（页重叠去重、不带 include_trackers/sort）
+- **R3** TR 双路径分批化：272MB→35.5MB（独立 TR_INFO_BASE_FIELDS 不动共享常量；批内 hashString 重排保游标全序；
+  tracker-only 两阶段此前零覆盖，新增 6 用例首网）
+- **R5/R6** 脚本输出带上限增量读取（防管道死锁）+内部类结果有界摘要
+- **RSS 观测**：get_process_rss_mb（Windows ctypes 伪句柄/argtypes 两坑实测修复；macOS 语义陷阱规避）
+  +process_memory 事件+采样循环+/sync process.rssMb+四处配置透传
+- 验证全绿：后端全量 **4536 passed/9 skipped**（基线 4466）、mypy/black/flake8、量化验收全部达标（≤150MB 增量口径）
+
+### 遗留与后续
+
+1. qB info 全量快照路径（首轮/12h，~270MB）暂缓——1G 内可承受，feature_list 已知风险
+2. RSS 线上基线校准：process_memory 事件跑一段后对齐 ≤150MB 增量口径
+3. MALLOC_ARENA_MAX（glibc 碎片棘轮）可选后续项
+4. 分批提交策略：六批次各自独立 commit 可单独 revert（R1 测试同 commit；R3b/c 靠独立常量保边界）——待用户指示
+
+### 环境坑（本批新增，勿重踩）
+
+- 新同步类测试文件必须带 `isolate_call_downloader_api` autouse 夹具（tracker_budget 同款）：全量套件中更早
+  TestClient lifespan 退出 shutdown runtime 单例后真实 call_downloader_api 必败——单跑全绿、全量红
+- torrent_info 复合主键 (info_id, downloader_id, downloader_name)，`idx_torrent_hash_unique(hash, downloader_id)`
+  会对同 hash 测试种子报 IntegrityError——种子 hash 必须单射生成（如 md5(info_id)）
+- Windows ctypes GetProcessMemoryInfo：GetCurrentProcess 默认 c_int restype 截断 64 位伪句柄（ret=0 err=6），
+  须 restype=c_void_p 且 GetProcessMemoryInfo 配 argtypes（否则 OverflowError）
+- qB 服务端 torrents_info 无 sort 也应用 offset 但跨请求顺序不保证稳定；空列表+sort 取 [0] 无空检查会 BadParams——
+  分页去重+不传 sort 是唯一安全组合
+- TR get_torrents(ids=...) 按 id 序返回（≠hashString 序）：批内必须重排，否则 budget break 后游标越过未处理
+  小 hash 造成周期级静默漏同步（现有测试 fake 顺序恰好有序，测不出）
+
+---
+
+## 2026-09-05（最新）：移动端与交付制品一致化收口——CRLF 契约修复、门禁 Feature 终态 done、移动端 .3/.4/.5/.8 done（.7 唯一遗留）
+
+### 当前状态
+
+- **release-artifact-equivalence-gate-2026-08-28：父项 done（门禁系统语义）**——九子任务全 done（.4 经 run 33873168198 CI 实证修正）。**发布认证未发生**：CERTIFIED 需 GH secrets 签名+人工 approver+G0~G10 全 PASS（feature_list 收口注记+runbook §1.3）。
+- **v1.0.6-dual-mode-client：7/8 done**，仅 .7 in-progress（四项外部硬阻塞，play-release.md §11 SOP）。
+- 分支 dev 工作区未提交（用户要求不主动 commit）。
+
+### 本批战果（详见 progress.md 2026-09-05 节）
+
+- CRLF 契约误判根治（toLf 规范化比较+恒 LF 写出+14 例回归+变异）——`npm run lint` 在 CRLF 工作区首次直接通过
+- 2FA Pillow 优雅降级（手动录入，后端 6+前端 6 测试）
+- Android 3 产品缺陷修复（API35 e2e 布局/SPKI 指纹/OkHttp 手动钉扎）+ appcompat 1.7.1
+- 桌面 GUI E2E（opt-in）+ 迁移夹具 + lan_policy 回环对齐
+- 验证全绿：init.sh --ci / 后端 4466 / 前端 1322 / Android connected 12+release 双产物 / 变异验证
+
+### 遗留与外部前置
+
+1. **.7 四项硬阻塞**（不得伪造）：Play Console 人工审查（开发者账号）、arm64 真机矩阵（SOP-1；会话中 SDY-AN00 短暂接入后掉线）、跨版本升级演练（v1.0.7 版本对，SOP-3）、Doze 真机（SOP-4）
+2. **CERTIFIED 通道**：用户给 GH secrets（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+PASSWORD）+ manifest 人工审批
+3. v1.0.7 依赖治理批次（134 条安全例外 2026-10-03 到期等，见 W5 批次 F 交接）
+4. 桌面 GUI E2E 为 opt-in（BTDECK_GUI_E2E=1，需交互桌面会话；CI 自动 skip）
+
+### 环境坑（本批新增，勿重踩）
+
+- autocrlf=true 下模板字符串+JSON.stringify 混合行尾必误判 stale——契约类检查一律 LF 规范化后语义比较
+- API 35 强制 e2e：AppCompat ActionBar 不下推内容（content top=0）；windowOptOutEdgeToEdgeEnforcement 仅到 API 35，36 起必须迁移 insets 自处理
+- OkHttp CertificatePinner 与自定义 SSLSocketFactory 组合下 peer chain 为空——钉扎须 TrustManager 捕获链手动比对；指纹口径必须是 SPKI（RFC 7469）
+- WebView cookie 不分端口（RFC 6265）：同 host 不同端口的同域 cookie 互相可见/覆盖，隔离断言只看"会话残留清除"而非整个 getCookie 判空
+- Espresso 点 ListView 行用 onData().inAdapterView()；ActivityScenario 的 onActivity 只作用于自己的 activity，跨 activity 断言用 Application lifecycle 回调跟踪栈顶
+- am instrument 的 println 走 logcat System.out 不进 stdout 流；WebView 端口 9 会命中 ERR_UNSAFE_PORT（选关闭端口测离线时注意）
+- nvm-windows use 后 nodejs symlink 偶发缺失，重试 nvm use 即可；模拟器被 shell 取消连带杀死后冷启动约 45s
+
+## 2026-09-04（最新）：.9 批次 F 收口——完整 DAG RC 演练 15/15 全绿、六类故障注入、runbook；feature release-artifact-equivalence-gate 全部完成（.1~.9 done）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）——**全部 done**
+- 分支 dev@2787462（全部已推送）；master workflow 副本同步至 5066b9a 之后按轮次跟进
+- 测试：release 315/315；全套本地 4448 过 0 失败；dev regression 回绿（8-30 起 5 天红终结）
+
+### 批次 F 战果
+
+- **完整 DAG RC 演练八轮迭代终局全绿**（run 33873168198@2787462，15/15 job 含
+  rc-gate）：G0~G8 PASS + G9/G10 INDETERMINATE（drill 无签名+审批空=正确语义，
+  CERTIFIED 不可能）——迭代暴露并修复：w0-glibc 三层潜伏断裂（build-info staging/
+  output-dir/两段式 pip）、w2-docker verify tag v 前缀、grype 日更 5 新 CVE（例外
+  基线 129→134）、rc-gate 证据落位（upload-LCA 剥前缀+同名覆盖）、compare-report
+  tee 尾行容错；详见 progress 2026-09-04 节与 evidence/w6/rc-drill/
+- **生产缺陷修复**：Python 3.11 asyncio.wait_for 取消丢失竞态（torrents_async 三处
+  → asyncio.timeout；3.11 容器 before/after 探针实证）
+- **六类故障注入全部红在预期门**（fault_injection_drills.py 可复现）
+- docs/release/runbook.md（发布/回滚/豁免/证书轮换/八类红灯排查）；roadmap 同步
+- dev regression 5 天红三层根因修复（jsonschema dev 依赖/tracker 3.11 wrapper 计数/
+  两例时序敏感断言健壮化）
+
+### 独立欠账（移交，勿丢）
+
+- **v1.0.7 依赖升级治理批次**：安全例外 **134** 条 2026-10-03 到期（19 tracked
+  Critical + 110 High + SEC-130~134 新增 5 CVE 37 实例）；锁是手工双哈希维护
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（唯一构建消费架构兜底）
+- **真实签名启用**：用户给 GH secret（BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+
+  PASSWORD）后 dispatch 不勾 allow_unsigned_drill 即真实签名；CERTIFIED 需人工填
+  manifest approver/approved_at+verdict（runbook §1.3）
+- grype DB 日更会持续引入新 CVE——按 SEC-130~134 先例登记限时例外（到期自动阻断）
+
+### 环境坑（批次 F 新增，勿重踩）
+
+- Python 3.11 wait_for 取消丢失竞态（3.12 无）：外层 cancel 与 waiter 完成竞态下
+  任务永久停 cancelling——生产 await 链用 asyncio.timeout 上下文
+- upload-artifact：多路径 LCA=仓库根才保结构；单目录上传被剥前缀落根；多 artifact
+  同名文件 merge-multiple 按序覆盖——权威件单独最后重下
+- compare_snapshots stdout=JSON+verdict:/WARN 尾行（tee 产物）——解析用 raw_decode
+  首 JSON 文档
+- 本机调试 3.11：btdeck-backend:v1.0.6 容器 + PYTHONPATH=/src（镜像 /app 劫持导入）
+- CI 时序敏感断言三连坑：3.11 wait_for wrapper task 计数 / 饥饿 runner 首笔推迟过
+  全程 / 4s 级调度卡顿——主信号（p95/不随 N 增长/数据级证明）+环境条件化上限
+- regression G2/G3 片段要求同 SHA 绿 run——dispatch 全 DAG 前先确认该 SHA 回归绿
+
+## 2026-09-03：.9 批次 C+D+E 收口——G9 双面+G10 骨架与汇聚全落地；批次 F（RC 演练）待开工
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8；**.9 in-progress（批次 C+D+E done，F 待做——最后一批）**
+- 分支 dev@0807507（全部已推送）；master workflow 副本同步至 5060940
+- 测试：release 311/311；全套 4409 过 0 失败
+
+### 批次 E 战果（G10 汇聚面，提交 0807507，CI run 33764067820）
+
+- gate-fragment.schema.json + aggregate_gate_report.py（G0~G10 汇聚、§14 发布摘要、
+  verdict 三态：CERTIFIED 需全 PASS+manifest CERTIFIED+approver）；w0 四探针补 G0 片段
+  （windows 纯 pwsh、linux python3、node-matrix 覆写 working-directory）；rc-gate
+  fail-closed DAG job（needs 14 门禁 job+result 断言 skipped=NOT_RUN、
+  download-artifact w[0-9]-* merge-multiple 汇证、regression API 映射 G2/G3）
+- CI 实证：w0-windows 片段步骤 success+artifact 片段 schema 复验 VALID；rc-gate 负向
+  13 上游 skipped 逐个 error 阻断红；本机真实仓库 aggregate 对空壳 w3 证据 REJECTED
+  exit 1（坏证据不放过）
+- 语义要点：片段优先于推导；G9 双面单面缺失不得兜 PASS（首版漏报 bug 已修）；
+  G10「审批完成」是检查项（manifest INDETERMINATE→G10 INDETERMINATE）
+- 测试 +36（release 275→311）；证据 release/evidence/w5/gate/
+
+### 下一步：批次 F（最后一批）——RC 演练 + runbook + 全项目收口
+
+1. **完整 DAG 全绿演练**：一次 dispatch 勾全部输入（四探针+w2×3+w3×3+w4+w5_security+
+   w5_sign+rc_gate，allow_unsigned_drill=true）→ 预期 rc-gate 汇聚 verdict=INDETERMINATE
+   （drill 无签名+审批空）；先确保同 SHA 有 Full-stack regression 绿 run（G2/G3 片段来源）
+2. **六类故障注入各停预期门**：旧前端→G5、qB 漂移→G2、缺契约 JSON→G5、RPM 升级停服→
+   G6、Docker 混装→G8、digest 篡改→G10（各注入一次验证聚合报红且未产生发布动作）
+3. docs/release/runbook（发布/回滚/豁免/证书轮换/故障排查；含 RPM 升级需手动
+   `systemctl enable --now btdeck`）
+4. feature_list/progress/handoff/roadmap 全收口；.9 置 done
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（同尺寸不同字节，疑似内嵌构建
+  时间戳）；当前靠唯一构建消费架构兜底，根治列 v1.0.7 候选
+- **真实签名启用**：用户提供 GH secret（BTDECK_SIGN_PFX_B64+BTDECK_SIGN_PFX_PASSWORD /
+  BTDECK_COSIGN_KEY_B64+BTDECK_COSIGN_PASSWORD）后 dispatch 不勾 drill 即真实签名
+
+### 环境坑（批次 D/E 新增，勿重踩）
+
+- ghcr.io/sigstore/cosign 仓库已不存在（token DENIED/NAME_UNKNOWN）；cosign 用 release
+  二进制 sha256 固定（官方 .sigstore.json 的 messageDigest 即二进制 sha256）
+- cosign v3 移除 --output-signature/--tlog-upload；verify-blob 只吃 --bundle
+- Windows runner cp1252：python 脚本中文输出须 reconfigure UTF-8；subprocess text=True
+  会用 locale 解码头子进程输出（docker inspect JSON 含非 ASCII 必崩）——统一
+  encoding="utf-8", errors="replace"
+- upload-artifact 多路径 LCA=仓库根时结构原样保留（跨 job 传 dist+release/build 靠这个）；
+  download-artifact pattern 支持字符类（w[0-9]-*）+merge-multiple 合并多 artifact
+- CI job 日志下载：jobs/{id}/logs 的 302 重定向到 Azure blob，**不能带 Authorization 头**
+- docker inspect 本地镜像无 .Descriptor.Digest（经典 builder）——save-oci 口径兜底
+- 本机 ghcr 匿名 pull 时通时断；git credential 的 token 走 ghcr 认证 API 可靠
+- 前端双构建必然漂移——跨 job 比对 staging 的 job 必须消费上游唯一构建
+  （w5-frontend-unique-build artifact）
+- w0-node-matrix 有 defaults working-directory: frontend——仓库根级步骤须覆写
+- 仓库提交的 release/evidence/w3/*.json 是空壳（真实报告在 CI artifact）——本地跑
+  aggregate 会判坏证据，属预期
+
+## 2026-09-03：.9 批次 C+D 收口——G9 扫描+签名全绿、G10 骨架落地；批次 E 待开工
+
+### 批次 D 战果（CI run 33759319494 四轮迭代终局全绿）
+
+- 代码件：sign_artifacts.py（Authenticode+cosign、SIGNING_BLOCKED fail-closed exit 2、
+  drill unsigned、digest 分片记录）、build_release_manifest.py（schema 真校验、七制品、
+  verdict 只出 REJECTED/INDETERMINATE、approver 留空）、deploy/docker-compose.release.yml
+  （digest-only 模板）、verify_release_bundle.py 扩 G9/G10（篡改检出+compose 一致性+
+  CERTIFIED 断言链）；CI w5-sign-windows/w5-sign-docker + allow_unsigned_drill 输入
+- cosign v3.1.3：ghcr.io/sigstore/cosign 仓库已不存在（实测）→ release 二进制 sha256 固定；
+  v3 CLI：sign-blob 走 --bundle、verify-blob 无 --signature、keyed 签名 verify 需
+  --insecure-ignore-tlog
+- **CI 四轮迭代三个真根因**：①staging 回退链缺 windows-exe；②Windows runner cp1252 双层
+  编码坑（中文 print + subprocess locale 解码）；③**G1 拦截真实等价违规**——两次独立前端
+  构建 ~20 chunk 哈希漂移（SW/时间戳类），w5-sign-docker 改消费唯一前端构建
+  （w5-frontend-unique-build artifact）
+- 证据 release/evidence/w5/sign/（本机三态+wiring 冒烟+四轮 CI 日志+CI artifacts+README）
+
+### 下一步：批次 E（gate-report 汇聚 + rc-gate DAG）
+
+1. aggregate_gate_report.py 汇聚 G0~G10（各 job 产出标准 gate 片段 JSON 到
+   release/build/gate-fragments/——build_release_manifest.py 的 evidence 发现已按此约定预留）
+2. w0 探针等既有 job 补标准 gate 片段 JSON 输出（workflow 小改 → dev+master 双同步）
+3. rc-gate DAG job：串 w2/w3/w4/w5 各 job → aggregate → CERTIFIED 判定（approver 人工）
+
+之后批次 F（RC 演练：v1.0.5→v1.0.6 一次全绿 + 六类故障注入各停预期门【旧前端→G5、qB 漂移→
+G2、缺契约 JSON→G5、RPM 升级停服→G6、Docker 混装→G8、digest 篡改→G10】+ docs/release/
+runbook + feature_list/progress/handoff/roadmap 全收口）。
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+- **前端构建确定性化候选**：~20 JS chunk 内容哈希逐次漂移（同尺寸不同字节，疑似内嵌构建
+  时间戳）；当前靠唯一构建消费架构兜底，根治列 v1.0.7 候选
+- **真实签名启用**：用户提供 GH secret（BTDECK_SIGN_PFX_B64+BTDECK_SIGN_PFX_PASSWORD /
+  BTDECK_COSIGN_KEY_B64+BTDECK_COSIGN_PASSWORD）后 dispatch 不勾 drill 即真实签名
+
+### 环境坑（本会话新增，勿重踩）
+
+- ghcr.io/sigstore/cosign 仓库已不存在（token DENIED/NAME_UNKNOWN）；cosign 用 release
+  二进制 sha256 固定（官方 .sigstore.json 的 messageDigest 即二进制 sha256）
+- cosign v3 移除 --output-signature/--tlog-upload；verify-blob 只吃 --bundle
+- Windows runner cp1252：python 脚本中文输出须 reconfigure UTF-8；subprocess text=True
+  会用 locale 解码头子进程输出（docker inspect JSON 含非 ASCII 必崩）——统一
+  encoding="utf-8", errors="replace"
+- upload-artifact 多路径 LCA=仓库根时结构原样保留（跨 job 传 dist+release/build 靠这个）
+- CI job 日志下载：jobs/{id}/logs 的 302 重定向到 Azure blob，**不能带 Authorization 头**
+- docker inspect 本地镜像无 .Descriptor.Digest（经典 builder）——save-oci 口径兜底
+- 本机 ghcr 匿名 pull 时通时断；git credential 的 token 走 ghcr 认证 API 可靠
+- 前端双构建必然漂移（见上）——跨 job 比对 staging 的 job 必须消费上游唯一构建
+
+## 2026-09-03：.9 批次 C 收口——G9 七目标 SBOM+安全扫描 CI 全绿 PASS；批次 D 待开工
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8；**.9 in-progress（批次 C done，D/E/F 待做）**
+- 分支 dev@0a7326e（全部已推送）；master workflow 副本同步至 51eaac1
+- 测试：release 180/180；全套 4284 过 0 失败
+
+### 批次 C 战果（CI run 33747568891 全绿）
+
+- 七目标 SBOM + grype/gitleaks/许可证 → verdict=PASS（Critical 19 全 tracked-no-fix、
+  High 110 全限时例外、0 阻断）；gitleaks 21 误报白名单 9 条
+- 代码件：generate_sbom.py / scan_security.py / release/tool-versions.json（digest 固定
+  三件套）/ 三个治理 JSON / CI w5-security job；证据 release/evidence/w5/（README 有
+  治理决策记录）
+- **政策修订（用户批准）**：Critical 无修复可用型（distro 最新+fix=[]+上游已修证据）
+  可登记 tracked-no-fix 30 天跟踪例外；有修复可用仍硬阻断
+- **基镜像治理**：python:3.11-slim→trixie 新 digest；nginx 1.25（EOL）→1.27-alpine；
+  Dockerfile 运行时 apk/apt upgrade 层
+
+### 下一步：批次 D（签名+digest 晋级+发布清单）
+
+已批准方案（2026-09-03 确认的 .9 四批方案之 D）：
+1. sign_artifacts.py：Windows Authenticode（signtool，证书经 GH secret 注入；缺失→
+   SIGNING_BLOCKED 显式状态 fail-closed 不跳过）+ docker cosign 签名（同上）；
+   签名前后 digest 分别落 signing-digests.json
+2. build_release_manifest.py：按 release/schemas/release-manifest.schema.json 出清单
+   （引用签名后 digest+证据 digest，approver 留空待人工）
+3. deploy/docker-compose.release.yml：digest 引用模板（不 tag）+ 校验测试
+4. verify_release_bundle.py 扩展 G9/G10 校验（manifest digest==实际制品；compose 模板
+   digest 一致性）
+5. CI：签名 job 密钥缺失时输出 BLOCKED 并阻断 CERTIFIED；演练走 allow_unsigned_drill
+   dispatch 输入（决策点 2 已批准：证书属外部前置，用户提供 secret 后一键启用）
+之后：批次 E（aggregate_gate_report.py 汇聚 G0~G10+rc-gate DAG，w0 探针需补 gate 片段
+JSON 小改 workflow 双同步）、批次 F（RC 演练六类故障注入+runbook+全项目收口）
+
+### 独立欠账（勿丢）
+
+- **v1.0.7 依赖升级治理批次**：129 条安全例外 2026-10-03 到期（19 tracked Critical +
+  110 High）；锁是手工双哈希维护，升级=动 W1 哈希链
+- 秘密白名单 9 条 2026-11-02 到期
+
+### 环境坑（本会话新增，勿重踩）
+
+- grype 文件输出是 `-o json --file`（`-o json=path` 是 syft 语法）；rc=1 双义性靠"报告
+  可解析+含 matches 键"区分；grype v0.96.0 有 DB hydration UNIQUE-constraint 缺陷（用
+  v0.118.0）
+- syft 容器 root 写出文件宿主无权改写→临时文件+os.replace；docker -v 对不存在的宿主
+  文件会建成目录→挂目录不挂文件
+- gh CLI 不在本机：dispatch/日志/artifact 全走 REST API + `git credential fill` 的 token
+- 本机 Docker Hub 时通时断（ghcr.io 备源可靠；Docker Desktop 偶发掉线重启即可）；
+  MSYS_NO_PATHCONV=1 必须 export 在同一条命令里；shell cwd 会跨命令漂移（先 pwd）
+- generate_sbom 的 index.json 每次调用整体重写——增量调用会覆盖全量索引（全量跑用
+  默认全目标）
+- 境外网络夜间差：grype 漏洞库（数百 MB）白天可下；CI runner 无此问题
+
+
+## 2026-09-02：前端静态展示 Demo 分阶段交付（阶段 1-6 完成，阶段 7 自动化回归完成）
+
+### 当前状态
+
+- Feature：`frontend-static-showcase-demo-2026-08-23`，父任务 `in-progress`；子任务 `.1-.6 done`，`.7 in-progress`（自动化回归已完成，人工验收有环境遗留）。
+- 分支：从 `dev` 创建并已切换到 `codex/frontend-static-showcase-demo`；本次未执行 `git add`、未创建 commit，保持阶段成果可逐段审阅。
+- 工作区中原有的 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 未触碰，继续保留。
+
+### 分阶段成果
+
+- 阶段 1：冻结 core/extended/readonly/disabled 路由矩阵、12 个领域 fixture 契约、5 分钟演示脚本和能力边界。
+- 阶段 2：新增 `.env.demo`、Demo 认证旁路、固定脱敏用户、桌面/移动入口和全局 Demo 提示/重置按钮；真实模式仍走原认证链路。
+- 阶段 3：新增 typed `demo-request`、内存 `demo-store` 和统一 API 信封/分页/Blob/降级处理；Demo 模式无真实网络兜底。
+- 阶段 4：完成仪表盘、下载器、种子、查询模板、通知核心流程及状态突变；修复 Demo Vuex 初始化运行时错误。
+- 阶段 5：补齐 Tracker、任务/日志、回收站、孤儿文件、设置/文件管理的读取、轮询、预览、导出和不可执行能力边界。
+- 阶段 6：新增 `npm run build:demo`、`Dockerfile.demo`、`nginx.demo.conf`；dist 构建结果为 175 文件 / 36,375,361 bytes（34.69 MiB）。
+
+### 验证结果
+
+- `frontend`：`npm run lint` 通过（含 contract check 与 Vuex Action 检查）。
+- `frontend`：`npm run typecheck` 通过。
+- `frontend`：`npm run test:unit -- --silent` 通过，97 suites / 1319 tests 全部通过。
+- `frontend`：`npm run build:demo` 通过；仅有既有 Sass/Browserslist 警告；`git diff --check` 通过。
+- 本地浏览器曾成功加载 Demo 仪表盘和提示条；修复后的刷新/前进后退/窄屏/重复点击尚未完成人工复验。
+
+### 环境限制与下一步
+
+- 根目录 `./init.sh --ci` 卡于当前环境 WSL 发行版访问 `E_ACCESSDENIED`。
+- Dockerfile 已配置，但 Docker Desktop Linux engine 不可用，尚未完成镜像构建/启动复验。
+- 浏览器测试服务被回收后，浏览器安全策略阻止重新打开该本地地址；需在稳定 HTTP 服务和可用浏览器环境补验人工路径。
+- 下一位处理者先启动 Docker Desktop Linux engine，再用 `frontend/README.md` 的命令验证容器；随后补齐 `.7` 人工证据。用户确认后可按阶段拆分创建 Git commit。
+
+## 2026-09-02（最新）：W4 批次 B2 收口——C01~C12 十二场景三制品 CI 全绿 + 变异演练双拦截，task .8 done
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.8（.8 W4 黑盒契约本日收口）；**pending**: .9（W5/W6 安全+晋级，最后执行）
+- 分支 dev@a59a382（全部已推送）；master workflow 副本同步至 8360970
+- 测试：release 147/147；全套 4280 过/1 既有失败（openpyxl，见下）
+
+### W4 终局（批次 B2）
+
+- **CI run 33634391712@dev a59a382 全绿**：三制品 FULL(C01~C09/C11/C12)+重启+C10 merge →
+  compare total_diffs=0 零豁免；Mutation drill M1（前端资源字节）/M2（响应字段）双拦截
+- 代码件：fixtures/qb_tr_stub.py（三角色 stub，协议保真由真实客户端库背真）、
+  runner 四场景、slice_snapshot.py、docker-compose.w4-stub.yml、CI job 扩展
+- 副产品：修复遗留同步路径 3 个真缺陷（progress/qb_tr_stub 注释与证据 README 有全清单）
+- 证据：release/evidence/w4/b2/（本地双实例+CI 快照/报告/日志 + README）
+
+### 遗留观察（同日已全部清理）
+
+1. test_openpyxl_kept_for_excel_export：系旧口径测试与 W1/W2 平台增量白名单架构矛盾，
+   已改测试对齐（主清单+锁须含 openpyxl、平台文件须不含）
+2. no such table: tracker_keyword_config：import 期预加载早于迁移的启动顺序竞态，
+   已改模块级单例 auto_load=False 懒加载；回归 3 例 + 全新实例实证 0 报错
+
+### 下一步：.9（W5/W6）
+
+- SBOM（CycloneDX）/漏洞/秘密/许可证扫描、Windows/Docker 签名、release-gate DAG 与
+  gate report 汇聚、digest 晋级、RC 演练（六类故障注入）+ runbook（计划 §W5/§W6/§G9/§G10）
+- 两个遗留观察项已清理，可直接开工
+
+### 环境坑（B2 新增，勿重踩）
+
+- deb/rpm stub 容器名必须区别于 compose 服务的 container_name（w4-stub-host+network-alias）
+- 下载器缓存 host:port 去重且 delete 不清缓存；/downloader/test 是 ICMP 探测（负向用
+  不可解析主机名）；getList 键 camelCase；TR trackerStats 需完整字段集
+- dev 构建被 G5 拦 dirty build-info（本地实证用 dev 镜像、CI 用 --release 干净构建）
+- gh CLI 不在本机：dispatch/日志/artifact 走 REST API + git credential token
+- MSYS_NO_PATHCONV=1 必须 export 在同一条命令里；/tmp 在 Git Bash 与 Python 间不同视
+
+## 2026-09-01（最新）：W4 批次 A+B1 全绿——八场景跨制品黑盒契约等价（task .8 in-progress）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1~.7；**.8 in-progress（批次 A+B1 全绿，B2 待做）**；.9 pending
+- 分支 dev@50b9347（全部已推送）；master workflow 副本已同步；release 测试 127/127
+
+### W4 已完成（批次 A+B1）
+
+- **w4-contract CI job 全绿**：八场景（C01 健康 Identity/C02 OpenAPI/C03 认证/C04 改密/C07 查询模板/C08 定时任务/C09 通知审计/C11 SPA）三制品（deb/rpm/docker）快照 compare **total_diffs=0 零豁免规则**
+- 代码件：scripts/release/contract_runner.py（纯 stdlib 禁 import app.*，--spa-base-url 支持）、compare_snapshots.py（禁宽泛/过期规则+stale 报告）、release/equivalence-exceptions.json（空）、lifecycle/w4_install_wait.sh、lifecycle/docker-compose.w4-override.yml（docker 测试组合对齐生产形态 DEV=false+SECRET_KEY+ALLOWED_HOSTS）
+- 测试 backend/tests/release/test_contract_runner.py 16 例（铁律/纯函数/mock 端到端含 B1 路由/变异检出/规则负向/不可达语义）
+- 证据 release/evidence/w4/（三制品快照+compare 报告+16 轮 CI 日志+本地双实例快照）
+
+### 下一步：W4 批次 B2（task .8 完成件）
+
+1. **C05/C06（最大件）**：受控 qB/Transmission stub（scripts/release/fixtures/ 独立 HTTP 进程，纯 stdlib）——C05 下载器管理（新增/测试/编辑/删除）、C06 种子核心查询（固定 stub 数据下列表/状态/Tracker/分页）
+2. **C10 迁移与重启**：重启编排（deb 容器 systemctl restart 前后 API 可见数据/secret/head 一致；W3 已覆盖服务层断言，C10 增量=API 视角）
+3. **C12 文件路径边界**：各平台映射授权/拒绝语义、路径文本规范化比较
+4. **制品级变异注入演练（G8 退出门）**：对某制品注入一个真实差异（如改一个响应字段/路由/前端资源）验证聚合报红——runner 级变异已单测覆盖，制品级待做
+5. B2 全绿后 .8 置 done → .9（W5/W6：SBOM/漏洞扫描/签名/digest 晋级/RC 演练，最后执行）
+
+### 环境坑（W4 新增，勿重踩）
+
+- `| tee` 吞非零退出码（compare 步骤须 pipefail）
+- 宿主函数变量不进容器；"dpkg -i" 作为单参数=单命令名（127）；安装命令按包后缀在脚本内分支
+- docker exec 嵌套引号与 YAML 块内 heredoc 均不可靠→脚本仓库文件化（w4_install_wait.sh）
+- compose 测试组合 DEV=true 与生产形态不一致→C02/C11 伪差异（w4-override 对齐）
+- C11 SPA 按部署形态取址：deb/rpm backend 直出；docker 用 --spa-base-url http://w3-life-frontend
+- data_of 首元素语义（[obj] 信封）与直接数组端点冲突——列表/枚举端点用原始 body.data
+- **批量 python replace 必须对每个替换 assert**（被 black 折行吞掉已发生三次）
+- 生产 v1.0.5→v1.0.6 RPM 升级需手动 `systemctl enable --now btdeck`（runbook）
+
+## 2026-09-01：W3 收口达成——三平台生命周期门禁全部 CI 全绿（.5/.6/.7 done）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1(W0) .2(W1 版本) .3(W1 锁) .4(W2 前端) **.5(W3 Windows) .6(W3 DEB/RPM) .7(W3 Docker)——本日全绿置 done**
+- **pending**: .8(W4 黑盒契约 C01~C12) .9(W5/W6 安全+晋级)
+- 分支 dev@e8ec9ed 已推送；master workflow 注册副本同步至 b3885d5；master regression 绿
+
+### W3 终局（第七~二十一轮，194e5d0→e8ec9ed）
+
+- **全绿 run**：linux+docker=33400673991@97ac103；**windows=33504251419@e8ec9ed（8/8）**；w2-strict-linux 同批首绿
+- 16 个根因、7 个真实生产缺陷全修复（详见 progress.md 2026-09-01 节与 feature_list evidence）
+- 测试 114/114；每根因均带契约/行为回归
+
+### 交接要点（W4 开工前）
+
+1. **W4（task .8）按批次纪律先出方案**：contract_runner.py（禁 import app.*）+ compare_snapshots.py + C01~C12 + release/equivalence-exceptions.json；计划 §G8/§524
+2. **runbook 事项**：真实生产 v1.0.5→v1.0.6 RPM 升级需手动 `systemctl enable --now btdeck`（旧包 prerm 无条件 stop+disable 冻结不可修）
+3. **勿重踩**：PyInstaller bootloader 隔离 frozen app 的 PYTHON* env（修复走代码垫片）；windowed 打包 stdout=None print 静默（logging 走 fd2 有输出）；DEB/RPM 升级 scriptlet 时序相反；Windows datas 进 CArchive 是反斜杠名；CI Windows runner 是 cp1252
+
+### 环境坑（W3 新增）
+
+- workflow 改动须 dev+master 双同步（本轮 plumbing tree 提交法：read-tree+update-index+commit-tree，不动工作区）
+- CI 失败的诊断输出重定向本身就是变量——重定向存在与否会改变被诊断进程的行为（stdout/stderr 句柄有无决定 print 崩/静默）
+- NSSM AppRotateFiles 崩溃重启循环会反复轮转主日志——诊断要列目录读归档
+- ps1 里字符串嵌套引号用 -f 格式化（转义引号会因 Git Bash→文件的字面量问题崩 ForEach）
+
+## 2026-08-31：v1.0.6 制品等价门禁 W0/W1/W2 done + W3 阶段性收口（.5/.6/.7 pending CI 全绿）
+
+### 当前状态
+
+- Feature: release-artifact-equivalence-gate-2026-08-28（9 子任务）
+- **done**: .1(W0 基线+CI 4探针) .2(W1 版本/build-info) .3(W1 依赖锁) .4(W2 唯一前端+严格构建+E2E)
+- **pending**: .5(W3 Windows 生命周期) .6(W3 DEB/RPM 生命周期) .7(W3 Docker 生命周期) .8(W4 黑盒契约) .9(W5/W6 安全+晋级)
+- 分支 dev@27e1135，全部已推送 origin
+- 测试：backend/tests/release/ 100/100 全绿
+
+### W3 已完成内容（本轮提交链 e0d7ebc→27e1135，共 12 个 commit）
+
+- **R11 修复**：deploy/package-scripts/{postinst,prerm,postrm}.sh 从 build-linux.sh 抽出，prerm 按 DEB 字面/RPM 数字参数智能分支（升级只 stop 不 disable）；DEB postrm purge 清数据
+- **三个生产缺陷修复**（E2E 实测拦截）：①btdeck.service 加 PrivateTmp=true（ProtectSystem=strict 下 /tmp 只读→PyInstaller 挂）；②postinst SECRET_KEY 兜底改 coreutils；③postinst 守卫接受 degraded
+- **生命周期驱动**：scripts/release/lifecycle/{deb,rpm,docker,windows}.sh(ps1) + lib.sh + run_deb_rpm.sh + make_v105_baseline.sh + docker-compose.test.yml
+- **本地 E2E 实证绿**：deb-upgrade（v1.0.5→v1.0.6 升级 PASS + Alembic head 推进 PASS + secret 保留 PASS + remove 数据保留 PASS）
+- **CI 六轮迭代修复**：w1_pinned.node 值带注记→校验失败；bat if 块 echo ASCII 括号→exit 255；make_v105 容器内缺 safe.directory；锁缺 colorama（click 的 Win 传递依赖）；rocky curl-minimal 冲突；Windows --require-hashes 平台标记不兼容
+- **锁**：backend/requirements-lock.txt 52 包（补 colorama==0.4.6; sys_platform=="win32" 手动双哈希）
+
+### 下一步（按优先级）
+
+1. **CI 干净 dispatch**：重新触发 w3-lifecycle-{linux,docker,windows} 三 job（workflow_dispatch ref=dev），确认用 27e1135 代码全绿。上轮日志疑似缓存旧版（时间戳未变）。
+   - 注意 master 上有一份 release-gate.yml 注册副本（仅作 dispatch 键），改 workflow 要 dev+master 双同步
+2. **Docker v105 挂住**：v1.0.5 夹具镜像在 compose 环境启动后仅输出 banner 不继续——btdeck_startup.sh 兼容性问题。诊断方向：v1.0.5 tag 的 btdeck_startup.sh 在容器内卡在哪个步骤（可能等 DB lock / 权限 / 环境变量缺失）。artifact 已归档 release/evidence/w3/ci-v6/
+3. **CI 全绿后**：.5/.6/.7 置 done → 进入 W4（task .8 外部黑盒契约）
+4. **W4 要点**：scripts/release/contract_runner.py（不 import app.*）+ compare_snapshots.py + 12 场景（C01~C12）+ release/equivalence-exceptions.json
+
+### 环境坑（勿重踩）
+
+- Windows python/docker CLI 不认 `/c/...` 路径→脚本内一律 cd+相对路径
+- 锁文件内嵌 --hash 行让 pip 自动激活哈希模式→runtime 离线安装用去哈希 pins（Dockerfile 内已处理）
+- Git Bash 下 docker 命令须 `export MSYS_NO_PATHCONV=1`（否则 /app 被改写）
+- python 写 shell 时 `'
+'` 必须字节级核对（MSYS 会吞裸 CR 参数）
+- 严格构建禁止并发跑在同一目录/镜像 tag（竞态实证两次）
+- git worktree 的 .git 指回主仓 Windows 路径，容器内不可用→用本地 clone
+- CRLF 锁文件被 pip 当续行符（整文件拼一行）→.gitattributes 已强制 LF
+- Windows bat 的 if 块内 echo 不能有未转义 ASCII 括号→cmd 解析崩溃
+- apt 直连限速 ~40KB/s；aliyun 可用（tuna 403）；rocky 用 USTC 或 --allowerasing
+- Docker Desktop 引擎会间歇掉线（重启即好）
+- 健康接口 JSON 是紧凑格式（`"version":"x"` 无空格），匹配串别带空格
+- `docker build | tee` 会吞退出码；`grep -E` 才兼容 ugrep
+
+### 仓库状态
+
+- 工作区可能有并行 Android 会话改动（downloader/sync-task 等），勿动
+- 本批全部提交已推送；workflow 在 master 有注册副本需双同步
+- release/evidence/w3/ 含本地 E2E 报告与 CI 诊断日志
+
+## 2026-08-30：下载器手动种子同步异步生命周期修复（downloader-control-room-ui-redesign.4 done）
+
+### 已完成
+
+- 确认按钮调用链仍有效：`DownloaderCard.vue`/`mobile/downloader.vue` → `api/downloader.ts::syncDownloader` → `POST /torrents/sync-single` → `_execute_manual_sync_via_coordinator` → `SyncCoordinator(full/manual)` → `app.state.store` 缓存客户端。
+- 修复“提交受理即误报完成”：桌面/移动端共用 `views/downloader/sync-task.ts` 轮询既有 sync-status，同步 loading/禁用态保持到真实 success/failed/cancelled 终态，partial 单独警告。
+- `BackgroundTaskManager` 增加 pending/running 原子防重、runner 强引用与 done 释放，并把结构化 failed/cancelled 结果映射为真实任务终态。sync-single 后台体不再持有 ORM/请求对象，只使用纯数据快照。
+- 新增/扩展回归：后端任务生命周期 + 端点非阻塞/409 防重；前端状态轮询、终态文案、销毁取消、API URL 契约与桌面/移动占用行为。
+- 真实页面点击验证：先告知“同步任务已启动”；当本地下载器未进入 store 缓存时，随后正确告知 failed 原因，没有误报成功。
+
+### 验证
+
+- 后端同步专项：78 passed / 5 skipped（包含受控阻塞协调器的 HTTP 立即返回、重复 409 与单 runner 断言）。
+- 前端相关：4 suites / 87 tests；全量：91 suites / 1302 tests。
+- `npm run typecheck`、`npm run lint`、`npm run build`、目标 mypy/flake8、Git Bash 根 `./init.sh --ci`、feature_list JSON 解析与 `git diff --check` 通过；构建只有仓库已有 Browserslist/Sass 警告。新增测试经 Black formatter API 校验通过；其余已修改的后端存量文件在 HEAD 上已不符合当前 Black 版本，本批未做全文无关重排。
+
+### 交接注意
+
+- 无新 API、Schema 或 Alembic 迁移；运行路径仍强制复用 `app.state.store`，不创建额外下载器连接。
+- 未执行 Git stage/commit。工作区已有 `frontend/src/contracts/advancedSearch.generated.ts`、Android/发布制品目录及 release evidence 等其他会话改动，本批不删除、不覆盖、不纳入任务结论。
+
+## 2026-08-30：v1.0.6 制品等价门禁 W2 批次（task .4 done：唯一前端构建+严格制品构建+静态等价）
+
+### 已完成
+
+- 唯一前端构建链：`scripts/release/build_frontend.py`（Node 版本线校验）+ `check_prebuilt_frontend.py`（canonical 一致门）；所有制品构建只消费不重建。
+- 三构建入口 `--release` 严格模式（fail-closed）：预构建前端/fpm/ISCC 必需、干净树强制、双 spec 嵌发布身份、Windows 版本资源、OCI label 强校验；`frontend/Dockerfile.release` 消费唯一前端。
+- verify-package.py 内容级验证（CArchiveReader 逐文件哈希+禁入扫描）；verify_release_bundle.py 跨制品 G1/G4/G5。
+- **本地 E2E 全绿**（干净 clone @37bbccd）：Linux 严格（DEB/RPM）exit 0 → docker 严格 exit 0 → bundle 6 制品一致 PASS。证据 release/evidence/w2/（gate-report/checksums/docker-images/构建日志/build-info）。
+- 测试 78/78；CI 增 w2-strict 三 job（未推送首跑）。
+
+### 坑位（重要，复用）
+
+- 锁文件 CRLF 会被 pip 当续行符（整文件拼一行）——.gitattributes 已强制 LF，Dockerfile pins 生成带 `tr -d '
+'`。
+- Windows 原生 python/docker CLI 不认 `/c/...` 路径：脚本内 python/docker 调用一律 cd+相对路径。
+- python 写 shell 补丁时 `'
+'` 必须字节级核对（本批踩过字面 CR 字节坑，MSYS 还会吞裸 CR 参数）。
+- Windows 检出的 CRLF 在 Linux 容器 git 视角是"修改"：容器内 `git config --global core.autocrlf true` 对齐，或干净 clone+LF 重检出。
+- 严格构建禁止并发跑在同一目录/同一镜像 tag（本批竞态实证）。
+- git worktree 的 .git 指回 Windows 主仓路径，容器内不可用——用本地 clone。
+
+### 下一步
+
+1. **W3（task .5/.6/.7）**：Windows/DEB/RPM/Docker 生命周期幂等（scripts/release/lifecycle/），v1.0.5 升级夹具（.release-build-v1.0.5/assets）。
+2. CI w2-strict 三 job 推送后首跑（release-gate.yml 已含）。
+3. 待办：btdeck.iss Setup 内 EXE SHA 校验（W3/W5）；build-and-export-images.bat latest 链改造（W5 digest 晋级）。
+
+## 2026-08-29/30：v1.0.6 制品等价门禁 W0-CI 收口 + W1 全批次（.1/.2/.3 done，未提交）
+
+### 已完成
+
+- **W0 CI 全绿**：release-gate.yml 推 dev + master 注册（b357e07，仅注册键；dispatch ref=dev）。run 33236313405（Node22/bullseye/systemd）+ run 33237024759（Windows：ISCC/静默装卸/NSSM 三 PASS，报告归档 release/evidence/w0/）。Windows 两轮修复：runner 预装 Inno 6.7.1（版本资源 0.0.0.0）→预装探测跳过 choco；pwsh7 无 `Set-Content -Append`→`Add-Content`。task .1 → done。
+- **W1 版本与身份（task .2 done）**：六处版本统一 1.0.6 且被 `scripts/release/generate_build_info.py --check-versions` + tests/release/test_version_consistency.py 强制；build-info/release-manifest schema；生成器真实仓库冒烟通过；`backend/app/core/build_info.py` + 健康接口 build 字段（兼容外壳，身份非法 ready 503）；package.json engines/packageManager。回归 50/50 + 3 组真文件变异全拦截 + black/flake8/mypy 过。
+- **W1 依赖与工具链（task .3 done）**：`backend/requirements-lock.txt`（51 包全哈希，Py3.11）——**qB 分叉关闭 ==2025.2.0**；deploy 两 packaging = `-r 锁 + 白名单增量`（passlib/email-validator 零使用移除）；regression.yml → Py3.11 + Node 22.23.2；Dockerfile×3 digest 固定 + OCI label ARG 骨架 + trixie deb822 sed 修复 + runtime pins 离线安装。
+- **镜像验证**：btdeck-backend:w1-smoke freeze↔锁 50/50；btdeck-frontend:w1-smoke 配对冒烟 healthy；backend `/health/live` 实测返回 `build:{status:dev, productVersion:1.0.6}`。
+- 证据：release/evidence/w1/（lockgen/hash-dryrun/两镜像构建日志/freeze 比对）；PLANS §18/§19；feature_list .1/.2/.3 done。
+
+### 环境坑（复用）
+
+- PyPI 直连限速 ~40KB/s；tuna 403；**aliyun 镜像可用**（锁生成与镜像构建走它；哈希为内容哈希不受镜像影响；锁内 `--index-url` 行须删）。Docker Desktop 引擎间歇掉线（重启 15s 恢复）。`docker build | tee` 会吞退出码。Dockerfile APT_MIRROR 必须 host-only 且 trixie security 路径要单独映射（已修入三个 Dockerfile）。
+- 锁文件内嵌 --hash 会让 pip 自动进哈希模式：runtime 离线装本地 wheel 用去哈希 pins（builder 已 --require-hashes 锚定），镜像级一致性用 freeze↔锁比对。
+
+### 下一步
+
+1. **W2（task .4）**：唯一前端构建（frontend-dist 制品 + manifest 注入）、`--release --require-all` 严格模式（缺 ISCC/fpm/元数据即败）、EXE 版本资源、build-info 实际注入全部制品、verify-package 升级为内容级 + 五类变异。
+2. 遗留：advancedSearch.generated.ts（合法再生成）与并行 Android 改动待用户处置后 G0 才可冻结；W2 起构建脚本消费 release-config 的六处版本与 digest。
+3. 本批 17 个文件未提交，等用户指示。
+
+## 2026-08-30（二）：Phase 5 发布验收首批（task .7 → in-progress）
+
+### 已完成
+
+- **批次 A**：release keystore（不入库，凭据 local.properties）+ signingConfig；assembleRelease 87.7MB / AAB 67.7MB；apksigner 验签；bundletool 精算（universal 85.6MB、native 12.2MB/ABI、单设备 ≈73MB、8 so/ABI）。
+- **批次 B 设备矩阵**：API 24 全链路（Python 3.12 on minSdk 24 实证；旋转/LAN 绑定变化 *:0.0.0.0 端口复用/kill -9 恢复）；API 34 链路 + capabilities 5/3；Doze deep idle 模拟器不可强制（登记真机）。**修两个 API 24 真 bug**：NotificationChannel 版本守卫、java.util.Base64 → 自包含 Base64（lint NewApi + JVM 测试一致性双杀）。
+- **批次 C**：docs/android/play-release.md（FGS 申报/Data Safety/隐私/明文流量/ABI 说明/minify 决策/包体实测）；lintDebug 绿；单测 32 绿。
+- 遗留边界（登记 task .7/play-release.md §10）：Play 上传、arm64 真机、跨版本升级演练（v1.0.7）、Doze 真机。
+- ⚠ 工作区有**非本会话**的功能改动（frontend torrents 视图的 RuntimeListMembershipTracker 相关、advancedSearch.generated.ts 等）——疑似用户/并行会话进行中工作，本会话未触碰、未提交。
+
+## 2026-08-30：.3/.5/.8 设备级验证批次（Phase 4 已提交 b326378）
+
+### 已完成
+
+- Phase 4 capability 批次已提交 `b326378`（20 文件 +1181）。
+- .5：settings-capability E2E 4/4（Playwright 直连 AVD android-server 后端，与 WebView 同源等价）——矩阵 UI 设备级闭环。
+- .8：CredentialVaultAndroidTest 仪表化 6/6（Keystore 往返/密文落盘/改密/删除/约束）；connected 合计 7/7。
+- .3：AVD 后端 login.spec 3/3（认证失败提示+登录成功链路）；强制改密与登录限流（429）实证。
+- 遗留人工项：.3 离线 toast/自签证书弹窗/多 profile 原生切换；.8 桌面 GUI 侧。均已在 feature_list 对应 task evidence 登记。
+
+### 未提交（待用户指示）
+
+- android/app/src/androidTest/.../CredentialVaultAndroidTest.kt（新）
+- frontend/tests/e2e/mobile/settings-capability.spec.ts（新）
+- feature_list.json / progress.md / session-handoff.md
+
+### 下一步（按既定顺序）
+
+**Phase 5 发布验收（task .7，pending，最后执行）**：Play 提审材料（App Signing/隐私政策/Data Safety/FGS specialUse 申报）、GitHub Release APK、bundletool 包体精算（release 构建未做过）、设备矩阵（API 24 最低、Android 14/16、arm64 真机、升级安装迁移演练、Doze/OEM 电池、旋转、存储权限、LAN 开关实测）——建议新会话批次化推进（首轮出方案）。wheels 仓登记限制不变（pillow 攻坚、官方仓库存量 16KB 化随时间收敛复查）。
+
+## 2026-08-29（深夜二）：Phase 4 capability 矩阵 API/UI 一致降级接线（task .5）
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- 后端：`platform_capabilities.py`（14 项矩阵单一真相源+环境判定）+ `GET /api/v1/platform/capabilities` + cron 拦截升级（android-server 形态优先于开关）+ 壳注入 `BTDECK_PLATFORM`；70+156 定向回归绿、三质量门过。
+- 前端：api 单例缓存（失败兜底 supported/desktop）+ settings"主机能力"tab（双端同源）+ 桌面任务类型置灰/提交兜底 + 移动省电提示条；22 定向 + 1285 全量测试绿、tsc/lint 过。
+- AVD 端到端实证：android-server 形态矩阵逐项一致（5 降级/3 不支持）、cron add 403 主机形态文案、服务 10s 就绪端口复用。
+- 遗留：矩阵 UI WebView 内人工目验未做（组件测试+API 已锁）；Phase 5 设备矩阵不变。
+- 下一步候选：task .3/.8 设备级验证补全、Phase 5 发布验收、或桌面伴侣模式（计划第 7 节桌面部分）。
+
+## 2026-08-29（深夜）：Phase 3 安卓本地服务端壳工程落地（task .4 → in-progress）
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- **Python 侧**：`android/tools/stage-server.py`（staging：backend/app+alembic(.pymig)+alembic.ini+frontend/dist → `android/app/src/server/` gitignored 源集；requirements 生成含 pillow ANDROID-DROP、tzdata 已挪至 DSL）；`android/server-python/btdeck_server.py`（start/stop/status JSON 契约、异步启动+轮询、迁移 fail-fast 前置于深导入、16MB 大栈、uvicorn 预取端口+SO_REUSEADDR 复用、健康自检 trust_env=False）。桌面冒烟 SMOKE PASS。
+- **壳工程**：Chaquopy 17.0.0（py3.12 + wheels 索引 + `-r`；`-Pbtdeck.server=off` 跳过）；abiFilters arm64-v8a/x86_64；FGS specialUse（权限+subtype+START_STICKY）；ServerService/ServerStates/LocalServerProfile/LocalServerState；LanHostPolicy 回环豁免+isLoopbackHost；向导本机服务端全流程（ABI 检测/通知权限/LAN 威胁模型/进度/阶段归因/运行态管理）；本机 profile 复用 WebView 链路。
+- **验证**：JVM 单测 28 绿；btdeck-a35（4096）connectedDebugAndroidTest 1/1 绿 + 手动全流程铁证（向导→15s running→WebView SPA 渲染→通知带端口→停止→重启→am crash 崩溃恢复 pid 3816→4301+端口复用）；btdeck-16k（ps16k）connectedDebugAndroidTest 绿+启动链抽验；LAN 变体构建通过；APK debug 90.4MB。后端零源码改动。
+- **三个新实证坑（已沉淀代码注释+README）**：① httpx trust_env 在 Windows 会采纳注册表系统代理把 127.0.0.1 探测变代理 503；② Chaquopy pip 块无任何 install() 时整个 pip 配置（含 options()）被判空跳过（requirements imy 22 字节空头）；③ 迁移必须前置于 app.main 深导入（导入链有模块级 DB 查询）。
+
+### 遗留与下一步
+
+- task .4 保持 in-progress：arm64 真机、升级安装迁移演练、OEM 电池/Doze 设备矩阵、release+bundletool 体积精算均属 Phase 5；2FA 二维码暂不可用（pillow ANDROID-DROP）。
+- 构建 SOP：先 frontend `npm run build` → `python android/tools/stage-server.py` → gradle assembleDebug；改 requirements 后 `--rerun-tasks` + 清 pip cache。
+- 下一步候选：task .5 capability 矩阵接线（用户已拍板"现在做"）或 .3/.8 设备级验证补全。
+
+## 2026-08-28（夜）：v1.0.6 制品等价门禁 W0 本地探针批次
+
+### 已完成（未提交，遵循仅用户要求时提交）
+
+- 基线冻结：`release/release-config.json` + `release/evidence/w0/baseline.json`（v1.0.5=29c6f6f 与计划一致；GitHub Release API 对 v1.0.5 返回 404）。
+- v1.0.5 升级夹具策略升级：本地 `.release-build-v1.0.5/assets/` 存在完整制品集（DEB/RPM/portable EXE+ZIP，SHA256 已归档）；与 `git archive v1.0.5` 对账 971 文件仅 4 差异（cleanup_executor.py 的 py3.11 热修即 R9 事故修复 + 3 个记录文件）→ 夹具标注 local-release-build/reconstructed；注意无 v1.0.5 Inno 安装器。
+- R10 定案：现有 Debian 12 构建二进制在 Rocky 9 启动失败（libpython3.11.so.1.0 需 GLIBC_2.35 > 2.34）；python:3.11-bullseye 重建后单二进制在 Debian 12 + Rocky 9 均完整启动 → Linux 构建基线定格 bullseye，不拆发行版制品。
+- Node 工具链：Node v22.23.2 + npm 10.9.8 全量矩阵全绿（npm ci/contract:check/typecheck/84 套件 1233 测试/build）→ 前端统一锁 22 线。
+- systemd 容器拓扑：官方 rockylinux:9 / debian:12 基础镜像均不含 systemd；自建配方（官方基+仓库装 systemd；debian 必须补 `ln -sf /lib/systemd/systemd /sbin/init`）+ `--privileged --cgroupns=host` 下双发行版单元生命周期全通；`is-system-running=degraded` 属容器正常态。
+- `.github/workflows/release-gate.yml`：4 个 W0 探针 job（windows Inno+NSSM / 双发行版 systemd / Node 22 矩阵 / bullseye+双发行版），workflow_dispatch 触发、fail-closed、报告 artifact 强制上传；复用本地已验证配方，YAML 校验通过。
+- 文档同步：PLANS §18 W0 结论、feature_list task .1 evidence（保持 pending）、progress.md W0 节。
+
+### 阻断与下一步
+
+- **阻断：release-gate.yml 未推送**（用户未授权 push）→ CI 侧 4 探针全部 NOT_RUN；Windows Inno+NSSM 能力结论只能来自 CI。授权推送并触发后，task .1 方可评估 done。
+- W1 批次（待用户确认开工）：release-config 单一版本源、build-info schema+生成器、健康接口 build 字段、qB 统一 2025.2.0、公共依赖锁、Node 22/Dockerfile/CI 工具链统一。
+- 环境备忘：本机 Docker 引擎需先启动 Docker Desktop（非自启）；Git Bash 下 docker 命令须 `export MSYS_NO_PATHCONV=1` 防 `/app` 被改写；本机 grep 为 ugrep，`grep -E` 兼容、`\|` 分隔会误报。
+
+## 2026-08-28（晚）：Phase 0 判据 1-4 达成——android-wheels 首建与导入矩阵
+
+### 已完成
+
+- 远端仓库 `strainhzj/android-wheels`（公开）经 API 建仓并推送；Pages PEP 503 索引 live：https://strainhzj.github.io/android-wheels/simple/pydantic-core/
+- 闸门判据 1/2/3/4 达成（详见 wheels 仓 docs/gate.md 执行记录与主仓 progress.md）：两 ABI wheel 构建+形态校验+索引发布+CI 模拟器导入矩阵全绿（run 33180505344）。
+- 目标矩阵修正为两 ABI（Chaquopy py3.12 弃 32 位，三重实证）；自建面收窄至 pydantic-core。
+- 主仓 feature_list.json `.1` evidence、progress.md 已同步。
+
+### 环境与工具链备忘
+
+- GitHub 操作：本机无 gh CLI，用 `git credential fill` 取 token 走 REST API（建仓/Pages 启用/触发 workflow/取日志）。写死轮询脚本在 /tmp（会话级）。
+- wheels 仓库构建要点全部沉淀在 scripts/*.py 注释与 gate.md 决策记录；本地改动后必须让 build-pydantic-core 先绿再触发 import-matrix（索引自 build 发布）。
+- GitHub runner：无 KVM，模拟器 `-accel off` 冷启动 8-11 分钟（boot-timeout 1800）；android-35 镜像（default+google_atd）有 droid.bluetooth SIGABRT 系统崩溃，勿在 CI 强测 API35；16KB 用 `google_apis_ps16k` target。
+
+### 下一步（按用户确认的优先级）
+
+**Phase 0 闸门已全过（判据 1-6，2026-08-29 晚）——Phase 3 正式解锁**（正式放行待用户确认 arm64 真机项）。已完成：判据 5 fullgraph（staging/bootstrap/FullGraphTest，4096 AVD 9/9）；判据 6 16KB（ps16k AVD 全新安装 9/9；自建 greenlet/regex/pycryptodomex/bcrypt/pydantic-core；索引常驻 https://strainhzj.github.io/android-wheels/simple/）。
+
+1. Phase 3：安卓本地服务端壳工程（Chaquopy 17 + 单 worker uvicorn + Alembic fail-fast + FGS specialUse + 存储私有目录 + LAN 重绑；大栈线程导入 app.main 必用；testapp fullgraph 基建可直接迁移）。
+2. pillow 16KB wheel 攻坚（挂点在其自家构建后端的宿主 /usr/include 注入；ANDROID-DROP 期间 Android 2FA 二维码接口不可用——cuser 已延迟导入）。
+3. .5 capability 矩阵 API/UI 接线；C 批次 .8 桌面 GUI 实测；arm64 真机验证（Phase 5）。
+3. 批次 A：重跑定向后端测试组收口 `.2` 置 done（首轮核查已确认七项证据齐全）。
+4. Phase 2 设备项：离线/认证失败/版本不兼容状态、多 profile 隔离、自签证书真机全流程（OkHttp 指纹接入已实现，2026-08-28 晚，17/17 单测绿，真实 TLS 待设备）；`.5` capability 矩阵 API/UI 接线（用户拍板现在做，未开工）；`.8` 桌面 GUI 实测。
+5. Android 真机 arm64-v8a 导入验证（Phase 5 设备矩阵合并）。
+
+### 注意
+
+- wheels 仓 16 轮迭代均已推送（origin/main @ 231a5f0）；主仓本批仅改 feature_list.json/progress.md/session-handoff.md，未提交（遵循仅用户要求时提交）。
+- 唯一工作区"修改"仍是 advancedSearch.generated.ts 行尾假警报（零内容差异）。
+## 2026-08-28：安全修复与质量门禁可信化人工闭环
+
+### 状态更新
+
+- 根据用户人工确认，`security-remediation-2026-08` 与 `quality-gate-hardening` 已闭环。
+- `feature_list.json` 中两个父 Feature 均已标记为 `done`；子任务及既有 evidence 未改动。
+- 本次未修改业务源码；顶层 `verification.gate_status` 未作联动调整。
+
+## 2026-08-28：MCP 服务与可选能力开放计划
+
+### 结论
+
+- 专项计划已落到 `PLANS/mcp-service-capabilities.md`，feature 为 `mcp-service-capabilities-2026-08-28`，当前状态 pending；本批没有实现 MCP 代码。
+- 首批范围固定为 6 项：高级种子查询、等级4 `pending_delete` 标记、添加 `.torrent`、创建高级查询组合/模板、仪表盘读取、立即触发定时任务。
+- MCP 必须与 FastAPI 同进程，共享父应用 lifespan、`app.state.store` 和全局 Cron executor；挂载顺序必须早于 SPA fallback。
+- 全局服务和6项能力均默认关闭。关闭能力必须从 `tools/list` 消失，缓存客户端旧调用仍由 `tools/call` 门禁拒绝；配置复用 `configs` 表的 `mcp.runtime.v1`，损坏/缺失/未知版本 fail-closed，并提供 `BTDECK_MCP_FORCE_DISABLED` 紧急关闭。
+- 首版强制脱敏且无绕过：Tracker 仅返回域名与规范状态；原始 URL/消息/passkey/token、绝对路径、下载器凭据、审计 IP/UA 不得出现在响应、错误或日志。
+
+### 实现门禁
+
+- `feature_list.json` 已登记 MCP-G0～G11 共 12 个 blocking gate，G1/G2/G3/G5/G7/G8 禁止豁免。
+- 核心阻断：默认关闭与逐能力双门禁、统一 token→principal、HTTP/MCP 共用 service、敏感 canary 零泄漏、查询预算、写操作确认/幂等/审计、Cron 内置白名单、上传安全、运行时关闭语义、多制品验证与回滚演练。
+- 任一 gate 为 FAIL、NOT_RUN、INDETERMINATE 或证据缺失，均不得启用对应能力或纳入发布制品。
+
+### 实施顺序
+
+1. W0：运行时兼容探针、工具 schema、威胁模型和门禁骨架。
+2. W1：复用 configs 的控制面、revision CAS、设置页全局/逐能力开关。
+3. W2：同进程 MCP、RuntimeContext、统一认证、显式 DTO 和脱敏扫描。
+4. W3：先查询/模板/仪表盘，再等级4/Cron，最后抽 TorrentAddService 接入添加种子。
+5. W4：HTTP/MCP 等价、负向安全、启停竞态、依赖锁、EXE/DEB/RPM/Docker 黑盒及 runbook。
+
+### 验证
+
+- `feature_list.json` 解析与结构化不变量检查通过：feature 唯一、6 项 capability 全部默认关闭、12 项 gate 全部 blocking/pending、6 项禁止豁免门禁正确、9 项 task 全部 pending，plan_file 与计划索引可达。
+- `git diff --check` 通过；Git Bash 根 `./init.sh --ci` 退出 0，仅有既有 jq/venv/null-byte 环境警告。
+
+### 下一步注意
+
+- 等级4不是物理删除，工具名固定建议 `torrent_mark_pending_delete`，输出必须保留 DB 更新失败的 partial 状态。
+- MCP 高级查询不得沿用 HTTP 的 100000 条上限；计划规定 pageSize≤200、响应≤1 MiB。
+- Cron 首版只按稳定 `task_code` 触发显式内置 allowlist，永不开放 task_type 0～3 或任务定义修改。
+- 添加种子前必须先抽协议无关 `TorrentAddService`；首版禁止磁力、URL 和服务器本地路径输入。
+- 未执行 Git stage/commit；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保持不动。
+
+## 2026-08-28：v1.0.6 交付制品等价性与发布阻断门禁计划
+
+### 结论
+
+- 详细实施计划已落到 `PLANS/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
+- v1.0.6 在 G0～G10 非豁免门禁全部 PASS 前不得发布；测试失败、制品/证据缺失和基础设施不确定都按阻断处理。
+- 升级基线使用正式标签 `v1.0.5@29c6f6f68ab35e25f8cf7237ee187de359c77714`；若只能从标签重建旧制品，必须标记 reconstructed，不能冒充正式历史制品。
+
+### 规划范围
+
+- 同一 SHA 与版本身份、公共依赖锁及 qB 版本统一、唯一前端构建。
+- EXE/Setup/DEB/RPM/Docker 严格构建和静态内容等价。
+- Windows、Debian 12、Rocky Linux 9、Docker 首装/重装/升级/重启/卸载与数据保留。
+- C01～C12 外部黑盒契约、SBOM/漏洞/秘密/签名、不可变制品晋级及故障注入演练。
+- `feature_list.json` 已登记 9 个 pending 任务；本批没有实施 CI/脚本/源码改动。
+- 已删除过期 `PLANS/v1.0.9.md` 并清理 README/feature_list 路径引用；一键部署的历史完成证据仍保留在结构化 tasks/evidence 中。
+
+### 下一步
+
+1. 只实施 W0 环境能力探针，不先大改构建脚本。
+2. 根据探针固定 Python 3.11 patch、Node LTS、低 glibc Linux builder 和 Runner 方案。
+3. 实施 W1 release config/build-info/依赖锁，并用负向变异建立可信阻断。
+4. W1 通过后再进入 W2 制品构建和 W3 生命周期，避免在无身份、无统一依赖的制品上继续叠加测试。
+
+### 验证
+
+- `feature_list.json` JSON 解析通过，新 feature 及 9 个 pending task 结构检查通过。
+- `PLANS/README.md` 链接目标存在；`git diff --check` 通过。
+- Git Bash 根 `./init.sh` 退出 0；仅有既有 jq/venv/null-byte 环境警告。
+
+## 2026-08-27：EXE 与 APK 构建脚本生成
+
+### 结论
+
+- 既有 `deploy/build-windows.bat` 保持不变，新增 `deploy/build-android.bat` 与根目录 `build-packages.bat`。
+- Android 脚本默认构建严格版和 LAN 明文测试版；每个变体先跑 JVM 单测，再 assemble、复制、签名校验和 badging 校验。工具链路径支持环境变量覆盖，并拒绝/跳过 JDK 8，自动选择有效 JDK 17+。
+- 根入口默认构建 EXE + 两个 APK，也支持按 Windows、Android 或单个 APK 变体选择。
+
+### 验证
+
+- `cmd /c deploy\build-android.bat`：严格版、LAN 版均 BUILD SUCCESSFUL；每个变体 `LanHostPolicyTest` 11 + `ServerProfileTest` 2，共 13 个 JVM 用例通过；`apksigner verify`、`aapt2 dump badging` 通过。
+- `cmd /c build-packages.bat --android-strict-only`：根入口参数转发成功并完成严格版构建。
+- 严格版 APK：`android/dist/btdeck-companion-0.1.0-mvp-strict-debug.apk`，6,281,055 bytes，SHA-256 `036079612252AE55871BA2CC3003E80FD8E67DE1FC8837E71696FB9DB4C4C773`。
+- LAN 版 APK：`android/dist/btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`，6,281,023 bytes，SHA-256 `08008D79EAA3EC3C650B6C314D41073BD86499378FB48E3CA0CE5CDBF726D2C8`。
+- 既有 Windows EXE 产物：`dist/btdeck.exe`，45,814,476 bytes，SHA-256 `41B586C2A5A8892AFE181EA45E88953B2D68CD9FEAD3C7D4156AC6A6AA07C56F`；ISCC 未安装，安装器步骤跳过。
+
+### 后续
+
+- 运行 `build-packages.bat` 即可重建全部 EXE/APK；首次在新机器使用时设置 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME` 和 `ANDROID_SDK_ROOT`，或生成 `android\gradlew.bat`。
+- 本任务未执行 Git stage/commit；工作区其他已有修改与未跟踪目录保持不动。
+
+## 2026-08-27：移动端回收站 info_id 契约修复（自查缺陷）
+
+### 本批结果
+
+- **两串联确定性缺陷**（诊断实证）：移动端回收站恢复/彻底删除把 `item.torrent_id`（InfoHash）当批量接口 ID 传，后端实际按 `TorrentInfo.info_id` 查询→「种子不存在」；前端又读 `failed_list[0].error`（后端键恒为 `reason`）→「未知原因」兜底。
+- **修复**：`mobile/recycle-bin.vue` 守卫与载荷统一改 `item.info_id`、恢复/删除失败提示均展示 `reason`、彻底删除按钮禁用去掉 `|| !item.torrent_id`（同根缺陷）；`api/recycle-bin.ts` failed_list 项类型改 `{torrent_id; torrent_name?; reason}`、success_list 项 `name→torrent_name`；`mobile-recycle-bin.spec` 7→9 例（`['t1']→['i1']` 契约锁 + 用例 6 改造 + reason 展示 2 例）。
+- **后端契约测试（源码零改动）**：`test_recycle_bin_api.py` 新增 `TestBatchPayloadRequiresInfoId` 2 例——restore/cleanup 传 torrent_id 值→`reason=="种子不存在"` 且无 `error` 键；cleanup 传 info_id→`success_count==1`（`get_audit_service` 依赖 override None 规避同步 session `await commit()` 假失败）。
+- 方案经双子代理独立审查修订：补 spec 用例 6 连锁改造、后端审计坑、feature_list.json 两处语法修复（L94 残留 `}` + L93 尾逗号，brand-logo-2026-08.3 删除残留，已修复合法）。
+
+### 变更文件
+
+修改：`frontend/src/views/mobile/recycle-bin.vue`、`frontend/src/api/recycle-bin.ts`、`frontend/tests/unit/mobile-recycle-bin.spec.ts`、`backend/tests/api/test_recycle_bin_api.py`、`docs/roadmap/perspectives/test-coverage.md`（mobile-recycle-bin 行）、`feature_list.json`（语法修复 + `.5` evidence/files）、`progress.md`。
+
+### 验证与待办
+
+- 前端定向 9/9 全绿 + 定向 ESLint（`--no-fix --max-warnings 0`）+ `tsc --noEmit` 零错误 + grep 无 failed_list `.error` 残留；后端定向 16 passed + black/flake8 通过；根 `./init.sh`（ci）通过。
+- 已知错位登记待后续：恢复按钮禁用/L37 文案按 torrent_id 判定，与后端 `can_restore`（备份存在性）判据错位；`/restore-manual`（501 stub）未来实现应接受 info_id；后端 `torrent_ids` 实为 info_id 语义的命名歧义（42 处/9 文件）另行立项。
+- 未执行 Git 提交；工作区其他未提交/未跟踪文件（并行会话痕迹）保持不动。
+
+### 回归测试加固（同日追加）
+
+- **三层保护**：`mobile-recycle-bin.spec` 9→13 例——fixture 堵变异盲区（item2 改 `torrent_id:'t2'` 无 info_id、新增 item3 测按钮态），新增按钮禁用态契约（缺 torrent_id 仅禁恢复、彻底删除可用、busyKey 双禁）、reason 缺失兜底「未知原因」、destroy reject 分支、源码契约（载荷/守卫/reason/两按钮 disabled 表达式逐项锁定）；`api-contracts.spec` 新增回收站响应类型源码锁定 describe（failed_list 项 reason+torrent_name?、禁 error/name 回流、success_list 项 torrent_name、请求字段 torrent_ids 不变式）；后端 `TestBatchPayloadRequiresInfoId` 2→4 例（失败项精确键集 `{torrent_id,reason}`、cleanup 成功项 `{torrent_id,torrent_name}` 值锁、混合批量逐项独立判定+回显语义）。
+- **变异验证 10 组全部精确拦截**（备份-变异-红-还原-cmp 字节校验）：前端 M1-M7 覆盖两处载荷回退、reason→error、恢复提示去 reason、彻底删除禁用加回、守卫改回、类型 reason→error；后端 M8-M9 查询字段 info_id→torrent_id（M8 双红含既有 service 级用例）、M10 reason 键→error。还原后源码零残留（git diff + cmp 双核实）。
+- 全量复验：前端 **84 套件 1178 例全绿** + tsc 零错误 + 定向 ESLint；后端 **18 passed** + black/flake8；根 `./init.sh`（ci）通过。仍未执行 Git 提交。
+
+## 2026-08-27 交接：种子列表错误提示滚动收起与查询全屏蒙版
+
+### 当前结果
+
+- 列表视图与传统视图的错误原因 tooltip 已统一设置为不可进入，并通过共享 mixin 在 `wheel`、页面滚动或嵌套列表滚动时主动 `hide()`；销毁阶段会解除全局监听。
+- 两视图查询 loading 已改为 `v-loading.fullscreen.lock`：蒙版覆盖完整视口，加载期间锁定页面滚动，并由现有请求 `finally` 可靠解除。
+- 回归保护已加固为三层：mixin 7 个运行时边界与真实 Element UI Tooltip；真实 Loading 指令的 body mask/锁滚动/销毁清理；两视图编译后 directive modifiers 与请求失败复位。新增 `torrent-loading-mask.spec.ts` 和共享 `loadingDirectiveProbe.ts`。
+
+### 验证与后续
+
+- 前端全量 Jest **84 suites / 1169 tests passed**，定向 5 suites / 70 tests passed；`npm run typecheck`、完整 `npm run lint`、`npm run build` 及 Git Bash 根 `./init.sh --ci` 全部通过。
+- 构建仅有既有 Sass、CSS 顺序、资源体积及 Browserslist 警告；无本批新增错误。
+- 原修复提交为 `db6d24b`，本轮回归加固与其分为独立提交；安装包重建记录及其产物、其他既有工作区状态保持不动。可选人工复核：让错误原因提示出现后滚动列表/页面，确认提示立即收起；慢请求期间确认视口不可滚动到蒙版外。
+
+## 2026-08-27：Tracker 域名筛选命中可视化（matched_domain 标记 + 高亮 + 观察日志）
+
+### 本批结果
+
+- **根因**（双独立子代理静态+内存库动态复现验证）：`tracker_domain` 筛选为 EXISTS/ANY 语义——种子任一 tracker 命中所选域名即整行返回（辅种一籽挂多站 tracker 常态），返回行携带全部 tracker 且无命中标记，Tracker 详情平铺造成「搜出与所选域名不同」观感；SQL 锚定严格无误匹配。
+- **后端**：`TrackerInfoVO` 新增 `matched_domain`（default None，duplicate/advanced_search 复用路径零改动兼容）；`torrent_helpers.py` 域名归一前移入口、`tracker_row_matches_domains` Python 谓词与 SQL 8 条件同口径（like `escape` 字面量化）、`convert_to_vo(s)_with_trackers` 新增可选参数计算标记；修复 `tracker_like` 空结果静默返回全部（改返回空）。
+- **前端**：`TrackerDetailCard` 命中行浅主色高亮 + 「命中筛选」标签（snake/camel 双读）；两视图 `getList` 输出 `[tracker-filter]` console.debug（共享 `countMatchedTrackerRows`）；查询模板缺口修复（类型 + `QueryTemplateDialog` simple 表单域名多选 + `saveSimpleQueryAsTemplate` 透传，还原端本就兼容）。
+- **观察日志**：后端 `[tracker-domain-filter]`（归一输入/命中汇总）、`[tracker-filter]`（关键字命中行数）、`[torrent-list]`（total/页/参数）三组 debug 锚点，`LOG_LEVEL=DEBUG` 开启；前端 devtools console 对账。
+
+### 变更文件
+
+修改：`backend/app/torrents/trackerVO.py`、`backend/app/api/endpoints/torrent_helpers.py`、`backend/tests/api/test_torrent_list_api.py`、`frontend/src/api/torrents.ts`、`frontend/src/views/torrents/{index.vue,TraditionalView.vue,components/TrackerDetailCard.vue,utils/torrentBatch.ts}`、`frontend/src/styles/_tracker-table.scss`、`frontend/src/views/query-templates/components/QueryTemplateDialog.vue`、`frontend/tests/unit/{tracker-detail-card.spec.ts,torrent-batch.spec.ts,api-contracts.spec.ts}`、`docs/roadmap/` 三件（根 README 增量行 + frontend/views 分支 + torrent_crud 三层 md）、`feature_list.json`（新增 task）、`progress.md`。
+
+### 验证与待办
+
+- 后端全量 pytest **4052 passed / 7 skipped**（定向 test_torrent_list_api 40 passed：新增 ANY+标记/多选标记/未筛选不标记/下划线字面量 4 例 + 改写 tracker_like 空结果语义 1 例；关联面 duplicates+advanced_search 50 passed）；前端全量 **82 suites / 1155 passed**（定向 3 spec 新增 4 用例）。
+- black（改动文件）/flake8/mypy 通过——app/ 存量未格式化 `tracker_sync_task.py` 非本次引入未动；`tsc --noEmit` 零错误；`npm run lint` 通过；根 `./init.sh`（ci）通过。
+- 运行时复核可选：`LOG_LEVEL=DEBUG` 启动后端后筛一个域名，核对 `[tracker-domain-filter]` 归一输入与 `[torrent-list]` total，UI 详情卡命中行高亮。
+- 未执行 Git 提交；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保留不动。
+
+## 2026-08-27：移动端搜索收敛与系统设置移动化（三项调整）
+
+### 本批结果
+
+- **移动端仅保留高级搜索**：裁撤 `/m/query-templates` 页与 `m2-template-cache.ts`（模板应用跨页缓存成死代码），种子页/搜索页移除回填链路；深链 redirect 至 `/m/search`，模板能力收敛进工作区左侧已保存搜索（与 Web 端同源）。
+- **高级搜索条件组移动适配**：`AdvancedSearchBuilder.vue` 内联定宽全部类化（桌面宽度不变）+ 768px 断点强化（选择器铺满/组头换行/AND/OR 标签避让/操作按钮纵排），预览与保存模板对话框窄屏 94% 压宽；`ConditionValueInput.vue` 日期范围窄屏弹性对分（修 375px 溢出）。
+- **系统设置移动化**：新增 `/m/settings`（`views/mobile/settings.vue` 整页复用桌面设置组件，2FA + 改密零重复实现）；桌面设置页改密跳转改 `loginPathForMode()`；守卫强制改密落点按 UI 模式分流（移动落 `/m/settings`，白名单增补防循环）；`toMobilePath` 补 `/settings` 映射；抽屉菜单系统设置入移动组。
+
+### 变更文件
+
+删除：`frontend/src/views/mobile/query-templates.vue`、`frontend/src/views/mobile/m2-template-cache.ts`、`frontend/tests/unit/mobile-query-templates.spec.ts`。新增：`frontend/src/views/mobile/settings.vue`、`frontend/tests/unit/mobile-settings.spec.ts`。修改：`router.ts`、`layout/mobile/index.vue`、`permission.ts`、`utils/ui-mode.ts`、`views/mobile/{search,torrents}.vue`、`views/settings/index.vue`、`components/torrents/{AdvancedSearchBuilder,ConditionValueInput}.vue`、测试 5 件（search/torrents/shell/ui-mode/force-change-deadlock）、e2e `mobile-routes.spec.ts`、roadmap 三件、`feature_list.json`（`.5` evidence）、`progress.md`。
+
+### 验证与待办
+
+- 全量 82 套件 1151 例全绿（首跑 1 套件 worker 偶发崩溃，复跑两轮均全绿）；`tsc --noEmit` 零错误；`npm run lint` 通过（契约 stale 为已知行尾假警报，重生成内容与 HEAD 零差异，工作区保留 LF 归一化版本）；`npm run build` 通过（`m-settings` chunk 实证、`m-query-templates` 消失）；根 `./init.sh`（ci）通过。
+- 浏览器 390×844 交互级复核可选（条件组铺满/设置页改密链路已由单测与真实路由守卫回归锁定）。
+- 未执行 Git 提交；既有未跟踪 `.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 保留不动。
+
+## 2026-08-26：移动通知内容渲染与 Web 端一致
+
+### 本批结果
+
+- 用户要求移动通知页对内容的文本渲染与 Web 端一致。将桌面 `NotificationDrawer/index.vue` 详情弹窗的 Markdown-lite 渲染（标题/分隔线/列表/段落/粗体/行内代码，输入先转义）与失败明细目标回退链抽至共享 `frontend/src/utils/notification-markdown.ts`，桌面改委托调用（行为零变化），两端单一渲染源。
+- `views/mobile/notifications.vue`：列表摘要改三行截断（对齐桌面列表）；新增详情弹层（92% 宽 el-dialog）——标题/类型标签/时间、`v-html` 同源渲染、失败明细、Release 外链；点击卡片打开详情并保留"查看即已读+角标联动"。
+
+### 变更文件
+
+`frontend/src/utils/notification-markdown.ts`（新）、`frontend/src/views/mobile/notifications.vue`、`frontend/src/layout/components/NotificationDrawer/index.vue`、`frontend/tests/unit/notification-markdown.spec.ts`（新，13 例）、`docs/roadmap/frontend/components-layout/README.md`、`feature_list.json`（`.5` evidence 追加）、`progress.md`。
+
+### 验证与待办
+
+- 新增 13 例单测全过；`mobile-shell` + `api-contracts` 61 例回归全绿；`tsc --noEmit` 零错误；改动 4 文件 ESLint（`--max-warnings 0`）通过；`npm run build` 与根 `./init.sh` 通过。
+- 未执行 Git 提交（工作区遗留 `advancedSearch.generated.ts` 行尾差异与本批无关，前批已记录）；浏览器 390×844 交互级复核可选（逻辑层已由单测锁定）。
+
+### 回归测试加固（同日追加）
+
+- 三层保护：`notification-markdown.spec` 13→22 例（CRLF/`&` 转义/列表打断/内联覆盖/未配对字面量/连续 hr）；新增 `mobile-notifications.spec` 12 例（组件行为 + 源码契约禁裸文本直渲与私有实现回流）；新增 `notification-drawer-detail.spec` 7 例（Web 委托共享 util 契约 + 未读数轮询启停）。
+- 变异验证三组全部精确拦截（移动裸文本回退/截断丢失/Web 绕过共享 util），还原后三套件 39 例全绿。
+- 全量 81 套件 1108 例全绿；tsc/ESLint 通过；test-coverage 矩阵修复历史漂移（unit 表 48→69 行补齐）。仍未执行 Git 提交。
+
+## 2026-08-26：甲板连接 Logo 视觉重绘
+
+### 本批结果
+
+- 完成用户确认的“甲板连接”方案：绿色 D 形轨道、三条深色甲板线、绿色连接节点，移除原黑色板面视觉；新增完整横向锁定组合、标准/反白/微缩 mark 的 SVG 与 PNG 母版资源。
+- `AppLogo` 增加 `micro` 光学尺寸与 `inverse` 色调；桌面侧边栏成为唯一品牌锚点，顶栏移除重复 Logo；桌面/移动登录页和移动头部按横向 Logo 比例重设尺寸与底色。
+- favicon、Safari pinned tab、PWA/Apple/Android 图标统一为绿色底反白 mark，`generate-pwa-icons.py` 支持反白/微缩资源。
+
+### 变更文件
+
+`frontend/src/components/common/AppLogo.vue`、`frontend/src/components/common/__tests__/AppLogo.spec.ts`、桌面/移动布局与登录页、`frontend/public/img/brand/` 六组 SVG/PNG、`frontend/public/img/icons/favicon.svg`、`safari-pinned-tab.svg`、`frontend/scripts/generate-pwa-icons.py`、`frontend/tests/unit/pwa-manifest.spec.ts`、三层 roadmap 与 `feature_list.json`。
+
+### 验证与待办
+
+- 资源已生成并完成 PNG 视觉检查；`npm run typecheck` 通过；AppLogo.spec.ts 与 pwa-manifest.spec.ts 共 12 例通过；改动文件 Vue lint 通过；`npm run build` 通过；根 `./init.sh` 通过（仅保留既有 jq/虚拟环境/npm 警告）。
+- 全量 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关。
+- 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。
+
+## 2026-08-26：伴侣模式凭据记忆与会话恢复（v1.0.6-dual-mode-client.8）
+
+### 本批结果
+
+- 已实现 Android 与 Windows 桌面伴侣的用户名/密码录入与 profile 绑定。用户名进入 profile JSON；密码不进入 profile 文件或管理 API：Android 用 `CredentialVault`（Android Keystore AES-GCM），Windows 用当前用户 DPAPI 加密文件。
+- 切换 profile 时 Android 等待 `CookieManager.removeAllCookies` 回调后再加载，避免旧 token 竞态；桌面/Android 首屏在有保存密码时调用既有 `/api/v1/auth/login`，写入前端现有 access/refresh cookie。TOTP 只临时 prompt，不持久化；旧 profile 缺 username 仍按空值兼容。
+- 删除/忘记 profile 同步清理凭据；桌面与 Android 管理 UI 均提供编辑/清除入口，编辑时密码留空保留旧密码，显式 clear 才清除；更换地址会清理旧凭据/证书指纹。
+
+### 验证与待办
+
+- `backend/tests/desktop_companion`：53 passed（含 DPAPI 密文不落明文、改地址清理旧密码回归）；Android `:app:testDebugUnitTest`：13 passed，`:app:assembleDebug` BUILD SUCCESSFUL。
+- Android `:app:lintDebug` 受环境限制未完成：在线解析 `kotlin-compiler-31.7.3.jar` 超时，离线无缓存；需在完整 Gradle 缓存/网络 CI 复核。
+- 未做真实远程登录、TOTP、密码变更后的桌面 GUI/Android 真机验收；`.8` 保持 `in-progress`，下一步应在测试服务器上覆盖保存→切换→重启→失败登录/清除，以及自签 HTTPS/明文 LAN 组合。
+- 本批未执行 Git stage/commit/push；既有未跟踪 `.tmp-desktop-gui-test/` 保留不动。
+
+## 2026-08-26：GitHub CI 审计枚举断言修复
+
+### 已完成
+
+- 保留业务需要的 `AuditOperationType.SCHEDULED_TASK_INTERRUPT`，将枚举测试成员数更新为 48。
+- `backend/tests/enums/test_audit_enums.py` 新增 `scheduled_task_interrupt` 参数覆盖；专用测试 291 passed。
+- 审计 API 操作类型回归 4 passed；Flake8、JSON 解析和 `git diff --check` 通过。Black CLI 在本机超时，但纯库格式化检查返回 `NothingChanged`。
+- `docs/roadmap/backend/domain/README.md`、`feature_list.json`、`progress.md` 已同步。
+
+### 工作区状态
+
+- 未执行 Git stage/commit/push。
+- 现有未跟踪目录 `.tmp-desktop-gui-test/` 未修改、未删除。
+- 根目录 `bash ./init.sh` 受 Windows WSL 环境限制未完成；后续可在 GitHub CI/Linux 环境复核全量 pytest。
+
+## 2026-08-25（第二批）：定时任务停止治理——超时强杀 + interrupt 真取消 + MissingGreenlet 根修
+
+### 结果
+
+生产 Tracker 状态同步任务一轮执行挂 8.75h 无法停止（cron-7-20260825111000）的完整诊断与修复：cron 层超时强制终止（开关 `CRON_TASK_TIMEOUT_ENFORCE` 默认开）、interrupt 保存协程句柄真正 cancel（outcome=cancelled 落库）、MissingGreenlet 根修（onupdate postfetch → db.refresh）、心跳停滞告警 + faulthandler 线程栈自动转储、认证客户端补 requests 超时、interrupt 审计接线（含前端 audit.vue 映射）。相关套件 461 passed、mypy/black/flake8/eslint/init.sh 全过。feature_list.json `cron-task-stop-governance-2026-08-25` 已登记（task .7 挂起待生产取证）。**未提交待用户指示。**
+
+### 下一步（新会话优先）
+
+1. **生产取证（用户执行）**：`docker logs btdeck-backend 2>&1 | grep "QB_TRACKER_ENRICH" | grep -E "Enriching|Completed|游标"`——`budget_seconds=0` → 实施 task .7 预算收紧；`=120` → 路径 B（挂死），线程级回收单独立项。辅证：`grep "event=downloader_call" | grep "dabb1e6f"`（queue_wait_ms 高=令牌泄漏）。
+2. 条件项：speed_schedule 无超时同步 HTTP 链路（同型挂起点）取证后立项。
+3. 部署提醒：docker-compose 已加 CRON_TASK_TIMEOUT_ENFORCE / SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS 透传；发布说明需含已知限制（thread 孤儿线程/task_type 5-6/脚本子进程/事件循环共盲）。
+
+### 关键实现细节（后续会话避坑）
+
+- `_run_python_internal_class` 的 `except Exception` 兜底会吞穿透异常——TaskExecutionTimeoutError 有专门穿透分支，改码时不可删除
+- 任务体自身 TimeoutError 经入口 guard 包装为 `_TaskBodyTimeoutError`（Windows 时钟粒度 ~15.6ms 下 wait_for 可早于 timeout 触发，elapsed 判定不可靠，来源标记是唯一可靠区分）
+- interrupt 等收尾完成再返回（gather），用户中断 cancelled 的 success=True 对齐 skipped 统计口径
+- 测试锚点：TestTimeoutEnforcement / TestInterruptRunningInstance / test_cron_crud_async_freshness（移除 db.refresh 即失败，回归有效性已验证）
+
+## 2026-08-25：主 Logo 品牌资源接入
+
+### 结果
+
+- 已将用户提供的 Logo 清理为透明背景的完整 Logo 与环形 mark，资源位于 `frontend/public/img/brand/`。
+- 新增 `AppLogo.vue`，桌面侧边栏/顶部栏、桌面登录页、移动顶部栏/登录页统一接入；登录页使用 full，导航和小尺寸入口使用 mark。
+- 已重写 PWA 图标生成脚本并生成 favicon、Apple Touch Icon、Android/maskable、Windows 图标；`public/index.html` 已补齐 favicon 与 Apple Touch Icon 引用。
+- 已更新 `feature_list.json`、`progress.md` 与 `docs/roadmap/`。
+
+### 验证与边界
+
+- typecheck、PWA 品牌测试（6/6）、Vue lint、Vuex lint、生产 build 均通过。
+- 完整 `npm run lint` 被既有 advanced-search-contract 过期检查拦截；未重生成无关契约。
+- `bash ./init.sh --ci` 受当前 Windows WSL 访问拒绝影响；未执行全栈 init。
+- 工作区原有 backend desktop_companion 改动及临时目录未触碰；本次新增/修改仅涉及品牌资源、前端入口、前端测试、路线图和会话记录。
+
+## 2026-08-25 交接（十二）：桌面 GUI 窗口链路实测收官（task .6 置 done）
+
+### 结论
+
+task .6 桌面双模式对齐完成窗口链路全矩阵实测（向导/管理页/远程窗口/BTDECK_MODE 优先级/服务端行为不变/PyInstaller exe 实跑），**全部通过**，feature_list.json task .6 已置 done。实测抓到并修复一个 GUI 真实缺陷（向导选模式竞态崩溃，打包 exe 同样中招）。本批 3 个代码文件改动 + 三份记录，**未提交待用户指示**。
+
+### 修复：向导选模式即崩（launcher.py）
+
+- 症状：向导页点击模式卡后进程被 pythonnet `InternalPythonnetException（Task'1[VoidTaskResult]→NullReferenceException）` 杀死。
+- 根因：on_wizard_chosen/rerun_wizard「先 destroy 旧窗再 create 新窗」——pywebview(winforms) 销毁最后一窗即 `Application.Exit()` 结束 GUI 循环，且运行期 create_window 依赖既有窗口的 Invoke 通道（实例已空则无通道）。
+- 修复：两处均改「先建新窗、后销毁旧窗」；+2 webview-stub 单测锁 create-before-destroy 顺序（tests/desktop_companion 46 例全过）。
+
+### 实测矩阵（全部通过）
+
+1. 无记录首启：向导弹窗、服务端卡「默认」标签、记住默认勾选；选伴侣+记住 → 记录落盘+管理页存活。
+2. 管理页：四组校验文案（空名/地址无效/公网 http 拒/私有未确认拒）；添加 127.0.0.1:5001+确认 → 落盘键名值全对；测试连接 → 就绪+v1.0.5（落盘 READY/serverVersion）；死端口 → 不可达；删除（confirm）同步。
+3. 打开远程：窗口连 5001 加载 SPA 登录页+PWA SW 注册、管理页隐藏、lastConnectedAt 落盘；关远程 → 管理页恢复+列表刷新。
+4. 重跑向导：记录清除/向导重现/档案保留；选服务端+记住 → 迁移→uvicorn 5099→主窗口自家 SPA→关窗优雅退出 exit 0。
+5. BTDECK_MODE 双向优先（记录被 env 压制，全程无向导）；退出按钮优雅退出；无记录关窗落服务端不写记录。
+6. exe：build-windows.bat 全过（43.8MB/verify PASS/Inno 跳过=ISCC 未装）；exe 实跑同构全链路含优雅退出（launcher 修复已在包内）。
+
+### 关键发现（后续会话参考）
+
+- **测试基建**：WebView2 可经 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=N` 开 CDP（Node 原生 WebSocket 可驱动）；**用户 Chrome 占 127.0.0.1:9222 勿碰**，WebView2 端口回环栈不固定（双栈探测+按 Browser=Edg/ 过滤）；Git Bash `&` 后台进程会被工具调用结束杀死（GUI 进程须 exec 顶替 shell + 后台任务保活）；MSYS $$ ≠ Windows PID。
+- **既有边界（未改码，已登记 feature evidence）**：wait_for_server_ready 不校验应答方身份——端口被占且他人应答时桌面主窗口会连到他人服务；建议绑失败 fail-fast 或探测带实例标识。
+- btpManager env 无 pytest/mypy（质量门用 anaconda base python 跑）；本会话已向 btpManager 装 pywebview~=5.4.0（desktop_main 必需，与打包 requirements 同锚）。
+- 测试产物：.tmp-desktop-gui-test/（脚本/日志/截图，未跟踪可删）；dist/btdeck.exe 46.4MB（15:32 构建）+ .venv-packaging 为本批构建产物。
+
+### 待办
+
+1. 本批 3 代码文件（launcher.py 修复 + test_launcher.py 回归 + test_health.py black 规范化）+三份记录未提交，待用户指示。
+2. task .6 已 done；dual-mode-client 余项：.1/.2/.3 收尾（wheel 闸门/真机矩阵）、.4（安卓服务端壳）、.5（M 系列收尾判断）、.7（发布验收）。
+3. 5001 dev server 保持运行（PID 7144，未受测试影响）。
+
+## 2026-08-25 交接（十一）：移动端模拟器验证（PWA + 手势）
+
+### 结论
+
+对 838fc97（前端 PWA+手势）完成双层模拟器验证（SOP：docs/android/desktop-testing.md）：**全部通过，1 项平台约束**。后端 5001（btpManager env，服务生产 dist）；AVD btdeck-test（Pixel 6/API 35）Chrome 访问 10.0.2.2:5001。
+
+### 验证结果
+
+- **PWA（L1 IAB 390×844）**：视口分流 /#/m/login ✓；meta（#059669/capable yes/manifest link/apple-touch-icon）✓；**SW 真实注册实证** controller.scriptURL=service-worker.js?src=btdeck（带标记+激活接管，与 retire 共存）✓；后端服务 PWA 文件（manifest 200 品牌 SW 200 正确 MIME maskable 200）✓。
+- **手势（L2 AVD adb input swipe 真触摸 + CDP 断言）**：左滑链式切 Tab（dashboard→downloader→torrents）✓、右滑回退+首 Tab 边界不动 ✓、垂直滑动/顶部下拉不切 Tab ✓、汉堡开抽屉 ✓、抽屉左滑关 ✓、点遮罩关 ✓；**左边缘右滑开抽屉=平台约束**——Android Chrome 保留为返回导航（实测 back 出 Chrome），页面收不到；CDP 协议级触摸注入下逻辑正确（drawerVisible=true）。真机 Chrome 该入口不可达，PWA standalone/内嵌 WebView 不受影响。
+- 最终截图：种子页卡片流正常、"种子"Tab 激活、布局无异常。
+
+### 关键发现（后续会话参考）
+
+- IAB click 通道本回合故障（fill/snapshot/evaluate 正常，login POST 未达后端）；AVD 的 adb input text 不可用（Gboard WERR_CALL_NOT_IMPLEMENTED）→ **AVD 验证走 Chrome CDP**（adb forward chrome_devtools_remote + Runtime.evaluate native setter 填表单+click），全链路可用，推荐后续复用此组合。
+- back 手势退出 Chrome 会关闭 CDP 目标页、剩余 tab 网络栈可能卡 chrome-error → am force-stop com.android.chrome 重启恢复。
+- Element UI 遮罩关闭忽略 CDP 合成 click（isTrusted 校验），需真实触摸 tap（adb）。
+
+### 待办
+
+1. 本节仅记录文件（progress.md+本文件），无代码改动；与批次记录一起待用户指示提交。
+2. 桌面 GUI 窗口链路实测（task .6 收尾）仍留桌面会话。
+
+## 2026-08-25 交接（十）：移动独有优化（PWA+手势）+ 桌面双模式对齐 task .6 首批
+
+### 结论
+
+用户确认继续 M4 后两大候选（三项范围决策经 AskUserQuestion 确认：桌面伴侣=内嵌 webview、手势=Tab 滑动+抽屉关闭、PWA=完整启用含更新提示）。前端 PWA 完整启用+移动手势完成并全验证；后端 desktop_companion（task .6）逻辑层+GUI 全部落地，**窗口链路实测留待桌面会话**。全部未提交。
+
+### 交付
+
+- **前端 PWA**：SW 以 `?src=btdeck` 标记注册（registerServiceWorker.ts 重写+updated 事件）；retireLegacyServiceWorkers 标记感知改造（只清无标记注册+模板前缀缓存，与 main.ts 注册顺序共存）；vue.config pwa 补全（#059669/capable yes/**v5 扁平选项**/cacheId btdeck/skipWaiting false+clientsClaim true）；manifest 品牌化+9 图标重生成（scripts/generate-pwa-icons.py）+favicon.svg 统一品牌绿；RefreshPrompt.vue 常驻 App.vue（新版本提示→SKIP_WAITING→controllerchange 去抖重载）。
+- **前端手势**：内容区水平滑动切底部 Tab 四主页（**仅精确路径匹配**，/m/torrents/detail 子页排除——startsWith 会误命中）；左边缘 24px 右滑开抽屉（优先于切 Tab）；抽屉左滑/遮罩点击关闭；下拉刷新 mixin 横向主导中止（轴互斥）。
+- **后端 desktop_companion**（新包，对齐安卓 com.btdeck.companion）：hosts（URL 规范化+私有字面量判定 fail-closed）/lan_policy（明文准入四态）/profiles（键名对齐+原子写+脏数据容错）/health（live→ready 链式+TLS 分类，纯 urllib）/launcher（desktop_mode.json+BTDECK_MODE env>记录>向导；DesktopLauncher 单次 start() 事件驱动向导/管理/远程窗口；webview 惰性导入）。desktop_main 集成（server 模式历史行为不变；无桌面环境落回服务端+告警）。deploy/ 零改动（静态导入自动分析）。
+
+### 验证
+
+前端 Jest 76 套件 1048 例全绿 + tsc/ESLint/build + dist 实证（manifest/SW/meta/图标）；后端新增 44 例全过 + mypy/black/flake8；后端全量 3979 passed（1 失败为孤儿 120k 性能阈值满载抖动，单独重跑通过，与本批无涉）。
+
+### 关键发现（后续会话注意）
+
+- **PWA 前史**：插件一直在构建链但 main.ts 从未注册 SW（模板时代旧壳钉死事故后主动禁用+retire 清理）；重启必须带标记共存，否则每次启动被自己清掉。
+- vue-cli-plugin-pwa v5：public/manifest.json 是 manifest 源；cacheId 默认包名（=遗留清理前缀）；appleMobileWebAppCapable 扁平选项（v4 对象式不生效）。
+- pywebview 私有会话凭据不落盘（重启重登）+不做证书指纹信任=与安卓 MVP 同口径已知边界。
+
+### 待办
+
+1. 本批 21 文件（前端 13+后端 8）+三份记录未提交，待用户指示。
+2. 桌面 GUI 窗口链路实测（向导→管理→远程窗口、PyInstaller exe 实跑）留桌面会话；task .6 实测后收尾置 done。
+3. PWA 安装/更新流与手势真机/设备模拟实测留交互会话。
+
+## 2026-08-24 交接（九）：移动端 M4（孤儿文件双 Tab 移动化，功能页移动化收官）
+
+### 结论
+
+M4 完成并验证（未提交）。用户确认范围：孤儿文件移动化 **含隔离区立即清除**（单条+强确认）。移动抽屉桌面组收敛至 3 个有意保留页（种子列表桌面/Tracker 汇报测试/系统设置），M1-M4 功能页移动化收官。
+
+### 交付（前端 7 文件：2 新增 + 5 修改）
+
+- `/m/orphan-files`：双 Tab。孤儿文件 Tab——扫描上下文卡（门禁文案）、触发扫描+2s/3s 轮询（beforeDestroy 清理）、状态/置信度/路径筛选、卡片（状态三态/置信度/副本徽标）、清理两段式（门禁→cleanupPreview→rejected/空分支→确认含低置信度警告→cleanupOrphans 同载荷→task_id）、忽视/取消忽视（rejected/全失败/部分分支）。隔离区 Tab——卡片（预计清除/延迟次数）、单条恢复（rejected 报原因）、单条立即清除（type=error「不可恢复」强确认；already_running/task_id 分支）。
+- 路由 m-orphan-files + 抽屉（移动组 11/桌面组 3）+ /orphan-files 全前缀拦截 + toMobilePath。
+- 留桌面：文件夹聚合、副本位置、前缀快捷操作、批量操作、守卫复核。
+
+### 验证
+
+Jest 74 套件 1025 例全绿（+10 例）；tsc/ESLint/build 通过，m-orphan-files chunk（m-* 共 15）。浏览器 390×844 DOM 快照：双 Tab+空态+门禁文案+脚注渲染、守卫 /orphan-files/index→/m/orphan-files 实证。**IAB 点击通道连续第二回合全断**（playwright/dom_cua 均不达）；开发库无孤儿扫描数据，带数据渲染与扫描/清理/恢复/清除链路靠 Jest 10 例覆盖，真机复测可选（dev 跑一次扫描即有数据）。
+
+### 待办
+
+1. 本批 7 前端文件 + 三份记录未提交，待用户指示。
+2. 后续候选：移动独有优化（PWA/手势）、桌面双模式对齐（task .6，后端/打包域）。
+
+## 2026-08-24 交接（八）：移动端 M3（Tracker 关键词看板/搜索 + 定时任务 + 抽屉重组）
+
+### 结论
+
+M3 完成并验证（未提交）。M3 无计划预定义清单，AskUserQuestion 未获回复，按自治指令以推荐范围执行（全部来自用户候选方向）：**Tracker 核心移动化（关键词看板 + 关键词搜索）+ 定时任务移动化 + 抽屉遗留清理**。若用户对范围有异议，本批未提交可调整。
+
+### 交付（前端 13 文件：6 新增 + 7 修改）
+
+- `/m/tracker/keywords-board`：四池 Tab（getPoolStatistics 计数）+ 卡片流 + 分页；桌面拖拽移池→移动端卡片下拉「移动到X池」（moveKeywordToPool 同 API）+ 删除；添加复用桌面 AddKeywordDialog（92% media query）；候选池禁用添加。
+- `/m/tracker/keywords-search`：searchAllPools 全池检索（keyword/pool_types/time_range/sort_by 与桌面同字段集）+ 移动/删除 + ?keyword= 初始词。
+- `/m/tasks`：任务卡片（状态/六态 outcome/数据陈旧/类型/cron/描述/上次执行）；操作：立即执行（禁用拦截）/启停（PUT 部分更新 enabled，后端 CronTaskUpdate 全可选 + exclude_none 已核实）/中断（仅运行中）/删除；编辑/新建/日志脚注指路桌面。
+- 路由 3 条 + 抽屉（移动组 10 / 桌面组 4：移除下载器管理与定时任务，Tracker管理→「Tracker 汇报/测试（桌面）」直达 /tracker/reannounce-config）。
+- 分流：/tasks 全前缀拦截（M2 模式）；/tracker **精确拦截**三路径（看板/搜索），汇报配置/测试工具保留移动模式桌面直达。
+
+### 关键发现（后续批次注意）
+
+- **桌面缺陷已修**：keywords-board.vue `extractErrorMessage` 使用未导入（4 处错误路径 ReferenceError）→ 补导入。
+- **M3 模板三坑**（Jest 会直接套件失败但报错不指向真因）：①模板事件箭头函数不可带 TS 类型标注；②模板不可用 `??`（buble 只到 ES2015，兜底收实例方法）；③模板不可用 `!` 非空断言（v-if 守卫+双调用）。
+- **本会话 IAB 交互通道全断**（click/dom_cua/CUA 坐标/Tab 键/截图全失败，fill/goto/snapshot/evaluate 正常）——比前两会话更重；点击类交互全部由 Jest 直调方法覆盖兜底，点击级复核留交互恢复会话或真机。
+- 浏览器验证 query 参数链路注意：同路径仅 query 变更**不重挂载组件**（mounted 不重跑），验证 ?keyword= 须先离开再进入。
+
+### 验证
+
+Jest 全量 73 套件 1014 例全绿（+3 套件：mobile-tracker-keywords 7 / -search 6 / mobile-tasks 9）；tsc 零错误；ESLint 通过；build 14 个 m-* chunk（+3）。浏览器 390×844 DOM 快照实证：看板四池真实计数 112/1/1/81+候选池 20 卡+分页+禁用添加；搜索 195 条全池+?keyword=dupe 过滤 e2e（仅 6 命中无分页）；任务 13 卡六态（成功/已跳过）+数据陈旧双语义文案+中断按运行态隐藏；守卫 /tasks/index→/m/tasks、/tracker/reannounce-config 桌面直达。
+
+### 待办
+
+1. 本批 13 前端文件 + 三份记录未提交，待用户指示。
+2. M3 点击级交互复核（池切换/下拉移动/任务操作/抽屉）留交互通道恢复会话或真机。
+3. 后续候选待用户定：M4 孤儿文件移动化 / 移动独有优化（PWA/手势）/ 桌面双模式对齐（task .6，后端/打包域）；系统设置建议永留桌面。
+
+## 2026-08-24 交接（七）：后端单种子端点空 data 缺陷修复（M1 遗留清零）
+
+### 结论
+
+`GET /api/v1/torrents/torrents/{info_id}/{downloader_id}/{downloader_name}`（torrent_crud.py get_torrent）修复完成并活实例验证——M1 批次实测「响应全 null」的遗留缺陷清零。根因：ORM 实体直接 return 配 response_model=CommonResponse，Pydantic v2 无法从 ORM 属性构造信封，status/msg/code/data 全 null。修复：复用 torrent_helpers.convert_to_vo（与 getList 同源转换，camelCase 输出）显式包装；未找到由 raise HTTPException(404) 改项目惯例信封 code="404"+HTTP 200；移除死 import。
+
+### 关键发现
+
+- **端点真实路径含双 torrents 段**：端点声明 "/torrents/{...}" 且挂载于 prefix="/torrents"（torrents.py 聚合路由）→ /api/v1/torrents/torrents/{...}。保持不变（历史契约，前端零消费方）；写测试时直接访问会 404，须用双段路径。
+- TorrentInfoVO 输出 camelCase（alias_generator=alias_camel）——与 getList 列表项同构，断言/消费按 camelCase。
+- 移动端详情页现走 getList 回查（M1 绕开方案）继续可用；切换单种子直查为可选优化，非必须。
+
+### 验证
+
+新增 3 用例回归（命中完整 VO/信封 404/软删除过滤，TestClient+真实 SQLite）3 passed；相关回归 88 passed（torrent_crud 系列+auth_protection）；flake8/black/mypy 通过；5001 已重启加载修复代码，curl 实证命中返回完整 VO（name/hash/size/status 真实值）、未找到信封 404。
+
+### 待办
+
+1. 本批 3 文件未提交（torrent_crud.py、test_torrent_single_get_endpoint.py + 三份记录），待用户指示。
+2. 5001 dev server 已用修复后代码重启运行中。
+
+## 2026-08-24 交接（六）：M2 交互级复核全通过 + logs 筛选值 bug 修复 + DownloaderDialog 定性修正
+
+> 补记：本交接待办 2（后端单种子端点）已由交接（七）完成。
+
+### 结论
+
+用户要求完成 M2 真机/设备模拟交互复核与 DownloaderDialog 缺陷反馈修复。本会话 IAB 交互通道恢复（上会话故障为会话级环境问题），390×844 五页交互级复核**全部实测通过**；复核抓到并修复一个真实 bug；DownloaderDialog 定性修正为契约陷阱并文档化（M2 主体已随 a4cc75c 提交，本批为增量修复未提交）。
+
+### 交互复核结果（全部通过）
+
+- /m/logs：卡片+结果筛选+分页（20/451）；修复后「失败」筛选返回全部失败卡片（修复前恒空，实证）。
+- /m/search：简单查询→结果卡片→点卡片进详情（URL 实证）；高级模式桌面构建器完整渲染，构建「种子名称 包含 老男孩」执行→20 条结果；操作符未选时构建器弹校验提示（行为正确）。
+- /m/query-templates：应用模板→跳 /m/search→「已应用模板」提示+自动执行出结果（m2-template-cache 跨页链路实证）。
+- /m/recycle-bin：卡片列表+彻底删除确认框正确弹出（实际删除未执行，保护数据）。
+- /m/downloader：4 卡管理版（在线徽标+五操作）；/m/downloader/settings/:id 直达渲染桌面 DownloaderSettingsDialog（四页签+基本设置全套表单）。
+
+### 修复与定性
+
+1. **logs.vue 真实 bug**：结果筛选「失败」误传 `failure`，后端 audit_service 契约为 `success/failed/partial`（服务注释+桌面 resultMap 双证）→ 改 `failed` 并补 `partial` 选项；展示层由两态改三态（partial 原被折叠成红色「失败」，现「部分成功」橙色）；spec 同步 +1 用例锁三态与筛选值契约（禁 failure 回归）。
+2. **DownloaderDialog 定性修正**：桌面端**无功能缺陷**——index.vue 实际绑定自带落库的 DownloaderSettingsDialog（handleSubmit 只关框的注释是对的）；DownloaderDialog 是契约陷阱（emit submit 不落库、除移动端外零消费方）→ 组件头与 handleSubmit 补契约注释（消费方须显式调 add/up，参考移动端实现）。
+
+### 环境备注（后续会话注意）
+
+- IAB click 会话内也会**间歇**失灵（本会话前半段正常，后半段 playwright click/CUA 坐标/MessageBox 遮罩期点击交替失败）：兜底路径按优先级 dom_cua 节点点击 → 键盘导航（ArrowDown+Enter 选 Element 下拉项，操作符选择实证稳定）→ evaluate 只读坐标 + cua.click。Element 分组下拉选项对 Playwright actionability 判定 hidden，属环境非产品问题。
+- 获取下载器 id 走 API（getList + Bearer token）比从页面抓快。
+
+### 验证
+
+前端全量 70 套件 990 例全绿；tsc/ESLint（3 改动文件）通过；生产 build 通过，11 个 m-* chunk（m-logs/m-search 等哈希更新实证）。
+
+### 待办
+
+1. 本批 4 文件未提交（mobile/logs.vue、mobile-logs.spec.ts、DownloaderDialog.vue + 三份记录），待用户指示。
+2. 后端单种子端点空 data 缺陷待修复（M1 遗留，唯一存量待办）。
+
+## 2026-08-24 交接（五）：M2 五页面收口（高级搜索/查询模板/回收站/日志/下载器高级设置）
+
+> 补记：本交接待办 2（交互级复核）与待办 3（DownloaderDialog 缺陷）已由交接（六）完成；M2 主体已提交 a4cc75c。
+
+### 结论
+
+M2 全部完成并验证（未提交）：①/m/search 双模式——简单查询（桌面快捷筛选同字段集→getList）+ 高级搜索（复用桌面 AdvancedSearchBuilder→advancedSearch），模板应用经 m2-template-cache（take 取走即清）自动回填执行，builder 保存模板→createSearchTemplate；②/m/query-templates——客户端名称/来源过滤、系统模板（is_default）只可应用不可删除、应用跳 /m/search，新建/编辑保留桌面；③/m/recycle-bin——卡片+搜索+下拉刷新、单条恢复/彻底删除（用户拍板不做批量）；④/m/logs——卡片流+三筛选+分页，统计/导出保留桌面；⑤/m/downloader/settings/:id——整页复用桌面 DownloaderSettingsDialog，downloader.vue 升级管理版（新增/编辑/删除/同步/测试/设置）。路由 5 条 + 抽屉重组（移动组 8/桌面组 6）+ toMobilePath 三映射 + permission.ts 分流扩展。
+
+### 本会话工作（上会话源码中断后收口）
+
+上会话（sess_ff0b12a9）源码完成后中断未写记录，遗留 4 失败套件。本会话恢复上下文后修复 6 处：search.vue 导入源（advancedSearchState→views/torrents/utils/torrentBatch，两构建函数实际定义处）；search.vue 模板直调模块级 formatTorrentSize（M1 已知坑复发，render error 被吞致 DOM 不更新数据正常）→formatSize 实例包装；**downloader.vue testOne 真实产品 bug**——后端 /downloader/test 失败返回 code=200+data.success=false（桌面 handleTest 查 data.success），原只查 code 把失败当成功→改双条件；spec 三处（补 torrent-detail-cache mock、el-button-stub 断言改文本断言（Jest 无全局 element-ui unknown 元素无 stub）、shallowMount 下 class 查找改 stub 标签名）；m2-template-cache lint --fix。
+
+### 关键发现（后续批次注意）
+
+- **IAB 交互通道本会话故障**：Playwright click 超时/CUA 坐标/dom_cua 节点/Enter/截图全部无效（fill/快照/evaluate 正常）。登录提交等页面内交互未浏览器验证，已实测的：390 视口分流、登录页渲染、Vue data 绑定（evaluate）、登录 API curl 200、未登录直达 M2 三路由守卫重定向带 redirect 回跳。交互级复核用 Chrome 设备模拟或真机（docs/android/desktop-testing.md）。
+- **后端 /downloader/test 契约**：信封 code=200 仅代表请求执行成功，连接成败在 data.success（{success,delay,message}）——移动端/桌面端判断都必须查 data.success。
+- **桌面缺陷**：DownloaderDialog 的 submit 事件只关框不落库（addDownloader 零调用点），移动端已显式调用 add/up；桌面端待反馈修复。
+- Jest 无全局 element-ui：模板中 el-* 渲染为 unknown 元素（不产生 stub、slot 文本保留），断言按文本而非 el-*-stub。
+
+### 验证
+
+M2 相关 8 套件 67 例 + 前端全量 70 套件 989 例全绿；tsc 零错误；M2 相关 19 文件 ESLint 通过；生产 build 通过，11 个 m-* chunk 实证（M2 新增 m-search/m-query-templates/m-recycle-bin/m-logs/m-downloader-settings）。后端 5001/前端 8080 dev server 保持运行（上会话后台任务）。
+
+### 待办
+
+1. M2 批次 22 文件未提交（11 修改含三份记录 + 11 新增），待用户指示（M1 各批已入库：349bd01/a8c1ac8/2746177）。
+2. M2 页面浏览器交互级人工复核（Chrome 设备模拟/真机）。
+3. 桌面 DownloaderDialog submit 不落库缺陷反馈/修复。
+4. 后端单种子端点空 data 缺陷待修复（M1 遗留）。
+
+## 2026-08-24 交接（四）：Phase 4 M1 余项四项收口（种子详情/下拉刷新/未读角标/侧栏入口）
+
+### 结论
+
+M1 余项四项全部完成（未提交）：①种子详情页 `/m/torrents/detail/:downloaderId/:hash`——列表卡片点击写入快照缓存（take 取走即清）立即渲染，getList（downloader_id+name_like 回查按 hash 匹配）刷新基础字段，getActiveTorrents 5s 轮询覆盖速度/进度/做种连接；展示状态/进度/速度/大小/分享率/Tracker 数（hasTrackerError 警示）+ Tracker 折叠明细（复用 torrentBatch 状态判定）；操作保留暂停/恢复/删除，删除成功 replace 回列表。②下拉刷新：class 式 mixin `views/mobile/mixins/pull-to-refresh.ts`（页面 `extends Mixins(PullToRefresh)`，注意 vue-property-decorator 导出为大写 Mixins）——.mobile-content 到顶+下拉（阻尼 0.5/阈值 60px）触发覆写的 onPullRefresh；PullIndicator 指示条四页挂载。③通知未读角标：布局壳复用 NotificationModule.unreadCount + 60s 轮询，通知 Tab 红底白字角标（>99 显 99+），通知页 read() 后 dispatch FetchUnreadCount 联动。④桌面侧栏 footer「移动版」按钮（smartphone 图标新注册）：写 mobile 偏好 + push /m/dashboard，显式偏好优先视口（宽屏可预览，浏览器 1440 实证）。
+
+### 关键发现（后续批次注意）
+
+- **后端单种子端点缺陷**：`GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 直接 return ORM 实体配 CommonResponse，实测响应全 null（`{"status":null,"msg":null,"code":null,"data":null}`），不可用；详情页改走 getList 回查。该端点待单独修复。
+- .vue 模板不可直调模块级函数（formatTorrentSize/formatRatio 须包装成实例成员）；shallowMount 不接受 cast 成 Vue 实例的组件构造器。
+- 本机测试栈与 desktop-testing.md 记录的 thoma 路径不同：后端 `C:/software/anaconda3/envs/btpManager/python.exe`（5001），本地开发库 `data/backend/config/app.db`，admin 密码已按 SOP 改为 `Btdeck@2026dev`（原默认 admin 触发强制改密）。前端 dev server 8080 照旧。
+
+### 验证
+
+Jest 相关 7 套件 58 例 + 全量 65 套件 954 例全绿（新增 pull-to-refresh 6 / mobile-torrent-detail 6 / sidebar-mobile-entry 3 / mobile-shell 扩 4）；tsc、ESLint、生产 build 通过（m-torrent-detail chunk 实证）。浏览器 390×844 实测四项全通过：角标 3 与 API 一致、卡片→详情全字段→Tracker 展开「正常」→返回列表、通知点击已读角标 3→2 实时联动、宽视口桌面侧栏切移动版（偏好优先）。下拉刷新 touch 手势 IAB 无法注入（已知边界，单测覆盖 + 指示器挂载确认，真机复核留后续）。截图 .release-build-v1.0.5/m-torrent-detail-evidence.png。
+
+### 待办
+
+1. 本批 14 个 frontend 文件 + feature_list.json/progress.md/session-handoff.md 未提交（待用户指示）。
+2. 后端单种子端点空 data 缺陷待修复批次。
+3. M2（高级搜索/查询模板/回收站/日志/下载器高级设置移动化）未动。
+4. 后端 5001 与前端 8080 dev server 本会话保持运行中（后台任务），无需可直接结束进程。
+
+## 2026-08-24 交接（三）：移动头部主题色 + 下载器 Tab 第一梯队（新移动页）
+
+### 结论
+
+用户两需求已实施（未提交）：①布局壳头部与抽屉头部背景改 `var(--color-primary)`（桌面 #059669 同源），前景白系（汉堡条/桌面版链接/关闭钮）；②底部 Tab 三项→四项：仪表盘/**下载器**/种子/通知——新增移动下载器监控页 `/m/downloader`（新文件 views/mobile/downloader.vue，卡片：名称/类型/host:port/在线离线徽标 + 每卡测试连接复用桌面 API + 空态 + 脚注指路抽屉「下载器管理」桌面页做管理操作）。
+
+### 变更（frontend 5 文件：1 新增 + 4 修改）
+
+views/mobile/downloader.vue（新）、router.ts（/m/downloader）、layout/mobile/index.vue（四 Tab + 头部主题色）、mobile-shell.spec.ts（更新）、mobile-downloader.spec.ts（新，6 用例）。
+
+### 验证
+
+Jest 39 passed；tsc / 5 文件 ESLint / 生产 build 通过；m-downloader chunk 产出实证；浏览器 hash 直达 /m/downloader 空态渲染正常。spec 两坑已记录 progress.md：行首 `(x as jest.Mock)` ASI 吞分号（改 jest.mocked）、shallowMount 下 el-button kebab stub 不转发 click（改直调方法）。本会话 IAB 点击交互不稳定，Tab 切换浏览器实测未触发（Jest 已覆盖，非产品缺陷）。
+
+### 待办
+
+1. 本批 5 文件 + progress.md/feature_list.json/session-handoff.md 未提交（累计两批：交接二 2 文件 + 交接三 5 文件与记录，待用户指示一并或分开提交）。
+2. M1 余项实现假设仍待确认：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口。
+
+## 2026-08-24 交接（二）：移动布局壳主题色对齐 + 汉堡抽屉完整功能菜单
+
+### 结论
+
+用户查看移动版后提出：主题色与桌面端相同 + 完整功能菜单展示形式。已实施（未提交）：①Tab/抽屉激活色统一 `var(--color-primary)`（桌面端 #059669 同源变量，弃 Element 蓝色，Jest 静态契约禁 #409eff 回归）；②用户在"4+1 更多面板"与"顶部汉堡抽屉"间选定**汉堡抽屉**——header 左侧汉堡 → el-drawer 左滑 78%，"移动版"组 3 项（replace）+ "全部功能（桌面版页面）"组 9 项（push、不写 ui_mode 偏好，返回键/刷新回移动版）+ 完整桌面版出口（写偏好）。
+
+### 变更（frontend 2 文件）
+
+- `src/layout/mobile/index.vue`（汉堡+抽屉+主题色；顺带修复 goMenuItem 从 $router 解构方法丢 this 的 bug）
+- `tests/unit/mobile-shell.spec.ts`（5→11 用例，el-drawer 用透传插槽 stub）
+
+### 验证
+
+Jest 33 passed（shell 11 + ui-mode 11 + permission-guard 11）；tsc/ESLint/build 通过；390×844 浏览器实测抽屉 12 项菜单、"下载器管理"跳桌面页正常、返回键回 /m/dashboard。注意：本会话 IAB 的 Playwright click/CUA 坐标点击不稳定，交互验证用 dom_cua 节点点击——非产品缺陷。
+
+### 待办
+
+1. 本批 2 文件 + progress.md/feature_list.json/session-handoff.md 未提交（待用户指示）。
+2. M1 余项实现假设仍待用户确认：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口。
+3. 用户真机/浏览器视觉复核主题色（绿）与抽屉交互。
+
+## 2026-08-24 交接：移动端桌面测试体系就绪 + android/ data 包漏提交修复
+
+### 结论
+
+用户要求"继续安卓移动端开发 + 提供桌面端测试方案"。本批：①发现并修复 `a2f4e72` 漏提交的 `android/app/src/main/java/com/btdeck/companion/data/` 三文件（ServerProfile/ServerProfileStore/HealthClient——干净检出无法编译的 P0 缺陷），依据调用方与 README 契约重建后 BUILD SUCCESSFUL + 11 JVM 单测通过；**真正根因是根 `.gitignore:58` 的 `data/` 规则静默忽略了该源码包（当时 git add 加不进去），已补 `!android/.../data/` 例外，文件现对 git 可见**；②重建便携工具链 `C:\software\android-build-env\`（SDK+emulator+system-image+Gradle 8.9，JDK 用系统 jdk-17）；③三层桌面测试体系全部实证：Chrome 390×844 设备模拟（/m 自动分流+登录+仪表盘+种子页）、AVD btdeck-test（Pixel 6/API 35）装 lan-cleartext APK → 添加服务器 http://10.0.2.2:5001（明文确认复选框按策略出现）→ 测试连接"就绪/v1.0.5" → WebView 加载移动版登录页。
+
+### 关键文档
+
+- **`docs/android/desktop-testing.md`**：三层测试体系 SOP + 一次性重建步骤 + 8 条已知坑（uiautomator 坐标偏差、Git Bash `//sdcard`、adb input text 无中文、login 明文 vs changePassword base64、devServer allowedHosts 等）。
+- `android/README.md` 末节：data 包重建记录。
+
+### 测试环境状态（下次会话可直接用）
+
+- 本地开发库 admin 密码已改为 `Btdeck@2026dev`（原默认 admin 会触发强制改密守卫；改密后需刷新页面重建 store）。
+- 后端起法：`C:/Users/thoma/miniconda3/envs/btpManager/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5001`（conda 默认指向 anaconda3，环境实际在 miniconda3）；前端 `npm run serve`（node_modules 已装）。
+- AVD：`btdeck-test`；APK 产物在 `android/dist/`（不入库）。
+
+### 未完成 / 下一步
+
+1. **M1 余项**（Phase 4）：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口——实现假设待用户确认。
+2. 双变体 APK 需重打时：`gradle.bat --no-daemon :app:assembleDebug -Pbtdeck.lanCleartext=true`（JAVA_HOME 指 jdk-17）。
+3. Git 提交待用户指示（本批变更：.gitignore（data 例外）、android/ data 三文件 + README、docs/android/desktop-testing.md、feature_list.json、progress.md、session-handoff.md；frontend/package-lock.json 为 npm install 附带变更）。
+
+## 2026-08-23 交接：前端静态展示 Demo 任务登记
+
+### 当前结果
+
+- 已新建 `PLANS/frontend-static-showcase-demo.md`，明确静态 Demo 的产品边界、推荐架构、7 个实施任务、验收标准和交付限制。
+- 已在 `feature_list.json` 新增 `frontend-static-showcase-demo-2026-08-23`，父 feature 与 7 个任务均为 `pending`。
+- 本次只完成计划/feature 登记，未实现 Demo 模式、静态请求层、fixture、前端打包配置或任何业务源码修改。
+
+### 后续实施顺序
+
+1. 先执行 Task 1–3：冻结路由/数据契约，增加 Demo 构建开关、认证旁路和集中式静态请求层。
+2. 再执行 Task 4 交付仪表盘、下载器、种子、查询模板和通知中心核心展示路径。
+3. Task 5 覆盖扩展页面与上传/下载/Blob/轮询特殊路径，Task 6–7 完成独立静态交付和回归验收。
+
+### 验证与注意
+
+- 已做 JSON 解析与 feature/plan 路径一致性核对。
+- 不要把静态模拟操作写成真实下载器、文件系统或认证能力；完成后需回填构建、测试、包体和人工演示证据，才可将任务改为 `done`。
+- 未执行 Git stage/commit/push；工作区已有的其他修改和未跟踪文件须继续保留。
+
+## 2026-08-23 交接（十二）：tracker_sync 异常边界观测增强
+
+### 结论
+
+已完成 `tracker_sync` 异常静默排查所需的观测代码。原有容错控制流保留：下载器级异常仍汇总后继续其他下载器，批提交/检查点/单种子 tracker 失败仍按既有 partial 或继续语义处理；新增日志会明确显示 traceback、异常类型、阶段和是否继续执行。
+
+### 变更
+
+- `backend/app/services/sync_observability.py`：新增 `EVENT_SYNC_ERROR = "sync_error"` 及字段白名单。
+- `backend/app/services/sync_coordinator.py`：增加下载器 start/done、Tracker 子结果、状态阶段日志；所有关键异常边界补 `exc_info=True` 和 `event=sync_error`；结果含 errors 时强制 warning 并显示数量/摘要。
+- `backend/app/api/endpoints/torrents_async.py`：qB/TR tracker-only 的单种子远程请求、worker gather、批提交、行提取、检查点、输入校验及 qB 对象标记失败补统一异常观测。
+- `backend/app/tasks/scheduler/torrent_sync/tracker_sync_task.py`：增加有效下载器、Coordinator 结果和错误摘要日志。
+- `feature_list.json`：登记 `sync-resource-governance.5`；`progress.md`、`docs/roadmap/` 同步记录。
+
+### 验证
+
+- 定向回归：82 passed（sync observability、sync coordinator、tracker budget）。
+- flake8 通过；mypy 目标源文件通过；`git diff --check` 通过。
+- Black 全量检查对既有大文件报告格式差异且运行异常缓慢，本次未执行全文件重排，避免无关格式噪声。
+- 未修改 `E:\Users\huangzj\Desktop\app.db`；未执行 Git stage/commit/push。
+
+### 部署后查询
+
+检索 `event=sync_error`，按 `run_id` 关联 `tracker_sync_task coordinator_result` 与 `sync_coordinator downloader_done`。重点阶段：`tracker_enrich_single_torrent`、`tracker_batch_commit`、`tracker_row_extract`、`tracker_checkpoint_push`、`tracker_status`；字段 `suppressed` 和 `continue_after_error` 用于判断异常是否被转换后继续。
+
+## 2026-08-23 交接（十）：Phase 2 真机验证通过 + Phase 4 M1 第一片（移动 UI 壳）
+
+### 结论
+
+伴侣模式真机验证通过（lan-cleartext APK，WebView 正常进入服务器前端，含视口/缩放兜底）。Phase 3 被 Phase 0 闸门阻塞，Phase 4 先行：M1 第一片交付移动布局壳（底部 Tab）+ 模式切换 + 移动登录/仪表盘/种子卡片列表/通知中心，全部复用现有 API 与 user store。
+
+### 变更（未提交）
+
+- frontend：src/utils/ui-mode.ts（偏好+视口+登录分流）、src/layout/mobile/index.vue（Tab 壳+桌面版出口）、src/views/mobile/{login,dashboard,torrents,notifications}.vue、router.ts /m/* 懒加载组、permission.ts 守卫模式分流+4 处登录跳转模式化（强制改密/瞬时失败语义未动）。
+- 测试：tests/unit/ui-mode.spec.ts（11）+ mobile-shell.spec.ts（5）；守卫回归 31、前端全量 704 全绿；tsc/lint/build 通过；m-* chunk 实证。
+- 惯例：class 组件用 vue-property-decorator 导入（Jest 下 vue-class-component 直用 Vue 为 undefined）。
+
+### 生效与下一步
+
+- 手机上生效需把新 frontend/dist 部署到服务器（或 npm run serve 开发机验证）；auto 模式窄视口自动进移动版，移动版头部可切桌面版。
+- M1 余项：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口；M2 未动。
+- android-wheels 推送仍等用户指令；Git 提交待用户指示。
+
+## 2026-08-23 交接（十一）：孤儿 Schema 漂移重启自愈
+
+### 结论
+
+已针对新快照中的 `no such column: orphan_current_candidate.current_detail_id` 实施代码修复。根因是运行库的 `alembic_version` 可能已经是 `975dad435c03`，但物理表缺少历史迁移应创建的列；启动迁移因此 no-op，随后启动对账才报错。新增 `c1d2e3f4a5b6` 修复迁移后，所有用户重启后端都会在对账和调度器启动前自动补齐 Schema。
+
+### 变更
+
+- 新增 `backend/alembic/versions/c1d2e3f4a5b6_repair_orphan_current_detail_id.py`：幂等补列、按最近扫描/路径回填 `current_detail_id`、补齐必要索引；健康库 no-op；修复失败保持 fail-fast。
+- 新增 `backend/tests/core/test_orphan_schema_repair_migration.py`：缺列漂移库与健康库回归。
+- 更新迁移 head 断言、数据库迁移约束与 `docs/roadmap/` 记录；`feature_list.json` 登记证据。
+
+### 验证
+
+- 修复迁移回归：2 passed。
+- 迁移链/回滚/生产形状回归：37 passed；启动迁移守卫、孤儿任务生命周期和查询状态回归：17 passed。
+- flake8、mypy（新增迁移/测试）、Black `--diff`、`scripts/lint_btdeck.py`、JSON 解析和 `git diff --check` 通过。
+- `alembic heads`：仅 `c1d2e3f4a5b6`。
+- 用户提供的 `E:\Users\huangzj\Desktop\app.db` 仍只读分析，未写入。
+- 根 `bash ./init.sh` 受当前 Windows/WSL `E_ACCESSDENIED` 环境阻断，非本次测试代码失败。
+
+### 后续
+
+代码与定向验证已完成；等待用户决定是否提交/推送。
+
+## 2026-08-23 交接（十）：同步资源占用观测增强
+
+### 结论
+
+用户要求开始实施此前制定的观测方案。已完成一期只读观测增强：下一次 `ADMISSION_SKIP` 可定位 heavy_sync 的占用 task/run/phase/年龄/进程实例；长时间 Python 内部类任务会输出生命周期心跳和超时告警。未改变资源参数、调度行为、取消语义或数据库写入，也未修改 `E:\Users\huangzj\Desktop\app.db`。
+
+### 变更
+
+- `backend/app/tasks/resource_guard.py`：holder 快照、blocked_by 诊断、resource_lifecycle 事件、release 持有时长。
+- `backend/app/tasks/cron_executor.py`：Cron run_id 关联、task_lifecycle start/heartbeat/timeout_warning/end；超时只告警。
+- `backend/app/services/sync_coordinator.py`：活动同步 phase/elapsed/last-progress、sync_phase 事件和 holder 阶段刷新。
+- `backend/app/services/sync_observability.py`、`backend/app/core/config.py`：结构化事件白名单、worker PID/实例标识、心跳间隔配置。
+- `backend/tests/tasks/test_resource_guard.py`、`backend/tests/tasks/test_cron_executor_admission.py`：holder/生命周期回归。
+- `docs/roadmap/`、`feature_list.json`、`progress.md`：同步路线图与证据。
+
+### 验证
+
+- 观测/同步核心套件 92 passed；Cron executor + health 回归 28 passed。
+- mypy 目标文件无错误；flake8 通过；Black `--diff` 确认受影响 Python 文件无需格式化。
+
+### 下一步
+
+部署后检索 `event=resource_lifecycle`、`event=task_lifecycle`、`event=sync_phase`。重点确认 `blocked_by_task_code`、`blocked_by_sync_run_id`、`holder_phase` 和 `holder_age_ms`，再决定是否实施实际超时/恢复修复。Git 提交等待用户指示。
+
+## 2026-08-23 交接（九）：android/ 首次编译验证通过（BUILD SUCCESSFUL）
+
+### 结论
+
+用户指令"开始首次编译验证"。本机无 Android 环境，搭便携工具链（IntelliJ JBR21 + Gradle 8.9 腾讯镜像 + cmdline-tools 安装 platform 35/build-tools 35.0.0，全在 C:\software\android-build-env\ 可整体删除）后完成首次编译：**编译 + 11 个 JVM 单测 + APK 打包全部通过**，双 NSC 明文变体经 aapt2 实证按设计切换。Phase 2 MVP 从"未编译脚手架"升级为"本机可复现构建"。
+
+### 首次编译发现并修复（3 项）
+
+1. AGP 8.5.2 → **8.7.3**（8.5 不支持 compileSdk 35；Gradle 8.9 为其最低要求）。
+2. ServerListActivity：ListView `apply{}` 内未限定 `adapter` 被 Kotlin 解析到 ListView.getAdapter()（平台属性遮蔽）——改显式局部变量。
+3. `onItemClickListener = { }` 属性赋值不做 SAM 推断——改 `AdapterView.OnItemClickListener{}` 构造器。
+
+### 产物与验证
+
+- `:app:testDebugUnitTest` 11 用例 0 失败；`:app:assembleDebug` BUILD SUCCESSFUL。
+- app-debug.apk ~6.0MB，apksigner verify 通过；badging：com.btdeck.companion 0.1.0-mvp / targetSdk 35 / 权限仅 INTERNET+ACCESS_NETWORK_STATE。
+- NSC：默认变体 manifest→@0x7f110000（严格版）；`-Pbtdeck.lanCleartext=true`→@0x7f110001（LAN 明文版）。
+- android/README.md 构建节已改为已验证流程+工具链表；feature_list task .3 evidence、progress.md 第三批已同步。
+
+### 下一步
+
+1. 真机/模拟器人工冒烟（本机有 BlueStacks 未驱动）；仪表化测试与设备矩阵 Phase 5。
+2. android-wheels 建远端推送仍等用户"整体打包完成"指令。
+3. Git 提交待用户指示。
+
+## 2026-08-23 交接（八）：Phase 1 收口 + Phase 2 伴侣模式 MVP 脚手架
+
+### 结论
+
+用户指令"继续下一步，整体打包完成后再推送 android-wheels"。本批完成：Monaco 审计（Phase 1 第 6 项，**Phase 1 七项全部收口**）；Phase 2 伴侣模式 MVP 的 android/ 工程完整脚手架 + health version 字段（按登记原则标 in-progress，未编译验证不标 done）。android-wheels 远端创建/推送/Actions 全部顺延至整体打包完成。
+
+### 变更（BtDeck 主仓，未提交）
+
+- **Monaco 审计**：docs/android/monaco-audit.md（实测数据：首屏 app 75KB+vendors 1.06MB，Monaco 隔离于异步 chunk 2.94MB+按需 worker，零首屏成本）；删除死组件 frontend/src/components/MonacoEditor.vue（静态 import 版，零消费方零测试引用）；webpack plugin 与组件层均判定不改。
+- **health version**：health.py 的 /health/live、/health/ready（含 503 分支）data 增加 version（常量无 I/O）；test_health.py 10 用例锁定；tests/api 全量 1004 passed。
+- **android/ 工程全新**（Kotlin+AGP 8.5.2+minSdk 24/target 35）：向导/服务器 profile 管理/HealthClient（live→ready+版本+TLS 可辨识）/同源 WebView（超时重试、外链交系统浏览器、切换 profile 清 cookie+storage 隔离令牌、版本副标题）/自签证书指纹信任流程（记录作用域，绝不无条件 proceed）/明文 HTTP 双层防线（NSC 默认全禁+应用层 LanHostPolicy 私有字面量+显式同意；LAN 明文需 -Pbtdeck.lanCleartext=true 构建变体）/LanHostPolicyTest JVM 单测。
+- roadmap：api README health 行、根 README android 分支、元信息；feature_list.json（task .2 补 Monaco evidence、task .3 → in-progress）；progress.md 第二批已记。
+
+### 验证
+
+后端 mypy 247 文件零错、black/flake8、tests/api 1004 passed；前端 typecheck + tasks 相关 30 用例通过；根 ./init.sh 通过。
+
+### 诚实边界
+
+本机无 Android SDK/JDK17——android/ 未做 Gradle 编译验证（代码按正确性审查交付）；OkHttp 健康检查不消费 WebView 信任指纹（自签 https 显"证书错误"）为已知 MVP 边界，两项均已写入 android/README.md 与 feature_list evidence。
+
+### 下一步
+
+1. 【用户】具备 JDK17+Android SDK 的环境（或 CI）跑 android/ 首次 `gradlew :app:testDebugUnitTest` + `assembleDebug`。
+2. 整体打包完成后：android-wheels 建 GitHub 远端并推送（Phase 0 闸门验证）。
+3. Phase 3 服务端壳工程待 Phase 0 闸门；桌面伴侣模式可复用本批 profile/健康检查设计。
+4. Git 提交待用户指示。
+
+## 2026-08-23 交接（七）：安卓适配改造启动——Phase 0A/0B 脚手架 + Phase 1 主体落地
+
+### 结论
+
+按 PLANS/dual-mode-client.md 启动安卓适配：Phase 1 平台无关改造的第 1/3/4/5/7 项完成并全量验证，第 2 项完成文档契约与测试（LAN 重绑留 Phase 3）；Phase 0A 决策文档与 Phase 0B android-wheels 独立仓库脚手架就绪（本地 git 仓库，未推送）。Phase 0 闸门未验证（无 CI 实跑），按计划不得启动 Phase 3；Phase 2 伴侣模式可独立先行。
+
+### 变更（BtDeck 主仓，未提交）
+
+- **统一 TCP probe**：新增 `backend/app/utils/connectivity.py`；`downloader.py` get_delay_async/get_delay 与 `initialization.py` _update_downloader_status 三处 ping3 直调替换为"loopback 短路→桌面可选 ICMP（失败/PermissionError 全捕获回退）→TCP connect 计时"；安卓环境自动禁 ICMP。顺带修复延迟异常分支 `delay` 未绑定的 UnboundLocalError 潜伏 bug（原代码整个状态更新会 return False）。
+- **依赖瘦身**：两审计服务 Excel 导出改 openpyxl 直写；pandas/numpy/sympy/common 从三份 requirements 移除（零 import 核实）；两份 PyInstaller spec excludes 加 'pandas'/'numpy'。
+- **文档**：docs/android/ 四份——target-matrix.md（Phase 0A 目标矩阵+FGS 决策）、toolchain-matrix.md、config-and-paths.md（注入契约+HOST≠ALLOWED_HOSTS）、host-capability-matrix.md。
+- **测试**：新增 5 个文件 54 例——test_connectivity.py(23)、test_delay_probe_callchains.py(8)、test_audit_excel_export.py(7)、test_writable_roots.py(6)、test_packaging_contract.py(10)。
+- feature_list.json（dual-mode-client → in-progress，task .1/.2 带 evidence）、progress.md 已同步。
+
+### android-wheels 独立仓库（本地 C:\software\claude_code_full_stack\android-wheels，commit ee65481）
+
+构建 workflow（四 ABI cargo-ndk+maturin abi3 cp312+sdist sha256 固定）、check-wheel-tag.py（tag+ELF 校验）、make-simple-index.py（PEP 503+sha256）、import-matrix.yml（模拟器 API 34/35，full-graph 阶段 2 显式 fail 待接入真实资源）、最小 Chaquopy17 testapp、docs/gate.md 闸门模板、versions.env（hash/tag TBD 首次 CI 回填）。
+
+### 验证
+
+后端 mypy 247 文件零错误、black/flake8 通过、pytest 全量 **3927 passed + 7 skipped**；根 `./init.sh`（ci）通过（此前 WSL E_ACCESSDENIED 已不复现）。
+
+### 下一步（按优先级）
+
+1. 【用户】创建 android-wheels GitHub 远端并推送 → 首次 Actions 运行 → 回填 versions.env sha256/platform tag → import-matrix。
+2. Monaco chunk/首屏收益实测（Phase 1 第 6 项，唯一未完成项）。
+3. Phase 2 伴侣模式 MVP（独立可先行）。
+4. Git 提交待用户指示（主仓 + android-wheels 两处）。
+
+## 2026-08-23 交接（六）：双模式客户端计划评审修订与 v1.0.6 清单登记
+
+### 结论
+
+安卓服务端继续定位为轻量/临时服务端，伴侣模式可独立先行。计划已按依赖 wheel、Play/FGS、安全、存储、Doze、打包资源、能力降级和真实设备验收重新收敛；当前只有计划入册，未开始 Android 实现。
+
+### 变更
+
+- `PLANS/dual-mode-client.md`：评审修订版，补全风险闸门、平台无关改造、伴侣 WebView MVP、Chaquopy/FGS 壳、移动 UI、桌面对齐及发布 DoD。
+- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/v1.0.6.md` 链接。
+- `progress.md`：记录本次计划入册与验证结果。
+
+### 下一步
+
+1. 先完成 Phase 0A 的 Play/FGS/target API/备份安全预审。
+2. 在独立 `btdeck/android-wheels` 仓库完成 pydantic-core 四 ABI 构建，并从最小工程推进到 BtDeck 完整导入图。
+3. wheel 门禁通过前可独立实现伴侣模式；服务端模式不得跳过门禁进入 APK 工程。
+
+### 验证与工作区
+
+- `feature_list.json` JSON 解析通过；`git diff --check` 通过。
+- 根 `./init.sh --ci` 仍受本机 Windows/WSL `E_ACCESSDENIED` 影响，未作为本次计划变更的有效门禁。
+- 未执行 Git stage/commit；已有 `.release-build-v1.0.5/` 未跟踪目录保持不动。
 
 ## 2026-08-22 交接（五）：v1.0.5 发布前修正 GitHub 仓库地址
 
@@ -2648,3 +5028,344 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 未提交 Git；部署时使用当前 btdeck-backend:latest 导出/加载并重启后端即可。
 - docs/roadmap/ 未改：本次未改变模块职责、文件路径或路线图行号。
+
+## 2026-08-24（三）交接：独立 VitePress Wiki 初始化
+
+### 当前结果
+
+- 新仓库目录：`C:\software\full_stack\btdeck-wiki`。
+- 已初始化 `main` 分支，尚未提交；BtDeck 主仓库原有未提交修改未触碰。
+- Wiki 使用 VitePress 1.6.4，Node 基线为 22+，构建产物为 `btdeck-wiki/docs/.vitepress/dist/`。
+- 主题复现已确认的 VitePress 风格：深色顶栏、左侧目录、宽内容区、右侧页内目录、翡翠绿强调色和本地搜索。
+
+### 验证
+
+- `npm ls vitepress --depth=0`：vitepress@1.6.4。
+- `npm run docs:build`：通过。
+- 首页、快速开始、架构、API、部署、维护、路线图和版本记录的静态产物均存在。
+
+### 下一步
+
+- 新对话进入 `btdeck-wiki` 目录继续做视觉细节和真实文档迁移。
+- 先确认部署目标与 `/wiki/` 子路径，再确定主仓库文档同步白名单。
+
+## 2026-08-26 交接：Tracker 状态同步回归加固
+
+### 已完成
+
+- 针对最近 5 次提交复查 Tracker 同步健壮性，新增 `tests/api/test_torrents_async_tracker_budget.py` 的哨兵重试、全哨兵丢失自愈、取消清理回归；新增 `tests/downloader/test_auth_client_timeout.py` 的缓存 qB 客户端构造接线回归。
+- 取消回归暴露 producer 会在外层取消后继续执行 30 秒哨兵收尾，已在 `torrents_async.py` 跳过取消收尾并统一取消/等待子任务，避免后台任务泄漏。
+- `feature_list.json` task `.9` 已登记新增测试文件和验证证据；roadmap 仅同步测试覆盖矩阵，模块职责未变。
+
+### 验证与后续
+
+- 三个相关测试文件共 56 passed；flake8、mypy、py_compile、测试文件格式检查、`git diff --check` 通过，根 `./init.sh --ci` 已通过。
+- Git 未提交；用户已有 `.tmp-desktop-gui-test/` 未跟踪目录保持不动。
+
+## 2026-08-26 交接：BtDeck 效果图 Logo 与 App 微型图标
+
+### 已完成
+
+- 完整横版品牌资源已改为 D 形甲板 mark + `BtDeck` 字标（`Bt` 绿、`Deck` 深色），移除实验编号、中文标题和说明文字；同步品牌/反白 SVG 与 PNG。
+- 移动头部改用 22px 反白 `micro`；PWA、Apple、Android、Windows tile、favicon SVG/PNG/ICO 全部采用反白微型光学版重新生成。
+- 生成脚本现可同时产出横版 PNG 与 App 图标；契约测试锁定完整字标、微型生成源和移动头部 variant。
+- roadmap、feature_list 与 progress 已同步；已按用户后续指令提交本批改动（`feat(frontend): align logo display and app icons`）。
+
+### 验证
+
+- 浏览器桌面登录页与 390×844 移动登录页视觉复核通过；3 套相关 Jest 共 37 例通过。
+- typecheck、改动文件 ESLint、图标脚本 py_compile、生产 build、git diff --check、根 init.sh --ci 通过。
+- 全量 lint 仅失败于既有 advanced-search-contract 过期检查；并行任务的 Playwright E2E 工作区变动未纳入本批，其它未跟踪目录未触碰。
+
+## 2026-08-27 交接：移动/桌面通知列表摘要剥离 Markdown 记号
+
+### 已完成
+
+- 用户报告移动通知页未打开详情前预览仍显示 `##` 等渲染字符。根因：两端列表摘要均纯文本直出原始 content（上批 cb6890d 只对齐详情弹层渲染，摘要"纯文本+三行截断"设计遗留记号裸露）。
+- 方案经 AskUserQuestion 确认：剥离 Markdown 记号为纯文本摘要（不渲染 HTML）；范围移动+桌面一起修。
+- `utils/notification-markdown.ts` 新增 `plainNotificationContent`（块级记号逐行剥离、分隔线/空行丢弃、内联去 `**`/反引号；不做 HTML 转义，职责与 `renderNotificationContent` 分离）；`views/mobile/notifications.vue`（summaryText）与 `NotificationDrawer/NotificationItem.vue`（plainContent computed）双端同源接入，v-if 改剥离后判空。
+- 测试三层 51 例全绿（util 22→31；mobile 摘要契约反转+源码契约禁直塞；drawer-detail 7→10 新增 NotificationItem 摘要 describe）；roadmap（components-layout 通知项行 + test-coverage 三行）、progress.md、feature_list.json `v1.0.6-dual-mode-client.5` evidence 已同步。
+
+### 验证与后续
+
+- `tsc --noEmit` 零错误；改动 6 文件 ESLint 通过；根 `./init.sh`（ci 模式）通过；前端全量单测见 progress.md 复验记录。
+- Git 未提交（遵循仅用户要求时提交）；`.tmp-desktop-gui-test/`、`.tmp-mobile-run/` 未跟踪目录保持不动。
+- 经验：块注释内书写 Markdown 记号示例时 `**/` 恰构成 `*/` 会提前终止注释，导致后续反引号被解析为模板字符串边界（整套件 TS2304）——块注释内避免 `**/` 序列。
+
+### 回归加固追加（2026-08-27 二）
+
+- 应用户要求三套件 51→62 例：util +6（语法严格性/语法集交叉契约/端到端快照/跨行内联合并/分隔线交错）、mobile +3（摘要与详情双层分离契约/空摘要不渲染块/纯函数不污染原始 content）、desktop +3（精确全文/空串路径/props 响应式重算）。
+- 变异验证四组全部精确拦截（回退双端摘要→各 5 红；删分隔线丢弃→三层 7 红；删粗体替换→8 红），备份-变异-恢复（源码未提交不可 checkout 还原）；锚点跨行尾会因 CRLF 匹配失败，行内锚点+唯一性断言可避开。
+- 还原后 62 例全绿，全量复验与文档同步见 progress.md；仍未提交。
+
+## 2026-08-29 交接：种子实时终态收敛与部分快照容错
+
+### 已完成
+
+- `backend/app/api/endpoints/torrent_speed.py`：实时速度响应增加归一化 `status`/`downloadComplete`；显式未完成标记优先于状态推断，且完成时间/完成状态/100% 一旦落库后不会被异步旧快照回退；完成态强制进度 100 并在响应前同步进度、状态、`completed_date`；TTL 补查按下载器独立轮转、2 秒退避，确认完成后移除；新增 `POST /torrents/runtime-state/reconcile`，按 `downloader_id + hash` 批量核验最多 100 项并返回 `list/missing`。
+- `frontend/src/api/torrents.ts`、`views/torrents/utils/torrentBatch.ts`、桌面列表/传统视图及移动种子页：兼容 200/206 快照，206 增量合并不清空旧值；状态/完成证据统一收敛，完整快照连续两次未命中后低频核验，三种视图均按复合键更新。
+- 回归测试与文档已同步：`feature_list.json`、`progress.md`、`docs/roadmap/`。
+
+### 验证
+
+- 后端定向套件 94 passed；前端 `torrent-batch.spec.ts` 98 passed，列表/传统/移动组件 75 passed（合计 173）。
+- `python -m py_compile`、mypy、flake8、前端 `npm run typecheck`、`npm run lint -- --no-fix`、前端生产 build 通过。Black 24.10 在当前 Windows 对该文件按项目 `line-length=120` 检查会挂起，`line-length=117` 快速检查无格式差异。
+- 根 `./init.sh --ci` 在当前 Windows/WSL 环境因既有 `E_ACCESSDENIED`/null-byte 输出限制未完成；未执行 Git 提交。
+
+### 后续
+
+- 部署或联调时重点观察完成瞬间：速度归零后列表是否收到 100%/终态；多下载器相同 hash 是否只更新对应行；206 部分快照是否保持其它下载器旧值。
+- 保留用户已有未提交修改：`frontend/src/contracts/advancedSearch.generated.ts` 以及未跟踪的 `.release-build-v1.0.5/`、`data/`。
+
+### 回归加固追加（2026-08-29）
+
+- 已通过端点级两轮复现直接确认原问题闭环：任务先以 99.37% 下载中进入 TTL，下一轮速度归零并报告 seeding 后，接口仍返回最后一个 `100% + downloadComplete=true` 终态快照，响应前完成数据库同步且从 TTL 队列移除；206 部分快照也不会丢失健康下载器的已确认终态。
+- 新增后端 16、前端 20 个回归执行项（共 36）：完成状态矩阵、TTL 退避/恢复、旧快照三类数据库守卫、异常数值、复合键/100 项上限、API 契约，以及列表/传统/移动三视图终态核验行为。变更限于 8 个测试文件及 feature/progress/roadmap/handoff 证据，业务源码未再修改。
+- 验证：后端定向 110 passed；前端定向 237 passed、全量 1258 passed；typecheck、lint、生产 build、目标 mypy、flake8、py_compile、lint_btdeck 通过。后端全量 4136 passed / 7 skipped / 2 failed，两项失败均落在本轮开始前已有的未暂存 health build 字段与 Linux 依赖清单改造，不涉及终态链路。
+- 环境限制：Black 24.10 在当前 Windows 按项目线宽检查测试文件仍挂起；Ruff format 仅发现 `test_active_only_filter.py` 本批未触及的既有 L177 格式。根 init 仍因 WSL `E_ACCESSDENIED` 无法执行。本轮回归加固尚未提交；此前业务修复提交仍为 `67754e5`。
+
+## 桌面折叠侧栏 Lucide 父菜单修复（2026-08-29）
+
+### 已完成
+
+- 根因已证实：多子菜单路由进入 `el-submenu`，旧折叠规则 `> span { visibility: hidden; }` 会误伤根节点为 `span` 的 `LucideIcon`；单子项走 `el-menu-item`，所以不受影响。
+- `frontend/src/layout/components/Sidebar/SidebarItem.vue` 为标题增加 `.submenu-label`，折叠态只隐藏标题与 `.submenu-chevron`，显式保留 `.menu-icon`。
+- 新增 `frontend/tests/unit/sidebar-collapse-lucide.spec.ts`，以真实 Element UI/Lucide 组件和实际 SCSS 验证种子管理、Tracker 管理、展开态、单子项与选择器防退化。
+- `feature_list.json`、`progress.md` 与 `docs/roadmap/` 已同步。
+
+### 验证
+
+- 新增测试 1 suite / 5 tests；相关回归 4 suites / 122 tests；前端全量 85 suites / 1263 tests。
+- `npm run typecheck`、严格 `npm run lint`、`npm run build` 全部通过；构建仅有 58 条既有 warning。
+- 根 `bash ./init.sh --ci` 在当前 Windows/WSL 环境仍报 `Bash/Service/CreateInstance/E_ACCESSDENIED`；未执行 Git 提交，未触碰其它既有工作区修改。
+
+## 2026-08-30 交接：种子列表成员自愈补充修复
+
+### 已完成
+
+- 已确认此前终态收敛只能更新当前前端 `list` 中已有的行，不能解决“批量添加后台已入库，但 202 后的首次列表刷新过早，页面仍缺行”的竞态。
+- `frontend/src/views/torrents/utils/torrentBatch.ts` 新增 `RuntimeListMembershipTracker`：首个完整活动快照建立分页外基线，后续新出现且未展示的 `downloader_id + hash` 触发一次串行权威列表刷新；206 仅增量合并，刷新后重放同轮速度。
+- 列表、传统、移动三视图均接入成员自愈。`TorrentAddDialog.vue` 另按 202 响应的 `task_id` 轮询既有批量添加完成通知并发出 `batch-complete`，桌面两视图随后补拉列表与速度，覆盖零速度、暂停或瞬间完成的新增种子。
+- 新增 `torrent-add-dialog.spec.ts`，并扩展 `torrent-batch.spec.ts`、列表/传统/移动组件回归，共新增 12 个执行项；feature、progress 与 roadmap 证据已同步。
+
+### 验证与后续
+
+- 相关 5 suites / 204 passed；前端全量 90 suites / 1297 passed；`npm run typecheck`、`npm run lint`、`npm run build` 通过。构建仅保留既有 Browserslist/Sass 警告。
+- 根 `bash ./init.sh --ci` 仍被当前 Windows/WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+- 本批尚未 Git 提交。保留并未触碰工作区其它 Android、发布构建、生成契约与数据目录修改；后续提交时只暂存本批前端源码、测试和四类项目记录文件。
+
+## 2026-09-07 交接：Android 主服务端路径映射能力硬禁用
+
+### 已完成
+
+- 后端能力矩阵新增并冻结六项 Android 主服务端不支持能力：下载器文件系统访问、路径映射、孤儿文件、种子备份、种子转移、三级回收站；统一 403 错误契约为 `PLATFORM_CAPABILITY_UNSUPPORTED`。
+- 路由、服务、旧同步旁路、定时任务、启动恢复均已加门禁；Android 启动不扫描宿主文件系统，历史孤儿任务仅标记失败；桌面/NAS 行为保持不变，伴侣模式由远端 BtDeck 能力矩阵决定。
+- 前端能力加载 fail-closed，受限路由/侧栏隐藏，下载器路径字段剔除，三级删除/转移/定时任务入口禁用；文档与 roadmap 已同步。
+- 新增 `backend/tests/tasks/test_task_capabilities.py`；既有后端 API/任务回归、前端 lint 与生产构建已通过。
+
+### 待验证/注意
+
+- 本轮最终回归需执行新增任务能力测试、`git diff --check`，并尝试根 `bash ./init.sh --ci`；后者在当前 Windows/WSL 环境可能继续因 `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+- 未执行 Git 提交；工作区含本批后端、前端、测试、文档与路线图变更，另有历史未提交内容，提交时需按文件范围审阅。
+
+### 2026-09-07 续：验收完成
+
+- 已修复 `backend/app/startup/lifecycle.py` 的局部导入遮蔽；新增启动生命周期与真实 SQLite 收敛回归，Android 不扫描文件系统且不创建 orphan dispatcher。
+- 已修复 `frontend/src/api/platform-capabilities.ts`：强制刷新失败清空旧矩阵；未知能力保持 fail-closed；新增伴侣模式消费远端矩阵测试。
+- AVD `btdeck-a35` 真实 instrumentation：`LocalServerAndroidTest` 1 passed。服务报告 schemaVersion=2、20 项能力、degraded=5、unsupported=9；路径映射、孤儿、备份、转移、三级删除均返回 403 `PLATFORM_CAPABILITY_UNSUPPORTED`；健康、静态首页和停止/重启通过。
+- 本轮验证：后端定向 39 passed；前端能力/任务 4 suites 30 passed；frontend lint/typecheck/build、flake8/mypy/ruff format、git diff --check 通过；根 `bash ./init.sh --ci` 通过但保留既有 null-byte 警告。
+- 工作区未提交；本轮新增/修改文件需与既有历史修改一起审阅。未跟踪 `data/` 保持不动。
+
+## 2026-09-13 交接：本机服务端启动等待优化（prewarm 预热 + 轮询收敛）
+
+### 已完成
+
+- 归因：真机点「运行本次服务」等十几秒 = 手机 CPU/IO 对启动链（alembic 导入+冷迁移+深导入 app.main 1198 模块+lifespan+双层 1s 轮询量化，桌面基准 3.4s）放大 3-5x，属架构现状非回归（AVD 实证 15s 印证）。探针脚本留 data/startup_timing_probe.py。
+- Python（android/server-python/btdeck_server.py，staging 已重跑）：抽 _init_phases 共享三段；新增 prewarm(data_root)（不动 _state/不占端口/active 跳过/幂等）；_init_lock 串行 prewarm↔_bootstrap 防冷首跑双迁移 database is locked；健康自检 1s→0.2s。
+- Kotlin：新文件 ServerPrewarm.kt（PythonBoot Python.start 进程级互斥 + ServerPrewarm AtomicBoolean 一次/ABI 门/失败静默）；接线 CompanionApp 冷启（lastPort>0 内存门，纯伴侣用户不加载 Python）与 WizardActivity 点开本机服务卡片；ServerService 轮询 1000→200ms + 快照变更检测（防 5Hz notify），Python.start 收敛到 PythonBoot。
+- 验证：桌面冒烟 SMOKE PASS（prewarm 后 start→running 1.33s vs 冷基线 3.4s）；契约测试 ServerPrewarmContractTest 5 例全绿 0 skipped；变异验证 3/3 检出后逐字节还原；:app:testDebugUnitTest + :app:assembleDebug 全绿。
+- 版本纪律：versionCode 6→7、versionName 0.2.5-server(+lan)、deploy/build-android.bat BTDECK_APK_VERSION=0.2.5（字节级替换保 CRLF）。feature_list.json evidence 与 progress.md 已回填。
+
+### 待办/注意
+
+- 双变体 APK 未构建：本批改了嵌入服务（btdeck_server.py）→ 出包前确保 staging 最新（已重跑 2026-09-13）→ deploy/build-android.bat；预期产物 btdeck-companion-0.2.5-{strict,lan-cleartext}-debug.apk。
+- 真机验收：预热后点击启动预期 3-5s（原十几秒）；首装首次仍含 Chaquopy pyc 编译略慢属正常；冷启预热仅在 lastPort>0 设备触发（首次使用者由向导卡片入口预热）。
+- 未执行 Git 提交；工作区改动 = 安卓 5 文件 + 2 新增（ServerPrewarm.kt / ServerPrewarmContractTest.kt）+ bat 版本号 + feature_list.json + progress.md + 本文件。data/ 下探针/冒烟脚本为未跟踪辅助产物。
+
+## 2026-09-13 交接（续2）：首启 pyc 编译疑云澄清 + chaquopy pyc 三开关钉死
+
+### 结论与纠正
+
+- 纠正前一批 handoff 的错误说法「覆盖安装首次启动会重新编译 pyc」：解剖 0.2.5 APK 实证 8 个 .imy bundle 全部 .pyc 零 .py——Chaquopy 17 默认构建期全量预编译，设备上无现场编译。首启一次性成本实为资源解包+建库迁移，已由 prewarm 吸收。
+- 加固：build.gradle.kts 显式 pyc { src/pip/stdlib = true } + ServerPrewarmContractTest 新增契约（6 例全绿）；assembleDebug 重建产物 .py=0/.pyc=4261 与默认一致。纯声明式零行为变化，不递版本号不出包，随下次交付生效。
+
+### 待办
+
+- 本批（build.gradle.kts、ServerPrewarmContractTest.kt、progress.md、session-handoff.md）提交待执行；工作区另有未跟踪 data/（探针/冒烟脚本，保持不动）。
+
+## 2026-09-18：双语化 P3-1 范围已确认待实施（本会话上下文耗尽前固化）
+
+- 用户已确认 P3-1 范围：仪表盘（图表/图例/tooltip/卡片）+ 种子列表骨架（筛选/列头/空态/分页/工具栏/视图切换）+ TorrentAddDialog（含跳过校验）+ 暂停/恢复/开始/校验单条与批量反馈 + BatchOperationDialog + **Q1：快捷删重与重复扫描两弹窗纳入 M1 随本批**；Q2（修改路径/转移三弹窗）与 Q3（全局替换 Tracker）定 M2 留 P6。
+- 高级搜索共享层特殊风险（实施必读）：契约链 = 后端 `app/contracts/advanced_search_contract.json`（39 处中文）→ `frontend/scripts/generate-advanced-search-contract.js` → `generated.ts`（禁直改）；双语必须改契约源（加 en 字段或平行结构）+ 重跑生成 + 同步 contract:check 门禁与后端契约测试；字段/操作符映射按稳定值（field/operator code）而非中文 label。
+- 实施顺序建议：先契约链设计（风险最高）→ 列表骨架 → 添加弹窗/操作反馈 → 删重两弹窗 → 仪表盘 → 验证（全量 Jest/typecheck/lint/build；搜索参数不变性契约 spec；后端若动契约 json 则 pytest）。P3-2（详情/Tracker 卡片与操作/汇报/查询模板页与 4 预设展示）待本批后另批。
+- 状态：feature p2= in_progress（余人工验收），p3 待本批开工后置 in_progress。
+
+---
+
+## 2026-09-18：双语化 P2 第一批完成（文案+错误契约，未提交）
+
+- 首次使用闭环双语化已落地（auth/settings M1/downloader M1/通知壳层）+ 错误契约 M1 子集（后端 reasonCode + 前端 apiErrorMessage）；四项验证全绿（前端 114 套 1604 例 + 后端 api 1172 例）。
+- P2 剩余：A01/A02/D01/D02 人工验收（真下载器+浏览器）；P3 起步含仪表盘与种子页；roadmap 三层同步（frontend views login/settings/downloader 行 + entry 行）待下批补齐。
+
+---
+
+## 2026-09-18：双语化提取批（dev1.0.7 → dev 线）
+
+- 双语化 P0/P1 三提交已 cherry-pick 至 `dev-i18n-extract`（基于 dev b067ba55）：基础设施/语言包/接线/测试全部落地，四项验证全绿（typecheck/lint/Jest 114 套 1604 例/build）。
+- 冲突仅 4 处共享文档（PLANS/README、session-handoff、roadmap README、progress），均已按“保 dev 结构+双语增量”解决；未提取 1.0.7 线的 MCP/MoviePilot/CI 提交。
+- 下一步：用户确认后 `git checkout dev; git merge --ff-only dev-i18n-extract`，推送另行确认；双语后续 P2～P7（文案迁移主体）见 PLANS/desktop-bilingual.md 与 PLANS/bilingual/ 盘点数据。
+
+---
+
+## 2026-09-18：桌面 Web 中英双语已登记，待实施
+
+- 用户要求添加 feature 与 plan；本轮只修改规划文档，不实施业务、不安装依赖、不提交 Git。
+- Feature：`desktop-bilingual-20260918`（pending）；计划：[PLANS/desktop-bilingual.md](PLANS/desktop-bilingual.md)，P0～P7 八项任务全部 pending。
+- M1 核心桌面试用 23～36 人日；M2 全部桌面累计 33～52 人日。移动 Web 专项、Android 原生、README/部署文档、Demo fixtures 不在本次范围；共享组件移动中文需回归。
+- 下一步在获得实施指示后从 P0 清单开始；本轮登记不等同于实现授权。Vue 2 兼容库选型/维护风险及英文审校责任尚待落实，M1 是否单独发布默认不阻塞开发。
+- 注意预设按中文名称去重且 UUID 随机、强制改密入口、后端 msg 与 202/206/207/历史 error+200、四级删除降级、移动路由分流等约束，见计划。
+- 本轮验证结果见 progress.md 同日记录；未执行运行时双语验收。
+
+---
+
+## 2026-09-21 交接：桌面双语 P3-1 第一批完成（未提交）
+
+### 已完成
+
+- 契约链：契约 json 38 操作符补 labelEn（中文逐字节不变）→ 生成器校验/接口更新 → generated.ts 重跑；后端契约守卫 +1 用例（label/labelEn 成对）。字段/操作符映射全部按稳定 code/value，操作符展示名单源在契约（语言包不复制）。
+- 共享层：searchFieldLabel/searchOperatorLabel（locale 感知）+ 分组标题/摘要/预览/归一化错误 i18n；Builder 与移动 ConditionEditSheet 已接线（中文输出不变）；getStatusText 走 torrent.status.*。
+- 页面/组件：index.vue 列表骨架与操作反馈（删除确认/结果链路留 P5）、torrentBatch mixin、TorrentAddDialog（跳过校验）、BatchOperationDialog、QuickDeleteDuplicatesDialog、DuplicateTorrentsDialog、dashboard、AdvancedMultiSelect、PageSizeCombobox。
+- 语言包新增 search/torrent/dashboard + common.multiSelect/pageSize；zh 输出与原内联逐字一致（存量断言零改动通过）。
+- 新测试 search-shared-layer-i18n.spec（13 例，含 T01 搜索参数不变性：两语言 groups JSON 完全一致）；11 套件迁移 i18n 挂载。
+- 四项验证全绿：typecheck / lint / Jest 115 套 1617 例（基线 1604）/ build；后端 advanced_search 回归 147+2 例、black/flake8 净、mypy 存量零新增。
+
+### 待办/注意
+
+- P3-2 另批：详情弹窗、TrackerDetailCard/TrackerOperationDialog/汇报文案、查询模板页与 4 预设展示（预设名称/描述翻译依赖 P4 preset_key 方案）。
+- 删除菜单项已译（工具栏骨架），其后的 /结果消息仍中文——P5 高风险批统一收口并逐条审校（R01-R05）。
+- 浏览器 T01 人工验收与英文审校未做（自动化绿不等于人工视觉通过）。
+- 批量改文件教训：PowerShell 文本管道按 GBK 读 UTF-8 会损坏文件；CRLF 文件插入换行须防 \r\r\n。本批全部用 Python 显式 UTF-8 完成。
+- 未执行 Git 提交；data/ 下三个辅助脚本（p3_add_label_en.py / p3_spec_i18n_fix*.py）为未跟踪产物，保持不动。
+
+## 2026-09-21 交接：桌面双语 P3-2 第二批完成（已提交推送 3f6fea5 + 128facc）
+
+### 已完成
+
+- 预设方案 b 落地（用户拍板）：后端 search_templates.preset_key 稳定身份列——Alembic 迁移 b3e5f7a9c1d2（head 已推进；一次性按旧中文名回填，仅 is_default=1 恰一行；用户同名/歧义保持 NULL，B02）+ init 按 preset_key 幂等（旧库自愈回填）+ API 透出 preset_key（SearchTemplate 接口已加字段）。
+- 前端文案：详情弹窗/TrackerDetailCard 三页签/TrackerOperationDialog/汇报兜底/torrentBatch Tracker 段/高级搜索五件外壳（Builder/Workspace/ConditionValueInput/SizeRangeFilter/SearchTemplateDialog）/advancedSearchState 校验消息 52 处/查询模板页两件；语言包新增 tracker/queryTemplate 模块 + search/torrent 扩展（两语言成对）。
+- 预设展示（Q01）：共享层 presetDisplayName/presetDisplayDescription/presetGroupName；查询模板页与 Workspace 侧栏按 preset_key 本地化；应用模板时内置组名按稳定组 id（preset_large_files）入口翻译（仅 Builder 内存态）。
+- 关键取舍：buildAdvancedSearchParams 回退组名保持内联中文（API 载荷非展示文案，T01 两语言 groups 一致由 spec 钉住）。
+- 验证全绿：前端 typecheck/lint 三项/build/全量 Jest 115 套 1620 例（基线 1617）；后端 preset_key 12 新例 + 迁移链/governance/api 存量回归，black/flake8 净、mypy 本批文件零错误。
+- 文档回填：feature_list.json p3 evidence、progress.md、roadmap 七处（根/entry/views/components-layout/backend infra·data-models）。
+
+### 待办/注意
+
+- P3 剩余：浏览器 T01/T03/Q01 人工验收与英文审校（自动化绿≠人工视觉通过）；utils/torrentBatch.ts 的 buildAdvancedSearchParams 校验消息（~20 条，与 advancedSearchState 同构）未在本批清单，留后续批次。
+- 后端 rollback_scenarios 有 2 例存量基线失败（stash 对照证实非本批引入），后续如遇全量跑红注意甄别。
+- 迁移注意：新库/升级库首启自动执行 b3e5f7a9c1d2；Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
+- Git 已提交并推送 origin/dev：3f6fea5（feat：backend/frontend/feature_list/progress/session-handoff 共 42 文件）+ 128facc（docs(roadmap) 6 文件）；data/ 下 p32_*.py 辅助脚本未跟踪保持不动。
+
+## 2026-09-21 交接：桌面双语 P4 剩余子范围完成（错误契约 M1 扩展 + E03 通知事件，已提交 9206f82 + ef37db9）
+
+### 已完成
+
+- 错误契约 M1 扩展（非删除链路）：后端 8 文件失败路径 data.reasonCode 共 33 新键（torrent_status 全操作分支/tracker _DownloaderUnavailableError 携带 reason_code/advanced_search 模板 CRUD/torrent_add_service reason_code 字段/torrent_crud add-batch+sync）；动态 str(e)·type(e) msg 固定化 17 处（诊断只进日志）。前端 errors.byCode 扩 33 键 + E17 errors.validation（apiErrorMessage 集成 422 分支）+ apiResponseMessage 新入口；6 个组件错误展示接线（index.vue/TrackerOperationDialog/TorrentAddDialog/query-templates×2）。
+- E03 通知事件双语：后端 version_update 补 event 键 + 孤儿通知补 orphan_count_warning + 欢迎脚本补 event；前端新 utils/notification-display.ts 四事件本地化 + NotificationDrawer/NotificationItem 接线（含"全部已读"/类型标签/详情时间 locale 化）。
+- E02 双形态钉住：/downloader/getList 缓存缺失 success+200+data=[] 冻结（B03 不改形状）。
+- 验证全绿：后端新 30 例契约测试 + tests/api+services+core 3004 passed（5 例存量基线失败 stash 对照）；前端 117 套 1660 例/typecheck/lint/build。
+- 文档回填：error-contract.md §3.1 落地汇总、feature_list p4 in_progress、roadmap 八处。
+
+### 待办/注意
+
+- P4 任务保持 in_progress：删除链路契约（E14 TORRENT_DELETE_ACCEPTED/E16）归 P5 与 R01-R05 审校同批；设置模板 preset_key（default_templates 5 预设）+ cron 安全拦截通知等低频事件归 P6。
+- 浏览器 E01/E02/E03 人工验收与英文审校未做（自动化绿≠人工视觉通过）。
+- 后端 5 例存量基线失败（rollback_scenarios×2 + orphan 迁移×3，stash 对照证实），全量跑红时注意甄别。
+- Android 嵌入服务（staged backend）未同步本批后端变更，下次出 APK 前须重跑 stage-server.py。
+- 坑位：pytest fixture 须 register_exception_handlers(app) 才复刻生产 422 信封；Notification.extra_data 是 JSON 字符串需 json.loads；pause/resume/recheck 空 hashes 被 pydantic 拦截（业务 400 分支不可达）；Optional[UploadFile]=File(...) 表单必填。
+- Git 已提交（未推送）：9206f82（feat，35 文件）+ ef37db9（docs(roadmap)，7 文件）；data/ 下未跟踪产物保持不动。
+## 2026-09-20 交接：桌面双语 P6-3 Tracker 管理域完成（全绿未提交）
+
+### 已完成
+
+- **范围**：views/tracker 全域——4 页面（关键词看板/搜索、汇报配置、判断测试）+ 9 组件 + utils/tracker.ts；后端 tracker_keywords/keywords_pools/reannounce/test 四端点 reasonCode 契约（经用户确认随批）。
+- **前端**：tracker 语言包十五子树（zh 逐字节 + en）；poolLabel/poolOptions 池名共享、getLanguageLabel 键化、extractErrorMessage 兜底键化、9 个零消费方导出删除；搜索页 pool_label 后端中文字段改本地化直出；4 处 .msg 直读改契约入口；汇报批量部分失败明细转 console。
+- **后端**：18 个 reasonCode 新键（KEYWORD_*/REANNOUNCE_*/TEST_MATCH_FAILED + 复用 DB_OPERATION_FAILED）；str(e)/池名/合法值清单只进日志；reannounce not-found 改 result.error_code 结构化判定（原中文子串匹配删除，源码断言钉死）。
+- **测试**：backend test_reason_contract_p6 26 例 + frontend p6-tracker-domain-i18n 26 例；3 存量套件挂 i18n；审计集 58 面（14 文件 + parseJSON 白名单）。
+- **验证全绿**：前端 typecheck/lint 三项/build/Jest 121 套 1755 例；后端全量 4776 passed/0 skipped 外 17 skipped、mypy/black/flake8 净；roadmap 六处同步。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap（根/entry/views/utils-types/backend api/test-coverage）。
+
+### 并发事件（重要）
+
+- 执行中检测到旧会话（pi CLI pts/0，即用户报告「卡死」的会话）仍在实时写同批文件；经用户拍板终止（kill PID 2931）后由本会话接管。接管时旧会话已完成：语言包十五子树、utils/tracker 收敛、4 页面 + 13 组件接线、审计集扩容；本会话续作：测试迁移、后端契约、漏点修复、新 spec、验证、文档。工作区无冲突损坏（逐文件复核 + 全量测试背书）。
+
+### 待办/注意
+
+- P6 剩余：P6-4（任务/日志/孤儿文件/设置 MCP·MoviePilot 页签）、P6-5 收口；tracker_messages.py 前端无消费方未契约化（P0 边界外）。
+- 英文人工审校与浏览器视觉验收随 P7；本批未执行 Git 提交（含旧会话未提交改动，一并待用户指令）。
+- Android 嵌入服务未同步本批后端四端点契约变更，下次出 APK 前须重跑 stage-server.py。
+
+---
+
+## 2026-09-20 交接：桌面双语 P6-4a 任务域完成（全绿未提交，接 P6-3 两提交之后）
+
+### 已完成
+
+- **范围**：views/tasks/index.vue + components/tasks 三组件 + api/tasks.ts 共享层；后端 cron_tasks.py 全端点 reasonCode（两项决策经用户确认：契约随批、拆两批）。
+- **结构改造**：PythonClassSelector 预定义类改由后端 type-config 驱动（getTaskTypeConfig 零调用→接线；假类树删除）；CronEditor 内置模板身份 key 化；任务状态/类型展示按稳定码位。
+- **后端**：29 个 TASKS_* reasonCode + str(e)/冲突明细只进日志；P4 能力矩阵 reasonCode 保留（断言钉住）。
+- **测试**：backend 20 例 + frontend 22 例 + 存量 5 套件断言语义化；审计集 63 面 + 白名单 38 条。
+- **验证全绿**：前端 typecheck/lint 三项/Jest 122 套 1777 例/build；后端全量 4796 passed/0 failed + mypy/black/flake8 净。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap 七处。
+
+### 待办/注意
+
+- **P6-4b**：views/logs/audit.vue（198 中文行）+ views/orphan-files/index.vue（349 中文行）+ 后端 audit_logs.py（18 条 msg）/orphan_files.py（31 条 msg）契约——范围与决策已由本批确认沿用（契约随批）。
+- MCP/MoviePilot 页签不存在（计划项过时，已在 evidence 注明）；tracker_messages.py 仍无前端消费方。
+- 英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前重跑 stage-server.py。
+- 未执行 Git 提交（待用户指令或随 P6-4b 一并处理）。
+- **P6-4a 已提交**：b79544d（feat，23 文件 +2657/-781）+ f84adf7（docs roadmap，7 文件）。
+
+### P6-4b 开工调研（本会话已完成盘点，下会话可直接实施）
+
+- **audit.vue（1276 行，198 中文行）**：管理页骨架（标题/副标题/筛选面板 CollapsiblePanel title+desc）；操作类型筛选 19 选项分 4 组（种子管理 7/下载器 4/定时任务 5/关键词规则 3）——与脚本区 `operationTypeLabels` 19 项值→标签 map **同源两份**（建议语言包建 `operationType.*` 子树两处消费）；结果三态（成功/失败/部分成功）同样两份（筛选选项 + resultMap）；表头 8 列；详情弹窗 5 节（基本信息/调试信息/操作详情/修改前旧值/修改后新值/错误信息）+ 复制 JSON；归档弹窗（截止时间/文件名/说明 alert + 危险确认「归档操作不可恢复」）；toast 若干（含 `response.msg ||` 直读 3 处 L585/700/739 待接 apiResponseMessage）。
+- **orphan-files/index.vue（2500 行，349 中文行）**：双页签（孤儿文件/隔离区）；统计卡 5 张 + 扫描失败/进行中/超量提醒 alerts；筛选面板（路径/下载器/状态/置信度/副本筛选 + 组合提示 tooltip）；工具栏（清理/忽视/取消忽视选中 + 快捷操作下拉 3 项 + 按文件夹展示）；两种表格（嵌套文件夹/扁平）×列头 8；状态/置信度标签（待清理/已忽视/已清理/混合 + 高/低）；分页；隔离区页签（恢复/彻底删除/延后次数列 + 保留期描述）；硬链接副本位置弹窗（实时/已定位/待预扫描计数、副本标签、删除副本链路 + 路径数上限提示 + 四空态）；清理确认弹窗（低置信度警告 alert + 危险语义）；快捷操作弹窗（cleanup/ignore 双模式标题与文案 + 确认文本拼接 `将影响 N 个…低置信度…移入隔离区/设为忽视`）；大量复合模板串 toast/confirm（`${action}失败：` 等）与 `response.msg ||` 直读 ~10 处；`cleanup_block_reason: '尚无可清理的成功扫描'` 等 scanContext 展示；筛选选项数组（置信度/状态 label 中文两处）。**共享组件**（PageSizeCombobox/AdvancedMultiSelect）已双语。隔离区/副本删除走 reasonCode 契约（E13/删除副本端点 P4/P5 已有部分 reasonCode——先查再补）。
+- **后端**：audit_logs.py 18 条中文 msg + orphan_files.py 31 条（含 P5 已契约化的删除/清理端点？grep reasonCode 先行核实，仅补缺口）。
+- **建议节奏**：audit.vue + 后端 audit_logs 一批，orphan-files + 后端 orphan_files 一批（orphan 单文件体量 ≈ P6-3 全批）。
+
+---
+
+
+## 2026-09-20 交接：桌面双语 P6-4b 审计日志/孤儿文件域完成（全绿未提交，接 P6-4a 两提交之后）
+
+### 已完成
+
+- **范围**：views/logs/audit.vue + views/orphan-files/index.vue 全量双语；后端 audit_logs.py / orphan_files.py 全端点 reasonCode 契约（契约随批决策沿用 P6-4a）。
+- **前端**：新 auditLogs/orphanFiles 两语言包模块（zh 逐字节 + en 成对）；操作类型 19 项键化数据驱动（OPERATION_GROUPS 短/长双形态 + Q02 回退）；孤儿状态/置信度按稳定码位（与筛选选项同源）；快捷操作说明 strong 分片；危险链路三要素保留；分页汇总分片键。
+- **关键取舍**：扫描上下文 cleanup_block_reason/error_message 后端数据原文透传（{reason} 槽位 + 本地键兜底，B03/Q02）；E01 拒绝/部分失败明细转 console + 计数键提示（6 处）；200 信息态按 task_id 分支提示；summarizeIgnoreFailures 死方法删除；audit.vue 模板 `?.` 可选链根修（buble 不支持，首次可挂载）。
+- **后端**：audit_logs 7 键 + orphan_files 全端点 22 键 data.reasonCode；动态 str(e)/scan_id 只进日志；归档业务失败 message 透传 + reasonCode 追加；hardlink rejected 双形态 200 包裹 + reasonCode 追加进 data（E14 同款）；download-export 保持真 HTTPException（detail 去动态诊断）；成功计数 msg 保持 B03。
+- **测试**：backend test_reason_contract_p6b 36 例 + frontend p6-logs-orphan-domain-i18n 22 例；orphan-files.spec 迁移 i18n 挂载 + 6 例 E01 语义化；management-pages-ui 断言语义化；test_orphan_files_api 1 例增量调整；审计集 65 面。
+- **验证全绿**：前端 typecheck/lint 三项/build/全量 Jest 123 套 1799 例；后端全量 4832 passed/0 failed + mypy/black/flake8 净；根 ./init.sh 通过。
+- **文档回填**：feature_list p6 evidence、progress.md、roadmap 七处（根 README 功能域两行+元信息、entry i18n 行、views 两文件行、backend api 两端点行、test-coverage 两行）。
+
+### 待办/注意
+
+- **P6 剩余**：P6-5（收口：M2 门禁核查 + 移动中文回归抽查 + P6 六批遗漏扫描）——完成后 p6 才可标 done。
+- 英文人工审校与浏览器视觉验收随 P7；Android 嵌入服务未同步本批后端契约，下次出 APK 前须重跑 stage-server.py。
+- tracker_messages.py（21 条中文 msg）仍无前端消费方，不契约化（P0 边界外）。
+- 未执行 Git 提交（待用户指令）。
+
+### 坑位（下会话注意）
+
+- buble 模板编译器不支持 `?.` 可选链——模板表达式内可选链必须避免（页面无挂载测试时不暴露，jest 挂载即炸）。
+- vue-jest 下 console.error spy 按参数匹配断言（同流程多次调用常态），勿断言调用次数。
+- eslint --max-warnings 0 对测试文件同样生效：空 arrow `() => {}` 报 no-empty-function，用 `() => undefined`；`--fix` 会把插值对象 `{ count: x }` 收敛为 `{count: x}`，源码契约断言以 fix 后形态为锚。

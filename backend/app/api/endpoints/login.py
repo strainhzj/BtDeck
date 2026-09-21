@@ -10,7 +10,11 @@ from app.auth.request import RefreshRequest, UserLogin
 from app.core.config import settings
 from app.database import get_db
 
+import logging
+
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_int(value):
@@ -33,7 +37,12 @@ def login(
         # 登录限流（W9）：阶梯锁定中的键直接拒绝，不写日志防灌库。
         # 密码与 TOTP 失败共用同一计数（见 login_throttle 模块说明）。
         if login_throttle.check_locked(request_user.username, client_ip or ""):
-            return CommonResponse(code="429", msg="尝试次数过多，请稍后再试", status="error", data=[])
+            return CommonResponse(
+                code="429",
+                msg="尝试次数过多，请稍后再试",
+                status="error",
+                data={"reasonCode": "AUTH_RATE_LIMITED"},
+            )
 
         user = db.query(models.User).filter(models.User.username == request_user.username).first()
 
@@ -49,7 +58,12 @@ def login(
             login_throttle.record_failure(request_user.username, client_ip or "")
             db.add(login_log)
             db.commit()
-            return CommonResponse(code="401", msg="用户名或密码错误", status="error", data=[])
+            return CommonResponse(
+                code="401",
+                msg="用户名或密码错误",
+                status="error",
+                data={"reasonCode": "AUTH_INVALID_CREDENTIALS"},
+            )
 
         # 旧格式密码自动升级为 bcrypt（W8）：条件更新仅当库中仍是本次
         # 验证时的旧值才覆盖——避免与并发改密交错时把新密码回滚成旧密码
@@ -70,7 +84,12 @@ def login(
             if not request_user.twofa_code:
                 db.add(login_log)
                 db.commit()
-                return CommonResponse(code="400", msg="请填写两步验证码", status="error", data=[])
+                return CommonResponse(
+                    code="400",
+                    msg="请填写两步验证码",
+                    status="error",
+                    data={"reasonCode": "AUTH_TOTP_REQUIRED"},
+                )
 
             if not utils.verify_totp(user.two_factor_secret, request_user.twofa_code):
                 # TOTP 失败与密码失败共用同一限流计数（6 位数字空间小，
@@ -78,7 +97,12 @@ def login(
                 login_throttle.record_failure(request_user.username, client_ip or "")
                 db.add(login_log)
                 db.commit()
-                return CommonResponse(code="401", msg="验证码错误，请重试", status="error", data=[])
+                return CommonResponse(
+                    code="401",
+                    msg="验证码错误，请重试",
+                    status="error",
+                    data={"reasonCode": "AUTH_TOTP_INVALID"},
+                )
 
         # 读法与 refresh 端点对齐：get_login_secret 带缓存与 fail-safe，
         # 消除旧版升级配置缺 login_status_secret 时的直取 KeyError → 登录 500
@@ -121,12 +145,20 @@ def login(
         }
         return CommonResponse(code="200", msg="登录成功", status="success", data=[token_data])
 
-    except Exception as e:
+    except Exception:
+        # 错误契约（双语 P2）：动态拼接 str(e) 不可翻译且有信息泄露面，
+        # 原始异常只进日志，msg 固定，前端按 AUTH_INTERNAL_ERROR 本地化
+        logger.exception("登录接口未捕获异常")
         try:
             db.rollback()
         except Exception:
             pass
-        return CommonResponse(code="500", msg=f"系统异常: {str(e)}", status="error", data=[])
+        return CommonResponse(
+            code="500",
+            msg="系统异常",
+            status="error",
+            data={"reasonCode": "AUTH_INTERNAL_ERROR"},
+        )
 
 
 @router.post("/refresh", summary="刷新访问令牌", tags=["login"], response_model=CommonResponse)

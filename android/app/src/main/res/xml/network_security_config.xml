@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 默认安全基线：cleartext 全局禁止，仅 loopback 放行（Phase 3 本机服务端需要）。
+     LAN 明文需要 btdeck.lanCleartext=true 构建（见 app/build.gradle.kts 与 README
+     的双层防线说明）。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
+</network-security-config>

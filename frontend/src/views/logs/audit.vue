@@ -2,117 +2,103 @@
   <div class="app-container management-page audit-logs-container">
     <header class="management-page__header" aria-labelledby="audit-logs-title">
       <div class="management-page__heading">
-        <h1 id="audit-logs-title" class="management-page__title">操作日志</h1>
-        <p class="management-page__subtitle">检索关键操作记录，核对执行结果并导出留档</p>
+        <h1 id="audit-logs-title" class="management-page__title">{{ $t('auditLogs.title') }}</h1>
+        <p class="management-page__subtitle">{{ $t('auditLogs.subtitle') }}</p>
       </div>
     </header>
 
     <!-- 筛选区域 -->
     <CollapsiblePanel
-      title="筛选日志"
-      description="可组合名称、类型、操作人、结果与时间范围进行查询"
+      :title="$t('auditLogs.filter.panelTitle')"
+      :description="$t('auditLogs.filter.panelDescription')"
       storage-key="btdeck_audit_filter_collapsed"
     >
       <template #meta>
-        <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
+        <el-tag type="info" effect="plain">{{ $t('auditLogs.filter.countTag', {count: total}) }}</el-tag>
       </template>
       <div class="management-filter audit-filter-grid">
         <div class="management-filter__field">
-          <label class="management-filter__label" for="audit-torrent-name">种子名称</label>
+          <label class="management-filter__label" for="audit-torrent-name">{{ $t('auditLogs.filter.torrentName') }}</label>
           <el-input
             id="audit-torrent-name"
             v-model="listQuery.torrent_name"
             class="management-filter__control"
-            placeholder="支持模糊搜索"
+            :placeholder="$t('auditLogs.filter.torrentNamePlaceholder')"
             prefix-icon="el-icon-search"
             clearable
             @keyup.enter.native="handleFilter"
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="audit-operation-type">操作类型</label>
+          <label class="management-filter__label" for="audit-operation-type">{{ $t('auditLogs.filter.operationType') }}</label>
           <el-select
             id="audit-operation-type"
             v-model="listQuery.operation_type"
             class="management-filter__control"
-            placeholder="全部类型"
+            :placeholder="$t('auditLogs.filter.allTypes')"
             clearable
             filterable
           >
-            <el-option label="全部类型" value="" />
-            <el-option-group label="种子管理">
-              <el-option label="新增种子" value="add" />
-              <el-option label="种子转移" value="transfer" />
-              <el-option label="等级4删除（待删除）" value="delete_l4" />
-              <el-option label="等级3删除（回收站）" value="delete_l3" />
-              <el-option label="等级2删除（保留数据）" value="delete_l2" />
-              <el-option label="等级1删除（完全删除）" value="delete_l1" />
-              <el-option label="还原种子" value="restore" />
-            </el-option-group>
-            <el-option-group label="下载器操作">
-              <el-option label="添加下载器" value="downloader_add" />
-              <el-option label="删除下载器" value="downloader_delete" />
-              <el-option label="修改下载器" value="downloader_update" />
-              <el-option label="测试下载器" value="downloader_test" />
-            </el-option-group>
-            <el-option-group label="定时任务">
-              <el-option label="添加定时任务" value="scheduled_task_add" />
-              <el-option label="删除定时任务" value="scheduled_task_delete" />
-              <el-option label="修改定时任务" value="scheduled_task_update" />
-              <el-option label="执行定时任务" value="scheduled_task_execute" />
-            </el-option-group>
-            <el-option-group label="关键词规则">
-              <el-option label="添加关键词规则" value="keyword_rule_add" />
-              <el-option label="删除关键词规则" value="keyword_rule_delete" />
-              <el-option label="修改关键词规则" value="keyword_rule_update" />
+            <el-option :label="$t('auditLogs.filter.allTypes')" value="" />
+            <el-option-group
+              v-for="group in operationGroups"
+              :key="group.id"
+              :label="$t(group.labelKey)"
+            >
+              <el-option
+                v-for="opt in group.options"
+                :key="opt.value"
+                :label="operationTypeFilterLabel(opt)"
+                :value="opt.value"
+              />
             </el-option-group>
           </el-select>
         </div>
         <div class="management-filter__field audit-filter-field--operator">
-          <label class="management-filter__label" for="audit-operator">操作人</label>
+          <label class="management-filter__label" for="audit-operator">{{ $t('auditLogs.filter.operator') }}</label>
           <el-input
             id="audit-operator"
             v-model="listQuery.operator"
             class="management-filter__control"
-            placeholder="全部操作人"
+            :placeholder="$t('auditLogs.filter.operatorPlaceholder')"
             clearable
             @keyup.enter.native="handleFilter"
           />
         </div>
         <div class="management-filter__field audit-filter-field--result">
-          <label class="management-filter__label" for="audit-operation-result">操作结果</label>
+          <label class="management-filter__label" for="audit-operation-result">{{ $t('auditLogs.filter.result') }}</label>
           <el-select
             id="audit-operation-result"
             v-model="listQuery.operation_result"
             class="management-filter__control"
-            placeholder="全部结果"
+            :placeholder="$t('auditLogs.filter.allResults')"
             clearable
           >
-            <el-option label="全部" value="" />
-            <el-option label="成功" value="success" />
-            <el-option label="失败" value="failed" />
-            <el-option label="部分成功" value="partial" />
+            <el-option :label="$t('auditLogs.filter.all')" value="" />
+            <el-option :label="$t('auditLogs.result.success')" value="success" />
+            <el-option :label="$t('auditLogs.result.failed')" value="failed" />
+            <el-option :label="$t('auditLogs.result.partial')" value="partial" />
           </el-select>
         </div>
         <div class="management-filter__field management-filter__field--wide audit-filter-field--time">
-          <label class="management-filter__label" for="audit-date-range">操作时间</label>
+          <label class="management-filter__label" for="audit-date-range">{{ $t('auditLogs.filter.timeRange') }}</label>
           <el-date-picker
             id="audit-date-range"
             v-model="dateRange"
             class="management-filter__control"
             type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+            :range-separator="$t('auditLogs.filter.rangeSeparator')"
+            :start-placeholder="$t('auditLogs.filter.startPlaceholder')"
+            :end-placeholder="$t('auditLogs.filter.endPlaceholder')"
             value-format="yyyy-MM-dd HH:mm:ss"
             @change="handleDateRangeChange"
           />
         </div>
         <div class="management-filter__actions audit-search-actions">
           <el-button v-waves type="primary" icon="el-icon-search" @click="handleFilter">
-            搜索
+            {{ $t('auditLogs.filter.search') }}
           </el-button>
-          <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">{{ $t('auditLogs.filter.reset') }}</el-button>
         </div>
       </div>
     </CollapsiblePanel>
@@ -123,24 +109,24 @@
         <div class="audit-action-bar__heading">
           <span class="audit-action-bar__icon" aria-hidden="true"><i class="el-icon-setting" /></span>
           <div>
-            <h2 id="audit-actions-title" class="audit-action-bar__title">日志操作</h2>
-            <p class="audit-action-bar__description">导出当前筛选结果，或归档历史数据</p>
+            <h2 id="audit-actions-title" class="audit-action-bar__title">{{ $t('auditLogs.actions.title') }}</h2>
+            <p class="audit-action-bar__description">{{ $t('auditLogs.actions.description') }}</p>
           </div>
         </div>
         <div class="audit-action-bar__actions">
           <el-dropdown @command="handleExport">
             <el-button type="success" icon="el-icon-download">
-              导出 <i class="el-icon-arrow-down el-icon--right" />
+              {{ $t('auditLogs.actions.export') }} <i class="el-icon-arrow-down el-icon--right" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
-              <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
-              <el-dropdown-item command="excel">导出为 Excel</el-dropdown-item>
+              <el-dropdown-item command="csv">{{ $t('auditLogs.actions.exportCsv') }}</el-dropdown-item>
+              <el-dropdown-item command="excel">{{ $t('auditLogs.actions.exportExcel') }}</el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
           <el-button type="warning" icon="el-icon-folder" @click="showArchiveDialog">
-            归档历史日志
+            {{ $t('auditLogs.actions.archive') }}
           </el-button>
-          <el-button icon="el-icon-refresh" @click="refreshStatistics">刷新统计</el-button>
+          <el-button icon="el-icon-refresh" @click="refreshStatistics">{{ $t('auditLogs.actions.refreshStats') }}</el-button>
         </div>
       </div>
     </section>
@@ -153,7 +139,7 @@
             <i class="el-icon-document" style="font-size: 32px; color: #409EFF;" />
             <div class="statistics-content">
               <div class="statistics-value">{{ statistics.total_count || 0 }}</div>
-              <div class="statistics-label">总日志数</div>
+              <div class="statistics-label">{{ $t('auditLogs.stats.total') }}</div>
             </div>
           </div>
         </el-card>
@@ -163,8 +149,8 @@
           <div class="statistics-item">
             <i class="el-icon-success" style="font-size: 32px; color: #67C23A;" />
             <div class="statistics-content">
-              <div class="statistics-value">{{ statistics.result_stats?.success || 0 }}</div>
-              <div class="statistics-label">成功操作</div>
+              <div class="statistics-value">{{ statistics.result_stats.success || 0 }}</div>
+              <div class="statistics-label">{{ $t('auditLogs.stats.success') }}</div>
             </div>
           </div>
         </el-card>
@@ -174,8 +160,8 @@
           <div class="statistics-item">
             <i class="el-icon-error" style="font-size: 32px; color: #F56C6C;" />
             <div class="statistics-content">
-              <div class="statistics-value">{{ statistics.result_stats?.failed || 0 }}</div>
-              <div class="statistics-label">失败操作</div>
+              <div class="statistics-value">{{ statistics.result_stats.failed || 0 }}</div>
+              <div class="statistics-label">{{ $t('auditLogs.stats.failed') }}</div>
             </div>
           </div>
         </el-card>
@@ -186,7 +172,7 @@
             <i class="el-icon-date" style="font-size: 32px; color: #E6A23C;" />
             <div class="statistics-content">
               <div class="statistics-value">{{ getTodayLogsCount() }}</div>
-              <div class="statistics-label">今日操作</div>
+              <div class="statistics-label">{{ $t('auditLogs.stats.today') }}</div>
             </div>
           </div>
         </el-card>
@@ -198,14 +184,14 @@
       <table class="audit-table">
         <thead>
           <tr>
-            <th style="width: 180px;">操作类型</th>
-            <th style="width: 100px;">操作人</th>
-            <th style="width: 200px;">种子名称</th>
-            <th style="width: 150px;">下载器名称</th>
-            <th style="width: 160px;">操作时间</th>
-            <th style="width: 100px;">结果</th>
-            <th style="width: 140px;">IP地址</th>
-            <th style="width: 100px;">操作</th>
+            <th style="width: 180px;">{{ $t('auditLogs.col.operationType') }}</th>
+            <th style="width: 100px;">{{ $t('auditLogs.col.operator') }}</th>
+            <th style="width: 200px;">{{ $t('auditLogs.col.torrentName') }}</th>
+            <th style="width: 150px;">{{ $t('auditLogs.col.downloaderName') }}</th>
+            <th style="width: 160px;">{{ $t('auditLogs.col.time') }}</th>
+            <th style="width: 100px;">{{ $t('auditLogs.col.result') }}</th>
+            <th style="width: 140px;">{{ $t('auditLogs.col.ip') }}</th>
+            <th style="width: 100px;">{{ $t('auditLogs.col.action') }}</th>
           </tr>
         </thead>
         <tbody v-if="list.length > 0">
@@ -253,7 +239,7 @@
                 icon="el-icon-view"
                 @click.stop="handleViewDetail(log)"
               >
-                详情
+                {{ $t('auditLogs.detail') }}
               </el-button>
             </td>
           </tr>
@@ -263,7 +249,7 @@
             <td :colspan="8" class="empty-cell">
               <div class="empty-state">
                 <i class="el-icon-document" style="font-size: 64px; margin-bottom: 20px; display: block;" />
-                <p class="empty-state-text">暂无审计日志</p>
+                <p class="empty-state-text">{{ $t('auditLogs.empty') }}</p>
               </div>
             </td>
           </tr>
@@ -288,7 +274,7 @@
 
     <!-- 详情对话框 -->
     <el-dialog
-      title="审计日志详情"
+      :title="$t('auditLogs.detailDialog.title')"
       :visible.sync="detailDialogVisible"
       width="70%"
       :close-on-click-modal="false"
@@ -297,11 +283,11 @@
       <div v-if="currentLog" class="detail-content">
         <!-- 基本信息 -->
         <div class="detail-section">
-          <h4 class="detail-section-title">基本信息</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.basicSection') }}</h4>
           <el-row :gutter="20">
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">操作类型：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.operationType') }}</span>
                 <span class="detail-value">
                   <el-tag
                     :type="getOperationTagType(currentLog.operation_type)"
@@ -314,7 +300,7 @@
             </el-col>
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">操作人：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.operator') }}</span>
                 <span class="detail-value">{{ currentLog.operator }}</span>
               </div>
             </el-col>
@@ -322,13 +308,13 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">操作时间：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.time') }}</span>
                 <span class="detail-value">{{ formatDateTime(currentLog.operation_time) }}</span>
               </div>
             </el-col>
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">操作结果：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.result') }}</span>
                 <span class="detail-value">
                   <el-tag
                     :type="getResultTagType(currentLog.operation_result)"
@@ -343,13 +329,13 @@
           <el-row :gutter="20" v-if="currentLog.torrent_name || currentLog.downloader_name">
             <el-col :span="12" v-if="currentLog.torrent_name">
               <div class="detail-item">
-                <span class="detail-label">种子名称：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.torrentName') }}</span>
                 <span class="detail-value">{{ currentLog.torrent_name }}</span>
               </div>
             </el-col>
             <el-col :span="12" v-if="currentLog.downloader_name">
               <div class="detail-item">
-                <span class="detail-label">下载器名称：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.downloaderName') }}</span>
                 <span class="detail-value">{{ currentLog.downloader_name }}</span>
               </div>
             </el-col>
@@ -358,11 +344,11 @@
 
         <!-- 调试信息 -->
         <div class="detail-section">
-          <h4 class="detail-section-title">调试信息</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.debugSection') }}</h4>
           <el-row :gutter="20">
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">IP地址：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.ip') }}</span>
                 <span class="detail-value">{{ currentLog.ip_address || '-' }}</span>
               </div>
             </el-col>
@@ -376,13 +362,13 @@
           <el-row :gutter="20">
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">请求ID：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.requestId') }}</span>
                 <span class="detail-value">{{ currentLog.request_id || '-' }}</span>
               </div>
             </el-col>
             <el-col :span="12">
               <div class="detail-item">
-                <span class="detail-label">会话ID：</span>
+                <span class="detail-label">{{ $t('auditLogs.detailDialog.sessionId') }}</span>
                 <span class="detail-value">{{ currentLog.session_id || '-' }}</span>
               </div>
             </el-col>
@@ -391,7 +377,7 @@
 
         <!-- 操作详情 -->
         <div class="detail-section" v-if="currentLog.operation_detail">
-          <h4 class="detail-section-title">操作详情</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.operationSection') }}</h4>
           <div class="json-viewer">
             {{ formatJson(currentLog.operation_detail) }}
           </div>
@@ -399,7 +385,7 @@
 
         <!-- 旧值 -->
         <div class="detail-section" v-if="currentLog.old_value">
-          <h4 class="detail-section-title">修改前（旧值）</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.oldSection') }}</h4>
           <div class="json-viewer">
             {{ formatJson(currentLog.old_value) }}
           </div>
@@ -407,7 +393,7 @@
 
         <!-- 新值 -->
         <div class="detail-section" v-if="currentLog.new_value">
-          <h4 class="detail-section-title">修改后（新值）</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.newSection') }}</h4>
           <div class="json-viewer">
             {{ formatJson(currentLog.new_value) }}
           </div>
@@ -415,7 +401,7 @@
 
         <!-- 错误信息 -->
         <div class="detail-section" v-if="currentLog.error_message">
-          <h4 class="detail-section-title">错误信息</h4>
+          <h4 class="detail-section-title">{{ $t('auditLogs.detailDialog.errorSection') }}</h4>
           <el-alert
             :title="currentLog.error_message"
             type="error"
@@ -425,56 +411,56 @@
       </div>
 
       <span slot="footer" class="dialog-footer">
-        <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button type="primary" icon="el-icon-document-copy" @click="handleCopyJson">复制 JSON</el-button>
+        <el-button @click="detailDialogVisible = false">{{ $t('common.close') }}</el-button>
+        <el-button type="primary" icon="el-icon-document-copy" @click="handleCopyJson">{{ $t('auditLogs.detailDialog.copyJson') }}</el-button>
       </span>
     </el-dialog>
 
     <!-- 归档对话框 -->
     <el-dialog
-      title="归档审计日志"
+      :title="$t('auditLogs.archiveDialog.title')"
       :visible.sync="archiveDialogVisible"
       width="600px"
       :close-on-click-modal="false"
     >
       <el-alert
-        title="归档说明"
+        :title="$t('auditLogs.archiveDialog.noticeTitle')"
         type="warning"
         :closable="false"
         style="margin-bottom: 20px;"
       >
-        归档功能会将指定时间之前的审计日志导出到独立的JSON文件，并从主数据库中删除这些日志。归档后的日志将无法在查询界面中显示，但可以通过归档文件查看。
+        {{ $t('auditLogs.archiveDialog.noticeText') }}
       </el-alert>
 
       <el-form :model="archiveForm" label-width="120px">
-        <el-form-item label="归档截止时间" required>
+        <el-form-item :label="$t('auditLogs.archiveDialog.endTime')" required>
           <el-date-picker
             v-model="archiveForm.end_time"
             type="datetime"
-            placeholder="选择日期时间"
+            :placeholder="$t('auditLogs.archiveDialog.endTimePlaceholder')"
             value-format="yyyy-MM-dd HH:mm:ss"
             style="width: 100%;"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-            此时间之前的审计日志将被归档
+            {{ $t('auditLogs.archiveDialog.endTimeHint') }}
           </div>
         </el-form-item>
 
-        <el-form-item label="归档文件名">
+        <el-form-item :label="$t('auditLogs.archiveDialog.fileName')">
           <el-input
             v-model="archiveForm.archive_path"
-            placeholder="留空则自动生成"
+            :placeholder="$t('auditLogs.archiveDialog.fileNamePlaceholder')"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-            仅接受文件名（自动追加 .json 后缀），固定保存到：data/audit_logs_archive/
+            {{ $t('auditLogs.archiveDialog.fileNameHint') }}
           </div>
         </el-form-item>
       </el-form>
 
       <span slot="footer" class="dialog-footer">
-        <el-button @click="archiveDialogVisible = false">取消</el-button>
+        <el-button @click="archiveDialogVisible = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="warning" icon="el-icon-folder-checked" :loading="archiveLoading" @click="handleConfirmArchive">
-          确认归档
+          {{ $t('auditLogs.archiveDialog.confirm') }}
         </el-button>
       </span>
     </el-dialog>
@@ -495,6 +481,7 @@ import {
   AuditLogStatisticsResponse
 } from '@/api/audit-logs'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { apiErrorMessage, apiResponseMessage } from '@/i18n'
 
 interface AuditLogListQuery extends AuditLogQueryRequest {
   torrent_name: string
@@ -506,6 +493,78 @@ interface AuditLogListQuery extends AuditLogQueryRequest {
   page: number
   page_size: number
 }
+
+/** 操作类型选项：后端稳定 value → auditLogs.operationType.* 键（未知值回退原文 Q02） */
+interface AuditOperationOption {
+  value: string
+  key: string
+}
+
+interface AuditOperationGroup {
+  id: string
+  labelKey: string
+  options: AuditOperationOption[]
+}
+
+const OPERATION_GROUPS: AuditOperationGroup[] = [
+  {
+    id: 'seed',
+    labelKey: 'auditLogs.operationGroup.seed',
+    options: [
+      { value: 'add', key: 'add' },
+      { value: 'transfer', key: 'transfer' },
+      { value: 'delete_l4', key: 'deleteL4' },
+      { value: 'delete_l3', key: 'deleteL3' },
+      { value: 'delete_l2', key: 'deleteL2' },
+      { value: 'delete_l1', key: 'deleteL1' },
+      { value: 'restore', key: 'restore' }
+    ]
+  },
+  {
+    id: 'downloader',
+    labelKey: 'auditLogs.operationGroup.downloader',
+    options: [
+      { value: 'downloader_add', key: 'downloaderAdd' },
+      { value: 'downloader_delete', key: 'downloaderDelete' },
+      { value: 'downloader_update', key: 'downloaderUpdate' },
+      { value: 'downloader_test', key: 'downloaderTest' }
+    ]
+  },
+  {
+    id: 'task',
+    labelKey: 'auditLogs.operationGroup.task',
+    options: [
+      { value: 'scheduled_task_add', key: 'scheduledTaskAdd' },
+      { value: 'scheduled_task_delete', key: 'scheduledTaskDelete' },
+      { value: 'scheduled_task_update', key: 'scheduledTaskUpdate' },
+      { value: 'scheduled_task_execute', key: 'scheduledTaskExecute' },
+      { value: 'scheduled_task_interrupt', key: 'scheduledTaskInterrupt' }
+    ]
+  },
+  {
+    id: 'keyword',
+    labelKey: 'auditLogs.operationGroup.keyword',
+    options: [
+      { value: 'keyword_rule_add', key: 'keywordRuleAdd' },
+      { value: 'keyword_rule_delete', key: 'keywordRuleDelete' },
+      { value: 'keyword_rule_update', key: 'keywordRuleUpdate' }
+    ]
+  }
+]
+
+/** 表格/详情短标签用的 value→键映射 */
+const OPERATION_TYPE_KEYS: Record<string, string> = OPERATION_GROUPS.reduce<Record<string, string>>(
+  (acc, group) => {
+    group.options.forEach((opt) => {
+      acc[opt.value] = opt.key
+    })
+    return acc
+  },
+  {}
+)
+
+/** 删除四级在筛选下拉中带等级语义后缀，其余类型复用短标签 */
+const OPERATION_FULL_LABEL_KEYS = new Set(['deleteL4', 'deleteL3', 'deleteL2', 'deleteL1'])
 
 function createDefaultListQuery(): AuditLogListQuery {
   return {
@@ -564,6 +623,18 @@ export default class AuditLogs extends Vue {
     this.getStatistics()
   }
 
+  // 筛选下拉分组（键化数据驱动，语言切换响应式）
+  get operationGroups(): AuditOperationGroup[] {
+    return OPERATION_GROUPS
+  }
+
+  operationTypeFilterLabel(opt: AuditOperationOption): string {
+    const key = OPERATION_FULL_LABEL_KEYS.has(opt.key)
+      ? `auditLogs.operationTypeFull.${opt.key}`
+      : `auditLogs.operationType.${opt.key}`
+    return this.$t(key) as string
+  }
+
   // 获取列表
   async getList() {
     this.listLoading = true
@@ -572,7 +643,7 @@ export default class AuditLogs extends Vue {
 
       // 增强的响应结构验证
       if (!response) {
-        throw new Error('API返回为空')
+        throw new Error('empty audit logs response')
       }
 
       if (response.code === '200') {
@@ -581,7 +652,7 @@ export default class AuditLogs extends Vue {
         this.list = Array.isArray(data.list) ? data.list : []
         this.total = typeof data.total === 'number' ? data.total : 0
       } else {
-        this.$message.error(response.msg || '查询失败')
+        this.$message.error(apiResponseMessage(response, this.$t('auditLogs.msg.queryFailed') as string))
         // 失败时降级到空状态
         this.list = []
         this.total = 0
@@ -593,7 +664,7 @@ export default class AuditLogs extends Vue {
       this.list = []
       this.total = 0
 
-      this.$message.error('查询审计日志失败')
+      this.$message.error(this.$t('auditLogs.msg.queryException') as string)
     } finally {
       this.listLoading = false
     }
@@ -679,7 +750,7 @@ export default class AuditLogs extends Vue {
       }
       const response = await exportAuditLogs(exportRequest)
       if (response && response.code === '200' && response.data) {
-        this.$message.success(`正在导出为 ${command.toUpperCase()}...`)
+        this.$message.success(this.$t('auditLogs.msg.exporting', { format: command.toUpperCase() }) as string)
         // 下载文件：走统一 axios 客户端（认证头/续期链路），成功后前端触发保存
         const fileName = response.data.file_name
         if (fileName) {
@@ -693,14 +764,14 @@ export default class AuditLogs extends Vue {
           document.body.removeChild(link)
           window.URL.revokeObjectURL(url)
         } else {
-          this.$message.error('导出文件名缺失')
+          this.$message.error(this.$t('auditLogs.msg.fileNameMissing') as string)
         }
       } else {
-        this.$message.error(response?.msg || '导出失败')
+        this.$message.error(apiResponseMessage(response, this.$t('auditLogs.msg.exportFailed') as string))
       }
     } catch (error) {
       console.error('导出失败:', error)
-      this.$message.error('导出失败，请稍后重试')
+      this.$message.error(this.$t('auditLogs.msg.exportRetry') as string)
     }
   }
 
@@ -716,13 +787,13 @@ export default class AuditLogs extends Vue {
   // 确认归档
   async handleConfirmArchive() {
     if (!this.archiveForm.end_time) {
-      this.$message.warning('请选择归档截止时间')
+      this.$message.warning(this.$t('auditLogs.msg.archiveTimeRequired') as string)
       return
     }
 
-    this.$confirm('归档操作不可恢复，确定要归档审计日志吗？', '警告', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    this.$confirm(this.$t('auditLogs.msg.archiveConfirm') as string, this.$t('auditLogs.msg.confirmTitle') as string, {
+      confirmButtonText: this.$t('auditLogs.msg.ok') as string,
+      cancelButtonText: this.$t('common.cancel') as string,
       type: 'warning'
     }).then(async() => {
       this.archiveLoading = true
@@ -730,16 +801,16 @@ export default class AuditLogs extends Vue {
         const response = await archiveAuditLogs(this.archiveForm)
         if (response && response.code === '200' && response.data && response.data.success) {
           const archivedCount = response.data.archived_count || 0
-          this.$message.success(`归档成功，已归档 ${archivedCount} 条日志`)
+          this.$message.success(this.$t('auditLogs.msg.archiveSuccess', { count: archivedCount }) as string)
           this.archiveDialogVisible = false
           this.getList()
           this.getStatistics()
         } else {
-          this.$message.error(response?.msg || '归档失败')
+          this.$message.error(apiResponseMessage(response, this.$t('auditLogs.msg.archiveFailed') as string))
         }
       } catch (error) {
         console.error('归档失败:', error)
-        this.$message.error('归档失败，请稍后重试')
+        this.$message.error(apiErrorMessage(error, this.$t('auditLogs.msg.archiveRetry') as string))
       } finally {
         this.archiveLoading = false
       }
@@ -751,7 +822,7 @@ export default class AuditLogs extends Vue {
   // 刷新统计
   refreshStatistics() {
     this.getStatistics()
-    this.$message.success('统计已刷新')
+    this.$message.success(this.$t('auditLogs.msg.statsRefreshed') as string)
   }
 
   // 复制JSON
@@ -762,36 +833,20 @@ export default class AuditLogs extends Vue {
 
     try {
       await copyTextToClipboard(JSON.stringify(currentLog, null, 2))
-      message.success('JSON 已复制到剪贴板')
+      message.success(this.$t('auditLogs.msg.jsonCopied') as string)
     } catch (error) {
       console.error('复制审计日志 JSON 失败:', error)
-      message.error('复制失败，请手动选择内容复制')
+      message.error(this.$t('auditLogs.msg.copyFailed') as string)
     }
   }
 
-  // 获取操作类型名称
+  // 获取操作类型名称（按稳定 value 取键，未知值回退原文 Q02）
   getOperationTypeName(type: string): string {
-    const typeMap: Record<string, string> = {
-      add: '新增种子',
-      transfer: '种子转移',
-      delete_l4: '等级4删除',
-      delete_l3: '等级3删除',
-      delete_l2: '等级2删除',
-      delete_l1: '等级1删除',
-      restore: '还原种子',
-      downloader_add: '添加下载器',
-      downloader_delete: '删除下载器',
-      downloader_update: '修改下载器',
-      downloader_test: '测试下载器',
-      scheduled_task_add: '添加定时任务',
-      scheduled_task_delete: '删除定时任务',
-      scheduled_task_update: '修改定时任务',
-      scheduled_task_execute: '执行定时任务',
-      keyword_rule_add: '添加关键词规则',
-      keyword_rule_delete: '删除关键词规则',
-      keyword_rule_update: '修改关键词规则'
+    const key = OPERATION_TYPE_KEYS[type]
+    if (key && this.$te(`auditLogs.operationType.${key}`)) {
+      return this.$t(`auditLogs.operationType.${key}`) as string
     }
-    return typeMap[type] || type
+    return type
   }
 
   // 获取操作类型样式类
@@ -812,14 +867,13 @@ export default class AuditLogs extends Vue {
     return ''
   }
 
-  // 获取操作结果名称
+  // 获取操作结果名称（按稳定码位取键，未知值回退原文 Q02）
   getResultName(result: string): string {
-    const resultMap: Record<string, string> = {
-      success: '成功',
-      failed: '失败',
-      partial: '部分成功'
+    const key = `auditLogs.result.${result}`
+    if (this.$te(key)) {
+      return this.$t(key) as string
     }
-    return resultMap[result] || result
+    return result
   }
 
   // 获取操作结果标签类型

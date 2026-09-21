@@ -72,5 +72,8 @@ def test_match(test_req: MatchTestRequest, _user=Depends(require_authenticated_u
         )
 
     except Exception as e:
+        # 双语 P6-3 错误契约：动态 str(e) 不进 msg（诊断只进日志），前端按 errors.byCode 本地化
         logger.error(f"测试关键词匹配失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"测试失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg="测试失败，请稍后重试", code="500", data={"reasonCode": "TEST_MATCH_FAILED"}
+        )

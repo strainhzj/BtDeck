@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="!item.meta || !item.meta.hidden"
+    v-if="isRouteAvailable(item) && (!item.meta || !item.meta.hidden)"
     :class="['menu-wrapper', isCollapse ? 'simple-mode' : 'full-mode', {'first-level': isFirstLevel}]"
   >
     <template v-if="theOnlyOneChild && !theOnlyOneChild.children">
@@ -22,7 +22,7 @@
           <span
             v-if="theOnlyOneChild.meta.title"
             slot="title"
-          >{{ theOnlyOneChild.meta.title }}</span>
+          >{{ titleText(theOnlyOneChild.meta) }}</span>
         </el-menu-item>
       </sidebar-item-link>
     </template>
@@ -41,8 +41,9 @@
         />
         <span
           v-if="item.meta && item.meta.title"
+          class="submenu-label"
           slot="title"
-        >{{ item.meta.title }}</span>
+        >{{ titleText(item.meta) }}</span>
         <LucideIcon
           name="chevron-down"
           :size="14"
@@ -71,6 +72,8 @@ import { Component, Prop, Vue } from 'vue-property-decorator'
 import { RouteConfig } from 'vue-router'
 import { isExternal } from '@/utils/validate'
 import SidebarItemLink from './SidebarItemLink.vue'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
+import { routeTitle } from '@/i18n'
 
 @Component({
   // Set 'name' here to prevent uglifyjs from causing recursive component not work
@@ -86,10 +89,15 @@ export default class extends Vue {
   @Prop({ default: true }) private isFirstLevel!: boolean
   @Prop({ default: '' }) private basePath!: string
 
+  /** 菜单标题：titleKey（桌面双语键）优先，移动/未配置路由回退中文原值 */
+  private titleText(meta: unknown): string {
+    return routeTitle(meta)
+  }
+
   get showingChildNumber() {
     if (this.item.children) {
       const showingChildren = this.item.children.filter((item) => {
-        if (item.meta && item.meta.hidden) {
+        if (!this.isRouteAvailable(item) || (item.meta && item.meta.hidden)) {
           return false
         } else {
           return true
@@ -106,7 +114,7 @@ export default class extends Vue {
     }
     if (this.item.children) {
       for (const child of this.item.children) {
-        if (!child.meta || !child.meta.hidden) {
+        if (this.isRouteAvailable(child) && (!child.meta || !child.meta.hidden)) {
           return child
         }
       }
@@ -114,6 +122,11 @@ export default class extends Vue {
     // If there is no children, return itself with path removed,
     // because this.basePath already conatins item's path information
     return { ...this.item, path: '' }
+  }
+
+  private isRouteAvailable(route: RouteConfig): boolean {
+    const requiredCapability = route.meta && (route.meta as any).requiredCapability
+    return !requiredCapability || isCapabilityAvailable(String(requiredCapability))
   }
 
   private resolvePath(routePath: string) {
@@ -205,8 +218,14 @@ export default class extends Vue {
           display: none;
         }
 
-        &>span {
+        &>.submenu-label,
+        &>.submenu-chevron {
           visibility: hidden;
+        }
+
+        /* LucideIcon 的根节点是 span，不能随标题文字一起隐藏。 */
+        &>.menu-icon {
+          visibility: visible;
         }
       }
     }

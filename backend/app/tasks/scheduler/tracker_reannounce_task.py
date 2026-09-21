@@ -135,47 +135,46 @@ class TrackerReannounceTask(BaseSyncTask):
         return result
 
     def _read_downloader_data(self, dl_vo, configs) -> Optional[Tuple[List, set]]:
-        """读段：短 session 查询 tracker / 种子记录，expunge 剥离后立即 close。
+        """读段：短 session 两段轻量查询（tracker 域名预过滤 + 命中种子轻量列）。
 
-        同步方法，由 _process_downloader 经 asyncio.to_thread 调用，避免阻塞事件循环。
-        Session 生命周期自管：查完 expunge_all + close，使返回的 ORM 对象脱离 session。
+        OOM 治理（2026-09-05）：原实现把该下载器全部 TrackerInfo ORM 实体加载进
+        内存（10 万种子 × ~5 tracker ≈ 数百 MB~GB 级驻留），每 5 分钟一次。现改为：
+        1. JOIN + 双列包含式 LIKE 预过滤（保守超集）+ tracker_id keyset 分页，
+           只取 4 个轻量列；SQL 不会漏检（Python 真值无论走 host 还是 url 回退
+           链，其 hostname 必为所用字符串的子串），误报由 Python 精确复验剔除；
+        2. Python 侧匹配语义与原实现逐行一致（_extract_domain + 首个命中
+           config + should_announce 资格 + break）；
+        3. 命中子集分块（≤500）回查种子轻量列（info_id/hash/torrent_id/
+           downloader_id），返回 Row——execute_reannounce 仅消费 hash/
+           torrent_id/len。
+        顺带消除原"巨型 IN (info_id...)"在 10 万种子下超 SQLite 32766 绑定
+        变量上限的隐患。
+
+        同步方法，由 _process_downloader 经 asyncio.to_thread 调用，避免阻塞
+        事件循环。Session 生命周期自管：查完即 close。
 
         Args:
             dl_vo: 下载器视图对象（需有 downloader_id）。
-            configs: 站点配置列表。
+            configs: 站点配置列表（空列表/全空 pattern 时无任何可命中配置，直接返回）。
 
         Returns:
             (torrent_records, matched_config_ids)：无数据时返回 None。
         """
+        from sqlalchemy import or_
+
         from app.torrents.models import TorrentInfo, TrackerInfo
+
+        patterns = _compile_domain_contains_patterns(configs)
+        if not patterns:
+            return None
 
         db = SessionLocal()
         try:
-            # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
-            downloader_torrent_ids = [
-                r.info_id
-                for r in db.query(TorrentInfo.info_id)
-                .filter(
-                    TorrentInfo.downloader_id == dl_vo.downloader_id,
-                    TorrentInfo.dr == 0,
-                )
-                .all()
-            ]
-            if not downloader_torrent_ids:
-                return None
-
-            # 只查询属于当前下载器的 tracker，避免全表扫描
-            trackers = (
-                db.query(TrackerInfo)
-                .filter(
-                    TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
-                    TrackerInfo.tracker_url.isnot(None),
-                    TrackerInfo.dr == 0,
-                )
-                .all()
-            )
-            if not trackers:
-                return None
+            like_clauses = []
+            for pattern in patterns:
+                contains = f"%{pattern}%"
+                like_clauses.append(TrackerInfo.tracker_host.like(contains, escape="\\"))
+                like_clauses.append(TrackerInfo.tracker_url.like(contains, escape="\\"))
 
             # 预编译配置匹配：按需汇报的config缓存判断结果
             eligible_config_ids = set()
@@ -186,33 +185,71 @@ class TrackerReannounceTask(BaseSyncTask):
             # 按 tracker_url 提取域名，匹配配置，收集需要汇报的 torrent_info_id
             torrent_ids_to_announce = set()
             matched_config_ids = set()
+            scanned_count = 0
+            cursor: Optional[str] = None
+            while True:
+                page_query = (
+                    db.query(
+                        TrackerInfo.tracker_id,
+                        TrackerInfo.torrent_info_id,
+                        TrackerInfo.tracker_host,
+                        TrackerInfo.tracker_url,
+                    )
+                    .join(TorrentInfo, TrackerInfo.torrent_info_id == TorrentInfo.info_id)
+                    .filter(
+                        TorrentInfo.downloader_id == dl_vo.downloader_id,
+                        TorrentInfo.dr == 0,
+                        TrackerInfo.dr == 0,
+                        TrackerInfo.tracker_url.isnot(None),
+                        or_(*like_clauses),
+                    )
+                )
+                if cursor is not None:
+                    page_query = page_query.filter(TrackerInfo.tracker_id > cursor)
+                rows = page_query.order_by(TrackerInfo.tracker_id).limit(_REANNOUNCE_TRACKER_PAGE_SIZE).all()
+                if not rows:
+                    break
+                scanned_count += len(rows)
+                for tracker in rows:
+                    domain = _extract_domain(tracker.tracker_host or tracker.tracker_url or "")
+                    if not domain:
+                        continue
+                    for config in configs:
+                        if ops.match_domain(domain, config):
+                            if config.id_ in eligible_config_ids:
+                                torrent_ids_to_announce.add(tracker.torrent_info_id)
+                                matched_config_ids.add(config.id_)
+                            break
+                cursor = rows[-1].tracker_id
 
-            for tracker in trackers:
-                domain = _extract_domain(tracker.tracker_host or tracker.tracker_url or "")
-                if not domain:
-                    continue
-                for config in configs:
-                    if ops.match_domain(domain, config):
-                        if config.id_ in eligible_config_ids:
-                            torrent_ids_to_announce.add(tracker.torrent_info_id)
-                            matched_config_ids.add(config.id_)
-                        break
-
+            logger.info(
+                "[TrackerReannounce] 域名预过滤扫描 %d 行 tracker（含超集误报），" "命中 %d 个种子、%d 个配置待汇报",
+                scanned_count,
+                len(torrent_ids_to_announce),
+                len(matched_config_ids),
+            )
             if not torrent_ids_to_announce:
                 return None
 
-            # 查询对应的种子记录（属于当前下载器且未删除）
-            torrent_records = (
-                db.query(TorrentInfo)
-                .filter(
-                    TorrentInfo.info_id.in_(torrent_ids_to_announce),
-                    TorrentInfo.downloader_id == dl_vo.downloader_id,
-                    TorrentInfo.dr == 0,
+            # 查询对应的种子记录（属于当前下载器且未删除，轻量列分块回查）
+            torrent_records: List[Any] = []
+            matched_ids = sorted(torrent_ids_to_announce)
+            for start in range(0, len(matched_ids), _REANNOUNCE_RECORD_CHUNK_SIZE):
+                chunk = matched_ids[start : start + _REANNOUNCE_RECORD_CHUNK_SIZE]
+                torrent_records.extend(
+                    db.query(
+                        TorrentInfo.info_id,
+                        TorrentInfo.hash,
+                        TorrentInfo.torrent_id,
+                        TorrentInfo.downloader_id,
+                    )
+                    .filter(
+                        TorrentInfo.info_id.in_(chunk),
+                        TorrentInfo.downloader_id == dl_vo.downloader_id,
+                        TorrentInfo.dr == 0,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            # 关键：把 ORM 对象从 session 剥离，使 close 后仍可在网络段使用其字段。
-            db.expunge_all()
         finally:
             db.close()
 
@@ -223,6 +260,36 @@ class TrackerReannounceTask(BaseSyncTask):
 
 
 # ==================== 工具函数 ====================
+
+# tracker 域名预过滤的 keyset 分页页大小（按主键翻页，内存驻留=单页缓冲）
+_REANNOUNCE_TRACKER_PAGE_SIZE = 5000
+# 命中子集二次查询的分块大小（保守低于 SQLite 绑定变量上限）
+_REANNOUNCE_RECORD_CHUNK_SIZE = 500
+
+
+def _compile_domain_contains_patterns(configs) -> List[str]:
+    """把站点配置的 domain_pattern 翻译为 SQL LIKE 包含模式（保守超集预过滤）。
+
+    match_domain 语义（reannounce_config_operations）：仅 % 是通配符，其余字符
+    一律字面量、全串锚定、大小写不敏感。LIKE 翻译规则：字面量中的 \\ 与 _
+    转义（配 ESCAPE '\\'），% 保留为通配符。调用方以 '%'+pattern+'%' 包含式
+    匹配 tracker_host 与 tracker_url 双列——Python 真值（_extract_domain 取
+    hostname，剥端口/scheme）无论走 host 还是 url 回退链，hostname 必为所用
+    字符串的子串，故包含式双列 LIKE 只可能多检、不可能漏检（误报由 Python
+    精确复验剔除）。
+
+    已知接受的边缘：SQLite LIKE 仅 ASCII 大小写不敏感，非 ASCII 域名（IDN
+    原文）的大小写折叠差异可能漏检；生产 tracker 域名为 ASCII，罕见。
+    空 pattern 的配置不参与预过滤（Python 侧同样永不命中，行为等价）。
+    """
+    patterns: List[str] = []
+    for config in configs:
+        raw = getattr(config, "domain_pattern", None)
+        if not raw:
+            continue
+        escaped = raw.replace("\\", "\\\\").replace("_", "\\_")
+        patterns.append(escaped)
+    return list(dict.fromkeys(patterns))
 
 
 def _extract_domain(tracker_host: str) -> str:

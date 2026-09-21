@@ -1,0 +1,512 @@
+/**
+ * 移动布局壳行为契约（dual-mode-client Phase 4 M1 + 2026-08-24 增强）：
+ * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航；
+ * - 桌面版出口按视口分流（2026-09-12）：窄视口（手机）不渲染（mobile-ux-fixes
+ *   决策），宽视口（≥768px 桌面浏览器预览）顶栏渲染且点击写 desktop 偏好并
+ *   进 /dashboard（偏好 mobile 单向锁死回归的解锁口，不自锁原则）；
+ *   伴侣 App WebView 恒不渲染（同日用户决策：APK 全程移动端，UA 标记门控）；
+ * - 汉堡抽屉：完整功能菜单（移动组，能力 fail-closed 隐藏受限项），移动项 replace；
+ * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
+ *   + 60s 轮询（fake timers），>99 显示 99+；
+ * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
+ *   （静态契约，防回归到深灰 #27303f 头部 / Element 默认蓝 #409eff）；
+ * - 悬浮玻璃按钮件源码契约（2026-08-28 质感升级）：Tab 栏悬浮圆角玻璃条
+ *   三件套 + 字面量 @supports 降级 + 内容区留白 + 与浮标的几何净空。
+ */
+
+import { shallowMount, Wrapper } from '@vue/test-utils'
+import fs from 'fs'
+import path from 'path'
+import AppLogo from '@/components/common/AppLogo.vue'
+import MobileLayout from '@/layout/mobile/index.vue'
+import { NotificationModule } from '@/store/modules/notification'
+import { setPlatformCapabilityCacheForTesting, resetPlatformCapabilityCache } from '@/api/platform-capabilities'
+
+jest.mock('@/store/modules/notification', () => ({
+  NotificationModule: {
+    unreadCount: 0,
+    FetchUnreadCount: jest.fn().mockResolvedValue(undefined)
+  }
+}))
+
+const setMockUnread = (count: number): void => {
+  (NotificationModule as unknown as { unreadCount: number }).unreadCount = count
+}
+
+const readLayoutSource = (): string =>
+  fs.readFileSync(path.resolve(__dirname, '../../src/layout/mobile/index.vue'), 'utf-8')
+
+describe('layout/mobile/MobileLayout', () => {
+  const mountLayout = (currentPath: string, meta: Record<string, unknown> = {}): Wrapper<Vue> =>
+    shallowMount(MobileLayout, {
+      mocks: {
+        $route: { path: currentPath, meta },
+        $router: { replace: jest.fn().mockResolvedValue(undefined), push: jest.fn().mockResolvedValue(undefined) }
+      },
+      stubs: {
+        'router-view': true,
+        'lucide-icon': true,
+        // 透传默认插槽，让抽屉菜单内容可断言（避免 Element drawer 的 DOM 副作用）
+        'el-drawer': { template: '<div class="drawer-stub"><slot /></div>' }
+      }
+    })
+
+  afterEach(() => {
+    localStorage.clear()
+    jest.clearAllMocks()
+    jest.useRealTimers()
+    setMockUnread(0)
+    resetPlatformCapabilityCache()
+  })
+
+  it('渲染四个底部 Tab（仪表盘/下载器/种子/通知）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const labels = wrapper.findAll('.mobile-tab-label').wrappers.map((w) => w.text())
+    expect(labels).toEqual(['仪表盘', '下载器', '种子', '通知'])
+  })
+
+  it('当前路由对应 Tab 高亮', () => {
+    const wrapper = mountLayout('/m/downloader')
+    const tabs = wrapper.findAll('.mobile-tab')
+    expect(tabs.at(1).classes()).toContain('is-active')
+    expect(tabs.at(0).classes()).not.toContain('is-active')
+  })
+
+  it('点击非当前 Tab 导航到目标路径', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.findAll('.mobile-tab').at(1).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+  })
+
+  it('点击当前 Tab 不重复导航', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.findAll('.mobile-tab').at(0).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('窄视口不渲染桌面版出口（mobile-ux-fixes 决策保持）：手机屏顶栏/抽屉/分组均无桌面版', async() => {
+    // jsdom 无 window.matchMedia → showDesktopEntry 兜底 false（等价窄视口路径）
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-desktop-btn').exists()).toBe(false)
+    expect(wrapper.find('.mobile-menu-footer').exists()).toBe(false)
+    expect((wrapper.vm as any).desktopMenuItems).toBeUndefined()
+    expect(wrapper.text()).not.toContain('桌面版')
+  })
+
+  it('宽视口恢复桌面版出口（2026-09-12 回归修复）：渲染 + 点击写 desktop 偏好并进 /dashboard', async() => {
+    // jsdom 无 matchMedia，注入宽视口桩（matches: true）
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      // mounted 同步改 showDesktopEntry，DOM 更新在下一微任务
+      await wrapper.vm.$nextTick()
+      const btn = wrapper.find('.mobile-header-desktop')
+      expect(btn.exists()).toBe(true)
+      expect(btn.text()).toContain('桌面版')
+      // 模拟被 switchToMobile 锁定的偏好，点击出口应解锁
+      localStorage.setItem('btdeck_ui_mode', 'mobile')
+      btn.trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
+      expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/dashboard')
+      wrapper.destroy()
+      // 销毁时解绑媒体查询监听
+      expect(mqlStub.removeEventListener).toHaveBeenCalled()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+    }
+  })
+
+  it('伴侣 App WebView：宽视口也不渲染桌面版出口（APK 全程移动端，2026-09-12 用户决策）', async() => {
+    // UA 含 WebViewActivity 注入的 BtDeckCompanion 标记：即便平板/横屏 ≥768px
+    // （matchMedia matches: true），mixin 早退恒 false，出口永不渲染
+    const mqlStub = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      value: jest.fn().mockReturnValue(mqlStub),
+      configurable: true
+    })
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 BtDeckCompanion',
+      configurable: true
+    })
+    try {
+      const wrapper = mountLayout('/m/dashboard')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('桌面版')
+      // App WebView 早退：不挂媒体查询监听（卸载也无从泄漏）
+      expect(mqlStub.addEventListener).not.toHaveBeenCalled()
+      wrapper.destroy()
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia
+      delete (window.navigator as unknown as { userAgent?: string }).userAgent
+    }
+  })
+
+  it('宽视口 matchMedia 不存在或不可用时：出口保持隐藏（安全兜底，不抛错）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-header-desktop').exists()).toBe(false)
+  })
+
+  // ============ 汉堡抽屉（2026-08-24） ============
+
+  it('汉堡按钮打开抽屉：桌面分组已移除；能力 fail-closed 下仅渲染 9 项（回收站/孤儿文件隐藏）', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    wrapper.find('.mobile-header-menu').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+
+    // 能力矩阵未加载（cache=null）时 FILESYSTEM 能力 fail-closed：回收站/孤儿文件隐藏
+    const items = wrapper.findAll('.mobile-menu-item')
+    expect(items.length).toBe(9)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '日志', 'Tracker关键词', '定时任务', '系统设置']
+    )
+    expect(wrapper.text()).not.toContain('全部功能')
+  })
+
+  it('能力矩阵已加载且支持时：抽屉渲染全部 11 项移动菜单', async() => {
+    setPlatformCapabilityCacheForTesting({
+      schemaVersion: 1,
+      platform: 'desktop',
+      capabilities: {
+        level3_recycle: { label: '三级回收', level: 'supported' },
+        orphan_files: { label: '孤儿文件', level: 'supported' }
+      },
+      degradedCount: 0,
+      unsupportedCount: 0
+    })
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.find('.mobile-header-menu').trigger('click')
+    await wrapper.vm.$nextTick()
+    const items = wrapper.findAll('.mobile-menu-item')
+    expect(items.length).toBe(11)
+    expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置']
+    )
+  })
+
+  it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    const items = wrapper.findAll('.mobile-menu-item')
+    // 第 2 项为移动组"下载器"
+    items.at(1).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+  })
+
+  it('抽屉点当前移动项：仅关闭抽屉不导航', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.findAll('.mobile-menu-item').at(0).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+  })
+
+  // ============ 主题色契约（与桌面端同源） ============
+
+  it('头部品牌锚点使用反白微型 Logo', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const logo = wrapper.findComponent(AppLogo)
+    expect(logo.props('variant')).toBe('micro')
+    expect(logo.props('tone')).toBe('inverse')
+  })
+
+  it('头部背景与 Tab 激活色均使用 var(--color-primary)，无旧深灰/默认蓝回归', () => {
+    const source = readLayoutSource()
+    const activeRule = source.slice(
+      source.indexOf('.mobile-tab.is-active'),
+      source.indexOf('.mobile-tab-label')
+    )
+    expect(activeRule).toContain('var(--color-primary)')
+    const headerRule = source.slice(
+      source.indexOf('.mobile-header {'),
+      source.indexOf('.mobile-header-title')
+    )
+    expect(headerRule).toContain('var(--color-primary)')
+    const drawerHeaderRule = source.slice(
+      source.indexOf('.mobile-menu-header'),
+      source.indexOf('.mobile-menu-title')
+    )
+    expect(drawerHeaderRule).toContain('var(--color-primary)')
+    expect(source).not.toContain('#409eff')
+    expect(source).not.toContain('#27303f')
+    // 抽屉菜单激活态同样走主题变量
+    expect(source).toContain('.mobile-menu-item.is-active')
+  })
+
+  // ============ 通知未读角标（M1 余项，2026-08-24 第四批） ============
+
+  it('未读数 > 0：通知 Tab 显示数字角标（其余 Tab 无角标）', () => {
+    setMockUnread(5)
+    const wrapper = mountLayout('/m/dashboard')
+    const tabs = wrapper.findAll('.mobile-tab')
+    expect(tabs.at(3).find('.mobile-tab-badge').exists()).toBe(true)
+    expect(tabs.at(3).find('.mobile-tab-badge').text()).toBe('5')
+    expect(tabs.at(0).find('.mobile-tab-badge').exists()).toBe(false)
+    expect(tabs.at(1).find('.mobile-tab-badge').exists()).toBe(false)
+    expect(tabs.at(2).find('.mobile-tab-badge').exists()).toBe(false)
+  })
+
+  it('未读数超过 99：角标显示 99+', () => {
+    setMockUnread(120)
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-tab-badge').text()).toBe('99+')
+  })
+
+  it('未读数为 0：不渲染角标', () => {
+    setMockUnread(0)
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-tab-badge').exists()).toBe(false)
+  })
+
+  it('挂载即拉取未读数，60s 轮询，销毁停止', () => {
+    jest.useFakeTimers()
+    const wrapper = mountLayout('/m/dashboard')
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(1)
+    jest.advanceTimersByTime(60000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(2)
+    jest.advanceTimersByTime(60000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(3)
+    wrapper.destroy()
+    jest.advanceTimersByTime(180000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(3)
+  })
+
+  // ============ 手势（v1.0.6 移动独有优化：滑动切 Tab / 抽屉手势） ============
+
+  const swipe = (wrapper: Wrapper<Vue>, startX: number, endX: number, startY = 400, endY = 402): void => {
+    const content = wrapper.find('.mobile-content')
+    content.trigger('touchstart', { touches: [{ clientX: startX, clientY: startY }] })
+    content.trigger('touchmove', {
+      touches: [{ clientX: (startX + endX) / 2, clientY: (startY + endY) / 2 }]
+    })
+    content.trigger('touchend', { changedTouches: [{ clientX: endX, clientY: endY }] })
+  }
+
+  it('内容区左滑：切换到右侧相邻 Tab 并带 next 切向动画', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    swipe(wrapper, 300, 200)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+    expect(wrapper.find('.mobile-content').classes()).toContain('swipe-anim-next')
+  })
+
+  it('内容区右滑：切换到左侧相邻 Tab 并带 prev 切向动画', async() => {
+    const wrapper = mountLayout('/m/notifications')
+    swipe(wrapper, 200, 300)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/torrents')
+    expect(wrapper.find('.mobile-content').classes()).toContain('swipe-anim-prev')
+  })
+
+  it('第一个 Tab 右滑（非左边缘）/ 最后一个 Tab 左滑：不导航', () => {
+    const first = mountLayout('/m/dashboard')
+    swipe(first, 200, 320)
+    expect(first.vm.$router.replace).not.toHaveBeenCalled()
+    const last = mountLayout('/m/notifications')
+    swipe(last, 300, 180)
+    expect(last.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('垂直滑动不切换 Tab（轴锁定让位下拉刷新）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const content = wrapper.find('.mobile-content')
+    content.trigger('touchstart', { touches: [{ clientX: 300, clientY: 400 }] })
+    content.trigger('touchmove', { touches: [{ clientX: 302, clientY: 470 }] })
+    content.trigger('touchend', { changedTouches: [{ clientX: 301, clientY: 560 }] })
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('水平位移未达阈值（60px）不切换', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    swipe(wrapper, 300, 260)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('子页面（种子详情）左滑不切 Tab：仅主页精确匹配生效', () => {
+    const wrapper = mountLayout('/m/torrents/detail/d1/abc')
+    swipe(wrapper, 300, 200)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('左边缘右滑：打开抽屉且不导航（边缘手势优先于切 Tab）', async() => {
+    const wrapper = mountLayout('/m/downloader')
+    swipe(wrapper, 10, 100, 400, 402)
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('抽屉内左滑关闭抽屉', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).drawerVisible = true
+    await wrapper.vm.$nextTick()
+    const menu = wrapper.find('.mobile-menu')
+    menu.trigger('touchstart', { touches: [{ clientX: 250, clientY: 300 }] })
+    menu.trigger('touchmove', { touches: [{ clientX: 180, clientY: 302 }] })
+    menu.trigger('touchend', { changedTouches: [{ clientX: 130, clientY: 305 }] })
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+  })
+
+  it('抽屉内垂直滑动不关闭抽屉（菜单可上下滚动）', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).drawerVisible = true
+    await wrapper.vm.$nextTick()
+    const menu = wrapper.find('.mobile-menu')
+    menu.trigger('touchstart', { touches: [{ clientX: 250, clientY: 300 }] })
+    menu.trigger('touchmove', { touches: [{ clientX: 252, clientY: 380 }] })
+    menu.trigger('touchend', { changedTouches: [{ clientX: 250, clientY: 480 }] })
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+  })
+
+  // ============ 2026-08-28 UX 增强：Tab 图标 + 二级页 ← 返回 ============
+
+  it('四个底部 Tab 均渲染图标（house/hard-drive/download/bell）且品牌页头部无返回按钮', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const icons = wrapper.findAll('.mobile-tab-icon')
+    expect(icons).toHaveLength(4)
+    expect(wrapper.find('.mobile-header-back').exists()).toBe(false)
+    expect(wrapper.find('.mobile-header-menu').exists()).toBe(true)
+  })
+
+  it('二级页：← 返回与汉堡并存，标题显示 meta.title 而非品牌 Logo', () => {
+    const wrapper = mountLayout('/m/search', { title: '高级搜索' })
+    expect(wrapper.find('.mobile-header-back').exists()).toBe(true)
+    expect(wrapper.find('.mobile-header-menu').exists()).toBe(true)
+    expect(wrapper.find('.mobile-header-title').text()).toBe('高级搜索')
+    expect(wrapper.findComponent(AppLogo).exists()).toBe(false)
+  })
+
+  it('二级页 meta.title 缺失时标题兜底 BtDeck', () => {
+    const wrapper = mountLayout('/m/recycle-bin')
+    expect(wrapper.find('.mobile-header-title').text()).toBe('BtDeck')
+  })
+
+  it('← 返回固定映射：种子详情→种子列表（replace，不依赖 history）', async() => {
+    const wrapper = mountLayout('/m/torrents/detail/d1/abcdef')
+    wrapper.find('.mobile-header-back').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/torrents')
+  })
+
+  it('← 返回固定映射：下载器设置→下载器、关键词搜索→关键词看板、其余→仪表盘', async() => {
+    const settings = mountLayout('/m/downloader/settings/d1')
+    settings.find('.mobile-header-back').trigger('click')
+    await settings.vm.$nextTick()
+    expect(settings.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+
+    const keywordSearch = mountLayout('/m/tracker/keywords-search')
+    keywordSearch.find('.mobile-header-back').trigger('click')
+    await keywordSearch.vm.$nextTick()
+    expect(keywordSearch.vm.$router.replace).toHaveBeenCalledWith('/m/tracker/keywords-board')
+
+    const generic = mountLayout('/m/logs')
+    generic.find('.mobile-header-back').trigger('click')
+    await generic.vm.$nextTick()
+    expect(generic.vm.$router.replace).toHaveBeenCalledWith('/m/dashboard')
+  })
+
+  it('未读轮询后台标签页跳过：document.hidden 时不调用 FetchUnreadCount', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).fetchUnreadCount()
+    expect(NotificationModule.FetchUnreadCount).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+    ;(wrapper.vm as any).fetchUnreadCount()
+    expect(NotificationModule.FetchUnreadCount).toHaveBeenCalled()
+  })
+
+  // ============ 悬浮玻璃按钮件源码契约（2026-08-28 质感升级回归保护） ============
+
+  it('源码契约：Tab 栏为悬浮圆角玻璃条（内缩定位/圆角/玻璃三件套/无双重安全区）', () => {
+    const source = readLayoutSource()
+    const tabbarRule = source.slice(
+      source.indexOf('.mobile-tabbar {'),
+      source.indexOf('.mobile-tab {')
+    )
+    // 悬浮形态：左右内缩 + 底部偏移承担安全区（回退贴底 left/right: 0 即红）
+    expect(tabbarRule).toContain('left: 12px')
+    expect(tabbarRule).toContain('right: 12px')
+    expect(tabbarRule).toContain('bottom: calc(8px + env(safe-area-inset-bottom))')
+    // 安全区只能由 bottom 偏移承担：内部 padding-bottom 会叠加成双倍避让
+    expect(tabbarRule).not.toContain('padding-bottom')
+    // 轻微圆角 + 玻璃三件套（前缀齐全，缺任一则旧 WebView / 旧 iOS 无效果）
+    expect(tabbarRule).toContain('border-radius: var(--radius-xl, 16px)')
+    expect(tabbarRule).toContain('background: var(--glass-bg')
+    expect(tabbarRule).toContain('\n  backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(tabbarRule).toContain('\n  -webkit-backdrop-filter: blur(var(--glass-blur, 12px))')
+    expect(tabbarRule).toContain('border: var(--glass-border')
+    expect(tabbarRule).toContain('box-shadow: var(--shadow-lg')
+    // 层级：低于抽屉（el-drawer 2000+），浮标（z-index 9）须在其下
+    expect(tabbarRule).toContain('z-index: 10')
+  })
+
+  it('源码契约：Tab 栏 @supports 降级为主题变量实色，条件必须字面量（防 var() 恒真坑）', () => {
+    const source = readLayoutSource()
+    // 字面量条件：var() 写进 @supports 条件会被部分引擎判 unknown → not() 恒真
+    // → 降级实色在支持玻璃的浏览器上也生效（Navbar 等桌面端 4 处的既有隐患形态，勿"对齐"）
+    expect(source).toContain('@supports not (backdrop-filter: blur(12px)) {')
+    const fallback = source.slice(
+      source.indexOf('@supports not (backdrop-filter: blur(12px))'),
+      source.indexOf('.mobile-tab {')
+    )
+    // 降级走主题变量（为暗色模式留出路），不回退裸 #fff/#e4e7ed
+    expect(fallback).toContain('.mobile-tabbar')
+    expect(fallback).toContain('background: var(--color-bg-primary, #FFFFFF)')
+    expect(fallback).toContain('border: 1px solid var(--color-border-primary, #E5E7EB)')
+  })
+
+  it('源码契约：内容区底部留白适配悬浮条（80px + 安全区，72px 贴底旧值回归即红）', () => {
+    const source = readLayoutSource()
+    const contentRule = source.slice(
+      source.indexOf('.mobile-content {'),
+      source.indexOf('.mobile-content.swipe-anim-next')
+    )
+    expect(contentRule).toContain('padding: 12px 12px calc(80px + env(safe-area-inset-bottom))')
+  })
+
+  it('几何契约：返回顶部浮标与 Tab 栏顶边净空 ≥ 12px（跨文件联动，单侧改动挤压即红）', () => {
+    const layout = readLayoutSource()
+    const torrents = fs.readFileSync(
+      path.resolve(__dirname, '../../src/views/mobile/torrents.vue'), 'utf-8'
+    )
+    const tabRule = layout.slice(layout.indexOf('.mobile-tab {'), layout.indexOf('.mobile-tab.is-active'))
+    const barRule = layout.slice(layout.indexOf('.mobile-tabbar {'), layout.indexOf('.mobile-tab {'))
+    const backtopRule = torrents.slice(
+      torrents.indexOf('.m-backtop {'),
+      torrents.indexOf('@supports not (backdrop-filter: blur(12px))')
+    )
+    const heightMatch = tabRule.match(/height: (\d+)px/)
+    const barBottomMatch = barRule.match(/bottom: calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/)
+    const backtopBottomMatch = backtopRule.match(/bottom: calc\((\d+)px \+ env\(safe-area-inset-bottom\)\)/)
+    if (!heightMatch || !barBottomMatch || !backtopBottomMatch) {
+      throw new Error('几何契约锚点缺失：Tab 高度或 bottom calc 声明被改动')
+    }
+    // Tab 栏顶边 = 底距 + Tab 高（当前 8 + 56 = 64），浮标 bottom 当前 80 → 净空 16px
+    const gap = Number(backtopBottomMatch[1]) - (Number(barBottomMatch[1]) + Number(heightMatch[1]))
+    expect(gap).toBeGreaterThanOrEqual(12)
+  })
+})

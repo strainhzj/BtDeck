@@ -19,11 +19,15 @@ CronTaskExecutor 调度器注册回归测试
 - 重入跳过（already_running）也落库。
 """
 
+import asyncio
+import sys
+import types
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.config import settings
 from app.core.database_result import DatabaseResult
 from app.models import (
     OUTCOME_CANCELLED,
@@ -255,6 +259,215 @@ class TestExecuteTaskOutcomeMapping:
         assert log["skip_reason"] is None
         assert "任务执行异常" in log["log_detail"]
         assert freshness_mock.await_args.kwargs["advance_success"] is False
+
+    async def test_timeout_kill_maps_to_failed_with_detail(self, monkeypatch):
+        """【2026-08-25】强制超时异常 → outcome=failed + log_detail 标注超时语义。"""
+        captured, freshness_mock = await self._execute(
+            monkeypatch, None, run_script_exc=cron_module.TaskExecutionTimeoutError(3600)
+        )
+
+        log = captured["log_data"]
+        assert log["success"] is False
+        assert log["outcome"] == OUTCOME_FAILED
+        assert "执行超时强制终止" in log["log_detail"]
+        assert "3600" in log["log_detail"]
+        assert freshness_mock.await_args.kwargs["advance_success"] is False
+
+
+class TestInterruptRunningInstance:
+    """【2026-08-25】interrupt 真正取消运行实例并按 cancelled 落库。
+
+    回归锚点：旧实现 interrupt 只置 running_tasks=False + remove_job，运行中
+    协程无检查点无句柄，生产出现执行挂 8.75h 无法停止的案例。
+    """
+
+    def _patch_env(self, monkeypatch, run_script, task_dict=None):
+        """patch 出 _execute_task 的最小执行环境，返回 (captured, freshness_mock)。
+
+        task_dict 可覆盖默认任务定义（真实链路集成用例注入 fake executor 与
+        timeout_seconds，使执行经 observed 的 wait_for）。
+        """
+        captured = {"log_data": None}
+        task_def = task_dict if task_dict is not None else TestExecuteTaskOutcomeMapping.TASK
+        fake_db = MagicMock()
+        monkeypatch.setattr(cron_module, "AsyncSessionLocal", lambda: _FakeSessionCtx(fake_db))
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.success_result(dict(task_def))),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_start_time",
+            AsyncMock(return_value=DatabaseResult.success_result(True)),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_execution_duration",
+            AsyncMock(return_value=DatabaseResult.success_result(True)),
+        )
+        freshness_mock = AsyncMock(return_value=DatabaseResult.success_result(True))
+        monkeypatch.setattr(cron_module.AsyncCronTaskCRUD, "update_task_freshness", freshness_mock)
+
+        async def _capture_log(db, log_data):
+            captured["log_data"] = log_data
+            return DatabaseResult.success_result(log_data)
+
+        monkeypatch.setattr(cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_capture_log))
+        if run_script is not None:
+            monkeypatch.setattr(CronTaskExecutor, "_run_task_script", run_script)
+        return captured, freshness_mock
+
+    async def test_interrupt_cancels_running_task_and_records_cancelled(self, monkeypatch):
+        """运行中任务被 interrupt：协程被 cancel、outcome=cancelled + success=True
+        落库、运行标记/句柄/中断标记清理、状态复位（不推进 last_success_at）。"""
+        release = asyncio.Event()
+
+        async def _run_script(self, task):
+            await release.wait()
+            return {"success": True, "log_detail": "不应到达"}
+
+        captured, freshness_mock = self._patch_env(monkeypatch, _run_script)
+
+        executor = CronTaskExecutor()
+        executor.scheduler = MagicMock()  # get_job 返回 MagicMock → 不存在，跳过 remove
+        executor.scheduler.get_job.return_value = None
+        status_mock = AsyncMock()
+        monkeypatch.setattr(executor, "_update_task_status", status_mock)
+
+        run_handle = asyncio.create_task(executor._execute_task(1))
+        await asyncio.sleep(0.05)  # 等待进入执行段（句柄已自登记）
+        assert 1 in executor.running_task_handles, "运行实例句柄应已自登记"
+
+        ok = await executor.interrupt_task(1)
+        assert ok is True
+
+        # interrupt_task 内部已等待收尾完成，日志与清理均就绪
+        log = captured["log_data"]
+        assert log["outcome"] == OUTCOME_CANCELLED
+        assert log["success"] is True, "用户主动中断对齐 skipped 口径，不误判故障"
+        assert log["log_detail"].startswith("[INTERRUPTED]")
+        assert executor.running_tasks.get(1) is False
+        assert 1 not in executor.running_task_handles
+        assert 1 not in executor.interrupt_requested
+        # 状态最终复位为空闲(2)
+        assert status_mock.await_args.args[1] == 2
+
+        # freshness：cancelled 不推进 last_success_at（数据成功集合不含 cancelled）
+        freshness_mock.assert_awaited_once()
+        freshness_kwargs = freshness_mock.await_args.kwargs
+        assert freshness_kwargs["last_outcome"] == OUTCOME_CANCELLED
+        assert freshness_kwargs["advance_success"] is False
+
+        # 被中断的任务协程正常结束（吞掉了 CancelledError，不向调度器传播）
+        await asyncio.wait_for(run_handle, timeout=1.0)
+
+    async def test_interrupt_cancels_through_real_observed_wait_for_chain(self, monkeypatch):
+        """【真实链路集成】不 mock _run_task_script：经 _run_python_internal_class
+        → observed 的 wait_for → 挂起的 execute，interrupt 的 cancel 注入必须
+        穿透 wait_for（外层 cancel 传播 CancelledError 而非转译 TimeoutError）
+        与 _run_task_script/_run_python_internal_class 两层 except Exception 兜底
+        （CancelledError 是 BaseException），最终按 outcome=cancelled 落库。"""
+        release = asyncio.Event()
+
+        class _HangingTask:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def execute(self, **kwargs):
+                await release.wait()
+                return {"status": "success", "message": "不应到达"}
+
+        fake_module = types.ModuleType("app.tasks.fake_module_interrupt_chain")
+        fake_module.HangingTask = _HangingTask
+        monkeypatch.setitem(sys.modules, "app.tasks.fake_module_interrupt_chain", fake_module)
+
+        task_dict = {
+            "task_id": 1,
+            "task_name": "集成中断任务",
+            "task_type": 4,
+            "task_code": "test_task_code",
+            # timeout_seconds 使 wait_for 强杀路径处于激活状态——中断必须与之共存
+            "timeout_seconds": 30,
+            "executor": "app.tasks.fake_module_interrupt_chain.HangingTask",
+        }
+        captured, freshness_mock = self._patch_env(monkeypatch, None, task_dict=task_dict)
+
+        executor = CronTaskExecutor()
+        executor.scheduler = MagicMock()
+        executor.scheduler.get_job.return_value = None
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+
+        with patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True):
+            run_handle = asyncio.create_task(executor._execute_task(1))
+            await asyncio.sleep(0.08)  # 等待进入 observed 执行段
+            assert 1 in executor.running_task_handles
+
+            ok = await executor.interrupt_task(1)
+            assert ok is True
+            await asyncio.wait_for(run_handle, timeout=1.0)
+
+        log = captured["log_data"]
+        assert log is not None, "中断后必须落库任务日志"
+        assert log["outcome"] == OUTCOME_CANCELLED
+        assert log["success"] is True
+        assert log["log_detail"].startswith("[INTERRUPTED]")
+        assert freshness_mock.await_args.kwargs["last_outcome"] == OUTCOME_CANCELLED
+        assert freshness_mock.await_args.kwargs["advance_success"] is False
+        assert 1 not in executor.running_task_handles
+
+    async def test_early_return_cleans_registration(self, monkeypatch):
+        """读会话失败早退路径：finally 以 pop/discard 清理句柄与中断标记
+        （早退时句柄可能尚未注册，不得 KeyError）。"""
+        fake_db = MagicMock()
+        monkeypatch.setattr(cron_module, "AsyncSessionLocal", lambda: _FakeSessionCtx(fake_db))
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.failure_result("db error")),
+        )
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+
+        await executor._execute_task(7)
+
+        assert executor.running_tasks.get(7) is False
+        assert 7 not in executor.running_task_handles
+        assert 7 not in executor.interrupt_requested
+
+    async def test_non_interrupt_cancel_propagates(self, monkeypatch):
+        """非 interrupt 来源的取消（如调度器关闭）：保持 CancelledError 向上传播。
+
+        注意 CancelledError 是 BaseException，except Exception 捕不到——
+        这是分支能 re-raise 的前提。
+        """
+        release = asyncio.Event()
+
+        async def _run_script(self, task):
+            await release.wait()
+            return {"success": True, "log_detail": "ok"}
+
+        self._patch_env(monkeypatch, _run_script)
+
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+
+        run_handle = asyncio.create_task(executor._execute_task(1))
+        await asyncio.sleep(0.05)
+        run_handle.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await run_handle
+
+    async def test_interrupt_without_running_handle_still_succeeds(self, monkeypatch):
+        """无运行实例时 interrupt 仍成功（仅移除调度注册，维持既有语义）。"""
+        executor = CronTaskExecutor()
+        executor.scheduler = MagicMock()
+        executor.scheduler.get_job.return_value = None
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+
+        ok = await executor.interrupt_task(42)
+        assert ok is True
 
 
 class TestReentrantSkipRecording:

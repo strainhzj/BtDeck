@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.config import settings
+from app.core.platform_capabilities import require_capability
 from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class OrphanScanTask:
                 logger.debug("记录孤儿扫描 Cron 阶段日志失败", exc_info=True)
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
+        require_capability("orphan_files", "orphan_files.scheduled_scan")
         """执行扫描 + 自动清理，并等待同一 dispatcher 的终态。
 
         手动/API 入口仍然只提交 queued；只有 Cron 调用该类时才等待扫描和

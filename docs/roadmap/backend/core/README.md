@@ -7,8 +7,10 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署） |
+| 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署）；`create_task_if_idle()` L109 原子占用下载器 pending/running 任务，`start_task_runner()` L140 保留 asyncio runner 强引用并消费异常，`execute_task()` L215 把结构化 failed/cancelled 结果映射为真实终态 |
 | 全局配置 config | `config.py` | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
+| 构建身份 build-info ✨2026-09-21 补录 | `build_info.py` | 构建身份读取（release 门禁 G1）：按 env `BTDECK_BUILD_INFO` → PyInstaller `sys._MEIPASS` → `release/build-info.json` → `/app/build-info.json` 顺序查找；fail-closed（命中但畸形抛 `BuildInfoError`，未命中 dev 模式 `source_mode=True` 不伪造身份），供健康接口透出 Git SHA/产品版本/Alembic head/前端 manifest 指纹 |
+| 主机能力矩阵 platform-capability | `platform_capabilities.py` | Android 主服务端/桌面能力单一真相源（L36）；`require_capability` L217 对路径映射、孤儿、备份、转移、三级删除执行统一门禁，能力载荷 schemaVersion=2 |
 | DB 结果封装 database-result | `database_result.py` | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
 | 迁移备份 db-backup | `db_backup.py` | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用 |
 | 下载器桩 downloader-stub | `downloader.py` | ⚠️ **孤儿**：遗留下载器依赖桩（`from app.downloader import models` 已失效） |
@@ -17,7 +19,8 @@
 | 灾备建库 init-schema | `init_schema_from_production.py` | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
 | JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
 | DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast |
-| 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
+| 运行时上下文 runtime-context ✨2026-09-05 | `runtime_context.py` | 协议无关运行时依赖快照 `RuntimeContext`（L14，store/torrent_stats/start_time；`from_app` L26 从 app.state 提取），服务层去 app 化注入用 |
+| 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离）；Android 主服务端由 `platform_capabilities.require_capability` 拒绝调用 |
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
@@ -53,7 +56,7 @@
 |------|--------|
 | `core/db_backup.py` | `core/migration.py` + `core/ratio_data_diagnostics.py`（v1.0.6.27 起从 1 引用升为 2） |
 | `core/ratio_data_diagnostics.py` | `scripts/ratio_migration_report.py` + `tests/core/test_ratio_data_diagnostics.py` |
-| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:23` |
+| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:23`；手动下载器同步的原子防重、并发限制、runner 生命周期与查询终态均由该单例承载 |
 
 > 详见 [../../perspectives/risks.md](../../perspectives/risks.md) "孤儿文件" 章节。
 

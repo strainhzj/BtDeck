@@ -6,14 +6,14 @@
     </div>
     <div v-if="loadError" class="editor-error">
       <el-alert
-        title="编辑器加载失败"
+        :title="$t('tasks.monaco.fallbackTitle')"
         type="error"
-        description="已切换到基础模式，您可以继续使用文本编辑器"
+        :description="$t('tasks.monaco.fallbackDesc')"
         show-icon
         :closable="false"
       />
       <el-button type="primary" size="small" @click="retryLoadEditor" style="margin-top: 10px;">
-        重试加载
+        {{ $t('tasks.monaco.retry') }}
       </el-button>
     </div>
     <!-- 降级文本编辑器 -->
@@ -57,12 +57,6 @@ export default class MonacoEditor extends Vue {
   private errorMarkers: ValidationMarker[] = []
   private validationTimer: number | null = null
   private isInitialized = false
-
-  // 添加缺失的响应式属性
-  private syntaxStatus = ''
-  private executionStatus = ''
-  private 代码语法正确 = false
-  private 可以正常执行 = false
 
   async mounted() {
     await this.initializeMonaco()
@@ -293,10 +287,6 @@ export default class MonacoEditor extends Vue {
       const content = this.editor.getValue()
       if (!content) {
         this.errorMarkers = []
-        this.代码语法正确 = false
-        this.可以正常执行 = false
-        this.syntaxStatus = ''
-        this.executionStatus = ''
         this.$emit('validation-change', [])
         return
       }
@@ -312,20 +302,10 @@ export default class MonacoEditor extends Vue {
 
       this.updateErrorMarkers(validResult.errors)
 
-      // 更新响应式状态属性
-      this.代码语法正确 = validResult.valid
-      this.可以正常执行 = validResult.valid
-      this.syntaxStatus = validResult.valid ? '语法正确' : '存在语法错误'
-      this.executionStatus = validResult.valid ? '可以执行' : '执行可能失败'
-
       this.$emit('validation-change', validResult.errors)
 
     } catch (error) {
       console.error('语法校验失败:', error)
-      this.代码语法正确 = false
-      this.可以正常执行 = false
-      this.syntaxStatus = '语法校验失败'
-      this.executionStatus = '无法执行'
       // 发出空错误数组，确保前端能正常处理
       this.$emit('validation-change', [])
     }
@@ -411,7 +391,7 @@ export default class MonacoEditor extends Vue {
             endLineNumber: lineNum + 1,
             endColumn: line.indexOf('print(') + 10,
             severity: 8,
-            message: 'print语句可能缺少引号'
+            message: this.$t('tasks.monaco.printQuoteHint')
           })
         }
       }

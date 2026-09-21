@@ -1,0 +1,255 @@
+/**
+ * 移动高级搜索契约（方案三移动原生重构）：
+ * - MobileAdvancedSearch 构建器（摘要卡+底部弹层编辑）search 事件 →
+ *   buildAdvancedSearchRequest → POST advancedSearch；
+ * - 搜索完成后自动滚动定位结果锚点（jsdom 无 scrollIntoView，静默跳过）；
+ * - 下拉刷新：已搜索过经 builder.onSearch 重放，未搜索过刷新字段候选；
+ * - 简单搜索在种子页（/m/torrents），本页无简单查询表单与 getList。
+ * 构建器以轻量 stub 替身（真实交互契约由 mobile-advanced-search.spec 覆盖）。
+ */
+
+import { shallowMount, Wrapper } from '@vue/test-utils'
+import Vue from 'vue'
+import MobileSearch from '@/views/mobile/search.vue'
+import { advancedSearch } from '@/api/torrents'
+import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
+
+jest.mock('@/api/torrents', () => ({
+  advancedSearch: jest.fn()
+}))
+
+jest.mock('@/views/mobile/components/MobileAdvancedSearch.vue', () => ({
+  name: 'MobileAdvancedSearch',
+  render: (h: (t: string) => unknown) => h('div')
+}))
+
+jest.mock('@/views/mobile/torrent-detail-cache', () => ({
+  setCachedTorrent: jest.fn(),
+  takeCachedTorrent: jest.fn()
+}))
+
+const onSearchMock = jest.fn()
+const refreshFieldOptionsMock = jest.fn()
+
+const BuilderStub = Vue.extend({
+  name: 'MobileAdvancedSearchStub',
+  template: '<div class="builder-stub" />',
+  methods: {
+    onSearch: onSearchMock,
+    refreshFieldOptions: refreshFieldOptionsMock
+  }
+})
+
+const resultTorrent = {
+  infoId: 'i1',
+  downloaderId: 'd1',
+  downloaderName: 'qb',
+  torrentId: 't1',
+  hash: 'abc',
+  name: '搜索命中种子',
+  savePath: '/x',
+  size: 1024,
+  status: 'seeding',
+  torrentFile: '/t',
+  addedDate: '2026-08-01T00:00:00',
+  completedDate: null,
+  ratio: 1,
+  ratioLimit: null,
+  tags: '',
+  category: '',
+  superSeeding: false,
+  enabled: true,
+  progress: 100
+}
+
+const mountPage = (): Wrapper<Vue> =>
+  shallowMount(MobileSearch, {
+    stubs: { 'mobile-advanced-search': BuilderStub },
+    mocks: {
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+      $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) }
+    }
+  })
+
+async function flushLifecycle(): Promise<void> {
+  for (let i = 0; i < 15; i += 1) {
+    await Promise.resolve()
+  }
+  await Promise.resolve()
+}
+
+describe('views/mobile/MobileSearch', () => {
+  beforeEach(() => {
+    jest.mocked(advancedSearch).mockReset()
+    onSearchMock.mockReset()
+    refreshFieldOptionsMock.mockReset()
+  })
+
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('构建器 search 事件：经 buildAdvancedSearchRequest 组装后 POST advancedSearch', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    // 构建器载荷形态（groups 为 JSON 字符串）
+    const builderParams = {
+      complex_search: true as const,
+      groups_count: 1,
+      groups: JSON.stringify([{ logic: 'AND', conditions: [{ field: 'name', operator: 'contains', value: '命中' }] }]),
+      between_group_logics: '[]'
+    }
+    await vm.onBuilderSearch(builderParams)
+    expect(advancedSearch).toHaveBeenCalledTimes(1)
+    const request = jest.mocked(advancedSearch).mock.calls[0][0]
+    expect(request.condition_groups).toBeTruthy()
+    expect(wrapper.text()).toContain('搜索命中种子')
+    expect(wrapper.text()).toContain('共 1 条结果')
+    expect(wrapper.vm.$message.success).toHaveBeenCalled()
+  })
+
+  it('空结果显示空态提示', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [], total: 0, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    const builderParams = {
+      complex_search: true as const,
+      groups_count: 1,
+      groups: JSON.stringify([{ logic: 'AND', conditions: [{ field: 'name', operator: 'contains', value: '无命中' }] }]),
+      between_group_logics: '[]'
+    }
+    await vm.onBuilderSearch(builderParams)
+    expect(wrapper.text()).toContain('没有匹配的种子')
+  })
+
+  it('结果卡片点击：写快照缓存并进详情', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.openDetail(resultTorrent)
+    expect(setCachedTorrent).toHaveBeenCalledWith(resultTorrent)
+    expect(vm.$router.push).toHaveBeenCalledWith('/m/torrents/detail/d1/abc')
+  })
+
+  it('下拉刷新：已搜索过经 builder.onSearch 重放', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    const builderParams = {
+      complex_search: true as const,
+      groups_count: 1,
+      groups: JSON.stringify([{ logic: 'AND', conditions: [{ field: 'name', operator: 'contains', value: '命中' }] }]),
+      between_group_logics: '[]'
+    }
+    await vm.onBuilderSearch(builderParams)
+    onSearchMock.mockClear()
+    await vm.onPullRefresh()
+    expect(onSearchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('下拉刷新：未搜索过刷新构建器候选（不触发搜索）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.onPullRefresh()
+    expect(refreshFieldOptionsMock).toHaveBeenCalledTimes(1)
+    expect(onSearchMock).not.toHaveBeenCalled()
+    expect(advancedSearch).not.toHaveBeenCalled()
+  })
+
+  it('advancedSearch 信封非 200：提示后端 msg', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({ code: '500', msg: '搜索失败啦' } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.executeAdvanced({ complex_search: true } as never)
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('搜索失败啦')
+    expect(vm.searched).toBe(false)
+    expect(vm.searching).toBe(false)
+  })
+
+  it('advancedSearch 网络异常：提示错误且 searching 复位', async() => {
+    jest.mocked(advancedSearch).mockRejectedValue(new Error('网络连接失败') as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.executeAdvanced({ complex_search: true } as never)
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('网络连接失败')
+    expect(vm.searching).toBe(false)
+    expect(vm.searched).toBe(false)
+  })
+
+  it('构建器 reset 事件：清空结果与搜索态', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    await vm.executeAdvanced({ complex_search: true } as never)
+    expect(vm.searched).toBe(true)
+    vm.onBuilderReset()
+    expect(vm.results).toEqual([])
+    expect(vm.total).toBe(0)
+    expect(vm.searched).toBe(false)
+  })
+
+  it('rerunAdvanced：builder ref 缺失时静默不抛错（optional 防御）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.$refs.builder = undefined
+    expect(() => vm.rerunAdvanced()).not.toThrow()
+    expect(onSearchMock).not.toHaveBeenCalled()
+  })
+
+  it('scrollToResults：jsdom 无 scrollIntoView 时静默跳过不抛错', async() => {
+    jest.mocked(advancedSearch).mockResolvedValue({
+      code: '200',
+      data: { list: [resultTorrent], total: 1, page: 1, pageSize: 20 }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    expect(() => {
+      vm.scrollToResults()
+    }).not.toThrow()
+    await flushLifecycle()
+  })
+
+  it('源码契约：移动原生构建器（无简单表单/模式切换），已保存搜索同源', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/views/mobile/search.vue', 'utf-8')
+    expect(source).toContain('MobileAdvancedSearch')
+    expect(source).toContain('mobile-advanced-search')
+    // 搜索完成后自动定位结果锚点
+    expect(source).toContain('scrollToResults')
+    // 简单搜索已迁种子页：禁回流
+    expect(source).not.toContain('简单查询')
+    expect(source).not.toContain('switchMode')
+    expect(source).not.toContain('runSimpleSearch')
+    expect(source).not.toContain('simpleForm')
+    expect(source).not.toContain('getTorrentList')
+    // 查询模板页已裁撤：模板应用链路（m2-template-cache）禁回流
+    expect(source).not.toContain('m2-template-cache')
+    expect(source).not.toContain('applyPendingTemplate')
+  })
+})

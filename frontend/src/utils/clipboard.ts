@@ -4,6 +4,8 @@
  * HTTPS/localhost 优先使用 Clipboard API；HTTP 部署、旧浏览器或权限拒绝时，
  * 回退到隐藏 textarea + execCommand，确保局域网部署仍可复制。
  */
+import { translate } from '@/i18n'
+
 export async function copyTextToClipboard(text: string): Promise<void> {
   const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
   if (clipboard && typeof clipboard.writeText === 'function') {
@@ -16,7 +18,7 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   }
 
   if (typeof document === 'undefined' || !document.body || typeof document.execCommand !== 'function') {
-    throw new Error('当前环境不支持剪贴板复制')
+    throw new Error(translate('common.clipboard.unsupported'))
   }
 
   const activeElement = document.activeElement instanceof HTMLElement
@@ -36,7 +38,7 @@ export async function copyTextToClipboard(text: string): Promise<void> {
     textArea.select()
     textArea.setSelectionRange(0, text.length)
     if (!document.execCommand('copy')) {
-      throw new Error('浏览器拒绝复制命令')
+      throw new Error(translate('common.clipboard.denied'))
     }
   } finally {
     document.body.removeChild(textArea)

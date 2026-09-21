@@ -137,23 +137,25 @@ class TorrentStatsCache:
         """
         # 定义精确的状态集合（避免模糊子字符串匹配导致的数据互换）
         # qBittorrent 状态值参考：https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.2+)#get-torrent-list
+        # 注意：集合必须全小写——下方比较前会 status.lower()，驼峰写法（"stalledUP" 等）永不匹配
         DOWNLOADING_STATES = {
             "downloading",  # 下载中
-            "stalledDL",  # 下载停滞（无下载速度，有上传速度）
-            "queuedDL",  # 排队等待下载
-            "checkingDL",  # 下载中检查数据
+            "stalleddl",  # 下载停滞（无下载速度，有上传速度）
+            "queueddl",  # 排队等待下载
+            "checkingdl",  # 下载中检查数据
         }
 
         SEEDING_STATES = {
             "seeding",  # 做种中
-            "stalledUP",  # 做种停滞（无上传速度）
-            "queuedUP",  # 排队等待做种
-            "pausedUP",  # 上传暂停（已完成但在做种队列）
-            "checkingUP",  # ✅ 做种中检查数据（应归入做种而非下载）
+            "stalledup",  # 做种停滞（无上传速度）
+            "queuedup",  # 排队等待做种
+            "pausedup",  # 上传暂停（已完成但在做种队列）
+            "checkingup",  # ✅ 做种中检查数据（应归入做种而非下载）
         }
 
-        PAUSED_STATES = {"pausedDL", "stoppedDL"}  # 下载暂停  # 停止下载（某些版本可能使用）
+        # qB 的 pausedDL/stoppedDL + Transmission 的 stopped（TR 已完成/未完成暂停统一为 stopped）
         # 注意：pausedUP 归入"做种"而非"暂停"（因为种子已完成下载）
+        PAUSED_STATES = {"pauseddl", "stoppeddl", "stopped"}
 
         downloading = 0
         seeding = 0

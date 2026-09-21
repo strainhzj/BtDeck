@@ -8,7 +8,7 @@
     <div class="modal-dialog duplicate-torrents-dialog">
       <!-- 标题栏 -->
       <div class="modal-header">
-        <h3 class="modal-title">🔍 重复种子查询</h3>
+        <h3 class="modal-title">🔍 {{ $t('torrent.duplicates.scan.title') }}</h3>
         <button class="modal-close" @click="handleClose">✕</button>
       </div>
 
@@ -22,7 +22,7 @@
             :stroke-width="12"
             :indeterminate="true"
           />
-          <p class="loading-text">正在查询重复种子...</p>
+          <p class="loading-text">{{ $t('torrent.duplicates.scan.loading') }}</p>
         </div>
 
         <!-- 错误提示 -->
@@ -39,12 +39,12 @@
           <table class="result-table">
             <thead>
               <tr>
-                <th>Hash值</th>
-                <th>任务名称</th>
-                <th>大小</th>
-                <th>所在下载器</th>
-                <th>状态</th>
-                <th>保存路径</th>
+                <th>{{ $t('torrent.duplicates.scan.col.hash') }}</th>
+                <th>{{ $t('torrent.duplicates.scan.col.name') }}</th>
+                <th>{{ $t('torrent.duplicates.scan.col.size') }}</th>
+                <th>{{ $t('torrent.duplicates.scan.col.downloader') }}</th>
+                <th>{{ $t('torrent.duplicates.scan.col.status') }}</th>
+                <th>{{ $t('torrent.duplicates.scan.col.path') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -73,15 +73,15 @@
 
           <!-- 统计信息 -->
           <div class="statistics-footer">
-            <span>共找到 <strong>{{ duplicateCount }}</strong> 组重复种子</span>
-            <span>总计 <strong>{{ torrentList.length }}</strong> 个任务</span>
+            <span>{{ $t('torrent.duplicates.scan.groupsPrefix') }} <strong>{{ duplicateCount }}</strong> {{ $t('torrent.duplicates.scan.groupsSuffix') }}</span>
+            <span>{{ $t('torrent.duplicates.scan.tasksPrefix') }} <strong>{{ torrentList.length }}</strong> {{ $t('torrent.duplicates.scan.tasksSuffix') }}</span>
           </div>
         </div>
 
         <!-- 空状态提示 -->
         <div v-if="!loading && !error && torrentList.length === 0" class="empty-state">
           <div class="empty-icon">✅</div>
-          <div class="empty-text">未发现重复种子</div>
+          <div class="empty-text">{{ $t('torrent.duplicates.scan.empty') }}</div>
         </div>
       </div>
 
@@ -89,9 +89,9 @@
       <div class="modal-footer">
         <div class="modal-footer-left"></div>
         <div class="modal-footer-right">
-          <button class="btn-secondary" @click="handleClose">关闭</button>
+          <button class="btn-secondary" @click="handleClose">{{ $t('common.close') }}</button>
           <button class="btn-primary" @click="handleRefresh">
-            刷新
+            {{ $t('common.refresh') }}
           </button>
         </div>
       </div>
@@ -134,15 +134,15 @@ export default class DuplicateTorrentsDialog extends Vue {
 
       if (response.code === '200') {
         this.torrentList = response.data.list || []
-        // total是重复组数,list是所有重复种子
+        // total是重复组数，list是所有重复种子
         this.duplicateCount = response.data.total || 0
       } else {
-        this.error = response.msg || '查询失败'
+        this.error = response.msg || this.$t('torrent.duplicates.scan.queryFailed')
         this.torrentList = []
         this.duplicateCount = 0
       }
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.msg ?? error?.message ?? '查询失败'
+      const errorMessage = error?.response?.data?.msg ?? error?.message ?? this.$t('torrent.duplicates.scan.queryFailed')
       this.error = errorMessage
       this.torrentList = []
       this.duplicateCount = 0

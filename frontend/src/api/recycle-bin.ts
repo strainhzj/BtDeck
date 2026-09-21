@@ -55,12 +55,12 @@ export interface RestoreResponse {
   skipped_count: number
   success_list: Array<{
     torrent_id: string
-    name: string
+    torrent_name: string
   }>
   failed_list: Array<{
     torrent_id: string
-    name: string
-    error: string
+    torrent_name?: string
+    reason: string
   }>
 }
 
@@ -95,12 +95,12 @@ export interface CleanupResponse {
   failed_count: number
   success_list: Array<{
     torrent_id: string
-    name: string
+    torrent_name: string
   }>
   failed_list: Array<{
     torrent_id: string
-    name: string
-    error: string
+    torrent_name?: string
+    reason: string
   }>
 }
 

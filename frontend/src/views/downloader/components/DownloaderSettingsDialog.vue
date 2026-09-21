@@ -30,16 +30,16 @@
           </span>
           <span>
             <LucideIcon :name="isEdit ? 'pencil' : 'plus'" :size="13" :stroke-width="1.8" />
-            {{ isEdit ? '编辑模式' : '新增模式' }}
+            {{ isEdit ? $t('downloader.dialog.editMode') : $t('downloader.dialog.addMode') }}
           </span>
-          <button type="button" aria-label="关闭下载器设置" @click="handleClose">
+          <button type="button" :aria-label="$t('downloader.dialog.closeLabel')" @click="handleClose">
             <LucideIcon name="x" :size="18" :stroke-width="1.9" />
           </button>
         </div>
       </div>
     </template>
 
-    <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
+    <el-tabs v-model="activeTab" :tab-position="tabsPosition" class="settings-tabs">
       <!-- 标签页1: 基本信息（合并后） -->
       <el-tab-pane name="basic">
         <span slot="label" class="workspace-tab-label">
@@ -47,20 +47,20 @@
             <LucideIcon name="sliders-horizontal" :size="17" :stroke-width="1.8" />
           </span>
           <span class="workspace-tab-label__copy">
-            <strong>基本信息</strong>
-            <small>连接、认证与行为</small>
+            <strong>{{ $t('downloader.dialog.basicTitle') }}</strong>
+            <small>{{ $t('downloader.dialog.basicDesc') }}</small>
           </span>
         </span>
         <div class="tab-content tab-content--basic">
           <div class="panel-intro">
             <div>
               <span>01 / CONNECTION CORE</span>
-              <h3>{{ isEdit ? '节点连接与基础策略' : '接入新的下载节点' }}</h3>
-              <p>完成地址、认证与存储路径配置，并在保存前验证链路。</p>
+              <h3>{{ isEdit ? $t('downloader.dialog.editHeading') : $t('downloader.dialog.addHeading') }}</h3>
+              <p>{{ $t('downloader.dialog.headingDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="cable" :size="14" :stroke-width="1.8" />
-              核心配置
+              {{ $t('downloader.dialog.coreConfig') }}
             </span>
           </div>
           <el-form
@@ -76,15 +76,15 @@
             <div class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="cable" :size="18" :stroke-width="1.8" class="section-icon" />
-                连接配置
+                {{ $t('downloader.dialog.connectionConfig') }}
               </div>
-              <div class="form-section-card">
+              <div class="form-section-card connection-card">
                 <el-row :gutter="16">
-                  <el-col :span="12">
-                    <el-form-item label="下载器名称" prop="nickname">
+                  <el-col :span="12" class="col-nickname">
+                    <el-form-item :label="$t('downloader.dialog.nickname')" prop="nickname">
                       <el-input
                         v-model="formData.nickname"
-                        placeholder="请输入下载器名称"
+                        :placeholder="$t('downloader.dialog.nicknamePlaceholder')"
                         clearable
                       >
                         <template slot="prefix">
@@ -93,8 +93,8 @@
                       </el-input>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
-                    <el-form-item label="端口" prop="port">
+                  <el-col :span="12" class="col-port">
+                    <el-form-item :label="$t('downloader.dialog.port')" prop="port">
                       <el-input-number
                         v-model="formData.port"
                         :min="1"
@@ -107,11 +107,11 @@
                 </el-row>
 
                 <el-row :gutter="16">
-                  <el-col :span="12">
-                    <el-form-item label="主机地址" prop="host">
+                  <el-col :span="12" class="col-host">
+                    <el-form-item :label="$t('downloader.dialog.host')" prop="host">
                       <el-input
                         v-model="formData.host"
-                        placeholder="例如: 192.168.1.100"
+                        :placeholder="$t('downloader.dialog.hostPlaceholder')"
                         clearable
                       >
                         <template slot="prefix">
@@ -120,11 +120,11 @@
                       </el-input>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
-                    <el-form-item label="下载器类型" prop="downloader_type">
+                  <el-col :span="12" class="col-type">
+                    <el-form-item :label="$t('downloader.dialog.type')" prop="downloader_type">
                       <el-select
                         v-model="formData.downloader_type"
-                        placeholder="请选择下载器类型"
+                        :placeholder="$t('downloader.dialog.typePlaceholder')"
                         style="width: 100%;"
                         :disabled="isEdit"
                       >
@@ -136,10 +136,10 @@
                 </el-row>
 
                 <el-row :gutter="16">
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-ssl">
                     <el-form-item label="HTTPS" prop="is_ssl">
                       <div class="switch-control">
-                        <span class="switch-label-text">{{ formData.is_ssl === '1' ? '已启用' : '已禁用' }}</span>
+                        <span class="switch-label-text">{{ formData.is_ssl === '1' ? $t('downloader.dialog.sslOn') : $t('downloader.dialog.sslOff') }}</span>
                         <el-switch
                           v-model="formData.is_ssl"
                           active-value="1"
@@ -160,15 +160,15 @@
             <div class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="lock-keyhole" :size="18" :stroke-width="1.8" class="section-icon" />
-                认证信息
+                {{ $t('downloader.dialog.authSection') }}
               </div>
               <div class="form-section-card">
                 <el-row :gutter="16">
                   <el-col :span="12">
-                    <el-form-item label="用户名" prop="username">
+                    <el-form-item :label="$t('downloader.dialog.username')" prop="username">
                       <el-input
                         v-model="formData.username"
-                        placeholder="请输入用户名"
+                        :placeholder="$t('downloader.dialog.usernamePlaceholder')"
                         clearable
                       >
                         <template slot="prefix">
@@ -178,12 +178,12 @@
                     </el-form-item>
                   </el-col>
                   <el-col :span="12">
-                    <el-form-item label="密码" prop="password">
+                    <el-form-item :label="$t('downloader.dialog.password')" prop="password">
                       <el-input
                         v-model="formData.password"
                         type="password"
                         show-password
-                        :placeholder="isEdit ? '不修改密码请留空' : '请输入密码'"
+                        :placeholder="isEdit ? $t('downloader.dialog.passwordEditPlaceholder') : $t('downloader.dialog.passwordPlaceholder')"
                         clearable
                       >
                         <template slot="prefix">
@@ -196,12 +196,12 @@
                 <!-- 原密码字段：仅在编辑模式下，用户名改变或密码有输入时显示 -->
                 <el-row v-if="showOldPassword" :gutter="16">
                   <el-col :span="12">
-                    <el-form-item label="原密码" prop="old_password" :rules="[{required: true, message: '请输入原密码', trigger: 'blur'}]">
+                    <el-form-item :label="$t('downloader.dialog.oldPassword')" prop="old_password" :rules="[{required: true, message: $t('downloader.dialog.validation.oldPasswordRequired'), trigger: 'blur'}]">
                       <el-input
                         v-model="formData.old_password"
                         type="password"
                         show-password
-                        placeholder="请输入原密码以验证身份"
+                        :placeholder="$t('downloader.dialog.oldPasswordPlaceholder')"
                         clearable
                       >
                         <template slot="prefix">
@@ -213,7 +213,7 @@
                   <el-col :span="12">
                     <div class="old-password-hint">
                       <LucideIcon name="info" :size="13" :stroke-width="1.8" class="help-icon" />
-                      <span>修改用户名或密码时需要验证原密码</span>
+                      <span>{{ $t('downloader.dialog.oldPasswordHint') }}</span>
                     </div>
                   </el-col>
                 </el-row>
@@ -224,13 +224,13 @@
             <div class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="settings" :size="18" :stroke-width="1.8" class="section-icon" />
-                配置选项
+                {{ $t('downloader.dialog.optionsSection') }}
               </div>
               <div class="form-section-card">
                 <div class="override-setting-item">
                   <div class="override-setting-content">
-                    <div class="override-setting-title">覆盖下载器本地配置</div>
-                    <div class="override-setting-desc">启用后，将强制覆盖下载器本地的配置项，建议谨慎使用</div>
+                    <div class="override-setting-title">{{ $t('downloader.dialog.overrideTitle') }}</div>
+                    <div class="override-setting-desc">{{ $t('downloader.dialog.overrideDesc') }}</div>
                   </div>
                   <el-switch
                     v-model="formData.override_local"
@@ -245,7 +245,7 @@
             <div class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="activity" :size="18" :stroke-width="1.8" class="section-icon" />
-                连接测试
+                {{ $t('downloader.dialog.testSection') }}
               </div>
               <div class="form-section-card">
                 <el-row :gutter="16">
@@ -271,7 +271,7 @@
                         :stroke-width="1.9"
                         class="button-icon is-spinning"
                       />
-                      {{ testing ? '测试中...' : '测试连接' }}
+                      {{ testing ? $t('downloader.dialog.testing') : $t('downloader.dialog.testConnection') }}
                     </el-button>
                   </el-col>
                   <el-col :span="12">
@@ -285,7 +285,7 @@
                       <span>{{ testResult.message }}</span>
                     </div>
                     <div v-else class="test-result-placeholder">
-                      点击按钮测试连接
+                      {{ $t('downloader.dialog.testHint') }}
                     </div>
                   </el-col>
                 </el-row>
@@ -296,15 +296,15 @@
             <div class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="power" :size="18" :stroke-width="1.8" class="section-icon" />
-                功能开关
+                {{ $t('downloader.dialog.featureSection') }}
               </div>
               <div class="form-section-card">
                 <el-row :gutter="16">
                   <el-col :span="12">
                     <div class="feature-switch-item">
                       <div class="feature-switch-content">
-                        <div class="feature-switch-title">启用搜索功能</div>
-                        <div class="feature-switch-desc">允许此下载器用于种子搜索</div>
+                        <div class="feature-switch-title">{{ $t('downloader.dialog.searchTitle') }}</div>
+                        <div class="feature-switch-desc">{{ $t('downloader.dialog.searchDesc') }}</div>
                       </div>
                       <el-switch
                         v-model="formData.is_search"
@@ -318,8 +318,8 @@
                   <el-col :span="12">
                     <div class="feature-switch-item">
                       <div class="feature-switch-content">
-                        <div class="feature-switch-title">启用下载器</div>
-                        <div class="feature-switch-desc">启用后此下载器将正常工作</div>
+                        <div class="feature-switch-title">{{ $t('downloader.dialog.enableTitle') }}</div>
+                        <div class="feature-switch-desc">{{ $t('downloader.dialog.enableDesc') }}</div>
                       </div>
                       <el-switch
                         v-model="formData.enabled"
@@ -334,17 +334,17 @@
               </div>
             </div>
 
-            <!-- 存储配置 -->
-            <div class="form-section">
+            <!-- 存储配置：Android 主服务端无法访问下载器主机目录 -->
+            <div v-if="pathMappingAvailable" class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="folder-open" :size="18" :stroke-width="1.8" class="section-icon" />
-                存储配置
+                {{ $t('downloader.dialog.storageSection') }}
               </div>
               <div class="form-section-card">
-                <el-form-item label="种子保存目录" prop="torrent_save_path">
+                <el-form-item :label="$t('downloader.dialog.savePath')" prop="torrent_save_path">
                   <el-input
                     v-model="formData.torrent_save_path"
-                    placeholder="例如: /downloads/torrents 或 C:\Downloads\Torrents"
+                    :placeholder="$t('downloader.dialog.savePathPlaceholder')"
                     clearable
                   >
                     <template slot="prefix">
@@ -353,30 +353,30 @@
                   </el-input>
                   <div class="form-item-help">
                     <LucideIcon name="info" :size="13" :stroke-width="1.8" class="help-icon" />
-                    <span>保存种子文件的目录路径，必须为应用运行环境可直接访问的绝对路径</span>
+                    <span>{{ $t('downloader.dialog.savePathHint') }}</span>
                   </div>
                 </el-form-item>
               </div>
             </div>
 
-            <!-- 路径映射规则 -->
-            <div class="form-section">
+            <!-- 路径映射规则：仅在服务端明确支持时展示 -->
+            <div v-if="pathMappingAvailable" class="form-section">
               <div class="form-section-title">
                 <LucideIcon name="route" :size="18" :stroke-width="1.8" class="section-icon" />
-                路径映射规则
+                {{ $t('downloader.dialog.pathMapping') }}
               </div>
               <div class="form-section-card">
-                <el-form-item label="路径转换规则" prop="path_mapping_rules">
+                <el-form-item :label="$t('downloader.dialog.pathMapping')" prop="path_mapping_rules">
                   <el-input
                     v-model="formData.path_mapping_rules"
                     type="textarea"
                     :rows="6"
-                    placeholder="每行一条规则，格式：源路径{#**#}目标路径&#10;&#10;示例：&#10;/downloads{#**#}/volume1&#10;/volume1/downloads{#**#}/mnt/downloads&#10;&#10;转换类型自动判断：&#10;- /downloads{#**#}/volume1 → 加（结果：/volume1/downloads）&#10;- /downloads{#**#}/volume1/downloads → 替换（结果：/volume1/downloads）&#10;&#10;留空表示不进行路径转换"
+                    :placeholder="pathMappingPlaceholderText"
                     clearable
                   />
                   <div class="form-item-help">
                     <LucideIcon name="info" :size="13" :stroke-width="1.8" class="help-icon" />
-                    <span>路径转换规则用于定时任务扫描路径时自动生成外部路径。规则为空时表示路径相等（不转换）。</span>
+                    <span>{{ $t('downloader.dialog.pathMappingHint') }}</span>
                   </div>
                 </el-form-item>
               </div>
@@ -392,8 +392,8 @@
             <LucideIcon name="gauge" :size="17" :stroke-width="1.8" />
           </span>
           <span class="workspace-tab-label__copy">
-            <strong>速度设置</strong>
-            <small>全局与分时段限速</small>
+            <strong>{{ $t('downloader.tabs.speedTitle') }}</strong>
+            <small>{{ $t('downloader.tabs.speedDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -401,19 +401,19 @@
           <div class="panel-intro">
             <div>
               <span>02 / BANDWIDTH ENGINE</span>
-              <h3>速率与调度策略</h3>
-              <p>以紧凑时间规则控制全局带宽和上下行窗口。</p>
+              <h3>{{ $t('downloader.tabs.speedSectionTitle') }}</h3>
+              <p>{{ $t('downloader.tabs.speedSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="activity" :size="14" :stroke-width="1.8" />
-              实时应用
+              {{ $t('downloader.tabs.liveApply') }}
             </span>
           </div>
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>速度设置需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicSpeed') }}</p>
           </div>
           <!-- 编辑模式：显示设置组件 -->
           <speed-settings-tab
@@ -430,13 +430,13 @@
       <!-- 【已废弃】高级设置页签已隐藏，不再显示给用户 -->
       <!-- 原因: qBittorrent客户端支持不完整，部分字段无法生效 -->
       <!-- 未来版本将完全移除此功能 -->
-      <el-tab-pane v-if="false" label="高级设置" name="advanced">
+      <el-tab-pane v-if="false" :label="$t('downloader.tabs.advancedLabel')" name="advanced">
         <div class="tab-content">
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>高级设置需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicAdvanced') }}</p>
           </div>
           <!-- 编辑模式：显示设置组件 -->
           <advanced-settings-tab
@@ -449,14 +449,14 @@
       </el-tab-pane>
 
       <!-- 标签页5: 路径管理 (包含路径映射和下载器路径管理) -->
-      <el-tab-pane name="pathManagement" :disabled="!isEdit">
+      <el-tab-pane v-if="pathMappingAvailable" name="pathManagement" :disabled="!isEdit">
         <span slot="label" class="workspace-tab-label">
           <span class="workspace-tab-label__icon">
             <LucideIcon name="route" :size="17" :stroke-width="1.8" />
           </span>
           <span class="workspace-tab-label__copy">
-            <strong>路径管理</strong>
-            <small>映射与可用目录</small>
+            <strong>{{ $t('downloader.tabs.pathTitle') }}</strong>
+            <small>{{ $t('downloader.tabs.pathDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -464,19 +464,19 @@
           <div class="panel-intro">
             <div>
               <span>03 / PATH TOPOLOGY</span>
-              <h3>存储路径拓扑</h3>
-              <p>校验下载器内部目录与 BtDeck 可访问路径之间的真实映射。</p>
+              <h3>{{ $t('downloader.tabs.pathSectionTitle') }}</h3>
+              <p>{{ $t('downloader.tabs.pathSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="folder-sync" :size="14" :stroke-width="1.8" />
-              双向映射
+              {{ $t('downloader.tabs.bidirectional') }}
             </span>
           </div>
           <!-- 新增模式：显示提示信息 -->
           <div v-if="!downloader" class="empty-state">
             <LucideIcon name="lock-keyhole" :size="36" :stroke-width="1.4" class="empty-icon" />
-            <h3>请先保存基本信息</h3>
-            <p>路径管理需要下载器创建后才能配置</p>
+            <h3>{{ $t('downloader.tabs.needBasicTitle') }}</h3>
+            <p>{{ $t('downloader.tabs.needBasicPath') }}</p>
           </div>
           <!-- 编辑模式：显示路径管理组件 -->
           <path-management-tab
@@ -497,7 +497,7 @@
           </span>
           <span class="workspace-tab-label__copy">
             <strong>{{ tabLabel }}</strong>
-            <small>组织下载任务</small>
+            <small>{{ $t('downloader.tabs.tagDesc') }}</small>
           </span>
           <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
         </span>
@@ -506,11 +506,11 @@
             <div>
               <span>04 / TAXONOMY</span>
               <h3>{{ tabLabel }}</h3>
-              <p>集中维护节点上的分类与标签，使任务结构保持清晰。</p>
+              <p>{{ $t('downloader.tabs.tagSectionDesc') }}</p>
             </div>
             <span class="panel-intro__badge">
               <LucideIcon name="tags" :size="14" :stroke-width="1.8" />
-              结构同步
+              {{ $t('downloader.tabs.structureSync') }}
             </span>
           </div>
           <!-- 标签管理组件 -->
@@ -526,14 +526,14 @@
       <div class="footer-left">
         <el-button class="workspace-footer-button" @click="handleSelectTemplate">
           <LucideIcon name="layout-template" :size="15" :stroke-width="1.8" />
-          <span>从模板选择</span>
+          <span>{{ $t('downloader.dialog.templateSelect') }}</span>
         </el-button>
-        <span class="footer-hint">模板可快速载入速度、路径与高级策略</span>
+        <span class="footer-hint">{{ $t('downloader.dialog.templateHint') }}</span>
       </div>
       <div class="footer-right">
         <el-button class="workspace-footer-button" :disabled="submitting" @click="handleClose">
           <LucideIcon name="x" :size="15" :stroke-width="1.9" />
-          <span>取消</span>
+          <span>{{ $t('downloader.dialog.footerCancel') }}</span>
         </el-button>
         <el-button
           class="workspace-footer-button workspace-footer-button--primary"
@@ -547,7 +547,7 @@
             :stroke-width="1.9"
             :class="{'is-spinning': submitting}"
           />
-          <span>{{ submitting ? '正在保存' : (isEdit ? '保存并应用' : '确认接入') }}</span>
+          <span>{{ submitting ? $t('downloader.dialog.saving') : (isEdit ? $t('downloader.dialog.saveApply') : $t('downloader.dialog.confirmAdd')) }}</span>
         </el-button>
       </div>
     </div>
@@ -565,6 +565,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
+import { apiErrorMessage } from '@/i18n'
 import {
   Downloader,
   DownloaderFormData,
@@ -589,6 +590,7 @@ import TagManagementTab from './TagManagementTab.vue'
 import TemplateSelectionDialog from './TemplateSelectionDialog.vue'
 import { resolveEnableSchedule } from '../settings'
 import { hasCompleteConnectionInfo } from '../connection'
+import { isCapabilityAvailable, loadPlatformCapabilities } from '@/api/platform-capabilities'
 
 type SettingsApiData = DownloaderSettings & {
   dl_speed_limit?: number
@@ -610,11 +612,6 @@ interface CapabilityApiData {
     downloadPaths?: boolean
     advancedSettings?: boolean
   }
-}
-
-interface ApiErrorLike {
-  response?: { data?: { msg?: string } }
-  message?: string
 }
 
 type DownloaderSubmitData = Omit<DownloaderFormData, 'password'> & {
@@ -642,6 +639,13 @@ export default class DownloaderSettingsDialog extends Vue {
 
   // 当前激活的标签页
   private activeTab = 'basic'
+
+  // ============ ≤780 顶部横向页签（mobile-ux-fixes 2026-09） ============
+  // 手机上左列 64px 图标页签不可读（无文字），基本信息/速度设置/路径管理/标签
+  // 分类管理四页签改为顶部横向滚动（图标+文字）；宽屏保持左列布局不变。
+  private tabsPosition: 'left' | 'top' = 'left'
+  private tabsMediaQuery: MediaQueryList | null = null
+  private tabsMediaHandler: ((mq: MediaQueryList) => void) | null = null
 
   // 提交状态
   private submitting = false
@@ -673,6 +677,53 @@ export default class DownloaderSettingsDialog extends Vue {
   // 保存原始用户名，用于判断是否需要原密码
   private originalUsername = ''
 
+  get pathMappingAvailable(): boolean {
+    return isCapabilityAvailable('path_mapping')
+  }
+
+  created(): void {
+    loadPlatformCapabilities().then(() => this.$forceUpdate()).catch(() => this.$forceUpdate())
+  }
+
+  mounted(): void {
+    // 整页复用形态（/m/downloader/settings/:id|new）：弹窗创建时 visible 已为
+    // true，@Watch('visible') 不为初始值触发——挂载即补一次初始化，否则表单空白
+    if (this.visible) {
+      void this.initDialog()
+    }
+    if (typeof window.matchMedia === 'function') {
+      const mql = window.matchMedia('(max-width: 780px)')
+      this.tabsPosition = mql.matches ? 'top' : 'left'
+      this.tabsMediaHandler = (mq: MediaQueryList) => {
+        this.tabsPosition = mq.matches ? 'top' : 'left'
+      }
+      this.tabsMediaQuery = mql
+      const legacy = mql as MediaQueryList & {
+        addListener?: (listener: (mq: MediaQueryList) => void) => void
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.addListener === 'function') {
+        legacy.addListener(this.tabsMediaHandler)
+      }
+    }
+  }
+
+  beforeDestroy(): void {
+    if (this.tabsMediaQuery && this.tabsMediaHandler) {
+      const mql = this.tabsMediaQuery
+      const legacy = mql as MediaQueryList & {
+        removeListener?: (listener: (mq: MediaQueryList) => void) => void
+      }
+      if (typeof mql.removeEventListener === 'function') {
+        mql.removeEventListener('change', this.tabsMediaHandler)
+      } else if (typeof legacy.removeListener === 'function') {
+        legacy.removeListener(this.tabsMediaHandler)
+      }
+    }
+  }
+
   // 当前设置
   private currentSettings: DownloaderSettings = {
     downloader_id: '',
@@ -699,32 +750,37 @@ export default class DownloaderSettingsDialog extends Vue {
     supports_advanced_options: true
   }
 
-  // 基本信息表单验证规则
+  // 基本信息表单验证规则（computed：文案随语言响应式更新）
   get basicFormRules() {
     return {
       nickname: [
-        { required: true, message: '请输入下载器名称', trigger: 'blur' }
+        { required: true, message: this.$t('downloader.dialog.validation.nicknameRequired'), trigger: 'blur' }
       ],
       host: [
-        { required: true, message: '请输入主机地址', trigger: 'blur' }
+        { required: true, message: this.$t('downloader.dialog.validation.hostRequired'), trigger: 'blur' }
       ],
       username: [
-        { required: true, message: '请输入用户名', trigger: 'blur' }
+        { required: true, message: this.$t('downloader.dialog.validation.usernameRequired'), trigger: 'blur' }
       ],
       password: [
-        { required: !this.isEdit, message: '请输入密码', trigger: 'blur' }  // 新增模式必填，编辑模式可选
+        { required: !this.isEdit, message: this.$t('downloader.dialog.validation.passwordRequired'), trigger: 'blur' }  // 新增模式必填，编辑模式可选
       ],
       old_password: [
-        { required: false, message: '请输入原密码', trigger: 'blur' }  // 动态验证
+        { required: false, message: this.$t('downloader.dialog.validation.oldPasswordRequired'), trigger: 'blur' }  // 动态验证
       ],
       port: [
-        { required: true, message: '请输入端口号', trigger: 'blur' },
-        { type: 'number', min: 1, max: 65535, message: '端口范围为1-65535', trigger: 'blur' }
+        { required: true, message: this.$t('downloader.dialog.validation.portRequired'), trigger: 'blur' },
+        { type: 'number', min: 1, max: 65535, message: this.$t('downloader.dialog.validation.portRange'), trigger: 'blur' }
       ],
       downloader_type: [
-        { required: true, message: '请选择下载器类型', trigger: 'change' }
+        { required: true, message: this.$t('downloader.dialog.validation.typeRequired'), trigger: 'change' }
       ]
     }
+  }
+
+  /** 路径映射 placeholder：{#**#} 与 vue-i18n 插值语法冲突，经 {sep} 插值槽注入 */
+  get pathMappingPlaceholderText(): string {
+    return this.$t('downloader.dialog.pathMappingPlaceholderFull', { sep: '{#**#}' }).toString()
   }
 
   // 获取表单引用
@@ -740,22 +796,22 @@ export default class DownloaderSettingsDialog extends Vue {
   // 计算属性：对话框标题
   get dialogTitle(): string {
     if (this.isEdit) {
-      return `下载器设置 • ${this.downloader?.nickname || ''}`
+      return this.$t('downloader.dialog.titleEdit', { name: this.downloader?.nickname || '' }).toString()
     }
-    return '新增下载器'
+    return this.$t('downloader.dialog.titleAdd').toString()
   }
 
   get downloaderTypeLabel(): string {
     return this.formData.downloader_type === 1 ? 'Transmission' : 'qBittorrent'
   }
 
-  // 计算属性：标签页签标题（Transmission显示"分类管理"，qBittorrent显示"标签/分类管理"）
+  // 计算属性：标签页签标题（Transmission只有标签，显示纯分类入口）
   get tabLabel(): string {
-    // 当下载器是Transmission时，显示"分类管理"（因为Transmission只有标签）
+    // 当下载器是Transmission时，仅显示分类管理
     if (this.downloader && this.downloader.downloader_type === 1) {
-      return '分类管理'
+      return this.$t('downloader.dialog.tagsLink').toString()
     }
-    return '标签/分类管理'
+    return this.$t('downloader.dialog.tagsTitle').toString()
   }
 
   // 计算属性：是否需要显示原密码字段
@@ -810,11 +866,11 @@ export default class DownloaderSettingsDialog extends Vue {
             // 保存原始用户名
             this.originalUsername = originalUsername
           } else {
-            throw new Error('获取下载器详情失败')
+            throw new Error(this.$t('downloader.dialog.detailLoadFailed'))
           }
         } catch (error) {
           console.error('获取下载器详情失败:', error)
-          this.$message.error('获取下载器详情失败')
+          this.$message.error(this.$t('downloader.dialog.detailLoadFailed'))
           return
         }
       } else {
@@ -943,14 +999,15 @@ export default class DownloaderSettingsDialog extends Vue {
         this.formData.override_local = this.currentSettings.override_local
       }
 
-      // 加载路径映射配置
-      const { getPathMappings } = await import('@/api/downloader')
+      // Android 主服务端不请求远端路径映射接口，避免把不可访问的主机路径当成本机路径。
+      if (this.pathMappingAvailable) {
+        const { getPathMappings } = await import('@/api/downloader')
+        const pathMappingResponse = await getPathMappings(this.downloader.id)
 
-      const pathMappingResponse = await getPathMappings(this.downloader.id)
-
-      if (pathMappingResponse.code === '200' && pathMappingResponse.data) {
-        // 使用 $set 确保 Vue 响应式更新
-        this.$set(this.currentSettings, 'path_mapping', pathMappingResponse.data)
+        if (pathMappingResponse.code === '200' && pathMappingResponse.data) {
+          // 使用 $set 确保 Vue 响应式更新
+          this.$set(this.currentSettings, 'path_mapping', pathMappingResponse.data)
+        }
       }
     } catch (error) {
       console.error('加载下载器设置失败:', error)
@@ -981,7 +1038,7 @@ export default class DownloaderSettingsDialog extends Vue {
   private async handleTestConnection() {
     // 编辑模式允许留空密码，由后端回退读取已保存的密码；新增模式仍要求填写密码
     if (!hasCompleteConnectionInfo(this.formData, this.isEdit)) {
-      this.$message.warning('请先填写完整的连接信息（主机、端口、用户名、密码）')
+      this.$message.warning(this.$t('downloader.dialog.testIncomplete'))
       return
     }
 
@@ -1008,21 +1065,22 @@ export default class DownloaderSettingsDialog extends Vue {
       if (response.code === '200') {
         this.testResult = {
           success: response.data.success,
+          // 展示层由 success 布尔（稳定契约）驱动本地化，不透传后端中文 message
           message: response.data.success
-            ? `连接成功 • 延迟 ${response.data.delay || 0}ms`
-            : response.data.message || '连接失败'
+            ? this.$t('downloader.dialog.testSuccess', { delay: response.data.delay || 0 }).toString()
+            : this.$t('downloader.dialog.testFailed').toString()
         }
       } else {
         this.testResult = {
           success: false,
-          message: response.msg || '连接失败'
+          message: this.$t('downloader.dialog.testFailed').toString()
         }
       }
     } catch (error: unknown) {
-      const apiError = error as ApiErrorLike
       this.testResult = {
         success: false,
-        message: apiError.response?.data?.msg || apiError.message || '连接失败'
+        // 错误契约：reasonCode 命中时本地化，否则保留原始信息
+        message: apiErrorMessage(error, this.$t('downloader.dialog.testFailed'))
       }
     } finally {
       this.testing = false
@@ -1100,7 +1158,9 @@ export default class DownloaderSettingsDialog extends Vue {
       // 收集所有标签页的数据（不包括基本信息页签，因为已经在 formData 中）
       const speedData = (this.$refs.speedSettingsTabRef as SpeedSettingsTab | undefined)?.getFormData() || {}
       const advancedData = (this.$refs.advancedSettingsTabRef as AdvancedSettingsTab | undefined)?.getFormData() || {}
-      const pathMappingData = (this.$refs.pathManagementTabRef as PathManagementTab | undefined)?.getPathMappingData() || null
+      const pathMappingData = this.pathMappingAvailable
+        ? (this.$refs.pathManagementTabRef as PathManagementTab | undefined)?.getPathMappingData() || null
+        : null
 
       // 从 formData 中提取需要提交到设置的数据
       const settingsData = {
@@ -1110,6 +1170,12 @@ export default class DownloaderSettingsDialog extends Vue {
       // 构建基本信息提交数据（只包含基本信息字段）
       const basicData: DownloaderSubmitData = {
         ...this.formData
+      }
+
+      if (!this.pathMappingAvailable) {
+        delete basicData.path_mapping
+        delete basicData.path_mapping_rules
+        delete basicData.torrent_save_path
       }
 
       // 添加路径映射数据（包括空数组，用于清空配置）
@@ -1165,7 +1231,7 @@ export default class DownloaderSettingsDialog extends Vue {
 
           // 2. 应用设置到下载器客户端
           const loadingMessage = this.$message({
-            message: '正在应用配置到下载器...',
+            message: this.$t('downloader.dialog.applying'),
             type: 'info',
             duration: 0
           })
@@ -1173,30 +1239,27 @@ export default class DownloaderSettingsDialog extends Vue {
           try {
             await applyDownloaderSettings(downloaderId)
             loadingMessage.close()
-            this.$message.success('保存成功，配置已应用到下载器')
+            this.$message.success(this.$t('downloader.dialog.appliedSuccess'))
           } catch (applyError: unknown) {
             loadingMessage.close()
-            const apiError = applyError as ApiErrorLike
-            const applyErrorMsg = apiError.response?.data?.msg || apiError.message || '配置应用失败'
-            this.$message.warning(`保存成功，但配置应用失败: ${applyErrorMsg}`)
+            const applyErrorMsg = apiErrorMessage(applyError, this.$t('downloader.dialog.submitFailed'))
+            this.$message.warning(this.$t('downloader.dialog.applyFailedPartial', { reason: applyErrorMsg }))
             // 不抛出错误，因为数据库已经保存成功
           }
         } else {
-          this.$message.success('保存成功')
+          this.$message.success(this.$t('downloader.dialog.saveSuccess'))
         }
       } else {
         // 新增模式：创建下载器
         await addDownloader({ ...basicData, id: '' })
-        this.$message.success('新增成功')
+        this.$message.success(this.$t('downloader.dialog.addSuccess'))
       }
 
       this.$emit('submit')
       this.handleClose()
     } catch (error: unknown) {
       console.error('提交失败:', error)
-      const apiError = error as ApiErrorLike
-      const errorMsg = apiError.response?.data?.msg || apiError.message || '操作失败'
-      this.$message.error(errorMsg)
+      this.$message.error(apiErrorMessage(error, this.$t('downloader.dialog.submitFailed')))
     } finally {
       this.submitting = false
     }
@@ -2134,6 +2197,9 @@ export default class DownloaderSettingsDialog extends Vue {
     height: 100vh;
     margin: 0 !important;
     border-radius: 0;
+    /* 手机内容横向收口：超出宽度的子内容在各自容器内滚动而非撑破对话框 */
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .workspace-header {
@@ -2155,27 +2221,116 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
+  /* ≤780 顶部横向页签（tabsPosition=top）：图标+文字全可读、横向滚动、
+     右缘渐隐提示可滑；左列 .is-left 规则在 top 布局下不命中，无需覆盖 */
   .settings-tabs {
-    ::v-deep > .el-tabs__header.is-left {
-      flex-basis: 64px;
-      width: 64px;
-      padding: 12px 7px;
+    flex-direction: column;
+
+    ::v-deep > .el-tabs__content {
+      width: 100%;
     }
 
-    ::v-deep > .el-tabs__header .el-tabs__item.is-left {
-      justify-content: center;
-      height: 52px;
-      padding: 0 !important;
+    ::v-deep > .el-tabs__header.is-top {
+      box-sizing: border-box;
+      flex: 0 0 auto;
+      width: 100%;
+      margin: 0 0 6px;
+      border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.11);
+      background: rgba(249, 250, 251, 0.72);
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-wrap::after {
+      display: none;
+    }
+
+    /* 页签超出可视宽度时横向滑动（隐藏滚动条，右缘渐隐暗示还有页签） */
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, #000 0, #000 90%, transparent 100%);
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__nav {
+      display: flex;
+      width: max-content;
+      white-space: nowrap;
+    }
+
+    ::v-deep > .el-tabs__header.is-top .el-tabs__item.is-top {
+      height: 42px;
+      line-height: 42px;
+      padding: 0 12px !important;
+      color: var(--color-text-secondary);
+      font-size: 13px;
+      text-align: left !important;
+
+      &.is-active {
+        color: var(--color-primary);
+      }
+
+      &.is-disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+      }
     }
   }
 
   .workspace-tab-label {
-    justify-content: center;
+    justify-content: flex-start;
+    /* 顶部页签纯文字（2026-09-12 用户反馈：图标+副标题在窄屏被截断） */
+    gap: 0;
 
-    &__copy,
+    &__icon {
+      display: none;
+    }
+
+    &__copy {
+      gap: 0;
+
+      small {
+        display: none;
+      }
+    }
+
     &__lock {
       display: none;
     }
+  }
+
+  /* 底部操作栏纵排两行：模板行在上、取消/保存行贴近拇指；按钮全宽 + 40px 触控 */
+  ::v-deep .el-dialog__footer {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .footer-left,
+  .footer-right {
+    width: 100%;
+  }
+
+  .footer-left .workspace-footer-button,
+  .footer-right .workspace-footer-button {
+    flex: 1;
+    min-height: 40px;
+    margin-left: 0;
+  }
+
+  /* 520 断点把次要按钮收成纯图标——页脚全宽按钮恢复文字标签更易读 */
+  .dialog-footer .workspace-footer-button span span {
+    display: inline-flex;
   }
 
   .tab-content {
@@ -2197,6 +2352,38 @@ export default class DownloaderSettingsDialog extends Vue {
     grid-column: 1 / -1;
   }
 
+  /* 基本信息内层 el-row 双列（下载器名/类型等）整段手机宽度折单列 */
+  .workspace-basic-form ::v-deep .el-col {
+    width: 100%;
+  }
+
+  /* 连接配置卡：地址上移至端口上方（2026-09 用户反馈，仅手机重排，桌面双列布局不变）
+     DOM 行序为 昵称|端口 / 地址|类型，折单列后呈 昵称→端口→地址→类型，与
+     「地址在端口上方」的填写直觉不符；行容器 display:contents 让各列直接参与
+     卡片 flex 排序，按 order 重排为 昵称→地址→端口→类型→HTTPS。行盒消失
+     后 el-row gutter 的负边距随之失效，卡片水平内边距 12px→4px 补偿，保持
+     输入框与其他卡片（认证信息等）左右边缘对齐。 */
+  .connection-card {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 4px;
+
+    ::v-deep .el-row {
+      display: contents;
+
+      &::before,
+      &::after {
+        display: none;
+      }
+    }
+
+    ::v-deep .col-nickname { order: 1; }
+    ::v-deep .col-host { order: 2; }
+    ::v-deep .col-port { order: 3; }
+    ::v-deep .col-type { order: 4; }
+    ::v-deep .col-ssl { order: 5; }
+  }
+
   .footer-hint {
     display: none;
   }
@@ -2205,10 +2392,6 @@ export default class DownloaderSettingsDialog extends Vue {
 @media (max-width: 520px) {
   .workspace-eyebrow {
     display: none;
-  }
-
-  .workspace-basic-form ::v-deep .el-col {
-    width: 100%;
   }
 
   .workspace-footer-button {

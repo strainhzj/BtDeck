@@ -1,9 +1,9 @@
 ; BtDeck Inno Setup 安装脚本
 ; 用于创建 Windows 安装包 (.exe)
-; 版本: v1.0.5
+; 版本: v1.0.6（唯一版本输入见 release/release-config.json，由版本一致性检查强制对齐）
 
 #define AppName "BtDeck"
-#define AppVersion "1.0.5"
+#define AppVersion "1.0.6"
 #define AppPublisher "BtDeck Team"
 #define AppURL "https://github.com/strainhzj/BtDeck"
 #define AppExeName "btdeck.exe"
@@ -41,6 +41,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startmenuicon"; Description: "Create Start Menu shortcut"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "startup"; Description: "Run at Windows startup"; GroupDescription: "Auto Start"; Flags: unchecked
 
+[Dirs]
+; NSSM 服务日志（AppStdout/AppStderr）与应用日志的落盘目录
+Name: "{app}\logs"; Permissions: users-modify
+
 [Files]
 ; 主可执行文件（PyInstaller 输出到 dist/ 目录）
 Source: "..\dist\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -50,9 +54,9 @@ Source: "nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; 真实密钥的 config.yaml）。运行时 config 由应用首启 init_config_file 自动生成。
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchAppDirectly
@@ -95,6 +99,15 @@ begin
       { 使用 NSSM 注册服务（解决 PyInstaller 控制台程序无法满足 SCM 协议的问题） }
       Exec(ExpandConstant('{app}\nssm.exe'), 'install BtDeck "' + ExpandConstant('{app}\{#AppExeName}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppDirectory "' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      { 服务形态强制服务端模式：NSSM 启动的进程 SESSIONNAME 不一定是 "services"，
+        desktop_main 的桌面分支判定会误入 GUI 启动器（无头环境卡死、端口永不监听，
+        W3 CI 实测拦截）。服务永远不该弹桌面窗口。 }
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppEnvironmentExtra "BTDECK_DESKTOP_WINDOW=0"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      { 服务输出落盘：服务会话无控制台，stdout/stderr 不落盘则启动失败无从诊断
+        （W3 CI 实测：服务 Running 但端口不监听，无任何日志可查） }
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppStdout "' + ExpandConstant('{app}\logs\service-stdout.log') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppStderr "' + ExpandConstant('{app}\logs\service-stderr.log') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppRotateFiles 1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Description "BtDeck - BitTorrent Management Platform"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Start SERVICE_AUTO_START', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(ExpandConstant('{app}\nssm.exe'), 'start BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

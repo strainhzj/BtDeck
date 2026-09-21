@@ -1,0 +1,27 @@
+# W4 B2 受控下载器 stub 组合（release-artifact-equivalence-gate task .8 / G8）。
+#
+# 在 w4 测试组合网络上挂一个三监听 stub 容器，供 backend 容器内的 C05/C06
+# 场景以服务名 w4-stub 访问：
+#   18080 qB（C06 主夹具）  18081 Transmission（C06）  18082 qB（C05 专用，
+#   避开下载器缓存的 host:port 去重——delete 不清缓存，C05/C06 共端口会让
+#   C06 的下载器进不了缓存，本地双实例实证）
+# 与 docker-compose.w4-override.yml 叠加使用；stub 为纯 stdlib 单文件。
+#
+# 用法：
+#   docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
+#     -f scripts/release/lifecycle/docker-compose.w4-override.yml \
+#     -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
+services:
+  w4-stub:
+    image: python:3.11-slim
+    container_name: w4-stub
+    working_dir: /stub
+    volumes:
+      - ../../../scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro
+    command:
+      - sh
+      - -c
+      - python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait
+    networks:
+      - w3life_net
+    restart: unless-stopped

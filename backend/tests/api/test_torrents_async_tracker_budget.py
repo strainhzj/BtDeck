@@ -22,6 +22,8 @@ qB Tracker 有界队列与单轮预算测试（W3-1 第一部分 + 第二部分�
 10. 稳定排序：hash 乱序输入 → 处理顺序为字典序（续跑游标依赖）。
 11. Coordinator 预算透传：SyncRequest.deadline/record_budget 传给 qB tracker
     单轮预算；缺省（手动/定时共用）回落 settings 默认。
+12. producer 哨兵在队列满时重试，且所有哨兵丢失时 worker 仍能轮询自愈退出。
+13. enrich 被取消后 producer/worker 不遗留后台任务。
 
 设计依据：
 - asyncio_mode=auto（pytest.ini），异步测试直接 async def。
@@ -95,8 +97,15 @@ def _completion_log(mock_info):
 
 
 async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
-    """10k hash + worker_count=2：拉取期间活跃 asyncio 任务数 ≤ 4。"""
-    monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+    """10k hash + worker_count=2：拉取期间活跃 asyncio 任务数为固定上界，不随 hash 总量增长。
+
+    任务拓扑：当前协程 + 生产者(1) + worker(2)。Python 3.11 的 asyncio.wait_for 会为
+    每个在飞的 put/get 额外包一层 wrapper task（3.12 起改用 timeout 上下文不再创建）——
+    CI 跑 3.11（工具链锁定版本）采样到 6 属预期，本地 3.12 恒为 4；上界放行 wrapper
+    余量但保持固定常数（CI run 33765218992 实证 growth=6）。
+    """
+    worker_count = 2
+    monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", worker_count)
     monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**7)
     monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
 
@@ -114,9 +123,12 @@ async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
     with patch.object(torrents_async, "call_downloader_api", new=counting_wrapper):
         await torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_1")
 
-    # 活跃任务数 = 当前协程 + 生产者(1) + worker(2)，恒 ≤ 4，不随 hash 总量增长
-    assert max_seen["value"] <= 4
-    assert max_seen["value"] - baseline <= 3
+    growth = max_seen["value"] - baseline
+    # 设计拓扑（生产者+workers）+ 3.11 wait_for wrapper 余量（producer put + 每 worker get）
+    allowed_growth = worker_count + 1 + worker_count + 1
+    assert growth <= allowed_growth
+    # 不变量：10k hash 下仍是小固定常数，绝无随 hash 总量的任务增长
+    assert growth < 10
     # 无预算限制：全量拉取并写回
     assert fake_client.torrents_trackers.call_count == 10000
     assert all(t.trackers == [] for t in infos)
@@ -612,3 +624,292 @@ class TestCoordinatorBudgetPassthrough:
         fresh = await checkpoint_env.store.get_or_create("dl_001", "tracker")
         assert fresh["cursor"] is None
         assert fresh["last_full_sync_at"] is not None
+
+
+class TestSentinelLossSelfHealing:
+    """【2026-08-25 生产 cron-7-20260825223237 回归】producer 哨兵丢失自愈。
+
+    根因（双子代理验证定位）：producer 收尾放哨兵时队列恰被未消费 hash 占满
+    （worker 各挂在 30s 慢调用上不消费），首个哨兵 put 0.5s 超时即 break 丢弃
+    全部哨兵，worker 处理完后在 queue.get()（无超时）永久挂起——enrich 永不
+    返回、任务挂死 8.75h（叠加下载器级熔断前无强制取消）。修复双保险：
+    producer 哨兵 put 带总限重试 + worker get 超时轮询（producer done 且队列空
+    即退出）。若有人改回 break 丢弃哨兵或去掉轮询，本测试即挂起超时失败。
+    """
+
+    async def test_slow_fetch_sentinel_timeout_does_not_hang(self):
+        """确定性时序复现：fetch 0.8s > 哨兵 put 0.5s 窗口 → 首个哨兵 put
+        必超时（队列被 hash3/4 占满、两 worker 挂在 0.8s fetch 上）→ 修复后
+        enrich 仍正常收尾并打 Completed（修复前 worker 永久挂死）。"""
+        infos = _make_torrent_infos(4)
+
+        async def slow_fetch(downloader_id, lane, func, args=(), kwargs=None, timeout=None, operation=""):
+            await asyncio.sleep(0.8)  # > 0.5s：保证哨兵首个 put 在队列满时超时
+            raise asyncio.TimeoutError("simulated slow qb webui")
+
+        with (
+            patch.object(torrents_async, "call_downloader_api", new=slow_fetch),
+            patch.object(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.2),
+            patch.object(torrents_async.logger, "info") as mock_info,
+        ):
+            # 修复前：worker 挂在 queue.get()，15s wait_for 超时即测试失败
+            await asyncio.wait_for(
+                torrents_async._enrich_qb_torrents_with_trackers(MagicMock(), infos, "dl_sentinel_loss"),
+                timeout=15.0,
+            )
+
+        completed = _completion_log(mock_info)
+        assert "4 failed" in completed, f"4 个 hash 应全部计为失败: {completed}"
+
+    async def test_worker_polling_self_heals_when_all_sentinels_are_lost(self, fake_client, monkeypatch):
+        """独立验证 worker 轮询兜底：模拟 producer 的所有哨兵 put 都失败。
+
+        本用例不依赖 producer 的重试修复，直接让哨兵永远无法入队，并用隔离的
+        单调时钟让 producer 快速放弃 30 秒总限；worker 处理完正常任务后只能依靠
+        ``producer_task.done() + queue.empty()`` 退出。若删除 queue.get 超时轮询，
+        本用例会在外层 wait_for 超时。
+        """
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 1)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+        monkeypatch.setattr(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.01)
+
+        original_queue = torrents_async.asyncio.Queue
+        queues = []
+
+        class DropAllSentinelQueue(original_queue):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.sentinel_attempts = 0
+                queues.append(self)
+
+            async def put(self, item):
+                if item is None:
+                    self.sentinel_attempts += 1
+                    raise asyncio.TimeoutError("simulated lost sentinel")
+                return await super().put(item)
+
+        # 仅替换被测模块的 time 对象，避免改动 asyncio 事件循环使用的全局时钟。
+        clock_values = iter((0.0, 0.0, 31.0))
+
+        def fake_monotonic():
+            return next(clock_values, 31.0)
+
+        monkeypatch.setattr(torrents_async, "time", SimpleNamespace(monotonic=fake_monotonic))
+        monkeypatch.setattr(torrents_async.asyncio, "Queue", DropAllSentinelQueue)
+
+        infos = _make_torrent_infos(3)
+        await asyncio.wait_for(
+            torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_lost_all_sentinels"),
+            timeout=2.0,
+        )
+
+        assert len(queues) == 1
+        assert queues[0].sentinel_attempts == 1
+        assert fake_client.torrents_trackers.call_count == 3
+        assert all(t.trackers == [] for t in infos)
+
+    async def test_producer_retries_sentinel_until_each_worker_receives_one(self, fake_client, monkeypatch):
+        """独立验证 producer 重试层：前两次哨兵入队超时后仍为两个 worker 补齐哨兵。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+        monkeypatch.setattr(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.01)
+
+        original_queue = torrents_async.asyncio.Queue
+        queues = []
+
+        class FlakySentinelQueue(original_queue):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.sentinel_attempts = 0
+                self.accepted_sentinels = 0
+                queues.append(self)
+
+            async def put(self, item):
+                if item is None:
+                    self.sentinel_attempts += 1
+                    if self.sentinel_attempts <= 2:
+                        raise asyncio.TimeoutError("simulated full queue")
+                    self.accepted_sentinels += 1
+                return await super().put(item)
+
+        monkeypatch.setattr(torrents_async.asyncio, "Queue", FlakySentinelQueue)
+
+        infos = _make_torrent_infos(4)
+        await asyncio.wait_for(
+            torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_retry_sentinels"),
+            timeout=2.0,
+        )
+
+        assert len(queues) == 1
+        assert queues[0].sentinel_attempts == 4
+        assert queues[0].accepted_sentinels == 2
+        assert fake_client.torrents_trackers.call_count == 4
+
+    async def test_cancelled_enrichment_cleans_up_producer_and_workers(self, fake_client, monkeypatch):
+        """取消 enrich 后，固定控制任务全部结束，不遗留悬挂 worker/producer。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+
+        started = asyncio.Event()
+        baseline_tasks = set(asyncio.all_tasks())
+
+        async def hanging_call(*args, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        infos = _make_torrent_infos(10)
+        with patch.object(torrents_async, "call_downloader_api", new=hanging_call):
+            enrich_task = asyncio.create_task(
+                torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_cancelled")
+            )
+            # 断言对象是"无泄漏"而非取消时延：慢 runner 上清理（哨兵补齐重试+队列排空）
+            # 可能超过 1s（CI run 33765218992 实证），超时预算放宽到 5s
+            await asyncio.wait_for(started.wait(), timeout=5.0)
+            enrich_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(enrich_task, timeout=5.0)
+
+        await asyncio.sleep(0)
+        leaked_tasks = [task for task in asyncio.all_tasks() if task not in baseline_tasks and not task.done()]
+        assert not leaked_tasks, f"取消后不应遗留后台任务: {leaked_tasks}"
+
+
+# ==================== OOM 治理（2026-09-05）：fetch 分页化 + hash 轻对象 ====================
+
+
+def _paginated_qb_tracker_client(torrents, page_size, overlap=0):
+    """构造 limit/offset 分页感知的伪 qB 客户端（tracker-only fetch 分页化测试用）。
+
+    page_size 控制每页返回量（模拟远端对 limit 的尊重）；overlap 模拟翻页期间
+    种子集变动导致的页重叠——第 2 页起重复返回前一页末尾 overlap 个元素。
+    """
+    client = MagicMock()
+
+    def _torrents_info(*, limit=None, offset=0, **_kwargs):
+        start = max(0, offset - overlap)
+        end = start + limit if limit else None
+        return torrents[start:end]
+
+    client.torrents_info = MagicMock(side_effect=_torrents_info)
+    client.torrents_trackers = MagicMock(side_effect=_tracker_payload)
+    return client
+
+
+class TestQbTrackerFetchPagination:
+    """第 2 步 fetch 分页化（R2 OOM 治理）的调用形态与去重语义。
+
+    覆盖：
+    - torrents_info 以 limit/offset 分页调用，kwargs 不含 include_trackers/sort；
+    - 页重叠（增删期间 offset 漂移）由 hash 去重吸收，enrich 不重复拉取；
+    - 轻对象协议：进入 enrich 的对象仅含 hash（可变，enrich 在其上写标记）。
+    """
+
+    async def test_fetch_is_paginated_without_include_trackers(self, monkeypatch):
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        torrents = _make_torrent_infos(7)  # 7 个种子 → 3 页（3+3+1）
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=3)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_page", nickname="qb-page")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(
+                torrents_async,
+                "sync_trackers_batch_async",
+                new=AsyncMock(return_value={"insert": 0, "update": 1, "skip": 0, "removed": 0}),
+            ),
+        ):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        info_calls = fake_client.torrents_info.call_args_list
+        assert len(info_calls) == 3, f"7 种子 / 页 3 应翻 3 页，实际 {len(info_calls)}"
+        assert [c.kwargs.get("offset") for c in info_calls] == [0, 3, 6]
+        assert all(c.kwargs.get("limit") == 3 for c in info_calls)
+        for call in info_calls:
+            assert "include_trackers" not in call.kwargs, "tracker-only fetch 不需要 tracker 负载"
+            assert "sort" not in call.kwargs, "空库 + sort 会触发 qB BadParams"
+        fetched = {c.args[0] for c in fake_client.torrents_trackers.call_args_list}
+        assert fetched == {t.hash for t in torrents}
+        assert result["cycle_complete"] is True
+
+    async def test_page_overlap_deduped_by_hash(self, monkeypatch):
+        """翻页期间种子集变动导致页重叠 → hash 去重吸收，enrich 每 hash 恰一次。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        torrents = _make_torrent_infos(6)
+        # overlap=2：第 2 页从 offset-2 开始返回 → 与第 1 页重叠 2 个 hash
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=3, overlap=2)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_dup", nickname="qb-dup")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(
+                torrents_async,
+                "sync_trackers_batch_async",
+                new=AsyncMock(return_value={"insert": 0, "update": 1, "skip": 0, "removed": 0}),
+            ),
+        ):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        tracker_calls = [c.args[0] for c in fake_client.torrents_trackers.call_args_list]
+        assert len(tracker_calls) == len(set(tracker_calls)), "enrich 不得对重复 hash 重复拉取"
+        assert set(tracker_calls) == {t.hash for t in torrents}
+        assert result["cycle_complete"] is True
+
+    async def test_empty_library_breaks_after_first_page(self, monkeypatch):
+        """空库：首轮空页即 break（不传 sort 的空库 BadParams 规避依赖此路径）。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 3)
+
+        fake_client = _paginated_qb_tracker_client([], page_size=3)
+        downloader = BtDownloaders(downloader_id="dl_empty", nickname="qb-empty")
+        db = MagicMock()
+
+        with patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value={"h": 1})):
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        assert fake_client.torrents_info.call_count == 1
+        assert result["status"] == "success"
+        assert result["torrent_count"] == 0
+
+    async def test_enrich_receives_hash_only_mutable_objects(self, monkeypatch):
+        """轻对象协议：fetch 产出的对象仅含 hash 且可变（enrich 标记写回依赖）。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+        monkeypatch.setattr(torrents_async, "QB_BATCH_SIZE", 500)
+
+        captured: dict = {}
+
+        async def spy_enrich(client, infos, downloader_id, **kwargs):
+            captured["infos"] = list(infos)
+            return None, None
+
+        torrents = _make_torrent_infos(4)
+        fake_client = _paginated_qb_tracker_client(torrents, page_size=500)
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+        downloader = BtDownloaders(downloader_id="dl_spy", nickname="qb-spy")
+        db = MagicMock()
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(torrents_async, "_enrich_qb_torrents_with_trackers", new=spy_enrich),
+        ):
+            await torrents_async.qb_sync_trackers_only_async(db, downloader, fake_client)
+
+        infos = captured["infos"]
+        assert len(infos) == 4
+        for obj in infos:
+            assert set(vars(obj).keys()) == {
+                "hash"
+            }, f"fetch 阶段产出的轻对象应仅含 hash，实际携带: {set(vars(obj).keys())}"

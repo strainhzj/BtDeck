@@ -14,7 +14,7 @@
 
 满足任一条件即可进入止血流程：
 
-- `/health/ready` 返回 503，或 `/api/v1/health/sync` 报告同步任务 stale/offline/active 超时；
+- `/health/ready` 返回 503，或 `/api/v1/health/diagnosis` 的 `sync` 字段报告同步任务 stale/offline/active 超时；
 - 交互接口连续出现超时，或只读/写请求 P95 超过发布门（1s/2s）；
 - 日志出现 `SQLITE_BUSY`、`checkpoint_busy=true`、事件循环 lag 告警，且与同步运行窗口重合；
 - 同一下载器的 info 与 tracker 同时运行，或单轮处理量明显超过配置预算。
@@ -30,18 +30,20 @@ run_id 和观测结果写入值班记录。不要通过重启/删除 `app.db-wal
    ```text
    GET /health/live
    GET /health/ready
-   GET /api/v1/health/sync
+   GET /api/v1/health/diagnosis
    ```
 
-   保存响应中的 `reasonCodes`、任务 `outcome`/`freshness`、`activePhase`、checkpoint age、
-   downloader offline 告警以及 WAL/busy 事件。
+   诊断端点以 JSON 附件返回快照（含版本/构建身份、readiness 检查与同步业务健康），
+   curl 需加 `-o` 保存或直接查看响应体。保存响应中的 `reasonCodes`、`sync` 字段下任务
+   `outcome`/`freshness`、`activePhase`、checkpoint age、downloader offline
+   告警以及 WAL/busy 事件。
 
 3. 在定时任务页面或 API 中定位上述两个 `task_code`，记录 task id、enabled、下一次执行时间，
    然后分别调用暂停动作（路由形如 `POST /api/v1/cron-tasks/{task_id}/pause`）。暂停只阻止
    新一轮调度，不假定当前协程已经停止。
 4. 暂停人工“立即执行/重试”入口，通知相关操作人不要再次触发同步。若部署有多个 Worker，
    确认所有 Worker 的调度器均已暂停；临时将同步 Worker/并发降至 1，只作为止血措施。
-5. 每 10 秒检查一次 `/api/v1/health/sync` 和日志，直到 `activePhase` 清空、没有新增
+5. 每 10 秒检查一次 `/api/v1/health/diagnosis` 和日志，直到 `activePhase` 清空、没有新增
    `sync_batch_commit`，且 CRUD 探针恢复。若活动运行持续超过单轮 deadline，使用任务取消能力，
    记录“已提交批次保留、未提交批次丢弃”的结果。
 6. 只读记录 WAL 文件大小和 busy 状态；不执行 `PRAGMA wal_checkpoint(TRUNCATE)`，不手工复制/删除
@@ -72,7 +74,7 @@ run_id 和观测结果写入值班记录。不要通过重启/删除 `app.db-wal
 | checkpoint cursor | 每轮成功后单调前进 | 倒退、跨过未提交 hash 或连续 2 轮不变 |
 | freshness/stale | 在任务 SLA 内 | 超过 SLA 1 个周期，或 downloader offline |
 
-触发升级时保留：应用日志（含 `run_id`）、`/health/ready` 与 `/api/v1/health/sync` 响应、
+触发升级时保留：应用日志（含 `run_id`）、`/health/ready` 与 `/api/v1/health/diagnosis` 响应、
 WAL 快照、最近 30 轮基准 JSON、任务配置和数据库文件大小；交给后端值班人员分析，不在生产
 直接改表或迁移。
 

@@ -5,10 +5,11 @@
 
 ## 关键词速查
 
-### utils/（5 个文件）
+### utils/（6 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
+| 连通性探测 connectivity | `connectivity.py` | 统一下载器探测（dual-mode-client Phase 1.1）：loopback 短路→桌面可选 ICMP（失败/PermissionError 回退）→TCP connect 计时；安卓自动禁 ICMP。`probe_delay_sync`(L160)/`probe_delay`(L189)，被 downloader.py 与 initialization.py 复用 |
 | 审计日志 audit-logger | `audit_logger.py` | 🔵 审计日志系统：`_AuditLoggerSingleton`(L32)、`_AuditFormatter`(L283)、`_CompressingRotator`(L305 旧日志压缩)、`get_audit_logger`(L384)、`export_audit_logs_from_db_to_file`(L394) |
 | UTC 时间序列化 datetime-utils | `datetime_utils.py` | `serialize_utc_datetime`(L8)：将 DB 中 naive UTC DateTime 序列化为带显式 UTC 的 ISO-8601，供 API 响应模型共用 |
 | SM4 加密 encryption | `encryption.py` | 🔵 SM4 加密：`SM4Encryption`(L14) + 模块封装 `get_sm4_encryption`(L159)、`encrypt_password`(L167)、`decrypt_password`(L181)、`encrypt_tracker_url`(L195)、`decrypt_tracker_url`(L209) |
@@ -21,7 +22,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L262)：迁移未完成时在 seed/对账/调度器前 fail-fast；成功后对账孤儿隔离状态、终结残留 running 并恢复 queued 扫描/清理任务 |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L344)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L304) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控） |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程
@@ -61,11 +62,11 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **28 个** revision 文件；当前 head 为 `975dad435c03`（见下表） |
+| Alembic revisions versions | `versions/` | **31 个** revision 文件；当前 head 为 `d1e2f3a4b5c6`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（28 个迁移文件）
+### alembic/versions/（31 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -97,6 +98,9 @@
 | 强制改密 must-change-password | `ff42d3402df5_add_users_must_change_password.py` | 【可回滚】`users` 加 `must_change_password` 标志列（server_default '0'），downgrade 直接删列 |
 | 清理任务 IP purge-job-ip | `ab68fe061d5b_add_orphan_purge_job_ip_address.py` | 【可回滚】`orphan_purge_job` 新增 `ip_address`（nullable String(64)）：后台异步清理无 HTTP 上下文，任务提交时持久化提交端 IP、执行时透传审计；历史任务行保持 NULL |
 | 辅种数量 auxiliary-seed-count | `975dad435c03_add_auxiliary_seed_count.py` ✨2026-08-20 | 为 `torrent_info` 增加 NOT NULL Integer `auxiliary_seed_count`，历史行默认 1；upgrade/downgrade 仅增删该列，可回滚 |
+| 孤儿 Schema 漂移修复 orphan-schema-repair | `c1d2e3f4a5b6_repair_orphan_current_detail_id.py` ✨2026-08-23 | 针对版本号已到 `975dad435c03` 但 `orphan_current_candidate.current_detail_id` 实际缺失的存量库，重启时幂等补列、回填稳定明细指针与必要索引；健康库 no-op，受限回滚 |
+| 设置模板预设身份键 setting-template-preset-key | `d1e2f3a4b5c6_add_setting_template_preset_key.py` ✨2026-09-19 | setting_templates 加 `preset_key` 稳定身份列（可空+索引）+ 一次性按旧中文名回填（仅 is_system_default=1 恰一行时；歧义/用户同名保持 NULL 不猜，B02）；注意本表 `name` 带 UNIQUE 约束（uq_setting_templates_name）→ 无同名多行歧义，但用户占名时 init 必须跳过插入而不写 key；可回滚；桌面双语 P6-2 子范围，方案见 PLANS/bilingual/system-content.md §2 |
+| 预设身份键 preset-key | `b3e5f7a9c1d2_add_search_template_preset_key.py` ✨2026-09-21 | search_templates 加 `preset_key` 稳定身份列（可空+索引，不做唯一约束）+ 一次性按旧中文名回填（仅 is_default=1 恰一行时；歧义/用户同名保持 NULL 不猜，B02）；可回滚（drop 索引与列）；桌面双语 P4 子范围提前，方案见 PLANS/bilingual/system-content.md §1 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

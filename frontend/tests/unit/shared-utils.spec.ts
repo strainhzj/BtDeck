@@ -25,6 +25,7 @@ import {
   downloaderTypeToString,
   getDownloaderTypeLabel
 } from '@/utils/downloaderType'
+import { setLocale, default as i18n } from '@/i18n'
 import {
   getStatusIcon,
   getStatusText,
@@ -46,6 +47,11 @@ import { TorrentStatus } from '@/types/torrent'
 
 describe('共享格式化与规范化工具', () => {
   let warnSpy: jest.SpyInstance
+
+  // formatRelativeTime 文案已接 i18n（P1）：钉住中文，断言不随浏览器语言漂移
+  beforeAll(() => {
+    setLocale('zh-CN')
+  })
 
   beforeEach(() => {
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -357,10 +363,13 @@ describe('主题工具', () => {
     expect(callback).toHaveBeenCalledTimes(1)
   })
 
-  it('返回防御性主题列表和指定配置', () => {
+  it('返回防御性主题列表和指定配置（P6-5：name→nameKey，展示经 common.theme.* 键）', () => {
     const themes = getAllThemes()
     expect(themes).toHaveLength(3)
-    expect(getThemeConfig('emerald')).toMatchObject({ name: '翡翠绿' })
+    expect(getThemeConfig('emerald')).toMatchObject({ nameKey: 'common.theme.names.emerald' })
+    // zh 键与原内联中文逐字节一致（零回归）
+    expect(i18n.t('common.theme.names.emerald')).toBe('翡翠绿')
+    expect(i18n.t('common.theme.descriptions.emerald')).toBe('自然流动 + 稳定可靠 + 高效传输')
     themes.pop()
     expect(getAllThemes()).toHaveLength(3)
   })

@@ -5,27 +5,29 @@
 
 ## 关键词速查
 
-### services/ 根（47 个文件，不计 `__init__.py`）
+### services/ 根（49 个文件，不计 `__init__.py`）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1471 行，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
-| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
+| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1544 行实测 2026-09-21，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；搜索模板 CRUD ✨2026-09-21 双语 P4 错误契约：失败路径 result.data 携带 reasonCode（SEARCH_TEMPLATE_NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS/各操作 _FAILED），500 动态 str(e) msg 固定化；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
+| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数；✨2026-09-05 起注入 store+AuditContext，不再接收 FastAPI Request） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
-| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
+| 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
+| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
+| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
-| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1435 限量补齐种子文件备份 |
+| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
-| 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
+| 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查）；✨2026-09-21 双语 P4（E03）：版本更新通知 extra_data 补稳定 event=version_update 键（前端按事件本地化标题；历史通知无 event 原文展示） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L65 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L174 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1568 展开后独立分页，实时硬链接仅覆盖当前可见文件；`hardlink_copies=located` 筛选（候选身份 CAST join 结果表 `found_count>1`）list/grouped/children 三点透传；`delete_hardlink_copies` L856 弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + tombstone 三段式 + 审计）；手动操作审计带提交端 IP（2026-08-16 第二批：5 函数 ip_address 形参+租约递归透传）；超量扫描仅作为可关闭提醒 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；列表/硬链接/清理链路由 `orphan_files` 能力统一门禁，Android 主服务端不访问下载器目录；桌面端保留原有分批生命周期与 fail-closed 文件操作 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿文件夹分组 orphan-folder-group | `orphan_folder_grouping.py` | SQLite 自定义函数 `bt_orphan_parent_dir`（直接父目录提取），供折叠列表在 SQL 层 GROUP BY 聚合同父目录孤儿行，避免万级行拉进内存；aiosqlite 下查询前穿透 wrapper 显式注册（幂等） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `reconcile_candidates` L76 按 200 条分批查询/更新/current_detail 复用/resolved keyset，每批整体进入 `db_write_scope`；可清理查询亦分页 |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
-| 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
+| 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key）；✨2026-09-21 双语 P4（E03）：extra_data 补 orphan_count_warning 结构化标志（前端事件本地化还原护栏提示语义） |
 | 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放；job 行持久化提交端 IP 供后台审计，迁移 ab68fe061d5b） |
 | 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量提醒/兼容复核记录 |
 | 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举；`collect_runtime_accessible_roots` L312 按目标 `st_dev` 收集当前进程可访问挂载根（硬链接不跨文件系统），仅 `os.rmdir` 回收空目录 |
@@ -35,22 +37,22 @@
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
 | Tracker 重宣告 reannounce | `reannounce_service.py` | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | 回收站 recycle-bin | `recycle_bin_service.py` | 回收站服务（列表/还原/清理/批量/记录） |
-| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；验证成功 `_upsert_target_torrent_row` L803 立即落库目标行（与后续同步同一条），delete_source 成功 `_mark_source_row_transferred` L926 源行 dr=1 并维护辅种数量；source==target 服务层防御） |
+| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；成功后落库目标/源行）；`transfer_seed` L118 要求 `seed_transfer`，Android 主服务端不可用 |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
 | Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
-| 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |
+| 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、task/resource 生命周期事件、worker pid/instance 标识、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |
 | 配置模板 template | `template_service.py` | 配置模板服务（CRUD/验证/应用/冲突检测） |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete_service.py` | 跨下载器重复种子分类；预览排除活动删除 ID，提交阶段交由任务管理器原子占用 |
-| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取 |
+| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取；2026-09-06 锁治理：`_add_one_torrent` 顶部 rollback 结束上一轮 refresh 遗留读事务（WAL 陈旧快照跨网络调用会在 commit 升级时报 BUSY_SNAPSHOT、busy_timeout 无效），新增 `_insert_torrent_record_with_retry`（BUSY 5/517/518 有界重试 5 次、每次 rollback 后经 record_factory 重建实例防 expunge 静默丢 INSERT），失败串透传 sqlite_errorcode 供锁类型鉴别 |
 | 存量 added_date 回填 added-date-backfill | `torrent_added_date_backfill.py` | 对 torrent_info.added_date 为 NULL 的存量行按下载器分批拉取 added_on/addedDate 回填的后台任务（启动后 create_task、INFO_SYNC_STARTUP_BACKFILL_ENABLED 开关默认关闭；经 SYNC lane 分批执行不阻塞事件循环，下载器不可用跳过由 12h 全量快照兜底） |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
-| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签） |
+| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request） |
 | 辅种数量 auxiliary-seed-count | `auxiliary_seed_count_service.py` | 全局按 `name + size` 计算辅种数量；同步任务全量校正，删除/转移/还原按分组增量维护 |
 | 种子删除策略 torrent-delete | `torrent_deletion_service.py` | 种子删除服务（抽象基类 + 各下载器策略） |
-| 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理（协调 Repository 与文件操作）；`reconcile_missing_backups` L151 增量补齐缺失备份（限量批次、墓碑感知、幂等） |
+| 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理；`reconcile_missing_backups` L152 在 Android 返回 `disabled_by_capability`，所有公开入口要求 `torrent_backup`，同步旁路跳过远端文件备份 |
 | 种子路径修改 torrent-location | `torrent_location_service.py` | 种子保存路径修改（参数验证→取适配器→调 SDK） |
 | 种子元数据 hydrate torrent-meta | `torrent_metadata.py` | Torrent 元数据 hydrate（缓存连接补齐展示，不二次建连） |
 | ratio 规范化 torrent-ratio | `torrent_ratio_values.py` | ratio/ratio_limit 规范化（三态枚举 value/explicit_null/unavailable） |

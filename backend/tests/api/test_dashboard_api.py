@@ -105,7 +105,13 @@ async def _add_cron(async_db, *, task_code, task_status=0, dr=0, task_name="t"):
 
 
 async def _add_audit(
-    async_db, *, operation_type="add", operation_time=None, torrent_name=None, downloader_name=None, operation_detail=None
+    async_db,
+    *,
+    operation_type="add",
+    operation_time=None,
+    torrent_name=None,
+    downloader_name=None,
+    operation_detail=None,
 ):
     """插入审计日志行。operation_time 默认 now（让相对时间落到"秒前"分支便于断言）。"""
     log = TorrentAuditLog(
@@ -437,7 +443,7 @@ class TestCacheRead:
         assert r.json()["data"]["torrents"] == {"active": 10, "downloading": 4, "seeding": 6, "paused": 0}
 
     def test_downloader_list_construction(self, client):
-        """downloader_list 每项含 8 个键，status 由 fail_time 决定。"""
+        """downloader_list 每项含 9 个键，status 由 fail_time 决定。"""
         _set_store(
             client.app,
             [
@@ -448,6 +454,7 @@ class TestCacheRead:
                     downloader_type=1,
                     downloading_count=2,
                     seeding_count=3,
+                    paused_count=4,
                     download_speed=10,
                     upload_speed=5,
                 ),
@@ -474,17 +481,21 @@ class TestCacheRead:
             "status",
             "downloading",
             "seeding",
+            "paused",
             "download_speed",
             "upload_speed",
         }
         assert online["status"] == "online"
         assert online["downloading"] == 2
         assert online["seeding"] == 3
+        assert online["paused"] == 4
         # 缓存速度单位 KB/s → bytes/s（×1024）
         assert online["download_speed"] == 10 * 1024
         assert online["upload_speed"] == 5 * 1024
         offline = next(d for d in lst if d["downloader_id"] == "d2")
         assert offline["status"] == "offline"
+        # 无 paused_count 属性 → getattr 兜底 0
+        assert offline["paused"] == 0
 
     def test_downloader_list_empty_nickname_defaults_unknown(self, client):
         """nickname 为空 → 'Unknown'。"""
@@ -533,9 +544,10 @@ class TestCacheRead:
                     downloader_id="d1",
                     nickname="A",
                     downloader_type=1,
-                    torrent_stats={"downloading": 5, "seeding": 7},
+                    torrent_stats={"downloading": 5, "seeding": 7, "paused": 6},
                     downloading_count=99,  # 应被忽略
                     seeding_count=88,  # 应被忽略
+                    paused_count=77,  # 应被忽略
                 ),
             ],
         )
@@ -543,6 +555,7 @@ class TestCacheRead:
         item = r.json()["data"]["downloader_list"][0]
         assert item["downloading"] == 5, "torrent_stats 是 dict 时优先取 dict 值"
         assert item["seeding"] == 7
+        assert item["paused"] == 6
 
 
 # ==================== 组5：系统信息 ====================

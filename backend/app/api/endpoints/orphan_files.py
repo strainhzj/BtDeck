@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_async_db
 from app.services.audit_service import AuditLogService, extract_audit_info_from_request, get_audit_service
@@ -30,7 +31,16 @@ from app.services.orphan_scan_job_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["孤儿文件管理"])
+router = APIRouter(
+    tags=["孤儿文件管理"],
+    dependencies=[Depends(capability_dependency("orphan_files", "orphan_files.api"))],
+)
+
+
+# 双语 P6-4b 错误契约：失败路径 data.reasonCode 稳定标识（信封四字段不变，仅 data 新增字段），
+# 动态 str(e)/scan_id 只进日志；成功/部分成功 msg 携带的计数文案属 B03 数据，前端自行组文案。
+def _orphan_error(reason_code: str, msg: str, code: str) -> CommonResponse:
+    return CommonResponse(status="error", msg=msg, code=code, data={"reasonCode": reason_code})
 
 
 # ========== 请求/响应模型 ==========
@@ -165,7 +175,7 @@ async def get_latest_scan(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"获取最新扫描结果失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_LATEST_FAILED", "获取最新扫描结果失败，请稍后重试", "500")
 
 
 @router.get("/scans/{scan_id}", response_model=CommonResponse)
@@ -178,11 +188,11 @@ async def get_scan_status(
     try:
         result = await OrphanScanJobService(db).get_scan(scan_id)
         if result is None:
-            return CommonResponse(status="error", msg="扫描任务不存在", code="404", data=None)
+            return _orphan_error("ORPHAN_SCAN_NOT_FOUND", "扫描任务不存在", "404")
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error("查询孤儿扫描状态失败 scan_id=%s: %s", scan_id, e, exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_SCAN_STATUS_FAILED", "查询扫描状态失败，请稍后重试", "500")
 
 
 @router.post("/scans/{scan_id}/guardrail-review", response_model=CommonResponse)
@@ -202,11 +212,11 @@ async def review_scan_guardrail(
             note=req.note,
         )
         return CommonResponse(status="success", msg="安全护栏复核完成", code="200", data=result)
-    except ValueError as e:
-        return CommonResponse(status="error", msg=str(e), code="400", data=None)
+    except ValueError:
+        return _orphan_error("ORPHAN_GUARDRAIL_REVIEW_INCOMPLETE", "必须同时完成路径映射核查和孤儿样本核查", "400")
     except Exception as e:
         logger.error("复核孤儿扫描护栏失败 scan_id=%s: %s", scan_id, e, exc_info=True)
-        return CommonResponse(status="error", msg=f"复核失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_GUARDRAIL_REVIEW_FAILED", "复核失败，请稍后重试", "500")
 
 
 @router.get("/list", response_model=CommonResponse)
@@ -291,7 +301,7 @@ async def get_orphan_list(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询孤儿文件列表失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_LIST_FAILED", "查询孤儿文件列表失败，请稍后重试", "500")
 
 
 @router.get("/folders/children", response_model=CommonResponse)
@@ -326,7 +336,7 @@ async def get_orphan_folder_children(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error("查询孤儿文件夹子项失败 folder=%s: %s", folder_path, e, exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_FOLDER_CHILDREN_FAILED", "加载文件夹子项失败，请稍后重试", "500")
 
 
 @router.post("/hardlink-copies", response_model=CommonResponse)
@@ -346,7 +356,7 @@ async def get_hardlink_copy_locations(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询硬链接副本位置失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_HARDLINK_QUERY_FAILED", "查询硬链接副本位置失败，请稍后重试", "500")
 
 
 @router.post("/hardlink-copies/delete", response_model=CommonResponse)
@@ -374,6 +384,9 @@ async def delete_hardlink_copies(
         )
         if result.get("rejected"):
             msg = str(result.get("error") or "维护操作互斥，本次未执行删除")
+            return CommonResponse(
+                status="success", msg=msg, code="200", data={**result, "reasonCode": "ORPHAN_HARDLINK_DELETE_REJECTED"}
+            )
         elif result["failed_count"] > 0:
             msg = f"副本删除完成: 成功 {result['success_count']} 个，失败 {result['failed_count']} 个"
         else:
@@ -381,7 +394,7 @@ async def delete_hardlink_copies(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"删除硬链接副本失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"删除失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_HARDLINK_DELETE_FAILED", "删除硬链接副本失败，请稍后重试", "500")
 
 
 @router.post("/scan", response_model=CommonResponse)
@@ -401,7 +414,7 @@ async def trigger_manual_scan(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"手动扫描失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"扫描失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_SCAN_SUBMIT_FAILED", "扫描任务提交失败，请稍后重试", "500")
 
 
 @router.post("/cleanup-preview", response_model=CommonResponse)
@@ -419,7 +432,7 @@ async def cleanup_preview(
         return CommonResponse(status="success", msg="预览成功", code="200", data=result)
     except Exception as e:
         logger.error(f"清理预览失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"预览失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_CLEANUP_PREVIEW_FAILED", "清理预览失败，请稍后重试", "500")
 
 
 @router.post("/cleanup", response_model=CommonResponse)
@@ -456,7 +469,7 @@ async def cleanup_orphans(
         )
     except Exception as e:
         logger.error(f"提交主动清理任务失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"任务提交失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_CLEANUP_SUBMIT_FAILED", "清理任务提交失败，请稍后重试", "500")
 
 
 @router.post("/ignore", response_model=CommonResponse)
@@ -488,7 +501,7 @@ async def set_orphan_ignored(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"设置孤儿忽视态失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_IGNORE_FAILED", "设置忽视态失败，请稍后重试", "500")
 
 
 @router.post("/prefix-match-preview", response_model=CommonResponse)
@@ -509,7 +522,7 @@ async def prefix_match_preview(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"左匹配预览失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_PREFIX_PREVIEW_FAILED", "前缀匹配预览失败，请稍后重试", "500")
 
 
 @router.get("/quarantine", response_model=CommonResponse)
@@ -533,7 +546,7 @@ async def get_quarantine_list(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询隔离区列表失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_QUARANTINE_LIST_FAILED", "加载隔离区列表失败，请稍后重试", "500")
 
 
 @router.post("/restore", response_model=CommonResponse)
@@ -560,7 +573,7 @@ async def restore_quarantined(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"隔离区恢复失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_QUARANTINE_RESTORE_FAILED", "恢复失败，请稍后重试", "500")
 
 
 @router.post("/purge", response_model=CommonResponse)
@@ -594,7 +607,7 @@ async def purge_quarantine_now(
         )
     except Exception as e:
         logger.error(f"提交隔离区彻底删除任务失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"任务提交失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_PURGE_SUBMIT_FAILED", "彻底删除任务提交失败，请稍后重试", "500")
 
 
 @router.get("/purge-jobs/{task_id}", response_model=CommonResponse)
@@ -607,11 +620,11 @@ async def get_purge_job_status(
     try:
         job = await OrphanPurgeJobService(db).get_job(task_id)
         if job is None:
-            return CommonResponse(status="error", msg="任务不存在", code="404", data=None)
+            return _orphan_error("ORPHAN_PURGE_JOB_NOT_FOUND", "任务不存在", "404")
         return CommonResponse(status="success", msg="查询成功", code="200", data=job.to_dict())
     except Exception as e:
         logger.error(f"查询隔离区彻底删除任务失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_PURGE_JOB_QUERY_FAILED", "查询任务状态失败，请稍后重试", "500")
 
 
 @router.get("/cleanup-jobs/{task_id}", response_model=CommonResponse)
@@ -624,8 +637,8 @@ async def get_cleanup_job_status(
     try:
         job = await OrphanPurgeJobService(db).get_job(task_id)
         if job is None or (job.operation_type or "purge") != "cleanup":
-            return CommonResponse(status="error", msg="任务不存在", code="404", data=None)
+            return _orphan_error("ORPHAN_CLEANUP_JOB_NOT_FOUND", "任务不存在", "404")
         return CommonResponse(status="success", msg="查询成功", code="200", data=job.to_dict())
     except Exception as e:
         logger.error(f"查询主动清理任务失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+        return _orphan_error("ORPHAN_CLEANUP_JOB_QUERY_FAILED", "查询任务状态失败，请稍后重试", "500")

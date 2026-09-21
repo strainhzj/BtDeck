@@ -13,6 +13,7 @@ from sqlalchemy import Integer, String, case, cast as sql_cast, func, select, tr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.core.platform_capabilities import require_capability
 from app.models.orphan_purge_job import OrphanPurgeJob
 from app.services.notification_service import NotificationService
 from app.services.orphan_stats_cache import orphan_stats_cache
@@ -207,6 +208,7 @@ class OrphanPurgeJobService:
         self, canonical_paths: List[str], operator: str, ip_address: Optional[str] = None
     ) -> OrphanJobSubmission:
         """原子提交隔离区彻底删除任务；活动任务中的路径被跳过。"""
+        require_capability("orphan_files", "orphan_files.submit_purge")
         normalized_paths = list(dict.fromkeys(path for path in canonical_paths if path and path.strip()))
         if not normalized_paths:
             raise ValueError("至少需要一个有效的隔离区路径")
@@ -230,6 +232,7 @@ class OrphanPurgeJobService:
         self, scan_id: str, orphan_ids: List[int], operator: str, ip_address: Optional[str] = None
     ) -> OrphanJobSubmission:
         """原子提交主动清理任务；后台仍执行全部安全复核。"""
+        require_capability("orphan_files", "orphan_files.submit_cleanup")
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not scan_id or not scan_id.strip():
             raise ValueError("主动清理任务必须绑定有效的扫描批次")
@@ -497,6 +500,7 @@ class OrphanPurgeJobDispatcher:
 
     def submit(self, task_id: str) -> bool:
         """安排任务并立即返回；已安排的 task_id 不重复创建协程。"""
+        require_capability("orphan_files", "orphan_files.dispatch_purge")
         if self._closed:
             raise RuntimeError("孤儿彻底删除调度器已关闭")
         existing = self._tasks.get(task_id)
@@ -527,6 +531,7 @@ class OrphanPurgeJobDispatcher:
 
     async def recover_pending_jobs(self) -> Dict[str, int]:
         """启动恢复 pending/running 任务、补发通知并清理历史空目录。"""
+        require_capability("orphan_files", "orphan_files.recover_purge")
         async with self.session_factory() as db:
             service = OrphanPurgeJobService(db)
             pending_ids = await service.recover_interrupted_jobs()
@@ -549,6 +554,7 @@ class OrphanPurgeJobDispatcher:
 
     async def execute_job(self, task_id: str) -> None:
         """领取并执行单个任务，任务终态先落库再发送通知。"""
+        require_capability("orphan_files", "orphan_files.execute_purge")
         async with self._serial_lock:
             async with self.session_factory() as db:
                 job_service = OrphanPurgeJobService(db)

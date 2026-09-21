@@ -1,6 +1,9 @@
 {
-  "name": "Vue Typescript Admin",
-  "short_name": "Vue Ts Admin",
+  "name": "BtDeck",
+  "short_name": "BtDeck",
+  "description": "BitTorrent 客户端统一管理平台",
+  "lang": "zh-CN",
+  "dir": "ltr",
   "icons": [
     {
       "src": "./img/icons/android-chrome-192x192.png",
@@ -11,10 +14,18 @@
       "src": "./img/icons/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png"
+    },
+    {
+      "src": "./img/icons/android-chrome-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "start_url": "./index.html",
+  "scope": ".",
   "display": "standalone",
-  "background_color": "#fff",
-  "theme_color": "#4DBA87"
+  "orientation": "any",
+  "background_color": "#f5f7fa",
+  "theme_color": "#059669"
 }

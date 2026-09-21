@@ -114,7 +114,8 @@ import {
   ArrowDownAZ,
   ListFilter,
   WandSparkles,
-  ArrowLeft
+  ArrowLeft,
+  Smartphone
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -234,7 +235,8 @@ const ICONS: Record<string, unknown> = {
   'arrow-down-a-z': ArrowDownAZ,
   'list-filter': ListFilter,
   'wand-sparkles': WandSparkles,
-  'arrow-left': ArrowLeft
+  'arrow-left': ArrowLeft,
+  smartphone: Smartphone
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

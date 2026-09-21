@@ -56,6 +56,8 @@ app/config.yaml
 
 # qBittorrent RID缓存文件
 config/qb_rid_cache.json
+# 同步全量快照节奏标记（2026-09-05 移动端治理，运行态状态文件）
+config/full_sync_state.json
 
 # Logs
 *.log

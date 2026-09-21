@@ -6,19 +6,19 @@
     未来: 可能完全移除此组件
   -->
   <div class="advanced-settings-tab">
-    <!-- qBittorrent 专属设置 -->
+    <!-- {{ $t('downloader.advanced.qbSection') }} -->
     <div class="form-section">
       <div class="form-section-title">
-        qBittorrent 专属设置
+        {{ $t('downloader.advanced.qbSection') }}
         <span v-if="downloaderType === 0" class="capability-badge supported">
           <LucideIcon name="check" :size="13" />
-          已支持
+          {{ $t('downloader.advanced.supported') }}
         </span>
       </div>
 
       <div v-if="downloaderType === 0" class="settings-grid">
         <div v-for="field in qbittorrentFields" :key="field.key" class="setting-field">
-          <label class="field-label">{{ field.label }}</label>
+          <label class="field-label">{{ $t(field.labelKey) }}</label>
           <el-input-number
             v-model="formData[field.key]"
             :min="field.min"
@@ -26,27 +26,27 @@
             controls-position="right"
             style="width: 100%;"
           />
-          <p class="field-hint">{{ field.hint }}</p>
+          <p class="field-hint">{{ $t(field.hintKey) }}</p>
         </div>
       </div>
 
       <div v-else class="unsupported-hint">
         <LucideIcon name="info" :size="16" />
-        <span>当前下载器为 Transmission，qBittorrent 专属设置不可用。如需配置 qBittorrent 选项，请切换到 qBittorrent 下载器。</span>
+        <span>{{ $t('downloader.advanced.qbUnavailable') }}</span>
       </div>
     </div>
 
-    <!-- Transmission 专属设置 -->
+    <!-- {{ $t('downloader.advanced.trSection') }} -->
     <div class="form-section">
       <div class="form-section-title">
-        Transmission 专属设置
+        {{ $t('downloader.advanced.trSection') }}
         <span v-if="downloaderType === 1" class="capability-badge supported">
           <LucideIcon name="check" :size="13" />
-          已支持
+          {{ $t('downloader.advanced.supported') }}
         </span>
         <span v-else class="capability-badge unsupported">
           <LucideIcon name="circle-x" :size="13" />
-          不适用
+          {{ $t('downloader.advanced.notApplicable') }}
         </span>
       </div>
 
@@ -54,7 +54,7 @@
         <el-form label-width="180px">
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="下载队列大小">
+              <el-form-item :label="$t('downloader.advanced.downloadQueueSize')">
                 <el-input-number
                   v-model="formData.download_queue_size"
                   :min="1"
@@ -62,11 +62,11 @@
                   controls-position="right"
                   style="width: 100%;"
                 />
-                <p class="field-hint">同时下载的任务数量</p>
+                <p class="field-hint">{{ $t('downloader.advanced.downloadQueueHint') }}</p>
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="上传队列大小">
+              <el-form-item :label="$t('downloader.advanced.uploadQueueSize')">
                 <el-input-number
                   v-model="formData.seed_queue_size"
                   :min="1"
@@ -74,7 +74,7 @@
                   controls-position="right"
                   style="width: 100%;"
                 />
-                <p class="field-hint">同时上传（做种）的任务数量</p>
+                <p class="field-hint">{{ $t('downloader.advanced.uploadQueueHint') }}</p>
               </el-form-item>
             </el-col>
           </el-row>
@@ -83,16 +83,16 @@
 
       <div v-else class="unsupported-hint">
         <LucideIcon name="info" :size="16" />
-        <span>当前下载器为 qBittorrent，Transmission 专属设置不可用。如需配置 Transmission 选项，请切换到 Transmission 下载器。</span>
+        <span>{{ $t('downloader.advanced.trUnavailable') }}</span>
       </div>
     </div>
 
     <!-- 其他高级选项 -->
     <div class="form-section">
-      <div class="form-section-title">其他高级选项</div>
+      <div class="form-section-title">{{ $t('downloader.advanced.otherSection') }}</div>
       <div class="switches-grid">
         <div class="switch-item">
-          <span class="switch-label">启用 DHT 网络</span>
+          <span class="switch-label">{{ $t('downloader.advanced.enableDht') }}</span>
           <el-switch
             v-model="formData.dht_enabled"
             active-color="#059669"
@@ -100,7 +100,7 @@
           />
         </div>
         <div class="switch-item">
-          <span class="switch-label">启用 LSD (本地对等发现)</span>
+          <span class="switch-label">{{ $t('downloader.advanced.enableLsd') }}</span>
           <el-switch
             v-model="formData.lsd_enabled"
             active-color="#059669"
@@ -108,7 +108,7 @@
           />
         </div>
         <div class="switch-item">
-          <span class="switch-label">启用 uTP 协议</span>
+          <span class="switch-label">{{ $t('downloader.advanced.enableUtp') }}</span>
           <el-switch
             v-model="formData.utp_enabled"
             active-color="#059669"
@@ -152,48 +152,48 @@ export default class AdvancedSettingsTab extends Vue {
   private qbittorrentFields = [
     {
       key: 'max_connections',
-      label: '全局最大连接数',
-      hint: '同时连接的最大 Peer 数量',
+      labelKey: 'downloader.advanced.fields.globalMaxConnections',
+      hintKey: 'downloader.advanced.fields.globalMaxConnectionsHint',
       min: 1,
       max: 10000,
       default: 500
     },
     {
       key: 'max_connections_per_torrent',
-      label: '单任务最大连接数',
-      hint: '每个任务的最大连接数',
+      labelKey: 'downloader.advanced.fields.maxConnectionsPerTorrent',
+      hintKey: 'downloader.advanced.fields.maxConnectionsPerTorrentHint',
       min: 1,
       max: 1000,
       default: 100
     },
     {
       key: 'max_uploads',
-      label: '全局上传槽位',
-      hint: '同时上传的任务数量',
+      labelKey: 'downloader.advanced.fields.globalUploadSlots',
+      hintKey: 'downloader.advanced.fields.globalUploadSlotsHint',
       min: 1,
       max: 500,
       default: 50
     },
     {
       key: 'max_uploads_per_torrent',
-      label: '单任务上传槽位',
-      hint: '每个任务的上传槽位',
+      labelKey: 'downloader.advanced.fields.uploadSlotsPerTorrent',
+      hintKey: 'downloader.advanced.fields.uploadSlotsPerTorrentHint',
       min: 1,
       max: 100,
       default: 4
     },
     {
       key: 'max_download_slots',
-      label: '下载队列',
-      hint: '同时下载的任务数量',
+      labelKey: 'downloader.advanced.fields.downloadQueue',
+      hintKey: 'downloader.advanced.fields.downloadQueueHint',
       min: 1,
       max: 100,
       default: 10
     },
     {
       key: 'max_upload_slots',
-      label: '上传队列',
-      hint: '同时上传（做种）的任务数量',
+      labelKey: 'downloader.advanced.fields.uploadQueue',
+      hintKey: 'downloader.advanced.fields.uploadQueueHint',
       min: 1,
       max: 500,
       default: 50

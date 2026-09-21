@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/strainhzj/BtDeck/release/schemas/release-manifest.schema.json",
+  "title": "BtDeck release manifest",
+  "description": "发布清单（release-artifact-equivalence-gate G10）。审批与晋级的对象是本清单而非单个文件；由 scripts/release/verify_release_bundle.py 校验后进入签名与晋级。W1 定义 v1 骨架，W5 编排时填充并强制 digest 闭环。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "git_tag",
+    "git_sha",
+    "source_date_epoch",
+    "created_at",
+    "artifacts",
+    "evidence",
+    "verdict"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "product_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "git_tag": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_date_epoch": { "type": "integer", "minimum": 0 },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "build_id": { "type": ["string", "null"] },
+    "frontend_asset_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 6,
+      "description": "六个认证对象（windows-exe/windows-setup/linux-binary/linux-deb/linux-rpm/docker-backend/docker-frontend）逐一登记；linux-binary 允许标记 internal=true 不公开发布",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "sha256", "size_bytes", "internal"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "windows-exe",
+              "windows-setup",
+              "linux-binary",
+              "linux-deb",
+              "linux-rpm",
+              "docker-backend",
+              "docker-frontend"
+            ]
+          },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 1 },
+          "digest_ref": {
+            "type": ["string", "null"],
+            "description": "Docker 制品的 registry digest 引用（如 btdeck-backend@sha256:...），不以 latest 配对"
+          },
+          "build_info_sha256": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "制品内嵌 build-info.json 内容的 SHA256，跨制品比对用"
+          },
+          "signature": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "mechanism": { "enum": ["authenticode", "cosign", "none"] },
+              "signed_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "签名后文件的最终 SHA256" },
+              "status": { "enum": ["signed", "unsigned", "indeterminate"] }
+            }
+          },
+          "internal": { "type": "boolean" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "G0～G10 门禁证据索引；verify_release_bundle.py 要求每个 gate 都有条目",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate", "status", "path"],
+        "properties": {
+          "gate": {
+            "enum": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"]
+          },
+          "status": { "enum": ["PASS", "FAIL", "INDETERMINATE", "NOT_RUN"] },
+          "path": { "type": "string", "minLength": 1 },
+          "digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+          "waiver": {
+            "type": ["object", "null"],
+            "description": "限时豁免必须含编号/责任人/到期日（≤30天）；不可豁免项为 null",
+            "properties": {
+              "id": { "type": "string" },
+              "owner": { "type": "string" },
+              "expires": { "type": "string", "format": "date" },
+              "target_version": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "compose": {
+      "type": ["object", "null"],
+      "description": "Docker 发布组合：digest 固定配对，禁止 latest",
+      "additionalProperties": false,
+      "properties": {
+        "backend_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "frontend_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "compose_file": { "type": "string" }
+      }
+    },
+    "verdict": {
+      "enum": ["CERTIFIED", "REJECTED", "INDETERMINATE"],
+      "description": "最终结论只能三选一；INDETERMINATE 不得发布"
+    },
+    "approver": { "type": ["string", "null"] },
+    "approved_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

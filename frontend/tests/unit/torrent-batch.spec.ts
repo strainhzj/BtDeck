@@ -8,7 +8,6 @@
  */
 import {
   groupTorrentsByDownloader,
-  deleteTorrentsBatch,
   runBatchAction,
   sortByActive,
   deriveVisibleTorrentList,
@@ -19,6 +18,7 @@ import {
   hasTrackerError,
   showTrackerErrorTag,
   getTorrentErrorReason,
+  countMatchedTrackerRows,
   assertSameDownloader,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -27,9 +27,16 @@ import {
   parseDeleteTaskResult,
   parseSyncDeleteResponse,
   buildSpeedSnapshot,
-  needsActiveSnapshotRefresh
+  needsActiveSnapshotRefresh,
+  collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker,
+  TerminalReloadTracker,
+  isTorrentRowEffectivelyComplete
 } from '@/views/torrents/utils/torrentBatch'
 import type { AdvancedSearchRequest } from '@/api/torrents'
+import { setLocale } from '@/i18n'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
 
@@ -56,60 +63,6 @@ describe('Bug#1/Bug#4 - groupTorrentsByDownloader', () => {
     const groups = groupTorrentsByDownloader(torrents as any)
     expect(Object.keys(groups)).toEqual(['dl1'])
     expect(groups.dl1.length).toBe(1)
-  })
-})
-
-describe('Bug#1 - deleteTorrentsBatch 计数契约', () => {
-  it('逐种子统计成功/失败数（而非下载器ID字符串长度）', async() => {
-    // 防回归 Bug#1：原 bug 是 Object.keys(groups)[index].length（ID 字符串长度），
-    // 这里 mock 让全部成功，断言 successCount 等于种子数而非 ID 长度。
-    const deleteFn = jest.fn().mockResolvedValue({ code: '200' })
-
-    // 用长 ID（dl_long_001）确保计数不是字符串长度
-    const torrents = [
-      { info_id: 'i1', downloader_id: 'dl_long_001', hash: 'h1' },
-      { info_id: 'i2', downloader_id: 'dl_long_001', hash: 'h2' },
-      { info_id: 'i3', downloader_id: 'dl_long_002', hash: 'h3' }
-    ]
-    const result = await deleteTorrentsBatch(torrents, 1, deleteFn)
-
-    expect(result.successCount).toBe(3) // 种子数，不是 ID 长度
-    expect(result.failCount).toBe(0)
-    expect(result.deletedTorrents.length).toBe(3)
-  })
-
-  it('部分失败时收集错误信息', async() => {
-    const deleteFn = jest.fn()
-      .mockResolvedValueOnce({ code: '200' })
-      .mockRejectedValueOnce({ response: { data: { msg: '下载器离线' } } })
-
-    const torrents = [
-      { info_id: 'i1', downloader_id: 'dl1', hash: 'h1' },
-      { info_id: 'i2', downloader_id: 'dl2', hash: 'h2' }
-    ]
-    const result = await deleteTorrentsBatch(torrents, 0, deleteFn)
-
-    expect(result.successCount).toBe(1)
-    expect(result.failCount).toBe(1)
-    expect(result.errors).toContain('下载器离线')
-    expect(result.deletedTorrents.length).toBe(1)
-  })
-
-  it('防回归 Bug#4：调用参数为 info_id/delete_data/id_recycle（非 hashes/deleteData）', async() => {
-    // 后端 delete_torrent 只接受 info_id / delete_data / id_recycle，
-    // 不识别 hashes / deleteData。锁定调用契约。
-    const deleteFn = jest.fn().mockResolvedValue({ code: '200' })
-    const torrents = [{ info_id: 'i1', downloader_id: 'dl1', hash: 'h1' }]
-    await deleteTorrentsBatch(torrents, 1, deleteFn)
-
-    const callArg = deleteFn.mock.calls[0][0]
-    expect(callArg).toHaveProperty('info_id', 'i1')
-    expect(callArg).toHaveProperty('downloader_id', 'dl1')
-    expect(callArg).toHaveProperty('delete_data', 1)
-    expect(callArg).toHaveProperty('id_recycle', 1)
-    // 确保没有错误的参数名
-    expect(callArg).not.toHaveProperty('hashes')
-    expect(callArg).not.toHaveProperty('deleteData')
   })
 })
 
@@ -483,6 +436,38 @@ describe('hasTrackerError / showTrackerErrorTag / getTorrentErrorReason', () => 
     expect(
       getTorrentErrorReason({ status: 'error', hasTrackerError: true, errorReason: '403' } as never)
     ).toBe('403')
+  })
+})
+
+// ============ tracker 域名筛选命中标记契约 ============
+
+describe('countMatchedTrackerRows - tracker 域名筛选命中标记统计', () => {
+  it('统计含 matched_domain / matchedDomain 的 tracker 行所在种子数，snake/camel 双读', () => {
+    const torrents = [
+      {
+        tracker_info: [
+          { tracker_url: 'https://a.example/announce', matched_domain: 'a.example' },
+          { tracker_url: 'https://b.example/announce' }
+        ]
+      },
+      { trackerInfo: [{ trackerUrl: 'https://b.example/announce' }] },
+      {
+        trackerInfo: [
+          { trackerUrl: 'https://c.example/announce', matchedDomain: 'c.example' },
+          { trackerUrl: 'https://d.example/announce', matchedDomain: 'd.example' }
+        ]
+      },
+      {}
+    ] as never[]
+
+    // 第 1/3 行命中（第 3 行两个 tracker 都带标记也只计 1 行），第 2/4 行不命中
+    expect(countMatchedTrackerRows(torrents)).toBe(2)
+  })
+
+  it('空 tracker 列表与 null/undefined 种子不计数、不抛错', () => {
+    expect(countMatchedTrackerRows([])).toBe(0)
+    expect(countMatchedTrackerRows([null, undefined])).toBe(0)
+    expect(countMatchedTrackerRows([{ tracker_info: [] }, { trackerInfo: [] }] as never[])).toBe(0)
   })
 })
 
@@ -912,6 +897,278 @@ describe('P2 - parseSyncDeleteResponse', () => {
   })
 })
 
+// ============ 双语 P5：四级删除文案按等级独立成键（R01～R04 三要素） ============
+
+describe('P5 - buildDeleteConfirmMessage 双语契约', () => {
+  afterEach(() => {
+    setLocale('zh-CN')
+  })
+
+  it('zh 值与原内联文案逐字节一致（零回归）', () => {
+    setLocale('zh-CN')
+    expect(buildDeleteConfirmMessage(1, 1)).toBe('警告：此操作将完全删除，是否继续？')
+    expect(buildDeleteConfirmMessage(2, 1)).toBe('确定要将种子删除任务（保留数据）吗？')
+    expect(buildDeleteConfirmMessage(3, 1)).toBe('警告：此操作将移至回收站，是否继续？')
+    expect(buildDeleteConfirmMessage(4, 1)).toBe('确定要将种子标记为待删除吗？')
+    expect(buildDeleteConfirmMessage(1, 5)).toBe('确定要将选中的 5 个种子完全删除吗？')
+    expect(buildDeleteConfirmMessage(3, 3)).toBe('确定要将选中的 3 个种子移至回收站吗？')
+  })
+
+  it('en 按等级完整句式（等级号 + 对象 + 不可恢复性）', () => {
+    setLocale('en')
+    const l1 = buildDeleteConfirmMessage(1, 1)
+    expect(l1).toContain('Level 1')
+    expect(l1).toContain('cannot be undone')
+    expect(l1.toLowerCase()).toContain('data files')
+
+    const l2 = buildDeleteConfirmMessage(2, 1)
+    expect(l2).toContain('Level 2')
+    expect(l2.toLowerCase()).toContain('data files will be kept')
+
+    const l3 = buildDeleteConfirmMessage(3, 2)
+    expect(l3).toContain('Level 3')
+    expect(l3).toContain('2')
+    expect(l3.toLowerCase()).toContain('recycle bin')
+
+    const l4 = buildDeleteConfirmMessage(4, 2)
+    expect(l4).toContain('Level 4')
+    expect(l4.toLowerCase()).toContain('pending deletion')
+    expect(l4.toLowerCase()).toContain('nothing is removed')
+  })
+
+  it('未知等级回退 generic 键（防御分支）', () => {
+    expect(buildDeleteConfirmMessage(9, 1)).toBe('确定要将种子删除吗？')
+    setLocale('en')
+    expect(buildDeleteConfirmMessage(9, 2)).toContain('Are you sure')
+  })
+})
+
+describe('P5 - 删除结果文案名称拼接随语言切换', () => {
+  afterEach(() => {
+    setLocale('zh-CN')
+  })
+
+  it('zh 用顿号拼接失败项名称，en 用逗号', () => {
+    setLocale('zh-CN')
+    const zh = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 2,
+      failed_items: [{ info_id: 'i1' }, { info_id: 'i2' }]
+    }, [{ info_id: 'i1', name: '甲' }, { info_id: 'i2', name: '乙' }])
+    expect(zh.failedDetail).toContain('甲、乙')
+
+    setLocale('en')
+    const en = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 2,
+      failed_items: [{ info_id: 'i1' }, { info_id: 'i2' }]
+    }, [{ info_id: 'i1', name: '甲' }, { info_id: 'i2', name: '乙' }])
+    expect(en.failedDetail).toContain('甲, 乙')
+    expect(en.failedDetail).not.toContain('、')
+  })
+
+  it('taskFailed 未知错误复用 addDialog.msg.unknownError 键', () => {
+    setLocale('zh-CN')
+    const r = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 1, error_message: ''
+    }, [])
+    expect(r.message).toBe('批量删除失败：未知错误')
+    setLocale('en')
+    const r2 = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 1, error_message: ''
+    }, [])
+    expect(r2.message).toBe('Batch deletion failed: Unknown error')
+  })
+})
+
+// ============ 等级3文件缺失提醒：未找到种子文件时跳过文件操作直接入回收站 ============
+// 后端契约：level3 删除成功但文件缺失时 data.level3_file_missing 携带
+// [{torrent_id, torrent_name}]；异步任务 results 每项 {info_id, result} 中
+// result.file_missing=true 标记该种子。前端负责转成提醒文案（$notify 展示）。
+
+describe('等级3文件缺失提醒 - parseSyncDeleteResponse', () => {
+  it('level3_file_missing 非空 → success 主提示带计数 + fileMissingDetail 列出名称', () => {
+    const data = {
+      level3_success: ['t1', 't2'],
+      level3_file_missing: [
+        { torrent_id: 't1', torrent_name: '幽灵种子A' },
+        { torrent_id: 't2', torrent_name: '幽灵种子B' }
+      ]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('2 个未找到文件')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+    expect(r.fileMissingDetail).toContain('幽灵种子B')
+    expect(r.fileMissingDetail).toContain('已跳过文件操作直接移入回收站')
+  })
+
+  it('level3_file_missing 超5个 → fileMissingDetail 带"等N个"', () => {
+    const missing = Array.from({ length: 7 }, (_, i) => ({
+      torrent_id: `t${i}`, torrent_name: `种子${i}`
+    }))
+    const r = parseSyncDeleteResponse({ level3_success: ['t0'], level3_file_missing: missing }, 3)
+    expect(r.fileMissingDetail).toContain('等7个')
+  })
+
+  it('无 level3_file_missing → fileMissingDetail 为 null，主提示保持原样', () => {
+    const r = parseSyncDeleteResponse({ level3_success: ['t1'] }, 3)
+    expect(r.fileMissingDetail).toBeNull()
+    expect(r.message).toBe('等级3删除成功 1 个')
+  })
+
+  it('等级2响应不受影响 → fileMissingDetail 为 null', () => {
+    const r = parseSyncDeleteResponse({ level2_success: [{}] }, 2)
+    expect(r.fileMissingDetail).toBeNull()
+  })
+})
+
+describe('等级3文件缺失提醒 - parseDeleteTaskResult', () => {
+  it('completed 且 results 含 file_missing → 主提示带计数 + fileMissingDetail', () => {
+    const taskData = {
+      status: 'completed',
+      success_count: 2,
+      failed_count: 0,
+      failed_items: [],
+      results: [
+        { info_id: 't1', result: { success: true, file_missing: true, torrent_name: '幽灵种子A' } },
+        { info_id: 't2', result: { success: true, file_missing: false, torrent_name: '正常种子' } }
+      ]
+    }
+    const r = parseDeleteTaskResult(taskData, [])
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('1 个未找到文件')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+    expect(r.fileMissingDetail).not.toContain('正常种子')
+  })
+
+  it('completed 无 results / 无 file_missing → fileMissingDetail 为 null 且主提示原样', () => {
+    const r = parseDeleteTaskResult({
+      status: 'completed', success_count: 5, failed_count: 0, failed_items: []
+    }, [])
+    expect(r.fileMissingDetail).toBeNull()
+    expect(r.message).not.toContain('未找到文件')
+  })
+
+  it('failed → fileMissingDetail 为 null', () => {
+    const r = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 3, error_message: '下载器离线',
+      results: [{ info_id: 't1', result: { file_missing: true, torrent_name: '幽灵种子A' } }]
+    }, [])
+    expect(r.fileMissingDetail).toBeNull()
+  })
+
+  it('partial + results 含 file_missing → fileMissingDetail 保留（与 failedDetail 并存）', () => {
+    const r = parseDeleteTaskResult({
+      status: 'partial', success_count: 1, failed_count: 1,
+      failed_items: [{ info_id: 'i1' }],
+      results: [
+        { info_id: 't1', result: { file_missing: true, torrent_name: '幽灵种子A' } },
+        { info_id: 't2', result: { success: true, torrent_name: '正常种子' } }
+      ]
+    }, [{ info_id: 'i1', name: '失败种子' }])
+    expect(r.type).toBe('warning')
+    expect(r.failedDetail).toContain('失败种子')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+})
+
+describe('等级3文件缺失提醒 - 并存场景', () => {
+  it('降级与文件缺失并存 → downgradeDetail 与 fileMissingDetail 同时输出', () => {
+    const data = {
+      level3_success: [],
+      level4_downgraded: [{ torrent_name: '备份失败种子' }],
+      level3_file_missing: [{ torrent_id: 't1', torrent_name: '幽灵种子A' }]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('warning')
+    expect(r.downgradeDetail).toContain('降级为等级4')
+    // 降级分支 return 也必须透传 fileMissingDetail
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+
+  it('部分失败与文件缺失并存 → failed 提示 + fileMissingDetail 保留', () => {
+    const data = {
+      level3_success: ['t1'],
+      level3_file_missing: [{ torrent_id: 't1', torrent_name: '幽灵种子A' }],
+      failed: [{ torrent_id: 't2', message: 'move failed' }]
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('warning')
+    expect(r.message).toContain('失败 1')
+    expect(r.fileMissingDetail).toContain('幽灵种子A')
+  })
+})
+
+// ============ 等级3文件缺失提醒：源码契约（展示层接线） ============
+// 行为契约锁纯函数；此处锁「接线」——mixin 必须把 fileMissingDetail 发成通知，
+// utils 必须读后端约定的字段名。丢接线时行为测试不红（纯函数仍正确），
+// 只有源码契约能拦住「解析了但没展示」「字段名对不上」这类静默失效。
+
+describe('等级3文件缺失提醒 - 源码接线契约', () => {
+  const utilsSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/utils/torrentBatch.ts'),
+    'utf-8'
+  )
+  const mixinSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/mixins/torrentBatch.ts'),
+    'utf-8'
+  )
+
+  it('utils 解析后端契约字段：同步 level3_file_missing / 异步 result.file_missing', () => {
+    expect(utilsSource).toContain('data?.level3_file_missing')
+    expect(utilsSource).toContain('result?.file_missing')
+  })
+
+  it('两解析结果接口均声明 fileMissingDetail 字段', () => {
+    // 3 = ParsedSyncDeleteResult 接口 + ParsedDeleteTaskResult 接口 + parseSyncDeleteResponse 局部声明
+    expect(utilsSource.match(/fileMissingDetail: string \| null/g)?.length).toBe(3)
+  })
+
+  it('mixin 单删与批量轮询两处都发文件缺失提醒通知（双语 P5：标题走 i18n 键）', () => {
+    expect(mixinSource.match(/if \(parsed\.fileMissingDetail\)/g)?.length).toBe(2)
+    // 双语 P5：标题由硬编码中文改为 translate 键，禁止中文硬编码回流
+    expect(mixinSource.match(/translate\('torrent\.deleteLevel\.notify\.fileMissingTitle'\)/g)?.length).toBe(2)
+    expect(mixinSource).not.toContain("title: '文件缺失提醒'")
+  })
+})
+
+// ============ 双语 P5：删除链路收敛与死代码清理源码契约 ============
+
+describe('P5 - 删除链路收敛源码契约', () => {
+  const mixinSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/mixins/torrentBatch.ts'),
+    'utf-8'
+  )
+  const indexSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/index.vue'),
+    'utf-8'
+  )
+  const traditionalSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/TraditionalView.vue'),
+    'utf-8'
+  )
+
+  it('两视图删除命令均挂载 mixin 方法（本地重复链路已删）', () => {
+    expect(indexSource).toContain('@command="handleBatchDeleteByLevelCommand"')
+    expect(indexSource).toContain('@command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"')
+    expect(traditionalSource).toContain('@command="handleBatchDeleteByLevelCommand"')
+    expect(traditionalSource).toContain('@command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"')
+  })
+
+  it('legacy 双问删除死代码不回流（两视图）', () => {
+    for (const src of [indexSource, traditionalSource]) {
+      expect(src).not.toContain('是否同时删除')
+      expect(src).not.toContain('仅删除种子，保留数据')
+      expect(src).not.toContain('callDeleteLegacyAPI')
+      expect(src).not.toContain('deleteTorrentsInternal')
+    }
+  })
+
+  it('mixin 错误提示优先 reasonCode 本地化（apiResponseMessage），禁中文 msg 直读', () => {
+    expect(mixinSource.match(/apiResponseMessage\(/g)?.length).toBeGreaterThanOrEqual(4)
+    expect(mixinSource).not.toContain("response.msg || '")
+  })
+})
+
 // ============ commit 466e18c：速度快照构建契约 ============
 // 锁定 loadActiveSpeed 抽出的 buildSpeedSnapshot 纯函数。
 // 核心：空数组 [] 是 truthy，code='200' + data=[] 时仍 ready=true——这是
@@ -955,7 +1212,7 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     expect(r.updates).toEqual([])
   })
 
-  it('code=206（部分下载器失败）→ ready=false，视图保留旧速度快照', () => {
+  it('code=206（部分下载器失败）→ ready=false 但应用可用增量', () => {
     const res = {
       code: '206',
       status: 'partial',
@@ -964,8 +1221,9 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     }
     const r = buildSpeedSnapshot(res)
     expect(r.ready).toBe(false)
-    expect(r.activeSpeedMap).toBeNull()
-    expect(r.updates).toEqual([])
+    expect(r.partial).toBe(true)
+    expect(r.activeSpeedMap?.partial).toEqual({ downloadSpeed: 10, uploadSpeed: 0, progress: 5 })
+    expect(r.updates).toHaveLength(1)
   })
 
   it('data 为 null → ready=false', () => {
@@ -1026,6 +1284,382 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     expect(r.updates.map(update => update.downloaderId)).toEqual(['dl-a', 'dl-b'])
     expect(r.count).toBe(2)
   })
+
+  it('终态证据强制进度为100，并保留归一化状态', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        {
+          hash: 'done', downloader_id: 'dl-a', downloadSpeed: 0, uploadSpeed: 0,
+          progress: 98.7, status: 'seeding', downloadComplete: true
+        }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      hash: 'done', progress: 100, status: 'seeding', downloadComplete: true
+    })
+  })
+
+  it('只有完成证据没有状态时也补齐 completed，避免列表继续显示 downloading', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'done-without-status', progress: 99.5, downloadComplete: true }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      hash: 'done-without-status', progress: 100, status: 'completed', downloadComplete: true
+    })
+  })
+
+  it.each([
+    'completed',
+    'seeding',
+    'stalledUP',
+    'queuedUP',
+    'uploading',
+    'forcedUP',
+    'pausedUP',
+    'checkingUP',
+    'seed pending'
+  ])('旧服务端未返回完成标记时，终态 %s 仍收敛到 100%%', (status) => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: `done-${status}`, progress: 91.25, status }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      progress: 100,
+      status,
+      downloadComplete: true
+    })
+  })
+
+  it('显式未完成优先于终态字符串，避免旧状态把 99% 误抬成 100%', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'not-done', progress: 99.4, status: 'seeding', downloadComplete: false }
+      ]
+    })
+    expect(r.updates[0]).toEqual({
+      hash: 'not-done',
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      progress: 99.4,
+      status: 'seeding'
+    })
+  })
+
+  it('100% 进度优先于滞后的 downloading/显式 false，并归一为 completed', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'progress-done', progress: 100, status: 'downloading', downloadComplete: false }
+      ]
+    })
+    expect(r.updates[0]).toMatchObject({
+      progress: 100,
+      status: 'completed',
+      downloadComplete: true
+    })
+  })
+
+  it('异常数值不会生成 NaN/Infinity 或越界进度', () => {
+    const r = buildSpeedSnapshot({
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'nan', downloadSpeed: Number.NaN, uploadSpeed: Number.POSITIVE_INFINITY, progress: Number.NaN },
+        { hash: 'negative', progress: -4 },
+        { hash: 'overflow', progress: 100.01 }
+      ]
+    })
+    expect(r.updates).toEqual([
+      { hash: 'nan', downloadSpeed: 0, uploadSpeed: 0, progress: 0 },
+      { hash: 'negative', downloadSpeed: 0, uploadSpeed: 0, progress: 0 },
+      {
+        hash: 'overflow', downloadSpeed: 0, uploadSpeed: 0,
+        progress: 100, status: 'completed', downloadComplete: true
+      }
+    ])
+  })
+})
+
+describe('实时列表成员自愈', () => {
+  const visible = [{ hash: 'visible', downloader_id: 'dl-a' }]
+  const update = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 1024,
+    uploadSpeed: 0,
+    progress: 25
+  })
+
+  it('首个完整快照只建立分页外活动键基线，后续新键才触发刷新', () => {
+    const tracker = new RuntimeListMembershipTracker()
+
+    expect(tracker.observe(visible, [update('old-off-page')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page'), update('newly-added')], true)).toEqual([
+      'speed:dl-a:newly-added'
+    ])
+    expect(tracker.observe(visible, [update('old-off-page'), update('newly-added')], true)).toEqual([])
+  })
+
+  it('206 部分快照只增量合并基线，不会让同一未知键反复触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    tracker.observe(visible, [update('old-off-page')], true)
+
+    expect(tracker.observe(visible, [update('new-partial')], false)).toEqual([
+      'speed:dl-a:new-partial'
+    ])
+    expect(tracker.observe(visible, [update('new-partial')], false)).toEqual([])
+    expect(tracker.observe(visible, [update('old-off-page'), update('new-partial')], true)).toEqual([])
+  })
+
+  it('同 hash 按下载器复合键区分，当前列表已经存在的行不算未知', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    const sameHashVisible = [{ hash: 'same', downloader_id: 'dl-a' }]
+    tracker.observe(sameHashVisible, [update('same', 'dl-a'), update('same', 'dl-b')], true)
+
+    expect(tracker.observe(
+      sameHashVisible,
+      [update('same', 'dl-a'), update('same', 'dl-b'), update('same', 'dl-c')],
+      true
+    )).toEqual(['speed:dl-c:same'])
+  })
+
+  it('权威刷新纳入新行后重新建基线，不再重复刷新并可继续更新进度', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    tracker.observe(visible, [], true)
+    const newUpdate = update('newly-added')
+
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual(['speed:dl-a:newly-added'])
+    tracker.rebaseline([...visible, { hash: 'newly-added', downloader_id: 'dl-a' }], [newUpdate])
+    expect(tracker.observe(
+      [...visible, { hash: 'newly-added', downloader_id: 'dl-a' }],
+      [newUpdate],
+      true
+    )).toEqual([])
+  })
+
+  it('快照抖动：掉出一轮再回来（宽限期内）不判为新键', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('flap')], true)
+    // 完整快照轮缺席：基线被替换（模拟补查退避缺席）
+    expect(tracker.observe(visible, [], true)).toEqual([])
+    now += 5_000
+    // 5 秒后回来：滞回宽限（30s）内，判为快照抖动而非新成员
+    expect(tracker.observe(visible, [update('flap')], true)).toEqual([])
+    expect(tracker.observe(visible, [update('flap')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('离开超过滞回宽限（30s）后回来才重新判为新键', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('long-gone')], true)
+    expect(tracker.observe(visible, [], true)).toEqual([])
+    now += 31_000
+    expect(tracker.observe(visible, [update('long-gone')], true)).toEqual(['speed:dl-a:long-gone'])
+
+    nowSpy.mockRestore()
+  })
+
+  it('滞回边界：掉出后 29_999ms 回归不触发，恰好 30_000ms 回归触发（>= 语义）', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('edge-b')], true)
+    tracker.observe(visible, [], true)
+    now += 29_999
+    expect(tracker.observe(visible, [update('edge-b')], true)).toEqual([])
+
+    tracker.observe(visible, [], true)
+    now += 30_000
+    expect(tracker.observe(visible, [update('edge-b')], true)).toEqual(['speed:dl-a:edge-b'])
+
+    nowSpy.mockRestore()
+  })
+
+  it('206 部分快照在场同样计入滞回：partial 见过后快速回归不算离开超宽限', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('p')], true)
+    now += 20_000
+    tracker.observe(visible, [update('p')], false) // partial 在场：刷新 seenAt
+    now += 20_000
+    tracker.observe(visible, [], true) // complete 缺席（距 partial 在场 20s < 30s，seenAt 保留）
+    now += 5_000
+    // 距上次在场（partial 轮）仅 25s：若 partial 在场未计入，距首次 45s 会误触发
+    expect(tracker.observe(visible, [update('p')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('lastSeenAt 回收不误伤在场键：他键超宽限被清理后，在场键短暂掉出回归仍不触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('stayer'), update('leaver')], true)
+    now += 31_000
+    // leaver 缺席超宽限触发 seenAt 清理；stayer 在场刷新自身时间戳
+    tracker.observe(visible, [update('stayer')], true)
+    // stayer 短暂掉出一轮后立即回归：自身时间戳刚刷新（1 秒前），不受清理影响
+    tracker.observe(visible, [], true)
+    now += 1_000
+    expect(tracker.observe(visible, [update('stayer')], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('rebaseline 刷新滞回时间戳：权威刷新后键掉出再快速回归不重复触发', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [], true)
+    const newUpdate = update('after-reload')
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual(['speed:dl-a:after-reload'])
+    // 权威刷新后列表仍不含该行（分页外），rebaseline 重建基线并刷新时间戳
+    tracker.rebaseline(visible, [newUpdate])
+
+    now += 10_000
+    tracker.observe(visible, [], true) // 掉出一轮（complete 基线替换）
+    now += 5_000
+    expect(tracker.observe(visible, [newUpdate], true)).toEqual([])
+
+    nowSpy.mockRestore()
+  })
+
+  it('振荡循环模拟：多轮在场/缺席交替全程零触发，超宽限回归触发一次（用户场景回归）', () => {
+    const tracker = new RuntimeListMembershipTracker()
+    let now = 1_000_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+
+    tracker.observe(visible, [update('osc')], true)
+    // 浓缩用户实测场景：补查退避造成的秒级在场/缺席交替
+    // （相邻两次在场间隔须小于宽限，否则是合法的"长时间离开后回归"）
+    const flaps: Array<[number, boolean]> = [
+      [1_000, false], [2_000, true], [1_000, false], [3_000, true],
+      [1_000, false], [2_000, true], [1_000, false], [4_000, true]
+    ]
+    flaps.forEach(([offset, present]) => {
+      now += offset
+      expect(tracker.observe(visible, present ? [update('osc')] : [], true)).toEqual([])
+    })
+
+    // 长时间真正离开后再回来：允许一次合法触发
+    now += 35_000
+    tracker.observe(visible, [], true)
+    expect(tracker.observe(visible, [update('osc')], true)).toEqual(['speed:dl-a:osc'])
+
+    nowSpy.mockRestore()
+  })
+
+  it('权威列表刷新并发时只执行一次，并在刷新后应用同轮速度', async() => {
+    const tracker = new RuntimeListMembershipTracker()
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>(resolve => {
+      releaseRefresh = resolve
+    })
+    const refreshList = jest.fn(() => refreshGate)
+    const applyUpdates = jest.fn(() => true)
+    const rows = [{ hash: 'newly-added', downloader_id: 'dl-a' }]
+    const updates = [update('newly-added')]
+
+    const first = tracker.refresh(() => rows, updates, refreshList, applyUpdates)
+    const second = tracker.refresh(() => rows, updates, refreshList, applyUpdates)
+    expect(refreshList).toHaveBeenCalledTimes(1)
+
+    releaseRefresh()
+    await expect(first).resolves.toBe(true)
+    await expect(second).resolves.toBe(true)
+    expect(applyUpdates).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('实时终态核验候选收敛', () => {
+  it('连续两次完整快照未命中后按复合键触发一次核验', () => {
+    const list = [
+      { hash: 'same', downloader_id: 'dl-a', status: 'downloading', progress: 50 },
+      { hash: 'same', downloader_id: 'dl-b', status: 'downloading', progress: 50 }
+    ]
+    const first = collectRuntimeStateReconcileCandidates(list, [], {})
+    expect(first.candidates).toEqual([])
+    const second = collectRuntimeStateReconcileCandidates(list, [], first.misses)
+    expect(second.candidates).toEqual([{ downloader_id: 'dl-a', hash: 'same' }, { downloader_id: 'dl-b', hash: 'same' }])
+    expect(second.misses['speed:dl-a:same']).toBe(0)
+  })
+
+  it('命中任务会清除未命中计数，避免误触发', () => {
+    const list = [{ hash: 'h1', downloader_id: 'dl-a', status: 'downloading', progress: 10 }]
+    const result = collectRuntimeStateReconcileCandidates(
+      list,
+      [{ hash: 'h1', downloaderId: 'dl-a', downloadSpeed: 10, uploadSpeed: 0, progress: 11 }],
+      { 'speed:dl-a:h1': 1 }
+    )
+    expect(result.candidates).toEqual([])
+    expect(result.misses['speed:dl-a:h1']).toBeUndefined()
+  })
+
+  it('同 hash 只清除实际命中的下载器，另一下载器仍按复合键触发核验', () => {
+    const list = [
+      { hash: 'same', downloader_id: 'dl-a', status: 'downloading', progress: 60 },
+      { hash: 'same', downloader_id: 'dl-b', status: 'downloading', progress: 60 }
+    ]
+    const result = collectRuntimeStateReconcileCandidates(
+      list,
+      [{ hash: 'same', downloaderId: 'dl-a', downloadSpeed: 1, uploadSpeed: 0, progress: 61 }],
+      { 'speed:dl-a:same': 1, 'speed:dl-b:same': 1 }
+    )
+    expect(result.candidates).toEqual([{ downloader_id: 'dl-b', hash: 'same' }])
+    expect(result.misses['speed:dl-a:same']).toBeUndefined()
+    expect(result.misses['speed:dl-b:same']).toBe(0)
+  })
+
+  it('暂停/错误/已完成行不进入核验，避免对稳定终态持续打下载器', () => {
+    const list = [
+      { hash: 'eligible', downloader_id: 'dl', status: 'downloading', progress: 80 },
+      { hash: 'paused', downloader_id: 'dl', status: 'paused', progress: 80 },
+      { hash: 'error', downloader_id: 'dl', status: 'error', progress: 80 },
+      { hash: 'seed', downloader_id: 'dl', status: 'seeding', progress: 80 },
+      { hash: 'complete-flag', downloader_id: 'dl', status: 'downloading', progress: 80, downloadComplete: true },
+      { hash: 'complete-date', downloader_id: 'dl', status: 'downloading', progress: 80, completed_date: '2026-08-29' },
+      { hash: 'complete-progress', downloader_id: 'dl', status: 'downloading', progress: 100 }
+    ]
+    const result = collectRuntimeStateReconcileCandidates(list, [], {}, 1)
+    expect(result.candidates).toEqual([{ downloader_id: 'dl', hash: 'eligible' }])
+    expect(Object.keys(result.misses)).toEqual(['speed:dl:eligible'])
+  })
+
+  it('一次最多核验 100 项，超出项保留未命中计数供下轮继续', () => {
+    const list = Array.from({ length: 105 }, (_, index) => ({
+      hash: `h-${index}`,
+      downloader_id: 'dl',
+      status: 'downloading',
+      progress: 50
+    }))
+    const result = collectRuntimeStateReconcileCandidates(list, [], {}, 1, 100)
+    expect(result.candidates).toHaveLength(100)
+    expect(result.candidates[0]).toEqual({ downloader_id: 'dl', hash: 'h-0' })
+    expect(result.candidates[99]).toEqual({ downloader_id: 'dl', hash: 'h-99' })
+    expect(result.misses['speed:dl:h-99']).toBe(0)
+    expect(result.misses['speed:dl:h-100']).toBe(1)
+    expect(result.misses['speed:dl:h-104']).toBe(1)
+  })
+
+  it('旧列表归一为 unknown 且未完成时仍可进入终态核验', () => {
+    const list = [{ hash: 'legacy', downloader_id: 'dl-a', status: 'unknown', progress: 40 }]
+    const first = collectRuntimeStateReconcileCandidates(list, [], {})
+    const second = collectRuntimeStateReconcileCandidates(list, [], first.misses)
+    expect(second.candidates).toEqual([{ downloader_id: 'dl-a', hash: 'legacy' }])
+  })
 })
 
 describe('active_only 206 前端握手', () => {
@@ -1054,3 +1688,80 @@ describe('active_only 206 前端握手', () => {
   })
 })
 
+
+describe('终态整表刷新去重与行级终态谓词', () => {
+  const terminalUpdate = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 0,
+    uploadSpeed: 512,
+    progress: 100,
+    downloadComplete: true
+  })
+  const activeUpdate = (hash: string, downloaderId = 'dl-a') => ({
+    hash,
+    downloaderId,
+    downloadSpeed: 1024,
+    uploadSpeed: 0,
+    progress: 25
+  })
+
+  it('TerminalReloadTracker：同复合键完成证据只报一次，新键才再报', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1'), activeUpdate('h2')])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(false)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1'), terminalUpdate('h3')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：同 hash 跨下载器按复合键区分', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-a')])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-a')])).toBe(false)
+    expect(tracker.observeNewTerminal([terminalUpdate('same', 'dl-b')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：clear 后同键允许重报（筛选上下文重建）', () => {
+    const tracker = new TerminalReloadTracker()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+    tracker.clear()
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+  })
+
+  it('TerminalReloadTracker：缺 downloaderId 退化 hash 键，与复合键不互通（有界双触发）', () => {
+    const tracker = new TerminalReloadTracker()
+    const bareUpdate = {
+      hash: 'h1', downloadSpeed: 0, uploadSpeed: 0, progress: 100, downloadComplete: true
+    }
+    expect(tracker.observeNewTerminal([bareUpdate])).toBe(true)
+    expect(tracker.observeNewTerminal([terminalUpdate('h1')])).toBe(true)
+    expect(tracker.observeNewTerminal([bareUpdate])).toBe(false)
+  })
+
+  it('isTorrentRowEffectivelyComplete：显式完成证据优先判终态', () => {
+    expect(isTorrentRowEffectivelyComplete({ progress: 100 })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ downloadComplete: true })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ download_complete: true })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ completedDate: '2026-09-01' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ completed_date: 1756684800 })).toBe(true)
+  })
+
+  // 折叠后行状态实际仅 completed/seeding 能命中终态集；checking/paused/queuedDL/
+  // error/unknown 判非终态是刻意保守口径（宁可多一次受去重保护的整表刷新，也不
+  // 误压制合法转移）。与 isRuntimeReconcileCandidate 的「不补查」口径分歧是有意设计。
+  it('isTorrentRowEffectivelyComplete：折叠后行状态仅 completed/seeding 判终态', () => {
+    expect(isTorrentRowEffectivelyComplete({ status: 'completed' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ status: 'seeding' })).toBe(true)
+    expect(isTorrentRowEffectivelyComplete({ status: 'downloading', progress: 99 })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'paused' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'queuedDL' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'checking' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'error' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ status: 'unknown' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({})).toBe(false)
+  })
+
+  it('isTorrentRowEffectivelyComplete：status 优先 state 兜底，大小写不敏感', () => {
+    expect(isTorrentRowEffectivelyComplete({ status: 'downloading', state: 'seeding' })).toBe(false)
+    expect(isTorrentRowEffectivelyComplete({ state: 'UPloading' })).toBe(true)
+  })
+})

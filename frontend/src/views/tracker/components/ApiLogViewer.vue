@@ -3,10 +3,10 @@
     <div class="api-log-header" @click="toggleExpanded">
       <span class="api-log-title">
         <span class="title-icon">📋</span>
-        <span>API日志</span>
+        <span>{{ $t('tracker.apiLog.title') }}</span>
       </span>
       <span class="api-log-toggle" :class="{expanded: expanded}">
-        <span>{{ expanded ? '收起' : '展开' }}</span>
+        <span>{{ expanded ? $t('tracker.apiLog.collapse') : $t('tracker.apiLog.expand') }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"></polyline>
         </svg>

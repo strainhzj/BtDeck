@@ -1,0 +1,41 @@
+# android/app — 伴侣模式凭据与会话
+
+> 2026-08-27 源码与构建链实测。Android 端只保存 profile 元数据和加密凭据，不包含本地 Python 服务端。
+
+## 构建入口
+
+- `deploy/build-android.bat`：从仓库根目录可直接调用；默认构建严格版与 LAN 明文版，
+  每个变体先跑 `:app:testDebugUnitTest`，再 assemble、复制到 `android/dist/`，并执行
+  `apksigner`/`aapt2` 产物校验。`--strict-only` 与 `--lan-only` 可单独构建变体。
+- `build-packages.bat`：根目录 EXE + APK 统一入口；`--android`、
+  `--android-strict-only`、`--android-lan-only` 可选择 Android 目标。
+- 工具链路径支持 `BTDECK_GRADLE`、`BTDECK_JAVA_HOME`、`ANDROID_SDK_ROOT`，
+  SDK 版本与 `android/local.properties` 保持一致。
+
+| 文件 | 关键入口（当前行号） | 职责 |
+|------|----------------------|------|
+| `app/src/main/java/com/btdeck/companion/data/ServerProfile.kt` | `ServerProfile:14` | profile JSON 增加 username；旧 JSON 缺字段按空字符串兼容 |
+| `app/src/main/java/com/btdeck/companion/data/CredentialVault.kt` | `CredentialVault:21`、`buildAutoLoginScript:94` | Android Keystore AES-GCM 密文 + 独立凭据 SharedPreferences；同源登录脚本与 TOTP 临时 prompt |
+| `app/src/main/java/com/btdeck/companion/ui/ServerListActivity.kt` | `ServerListActivity:41`、`showProfileActions:124`、`showAddDialog:148` | 用户名/密码录入、清除凭据/忘记服务器操作；✨2026-09-11 录入表单改 `dialog_add_server.xml`（OutlinedBox + TextInputLayout 错误展示，文案不变）+ MaterialAlertDialogBuilder，列表行卡片化 + 健康状态语义色圆点 |
+| `app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt` | `WebViewActivity:52`、`setupActionBar:211`、`exitToSourcePage:234`、`prepareSession:264`、`maybeAutoLogin:330` | 等待异步 CookieManager 清理后加载 profile；有凭据时恢复前端会话；✨2026-09-12 补 WebChromeClient `onShowFileChooser:136`（此前 `<input type="file">` 点击被静默忽略）+ `fileChooserLauncher`（ActivityResultLauncher，回调恰好投递一次，取消/销毁收敛 null 防锁死；`allowContentAccess` 维持 false 只门控页面内 content:// 资源引用，上传走 SAF 临时授权）；复验批加入口 Toast+Log 诊断（真机可判定原生层是否触发）与 SecurityException 兜底；✨2026-09-13 返回来源页双入口——home-as-up 箭头 + custom view（`action_bar_web_title.xml`）承载左上角名称整体可点，两入口 `finish()` 回来源 activity（伴侣=服务器列表/本机=向导）不带 WebView 历史；`onSupportNavigateUp` 禁走 super（默认落 onBackPressed 先耗历史）、副标题健康提示改写 custom view TextView（原生 subtitle 已隐藏） |
+| `app/src/main/java/com/btdeck/companion/ui/FileChooser.kt` | `pickerParams:38`、`buildPickerIntent:42`、`parseResult:60` | ✨2026-09-12 文件选择器纯逻辑：恒 `*/*` 规避 `accept=".torrent"` 扩展名被 SAF 当 MIME 过滤空列表（不用 FileChooserParams.createIntent）；多选补 EXTRA_ALLOW_MULTIPLE；结果解析独立实现（android.webkit JVM 是 not-mocked stub） |
+| `app/src/main/java/com/btdeck/companion/net/TrustScope.kt` | `sha256Fingerprint:22` | 自签证书指纹＝公钥 SPKI 的 SHA-256（RFC 7469 pin 语义；此前按整证书 DER 与 OkHttp 校验永不匹配，2026-09-04 设备级实证修复） |
+| `app/src/main/java/com/btdeck/companion/data/HealthClient.kt` | `probe`、`pinnedClient`、`CapturingTrustManager` | 自签钉扎：全信 TrustManager 捕获证书链 + 握手后手动 SPKI pin 比对（OkHttp CertificatePinner 与自定义 SSLSocketFactory 不兼容，链清洗为空；2026-09-04）；✨2026-09-10 `probeWithFallback` 主路径失败回退 `/api/v1` 健康别名 + 可注入 `HttpCall` L40（JVM 单测假探测，HealthClientFallbackTest） |
+| `app/src/main/res/values-v35/themes.xml` | `windowOptOutEdgeToEdgeEnforcement` | targetSdk 35 强制 e2e 致 AppCompat ActionBar 不下推内容（列表首行画进工具栏，生产路径实证）；退出恢复传统布局，API 36 起出口移除需迁移 insets 自处理（2026-09-04） |
+| `app/src/main/res/values/colors.xml`、`values/themes.xml` | `Theme.BtDeckCompanion`、`ThemeOverlay.BtDeck.MaterialAlertDialog`、`BtDeck.TextInputLayout` | ✨2026-09-11 原生过渡页翡翠绿品牌化：token 与 `frontend/src/styles/theme-variables.scss` emerald 同源（主色 #059669/语义色/灰阶/背景/边框）；基底 DayNight→Light（前端无暗色主题）；对话框统一 Material 风格；`values-v35` 颜色项须与 values 同步 |
+| `app/src/androidTest/java/com/btdeck/companion/`（CompanionOfflineUiTest/SelfSignedCert/ProfileIsolation + TinyLoopbackServer/CompanionTestState） | 设备级 UI 验收 | 离线覆盖层/自签证书信任与换签/多 profile cookie+storage+凭据隔离/自动登录；自持回环 HTTP(S) 假后端（双 PKCS12 证书），Espresso+ActivityScenario（2026-09-04） |
+| `app/src/androidTest/.../CompanionBrandingUiTest.kt` | ✨2026-09-11 | 品牌化 UI 回归：colorPrimary 解析 #059669、向导品牌头部/双卡、添加表单 OutlinedBox 标签 + 明文确认联动 + 空名错误不关框、健康圆点/文案 error 红 tint、LAN 开关联动威胁文案（POST_NOTIFICATIONS 经 uiAutomation 预授权） |
+| `app/src/test/.../ui/HealthUiTest.kt`、`ui/BrandThemeSyncTest.kt` | ✨2026-09-11 | JVM 回归：健康文案/语义色映射（HealthUi 纯逻辑）；token 值与前端 emerald 同源比对（读 theme-variables.scss，仓库根不可见自动 assume 跳过）、values 与 values-v35 主题 item 同步、Light 基底 + MaterialAlertDialog/colorAccent 挂线 |
+| `app/src/test/.../ui/FileChooserTest.kt`、`ui/WebViewActivityContractTest.kt` | ✨2026-09-12 | JVM 回归：MIME 通配钉死（禁回退 createIntent 扩展名当 MIME）、MODE_OPEN_MULTIPLE→allowMultiple 决策、取消/零选中判无效（null 语义防 WebView 锁死）、mode 显式 opt-in；接线契约（webChromeClient/onShowFileChooser/launcher、回调恰一次四路径 onReceiveValue(null) 恰 4 处、APK 版本纪律锚点 versionCode≥3 + bat 产物名同源）——Intent/ClipData 装配 JVM 不可测由真机兜底；✨2026-09-13 +2 返回双入口契约（箭头开关/onSupportNavigateUp 直调不走 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退）+ 标题布局契约 |
+| `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
+
+## 服务端配合（backend 侧 Android 形态）✨2026-09-21 补录
+
+- **主机能力矩阵**（1986d51，2026-08-30 dual-mode-client Phase 4）：`app/core/platform_capabilities.py` 单一真相源（`CAPABILITY_DEFINITIONS` L36 矩阵冻结基线 + `require_capability` L217 统一门禁 + `capability_payload` L225，schemaVersion=2）+ `api/endpoints/platform_capabilities.py`（`GET /platform/capabilities`）+ `api/platform_guard.py`（认证+能力检查依赖工厂）。Android 主服务端对路径映射/孤儿/备份/转移/三级删除等主机文件系域能力统一降级；设置页/任务列表/创建表单三处消费同一来源一致降级。
+- **远端文件系能力硬禁用**（3ac6f54，2026-09-07）：Android server 形态下硬禁用远端文件系统特性（平台门禁 fail-closed，服务层保留同能力二次检查）。
+
+## 约束
+
+- `android:allowBackup="false"` 与 Keystore 绑定保证凭据不会通过系统备份迁移。
+- CookieManager 是进程级单例，profile 切换必须等待 `removeAllCookies` 回调；WebStorage 与旧 token 不能跨 profile 复用。
+- 不使用 `addJavascriptInterface` 暴露密码；脚本只在同源页面短暂执行登录并写入前端现有 cookie。

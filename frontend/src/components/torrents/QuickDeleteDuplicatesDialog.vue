@@ -1,18 +1,19 @@
 <template>
   <div>
     <el-dialog
-      title="快捷删除重复种子"
+      :title="$t('torrent.duplicates.quick.title')"
       :visible.sync="dialogVisible"
       width="820px"
       :before-close="handleClose"
       :close-on-click-modal="false"
       append-to-body
+      custom-class="quick-delete-duplicates-dialog"
     >
       <!-- 配置区 -->
       <div class="qdd-config">
         <div class="qdd-field">
           <label class="qdd-label">
-            待检测下载器
+            {{ $t('torrent.duplicates.quick.detectLabel') }}
             <span class="qdd-required">*</span>
           </label>
           <AdvancedMultiSelect
@@ -23,12 +24,12 @@
             :list-height="200"
             class="qdd-control"
           />
-          <div class="qdd-field-hint">选择 2 个及以上下载器，用于在其间查找重复种子</div>
+          <div class="qdd-field-hint">{{ $t('torrent.duplicates.quick.detectHint') }}</div>
         </div>
 
         <div class="qdd-field">
           <label class="qdd-label">
-            保留下载器
+            {{ $t('torrent.duplicates.quick.keepLabel') }}
             <span class="qdd-required">*</span>
           </label>
           <AdvancedMultiSelect
@@ -39,17 +40,10 @@
             :list-height="200"
             class="qdd-control"
           />
-          <div class="qdd-field-hint">这些下载器中的重复种子将被保留，其余下载器中的重复种子将被删除（只删种子、不删文件）</div>
+          <div class="qdd-field-hint">{{ $t('torrent.duplicates.quick.keepHint') }}</div>
         </div>
 
-        <el-button
-          type="primary"
-          icon="el-icon-view"
-          :loading="previewLoading"
-          @click="handlePreview"
-        >
-          预览重复
-        </el-button>
+        <div class="qdd-field-hint qdd-auto-hint">{{ $t('torrent.duplicates.quick.autoHint') }}</div>
       </div>
 
       <el-divider />
@@ -57,7 +51,7 @@
       <!-- 预览区 -->
       <div v-if="previewLoading" class="qdd-state">
         <i class="el-icon-loading qdd-state-icon" />
-        <span>正在分析重复种子...</span>
+        <span>{{ $t('torrent.duplicates.quick.analyzing') }}</span>
       </div>
 
       <el-alert
@@ -73,19 +67,19 @@
         <!-- 汇总与 skipped 提醒 -->
         <div class="qdd-summary">
           <span class="qdd-summary-item">
-            共 <strong>{{ preview.total_groups }}</strong> 组重复
+            {{ $t('torrent.duplicates.quick.groupsPrefix') }} <strong>{{ preview.total_groups }}</strong> {{ $t('torrent.duplicates.quick.groupsSuffix') }}
           </span>
           <span class="qdd-summary-item">
-            将删除
+            {{ $t('torrent.duplicates.quick.deletePrefix') }}
             <strong class="qdd-summary-delete">{{ preview.total_delete }}</strong>
-            个种子
+            {{ $t('torrent.duplicates.quick.deleteSuffix') }}
           </span>
           <span v-if="preview.skipped_groups > 0" class="qdd-skipped-hint">
             <el-tooltip
-              content="这些重复仅在待删下载器间存在、无保留副本，为避免丢失最后一份数据已跳过，不会删除"
+              :content="$t('torrent.duplicates.quick.skippedTooltip')"
               placement="top"
             >
-              <span>⚠ 另有 {{ preview.skipped_groups }} 组已跳过（无保留副本）</span>
+              <span>{{ $t('torrent.duplicates.quick.skippedNote', {count: preview.skipped_groups}) }}</span>
             </el-tooltip>
           </span>
         </div>
@@ -93,7 +87,7 @@
         <!-- 空状态 -->
         <div v-if="preview.list.length === 0" class="qdd-state">
           <i class="el-icon-circle-check qdd-state-icon qdd-state-success" />
-          <span>未在所选下载器间发现可删除的重复种子</span>
+          <span>{{ $t('torrent.duplicates.quick.empty') }}</span>
         </div>
 
         <!-- 分组列表 -->
@@ -105,13 +99,13 @@
             :class="{'is-skipped': group.skipped}"
           >
             <div class="qdd-group-header">
-              <span class="qdd-group-name" :title="group.name">{{ group.name || '（无名称）' }}</span>
-              <span v-if="group.skipped" class="qdd-group-badge">已跳过</span>
+              <span class="qdd-group-name" :title="group.name">{{ group.name || $t('torrent.duplicates.quick.noName') }}</span>
+              <span v-if="group.skipped" class="qdd-group-badge">{{ $t('torrent.duplicates.quick.skippedBadge') }}</span>
               <span class="qdd-group-hash" :title="group.hash">{{ shortHash(group.hash) }}</span>
               <span class="qdd-group-size">{{ formatSize(group.size) }}</span>
             </div>
             <div v-if="group.skipped" class="qdd-skipped-body">
-              <div class="qdd-skipped-text">这些副本仅在待删下载器间存在，无保留副本，为避免丢失最后一份数据已跳过（不会删除）</div>
+              <div class="qdd-skipped-text">{{ $t('torrent.duplicates.quick.skippedBody') }}</div>
               <div class="qdd-skipped-items">
                 <span v-for="item in group.to_delete" :key="item.info_id" class="qdd-item is-skipped">
                   {{ item.downloader_name }}
@@ -120,7 +114,7 @@
             </div>
             <div v-else class="qdd-group-body">
               <div class="qdd-col">
-                <div class="qdd-col-title is-delete">将被删除</div>
+                <div class="qdd-col-title is-delete">{{ $t('torrent.duplicates.quick.colDelete') }}</div>
                 <div v-for="item in group.to_delete" :key="item.info_id" class="qdd-item is-delete">
                   <span class="qdd-item-downloader">{{ item.downloader_name }}</span>
                   <span class="qdd-item-status">{{ item.status }}</span>
@@ -128,7 +122,7 @@
                 <div v-if="group.to_delete.length === 0" class="qdd-col-empty">—</div>
               </div>
               <div class="qdd-col">
-                <div class="qdd-col-title is-keep">保留副本</div>
+                <div class="qdd-col-title is-keep">{{ $t('torrent.duplicates.quick.colKeep') }}</div>
                 <div v-for="item in group.kept" :key="item.info_id" class="qdd-item is-keep">
                   <span class="qdd-item-downloader">{{ item.downloader_name }}</span>
                   <span class="qdd-item-status">{{ item.status }}</span>
@@ -152,14 +146,14 @@
       </template>
 
       <span slot="footer" class="dialog-footer">
-        <el-button @click="handleClose">关闭</el-button>
+        <el-button @click="handleClose">{{ $t('common.close') }}</el-button>
         <el-button
           type="danger"
           :loading="deleteLoading"
           :disabled="!preview || preview.total_delete === 0"
           @click="handleDelete"
         >
-          确认删除{{ preview && preview.total_delete > 0 ? `（${preview.total_delete}个）` : '' }}
+          {{ preview && preview.total_delete > 0 ? $t('torrent.duplicates.quick.confirmDeleteCount', {count: preview.total_delete}) : $t('torrent.duplicates.quick.confirmDelete') }}
         </el-button>
       </span>
     </el-dialog>
@@ -235,6 +229,41 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
     if (next.length !== this.keepDownloaderIds.length) {
       this.keepDownloaderIds = next
     }
+    this.scheduleAutoPreview()
+  }
+
+  /**
+   * 选择完成即事件触发预览（2026-09-12 用户反馈）：待检测 ≥2 且保留 ≥1（子集）
+   * 达成时自动拉预览，无需手动点按钮；选择失效时清掉过期预览。
+   * 防抖合并联动剪裁引发的连续变更，避免重复请求。
+   */
+  @Watch('keepDownloaderIds', { deep: true })
+  onKeepSelectionChange() {
+    this.scheduleAutoPreview()
+  }
+
+  private autoPreviewTimer = 0
+  private readonly AUTO_PREVIEW_DEBOUNCE_MS = 250
+
+  private scheduleAutoPreview(): void {
+    if (this.autoPreviewTimer) window.clearTimeout(this.autoPreviewTimer)
+    if (!this.canPreview) {
+      this.preview = null
+      this.previewError = ''
+      return
+    }
+    this.autoPreviewTimer = window.setTimeout(() => {
+      this.autoPreviewTimer = 0
+      this.currentPage = 1
+      void this.fetchPreview(1)
+    }, this.AUTO_PREVIEW_DEBOUNCE_MS)
+  }
+
+  beforeDestroy(): void {
+    if (this.autoPreviewTimer) {
+      window.clearTimeout(this.autoPreviewTimer)
+      this.autoPreviewTimer = 0
+    }
   }
 
   private async initDialog() {
@@ -261,9 +290,13 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
     }
   }
 
+  private previewSeq = 0
+
   private async fetchPreview(page = 1) {
     this.previewLoading = true
     this.previewError = ''
+    // 选择再次变化会发起新请求：过期响应直接丢弃，防旧结果覆盖新选择
+    const seq = ++this.previewSeq
     try {
       const resp = await getQuickDeleteDuplicatePreview({
         downloader_ids: this.detectDownloaderIds.map(id => String(id)),
@@ -271,27 +304,20 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         page,
         pageSize: this.pageSize
       })
+      if (seq !== this.previewSeq) return
       if (resp.code === '200') {
         this.preview = resp.data
       } else {
-        this.previewError = resp.msg || '查询失败'
+        this.previewError = resp.msg || this.$t('torrent.duplicates.quick.msg.queryFailed')
         this.preview = null
       }
     } catch (e) {
+      if (seq !== this.previewSeq) return
       this.previewError = extractErrorMessage(e)
       this.preview = null
     } finally {
-      this.previewLoading = false
+      if (seq === this.previewSeq) this.previewLoading = false
     }
-  }
-
-  private async handlePreview() {
-    if (!this.canPreview) {
-      this.$message.warning('请选择至少 2 个待检测下载器，并至少选择 1 个保留下载器')
-      return
-    }
-    this.currentPage = 1
-    await this.fetchPreview(1)
   }
 
   private async handlePageChange(page: number) {
@@ -310,19 +336,24 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         notify_on_complete: true
       })
       if (resp.code !== '200') {
-        this.$message.error(resp.msg || '提交删除任务失败')
+        this.$message.error(resp.msg || this.$t('torrent.duplicates.quick.msg.submitFailed'))
         return
       }
       if (!resp.data.task_id) {
-        this.$message.info(resp.msg || '未发现可删除的重复种子')
+        this.$message.info(resp.msg || this.$t('torrent.duplicates.quick.msg.noDeletable'))
         this.$emit('deleted')
+        // 提交完成（无可删项）即关闭弹窗（2026-09-12 用户反馈，移动/桌面一致）
+        this.handleClose()
         return
       }
-      const skippedText = resp.data.skipped_count
-        ? `，跳过处理中 ${resp.data.skipped_count} 个`
-        : ''
-      this.$message.success(`已提交删除任务（共 ${resp.data.total_count} 个种子${skippedText}）`)
+      this.$message.success(
+        resp.data.skipped_count
+          ? this.$t('torrent.duplicates.quick.msg.submitted', { total: resp.data.total_count, skipped: resp.data.skipped_count })
+          : this.$t('torrent.duplicates.quick.msg.submittedPlain', { total: resp.data.total_count })
+      )
       this.$emit('deleted')
+      // 任务已受理即关闭弹窗：轮询在后台继续，结果经 toast/通知中心送达
+      this.handleClose()
       // 后台轮询完成状态，仅用于结果提示（不阻塞对话框）
       void this.pollDeleteStatus(resp.data.task_id)
     } catch (e) {
@@ -341,7 +372,12 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         if (resp.code !== '200') continue
         const st = resp.data
         if (st.status === 'completed' || st.status === 'partial' || st.status === 'failed') {
-          const msg = `删除任务${st.status === 'completed' ? '完成' : st.status === 'partial' ? '部分完成' : '失败'}：成功 ${st.success_count}，失败 ${st.failed_count}`
+          const doneKey = st.status === 'completed'
+            ? 'torrent.duplicates.quick.msg.taskDone'
+            : st.status === 'partial'
+              ? 'torrent.duplicates.quick.msg.taskPartial'
+              : 'torrent.duplicates.quick.msg.taskFailed'
+          const msg = this.$t(doneKey, { success: st.success_count, failed: st.failed_count })
           if (st.status === 'failed') {
             this.$message.error(msg)
           } else if (st.status === 'partial') {
@@ -355,7 +391,7 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         // 轮询失败继续尝试
       }
     }
-    this.$message.info('删除任务仍在后台执行，可稍后在通知中心查看结果')
+    this.$message.info(this.$t('torrent.duplicates.quick.msg.stillRunning'))
   }
 
   private delay(ms: number): Promise<void> {
@@ -405,6 +441,10 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
   font-size: 12px;
   color: var(--color-text-secondary, #909399);
   line-height: 1.4;
+}
+
+.qdd-auto-hint {
+  color: var(--color-primary, #059669);
 }
 
 .qdd-control {
@@ -603,5 +643,53 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
 .qdd-pagination {
   margin-top: 12px;
   text-align: right;
+}
+
+/* ---- 手机适配（mobile-ux-fixes 2026-09）：分组双列纵排、分组列表高度按视口、
+   底部按钮全宽加大触控 ---- */
+@media (max-width: 768px) {
+  .qdd-summary {
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .qdd-groups {
+    max-height: 46vh;
+  }
+
+  .qdd-group-body {
+    flex-direction: column;
+
+    .qdd-col + .qdd-col {
+      border-left: none;
+      border-top: 1px dashed var(--color-border-primary, #ebeef5);
+    }
+  }
+
+  .qdd-pagination {
+    text-align: center;
+  }
+
+  .dialog-footer {
+    display: flex;
+    gap: 8px;
+
+    .el-button {
+      flex: 1;
+      margin-left: 0;
+      min-height: 40px;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+/* 弹窗外壳挂 body（append-to-body），scoped 样式不达；宽度来自 el-dialog width
+   prop 的内联 style（820px），必须 !important 覆盖。仅 ≤768 生效，桌面不变。 */
+@media (max-width: 768px) {
+  .quick-delete-duplicates-dialog {
+    width: 94% !important;
+    margin-top: 6vh !important;
+  }
 }
 </style>

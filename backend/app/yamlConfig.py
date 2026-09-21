@@ -1,6 +1,9 @@
-import yaml as pyyaml  # ✨ 使用别名避免命名冲突
+import logging
 import os
 from typing import Any, Dict
+
+import yaml as pyyaml  # ✨ 使用别名避免命名冲突
+
 from app.core.config import settings
 
 
@@ -13,17 +16,22 @@ class Yaml:
         self.load()
 
     def load(self) -> bool:
-        """加载配置文件"""
+        """加载配置文件。
+
+        消息走 logging 而非 print：print 的中文文本在 cp1252 控制台（西文
+        Windows/CI runner）触发 UnicodeEncodeError 中断启动链（W3 CI 第十轮
+        实测拦截，首启无 config.yaml 的正常路径即崩）。
+        """
         try:
             if not os.path.exists(self._config_path):
-                print(f"警告：配置文件 '{self._config_path}' 不存在")
+                logging.warning("配置文件 %r 不存在", self._config_path)
                 return False
 
             with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config_data = pyyaml.safe_load(f)
             return True
-        except Exception as e:
-            print(f"加载配置文件时出错: {e}")
+        except Exception:
+            logging.exception("加载配置文件失败: %s", self._config_path)
             return False
 
     def reload(self) -> bool:

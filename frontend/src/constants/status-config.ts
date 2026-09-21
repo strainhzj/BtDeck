@@ -3,6 +3,8 @@
  * 与后端状态映射保持一致
  */
 
+import { translate } from '@/i18n'
+
 /**
  * 状态选项接口
  */
@@ -89,12 +91,19 @@ export const STATUS_ICON_MAP: Record<string, string> = {
 }
 
 /**
- * 获取状态显示文本
- * @param status 状态值
- * @returns 显示文本
+ * 获取状态显示文本（双语：按稳定状态值取 torrent.status.* 键，
+ * 未登记键时回退原值；中文输出与历史内联映射逐字一致）。
  */
 export function getStatusText(status: string): string {
-  return STATUS_TEXT_MAP[status] || status
+  return translate(`torrent.status.${status}`) || STATUS_TEXT_MAP[status] || status
+}
+
+/**
+ * 本地化状态筛选选项（STATUS_OPTIONS 的展示层映射，不改动原配置对象；
+ * 供列表筛选下拉/高级搜索状态字段按当前语言渲染）。
+ */
+export function localizedStatusOptions(): StatusOption[] {
+  return STATUS_OPTIONS.map(option => ({ ...option, label: getStatusText(option.value) }))
 }
 
 /**

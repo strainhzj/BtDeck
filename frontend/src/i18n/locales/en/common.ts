@@ -1,0 +1,155 @@
+/*
+ * Copyright (C) 2025 BTDeck Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/** Cross-page shared copy (common group, P2 first-use loop; P3-1 adds multiSelect/pageSize shared components). */
+export const common = {
+  adminName: 'Administrator',
+  cancel: 'Cancel',
+  /** Name list join separator (deletion failure / downgrade / missing-file details) */
+  listSeparator: ', ',
+  close: 'Close',
+  confirm: 'Confirm',
+  refresh: 'Refresh',
+  loadMore: 'Load more',
+  copy: 'Copy',
+  sessionExpired: 'Your session has expired. Please sign in again.',
+  forceChangeHint: 'Please change your password first — only the settings page is available until then.',
+  partialSuccess: 'Some operations succeeded',
+  serviceUnavailable: 'The service is temporarily unavailable. Please try again later.',
+  capabilityUnknown: 'Cannot verify server capabilities. This feature is temporarily disabled — check the connection and try again.',
+  capabilityBlocked: 'The Android host server cannot access the downloader host file system, so this feature is unavailable.',
+  notFound: {
+    title: 'Page not found',
+    desc: 'Sorry, the page you are looking for does not exist or has been removed.',
+    hint: 'Check the URL or go back to the home page.',
+    back: 'Go back',
+    home: 'Home',
+    helpTitle: 'Need help?',
+    contactSupport: 'Contact support',
+    /** P6-5 leftover fix: placeholder toast for the support entry */
+    supportComing: 'This feature is not available yet. Stay tuned.'
+  },
+  notifications: {
+    title: 'Notifications',
+    closeLabel: 'Close notifications',
+    closeDetail: 'Close notification detail',
+    empty: 'No notifications',
+    markUnread: 'Mark as unread',
+    markRead: 'Mark as read',
+    markAllRead: 'Mark all as read',
+    remove: 'Delete',
+    failedDetail: 'Failure details',
+    viewRelease: 'View the full release on GitHub',
+    filterAll: 'All',
+    filterUnread: 'Unread',
+    filterUpdate: 'Updates',
+    filterSystem: 'System',
+    /** Failure-detail target fallbacks (notification-markdown): record id / placeholder when all fields are missing */
+    failureRecord: 'record {id}',
+    failureUnknown: 'unknown item',
+    typeVersionUpdate: 'Version update',
+    typeSystem: 'System',
+    /** Event localization (bilingual P4 / E03): mapped by extra_data.event; unknown events fall back to raw text */
+    events: {
+      batchAdd: {
+        title: 'Batch torrent add completed',
+        content: 'Batch add finished: {total} total, {success} succeeded, {failed} failed.'
+      },
+      orphanScan: {
+        title: 'Orphan file scan completed',
+        content: 'This scan found {count} orphan files totaling {size}. Open the orphan file management page to review them.',
+        warning: ' (Note: the orphan count exceeds the guardrail threshold. This may be a genuinely large batch of data, or a false positive caused by a broken path mapping. Please verify on the orphan file management page.)'
+      },
+      versionUpdate: {
+        title: 'BtDeck {version} update available'
+      },
+      welcome: {
+        title: 'Welcome to BtDeck',
+        content: 'Thanks for using BtDeck! This is your first system notification. Version updates and system messages will appear here.'
+      }
+    }
+  },
+  /** AdvancedMultiSelect shared multi-select (list filters / advanced search / mobile, same source) */
+  /** PWA update prompt bar (added 2026-08-25, leftover fix) */
+  pwa: {
+    found: 'New version available',
+    refresh: 'Refresh now',
+    dismiss: 'Dismiss for now'
+  },
+  multiSelect: {
+    placeholder: 'Select',
+    searchPlaceholder: 'Search options...',
+    createOption: 'Create "{keyword}"',
+    include: 'Include',
+    exclude: 'Exclude',
+    selectedLabel: 'selected',
+    clear: 'Clear',
+    removeItem: 'Remove {label}',
+    emptyHint: 'Pick from the options below, or search to create',
+    noMatch: 'No matching options',
+    selectVisible: 'Select visible',
+    deselectVisible: 'Deselect visible',
+    selectAll: 'Select all options',
+    clearAll: 'Clear all selections',
+    pasteTitle: 'Bulk paste',
+    parsedCount: 'Parsed {count} items',
+    apply: 'Apply',
+    virtualScroll: 'Virtual scrolling',
+    showCount: 'Visible option limit',
+    customSeparators: 'Custom separators',
+    useSeparators: 'Separate multiple values with {separators}',
+    separatorJoin: ', ',
+    spaceSeparator: 'space',
+    multiSelected: '{first} + {count} more',
+    ariaSelect: 'Select multiple values',
+    ariaClear: 'Clear selected values'
+  },
+  /** PageSizeCombobox */
+  pageSize: {
+    ariaLabel: 'Items per page',
+    inputHint: 'Choose a preset or type 1-100000; press Enter or click away to apply',
+    expand: 'Expand page size options',
+    collapse: 'Collapse page size options',
+    options: 'Page size presets'
+  },
+  /** Theme switcher (P6-5 leftover fix: theme.ts config now uses nameKey/descriptionKey) */
+  theme: {
+    names: {
+      emerald: 'Emerald',
+      orange: 'Vibrant Orange',
+      graphite: 'Graphite'
+    },
+    descriptions: {
+      emerald: 'Natural flow + stable & reliable + efficient transfer',
+      orange: 'Vibrant energy + alert highlights + efficient management',
+      graphite: 'Professional & composed + minimal tech + efficient steward'
+    },
+    switchedTo: 'Switched to {name} theme'
+  },
+  /** Demo mode banner (P6-5: the banner is shell UI; demo fixture data stays out of scope) */
+  demo: {
+    badge: 'Demo Mode',
+    notice: 'Data is simulated locally — no backend side effects',
+    reset: 'Reset Data',
+    resetDone: 'Demo data has been reset'
+  },
+  /** Shared clipboard util (P6-5 leftover fix) */
+  clipboard: {
+    unsupported: 'Clipboard copy is not supported in this environment',
+    denied: 'The browser refused the copy command'
+  }
+}

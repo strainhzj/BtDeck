@@ -1,4 +1,7 @@
 import { TorrentStatus } from '@/types/torrent'
+import { translate, translateChoice } from '@/i18n'
+import i18n from '@/i18n'
+import { DEFAULT_LOCALE } from '@/i18n/types'
 
 export function normalizeTorrent(torrent: any): any {
   if (!torrent) {
@@ -198,41 +201,36 @@ export function debounce<T extends(...args: any[]) => any>(
  * @returns 用户友好的错误消息
  */
 export function extractErrorMessage(error: any): string {
-  if (!error) return '未知错误'
+  // 双语遗留补译：HTTP 兜底/网络/未知文案走 i18n（zh 与原内联逐字节一致）；
+  // 后端 msg/message 原文透传（契约化路径由 apiErrorMessage 按 reasonCode 本地化）
+  if (!error) return translate('errors.unknown')
 
   // Axios错误响应
   if (error.response) {
     const { data, status } = error.response
-    
+
     // 后端返回的标准错误格式
     if (data && data.msg) {
       return data.msg
     }
-    
+
     // 其他格式
     if (data && data.message) {
       return data.message
     }
-    
+
     // HTTP状态码
     if (status) {
-      const statusMessages: Record<number, string> = {
-        400: '请求参数错误',
-        401: '未授权，请重新登录',
-        403: '无权限访问',
-        404: '请求的资源不存在',
-        422: '数据验证失败',
-        500: '服务器内部错误',
-        502: '网关错误',
-        503: '服务不可用'
-      }
-      return statusMessages[status] || `请求失败 (${status})`
+      const key = `errors.http.${status}`
+      return i18n.te(key) || i18n.te(key, DEFAULT_LOCALE)
+        ? (i18n.t(key) as string)
+        : translate('errors.httpFallback', { status })
     }
   }
-  
+
   // 网络错误
   if (error.request) {
-    return '网络连接失败，请检查网络设置'
+    return translate('errors.network.checkSettings')
   }
   
   // 错误消息字符串
@@ -257,15 +255,18 @@ export function extractErrorMessage(error: any): string {
  */
 export function showErrorToast(
   error: any,
-  defaultMessage = '操作失败',
+  defaultMessage?: string,
   context?: string
 ): string {
+  // 双语遗留补译：上下文拼接模式走 i18n（zh 保持「{context}失败：{message}」原样）
   const errorMessage = extractErrorMessage(error)
-  const fullMessage = context ? `${context}失败：${errorMessage}` : errorMessage
-  
+  const fullMessage = context
+    ? translate('errors.contextFailed', { context, message: errorMessage })
+    : errorMessage
+
   // Element UI的Message组件需要通过Vue实例调用
   // 这里返回消息文本，由调用方显示
-  return fullMessage || defaultMessage
+  return fullMessage || defaultMessage || translate('errors.generic')
 }
 
 /**
@@ -540,9 +541,9 @@ export function getFileExtension(filename: string | null | undefined): string {
 }
 
 /**
- * 格式化时间差(相对时间)
- * @param timestamp 时间戳
- * @returns 相对时间描述,如 "2小时前"
+ * 格式化时间差(相对时间，文案走 i18n，随界面语言切换)
+ * @param timestamp 时间戳（秒或毫秒，或可被 Date 解析的字符串）
+ * @returns 相对时间描述（七档，键见 i18n locales 的 time 分组；不在此处写死文案）
  */
 export function formatRelativeTime(
   timestamp: number | string | null | undefined
@@ -572,19 +573,22 @@ export function formatRelativeTime(
     const diffDays = Math.floor(diffHours / 24)
 
     if (diffSecs < 60) {
-      return '刚刚'
+      return translate('time.justNow')
     } else if (diffMins < 60) {
-      return `${diffMins}分钟前`
+      return translateChoice('time.minutesAgo', diffMins, { n: diffMins })
     } else if (diffHours < 24) {
-      return `${diffHours}小时前`
+      return translateChoice('time.hoursAgo', diffHours, { n: diffHours })
     } else if (diffDays < 7) {
-      return `${diffDays}天前`
+      return translateChoice('time.daysAgo', diffDays, { n: diffDays })
     } else if (diffDays < 30) {
-      return `${Math.floor(diffDays / 7)}周前`
+      const weeks = Math.floor(diffDays / 7)
+      return translateChoice('time.weeksAgo', weeks, { n: weeks })
     } else if (diffDays < 365) {
-      return `${Math.floor(diffDays / 30)}个月前`
+      const months = Math.floor(diffDays / 30)
+      return translateChoice('time.monthsAgo', months, { n: months })
     } else {
-      return `${Math.floor(diffDays / 365)}年前`
+      const years = Math.floor(diffDays / 365)
+      return translateChoice('time.yearsAgo', years, { n: years })
     }
   } catch (error) {
     console.warn('相对时间格式化错误:', timestamp, error)

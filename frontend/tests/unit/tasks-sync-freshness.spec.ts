@@ -167,12 +167,14 @@ describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
 
   it('日志表格执行结果保留 success 布尔回退（兼容旧日志）', () => {
     expect(tasksSource).toContain('getTaskOutcomeMeta(scope.row.outcome)')
-    expect(tasksSource).toContain("scope.row.success ? '成功' : '失败'")
+    // 双语 P6-4a：布尔回退文案走 tasks.logs.successTag/failedTag 键
+    expect(tasksSource).toContain("$t('tasks.logs.successTag') : $t('tasks.logs.failedTag')")
   })
 
   it('日志详情弹窗与复制文案同步六态文案', () => {
     expect(tasksSource).toContain('getTaskOutcomeMeta(selectedLog?.outcome)')
-    expect(tasksSource).toContain('执行结果：${outcomeText}')
+    // 双语 P6-4a：复制文案标签走 tasks.logDetail.copyResult 键（zh 值含全角冒号，由语言包钉住）
+    expect(tasksSource).toContain("${this.$t('tasks.logDetail.copyResult')}${outcomeText}")
   })
 
   it('查看单任务日志后，清空操作移除隐藏 task_id 并立即刷新全部日志', () => {
@@ -181,7 +183,8 @@ describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
     expect(tasksSource).toContain('this.logQueryParams.task_id = undefined')
     expect(tasksSource).toContain("this.activeLogTaskName = ''")
     expect(tasksSource).toContain('@close="clearLogTaskFilter"')
-    expect(tasksSource).toContain('<LucideIcon name="x" :size="14" /> 清空')
+    // 双语 P6-4a：清空按钮文案走 tasks.logs.filter.clear 键
+    expect(tasksSource).toContain('<LucideIcon name="x" :size="14" /> {{ $t(\'tasks.logs.filter.clear\') }}')
   })
 
   it('导出与清理按钮使用项目标准 Element 按钮风格', () => {

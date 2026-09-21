@@ -20,13 +20,17 @@
 所有 Schema 变更必须通过 Alembic 管理，应用启动时自动执行迁移。
 **四轨治理后（v1.0.5-db-governance），Alembic 是唯一的 schema 来源**，已删除 create_all / schema 快照 / 原生 SQL 建表。
 
-**当前迁移链**（2026-08-14）：
+**当前迁移链**（2026-08-23）：
 ```
 e2a02abcf912 (base, 21表) → d0e58437af70 (+tracker_reannounce_config)
   → a0ada9774936 (+notification) → 95ef8bd8b47a (+search_templates)
   → ... → de898cb28172 (+torrent error_reason)
   → 4c1d8e7a2b90 (Tracker 状态判断任务错峰)
-  → 7b2c9d4e6f10 (孤儿后台扫描、稳定明细与超量复核, head)
+  → 7b2c9d4e6f10 (孤儿后台扫描、稳定明细与超量复核)
+  → b6e1c4d9a2f7 → c8d9e0f1a2b3 → d4e5f6a7b8c9
+  → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5
+  → ab68fe061d5b → 975dad435c03 (辅种数量)
+  → c1d2e3f4a5b6 (修复 orphan current_detail_id Schema 漂移, head)
 ```
 - 30 张业务表（+ alembic_version），单 head，无分叉
 - 历史幽灵版本 `9aea25308aff` 由 `KNOWN_GHOST_VERSIONS` 自动救援

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "description": "W4 跨制品黑盒契约允许差异登记（release-artifact-equivalence-gate task .8 / G8）。每条差异必须精确登记快照 JSON 路径（支持单段 * 通配）、实质原因与过期日；禁止宽泛规则（* 根路径 / 尾部吞段）。未命中任何真实差异的规则会被 compare_snapshots 报为 stale 提示清理。空规则集=当前所有制品在 C01~C04 场景下完全等价。",
+  "allowed_differences": []
+}

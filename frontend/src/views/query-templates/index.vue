@@ -2,8 +2,8 @@
   <div class="app-container management-page query-templates-page">
     <header class="management-page__header" aria-labelledby="query-templates-title">
       <div class="management-page__heading">
-        <h1 id="query-templates-title" class="management-page__title">查询模板</h1>
-        <p class="management-page__subtitle">集中管理并复用常用的简单查询与高级搜索条件</p>
+        <h1 id="query-templates-title" class="management-page__title">{{ $t('queryTemplate.list.title') }}</h1>
+        <p class="management-page__subtitle">{{ $t('queryTemplate.list.subtitle') }}</p>
       </div>
       <div class="management-page__actions">
         <el-button
@@ -11,24 +11,24 @@
           :loading="listLoading"
           @click="getList"
         >
-          刷新
+          {{ $t('common.refresh') }}
         </el-button>
         <el-button type="primary" icon="el-icon-plus" @click="handleCreate">
-          新建模板
+          {{ $t('queryTemplate.list.create') }}
         </el-button>
       </div>
     </header>
 
     <!-- 筛选条件 -->
-    <section class="management-panel" aria-label="查询模板筛选条件">
+    <section class="management-panel" :aria-label="$t('queryTemplate.list.filterAria')">
       <div class="management-filter">
         <div class="management-filter__field management-filter__field--wide">
-          <label class="management-filter__label" for="query-template-name">模板名称</label>
+          <label class="management-filter__label" for="query-template-name">{{ $t('queryTemplate.list.nameLabel') }}</label>
           <el-input
             id="query-template-name"
             v-model="listQuery.name"
             class="management-filter__control"
-            placeholder="输入模板名称"
+            :placeholder="$t('queryTemplate.list.namePlaceholder')"
             prefix-icon="el-icon-search"
             clearable
             @keyup.enter.native="handleFilter"
@@ -36,23 +36,23 @@
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="query-template-source">模板类型</label>
+          <label class="management-filter__label" for="query-template-source">{{ $t('queryTemplate.list.sourceLabel') }}</label>
           <el-select
             id="query-template-source"
             v-model="listQuery.source"
             class="management-filter__control"
-            placeholder="全部类型"
+            :placeholder="$t('queryTemplate.list.sourcePlaceholder')"
             clearable
             @change="handleFilter"
           >
-            <el-option label="全部" value="" />
-            <el-option label="简单查询" value="simple" />
-            <el-option label="高级搜索" value="advanced" />
+            <el-option :label="$t('queryTemplate.list.sourceAll')" value="" />
+            <el-option :label="$t('queryTemplate.list.simple')" value="simple" />
+            <el-option :label="$t('queryTemplate.list.advanced')" value="advanced" />
           </el-select>
         </div>
         <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">
-            搜索
+            {{ $t('queryTemplate.list.search') }}
           </el-button>
         </div>
       </div>
@@ -62,11 +62,11 @@
     <section class="management-panel" aria-labelledby="query-template-list-title">
       <div class="management-panel__header">
         <div class="management-panel__heading">
-          <h2 id="query-template-list-title" class="management-panel__title">模板列表</h2>
-          <p class="management-panel__description">系统模板仅可应用，个人模板可以编辑或删除</p>
+          <h2 id="query-template-list-title" class="management-panel__title">{{ $t('queryTemplate.list.listTitle') }}</h2>
+          <p class="management-panel__description">{{ $t('queryTemplate.list.listDesc') }}</p>
         </div>
         <div class="management-panel__meta">
-          <el-tag type="info" effect="plain">共 {{ filteredList.length }} 个模板</el-tag>
+          <el-tag type="info" effect="plain">{{ $t('queryTemplate.list.countTag', {count: filteredList.length}) }}</el-tag>
         </div>
       </div>
       <div class="management-table-scroll">
@@ -77,44 +77,48 @@
           border
           fit
           highlight-current-row
-          empty-text="暂无查询模板"
+          :empty-text="$t('queryTemplate.list.empty')"
           style="width: 100%"
         >
-          <el-table-column label="模板名称" prop="name" min-width="140" show-overflow-tooltip />
-          <el-table-column label="描述" prop="description" min-width="200" show-overflow-tooltip>
+          <el-table-column :label="$t('queryTemplate.list.colName')" min-width="140" show-overflow-tooltip>
             <template slot-scope="scope">
-              {{ scope.row.description || '-' }}
+              {{ displayPresetName(scope.row) }}
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="100" align="center">
+          <el-table-column :label="$t('queryTemplate.list.colDesc')" min-width="200" show-overflow-tooltip>
+            <template slot-scope="scope">
+              {{ displayPresetDescription(scope.row) || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('queryTemplate.list.colType')" width="100" align="center">
             <template slot-scope="scope">
               <el-tag :type="getConditionsSource(scope.row) === 'simple' ? '' : 'success'" size="small">
-                {{ getConditionsSource(scope.row) === 'simple' ? '简单查询' : '高级搜索' }}
+                {{ getConditionsSource(scope.row) === 'simple' ? $t('queryTemplate.list.simple') : $t('queryTemplate.list.advanced') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="来源" width="90" align="center">
+          <el-table-column :label="$t('queryTemplate.list.colSource')" width="90" align="center">
             <template slot-scope="scope">
-              <el-tag v-if="scope.row.is_default" type="warning" size="small">系统</el-tag>
-              <el-tag v-else-if="scope.row.is_public" type="info" size="small">公开</el-tag>
-              <el-tag v-else type="info" size="small" effect="plain">私有</el-tag>
+              <el-tag v-if="scope.row.is_default" type="warning" size="small">{{ $t('queryTemplate.list.tagSystem') }}</el-tag>
+              <el-tag v-else-if="scope.row.is_public" type="info" size="small">{{ $t('queryTemplate.list.tagPublic') }}</el-tag>
+              <el-tag v-else type="info" size="small" effect="plain">{{ $t('queryTemplate.list.tagPrivate') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="使用次数" prop="usage_count" width="90" align="center" />
-          <el-table-column label="创建时间" width="160" align="center">
+          <el-table-column :label="$t('queryTemplate.list.colUsage')" prop="usage_count" width="90" align="center" />
+          <el-table-column :label="$t('queryTemplate.list.colCreated')" width="160" align="center">
             <template slot-scope="scope">
               {{ formatTime(scope.row.created_time) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="138" align="center" fixed="right">
+          <el-table-column :label="$t('queryTemplate.list.colActions')" width="138" align="center" fixed="right">
             <template slot-scope="scope">
               <div class="template-row-actions">
-                <el-tooltip content="应用模板" placement="top" :open-delay="200">
+                <el-tooltip :content="$t('queryTemplate.list.applyTip')" placement="top" :open-delay="200">
                   <span class="template-action-trigger">
                     <el-button
                       type="text"
                       class="template-action-btn template-action-btn--apply"
-                      aria-label="应用模板"
+                      :aria-label="$t('queryTemplate.list.applyTip')"
                       @click="handleApply(scope.row)"
                     >
                       <LucideIcon name="play" :size="15" />
@@ -122,7 +126,7 @@
                   </span>
                 </el-tooltip>
                 <el-tooltip
-                  :content="scope.row.is_default ? '系统模板不可编辑' : '编辑模板'"
+                  :content="scope.row.is_default ? $t('queryTemplate.list.editDisabled') : $t('queryTemplate.list.editTip')"
                   placement="top"
                   :open-delay="200"
                 >
@@ -130,7 +134,7 @@
                     <el-button
                       type="text"
                       class="template-action-btn"
-                      :aria-label="scope.row.is_default ? '系统模板不可编辑' : '编辑模板'"
+                      :aria-label="scope.row.is_default ? $t('queryTemplate.list.editDisabled') : $t('queryTemplate.list.editTip')"
                       :disabled="scope.row.is_default"
                       @click="handleEdit(scope.row)"
                     >
@@ -139,7 +143,7 @@
                   </span>
                 </el-tooltip>
                 <el-tooltip
-                  :content="scope.row.is_default ? '系统模板不可删除' : '删除模板'"
+                  :content="scope.row.is_default ? $t('queryTemplate.list.deleteDisabled') : $t('queryTemplate.list.deleteTip')"
                   placement="top"
                   :open-delay="200"
                 >
@@ -147,7 +151,7 @@
                     <el-button
                       type="text"
                       class="template-action-btn template-action-btn--delete"
-                      :aria-label="scope.row.is_default ? '系统模板不可删除' : '删除模板'"
+                      :aria-label="scope.row.is_default ? $t('queryTemplate.list.deleteDisabled') : $t('queryTemplate.list.deleteTip')"
                       :disabled="scope.row.is_default"
                       @click="handleDelete(scope.row)"
                     >
@@ -180,6 +184,8 @@ import {
   deleteSearchTemplate,
   SearchTemplate
 } from '@/api/torrents'
+import { apiErrorMessage, apiResponseMessage, getLocale } from '@/i18n'
+import { presetDisplayDescription, presetDisplayName } from '@/components/torrents/advancedSearchFields'
 
 @Component({
   name: 'QueryTemplates',
@@ -216,6 +222,16 @@ export default class QueryTemplates extends Vue {
     })
   }
 
+  /** 名称列展示：系统预设按 preset_key 本地化，未识别保留原文（Q01/Q02） */
+  private displayPresetName(row: SearchTemplate): string {
+    return presetDisplayName(row)
+  }
+
+  /** 描述列展示：系统预设按 preset_key 本地化，未识别保留原文（无描述回退占位） */
+  private displayPresetDescription(row: SearchTemplate): string {
+    return presetDisplayDescription(row)
+  }
+
   private async getList() {
     this.listLoading = true
     try {
@@ -225,10 +241,12 @@ export default class QueryTemplates extends Vue {
         const data = response.data as any
         this.list = Array.isArray(data) ? data : (data?.list || [])
       } else {
-        this.$message.error(response.msg || '获取模板列表失败')
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.list.loadFailed') as string))
       }
     } catch (error) {
-      this.$message.error('获取模板列表失败：' + (error as Error).message)
+      // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+      this.$message.error(apiErrorMessage(error, this.$t('queryTemplate.list.loadFailed') as string))
     } finally {
       this.listLoading = false
     }
@@ -246,7 +264,7 @@ export default class QueryTemplates extends Vue {
   private formatTime(time: string): string {
     if (!time) return '-'
     try {
-      return new Date(time).toLocaleString('zh-CN', { hour12: false })
+      return new Date(time).toLocaleString(getLocale() === 'en' ? 'en-US' : 'zh-CN', { hour12: false })
     } catch {
       return time
     }
@@ -278,22 +296,30 @@ export default class QueryTemplates extends Vue {
 
   private async handleDelete(row: SearchTemplate) {
     try {
-      await this.$confirm(`确认删除模板 "${row.name}" 吗？`, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+      await this.$confirm(
+        this.$t('queryTemplate.list.confirmDelete', { name: row.name }).toString(),
+        this.$t('queryTemplate.list.confirmTitle').toString(),
+        {
+          confirmButtonText: this.$t('queryTemplate.list.confirmOk').toString(),
+          cancelButtonText: this.$t('common.cancel').toString(),
+          type: 'warning'
+        }
+      )
       const response = await deleteSearchTemplate(row.id)
       if (response.code === '200') {
-        this.$message.success('删除成功')
+        this.$message.success(this.$t('queryTemplate.list.deleteOk'))
         this.getList()
       } else {
-        this.$message.error(response.msg || '删除失败')
+        // 双语 P4 错误契约：优先 reasonCode 本地化
+        this.$message.error(apiResponseMessage(response, this.$t('queryTemplate.list.deleteFailed') as string))
       }
     } catch (error) {
       // 用户取消或删除失败
       if ((error as any)?.message) {
-        this.$message.error('删除失败：' + (error as Error).message)
+        // 双语 P4 错误契约：优先 reasonCode 本地化，未契约化路径回退原始 msg
+        this.$message.error(
+          apiErrorMessage(error, this.$t('queryTemplate.list.deleteFailed') as string)
+        )
       }
     }
   }

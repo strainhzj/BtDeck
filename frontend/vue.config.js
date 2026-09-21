@@ -1,7 +1,8 @@
 const path = require('path')
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin')
 
-const name = 'BtDeck'
+const isDemoBuild = process.env.VUE_APP_DEMO_MODE === 'true'
+const name = isDemoBuild ? 'BtDeck Demo' : 'BtDeck'
 
 module.exports = {
   // Docker部署使用根路径，如需子路径部署请修改此处
@@ -11,7 +12,24 @@ module.exports = {
   assetsDir: 'assets',
   lintOnSave: false,
   pwa: {
-    name: name
+    name: name,
+    // 品牌主题色与前端主题同源（theme-variables.scss --color-primary #059669）
+    themeColor: '#059669',
+    msTileColor: '#059669',
+    // iOS 添加到主屏幕后独立全屏运行（配合移动版 UI）；
+    // v5 插件为扁平选项（v4 的 appleMobileWebAppOptions 对象不生效）
+    appleMobileWebAppCapable: 'yes',
+    appleMobileWebAppStatusBarStyle: 'default',
+    appleMobileWebAppTitle: name,
+    workboxOptions: {
+      // 缓存前缀品牌化：默认值是包名 vue-typescript-admin-template，
+      // 恰为 deployment-recovery 的遗留清理前缀，必须区分开
+      cacheId: 'btdeck',
+      // 首装立即接管已打开页面；版本更新保持 waiting，由页面内
+      // RefreshPrompt 提示用户 SKIP_WAITING + 刷新（防止旧壳钉死）
+      clientsClaim: true,
+      skipWaiting: false
+    }
   },
   pluginOptions: {
     'style-resources-loader': {
@@ -65,7 +83,7 @@ module.exports = {
     // it can be accessed in index.html to inject the correct title.
     if (config.plugins.has('html')) {
       config.plugin('html').tap(args => {
-        args[0].title = name
+        args[0].title = process.env.VUE_APP_TITLE || name
         return args
       })
     }

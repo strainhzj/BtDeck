@@ -59,6 +59,8 @@ export interface Torrent {
   download_speed?: number | null // 蛇形命名兼容
   uploadSpeed?: number | null
   upload_speed?: number | null // 蛇形命名兼容
+  downloadComplete?: boolean | null
+  download_complete?: boolean | null // 蛇形命名兼容
   peers?: number | null
   seeds?: number | null
 }
@@ -91,6 +93,9 @@ export interface TrackerInfo {
   leecher_count?: number | null
   downloadCount?: number | null
   download_count?: number | null
+  // 命中当前 tracker 域名筛选的域名；未启用筛选或未命中时为 undefined
+  matchedDomain?: string
+  matched_domain?: string
 }
 
 export interface TorrentListData {
@@ -198,6 +203,7 @@ export interface TorrentListParams {
   active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
   same_content_only?: boolean  // 仅显示同名、同大小且不同 InfoHash 的种子
   single_error_only?: boolean  // 仅显示错误且全局同内容唯一的种子
+  with_trackers?: boolean  // 行内是否携带 tracker_info 明细（移动端列表传 false 瘦身，默认 true）
   skip?: number
   limit?: number
   sort_by?: string
@@ -214,11 +220,38 @@ export interface TorrentListResponseData {
   activeSnapshotStatus?: ActiveSnapshotStatus
 }
 
+/**
+ * getList 多选参数的后端契约为逗号分隔字符串（FastAPI Optional[str]）。
+ * axios 无自定义 paramsSerializer，数组会默认序列化成 `key[]=v` 形式，
+ * 与后端参数名不匹配而被静默忽略——数组在此统一归一化为 join(',')，
+ * 空数组剔除该键（桌面 index.vue 调用前的 join 由此成为无害冗余）。
+ */
+function normalizeTorrentListArrayParams(params?: TorrentListParams): TorrentListParams | undefined {
+  if (!params) return params
+  const normalized = { ...params }
+  const multiValueKeys: Array<'downloader_id' | 'status' | 'tracker_domain'> = [
+    'downloader_id',
+    'status',
+    'tracker_domain'
+  ]
+  multiValueKeys.forEach((key) => {
+    const value = normalized[key]
+    if (Array.isArray(value)) {
+      if (value.length > 0) {
+        normalized[key] = value.join(',')
+      } else {
+        delete normalized[key]
+      }
+    }
+  })
+  return normalized
+}
+
 export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<TorrentListResponseData>> {
   return request({
     url: '/torrents/getList',
     method: 'get',
-    params: params
+    params: normalizeTorrentListArrayParams(params)
   }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
 }
 
@@ -574,6 +607,43 @@ export function modifyTracker(data: ModifyTrackerRequest): Promise<ApiResponse<a
   }) as unknown as Promise<ApiResponse<any>>
 }
 
+/**
+ * Tracker操作（按下载器触发）接口参数类型
+ */
+export interface TrackerByDownloaderRequest {
+  downloader_id: string // 下载器ID（服务端解析该下载器下全部种子）
+  trackers: string // 多个tracker地址用分号分隔
+}
+
+export interface TrackerByDownloaderResponse {
+  success_count: number
+  failed_count: number
+}
+
+/**
+ * 按下载器添加tracker
+ * @description 对该下载器下全部种子添加tracker地址（服务端解析种子范围，无种子列表 URL 长度上限）
+ */
+export function addTrackerByDownloader(data: TrackerByDownloaderRequest): Promise<ApiResponse<TrackerByDownloaderResponse>> {
+  return request({
+    url: '/tracker/addTracker-by-downloader',
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<TrackerByDownloaderResponse>>
+}
+
+/**
+ * 按下载器修改tracker
+ * @description 完全替换该下载器下全部种子的tracker列表（服务端解析种子范围）
+ */
+export function modifyTrackerByDownloader(data: TrackerByDownloaderRequest): Promise<ApiResponse<TrackerByDownloaderResponse>> {
+  return request({
+    url: '/tracker/modifyTracker-by-downloader',
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<TrackerByDownloaderResponse>>
+}
+
 // ==================== 高级搜索相关接口 ====================
 
 /**
@@ -677,6 +747,8 @@ export interface SearchTemplate {
   name: string
   description: string | null
   conditions: QueryTemplateConditions
+  /** 系统预设稳定身份键（backend b3e5f7a9c1d2；用户模板为 null，展示层按键本地化） */
+  preset_key?: string | null
   is_default: boolean
   is_public: boolean
   usage_count: number
@@ -778,6 +850,7 @@ export interface QueryTemplateConditions {
     tags_like?: string
     downloader_id?: string[]
     status?: string[]
+    tracker_domain?: string[]
     showActiveOnly?: boolean
     sort_by?: string
     sort_order?: 'asc' | 'desc'
@@ -827,6 +900,7 @@ export function saveSimpleQueryAsTemplate(
       tags_like: listQuery?.tags_like ?? '',
       downloader_id: listQuery?.downloader_id ? [...listQuery.downloader_id] : [],
       status: listQuery?.status ? [...listQuery.status] : [],
+      tracker_domain: listQuery?.tracker_domain ? [...listQuery.tracker_domain] : [],
       showActiveOnly: listQuery?.showActiveOnly ?? false,
       sort_by: listQuery?.sort_by ?? 'added_date',
       sort_order: listQuery?.sort_order ?? 'desc'
@@ -1307,6 +1381,71 @@ export function reannounceAll(): Promise<ApiResponse<ReannounceResponse>> {
   }) as unknown as Promise<ApiResponse<ReannounceResponse>>
 }
 
+// ==================== 种子详情明细接口（TrackerDetailCard 文件/Peers 页签） ====================
+
+/**
+ * 种子文件信息（progress 契约：0~1）
+ */
+export interface TorrentFileInfo {
+  name: string
+  size: number // bytes
+  progress: number // 0~1
+}
+
+/**
+ * 种子 Peer 信息（progress 契约：0~1；速度单位 bytes/s）
+ */
+export interface TorrentPeerInfo {
+  ip: string
+  port: number
+  client: string
+  progress: number // 0~1
+  down_speed: number
+  downSpeed?: number // 驼形命名兼容
+  up_speed: number
+  upSpeed?: number // 驼形命名兼容
+  flags: string
+  country: string
+}
+
+/**
+ * 详情明细列表响应（后端列表强制信封 data 结构）
+ */
+export interface TorrentDetailListData<T> {
+  total: number
+  page: number
+  pageSize: number
+  list: T[]
+}
+
+/**
+ * 获取种子文件列表
+ */
+export function getTorrentFiles(
+  torrentHash: string,
+  downloaderId: string
+): Promise<ApiResponse<TorrentDetailListData<TorrentFileInfo>>> {
+  return request({
+    url: `/torrents/detail/${torrentHash}/files`,
+    method: 'get',
+    params: { downloader_id: downloaderId }
+  }) as unknown as Promise<ApiResponse<TorrentDetailListData<TorrentFileInfo>>>
+}
+
+/**
+ * 获取种子 Peer 列表
+ */
+export function getTorrentPeers(
+  torrentHash: string,
+  downloaderId: string
+): Promise<ApiResponse<TorrentDetailListData<TorrentPeerInfo>>> {
+  return request({
+    url: `/torrents/detail/${torrentHash}/peers`,
+    method: 'get',
+    params: { downloader_id: downloaderId }
+  }) as unknown as Promise<ApiResponse<TorrentDetailListData<TorrentPeerInfo>>>
+}
+
 // ==================== 实时速度监控接口 ====================
 
 /**
@@ -1319,8 +1458,23 @@ export interface ActiveTorrentSpeed {
   downloadSpeed: number  // bytes/s
   uploadSpeed: number    // bytes/s
   progress: number       // 下载进度（百分比，0-100）
+  /** 下载器归一化状态；旧服务端可能不返回，前端需兼容缺省。 */
+  status?: string
+  /** 与速度解耦的下载完成证据（速度为 0 时仍可能为 true）。 */
+  downloadComplete?: boolean
+  download_complete?: boolean
   num_seeds: number
   num_leechs: number
+}
+
+export interface RuntimeStateReconcileItem {
+  downloader_id: string
+  hash: string
+}
+
+export interface RuntimeStateReconcileData {
+  list: ActiveTorrentSpeed[]
+  missing: RuntimeStateReconcileItem[]
 }
 
 /**
@@ -1332,4 +1486,18 @@ export function getActiveTorrents(): Promise<ApiResponse<ActiveTorrentSpeed[]>> 
     url: '/torrents/active-torrents',
     method: 'get'
   }) as unknown as Promise<ApiResponse<ActiveTorrentSpeed[]>>
+}
+
+/**
+ * 低频核验当前可见但连续未出现在速度快照中的种子。
+ * 后端返回已找到的实时状态与暂未找到的复合键，missing 不代表已删除。
+ */
+export function reconcileRuntimeTorrentStates(
+  items: RuntimeStateReconcileItem[]
+): Promise<ApiResponse<RuntimeStateReconcileData>> {
+  return request({
+    url: '/torrents/runtime-state/reconcile',
+    method: 'post',
+    data: { items }
+  }) as unknown as Promise<ApiResponse<RuntimeStateReconcileData>>
 }

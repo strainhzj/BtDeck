@@ -1,9 +1,12 @@
 import Vue from 'vue'
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 interface PageSizeComboboxProps {
   value?: string
@@ -23,6 +26,7 @@ function mountCombobox(
 ): Wrapper<Vue> {
   return mount(PageSizeCombobox, {
     localVue,
+    i18n,
     attachTo,
     propsData: {
       value: '20',
@@ -143,6 +147,7 @@ describe('PageSizeCombobox append-to-body teleport', () => {
   it('append-to-body=true 展开时把下拉挪到 document.body 并加 floating class', async() => {
     wrapper = mount(PageSizeCombobox, {
       localVue,
+      i18n,
       attachTo: document.body,
       propsData: {
         value: '20',
@@ -172,6 +177,7 @@ describe('PageSizeCombobox append-to-body teleport', () => {
   it('append-to-body=false（默认）展开时下拉留在原父级，不 teleport', async() => {
     wrapper = mount(PageSizeCombobox, {
       localVue,
+      i18n,
       attachTo: document.body,
       propsData: {
         value: '20',

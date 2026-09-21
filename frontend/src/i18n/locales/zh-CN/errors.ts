@@ -1,0 +1,211 @@
+/*
+ * Copyright (C) 2025 BTDeck Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * 错误契约文案（errors 组：P2 批 M1 子集 + P4 批扩展）。
+ * byCode 键 = 后端 data.reasonCode 的 camelCase 形态；未命中走 generic 兜底。
+ * 前端禁止按中文 msg 匹配（主计划 §3.3）。
+ */
+export const errors = {
+  generic: '操作失败',
+  unknown: '未知错误',
+  /** 操作上下文拼接（formatters.showErrorToast）：'{context}失败：{message}' */
+  contextFailed: '{context}失败：{message}',
+  network: {
+    unavailable: '网络连接失败，请检查网络连接',
+    checkSettings: '网络连接失败，请检查网络设置',
+    generic: '网络错误'
+  },
+  /** HTTP 状态码兜底（formatters.extractErrorMessage，遗留补译） */
+  http: {
+    '400': '请求参数错误',
+    '401': '未授权，请重新登录',
+    '403': '无权限访问',
+    '404': '请求的资源不存在',
+    '422': '数据验证失败',
+    '500': '服务器内部错误',
+    '502': '网关错误',
+    '503': '服务不可用'
+  },
+  httpFallback: '请求失败 ({status})',
+  /** P6-5 遗漏扫描补译：请求层归一化兜底（error-normalize，E01 未识别错误当前语言兜底） */
+  paramValidation: '参数校验失败',
+  requestError: '请求错误',
+  /** E17：422 字段校验按 pydantic type 字典化（field 为 loc 末段标识符） */
+  validation: {
+    missing: '必填参数缺失：{field}',
+    tooShort: '参数项数不足：{field}',
+    tooLong: '参数项数超出上限：{field}',
+    stringType: '参数类型不正确：{field} 应为文本',
+    intParsing: '参数类型不正确：{field} 应为整数',
+    boolParsing: '参数类型不正确：{field} 应为布尔值',
+    greaterThan: '参数取值过小：{field}',
+    lessThan: '参数取值过大：{field}',
+    valueError: '参数无效：{field}',
+    generic: '请求参数校验失败（{field}）'
+  },
+  byCode: {
+    authRateLimited: '尝试次数过多，请稍后再试',
+    authInvalidCredentials: '用户名或密码错误',
+    authTotpRequired: '请填写两步验证码',
+    authTotpInvalid: '验证码错误，请重试',
+    authInternal: '系统异常，请稍后重试',
+    authRefreshInvalid: '登录状态已过期，请重新登录',
+    userNotFound: '用户不存在',
+    userOrigPasswordInvalid: '原密码错误',
+    userPasswordUpdateFailed: '密码修改失败，请稍后重试',
+    twofaForbidden: '无权操作其他用户的2FA设置',
+    twofaInvalidOperation: '无效的2FA操作',
+    twofaAlreadyEnabled: '用户已启用双因素认证，无需重复绑定',
+    twofaPasswordRequired: '停用双因素认证需要提供当前密码',
+    twofaPasswordInvalid: '密码错误',
+    twofaTotpRequired: '停用双因素认证需要提供双因素验证码',
+    twofaTotpInvalid: '双因素验证码错误',
+    downloaderAuthFailed: '下载器拒绝了用户名或密码',
+    downloaderNotFound: '该下载器已被删除或不存在',
+    downloaderOrigPasswordRequired: '修改用户名或密码时必须提供原密码',
+    downloaderOrigPasswordInvalid: '原密码错误',
+    downloaderOrigPasswordUnverified: '无法验证原密码，请稍后重试',
+    downloaderTestFailed: '测试连接失败',
+    downloaderDbQueryFailed: '数据库查询失败，请稍后重试',
+    /* ↓ 双语 P4 扩展：种子操作 / Tracker / 查询模板 / 添加链路 */
+    downloaderCacheUnavailable: '下载器缓存服务暂不可用，请稍后重试',
+    downloaderOffline: '下载器已失效，请检查下载器状态后重试',
+    downloaderConnectionMissing: '下载器连接不可用，请稍后重试',
+    downloaderNoTorrents: '该下载器下没有种子',
+    torrentHashesRequired: '请选择要操作的种子',
+    torrentRecordsNotFound: '未找到任何种子记录',
+    torrentOperationFailed: '种子操作失败，请稍后重试',
+    torrentOperationInternal: '操作异常，请稍后重试',
+    torrentFileRequired: '请选择种子文件',
+    torrentFileInvalid: '种子文件无效或已损坏',
+    torrentInfoTimeout: '获取种子信息超时，请检查下载器连接',
+    torrentInfoUnavailable: '种子已提交，但暂时无法从下载器获取信息',
+    torrentAddFailed: '添加种子失败，请稍后重试',
+    torrentFilesRequired: '请至少选择一个种子文件',
+    torrentStageFailed: '种子文件上传失败，请重试',
+    torrentBatchSubmitFailed: '提交批量任务失败，请稍后重试',
+    torrentSyncFailed: '同步失败，请稍后重试',
+    trackerUrlRequired: '请填写 Tracker 地址',
+    trackerNotFound: '未找到要替换的 Tracker',
+    trackerOperationInternal: 'Tracker 操作异常，请稍后重试',
+    searchTemplateNotFound: '查询模板不存在',
+    searchTemplateForbidden: '无权操作此模板',
+    searchTemplateInvalidConditions: '查询条件无效，请检查后重试',
+    searchTemplateCreateFailed: '创建模板失败，请稍后重试',
+    searchTemplateListFailed: '获取模板失败，请稍后重试',
+    searchTemplateUpdateFailed: '更新模板失败，请稍后重试',
+    searchTemplateDeleteFailed: '删除模板失败，请稍后重试',
+    searchTemplateApplyFailed: '应用模板失败，请稍后重试',
+    internalError: '服务器内部错误，请稍后重试',
+    dbOperationFailed: '数据库操作失败，请稍后重试',
+    /* ↓ 双语 P5 扩展：删除链路 / 回收站 */
+    torrentDeleteAccepted: '批量删除任务已提交，正在后台执行',
+    torrentDeleteAlreadyProcessed: '所选种子均已在删除任务中处理',
+    torrentDeleteTaskNotFound: '删除任务不存在或已失效',
+    torrentDeleteSubmitFailed: '提交删除任务失败，请稍后重试',
+    torrentDeleteStatusQueryFailed: '查询删除任务状态失败，请稍后重试',
+    torrentDeleteFailed: '删除种子失败，请稍后重试',
+    torrentDeleteInvalidParams: '请求参数有误，请检查后重试',
+    downloaderUnsupportedType: '不支持的下载器类型',
+    downloaderAdapterInitFailed: '下载器适配器初始化失败，请稍后重试',
+    recycleBinQueryFailed: '回收站查询失败，请稍后重试',
+    recycleRestoreFailed: '还原种子失败，请稍后重试',
+    recyclePreviewFailed: '清理预览失败，请稍后重试',
+    recycleCleanupFailed: '清理回收站失败，请稍后重试',
+    notImplemented: '该功能尚未开放，敬请期待',
+    /* ↓ 双语 P6-3 扩展：Tracker 关键词池 / 汇报配置 / 判断测试 */
+    keywordTooLong: '关键词长度超过限制（最大 200 字符）',
+    languageCodeTooLong: '语言代码长度超过限制（最大 10 字符）',
+    categoryTooLong: '分类长度超过限制（最大 50 字符）',
+    descriptionTooLong: '描述长度超过限制（最大 200 字符）',
+    keywordAlreadyExists: '该关键词已存在于对应池中',
+    keywordNotFound: '关键词不存在或已删除',
+    keywordListRequired: '关键词列表不能为空',
+    keywordDuplicateInBatch: '批量列表中存在重复的关键词',
+    keywordInvalidPoolType: '无效的池子类型',
+    keywordParamsRequired: '缺少必要参数（keyword_id / target_pool）',
+    keywordIdsMustBeList: 'keywordIds 必须是列表',
+    keywordPrefixRequired: '前缀不能为空',
+    reannounceConfigNotFound: '汇报配置不存在或已删除',
+    reannounceConfigInvalid: '配置参数无效，请检查后重试',
+    reannounceNoFieldsToUpdate: '没有需要更新的字段',
+    reannounceBatchFormatInvalid: '批量请求数据格式错误',
+    reannounceBatchEmpty: '批量请求数据不能为空',
+    testMatchFailed: '测试失败，请稍后重试',
+    /* ↓ 双语 P6-4a 扩展：定时任务域 */
+    tasksCustomScriptsDisabled: '自定义脚本任务已被安全策略禁用，如需启用请联系管理员',
+    tasksCustomScriptsHostUnsupported: '当前主机形态不支持自定义脚本任务',
+    tasksUnsupportedTaskType: '不支持的任务类型',
+    tasksExecutorNotAllowed: '执行类路径不在允许范围内',
+    tasksTaskConflict: '任务编码或名称已存在，请修改后重试',
+    tasksNotFound: '定时任务不存在或已删除',
+    tasksCreateFailed: '创建定时任务失败，请稍后重试',
+    tasksListFailed: '获取任务列表失败，请稍后重试',
+    tasksGetFailed: '获取定时任务失败，请稍后重试',
+    tasksUpdateFailed: '更新定时任务失败，请稍后重试',
+    tasksDeleteFailed: '删除定时任务失败，请稍后重试',
+    tasksExecuteFailed: '启动任务失败，请稍后重试',
+    tasksPauseFailed: '暂停任务失败，请稍后重试',
+    tasksResumeFailed: '恢复任务失败，请稍后重试',
+    tasksInterruptFailed: '中断任务失败，请稍后重试',
+    tasksLogListFailed: '获取任务日志失败，请稍后重试',
+    tasksLogStatsFailed: '获取日志统计失败，请稍后重试',
+    tasksLogDeleteFailed: '删除任务日志失败，请稍后重试',
+    tasksLogExportFailed: '导出任务日志失败，请稍后重试',
+    tasksLogCleanupFailed: '清理任务日志失败，请稍后重试',
+    tasksCleanupConditionRequired: '请至少指定一个清理条件',
+    tasksCleanupDaysInvalid: '保留天数必须大于等于 0',
+    tasksCleanupInvalidParams: '请求参数有误，请检查后重试',
+    tasksCleanupExecuteFailed: '执行清理失败，请稍后重试',
+    tasksCleanupPreviewFailed: '预览清理失败，请稍后重试',
+    tasksSyntaxValidateFailed: '脚本语法校验失败，请稍后重试',
+    tasksCronValidateFailed: 'Cron 表达式校验失败，请稍后重试',
+    tasksPythonClassFailed: 'Python 类路径验证失败，请稍后重试',
+    tasksTypeConfigFailed: '获取任务类型配置失败，请稍后重试',
+    // P6-4b（audit-logs / orphan-files 端点契约）
+    auditLogParamInvalid: '时间参数格式错误',
+    auditLogQueryFailed: '查询审计日志失败，请稍后重试',
+    auditLogStatsFailed: '获取统计信息失败，请稍后重试',
+    auditLogArchiveFailed: '归档失败，请稍后重试',
+    auditLogExportEmpty: '没有符合条件的数据可导出',
+    auditLogExportFailed: '导出失败，请稍后重试',
+    auditLogOperationTypesFailed: '获取操作类型失败，请稍后重试',
+    orphanLatestFailed: '获取最新扫描结果失败，请稍后重试',
+    orphanScanNotFound: '扫描任务不存在',
+    orphanScanStatusFailed: '查询扫描状态失败，请稍后重试',
+    orphanGuardrailReviewIncomplete: '必须同时完成路径映射核查和孤儿样本核查',
+    orphanGuardrailReviewFailed: '复核失败，请稍后重试',
+    orphanListFailed: '查询孤儿文件列表失败，请稍后重试',
+    orphanFolderChildrenFailed: '加载文件夹子项失败，请稍后重试',
+    orphanHardlinkQueryFailed: '查询硬链接副本位置失败，请稍后重试',
+    orphanHardlinkDeleteRejected: '维护操作互斥或有拦截，本次未执行删除',
+    orphanHardlinkDeleteFailed: '删除硬链接副本失败，请稍后重试',
+    orphanScanSubmitFailed: '扫描任务提交失败，请稍后重试',
+    orphanCleanupPreviewFailed: '清理预览失败，请稍后重试',
+    orphanCleanupSubmitFailed: '清理任务提交失败，请稍后重试',
+    orphanIgnoreFailed: '设置忽视态失败，请稍后重试',
+    orphanPrefixPreviewFailed: '前缀匹配预览失败，请稍后重试',
+    orphanQuarantineListFailed: '加载隔离区列表失败，请稍后重试',
+    orphanQuarantineRestoreFailed: '恢复失败，请稍后重试',
+    orphanPurgeSubmitFailed: '彻底删除任务提交失败，请稍后重试',
+    orphanPurgeJobNotFound: '任务不存在',
+    orphanPurgeJobQueryFailed: '查询任务状态失败，请稍后重试',
+    orphanCleanupJobNotFound: '任务不存在',
+    orphanCleanupJobQueryFailed: '查询任务状态失败，请稍后重试'
+  }
+}

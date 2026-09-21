@@ -2,6 +2,7 @@ import Vue from 'vue'
 import Router, { RawLocation, Route, isNavigationFailure, NavigationFailure } from 'vue-router'
 import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
+import MobileLayout from '@/layout/mobile/index.vue'
 import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
 
 Vue.use(Router)
@@ -30,12 +31,114 @@ const router = new Router({
     {
       path: '/login',
       component: () => import(/* webpackChunkName: "login" */ '@/views/login/index.vue'),
-      meta: { hidden: true }
+      meta: { hidden: true, titleKey: 'navigation.routes.login' }
     },
     {
       path: '/404',
       component: () => import(/* webpackChunkName: "404" */ '@/views/404.vue'),
+      meta: { hidden: true, titleKey: 'navigation.routes.notFound' }
+    },
+    {
+      // 移动版登录（Phase 4 M1）：守卫按 ui-mode 分流，登录链路复用 user store
+      path: '/m/login',
+      component: () => import(/* webpackChunkName: "m-login" */ '@/views/mobile/login.vue'),
       meta: { hidden: true }
+    },
+    {
+      // 移动版布局（Phase 4 M1）：底部 Tab 壳；桌面侧栏不展示（hidden）
+      path: '/m',
+      component: MobileLayout,
+      redirect: '/m/dashboard',
+      meta: { hidden: true },
+      children: [
+        {
+          path: 'dashboard',
+          component: () => import(/* webpackChunkName: "m-dashboard" */ '@/views/mobile/dashboard.vue'),
+          meta: { hidden: true, title: '仪表盘' }
+        },
+        {
+          path: 'downloader',
+          component: () => import(/* webpackChunkName: "m-downloader" */ '@/views/mobile/downloader.vue'),
+          meta: { hidden: true, title: '下载器' }
+        },
+        {
+          path: 'torrents',
+          component: () => import(/* webpackChunkName: "m-torrents" */ '@/views/mobile/torrents.vue'),
+          meta: { hidden: true, title: '种子' }
+        },
+        {
+          // 种子详情（Phase 4 M1 余项）：列表快照缓存 + getList 回查 + 活动速度轮询
+          path: 'torrents/detail/:downloaderId/:hash',
+          component: () => import(/* webpackChunkName: "m-torrent-detail" */ '@/views/mobile/torrent-detail.vue'),
+          meta: { hidden: true, title: '种子详情' }
+        },
+        {
+          // 高级搜索（Phase 4 M2）：简单筛选 + 复用桌面 AdvancedSearchBuilder；
+          // 已保存搜索与 Web 端同源（移动端查询模板页裁撤后模板能力收敛于此）
+          path: 'search',
+          component: () => import(/* webpackChunkName: "m-search" */ '@/views/mobile/search.vue'),
+          meta: { hidden: true, title: '高级搜索' }
+        },
+        {
+          // 旧移动查询模板页深链兜底：仅保留高级搜索后统一落到高级搜索页
+          path: 'query-templates',
+          redirect: '/m/search',
+          meta: { hidden: true }
+        },
+        {
+          // 回收站（Phase 4 M2）：单条恢复/彻底删除
+          path: 'recycle-bin',
+          component: () => import(/* webpackChunkName: "m-recycle-bin" */ '@/views/mobile/recycle-bin.vue'),
+          meta: { hidden: true, title: '回收站', requiredCapability: 'level3_recycle' }
+        },
+        {
+          // 审计日志（Phase 4 M2）：卡片流 + 筛选
+          path: 'logs',
+          component: () => import(/* webpackChunkName: "m-logs" */ '@/views/mobile/logs.vue'),
+          meta: { hidden: true, title: '日志' }
+        },
+        {
+          // 下载器设置（Phase 4 M2）：整页复用桌面设置对话框
+          path: 'downloader/settings/:id',
+          component: () => import(/* webpackChunkName: "m-downloader-settings" */ '@/views/mobile/downloader-settings.vue'),
+          meta: { hidden: true, title: '下载器设置' }
+        },
+        {
+          // Tracker 关键词看板（Phase 4 M3）：四池卡片 + 下拉移池/删除/添加
+          path: 'tracker/keywords-board',
+          component: () => import(/* webpackChunkName: "m-tracker-keywords" */ '@/views/mobile/tracker-keywords.vue'),
+          meta: { hidden: true, title: 'Tracker关键词' }
+        },
+        {
+          // Tracker 关键词全局搜索（Phase 4 M3）：全池检索 + 移动/删除
+          path: 'tracker/keywords-search',
+          component: () => import(/* webpackChunkName: "m-tracker-keywords-search" */ '@/views/mobile/tracker-keywords-search.vue'),
+          meta: { hidden: true, title: '关键词搜索' }
+        },
+        {
+          // 定时任务（Phase 4 M3）：任务卡片 + 执行/启停/中断/删除
+          path: 'tasks',
+          component: () => import(/* webpackChunkName: "m-tasks" */ '@/views/mobile/tasks.vue'),
+          meta: { hidden: true, title: '定时任务' }
+        },
+        {
+          // 孤儿文件（Phase 4 M4）：双 Tab（孤儿文件/隔离区）+ 清理/忽视/恢复/清除
+          path: 'orphan-files',
+          component: () => import(/* webpackChunkName: "m-orphan-files" */ '@/views/mobile/orphan-files.vue'),
+          meta: { hidden: true, title: '孤儿文件', requiredCapability: 'orphan_files' }
+        },
+        {
+          path: 'notifications',
+          component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
+          meta: { hidden: true, title: '通知' }
+        },
+        {
+          // 系统设置（整页复用桌面设置页组件：双因素认证 + 修改密码）
+          path: 'settings',
+          component: () => import(/* webpackChunkName: "m-settings" */ '@/views/mobile/settings.vue'),
+          meta: { hidden: true, title: '系统设置' }
+        }
+      ]
     },
     {
       path: '/',
@@ -47,6 +150,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "dashboard" */ '@/views/dashboard/index.vue'),
           meta: {
             title: '首页',
+            titleKey: 'navigation.routes.dashboard',
             icon: 'layout-dashboard'
           }
         }
@@ -61,6 +165,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "form" */ '@/views/downloader/index.vue'),
           meta: {
             title: '下载器管理',
+            titleKey: 'navigation.routes.downloader',
             icon: 'server'
           }
         }
@@ -72,6 +177,7 @@ const router = new Router({
       redirect: '/torrents/index',
       meta: {
         title: '种子管理',
+        titleKey: 'navigation.routes.torrentsGroup',
         icon: 'download'
       },
       children: [
@@ -80,6 +186,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "torrents" */ '@/views/torrents/TorrentViewSwitcher.vue'),
           meta: {
             title: '种子列表',
+            titleKey: 'navigation.routes.torrents',
             icon: 'list'
           }
         },
@@ -89,6 +196,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '种子列表（传统模式）',
+            titleKey: 'navigation.routes.torrentsTraditional',
             icon: 'list',
             hidden: true
           }
@@ -98,7 +206,9 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "file-management" */ '@/views/torrents/FileManagement.vue'),
           meta: {
             title: '种子文件管理',
-            icon: 'folder'
+            titleKey: 'navigation.routes.fileManagement',
+            icon: 'folder',
+            requiredCapability: 'torrent_backup'
           }
         },
         {
@@ -106,7 +216,8 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "torrent-detail" */ '@/views/torrents/index.vue'),
           meta: {
             hidden: true,
-            title: '种子详情'
+            title: '种子详情',
+            titleKey: 'navigation.routes.torrentDetail'
           }
         }
       ]
@@ -120,6 +231,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "tasks" */ '@/views/tasks/index.vue'),
           meta: {
             title: '定时任务',
+            titleKey: 'navigation.routes.tasks',
             icon: 'timer'
           }
         }
@@ -131,6 +243,7 @@ const router = new Router({
       redirect: '/tracker/keywords-board',
       meta: {
         title: 'Tracker管理',
+        titleKey: 'navigation.routes.tracker',
         icon: 'link'
       },
       children: [
@@ -139,6 +252,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "tracker-keywords-board" */ '@/views/tracker/keywords-board.vue'),
           meta: {
             title: '关键词看板',
+            titleKey: 'navigation.routes.keywordsBoard',
             icon: 'panels-top-left'
           }
         },
@@ -148,6 +262,7 @@ const router = new Router({
           meta: {
             hidden: true,
             title: '关键词搜索',
+            titleKey: 'navigation.routes.keywordsSearch',
             icon: 'search'
           }
         },
@@ -156,6 +271,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "tracker-reannounce-config" */ '@/views/tracker/reannounce-config.vue'),
           meta: {
             title: '汇报配置',
+            titleKey: 'navigation.routes.reannounceConfig',
             icon: 'settings'
           }
         },
@@ -164,6 +280,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "tracker-test" */ '@/views/tracker/test.vue'),
           meta: {
             title: '测试工具',
+            titleKey: 'navigation.routes.trackerTest',
             icon: 'wrench'
           }
         }
@@ -183,6 +300,7 @@ const router = new Router({
       redirect: '/logs/audit',
       meta: {
         title: '日志管理',
+        titleKey: 'navigation.routes.logs',
         icon: 'file-text'
       },
       children: [
@@ -191,6 +309,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "audit-logs" */ '@/views/logs/audit.vue'),
           meta: {
             title: '操作日志',
+            titleKey: 'navigation.routes.audit',
             icon: 'file-text'
           }
         }
@@ -199,13 +318,16 @@ const router = new Router({
     {
       path: '/recycle-bin',
       component: Layout,
+      meta: { requiredCapability: 'level3_recycle' },
       children: [
         {
           path: 'index',
           component: () => import(/* webpackChunkName: "recycle-bin" */ '@/views/recycle-bin/index.vue'),
           meta: {
             title: '回收站',
-            icon: 'trash-2'
+            titleKey: 'navigation.routes.recycleBin',
+            icon: 'trash-2',
+            requiredCapability: 'level3_recycle'
           }
         }
       ]
@@ -213,6 +335,7 @@ const router = new Router({
     {
       path: '/orphan-files',
       component: Layout,
+      meta: { requiredCapability: 'orphan_files' },
       children: [
         {
           path: 'index',
@@ -220,7 +343,9 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '孤儿文件',
-            icon: 'folder-search'
+            titleKey: 'navigation.routes.orphanFiles',
+            icon: 'folder-search',
+            requiredCapability: 'orphan_files'
           }
         }
       ]
@@ -237,6 +362,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "settings" */ '@/views/settings/index.vue'),
           meta: {
             title: '系统设置',
+            titleKey: 'navigation.routes.settings',
             icon: 'settings'
           }
         }
@@ -252,6 +378,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '查询模板',
+            titleKey: 'navigation.routes.queryTemplates',
             icon: 'layout-template'
           }
         }

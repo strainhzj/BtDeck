@@ -17,14 +17,14 @@
       </el-alert>
 
       <div class="operation-details">
-        <p><strong>操作类型：</strong>{{ operationText }}</p>
-        <p><strong>影响数量：</strong>{{ selectedCount }} 个种子</p>
+        <p><strong>{{ $t('torrent.batchDialog.opType') }}</strong>{{ operationText }}</p>
+        <p><strong>{{ $t('torrent.batchDialog.affectCount') }}</strong>{{ $t('torrent.batchDialog.countTorrents', {count: selectedCount}) }}</p>
       </div>
 
       <el-divider />
 
       <div class="affected-items">
-        <h4>受影响的种子：</h4>
+        <h4>{{ $t('torrent.batchDialog.affected') }}</h4>
         <el-scrollbar style="height: 200px">
           <ul>
             <li v-for="item in selectedItems" :key="item.info_id">
@@ -36,9 +36,9 @@
     </div>
 
     <span slot="footer" class="dialog-footer">
-      <el-button @click="handleClose">取消</el-button>
+      <el-button @click="handleClose">{{ $t('common.cancel') }}</el-button>
       <el-button :type="confirmButtonType" @click="handleConfirm" :loading="loading">
-        确认{{ operationText }}
+        {{ $t('torrent.batchDialog.confirmAction', {op: operationText}) }}
       </el-button>
     </span>
   </el-dialog>
@@ -56,23 +56,13 @@ export default class BatchOperationDialog extends Vue {
   private loading = false
 
   get dialogTitle() {
-    const titles: Record<string, string> = {
-      delete: '批量删除确认',
-      pause: '批量暂停确认',
-      resume: '批量恢复确认',
-      start: '批量开始确认'
-    }
-    return titles[this.operation] || '批量操作确认'
+    const key = `torrent.batchDialog.title.${this.operation}`
+    return this.$te(key) ? this.$t(key) : this.$t('torrent.batchDialog.title.fallback')
   }
 
   get operationText() {
-    const texts: Record<string, string> = {
-      delete: '删除',
-      pause: '暂停',
-      resume: '恢复',
-      start: '开始'
-    }
-    return texts[this.operation] || '操作'
+    const key = `torrent.batchDialog.op.${this.operation}`
+    return this.$te(key) ? this.$t(key) : this.$t('torrent.batchDialog.op.fallback')
   }
 
   get alertType() {
@@ -84,13 +74,8 @@ export default class BatchOperationDialog extends Vue {
   }
 
   get operationMessage() {
-    const messages: Record<string, string> = {
-      delete: '您确定要删除这些种子吗？此操作不可撤销！',
-      pause: '您确定要暂停这些种子吗？',
-      resume: '您确定要恢复这些种子吗？',
-      start: '您确定要开始这些种子吗？'
-    }
-    return messages[this.operation] || '您确定要执行此操作吗？'
+    const key = `torrent.batchDialog.message.${this.operation}`
+    return this.$te(key) ? this.$t(key) : this.$t('torrent.batchDialog.message.fallback')
   }
 
   get selectedCount() {

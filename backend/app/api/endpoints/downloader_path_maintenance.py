@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.api.responseVO import CommonResponse
+from app.api.platform_guard import capability_dependency
 from app.database import get_db
 from app.auth.dependencies import require_authenticated_user
 from app.services.path_maintenance_service import PathMaintenanceService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(capability_dependency("path_mapping", "path_mapping.maintenance"))])
 logger = logging.getLogger(__name__)
 
 

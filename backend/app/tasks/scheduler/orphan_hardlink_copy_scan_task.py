@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 from app.database import AsyncSessionLocal
 from app.services.orphan_hardlink_scan_service import OrphanHardlinkScanService
+from app.core.platform_capabilities import require_capability
 
 
 class OrphanHardlinkCopyScanTask:
@@ -18,6 +19,7 @@ class OrphanHardlinkCopyScanTask:
     version = "1.0.0"
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
+        require_capability("orphan_files", "orphan_files.scheduled_hardlink_scan")
         del kwargs
         async with AsyncSessionLocal() as db:
             service = OrphanHardlinkScanService(db)

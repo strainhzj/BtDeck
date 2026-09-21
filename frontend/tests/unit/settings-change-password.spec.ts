@@ -12,6 +12,8 @@
 
 import Vue, { CreateElement, VNode } from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import Settings from '@/views/settings/index.vue'
 import { changePassword } from '@/api/users'
@@ -52,6 +54,7 @@ const TrueStub = createLocalVue().extend({
 })
 
 const localVue = createLocalVue()
+localVue.use(VueI18n)
 
 const mountSettings = (forceChange: string | undefined): {
   wrapper: Wrapper<Vue>
@@ -69,6 +72,7 @@ const mountSettings = (forceChange: string | undefined): {
   const messageMock = jest.fn()
   const wrapper = shallowMount(Settings, {
     localVue,
+    i18n,
     stubs: {
       'el-tabs': TrueStub,
       'el-tab-pane': TrueStub,
@@ -159,8 +163,10 @@ describe('设置页改密流程（W9 + 改密会话终结）', () => {
     expect(UserModule.ResetToken).not.toHaveBeenCalled()
     expect(pushMock).not.toHaveBeenCalled()
     expect(replaceMock).not.toHaveBeenCalled()
+    // 错误契约：无 reasonCode 的错误保留原始信息透传（历史行为保留），
+    // 有 reasonCode（如 USER_ORIG_PASSWORD_INVALID）时本地化（后端契约测试钉死）
     expect(messageMock).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'error', message: '密码修改失败' })
+      expect.objectContaining({ type: 'error', message: '网络异常' })
     )
   })
 

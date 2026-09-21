@@ -111,13 +111,61 @@ class TestValidateTaskTypeAllowed:
             resp = _validate_task_type_allowed(bad_type)
             assert resp is not None
             assert resp.code == "400", f"未知类型 {bad_type} 须返回 400"
-            assert str(bad_type) in resp.msg
+            # 双语 P6-4a：类型值不再进 msg（只进日志），改按 reasonCode 稳定标识断言
+            assert resp.data == {"reasonCode": "TASKS_UNSUPPORTED_TASK_TYPE"}
 
     def test_unknown_type_400_even_when_scripts_enabled(self):
         """开关开启时未知类型仍返回 400（开关只放行 0-3，不放行未知）。"""
         with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", True):
             resp = _validate_task_type_allowed(99)
             assert resp.code == "400"
+
+
+# ==================== 组1b：android-server 形态（主机能力矩阵 Phase 4） ====================
+
+
+class TestAndroidServerPlatform:
+    """形态判定优先于安全开关：android-server 下自定义脚本 unsupported。
+
+    矩阵基线（docs/android/host-capability-matrix.md）：自定义脚本任务在
+    Android 服务端形态为 unsupported——即使管理员显式开启
+    BTDECK_ALLOW_CUSTOM_SCRIPTS 也不生效（Android 壳不启用开关）。
+    """
+
+    def test_script_types_unsupported_even_when_flag_enabled(self, monkeypatch):
+        """android-server + 开关开启 → 仍拦截（形态优先）。"""
+        monkeypatch.setenv("BTDECK_PLATFORM", "android-server")
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", True):
+            for t in CUSTOM_SCRIPT_TASK_TYPES:
+                resp = _validate_task_type_allowed(t)
+                assert resp is not None, f"android-server 下脚本类型 {t} 须拦截"
+                assert resp.code == "403"
+
+    @pytest.mark.parametrize("t", sorted(CUSTOM_SCRIPT_TASK_TYPES))
+    def test_message_states_platform_not_policy(self, monkeypatch, t):
+        """文案语义是"主机形态不支持"而非"安全策略禁用"（矩阵第 3 节）。"""
+        monkeypatch.setenv("BTDECK_PLATFORM", "android-server")
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            resp = _validate_task_type_allowed(t)
+            assert "主机形态" in resp.msg
+            assert "Android" in resp.msg
+            assert "BTDECK_ALLOW_CUSTOM_SCRIPTS" not in resp.msg
+
+    def test_builtin_types_still_allowed(self, monkeypatch):
+        """android-server 下内置类型 4/5/6 不受影响。"""
+        monkeypatch.setenv("BTDECK_PLATFORM", "android-server")
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            for t in BUILTIN_TASK_TYPES:
+                assert _validate_task_type_allowed(t) is None
+
+    def test_desktop_platform_keeps_policy_semantics(self, monkeypatch):
+        """desktop 形态维持既有安全开关语义（形态升级不改变桌面行为）。"""
+        monkeypatch.setenv("BTDECK_PLATFORM", "desktop")
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", True):
+            assert _validate_task_type_allowed(0) is None
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            resp = _validate_task_type_allowed(0)
+            assert "BTDECK_ALLOW_CUSTOM_SCRIPTS" in resp.msg
 
 
 # ==================== 组2：_validate_update_task_type 防绕过 ====================

@@ -1,7 +1,7 @@
 # BTDeck 前端项目
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Node Version](https://img.shields.io/badge/node-18.20.1-brightgreen)](https://nodejs.org/)
+[![Node Version](https://img.shields.io/badge/node-22.23.2-brightgreen)](https://nodejs.org/)
 [![Vue Version](https://img.shields.io/badge/vue-2.6.12-brightgreen)](https://vuejs.org/)
 
 基于 Vue 2 + TypeScript + Element UI 的 BitTorrent 管理器前端应用。
@@ -28,13 +28,13 @@ BTDeck 是一个全栈 Web 应用，为用户提供多种 BitTorrent 客户端�
 - **HTTP客户端**: Axios 0.27.2
 - **代码编辑器**: Monaco Editor 0.34.1
 - **构建工具**: Vue CLI 4.5.12
-- **Node.js**: 18.20.1 (开发环境)
+- **Node.js**: 22.23.2（以 `package.json` engines 为准）
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- Node.js 18.20.1
+- Node.js 22.23.2
 - npm 或 yarn
 
 ### 安装依赖
@@ -58,6 +58,43 @@ npm run build
 ```
 
 构建产物在 `dist/` 目录，可部署到 nginx 等 Web 服务器。
+
+### 静态展示 Demo（阶段 1 已冻结范围）
+
+Demo 构建用于无后端评审和产品演示：页面仍复用现有路由、布局和交互，但请求层会返回脱敏 fixture，并在当前浏览器会话内模拟有限状态变化。暂停/恢复、模板 CRUD、通知已读等“成功”只代表本地模拟成功，不会连接数据库、下载器、Tracker、文件系统或真实认证服务。
+
+使用以下命令生成独立 Demo 静态产物：
+
+```bash
+npm run build:demo
+```
+
+`build:demo` 等价于 `vue-cli-service build --mode demo`，只启用 `.env.demo` 中的
+`VUE_APP_DEMO_MODE=true`；普通 `npm run build` 仍然是生产 API 构建。当前仓库的
+锁文件与 `package.json` 使用 Node 22.23.2，建议用同版本执行 `npm ci` 和构建。
+
+构建完成后可以直接打包 `dist/` 目录（不要把后端目录一起交付）：
+
+```powershell
+Compress-Archive -Path dist\* -DestinationPath BtDeck-demo-dist.zip -Force
+```
+
+也可以用独立 Nginx 容器启动。该容器不配置 `btdeck-backend` upstream，不依赖
+Docker Compose 或后端服务：
+
+```bash
+npm run build:demo
+docker build -f Dockerfile.demo -t btdeck-demo:local .
+docker run --rm -p 8080:80 btdeck-demo:local
+```
+
+访问 `http://localhost:8080`（包括 `/health` 健康检查）。Demo 应通过 HTTP 服务访问，
+不承诺直接双击 `file://` 页面可用；容器或静态 Web 服务器的 SPA fallback 由
+`nginx.demo.conf` 提供。
+
+首批完整演示路径为：仪表盘 → 下载器筛选/连接测试 → 种子筛选、分页、详情、暂停/恢复 → 查询模板应用 → 通知中心与操作日志。任务、回收站、孤儿文件、设置和文件管理页面按静态展示/降级提示交付；真实认证、密码/二因素、外部 Tracker 测试、脚本执行、文件上传和物理删除明确不执行。
+
+演示数据定义在 [`src/demo/types.ts`](./src/demo/types.ts) 和 [`src/demo/fixtures/`](./src/demo/fixtures/)，所有分页契约使用 `list` / `total` / `pageSize`。数据规则与路由矩阵见 [`PLANS/frontend-static-showcase-demo.md`](../PLANS/frontend-static-showcase-demo.md)。
 
 ### 代码检查
 

@@ -9,7 +9,7 @@
           type="text"
           icon="el-icon-s-fold"
           @click="toggleFilterPanel"
-          title="切换过滤面板"
+          :title="$t('torrent.list.filters.toggle')"
         />
         <div class="tool-divider"></div>
         <el-button
@@ -18,7 +18,7 @@
           :disabled="multipleSelection.length === 0"
           @click="handleBatchStart"
         >
-          <i class="el-icon-video-play"></i> 开始
+          <i class="el-icon-video-play"></i> {{ $t('torrent.list.toolbar.start') }}
         </el-button>
         <el-button
           type="text"
@@ -26,7 +26,7 @@
           :disabled="multipleSelection.length === 0"
           @click="handleBatchPause"
         >
-          <i class="el-icon-video-pause"></i> 暂停
+          <i class="el-icon-video-pause"></i> {{ $t('torrent.list.toolbar.pause') }}
         </el-button>
         <el-dropdown
           @command="handleBatchDeleteByLevelCommand"
@@ -40,20 +40,20 @@
             class="danger"
             :disabled="multipleSelection.length === 0"
           >
-            <i class="el-icon-delete"></i> 删除<i class="el-icon-arrow-down el-icon--right"></i>
+            <i class="el-icon-delete"></i> {{ $t('torrent.list.toolbar.delete') }}<i class="el-icon-arrow-down el-icon--right"></i>
           </el-button>
           <el-dropdown-menu slot="dropdown" class="delete-level-menu">
             <el-dropdown-item command="4">
-              <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
+              <LucideIcon class="menu-icon" name="tag" :size="14" />{{ $t('torrent.list.deleteMenu.level4') }}
             </el-dropdown-item>
-            <el-dropdown-item command="3">
-              <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
+            <el-dropdown-item v-if="level3Available" command="3">
+              <LucideIcon class="menu-icon" name="trash-2" :size="14" />{{ $t('torrent.list.deleteMenu.level3') }}
             </el-dropdown-item>
             <el-dropdown-item command="2">
-              <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
+              <LucideIcon class="menu-icon" name="trash" :size="14" />{{ $t('torrent.list.deleteMenu.level2') }}
             </el-dropdown-item>
             <el-dropdown-item command="1" divided>
-              <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
+              <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />{{ $t('torrent.list.deleteMenu.level1') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
@@ -64,10 +64,10 @@
           :disabled="multipleSelection.length === 0"
           @click="handleBatchRecheck"
         >
-          <i class="el-icon-refresh"></i> 重检
+          <i class="el-icon-refresh"></i> {{ $t('torrent.list.toolbar.recheck') }}
         </el-button>
         <div class="selection-info" :class="{visible: multipleSelection.length > 0}">
-          已选 <span class="count">{{ multipleSelection.length }}</span> 个
+          {{ $t('torrent.list.selectedPrefix') }} <span class="count">{{ multipleSelection.length }}</span> {{ $t('torrent.list.selectedSuffix') }}
         </div>
       </div>
 
@@ -75,7 +75,7 @@
       <div class="toolbar-center">
         <el-input
           v-model="listQuery.name_like"
-          placeholder="搜索种子名称..."
+          :placeholder="$t('torrent.list.searchPlaceholder')"
           prefix-icon="el-icon-search"
           size="small"
           clearable
@@ -90,9 +90,9 @@
           class="manual-refresh-btn"
           :loading="listLoading"
           @click="handleManualRefresh"
-          title="刷新"
+          :title="$t('torrent.list.refresh')"
         >
-          刷新
+          {{ $t('torrent.list.refresh') }}
         </el-button>
         <el-button
           type="text"
@@ -100,7 +100,7 @@
           icon="el-icon-search"
           @click="openAdvancedSearch"
         >
-          高级搜索
+          {{ $t('torrent.list.advancedSearch') }}
         </el-button>
         <label
           class="duplicate-search-switch"
@@ -110,10 +110,10 @@
             v-model="showingDuplicates"
             active-color="var(--color-success, #10b981)"
             inactive-color="var(--color-border-secondary, #c0c4cc)"
-            aria-label="查找重复任务"
+            :aria-label="$t('torrent.list.duplicateSwitch')"
             @change="handleDuplicateSearchToggle"
           />
-          <span>查找重复任务</span>
+          <span>{{ $t('torrent.list.duplicateSwitch') }}</span>
         </label>
       </div>
 
@@ -125,14 +125,14 @@
           icon="el-icon-plus"
           @click="showAddDialog = true"
         >
-          添加
+          {{ $t('torrent.list.toolbar.addShort') }}
         </el-button>
         <el-button
           type="text"
           size="small"
           icon="el-icon-setting"
           @click="showColumnSettings = true"
-          title="列设置"
+          :title="$t('torrent.list.toolbar.columns')"
         ></el-button>
         <div class="tool-divider"></div>
         <div class="view-switcher">
@@ -141,7 +141,7 @@
             size="small"
             :class="{active: viewModeModule.currentMode === 'list'}"
             @click="switchViewMode('list')"
-            title="列表模式"
+            :title="$t('torrent.list.view.list')"
           >
             <i class="el-icon-s-grid"></i>
           </el-button>
@@ -150,7 +150,7 @@
             size="small"
             :class="{active: viewModeModule.currentMode === 'traditional'}"
             @click="switchViewMode('traditional')"
-            title="传统模式"
+            :title="$t('torrent.list.view.traditional')"
           >
             <i class="el-icon-menu"></i>
           </el-button>
@@ -166,48 +166,49 @@
         icon="el-icon-link"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTracker"
-      >Tracker操作</el-button>
+      >{{ $t('torrent.list.toolbar.trackerOps') }}</el-button>
       <el-button
         type="text"
         size="small"
         icon="el-icon-share"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchReannounce"
-      >Tracker汇报</el-button>
+      >{{ $t('torrent.list.toolbar.reannounce') }}</el-button>
       <el-button
         type="text"
         size="small"
         icon="el-icon-setting"
         @click="showGlobalReplaceDialog = true"
-      >全局替换</el-button>
+      >{{ $t('torrent.list.toolbar.globalReplace') }}</el-button>
       <div class="tool-divider"></div>
       <el-button
+        v-if="seedTransferAvailable"
         type="text"
         size="small"
         icon="el-icon-sort"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTransfer"
-      >转移</el-button>
+      >{{ $t('torrent.list.toolbar.transfer') }}</el-button>
       <el-button
         type="text"
         size="small"
         icon="el-icon-folder-opened"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchSetLocation"
-      >修改路径</el-button>
+      >{{ $t('torrent.list.toolbar.setLocation') }}</el-button>
       <el-dropdown trigger="click" @command="handleQuickActionCommand">
-        <el-button type="text" size="small" title="快捷操作">
-          快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
+        <el-button type="text" size="small" :title="$t('torrent.list.toolbar.quickActions')">
+          {{ $t('torrent.list.toolbar.quickActions') }}<i class="el-icon-arrow-down el-icon--right"></i>
         </el-button>
         <el-dropdown-menu slot="dropdown">
           <el-dropdown-item command="inspect-same-content">
-            <i class="el-icon-search"></i> 辅种异常排查
+            <i class="el-icon-search"></i> {{ $t('torrent.list.quickMenu.sameContent') }}
           </el-dropdown-item>
           <el-dropdown-item command="inspect-single-errors">
-            <i class="el-icon-warning-outline"></i> 错误单种排查
+            <i class="el-icon-warning-outline"></i> {{ $t('torrent.list.quickMenu.singleError') }}
           </el-dropdown-item>
           <el-dropdown-item command="delete-duplicates">
-            <i class="el-icon-delete"></i> 快捷删除重复种子
+            <i class="el-icon-delete"></i> {{ $t('torrent.list.quickMenu.deleteDuplicates') }}
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -215,45 +216,45 @@
     <el-alert
       v-if="showingSameContent"
       class="same-content-list-alert"
-      title="辅种异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      :title="$t('torrent.list.alert.sameContent')"
       type="warning"
       :closable="false"
       show-icon
     >
       <el-button type="text" size="small" @click="exitSameContentInspection">
-        退出排查并返回普通列表
+        {{ $t('torrent.list.alert.exit') }}
       </el-button>
     </el-alert>
     <el-alert
       v-if="showingSingleErrors"
       class="single-error-list-alert"
-      title="错误单种排查：当前列表仅显示错误且全局同内容唯一的种子"
+      :title="$t('torrent.list.alert.singleError')"
       type="error"
       :closable="false"
       show-icon
     >
       <el-button type="text" size="small" @click="exitSingleErrorInspection">
-        退出排查并返回普通列表
+        {{ $t('torrent.list.alert.exit') }}
       </el-button>
     </el-alert>
     <div class="page-body">
       <!-- 左侧过滤面板 -->
       <aside class="filter-panel" :class="{collapsed: viewModeModule.filterPanelCollapsed}">
         <div class="filter-panel-header">
-          <h3>过滤器</h3>
+          <h3>{{ $t('torrent.list.filters.title') }}</h3>
           <el-button
             type="text"
             class="filter-toggle-btn"
             icon="el-icon-d-arrow-left"
             @click="toggleFilterPanel"
-            title="收起"
+            :title="$t('torrent.list.filters.collapse')"
           />
         </div>
 
         <div class="filter-panel-content">
           <!-- 状态过滤 -->
           <FilterGroup
-            title="状态"
+            :title="$t('torrent.list.column.status')"
             :items="statusFilterItems"
             :active-value="activeStatusFilterValue"
             @select="handleStatusFilter"
@@ -261,7 +262,7 @@
 
           <!-- 下载器过滤 -->
           <FilterGroup
-            title="下载器"
+            :title="$t('torrent.list.filters.downloader')"
             :items="downloaderFilterItems"
             :active-value="listQuery.downloader_id"
             @select="handleDownloaderFilter"
@@ -269,10 +270,10 @@
 
           <!-- Tracker 主域名过滤 -->
           <div class="tracker-domain-filter">
-            <div class="filter-group-title">Tracker主域名</div>
+            <div class="filter-group-title">{{ $t('torrent.list.filters.trackerDomain') }}</div>
             <AdvancedMultiSelect
               v-model="listQuery.tracker_domain"
-              placeholder="请选择tracker"
+              :placeholder="$t('torrent.list.trackerPlaceholder')"
               :options="trackerDomainOptions"
               :allow-create="false"
               :show-mode-toggle="false"
@@ -285,7 +286,7 @@
 
           <!-- 分类过滤 -->
           <FilterGroup
-            title="分类"
+            :title="$t('torrent.list.filters.category')"
             :items="categoryFilterItems"
             :active-value="listQuery.category_like"
             @select="handleCategoryFilter"
@@ -293,7 +294,7 @@
 
           <!-- 标签过滤 -->
           <FilterGroup
-            title="标签"
+            :title="$t('torrent.list.filters.tags')"
             :items="tagFilterItems"
             :active-value="listQuery.tags_like"
             @select="handleTagFilter"
@@ -306,7 +307,7 @@
         <div
           ref="tableContainer"
           class="table-container"
-          v-loading="listLoading"
+          v-loading.fullscreen.lock="listLoading"
           @scroll="handleTableScroll"
         >
           <table
@@ -330,13 +331,13 @@
                   :style="columnWidthStyle('name')"
                   @click="handleSort('name')"
                 >
-                  名称
+                  {{ $t('torrent.list.column.nameShort') }}
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'name'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('name', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('name')"
                     @click.stop
@@ -348,13 +349,13 @@
                   :style="columnWidthStyle('size')"
                   @click="handleSort('size')"
                 >
-                  大小
+                  {{ $t('torrent.list.column.size') }}
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'size'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('size', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('size')"
                     @click.stop
@@ -365,10 +366,10 @@
                   class="col-auxiliary-seed-count"
                   :style="columnWidthStyle('auxiliarySeedCount')"
                 >
-                  辅种数量
+                  {{ $t('torrent.list.column.auxiliarySeedCount') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('auxiliarySeedCount', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('auxiliarySeedCount')"
                     @click.stop
@@ -379,10 +380,10 @@
                   class="col-progress"
                   :style="columnWidthStyle('progress')"
                 >
-                  进度
+                  {{ $t('torrent.list.column.progress') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('progress', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('progress')"
                     @click.stop
@@ -394,13 +395,13 @@
                   :style="columnWidthStyle('status')"
                   @click="handleSort('status')"
                 >
-                  状态
+                  {{ $t('torrent.list.column.status') }}
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'status'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('status', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('status')"
                     @click.stop
@@ -411,10 +412,10 @@
                   class="col-downspeed"
                   :style="columnWidthStyle('download')"
                 >
-                  ↓ 下载
+                  {{ $t('torrent.list.column.downloadShort') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('download', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('download')"
                     @click.stop
@@ -425,10 +426,10 @@
                   class="col-upspeed"
                   :style="columnWidthStyle('upload')"
                 >
-                  ↑ 上传
+                  {{ $t('torrent.list.column.uploadShort') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('upload', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('upload')"
                     @click.stop
@@ -440,13 +441,13 @@
                   :style="columnWidthStyle('ratio')"
                   @click="handleSort('ratio')"
                 >
-                  比率
+                  {{ $t('torrent.list.column.ratio') }}
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'ratio'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('ratio', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('ratio')"
                     @click.stop
@@ -457,10 +458,10 @@
                   class="col-downloader"
                   :style="columnWidthStyle('downloader')"
                 >
-                  下载器
+                  {{ $t('torrent.list.column.downloaderShort') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('downloader', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('downloader')"
                     @click.stop
@@ -471,10 +472,10 @@
                   class="col-category"
                   :style="columnWidthStyle('category')"
                 >
-                  分类/标签
+                  {{ $t('torrent.list.column.category') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('category', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('category')"
                     @click.stop
@@ -485,10 +486,10 @@
                   class="col-save-path"
                   :style="columnWidthStyle('savePath')"
                 >
-                  保存路径
+                  {{ $t('torrent.list.column.savePath') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('savePath', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('savePath')"
                     @click.stop
@@ -500,23 +501,23 @@
                   :style="columnWidthStyle('added')"
                   @click="handleSort('added_date')"
                 >
-                  添加时间
+                  {{ $t('torrent.list.column.addedDate') }}
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'added_date'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('added', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('added')"
                     @click.stop
                   ></span>
                 </th>
                 <th class="col-actions" :style="columnWidthStyle('actions')">
-                  操作
+                  {{ $t('torrent.list.column.actions') }}
                   <span
                     class="column-resizer"
-                    title="拖拽调整列宽，双击恢复默认"
+                    :title="$t('torrent.list.resizeHint')"
                     @mousedown.stop.prevent="startColumnResize('actions', $event)"
                     @dblclick.stop.prevent="handleColumnResizeDblclick('actions')"
                     @click.stop
@@ -550,7 +551,7 @@
                   <div
                     class="status-icon-circle"
                     :class="torrent.status"
-                    :title="showTrackerErrorTag(torrent) ? `${getStatusText(torrent.status)}（Tracker异常）` : getStatusText(torrent.status)"
+                    :title="showTrackerErrorTag(torrent) ? $t('torrent.list.trackerErrorTitle', {status: getStatusText(torrent.status)}) : getStatusText(torrent.status)"
                   >
                     <LucideIcon :name="getStatusIcon(torrent.status)" :size="14" />
                   </div>
@@ -558,8 +559,10 @@
                 <td v-if="getColumnSetting('name').visible" class="col-name">
                   <div class="torrent-name-cell">
                     <el-tooltip
+                      ref="torrentErrorTooltips"
                       :disabled="!getTorrentErrorReason(torrent)"
                       :content="getTorrentErrorReason(torrent)"
+                      :enterable="false"
                       placement="top"
                     >
                       <span
@@ -591,7 +594,7 @@
                     v-if="showTrackerErrorTag(torrent)"
                     class="tracker-error-tag"
                     :title="getTorrentErrorReason(torrent)"
-                  >Tracker异常</span>
+                  >{{ $t('torrent.list.trackerError') }}</span>
                 </td>
                 <td v-if="getColumnSetting('download').visible" class="col-downspeed">
                   <span
@@ -635,21 +638,21 @@
                       class="action-btn-mini"
                       :class="torrent.status === 'paused' ? 'play' : 'pause'"
                       @click.stop="handleTogglePause(torrent)"
-                      :title="torrent.status === 'paused' ? '开始' : '暂停'"
+                      :title="torrent.status === 'paused' ? $t('torrent.list.toolbar.start') : $t('torrent.list.toolbar.pause')"
                     >
                       <LucideIcon :name="torrent.status === 'paused' ? 'play' : 'pause'" :size="14" />
                     </button>
                     <button
                       class="action-btn-mini recheck"
                       @click.stop="handleRecheck(torrent)"
-                      title="重新检查"
+                      :title="$t('torrent.list.action.recheck')"
                     >
                       <LucideIcon name="refresh-cw" :size="14" />
                     </button>
                     <button
                       class="action-btn-mini location"
                       @click.stop="handleSetLocation(torrent)"
-                      title="修改保存路径"
+                      :title="$t('torrent.list.action.setLocation')"
                     >
                       <LucideIcon name="folder-open" :size="14" />
                     </button>
@@ -660,21 +663,21 @@
                       :append-to-body="true"
                       @click.native.stop
                     >
-                      <button class="action-btn-mini delete" title="删除">
+                      <button class="action-btn-mini delete" :title="$t('torrent.list.toolbar.delete')">
                         <LucideIcon name="trash" :size="14" />
                       </button>
                       <el-dropdown-menu slot="dropdown">
                         <el-dropdown-item command="4">
-                          <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
+                          <LucideIcon class="menu-icon" name="tag" :size="14" />{{ $t('torrent.list.deleteMenu.level4') }}
                         </el-dropdown-item>
-                        <el-dropdown-item command="3">
-                          <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
+                        <el-dropdown-item v-if="level3Available" command="3">
+                          <LucideIcon class="menu-icon" name="trash-2" :size="14" />{{ $t('torrent.list.deleteMenu.level3') }}
                         </el-dropdown-item>
                         <el-dropdown-item command="2">
-                          <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
+                          <LucideIcon class="menu-icon" name="trash" :size="14" />{{ $t('torrent.list.deleteMenu.level2') }}
                         </el-dropdown-item>
                         <el-dropdown-item command="1" divided>
-                          <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
+                          <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />{{ $t('torrent.list.deleteMenu.level1') }}
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </el-dropdown>
@@ -712,7 +715,7 @@
               @apply="applyPageSizeSelection"
               @select="handlePageSizeSelect"
             />
-            <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+            <span>{{ $t('torrent.list.pagination.prefix') }} <strong>{{ total }}</strong> {{ $t('torrent.list.pagination.middle') }} <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> {{ $t('torrent.list.pagination.suffix') }}</span>
           </div>
           <div class="pagination-controls">
             <el-button
@@ -749,8 +752,11 @@
           :tabs="detailTabs"
           :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
           :error-reason="getTorrentErrorReason(currentRow)"
+          :files-state="detailFilesState"
+          :peers-state="detailPeersState"
           @close="closeDetailPanel"
           @reannounce="handleTrackerReannounce"
+          @refresh="handleDetailRefresh"
         />
       </div>
     </div>
@@ -759,7 +765,7 @@
     <div class="global-statusbar-compact">
       <div class="statusbar-section">
         <div class="connection-dot"></div>
-        <span style="color: var(--color-text-secondary);">已连接</span>
+        <span style="color: var(--color-text-secondary);">{{ $t('torrent.list.connected') }}</span>
       </div>
       <div class="statusbar-sep"></div>
       <div class="statusbar-section">
@@ -774,7 +780,7 @@
       </div>
       <div class="statusbar-sep"></div>
       <div class="statusbar-section">
-        <span class="label">活动:</span>
+        <span class="label">{{ $t('torrent.list.activeLabel') }}</span>
         <span style="color: var(--color-text-primary);">{{ activeTorrentCount }}</span>
         <span class="label">/ {{ total }}</span>
       </div>
@@ -795,6 +801,7 @@
       :visible.sync="showAddDialog"
       :downloaders="downloaderList"
       @confirm="handleAdd"
+      @batch-complete="handleBatchAddCompleted"
     />
 
     <!-- P0新增：修改保存路径 -->
@@ -843,7 +850,7 @@
       <template slot="title">
         <span class="dialog-title-with-icon">
           <LucideIcon name="sliders-horizontal" :size="16" />
-          <span>高级搜索</span>
+          <span>{{ $t('torrent.list.advancedSearch') }}</span>
         </span>
       </template>
       <AdvancedSearchWorkspace
@@ -866,7 +873,7 @@
       <template slot="title">
         <span class="dialog-title-with-icon">
           <LucideIcon name="settings" :size="16" />
-          <span>列设置</span>
+          <span>{{ $t('torrent.list.toolbar.columns') }}</span>
         </span>
       </template>
       <div class="columns-grid-trad">
@@ -876,14 +883,14 @@
           class="column-checkbox-trad"
         >
           <input type="checkbox" v-model="column.visible" />
-          <span>{{ column.label }}</span>
+          <span>{{ $t(column.labelKey) }}</span>
         </label>
       </div>
       <span slot="footer" class="dialog-footer">
-        <el-button size="small" @click="resetColumnSettings">重置</el-button>
-        <el-button size="small" @click="handleResetColumnWidths">重置列宽</el-button>
-        <el-button size="small" @click="showColumnSettings = false">取消</el-button>
-        <el-button size="small" type="primary" @click="applyColumnSettings">应用</el-button>
+        <el-button size="small" @click="resetColumnSettings">{{ $t('torrent.list.columnSettings.reset') }}</el-button>
+        <el-button size="small" @click="handleResetColumnWidths">{{ $t('torrent.list.columnSettings.resetWidths') }}</el-button>
+        <el-button size="small" @click="showColumnSettings = false">{{ $t('common.cancel') }}</el-button>
+        <el-button size="small" type="primary" @click="applyColumnSettings">{{ $t('torrent.list.columnSettings.apply') }}</el-button>
       </span>
     </el-dialog>
   </div>
@@ -891,6 +898,7 @@
 
 <script lang="ts">
 import { Component } from 'vue-property-decorator'
+import { apiResponseMessage } from '@/i18n'
 import { mixins } from 'vue-class-component'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentAddDialog from './components/TorrentAddDialog.vue'
@@ -898,7 +906,10 @@ import SetLocationDialog from './components/SetLocationDialog.vue'
 import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
-import TrackerDetailCard from './components/TrackerDetailCard.vue'
+import TrackerDetailCard, {
+  DEFAULT_TRACKER_DETAIL_TABS
+} from './components/TrackerDetailCard.vue'
+import type { TrackerDetailTab } from './components/TrackerDetailCard.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
@@ -908,16 +919,18 @@ import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
 import ColumnResizeMixin from './mixins/columnResize'
+import TorrentErrorTooltipDismissMixin from './mixins/errorTooltipDismiss'
+import TrackerDetailDataMixin from './mixins/detailTabsData'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
-  deleteTorrents,
   pauseTorrents,
   resumeTorrents,
   recheckTorrents,
   reannounceTorrents,
   getDownloaderList,
   getActiveTorrents,
+  reconcileRuntimeTorrentStates,
   advancedSearch,
   getDuplicateTorrents,
   applySearchTemplate,
@@ -928,16 +941,15 @@ import {
   type AdvancedSearchRequest
 } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
-import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
+import { localizedStatusOptions, getStatusIcon, getStatusText } from '@/constants/status-config'
 import {
   formatFileSize,
   formatSpeed,
   formatDate,
   formatRatio,
   normalizeTorrent,
+  normalizeTorrentStatus,
   normalizePaginatedResponse,
-  getTorrentId,
-  getDownloaderId,
   extractErrorMessage,
   debounce
 } from '@/utils/formatters'
@@ -948,11 +960,17 @@ import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
+  collectRuntimeStateReconcileCandidates,
+  RuntimeListMembershipTracker,
+  TerminalReloadTracker,
+  isTorrentRowEffectivelyComplete,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups,
   getTorrentErrorReason as sharedErrorReason,
-  showTrackerErrorTag as sharedShowTrackerErrorTag
+  showTrackerErrorTag as sharedShowTrackerErrorTag,
+  countMatchedTrackerRows
 } from './utils/torrentBatch'
+import type { SpeedUpdate } from './utils/torrentBatch'
 import {
   buildTraditionalStatusFilterItems,
   getTraditionalStatusFilterValue,
@@ -961,6 +979,7 @@ import {
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
 import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
+import { isCapabilityAvailable } from '@/api/platform-capabilities'
 import {
   calculateTraditionalVirtualWindow,
   TRADITIONAL_VIRTUAL_OVERSCAN,
@@ -1004,7 +1023,20 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     AdvancedMultiSelect
   }
 })
-export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin) {
+export default class extends mixins(
+  TorrentBatchMixin,
+  SpeedPollingMixin,
+  ColumnResizeMixin,
+  TorrentErrorTooltipDismissMixin,
+  TrackerDetailDataMixin
+) {
+  get level3Available(): boolean {
+    return isCapabilityAvailable('level3_recycle')
+  }
+
+  get seedTransferAvailable(): boolean {
+    return isCapabilityAvailable('seed_transfer')
+  }
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 
@@ -1050,10 +1082,23 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // 实时速度轮询
   // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
-  private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeSpeedMap: Record<string, {
+    downloadSpeed: number
+    uploadSpeed: number
+    progress: number
+    status?: string
+    downloadComplete?: boolean
+  }> = {}
   private torrentSpeedTargetIndex: TorrentSpeedTargetIndex<TraditionalSpeedTarget> = buildTorrentSpeedTargetIndex([])
   private activeListRetryPending = false
   private activeListRetryInFlight = false
+  private runtimeStateMisses: Record<string, number> = {}
+  private runtimeStateReconcileInFlight = false
+  private runtimeListMembership = new RuntimeListMembershipTracker()
+  /** 终态整表刷新去重：同一复合键完成证据只触发一次 getList（防滞后窗口每秒刷新循环）。
+   * 筛选/模板/排查模式等上下文变化处 clear()；排序/翻页/手动刷新不清——去重键是
+   * downloader+hash 行身份键与行序无关，翻页与手动刷新本身即 getList。 */
+  private terminalReloadTracker = new TerminalReloadTracker()
 
   // 分类和标签数据
   private categoryList: string[] = []
@@ -1097,14 +1142,10 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // 快捷删除重复种子
   private showQuickDeleteDuplicatesDialog = false
 
-  // 详情面板
+  // 详情面板（detailFilesState/detailPeersState/handleDetailRefresh 由 TrackerDetailDataMixin 提供）
   private currentRow: any = null
   private activeDetailTab = 'tracker'
-  private detailTabs = [
-    { label: 'Tracker', value: 'tracker' },
-    { label: '文件', value: 'files' },
-    { label: 'Peers', value: 'peers' }
-  ]
+  private detailTabs: TrackerDetailTab[] = DEFAULT_TRACKER_DETAIL_TABS
 
   // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
   private showingDuplicates = false
@@ -1133,19 +1174,20 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   // P2-2 列设置（3列固定：checkbox/statusIcon/actions 不在此数组；11列可隐藏）
   private showColumnSettings = false
+  // 双语 P6-1：label 改 labelKey（模板按当前语言渲染，语言切换响应式）
   private columnSettings = [
-    { key: 'name', label: '名称', visible: true },
-    { key: 'size', label: '大小', visible: true },
-    { key: 'auxiliarySeedCount', label: '辅种数量', visible: true },
-    { key: 'progress', label: '进度', visible: true },
-    { key: 'status', label: '状态', visible: true },
-    { key: 'download', label: '下载速度', visible: true },
-    { key: 'upload', label: '上传速度', visible: true },
-    { key: 'ratio', label: '比率', visible: true },
-    { key: 'downloader', label: '下载器', visible: true },
-    { key: 'category', label: '分类/标签', visible: true },
-    { key: 'savePath', label: '保存路径', visible: true },
-    { key: 'added', label: '添加时间', visible: true }
+    { key: 'name', labelKey: 'torrent.list.column.nameShort', visible: true },
+    { key: 'size', labelKey: 'torrent.list.column.size', visible: true },
+    { key: 'auxiliarySeedCount', labelKey: 'torrent.list.column.auxiliarySeedCount', visible: true },
+    { key: 'progress', labelKey: 'torrent.list.column.progress', visible: true },
+    { key: 'status', labelKey: 'torrent.list.column.status', visible: true },
+    { key: 'download', labelKey: 'torrent.list.column.downloadSpeed', visible: true },
+    { key: 'upload', labelKey: 'torrent.list.column.uploadSpeed', visible: true },
+    { key: 'ratio', labelKey: 'torrent.list.column.ratio', visible: true },
+    { key: 'downloader', labelKey: 'torrent.list.column.downloaderShort', visible: true },
+    { key: 'category', labelKey: 'torrent.list.column.category', visible: true },
+    { key: 'savePath', labelKey: 'torrent.list.column.savePath', visible: true },
+    { key: 'added', labelKey: 'torrent.list.column.addedDate', visible: true }
   ]
 
   // 防抖搜索
@@ -1237,17 +1279,23 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   get statusFilterItems(): StatusFilterItem[] {
     return buildTraditionalStatusFilterItems(
-      STATUS_OPTIONS.map(opt => ({
+      // 双语 P6-1：状态展示名按当前语言（localizedStatusOptions 同源）
+      localizedStatusOptions().map(opt => ({
         icon: getStatusIcon(opt.value),
         label: opt.label,
         value: opt.value
-      }))
+      })),
+      // 双语 P6-5：固定项（全部/活动中）同样按当前语言，不再硬编码中文
+      {
+        allLabel: this.$t('torrent.list.filters.all').toString(),
+        activeLabel: this.$t('torrent.list.filters.activeStatus').toString()
+      }
     )
   }
 
   get downloaderFilterItems(): StatusFilterItem[] {
     return [
-      { icon: 'server', label: '全部', value: '' },
+      { icon: 'server', label: this.$t('torrent.list.filters.all').toString(), value: '' },
       ...this.downloaderList.map(d => ({
         icon: 'circle',
         label: d.nickname,
@@ -1265,7 +1313,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   get categoryFilterItems(): StatusFilterItem[] {
     const items = [
-      { icon: 'folder', label: '全部', value: '' },
+      { icon: 'folder', label: this.$t('torrent.list.filters.all').toString(), value: '' },
       ...this.categoryList.map(name => ({
         icon: 'folder-open',
         label: name,
@@ -1277,7 +1325,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   get tagFilterItems(): StatusFilterItem[] {
     const items = [
-      { icon: 'tag', label: '全部', value: '' },
+      { icon: 'tag', label: this.$t('torrent.list.filters.all').toString(), value: '' },
       ...this.tagList.map(name => ({
         icon: 'tag',
         label: name,
@@ -1408,6 +1456,14 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       // "仅显示活动种子"过滤已下沉到后端（active_only），此处直接使用后端返回的 list 与 total，
       // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
       this.replaceTorrentList(normalizedList, total)
+
+      // 观察日志：与后端 [tracker-domain-filter] debug 日志对账，验证命中标记口径
+      console.debug(
+        '[tracker-filter] total=%d 本页=%d 命中标记行=%d',
+        total,
+        normalizedList.length,
+        countMatchedTrackerRows(normalizedList)
+      )
     } catch (error) {
       if (requestSequence !== this.listRequestSequence) return
       console.error('获取种子列表失败:', error)
@@ -1462,6 +1518,73 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // ====== 实时速度轮询 ======
   // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
+  /** 将实时快照更新应用到当前列表，始终按 downloader_id + hash 精确命中。 */
+  private applySpeedUpdates(updates: SpeedUpdate[]): boolean {
+    let terminalObserved = false
+    updates.forEach(update => {
+      const targets = resolveTorrentSpeedTargets(this.torrentSpeedTargetIndex, update)
+      targets.forEach(torrent => {
+        // 转移判定的前态必须在本循环对该行任何赋值（speed/progress/status）之前捕获：
+        // buildSpeedSnapshot 会把完成证据的 status 改写为 'completed'，分支内延迟求值
+        // 会让行永远呈现已终态、转移永不触发，合法的滞后首刷会被彻底杀死。
+        const wasComplete = isTorrentRowEffectivelyComplete(torrent)
+        torrent.downloadSpeed = update.downloadSpeed
+        torrent.uploadSpeed = update.uploadSpeed
+        torrent.progress = update.downloadComplete ? 100 : update.progress
+        if (update.status) {
+          torrent.status = normalizeTorrentStatus(update.status, update.status)
+        }
+        if (update.downloadComplete) {
+          torrent.downloadComplete = true
+          // 稳态证据（行已是终态，如做种行每轮带回 downloadComplete）不再报告，
+          // 根治筛选下每秒 getList 的稳态循环；滞后窗口的重复触发由
+          // terminalReloadTracker 按复合键去重兜底。
+          if (!wasComplete) terminalObserved = true
+        }
+      })
+    })
+    return terminalObserved
+  }
+
+  private async reconcileRuntimeStates(
+    candidates: Array<{ downloader_id: string, hash: string }>
+  ): Promise<boolean> {
+    if (!candidates.length || this.runtimeStateReconcileInFlight) return false
+    this.runtimeStateReconcileInFlight = true
+    try {
+      const response = await reconcileRuntimeTorrentStates(candidates)
+      const data = response.code === '200' && response.data
+        ? response.data
+        : null
+      if (!data || !Array.isArray(data.list)) return false
+
+      const reconcileSnapshot = buildSpeedSnapshot({
+        status: response.status,
+        msg: response.msg,
+        code: '200',
+        data: data.list
+      })
+      const terminalObserved = this.applySpeedUpdates(reconcileSnapshot.updates)
+      // activeAdvancedSearchRequest 门控：getList 第一行会置空该标志，高级搜索
+      // 期间终态触发会静默退出高级模式并洗掉结果（既存同源危害一并修除）。
+      if (
+        terminalObserved &&
+        !this.activeAdvancedSearchRequest &&
+        (this.listQuery.showActiveOnly ||
+          (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0)) &&
+        this.terminalReloadTracker.observeNewTerminal(reconcileSnapshot.updates)
+      ) {
+        await this.getList()
+      }
+      return true
+    } catch (error) {
+      console.debug('[速度轮询] 终态核验失败:', error)
+      return false
+    } finally {
+      this.runtimeStateReconcileInFlight = false
+    }
+  }
+
   /**
    * 加载活跃种子实时速度和进度（对齐列表模式 index.vue:2177-2214）
    * 修复 Bug#3：原用原生 fetch + localStorage.getItem('token')，
@@ -1473,19 +1596,38 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     try {
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
-      if (snapshot.ready && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
-        // 列表替换时已建立 downloader_id + hash 索引；轮询只按键命中活动任务，
-        // 避免 10 万行场景为每条更新重复执行 Array.find。
-        snapshot.updates.forEach(u => {
-          const targets = resolveTorrentSpeedTargets(this.torrentSpeedTargetIndex, u)
-          targets.forEach(torrent => {
-            torrent.downloadSpeed = u.downloadSpeed
-            torrent.uploadSpeed = u.uploadSpeed
-            torrent.progress = u.progress
-          })
-        })
-        this.activeSpeedMap = snapshot.torrentSpeedMap
-        this.speedSnapshotReady = true
+      if ((snapshot.ready || snapshot.partial) && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
+        const newlyUnlistedKeys = this.runtimeListMembership.observe(
+          this.list,
+          snapshot.updates,
+          snapshot.ready
+        )
+        let terminalObserved = this.applySpeedUpdates(snapshot.updates)
+        this.activeSpeedMap = snapshot.ready
+          ? snapshot.torrentSpeedMap
+          : { ...this.activeSpeedMap, ...snapshot.torrentSpeedMap }
+        if (newlyUnlistedKeys.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-this-alias
+          const component = this
+          terminalObserved = (await component.runtimeListMembership.refresh(
+            () => component.list,
+            snapshot.updates,
+            () => component.getList(),
+            updates => component.applySpeedUpdates(updates)
+          )) || terminalObserved
+        }
+        if (snapshot.ready) {
+          this.speedSnapshotReady = true
+          const reconcile = collectRuntimeStateReconcileCandidates(
+            this.list,
+            snapshot.updates,
+            this.runtimeStateMisses
+          )
+          this.runtimeStateMisses = reconcile.misses
+          if (reconcile.candidates.length) {
+            await this.reconcileRuntimeStates(reconcile.candidates)
+          }
+        }
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
 
         if (
@@ -1500,7 +1642,16 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
             this.activeListRetryInFlight = false
           }
         }
-        return true
+        if (
+          terminalObserved &&
+          !this.activeAdvancedSearchRequest &&
+          (this.listQuery.showActiveOnly ||
+            (Array.isArray(this.listQuery.status) && this.listQuery.status.length > 0)) &&
+          this.terminalReloadTracker.observeNewTerminal(snapshot.updates)
+        ) {
+          await this.getList()
+        }
+        return snapshot.ready
       }
       return false
     } catch (e) {
@@ -1536,6 +1687,8 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // ====== 事件处理 ======
   private handleFilter() {
     this.currentPage = 1
+    // 筛选上下文变化：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     this.resetTableViewport()
     this.getList()
   }
@@ -1748,7 +1901,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   }
 
   // ====== 辅助方法 ======
-  // groupTorrentsByDownloader / deleteTorrentsInternal / 批量开始/暂停/重检
+  // groupTorrentsByDownloader / 批量开始/暂停/重检 / 四级删除
   // 已由 TorrentBatchMixin 提供（mixins/torrentBatch.ts + utils/torrentBatch.ts），
   // 此处不再重复实现，消除「改一处忘一处」的回归风险。
 
@@ -1762,22 +1915,22 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
     const downloaderId = torrent.downloader_id || torrent.downloaderId
     if (!downloaderId) {
-      this.$message.error('种子缺少下载器信息')
+      this.$message.error(this.$t('torrent.msg.missingDownloaderShort'))
       return
     }
 
     try {
       if (torrent.status === 'paused') {
         await resumeTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
-        this.$message.success('开始任务成功')
+        this.$message.success(this.$t('torrent.msg.startTaskSuccess'))
       } else {
         await pauseTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
-        this.$message.success('暂停任务成功')
+        this.$message.success(this.$t('torrent.msg.pauseTaskSuccess'))
       }
       this.getList()
     } catch (error) {
       console.error('切换暂停状态失败:', error)
-      this.$message.error('操作失败')
+      this.$message.error(this.$t('torrent.msg.opFailed'))
     }
   }
 
@@ -1786,72 +1939,17 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
     const downloaderId = torrent.downloader_id || torrent.downloaderId
     if (!downloaderId) {
-      this.$message.error('种子缺少下载器信息')
+      this.$message.error(this.$t('torrent.msg.missingDownloaderShort'))
       return
     }
 
     try {
       await recheckTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
-      this.$message.success('重新检查任务已提交')
+      this.$message.success(this.$t('torrent.msg.recheckSubmitted'))
       this.getList()
     } catch (error) {
       console.error('重检种子失败:', error)
-      this.$message.error('重检失败')
-    }
-  }
-
-  private async handleDelete(torrent: any) {
-    if (!torrent) return
-
-    this.$confirm(`确定要删除种子"${torrent.name}"吗？`, '删除确认', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(async() => {
-      this.$confirm('是否同时删除数据文件？', '删除数据文件', {
-        confirmButtonText: '同时删除种子和数据',
-        cancelButtonText: '仅删除种子，保留数据',
-        distinguishCancelAndClose: true,
-        type: 'warning'
-      }).then(async() => {
-        await this.performSingleDelete(torrent, 1)
-      }).catch((action) => {
-        if (action === 'cancel') {
-          this.performSingleDelete(torrent, 0)
-        }
-      })
-    }).catch(() => undefined)
-  }
-
-  private async performSingleDelete(torrent: any, deleteData: number) {
-    // 修复 Bug#4：deleteTorrents 后端只接受 info_id / delete_data / id_recycle，
-    // 不识别 hashes / deleteData。对齐列表模式 index.vue:1808-1821。
-    const infoId = getTorrentId(torrent)
-    const downloaderId = getDownloaderId(torrent)
-    if (!downloaderId) {
-      this.$message.error('种子缺少下载器信息')
-      return
-    }
-
-    try {
-      await deleteTorrents({
-        info_id: infoId,
-        downloader_id: downloaderId,
-        delete_data: deleteData,
-        id_recycle: 1
-      })
-
-      const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
-      this.$message.success(`删除种子成功 ${dataFileText}`)
-      this.getList()
-      // 如果删除的是当前详情面板的种子，关闭详情面板
-      if (this.isCurrentRow(torrent)) {
-        this.currentRow = null
-      }
-    } catch (error) {
-      const errorMessage = extractErrorMessage(error)
-      console.error('删除种子失败:', error)
-      this.$message.error(errorMessage || '删除种子失败')
+      this.$message.error(this.$t('torrent.msg.recheckFailed'))
     }
   }
 
@@ -1863,6 +1961,14 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     // 与 index.vue:1718 handleAdd 行为对齐。
     this.showAddDialog = false
     this.getList()
+  }
+
+  /** 202 后台添加真正完成后再拉一次权威列表，覆盖首次刷新早于入库的竞态。 */
+  private async handleBatchAddCompleted() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    await component.getList()
+    await component.loadActiveSpeed()
   }
 
   // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======
@@ -1883,6 +1989,8 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
    * 快捷操作下拉菜单命令分发
    */
   private async handleQuickActionCommand(command: string) {
+    // 排查模式切换等效换筛选：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     if (command === 'inspect-same-content') {
       this.showingDuplicates = false
       this.showingSingleErrors = false
@@ -1892,7 +2000,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       this.listQuery.skip = 0
       this.resetTableViewport()
       await this.getList()
-      this.$message.success(`排查完成，共找到 ${this.total} 条同内容种子`)
+      this.$message.success(this.$t('torrent.msg.inspectSameContentDone', { count: this.total }))
     } else if (command === 'inspect-single-errors') {
       this.showingDuplicates = false
       this.showingSameContent = false
@@ -1902,7 +2010,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       this.listQuery.skip = 0
       this.resetTableViewport()
       await this.getList()
-      this.$message.success(`排查完成，共找到 ${this.total} 条错误单种`)
+      this.$message.success(this.$t('torrent.msg.inspectSingleErrorDone', { count: this.total }))
     } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
@@ -1912,6 +2020,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     this.showingSameContent = false
     this.currentPage = 1
     this.listQuery.skip = 0
+    this.terminalReloadTracker.clear()
     this.resetTableViewport()
     await this.getList()
   }
@@ -1920,6 +2029,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     this.showingSingleErrors = false
     this.currentPage = 1
     this.listQuery.skip = 0
+    this.terminalReloadTracker.clear()
     this.resetTableViewport()
     await this.getList()
   }
@@ -1934,7 +2044,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   /** 单条 Tracker 汇报（在详情面板 Tracker tab 内触发） */
   private async handleTrackerReannounce(tracker: any, _index: number) {
     if (!this.currentRow?.hash) {
-      this.$message.error('种子信息不完整，无法汇报')
+      this.$message.error(this.$t('torrent.msg.reannounceIncomplete'))
       return
     }
     const downloaderId = this.currentRow.downloader_id || this.currentRow.downloaderId
@@ -1945,15 +2055,15 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
         downloader_id: downloaderId
       })
       if (response.code === '200') {
-        this.$message.success('Tracker汇报成功')
+        this.$message.success(this.$t('torrent.msg.reannounceSuccess'))
         await this.getList()
       } else {
-        this.$message.error(response.msg || 'Tracker汇报失败')
+        this.$message.error(apiResponseMessage(response, this.$t('torrent.msg.reannounceFailed')))
       }
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('Tracker汇报失败:', error)
-      this.$message.error(errorMessage || 'Tracker汇报失败')
+      this.$message.error(errorMessage || this.$t('torrent.msg.reannounceFailed'))
     } finally {
       this.$set(tracker, 'reannouncing', false)
     }
@@ -1962,7 +2072,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // ====== P0#5 批量 Tracker 汇报（按下载器分组，复用 mixin groupBy） ======
   private async handleBatchReannounce() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请先选择要汇报的种子')
+      this.$message.warning(this.$t('torrent.msg.selectFirstReannounce'))
       return
     }
     try {
@@ -1978,14 +2088,14 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       const downloaderCount = Object.keys(groups).length
 
       if (failed > 0) {
-        this.$message.warning(`Tracker汇报部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
+        this.$message.warning(this.$t('torrent.msg.reannouncePartial', { succeeded, failed, total }))
       } else {
-        this.$message.success(`Tracker汇报成功(${total}个种子, ${downloaderCount}个下载器)`)
+        this.$message.success(this.$t('torrent.msg.reannounceBatchSuccess', { total, downloaderCount }))
       }
       this.getList()
     } catch (error) {
       console.error('Tracker汇报失败:', error)
-      this.$message.error('Tracker汇报失败，请查看控制台')
+      this.$message.error(this.$t('torrent.msg.reannounceBatchFailed'))
     }
   }
 
@@ -1997,7 +2107,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   private handleBatchSetLocation() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请先选择种子')
+      this.$message.warning(this.$t('torrent.msg.selectFirst'))
       return
     }
     // 同源校验委托纯函数（防回归 P0-E）
@@ -2018,7 +2128,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   // ====== P0#7 批量转移 ======
   private handleBatchTransfer() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请先选择要转移的种子')
+      this.$message.warning(this.$t('torrent.msg.selectFirstTransfer'))
       return
     }
     const check = assertSameDownloader(this.multipleSelection)
@@ -2032,13 +2142,13 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   private handleBatchTransferSuccess() {
     this.showBatchTransferDialog = false
     this.getList()
-    this.$message.success('批量转移操作完成')
+    this.$message.success(this.$t('torrent.msg.transferDone'))
   }
 
   // ====== P0#8 Tracker 操作（增/改/替换） ======
   private handleBatchTracker() {
     if (this.multipleSelection.length === 0) {
-      this.$message.warning('请先选择要操作的种子')
+      this.$message.warning(this.$t('torrent.msg.selectFirstAction'))
       return
     }
     this.selectedTorrentsForTracker = [...this.multipleSelection]
@@ -2048,13 +2158,13 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 
   private handleTrackerOperationSuccess() {
     this.getList()
-    this.$message.success('Tracker操作成功')
+    this.$message.success(this.$t('torrent.msg.trackerOpSuccess'))
   }
 
   // ====== P0#9 全局替换 Tracker ======
   private handleGlobalReplaceSuccess() {
     this.getList()
-    this.$message.success('全局替换Tracker成功')
+    this.$message.success(this.$t('torrent.msg.globalReplaceSuccess'))
   }
 
   // ====== P1#8 高级搜索 ======
@@ -2076,7 +2186,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   private handleResetAdvancedSearch() {
     // AdvancedSearchBuilder 在发出 reset 前已经完成内部重置；这里只处理反馈，
     // 避免再次调用 resetConditions 形成 reset 事件递归。
-    this.$message.success('搜索条件已重置')
+    this.$message.success(this.$t('torrent.msg.conditionsReset'))
   }
 
   private handleAdvancedTemplateLoaded(conditions: QueryTemplateConditions) {
@@ -2101,7 +2211,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
         this.pageSize
       )
       if (error || !request) {
-        this.$message.error(error || '搜索条件格式错误')
+        this.$message.error(error || this.$t('torrent.msg.invalidSearchParams'))
         return
       }
 
@@ -2116,7 +2226,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('高级搜索失败:', error)
-      this.$message.error(errorMessage || '高级搜索失败，请检查搜索条件')
+      this.$message.error(errorMessage || this.$t('torrent.msg.advancedFailed'))
     } finally {
       this.advancedSearchSearching = false
     }
@@ -2147,19 +2257,19 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
           .map(item => ({ ...item, checked: false }))
         this.replaceTorrentList(nextList, response.data.total || 0)
         if (successContext === 'search') {
-          this.$message.success(`高级搜索完成，找到 ${this.total} 条结果`)
+          this.$message.success(this.$t('torrent.msg.advancedDone', { count: this.total }))
         } else if (successContext === 'template') {
-          this.$message.success('已应用高级搜索模板')
+          this.$message.success(this.$t('torrent.msg.advancedTemplateApplied'))
         }
         return true
       }
-      this.$message.error(response.msg || '搜索失败')
+      this.$message.error(apiResponseMessage(response, this.$t('torrent.msg.searchFailed')))
       return false
     } catch (error) {
       if (requestSequence !== this.listRequestSequence) return false
       const errorMessage = extractErrorMessage(error)
       console.error('高级搜索失败:', error)
-      this.$message.error(errorMessage || '搜索失败')
+      this.$message.error(errorMessage || this.$t('torrent.msg.searchFailed'))
       return false
     } finally {
       if (requestSequence === this.listRequestSequence) {
@@ -2175,7 +2285,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
    */
   private async applyQueryTemplate(conditions: QueryTemplateConditions): Promise<boolean> {
     if (!conditions || !conditions.source) {
-      this.$message.error('模板条件格式无效')
+      this.$message.error(this.$t('torrent.msg.templateInvalid'))
       return false
     }
     try {
@@ -2198,9 +2308,11 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
           sort_order: saved.sort_order ?? 'desc'
         }
         this.currentPage = 1
+        // 模板重建筛选上下文：重置终态刷新去重
+        this.terminalReloadTracker.clear()
         this.resetTableViewport()
         await this.getList()
-        this.$message.success('已应用查询模板')
+        this.$message.success(this.$t('torrent.msg.templateApplied'))
         return true
       } else if (conditions.source === 'advanced' && conditions.condition_groups) {
         const sortBy = conditions.sort_by || this.listQuery.sort_by || 'added_date'
@@ -2221,7 +2333,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
           this.pageSize
         )
         if (error || !request) {
-          this.$message.error(error || '搜索条件格式错误')
+          this.$message.error(error || this.$t('torrent.msg.invalidSearchParams'))
           return false
         }
         this.showingDuplicates = false
@@ -2233,10 +2345,10 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
         this.resetTableViewport()
         return await this.fetchAdvancedSearchPage('template')
       } else {
-        this.$message.warning('不支持的模板类型')
+        this.$message.warning(this.$t('torrent.msg.unsupportedTemplate'))
       }
     } catch (error) {
-      this.$message.error('应用模板失败：' + (error as Error).message)
+      this.$message.error(this.$t('torrent.msg.applyTemplateFailedWith', { message: (error as Error).message }))
     }
     return false
   }
@@ -2254,10 +2366,10 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
           applied = await this.applyQueryTemplate(conditions)
         }
       } else {
-        this.$message.error(response.msg || '应用模板失败')
+        this.$message.error(apiResponseMessage(response, this.$t('torrent.msg.applyTemplateFailed')))
       }
     } catch (error) {
-      this.$message.error('应用模板失败：' + (error as Error).message)
+      this.$message.error(this.$t('torrent.msg.applyTemplateFailedWith', { message: (error as Error).message }))
     }
     if (applied) {
       // 清除 query 参数，避免刷新重复应用
@@ -2275,6 +2387,8 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     this.activeAdvancedSearchRequest = null
     this.currentPage = 1
     this.listQuery.skip = 0
+    // 数据源模式切换等效换筛选：重置终态刷新去重
+    this.terminalReloadTracker.clear()
     this.resetTableViewport()
     if (!enabled) {
       await this.getList()
@@ -2320,7 +2434,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
       const nextList = list.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
       this.replaceTorrentList(nextList, total)
       if (showResultMessage) {
-        this.$message.success(`查找完成，共找到 ${total} 条重复种子`)
+        this.$message.success(this.$t('torrent.msg.duplicatesFound', { count: total }))
       }
     } catch (error) {
       if (requestSequence !== this.listRequestSequence) return
@@ -2346,13 +2460,13 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   /** 列设置菜单：全部列宽恢复默认（ColumnResizeMixin 提供 resetColumnWidths） */
   private handleResetColumnWidths() {
     this.resetColumnWidths()
-    this.$message.success('列宽已重置为默认')
+    this.$message.success(this.$t('torrent.list.columnSettings.widthsReset'))
   }
 
   private applyColumnSettings() {
     this.showColumnSettings = false
     this.saveColumnPreferences()
-    this.$message.success('列设置已保存')
+    this.$message.success(this.$t('torrent.list.columnSettings.saved'))
   }
 
   private saveColumnPreferences() {

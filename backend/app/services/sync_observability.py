@@ -35,8 +35,10 @@ import logging
 import math
 import os
 import sqlite3
+import sys
 import threading
 import time
+import uuid
 from collections import deque
 from contextvars import ContextVar
 from typing import Any, Callable, Deque, Dict, Optional
@@ -46,6 +48,11 @@ from app.core.config import settings
 from app.utils.log_sanitizer import IP_PATTERN, sanitize_ip
 
 logger = logging.getLogger(__name__)
+
+# 进程级身份：用于区分真实仍在运行的任务与进程重启后遗留的状态/日志。
+# 只生成一次，不写数据库；所有结构化观测事件自动携带这两个字段。
+WORKER_PID = os.getpid()
+WORKER_INSTANCE_ID = f"{WORKER_PID}-{uuid.uuid4().hex[:12]}"
 
 # ==================== 稳定事件名 ====================
 
@@ -65,6 +72,16 @@ EVENT_TRACKER_STATUS = "sync_tracker_status_done"
 EVENT_LOOP_LAG = "event_loop_lag"
 # WAL 只读快照
 EVENT_WAL_SNAPSHOT = "wal_snapshot"
+# Python 内部类任务生命周期（start/heartbeat/timeout_warning/end）
+EVENT_TASK_LIFECYCLE = "task_lifecycle"
+# heavy_sync 等资源生命周期（wait/admitted/timeout/release）
+EVENT_RESOURCE_LIFECYCLE = "resource_lifecycle"
+# 同步阶段切换（用于还原卡在哪个阶段）
+EVENT_SYNC_PHASE = "sync_phase"
+# 同步异常边界（记录异常类型、阶段以及是否被转换为结果后继续执行）
+EVENT_SYNC_ERROR = "sync_error"
+# 进程内存采样（OOM 治理 2026-09-05：周期采样 RSS，为内存峰值提供证据链）
+EVENT_PROCESS_MEMORY = "process_memory"
 
 # ==================== 字段白名单 ====================
 
@@ -77,12 +94,27 @@ COMMON_FIELDS = frozenset(
         "trigger",
         "downloader_id",
         "downloader_count",
+        "task_code",
+        "task_name",
+        "cron_run_id",
+        "sync_run_id",
+        "resource",
         "phase",
         "phase_ms",
         "outcome",
         "skip_reason",
         "admission_wait_ms",
         "threshold_ms",  # 告警阈值类事件通用（looped 阈值对比基准）
+        "state",
+        "pid",
+        "worker_instance_id",
+        "elapsed_ms",
+        "timeout_seconds",
+        "timeout_exceeded",
+        "execution_mode",
+        "error_type",
+        "last_progress_ms",
+        "resource_held_ms",
     }
 )
 
@@ -100,6 +132,43 @@ EVENT_FIELDS: Dict[str, frozenset] = {
     EVENT_TRACKER_STATUS: frozenset({"scanned", "changed", "unchanged", "batches", "duration_ms"}),
     EVENT_LOOP_LAG: frozenset({"lag_ms", "p95_ms", "p99_ms", "max_ms", "window_size"}),
     EVENT_WAL_SNAPSHOT: frozenset({"wal_bytes", "wal_growth_bytes", "busy_count", "checkpoint_busy"}),
+    # 2026-08-25：任务心跳进度停滞标记（SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS
+    # 阈值触发，白名单外字段会被 format_event_line 静默丢弃故必须登记）
+    EVENT_TASK_LIFECYCLE: frozenset({"progress_stalled"}),
+    EVENT_RESOURCE_LIFECYCLE: frozenset(
+        {
+            "resource_state",
+            "wait_ms",
+            "queue_count",
+            "running_count",
+            "queue_limit",
+            "blocked_by_task_code",
+            "blocked_by_task_id",
+            "blocked_by_cron_run_id",
+            "blocked_by_sync_run_id",
+            "blocked_by_phase",
+            "blocked_by_age_ms",
+            "blocked_by_started_at",
+            "blocked_by_pid",
+            "blocked_by_worker_instance_id",
+            "holder_task_code",
+            "holder_task_id",
+            "holder_cron_run_id",
+            "holder_sync_run_id",
+            "holder_phase",
+            "holder_age_ms",
+            "holder_started_at",
+            "holder_pid",
+            "holder_worker_instance_id",
+        }
+    ),
+    EVENT_SYNC_PHASE: frozenset({"previous_phase", "previous_phase_ms"}),
+    EVENT_SYNC_ERROR: frozenset({"stage", "operation", "suppressed", "continue_after_error"}),
+    # OOM 治理（2026-09-05）：进程 RSS 采样。rss_mb 只登记在本事件专属白名单，
+    # 绝不进 COMMON_FIELDS / EVENT_LOOP_LAG（test_non_whitelist_fields_dropped
+    # 以 rss_mb 作"非白名单字段应被丢弃"的反例样例）。heap_trimmed 为采样后
+    # 分配器归还动作的结果（SYNC_PROCESS_MEMORY_TRIM_ENABLED 门控）。
+    EVENT_PROCESS_MEMORY: frozenset({"rss_mb", "sample_interval_seconds", "heap_trimmed"}),
 }
 
 
@@ -232,6 +301,9 @@ def log_event(event_name: str, level: int = logging.INFO, **fields: Any) -> None
     当前上下文持有 run_id（set_run_id 后）时自动附加 run_id 字段；
     调用方显式传入 run_id 时以显式值优先。
     """
+    fields = dict(fields)
+    fields.setdefault("pid", WORKER_PID)
+    fields.setdefault("worker_instance_id", WORKER_INSTANCE_ID)
     context_run_id = _run_id_var.get()
     if context_run_id is not None and "run_id" not in fields:
         fields = dict(fields, run_id=context_run_id)
@@ -516,3 +588,138 @@ def snapshot_wal_stats(db_path: str) -> Dict[str, Any]:
         "busy_count": busy_count,
         "checkpoint_busy": checkpoint_busy,
     }
+
+
+# ==================== 进程 RSS 采样（OOM 治理 2026-09-05） ====================
+
+# 最近一次采样的 RSS（MB）；周期采样循环写，/api/v1/health/diagnosis 读取。
+# None 表示尚未采样或当前平台不可用。
+_LAST_RSS_MB: Optional[float] = None
+
+
+def get_process_rss_mb() -> Optional[float]:
+    """采集当前进程 RSS（MB）；平台不支持/采集失败返回 None（观测不破坏主流程）。
+
+    实现口径（刻意不引入 psutil 依赖）：
+    - Linux：读 /proc/self/status 的 VmRSS 行（kB）——部署主目标（docker）路径；
+    - Windows：ctypes GetProcessMemoryInfo 的 WorkingSetSize（字节）——桌面/
+      PyInstaller 场景；cb 必须先赋 sizeof(结构体) 再调用（仓库 ctypes 先例
+      见 desktop_companion/credentials.py）；
+    - macOS：返回 None——resource.getrusage 的 ru_maxrss 是高水位（peak）而非
+      当前值，且单位与 Linux 不同（字节 vs kB），语义陷阱直接规避。
+    纯同步毫秒级调用，事件循环内直接调用安全。
+
+    注意（口径声明）：desktop 模式下后端跑在 GUI 进程内线程中，本函数量到的
+    是整个桌面进程（含 webview）的 RSS，数值系统性偏高——该场景数据只作
+    趋势参考，不用于内存预算验收。
+    """
+    global _LAST_RSS_MB
+    rss_bytes: Optional[int] = None
+    try:
+        if sys.platform.startswith("linux"):
+            with open("/proc/self/status", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    if line.startswith("VmRSS:"):
+                        # "VmRSS:\t 123456 kB"
+                        rss_kb = int(line.split()[1])
+                        rss_bytes = rss_kb * 1024
+                        break
+        elif sys.platform.startswith("win32"):
+            import ctypes
+
+            class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("cb", ctypes.c_uint32),
+                    ("PageFaultCount", ctypes.c_uint32),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = _PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS)
+            # getattr 取 windll：非 Windows 平台无此属性（静态检查与运行时都安全）
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                return None
+            kernel32 = windll.kernel32
+            psapi = windll.psapi
+            # GetCurrentProcess 返回 64 位伪句柄（-1）：默认 c_int restype 会截断，
+            # 必须显式 c_void_p；GetProcessMemoryInfo 首参同为 HANDLE，需配 argtypes
+            # 否则巨大的无符号句柄 int 触发 OverflowError。
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(_PROCESS_MEMORY_COUNTERS),
+                ctypes.c_uint32,
+            ]
+            psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+            if psapi.GetProcessMemoryInfo(
+                kernel32.GetCurrentProcess(),
+                ctypes.byref(counters),
+                counters.cb,
+            ):
+                rss_bytes = int(counters.WorkingSetSize)
+    except Exception:  # noqa: BLE001 - 观测失败静默降级，不破坏调用方
+        logger.debug("get_process_rss_mb sampling failed", exc_info=True)
+        return None
+
+    if rss_bytes is None:
+        return None
+    rss_mb = round(rss_bytes / (1024 * 1024), 1)
+    _LAST_RSS_MB = rss_mb
+    return rss_mb
+
+
+def get_last_rss_mb() -> Optional[float]:
+    """读取最近一次采样值（不触发采集）；未采样/不可用返回 None。"""
+    return _LAST_RSS_MB
+
+
+def release_free_heap_memory() -> bool:
+    """把分配器空闲内存归还 OS（移动端内存治理 2026-09-05；返回是否生效）。
+
+    背景：同步任务的分批循环会产生大量短命大对象，原生分配器（glibc/scudo）
+    释放后仍可能持有高水位不归还 OS——容器/移动端看到的 RSS 呈楼梯上升
+    （生产实测：重启后 819MB，数小时爬到 2.2GB）。本函数在空闲时机主动触发
+    归还，把楼梯变锯齿。
+
+    平台分支（不支持/失败一律返回 False，绝不抛异常）：
+    - glibc（Linux 服务器/桌面）：malloc_trim(0)——归还堆顶与空闲 chunk；
+    - Android bionic/scudo：mallopt(M_PURGE)（API 28+；低版本 mallopt 对未知
+      命令返回 0，等价 no-op）；
+    - macOS/其它：无等价安全接口，直接 False。
+
+    纯同步毫秒级调用（madvise 扫描空闲页），由 RSS 采样循环在采样后调用
+    （默认 5 分钟一次的空闲时刻），不触碰同步热路径。
+    """
+    try:
+        if not sys.platform.startswith("linux"):
+            return False
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=False)
+        # glibc：malloc_trim 优先（语义最直接）
+        try:
+            trim = libc.malloc_trim
+        except AttributeError:
+            trim = None
+        if trim is not None:
+            trim.restype = ctypes.c_int
+            return bool(trim(ctypes.c_size_t(0)))
+        # bionic：M_PURGE=-101（scudo 空闲内存归还；value 被忽略；未知命令返回 0 不报错）
+        try:
+            mallopt = libc.mallopt
+        except AttributeError:
+            return False
+        mallopt.restype = ctypes.c_int
+        _M_PURGE = -101  # bionic malloc.h: M_DECAY_TIME=-100, M_PURGE=-101（命令码均为负值）
+        return bool(mallopt(ctypes.c_int(_M_PURGE), ctypes.c_int(0)))
+    except Exception:  # noqa: BLE001 - 归还失败静默降级，不影响任何主流程
+        logger.debug("release_free_heap_memory failed", exc_info=True)
+        return False

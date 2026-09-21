@@ -3,7 +3,7 @@
     <span
       v-if="inputType === 'none'"
       class="condition-value-input__empty"
-    >无需填写</span>
+    >{{ $t('search.valueInput.noValueNeeded') }}</span>
 
     <!-- 文本输入 -->
     <el-input
@@ -57,7 +57,7 @@
         @input="handleInput"
         @change="handleChange"
       />
-      <span class="days-label">天内</span>
+      <span class="days-label">{{ $t('search.valueInput.daysSuffix') }}</span>
     </div>
 
     <!-- 日期范围选择器 -->
@@ -68,23 +68,23 @@
       <el-date-picker
         v-model="inputValue.start"
         type="datetime"
-        placeholder="开始时间"
+        :placeholder="$t('search.valueInput.startPlaceholder')"
         size="small"
         format="yyyy-MM-dd HH:mm:ss"
         value-format="yyyy-MM-dd HH:mm:ss"
-        style="width: 180px;"
+        class="range-date-picker"
         @input="handleInput"
         @change="handleChange"
       />
-      <span class="range-separator">至</span>
+      <span class="range-separator">{{ $t('search.valueInput.rangeSeparator') }}</span>
       <el-date-picker
         v-model="inputValue.end"
         type="datetime"
-        placeholder="结束时间"
+        :placeholder="$t('search.valueInput.endPlaceholder')"
         size="small"
         format="yyyy-MM-dd HH:mm:ss"
         value-format="yyyy-MM-dd HH:mm:ss"
-        style="width: 180px;"
+        class="range-date-picker"
         @input="handleInput"
         @change="handleChange"
       />
@@ -95,27 +95,27 @@
       v-else-if="inputType === 'numberRange'"
       class="number-range-input"
     >
-      <span class="size-label">最小:</span>
+      <span class="size-label">{{ $t('search.valueInput.minLabel') }}</span>
       <el-input-number
         :value="inputValue && inputValue.min !== undefined ? inputValue.min : null"
         :min="0"
         :precision="2"
         :controls="true"
         :step="0.1"
-        placeholder="最小值"
+        :placeholder="$t('search.valueInput.minPlaceholder')"
         size="small"
         class="size-number-input"
         @change="handleNumberRangeMinChange"
       />
-      <span class="range-separator">至</span>
-      <span class="size-label">最大:</span>
+      <span class="range-separator">{{ $t('search.valueInput.rangeSeparator') }}</span>
+      <span class="size-label">{{ $t('search.valueInput.maxLabel') }}</span>
       <el-input-number
         :value="inputValue && inputValue.max !== undefined ? inputValue.max : null"
         :min="0"
         :precision="2"
         :controls="true"
         :step="0.1"
-        placeholder="最大值"
+        :placeholder="$t('search.valueInput.maxPlaceholder')"
         size="small"
         class="size-number-input"
         @change="handleNumberRangeMaxChange"
@@ -129,14 +129,14 @@
     >
       <!-- 最小值 -->
       <div class="size-input-wrapper">
-        <span class="size-label">最小:</span>
+        <span class="size-label">{{ $t('search.valueInput.minLabel') }}</span>
         <el-input-number
           :value="inputValue && inputValue.min !== undefined ? inputValue.min : null"
           :min="0"
           :precision="2"
           :controls="true"
           :step="1"
-          placeholder="最小值"
+          :placeholder="$t('search.valueInput.minPlaceholder')"
           size="small"
           class="size-number-input"
           @input="handleMinValueChange"
@@ -144,7 +144,7 @@
         />
         <el-select
           :value="inputValue && inputValue.minUnit ? inputValue.minUnit : 'GB'"
-          placeholder="单位"
+          :placeholder="$t('search.valueInput.unitPlaceholder')"
           size="small"
           class="size-unit-select"
           @change="handleMinUnitChange"
@@ -158,18 +158,18 @@
         <span class="size-hint">{{ formatSizeHint(inputValue && inputValue.min, inputValue && inputValue.minUnit) }}</span>
       </div>
 
-      <span class="range-separator">至</span>
+      <span class="range-separator">{{ $t('search.valueInput.rangeSeparator') }}</span>
 
       <!-- 最大值 -->
       <div class="size-input-wrapper">
-        <span class="size-label">最大:</span>
+        <span class="size-label">{{ $t('search.valueInput.maxLabel') }}</span>
         <el-input-number
           :value="inputValue && inputValue.max !== undefined ? inputValue.max : null"
           :min="0"
           :precision="2"
           :controls="true"
           :step="1"
-          placeholder="最大值"
+          :placeholder="$t('search.valueInput.maxPlaceholder')"
           size="small"
           class="size-number-input"
           @input="handleMaxValueChange"
@@ -177,7 +177,7 @@
         />
         <el-select
           :value="inputValue && inputValue.maxUnit ? inputValue.maxUnit : 'GB'"
-          placeholder="单位"
+          :placeholder="$t('search.valueInput.unitPlaceholder')"
           size="small"
           class="size-unit-select"
           @change="handleMaxUnitChange"
@@ -211,7 +211,7 @@
       />
       <el-select
         :value="inputValue && inputValue.unit ? inputValue.unit : 'GB'"
-        placeholder="单位"
+        :placeholder="$t('search.valueInput.unitPlaceholder')"
         size="small"
         class="size-unit-select"
         @change="handleSizeUnitChange"
@@ -279,8 +279,8 @@
       @change="handleChange"
       style="width: 120px;"
     >
-      <el-option label="是" :value="true" />
-      <el-option label="否" :value="false" />
+      <el-option :label="$t('search.valueInput.yes')" :value="true" />
+      <el-option :label="$t('search.valueInput.no')" :value="false" />
     </el-select>
 
     <!-- 正则表达式输入 -->
@@ -291,7 +291,7 @@
       <el-input
         v-if="inputValue"
         v-model="inputValue.pattern"
-        placeholder="正则表达式"
+        :placeholder="$t('search.valueInput.placeholder.regex')"
         size="small"
         clearable
         @input="handleInput"
@@ -301,8 +301,8 @@
         v-if="inputValue"
         v-model="inputValue.caseSensitive"
         size="small"
-        active-text="区分大小写"
-        inactive-text="不区分"
+        :active-text="$t('search.valueInput.regexCaseSensitive')"
+        :inactive-text="$t('search.valueInput.regexCaseInsensitive')"
         style="margin-left: 8px;"
         @input="handleInput"
         @change="handleChange"
@@ -380,19 +380,24 @@ export default class ConditionValueInput extends Vue {
   // 字段选项（将通过API或prop传入）
   @Prop({ default: () => [] }) fieldOptions!: FieldOption[]
 
-  // 状态选项
-  readonly statusOptions: FieldOption[] = [
-    { label: '下载中', value: 'downloading' },
-    { label: '已完成', value: 'completed' },
-    { label: '暂停', value: 'paused' },
-    { label: '错误', value: 'error' }
-  ]
+  // 状态选项（fieldOptions 未传入时的兜底；label 按语言生成，getter 勿固定译文）
+  get statusOptions(): FieldOption[] {
+    return [
+      { label: this.$t('torrent.status.downloading').toString(), value: 'downloading' },
+      { label: this.$t('torrent.status.completed').toString(), value: 'completed' },
+      { label: this.$t('search.valueInput.statusPaused').toString(), value: 'paused' },
+      { label: this.$t('torrent.status.error').toString(), value: 'error' }
+    ]
+  }
 
-  readonly superSeedingOptions: FieldOption[] = [
-    { label: '是', value: '1' },
-    { label: '否', value: '0' },
-    { label: '不支持', value: 'unsupported' }
-  ]
+  // 超级做种三态（与共享层 getSearchFieldOptions 同源，值恒为稳定码）
+  get superSeedingOptions(): FieldOption[] {
+    return [
+      { label: this.$t('search.superSeeding.yes').toString(), value: '1' },
+      { label: this.$t('search.superSeeding.no').toString(), value: '0' },
+      { label: this.$t('search.superSeeding.unsupported').toString(), value: 'unsupported' }
+    ]
+  }
 
   // Computed
   get inputType(): string {
@@ -436,29 +441,29 @@ export default class ConditionValueInput extends Vue {
   get placeholder(): string {
     switch (this.inputType) {
       case 'text':
-        return '输入文本内容'
+        return this.$t('search.valueInput.placeholder.text').toString()
       case 'number':
-        return '输入数字'
+        return this.$t('search.valueInput.placeholder.number').toString()
       case 'date':
-        return '选择日期时间'
+        return this.$t('search.valueInput.placeholder.datetime').toString()
       case 'select':
-        return '请选择'
+        return this.$t('search.valueInput.placeholder.select').toString()
       case 'multiSelect':
-        return '选择或输入标签'
+        return this.$t('search.valueInput.placeholder.tags').toString()
       case 'boolean':
-        return '请选择'
+        return this.$t('search.valueInput.placeholder.select').toString()
       case 'lastDays':
-        return '输入天数'
+        return this.$t('search.valueInput.placeholder.days').toString()
       case 'dateRange':
-        return '选择日期范围'
+        return this.$t('search.valueInput.placeholder.dateRange').toString()
       case 'sizeRange':
-        return '选择大小范围'
+        return this.$t('search.valueInput.placeholder.sizeRange').toString()
       case 'sizeWithUnit':
-        return '输入大小值'
+        return this.$t('search.valueInput.placeholder.size').toString()
       case 'regex':
-        return '输入正则表达式'
+        return this.$t('search.valueInput.placeholder.regex').toString()
       default:
-        return '请输入值'
+        return this.$t('search.valueInput.placeholder.default').toString()
     }
   }
 
@@ -578,7 +583,7 @@ export default class ConditionValueInput extends Vue {
       !('maxUnit' in value)
     ) {
       throw new AdvancedSearchValidationError(
-        '父组件未提供种子大小范围状态'
+        this.$t('search.valueInput.parentMissingSizeRange').toString()
       )
     }
     return value as SizeRangeValue
@@ -593,7 +598,7 @@ export default class ConditionValueInput extends Vue {
       !('min' in value) ||
       !('max' in value)
     ) {
-      throw new AdvancedSearchValidationError('父组件未提供数值范围状态')
+      throw new AdvancedSearchValidationError(this.$t('search.valueInput.parentMissingNumberRange').toString())
     }
     return value as NumberRangeValue
   }
@@ -607,7 +612,7 @@ export default class ConditionValueInput extends Vue {
       !('value' in value) ||
       !('unit' in value)
     ) {
-      throw new AdvancedSearchValidationError('父组件未提供种子大小状态')
+      throw new AdvancedSearchValidationError(this.$t('search.valueInput.parentMissingSize').toString())
     }
     return value as SizeValue
   }
@@ -726,6 +731,11 @@ export default class ConditionValueInput extends Vue {
     display: flex;
     align-items: center;
     gap: 8px;
+
+    /* 内联定宽类化（桌面 180px 不变）：窄屏断点可弹性铺满（移动端条件组适配） */
+    .range-date-picker {
+      width: 180px;
+    }
 
     .range-separator {
       font-size: 12px;
@@ -857,6 +867,21 @@ export default class ConditionValueInput extends Vue {
 
       .range-separator {
         display: none;
+      }
+    }
+
+    /* 移动端条件行字号 12→14px 后，100px 定宽的数字框末位被步进按钮裁切（如 0.00） */
+    .size-range-input .size-input-wrapper .size-number-input,
+    .size-with-unit-input .size-number-input {
+      width: 130px;
+    }
+
+    /* 日期范围 2×180px+分隔符超窄屏宽度：两个时间选择器弹性对分整行 */
+    .date-range-input {
+      .range-date-picker {
+        width: auto;
+        flex: 1;
+        min-width: 0;
       }
     }
   }

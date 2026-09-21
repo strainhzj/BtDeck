@@ -1,0 +1,420 @@
+/*
+ * Copyright (C) 2025 BTDeck Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * 种子域文案（torrent 组，P3-1：列表骨架 + 操作反馈 + 添加弹窗 + 批量弹窗 + 删重两弹窗；
+ * P3-2 增 detail 子树：种子详情弹窗；P5 增 deleteLevel 子树：四级删除确认/结果链路）。
+ *
+ * deleteLevel 子树 zh 值与原内联中文逐字节一致（零回归）；en 按等级独立成键
+ * （R01～R04 三要素：等级号 + 影响对象 + 不可恢复性），审校清单见
+ * PLANS/bilingual/delete-level-review.md。
+ */
+export const torrent = {
+  status: {
+    seeding: '做种中',
+    downloading: '下载中',
+    completed: '已完成',
+    paused: '已暂停',
+    queuedDL: '下载队列',
+    error: '错误',
+    checking: '检查中',
+    unknown: '未知'
+  },
+  list: {
+    searchPlaceholder: '搜索种子名称...',
+    /** 传统视图专属（P6-1）：过滤面板 / 选中计数 / 状态栏 */
+    filters: {
+      toggle: '切换过滤面板',
+      title: '过滤器',
+      collapse: '收起',
+      all: '全部',
+      downloader: '下载器',
+      trackerDomain: 'Tracker主域名',
+      category: '分类',
+      tags: '标签',
+      /** 传统视图状态筛选虚拟项（P6-5 遗漏扫描补译：traditionalStatusFilter 前两项） */
+      activeStatus: '活动中'
+    },
+    selectedPrefix: '已选',
+    selectedSuffix: '个',
+    connected: '已连接',
+    activeLabel: '活动:',
+    downloaderPlaceholder: '请选择下载器',
+    statusPlaceholder: '请选择种子状态',
+    trackerPlaceholder: '请选择tracker',
+    activeOnly: '仅显示活动种子',
+    search: '搜索',
+    advancedSearch: '高级搜索',
+    duplicateSwitch: '查找重复任务',
+    clear: '清空',
+    refresh: '刷新',
+    alert: {
+      sameContent: '辅种异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子',
+      singleError: '错误单种排查：当前列表仅显示错误且全局同内容唯一的种子',
+      exit: '退出排查并返回普通列表'
+    },
+    toolbar: {
+      start: '开始',
+      pause: '暂停',
+      delete: '删除',
+      recheck: '重检',
+      trackerOps: 'Tracker操作',
+      reannounce: 'Tracker汇报',
+      globalReplace: '全局替换',
+      transfer: '转移',
+      setLocation: '修改路径',
+      quickActions: '快捷操作',
+      add: '添加种子',
+      addShort: '添加',
+      columns: '列设置'
+    },
+    deleteMenu: {
+      level4: '等级4: 标记为待删除(推荐)',
+      level3: '等级3: 移至回收站',
+      level2: '等级2: 删除任务(保留数据)',
+      level1: '等级1: 完全删除'
+    },
+    quickMenu: {
+      sameContent: '辅种异常排查',
+      singleError: '错误单种排查',
+      deleteDuplicates: '快捷删除重复种子'
+    },
+    column: {
+      name: '种子名称',
+      nameShort: '名称',
+      downloaderShort: '下载器',
+      downloadShort: '↓ 下载',
+      uploadShort: '↑ 上传',
+      downloadSpeed: '下载速度',
+      uploadSpeed: '上传速度',
+      size: '大小',
+      auxiliarySeedCount: '辅种数量',
+      progress: '进度',
+      status: '状态',
+      downloader: '所属下载器',
+      ratio: '比率',
+      category: '分类/标签',
+      savePath: '保存路径',
+      addedDate: '添加时间',
+      actions: '操作'
+    },
+    sortTitle: {
+      name: '按种子名称排序',
+      size: '按大小排序',
+      status: '按状态排序',
+      ratio: '按比率排序',
+      addedDate: '按添加时间排序'
+    },
+    resizeHint: '拖拽调整列宽，双击恢复默认',
+    loading: '加载中...',
+    trackerError: 'Tracker异常',
+    trackerErrorTitle: '{status}（Tracker异常）',
+    action: {
+      recheck: '重新检查',
+      setLocation: '修改保存路径'
+    },
+    view: {
+      list: '列表模式',
+      traditional: '传统模式'
+    },
+    pagination: {
+      summary: '共 {total} 条，第 {page}/{pages} 页',
+      /** 传统视图分页文案分片（保留数字 <strong> 标记） */
+      prefix: '共',
+      middle: '条，第',
+      suffix: '页'
+    },
+    columnSettings: {
+      title: '列设置',
+      reset: '重置',
+      resetWidths: '重置列宽',
+      apply: '应用',
+      saved: '列设置已保存',
+      widthsReset: '列宽已重置为默认'
+    }
+  },
+  msg: {
+    getListFailed: '获取种子列表失败',
+    applyTemplateFailed: '应用模板失败',
+    applyTemplateFailedWith: '应用模板失败：{message}',
+    inspectSameContentDone: '排查完成，共找到 {count} 条同内容种子',
+    inspectSingleErrorDone: '排查完成，共找到 {count} 条错误单种',
+    duplicatesFound: '查找完成，共找到 {count} 条重复种子',
+    duplicateFetchFailed: '查找失败',
+    duplicateFetchFailedRetry: '查找失败，请稍后重试',
+    reannounceSuccess: 'Tracker汇报成功',
+    reannounceFailed: 'Tracker汇报失败',
+    reannounceIncomplete: '种子信息不完整，无法汇报',
+    reannouncePartial: 'Tracker汇报部分完成：成功{succeeded}个下载器，失败{failed}个下载器（共{total}个种子）',
+    reannounceBatchSuccess: 'Tracker汇报成功({total}个种子, {downloaderCount}个下载器)',
+    reannounceBatchFailed: 'Tracker汇报失败，请查看控制台',
+    startSuccess: '开始下载成功',
+    pauseSuccess: '暂停下载成功',
+    recheckSuccess: '重新检查成功',
+    opFailed: '操作失败，请稍后重试',
+    recheckFailed: '重新检查失败，请稍后重试',
+    advancedDone: '高级搜索完成，找到 {count} 条结果',
+    searchFailed: '搜索失败',
+    advancedFailed: '高级搜索失败，请检查搜索条件',
+    invalidSearchParams: '搜索条件格式错误',
+    templateInvalid: '模板条件格式无效',
+    templateApplied: '已应用查询模板',
+    advancedTemplateApplied: '已应用高级搜索模板',
+    unsupportedTemplate: '不支持的模板类型',
+    conditionsReset: '搜索条件已重置',
+    trackerOpSuccess: 'Tracker操作成功',
+    globalReplaceSuccess: '全局替换Tracker成功',
+    selectFirstAction: '请先选择要操作的种子',
+    selectFirstTransfer: '请先选择要转移的种子',
+    selectFirst: '请先选择种子',
+    missingDownloader: '选中种子缺少下载器信息，请刷新后重试',
+    missingDownloaderShort: '种子缺少下载器信息',
+    startTaskSuccess: '开始任务成功',
+    pauseTaskSuccess: '暂停任务成功',
+    recheckSubmitted: '重新检查任务已提交',
+    selectFirstReannounce: '请先选择要汇报的种子',
+    globalReplaceFailed: '全局替换Tracker失败',
+    transferSingleDownloaderOnly: '批量转移只支持同一下载器的种子，请重新选择',
+    setLocationSingleDownloaderOnly: '选中的种子必须属于同一下载器',
+    transferDone: '批量转移操作完成'
+  },
+  addDialog: {
+    title: '添加种子',
+    fileLabel: '种子文件',
+    filePlaceholder: '点击选择 .torrent 文件（数量不限）',
+    filesSelected: '已选择 {count} 个文件',
+    fileHint: '只支持 .torrent 文件，提交后将在后台异步处理',
+    downloaderLabel: '下载器',
+    downloaderPlaceholder: '选择下载器',
+    pathLabel: '保存路径',
+    pathPlaceholder: '输入或选择保存路径',
+    pathTypeDefault: '默认路径',
+    pathTypeInUse: '在用路径',
+    pathCount: '{count}个种子',
+    checkPolicy: '校验策略',
+    skipCheck: '跳过校验（数据已完整时直接做种）',
+    skipCheckHint: '保存路径已有完整数据（辅种/续种）时勾选可跳过 qBittorrent 本地校验，避免 CheckingDL；全新下载请勿勾选（会被当作已完成，无法正常下载）。仅对 qBittorrent 生效。',
+    category: '分类',
+    categoryPlaceholder: '选择分类（可选）',
+    tags: '标签',
+    tagsPlaceholder: '选择标签（可选）',
+    confirm: '确定',
+    adding: '添加中...',
+    error: {
+      chooseFile: '请选择种子文件',
+      chooseDownloader: '请选择下载器',
+      enterPath: '请输入保存路径',
+      onlyTorrent: '只能选择 .torrent 文件'
+    },
+    msg: {
+      submitted: '已提交 {count} 个种子到后台处理',
+      success: '成功添加 {count} 个种子',
+      failed: '种子添加失败',
+      failedWith: '种子添加失败：{detail}',
+      partial: '部分成功：成功 {success} 个，失败 {failed} 个',
+      failureItem: '{name}：{error}',
+      unknownError: '未知错误',
+      moreFailures: '；其余 {count} 个失败项请查看详情',
+      retry: '种子添加失败，请稍后重试'
+    }
+  },
+  batchDialog: {
+    title: {
+      delete: '批量删除确认',
+      pause: '批量暂停确认',
+      resume: '批量恢复确认',
+      start: '批量开始确认',
+      fallback: '批量操作确认'
+    },
+    op: {
+      delete: '删除',
+      pause: '暂停',
+      resume: '恢复',
+      start: '开始',
+      fallback: '操作'
+    },
+    message: {
+      delete: '您确定要删除这些种子吗？此操作不可撤销！',
+      pause: '您确定要暂停这些种子吗？',
+      resume: '您确定要恢复这些种子吗？',
+      start: '您确定要开始这些种子吗？',
+      fallback: '您确定要执行此操作吗？'
+    },
+    opType: '操作类型：',
+    affectCount: '影响数量：',
+    countTorrents: '{count} 个种子',
+    affected: '受影响的种子：',
+    confirmAction: '确认{op}'
+  },
+  batch: {
+    action: {
+      start: '开始',
+      pause: '暂停',
+      recheck: '重检'
+    },
+    partial: '批量{action}部分完成：成功{succeeded}个下载器，失败{failed}个下载器（共{total}个种子）',
+    success: '批量{action}成功({total}个种子, {downloaderCount}个下载器)',
+    failed: {
+      start: '批量开始失败，请查看控制台',
+      pause: '批量暂停失败，请查看控制台',
+      recheck: '批量重检失败，请查看控制台'
+    }
+  },
+  /** 四级删除链路（P5：确认/提交/轮询/降级/文件缺失/结果，zh 与原内联文案逐字节一致） */
+  deleteLevel: {
+    confirm: {
+      titleSingle: '确认删除',
+      titleBatch: '批量删除确认',
+      confirmButton: '确定',
+      cancelButton: '取消',
+      level1: {
+        single: '警告：此操作将完全删除，是否继续？',
+        batch: '确定要将选中的 {count} 个种子完全删除吗？'
+      },
+      level2: {
+        single: '确定要将种子删除任务（保留数据）吗？',
+        batch: '确定要将选中的 {count} 个种子删除任务（保留数据）吗？'
+      },
+      level3: {
+        single: '警告：此操作将移至回收站，是否继续？',
+        batch: '确定要将选中的 {count} 个种子移至回收站吗？'
+      },
+      level4: {
+        single: '确定要将种子标记为待删除吗？',
+        batch: '确定要将选中的 {count} 个种子标记为待删除吗？'
+      },
+      generic: {
+        single: '确定要将种子删除吗？',
+        batch: '确定要将选中的 {count} 个种子删除吗？'
+      }
+    },
+    msg: {
+      selectFirst: '请先选择要删除的种子',
+      submitFailed: '提交删除任务失败',
+      alreadyProcessed: '所选种子均已在删除任务中处理',
+      skipped: '已跳过 {count} 个正在处理的种子',
+      deleteFailed: '删除失败',
+      batchDeleteFailed: '批量删除失败',
+      statusQueryFailed: '查询任务状态失败',
+      retryLater: '删除失败，请稍后重试'
+    },
+    progress: {
+      loading: '批量删除中，请稍候...',
+      running: '批量删除中... ({done}/{total})',
+      timeout: '批量删除任务执行时间过长，请稍后查看任务状态'
+    },
+    notify: {
+      downgradeTitle: '降级详情',
+      fileMissingTitle: '文件缺失提醒',
+      failedTitle: '删除失败详情'
+    },
+    result: {
+      taskCompleted: '批量删除完成，成功删除 {count} 个种子',
+      taskCompletedWithMissing: '批量删除完成，成功删除 {count} 个种子（其中 {missing} 个未找到文件，已跳过文件操作）',
+      taskFailed: '批量删除失败：{error}',
+      taskPartial: '批量删除部分完成：成功 {success} 个，失败 {failed} 个',
+      failedDetail: '以下种子删除失败：{names}',
+      failedDetailMore: '以下种子删除失败：{names} 等{count}个',
+      fileMissingDetail: '以下种子未找到文件，已跳过文件操作直接移入回收站：{names}',
+      fileMissingDetailMore: '以下种子未找到文件，已跳过文件操作直接移入回收站：{names} 等{count}个',
+      downgraded: '已将 {count} 个种子降级为等级4删除（备份失败）',
+      downgradeDetail: '以下种子备份失败，已降级为等级4：{names}',
+      downgradeDetailMore: '以下种子备份失败，已降级为等级4：{names} 等{count}个',
+      syncPartialFailed: '删除完成：失败 {count} 个',
+      level3Success: '等级3删除成功 {count} 个',
+      level3SuccessWithMissing: '等级3删除成功 {count} 个（其中 {missing} 个未找到文件，已跳过文件操作）',
+      levelDone: '等级{level}删除完成，成功 {count} 个',
+      deleteDone: '删除完成，成功 {count} 个'
+    }
+  },
+  /** 种子详情弹窗（TorrentDetailDialog，P3-2；转移弹窗本体属 P6 不译） */
+  detail: {
+    title: '种子详情',
+    nameLabel: '种子名称',
+    status: '状态',
+    size: '文件大小',
+    progress: '进度',
+    downloadSpeed: '下载速度',
+    uploadSpeed: '上传速度',
+    addedDate: '添加时间',
+    completedDate: '完成时间',
+    ratio: '分享比率',
+    savePath: '保存路径',
+    tags: '标签',
+    notCompleted: '未完成',
+    trackerSection: 'Tracker信息',
+    trackerColName: '名称',
+    trackerColStatus: '状态',
+    statusNormal: '正常',
+    statusAbnormal: '异常',
+    transfer: '转移'
+  },
+  duplicates: {
+    quick: {
+      title: '快捷删除重复种子',
+      detectLabel: '待检测下载器',
+      detectHint: '选择 2 个及以上下载器，用于在其间查找重复种子',
+      keepLabel: '保留下载器',
+      keepHint: '这些下载器中的重复种子将被保留，其余下载器中的重复种子将被删除（只删种子、不删文件）',
+      autoHint: '完成待检测与保留下载器选择后将自动预览重复结果',
+      analyzing: '正在分析重复种子...',
+      groupsPrefix: '共',
+      groupsSuffix: '组重复',
+      deletePrefix: '将删除',
+      deleteSuffix: '个种子',
+      skippedNote: '⚠ 另有 {count} 组已跳过（无保留副本）',
+      skippedTooltip: '这些重复仅在待删下载器间存在、无保留副本，为避免丢失最后一份数据已跳过，不会删除',
+      empty: '未在所选下载器间发现可删除的重复种子',
+      noName: '（无名称）',
+      skippedBadge: '已跳过',
+      skippedBody: '这些副本仅在待删下载器间存在，无保留副本，为避免丢失最后一份数据已跳过（不会删除）',
+      colDelete: '将被删除',
+      colKeep: '保留副本',
+      confirmDelete: '确认删除',
+      confirmDeleteCount: '确认删除（{count}个）',
+      msg: {
+        queryFailed: '查询失败',
+        submitFailed: '提交删除任务失败',
+        noDeletable: '未发现可删除的重复种子',
+        submitted: '已提交删除任务（共 {total} 个种子，跳过处理中 {skipped} 个）',
+        submittedPlain: '已提交删除任务（共 {total} 个种子）',
+        taskDone: '删除任务完成：成功 {success}，失败 {failed}',
+        taskPartial: '删除任务部分完成：成功 {success}，失败 {failed}',
+        taskFailed: '删除任务失败：成功 {success}，失败 {failed}',
+        stillRunning: '删除任务仍在后台执行，可稍后在通知中心查看结果'
+      }
+    },
+    scan: {
+      title: '重复种子查询',
+      loading: '正在查询重复种子...',
+      col: {
+        hash: 'Hash值',
+        name: '任务名称',
+        size: '大小',
+        downloader: '所在下载器',
+        status: '状态',
+        path: '保存路径'
+      },
+      groupsPrefix: '共找到',
+      groupsSuffix: '组重复种子',
+      tasksPrefix: '总计',
+      tasksSuffix: '个任务',
+      empty: '未发现重复种子',
+      queryFailed: '查询失败'
+    }
+  }
+}

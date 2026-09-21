@@ -5,7 +5,7 @@
  * 逐行重复的批量逻辑抽成可单测的纯函数，消除「改一处忘一处」的回归风险。
  *
  * 对应 bug：
- *   - groupTorrentsByDownloader / deleteTorrentsBatch → Bug#1（计数）、Bug#4（删除参数）
+ *   - groupTorrentsByDownloader → Bug#1（计数）
  *   - runBatchAction → Bug#2（文案语义：区分种子数与下载器组数）
  *   - sortByActive → Bug#7（排序键：速度 > 0 而非「在 map 中」）
  *   - resetSelection → Bug#8（选中状态重置）
@@ -23,6 +23,7 @@ import type {
   QueryTemplateConditionGroup,
   Torrent
 } from '@/api/torrents'
+import { translate } from '@/i18n'
 import {
   AdvancedSearchConditionValue,
   AdvancedSearchGroupState,
@@ -33,10 +34,13 @@ import {
 } from '@/components/torrents/advancedSearchState'
 import { ADVANCED_SEARCH_FIELDS } from '@/contracts/advancedSearch.generated'
 import {
+  buildTorrentSpeedTargetIndex,
   getTorrentDownloaderId,
   getTorrentHashIdentity,
-  getTorrentSpeedIdentity
+  getTorrentSpeedIdentity,
+  resolveTorrentSpeedTargets
 } from './traditionalTorrentIdentity'
+import type { TorrentIdentityLike } from './traditionalTorrentIdentity'
 
 // ============ 类型定义 ============
 
@@ -44,19 +48,14 @@ interface ActiveSpeed {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
 }
 
 interface SelectionState {
   multipleSelection: any[]
   selectAll: boolean
   isIndeterminate: boolean
-}
-
-export interface BatchDeleteResult {
-  successCount: number
-  failCount: number
-  errors: string[]
-  deletedTorrents: any[]
 }
 
 export interface BatchActionResult {
@@ -73,14 +72,6 @@ export interface BatchActionResult {
 }
 
 type BatchApiFn = (params: { downloader_id: string, hashes: string[] }) => Promise<ApiResponse<any>>
-
-/** 单种子删除 API 签名（deleteTorrents） */
-type DeleteApiFn = (params: {
-  info_id: string
-  downloader_id: string
-  delete_data: number
-  id_recycle: number
-}) => Promise<ApiResponse<any>>
 
 // ============ 内联工具函数（不依赖 formatters，避免 ts-jest 编译牵连） ============
 
@@ -125,63 +116,6 @@ export function groupTorrentsByDownloader(torrents: any[]): Record<string, any[]
     groups[downloaderId].push(torrent)
   })
   return groups
-}
-
-/**
- * 批量删除种子内部逻辑（对齐 index.vue:1829 / TraditionalView.vue:1024）
- * 逐种子按 info_id 调用 deleteFn，使用 Promise.all 并行。
- * 防回归 Bug#1（计数按种子数而非字符串长度）、Bug#4（参数用 info_id/delete_data/id_recycle）。
- * @param torrents 要删除的种子列表
- * @param deleteData 是否删除数据文件 (0: 仅删种子, 1: 同时删数据)
- * @param deleteFn 删除 API（注入，便于单测 mock；生产传 deleteTorrents）
- * @returns 成功数 / 失败数 / 错误信息列表 / 成功删除的种子列表
- */
-export async function deleteTorrentsBatch(
-  torrents: any[],
-  deleteData: number,
-  deleteFn: DeleteApiFn
-): Promise<BatchDeleteResult> {
-  let successCount = 0
-  let failCount = 0
-  const errors: string[] = []
-  const deletedTorrents: any[] = []
-
-  const deletePromises = torrents.map(async(torrent) => {
-    try {
-      const infoId = getTorrentId(torrent)
-      const downloaderId = getDownloaderId(torrent)
-
-      await deleteFn({
-        info_id: infoId,
-        downloader_id: downloaderId,
-        delete_data: deleteData,
-        id_recycle: 1
-      })
-      return { success: true, torrent }
-    } catch (error: any) {
-      const errorMsg = error?.response?.data?.msg ??
-                       error?.message ??
-                       '删除失败'
-      return { success: false, error: errorMsg }
-    }
-  })
-
-  const results = await Promise.all(deletePromises)
-  results.forEach((result) => {
-    if (result.success) {
-      successCount++
-      if (result.torrent) {
-        deletedTorrents.push(result.torrent)
-      }
-    } else {
-      failCount++
-      if (result.error) {
-        errors.push(result.error)
-      }
-    }
-  })
-
-  return { successCount, failCount, errors, deletedTorrents }
 }
 
 /**
@@ -321,6 +255,8 @@ export interface SpeedSnapshotEntry {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
 }
 
 /** 列表种子命中快照后的速度更新（供视图层应用到 this.list） */
@@ -330,6 +266,157 @@ export interface SpeedUpdate {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
+  status?: string
+  downloadComplete?: boolean
+}
+
+/**
+ * 新键滞回宽限（ms）：快照成员抖动（补查退避缺席、完成态移除、下载器瞬时
+ * 失败）会让同一键"掉出一轮再回来"。掉出后该宽限内再出现不判为新键，
+ * 防止断速种子反复触发整表 getList；离开超过宽限再回来才算真正的新成员。
+ */
+const REAPPEAR_GRACE_MS = 30_000
+
+/**
+ * 跟踪“速度快照中存在、当前分页列表中不存在”的复合键。
+ *
+ * 首个完整快照只建立基线：分页之外的既有活动任务本来就不在当前 list，不能因此
+ * 每秒重拉列表。基线建立后，只有新出现的未展示复合键才返回给视图层触发一次
+ * 权威 getList/reload；206 部分快照只增量合并基线，不能删除其它下载器的已知键。
+ */
+export class RuntimeListMembershipTracker {
+  private initialized = false
+  private unlistedKeys = new Set<string>()
+  private lastSeenAt = new Map<string, number>()
+  private refreshPromise: Promise<boolean> | null = null
+
+  observe<T extends TorrentIdentityLike>(
+    torrents: T[],
+    updates: SpeedUpdate[],
+    completeSnapshot: boolean
+  ): string[] {
+    const now = Date.now()
+    const index = buildTorrentSpeedTargetIndex(torrents)
+    const currentUnlisted = new Set<string>()
+
+    updates.forEach(update => {
+      if (resolveTorrentSpeedTargets(index, update).length > 0) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (identity) currentUnlisted.add(identity)
+    })
+
+    if (!this.initialized) {
+      currentUnlisted.forEach(key => {
+        this.unlistedKeys.add(key)
+        this.lastSeenAt.set(key, now)
+      })
+      if (completeSnapshot) {
+        this.initialized = true
+        this.unlistedKeys = currentUnlisted
+      }
+      return []
+    }
+
+    // 滞回判定必须读取刷新前的旧时间戳：宽限期内回来的是快照抖动而非新成员
+    const discovered = Array.from(currentUnlisted).filter(key => {
+      if (this.unlistedKeys.has(key)) return false
+      const seenAt = this.lastSeenAt.get(key)
+      return seenAt === undefined || now - seenAt >= REAPPEAR_GRACE_MS
+    })
+    currentUnlisted.forEach(key => this.lastSeenAt.set(key, now))
+    if (completeSnapshot) {
+      this.unlistedKeys = currentUnlisted
+      // 回收长期不在场的滞回时间戳，防 Map 无界增长（部分快照不清理：
+      // 本轮缺席可能是快照不完整，不能当真实离开）
+      this.lastSeenAt.forEach((seenAt, key) => {
+        if (!currentUnlisted.has(key) && now - seenAt >= REAPPEAR_GRACE_MS) {
+          this.lastSeenAt.delete(key)
+        }
+      })
+    } else {
+      currentUnlisted.forEach(key => this.unlistedKeys.add(key))
+    }
+    return discovered
+  }
+
+  /** 列表刷新后以同一速度快照重新建立基线，避免同一缺失键重复拉表。 */
+  rebaseline<T extends TorrentIdentityLike>(torrents: T[], updates: SpeedUpdate[]): void {
+    const index = buildTorrentSpeedTargetIndex(torrents)
+    const nextUnlisted = new Set<string>()
+    updates.forEach(update => {
+      if (resolveTorrentSpeedTargets(index, update).length > 0) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (identity) nextUnlisted.add(identity)
+    })
+    this.initialized = true
+    this.unlistedKeys = nextUnlisted
+    const now = Date.now()
+    nextUnlisted.forEach(key => this.lastSeenAt.set(key, now))
+  }
+
+  /**
+   * 串行执行一次权威列表刷新，并把同轮速度立即应用到新行。
+   * 列表/传统/移动三视图只需注入各自的 getList/reload，避免复制竞态控制。
+   */
+  async refresh<T extends TorrentIdentityLike>(
+    getTorrents: () => T[],
+    updates: SpeedUpdate[],
+    refreshList: () => Promise<void>,
+    applyUpdates: (speedUpdates: SpeedUpdate[]) => boolean
+  ): Promise<boolean> {
+    if (this.refreshPromise) return this.refreshPromise
+
+    const execute = async(): Promise<boolean> => {
+      try {
+        await refreshList()
+        const terminalObserved = applyUpdates(updates)
+        this.rebaseline(getTorrents(), updates)
+        return terminalObserved
+      } catch {
+        return false
+      }
+    }
+
+    this.refreshPromise = execute()
+    try {
+      return await this.refreshPromise
+    } finally {
+      this.refreshPromise = null
+    }
+  }
+}
+
+/**
+ * 终态整表刷新去重器：同一复合键（downloader_id + hash）的完成证据只允许
+ * 触发一次 getList，斩断 DB 同步滞后窗口内「终态证据 → getList → 拉回滞后
+ * 行 → 下一轮又带证据」的每秒整表刷新循环（桌面 1s 轮询版移动端 10s 同款
+ * 缺陷；稳态证据循环则由 applySpeedUpdates 的转移判定另行根治）。
+ *
+ * 键形态与 RuntimeListMembershipTracker 一致（speed:{dl}:{hash}），缺
+ * downloaderId 时退化为 hash:{hash}——两种形态不互通，同一颗种子在混合
+ * 键来源下最多多触发一次，有界（buildSpeedSnapshot 已过滤缺 hash 条目，
+ * 键永不为空）。筛选/模板/排查模式等上下文变化时 clear() 重建终态处理。
+ */
+export class TerminalReloadTracker {
+  private reloadedKeys = new Set<string>()
+
+  /** 本轮 updates 是否含「带完成证据且尚未触发过整表刷新」的新复合键；有则消费并返回 true。 */
+  observeNewTerminal(updates: SpeedUpdate[]): boolean {
+    let hasNew = false
+    updates.forEach(update => {
+      if (!update.downloadComplete) return
+      const identity = getTorrentSpeedIdentity(update)
+      if (!identity || this.reloadedKeys.has(identity)) return
+      this.reloadedKeys.add(identity)
+      hasNew = true
+    })
+    return hasNew
+  }
+
+  /** 筛选上下文变化：重置终态刷新去重，重新建立终态处理上下文。 */
+  clear(): void {
+    this.reloadedKeys.clear()
+  }
 }
 
 /** buildSpeedSnapshot 实际读取的种子字段（ActiveTorrentSpeed 的结构子集）。
@@ -343,13 +430,19 @@ interface ActiveTorrentSpeedInput {
   downloadSpeed?: number
   uploadSpeed?: number
   progress?: number
+  status?: string
+  state?: string
+  downloadComplete?: boolean
+  download_complete?: boolean
 }
 
 /** buildSpeedSnapshot 的计算结果（视图据此更新 activeSpeedMap / speedSnapshotReady / list） */
 export interface SpeedSnapshotResult {
-  /** 是否应把 speedSnapshotReady 置为 true（code='200' 且 data truthy） */
+  /** 是否应把 speedSnapshotReady 置为 true（完整 code='200' 快照） */
   ready: boolean
-  /** 新的 activeSpeedMap（ready=false 时为 null，视图应保留旧值） */
+  /** 响应是否为可应用的部分快照（code='206'）；视图应合并而非清空旧值。 */
+  partial: boolean
+  /** 新的 activeSpeedMap（无效响应时为 null，视图应保留旧值） */
   activeSpeedMap: Record<string, SpeedSnapshotEntry> | null
   /** 按 downloader_id + hash 建立的精确映射，供可能出现同 hash 的传统列表使用。 */
   torrentSpeedMap: Record<string, SpeedSnapshotEntry> | null
@@ -361,6 +454,175 @@ export interface SpeedSnapshotResult {
 
 interface ActiveSnapshotResponseData {
   activeSnapshotReady?: boolean
+}
+
+const TERMINAL_RUNTIME_STATUSES = new Set([
+  'completed',
+  'seeding',
+  'stalledup',
+  'queuedup',
+  'uploading',
+  'forcedup',
+  'pausedup',
+  'checkingup',
+  'seed pending'
+])
+
+const RECONCILE_RUNTIME_STATUSES = new Set([
+  'downloading',
+  'queuedDl',
+  'queuedDL',
+  'stalledDL',
+  'checking',
+  'checkingDL',
+  'metadl',
+  'forcedmetadl',
+  'allocating',
+  'forceddl',
+  // normalizeTorrent 将缺少状态的旧记录归一为 unknown；仍允许它们进入
+  // 低频核验，避免旧数据永远没有机会收敛到完成态。
+  'unknown'
+].map(status => status.toLowerCase()))
+
+function normalizeSnapshotNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeSnapshotProgress(value: unknown): number {
+  return Math.max(0, Math.min(100, Math.round(normalizeSnapshotNumber(value) * 100) / 100))
+}
+
+function isRuntimeComplete(status: unknown, progress: number, explicitComplete: unknown): boolean {
+  if (explicitComplete === true || progress >= 100) return true
+  // 新后端明确返回 false 时优先相信下载器证据；否则旧服务端的 seeding/
+  // pausedUP 等终态仍可通过状态回退识别。
+  if (explicitComplete === false) return false
+  return typeof status === 'string' && TERMINAL_RUNTIME_STATUSES.has(status.trim().toLowerCase())
+}
+
+function isRuntimeReconcileCandidate(torrent: TorrentIdentityLike & {
+  status?: unknown
+  state?: unknown
+  progress?: unknown
+  downloadComplete?: unknown
+  download_complete?: unknown
+  completedDate?: unknown
+  completed_date?: unknown
+}): boolean {
+  const progress = normalizeSnapshotProgress(torrent.progress)
+  if (
+    progress >= 100 ||
+    torrent.downloadComplete === true ||
+    torrent.download_complete === true ||
+    torrent.completedDate ||
+    torrent.completed_date
+  ) return false
+  const status = String(torrent.status || torrent.state || '').trim().toLowerCase()
+  // 兼容旧列表没有 status 的情况，但不把已暂停/错误/做种任务纳入低频补查。
+  return !status || RECONCILE_RUNTIME_STATUSES.has(status)
+}
+
+/** isTorrentRowEffectivelyComplete 实际读取的列表行字段子集。 */
+export interface TorrentRowCompleteLike {
+  status?: unknown
+  state?: unknown
+  progress?: unknown
+  downloadComplete?: unknown
+  download_complete?: unknown
+  completedDate?: unknown
+  completed_date?: unknown
+}
+
+/**
+ * 列表行是否已处于（或 DB 已认定）下载完成的保守判定，供 applySpeedUpdates
+ * 做「非终态行 → 终态证据」的转移报告（稳态证据不再重复报告，根治做种筛选
+ * 下每秒 getList 的稳态循环）。
+ *
+ * 口径刻意不是 isRuntimeReconcileCandidate 的反向：后者对 error/paused 行
+ * 「不补查」，字面反向会把它们误判终态导致转移漏报漏刷。本谓词只认
+ * TERMINAL_RUNTIME_STATUSES 成员与显式完成证据，宁可多触发一次受去重
+ * 保护的整表刷新，也不误压制合法的终态转移。
+ *
+ * 折叠后行状态（normalizeTorrentStatus → TORRENT_STATUS_FOLD_MAP）实际仅
+ * completed/seeding 能命中集合；checking/paused/queuedDL 判非终态是正确
+ * 行为（checking 校验可能回退下载；paused 无流量进不了活跃快照，不可达）。
+ * status 优先、state 兜底（normalizeTorrent 的 spread 会保留原始 state）。
+ */
+export function isTorrentRowEffectivelyComplete(row: TorrentRowCompleteLike): boolean {
+  if (
+    normalizeSnapshotProgress(row.progress) >= 100 ||
+    row.downloadComplete === true ||
+    row.download_complete === true ||
+    row.completedDate ||
+    row.completed_date
+  ) return true
+  const status = String(row.status || row.state || '').trim().toLowerCase()
+  return TERMINAL_RUNTIME_STATUSES.has(status)
+}
+
+export interface RuntimeStateReconcileCandidate {
+  downloader_id: string
+  hash: string
+}
+
+export interface RuntimeStateReconcileCandidatesResult {
+  candidates: RuntimeStateReconcileCandidate[]
+  misses: Record<string, number>
+}
+
+/**
+ * 根据完整速度快照收敛“消失但仍显示下载中”的列表行。
+ * 连续 threshold 次未命中才触发一次低频服务端核验，并以复合键去重。
+ */
+export function collectRuntimeStateReconcileCandidates<T extends TorrentIdentityLike>(
+  torrents: T[],
+  updates: SpeedUpdate[],
+  previousMisses: Record<string, number> = {},
+  threshold = 2,
+  maxCandidates = 100
+): RuntimeStateReconcileCandidatesResult {
+  const observedIdentities = new Set<string>()
+  const observedWithoutDownloader = new Set<string>()
+  updates.forEach(update => {
+    const hash = getTorrentHashIdentity(update)
+    if (update.downloaderId && hash) {
+      observedIdentities.add(`speed:${String(update.downloaderId).trim()}:${hash}`)
+    } else if (hash) {
+      observedWithoutDownloader.add(hash)
+    }
+  })
+
+  const nextMisses: Record<string, number> = {}
+  const candidates: RuntimeStateReconcileCandidate[] = []
+  torrents.forEach(torrent => {
+    const identity = getTorrentSpeedIdentity(torrent)
+    const hash = getTorrentHashIdentity(torrent)
+    const downloaderId = getTorrentDownloaderId(torrent)
+    if (!identity || !hash || !downloaderId) return
+    const observed = observedIdentities.has(identity) || observedWithoutDownloader.has(hash)
+    if (observed || !isRuntimeReconcileCandidate(torrent as T & {
+      status?: unknown
+      state?: unknown
+      progress?: unknown
+      downloadComplete?: unknown
+      download_complete?: unknown
+      completedDate?: unknown
+      completed_date?: unknown
+    })) {
+      return
+    }
+
+    const count = (previousMisses[identity] || 0) + 1
+    if (count >= threshold && candidates.length < maxCandidates) {
+      candidates.push({ downloader_id: downloaderId, hash })
+      nextMisses[identity] = 0
+    } else {
+      nextMisses[identity] = count
+    }
+  })
+
+  return { candidates, misses: nextMisses }
 }
 
 /**
@@ -383,12 +645,14 @@ export function needsActiveSnapshotRefresh(
 /**
  * 从 active-torrents 接口响应计算速度快照状态（纯函数，无副作用）。
  *
- * 契约锁定（commit 466e18c）：
- * - code='200' 且 data truthy（含空数组 []）→ ready=true，activeSpeedMap 可能为空 {}。
+ * 契约：
+ * - code='200' 且 data 为数组（含空数组 []）→ ready=true，activeSpeedMap 可能为空 {}。
  *   空数组是 truthy，故空 data 仍置 ready=true——这是 deriveVisibleTorrentList
  *   空快照保护所依赖的前提。若此处改成「data.length>0 才 ready」，会导致
  *   「用户真零活动种子」时过滤永远不生效（另一个回归）。
- * - code≠'200' 或 data falsy → ready=false，activeSpeedMap=null（视图不更新）。
+ * - code='206' 且 data 为数组 → partial=true，返回可应用的增量 map，但 ready=false；
+ *   视图必须合并而不能清空上一次完整快照。
+ * - 其它 code 或 data 非数组 → ready=false、partial=false、map=null。
  *
  * 注意：原视图 loadActiveSpeed 对缺 hash 的条目会 console.warn，本纯函数不打 warn
  *（纯函数无副作用，调试噪声降级为静默跳过）。
@@ -399,9 +663,17 @@ export function needsActiveSnapshotRefresh(
 export function buildSpeedSnapshot(
   res: ApiResponse<ActiveTorrentSpeedInput[] | null> | null | undefined
 ): SpeedSnapshotResult {
-  if (!res || res.code !== '200' || !res.data) {
-    return { ready: false, activeSpeedMap: null, torrentSpeedMap: null, updates: [], count: 0 }
+  if (!res || (res.code !== '200' && res.code !== '206') || !Array.isArray(res.data)) {
+    return {
+      ready: false,
+      partial: false,
+      activeSpeedMap: null,
+      torrentSpeedMap: null,
+      updates: [],
+      count: 0
+    }
   }
+  const partial = res.code === '206'
   const map: Record<string, SpeedSnapshotEntry> = {}
   const torrentSpeedMap: Record<string, SpeedSnapshotEntry> = {}
   const updates: SpeedUpdate[] = []
@@ -411,10 +683,27 @@ export function buildSpeedSnapshot(
       // 防御性检查：跳过缺 hash 的无效种子（原视图会 console.warn，纯函数静默跳过）
       return
     }
-    const downloadSpeed = t.downloadSpeed ?? 0
-    const uploadSpeed = t.uploadSpeed ?? 0
-    const progress = t.progress ?? 0
-    const speed = { downloadSpeed, uploadSpeed, progress }
+    const downloadSpeed = normalizeSnapshotNumber(t.downloadSpeed)
+    const uploadSpeed = normalizeSnapshotNumber(t.uploadSpeed)
+    const rawStatus = typeof t.status === 'string'
+      ? t.status.trim()
+      : (typeof t.state === 'string' ? t.state.trim() : '')
+    const progress = normalizeSnapshotProgress(t.progress)
+    const explicitComplete = t.downloadComplete !== undefined
+      ? t.downloadComplete
+      : t.download_complete
+    const downloadComplete = isRuntimeComplete(rawStatus, progress, explicitComplete)
+    const statusLower = rawStatus.toLowerCase()
+    const status = downloadComplete && (!statusLower || statusLower === 'downloading' || statusLower === 'queueddl')
+      ? 'completed'
+      : rawStatus
+    const speed: SpeedSnapshotEntry = {
+      downloadSpeed,
+      uploadSpeed,
+      progress: downloadComplete ? 100 : progress,
+      ...(status ? { status } : {}),
+      ...(downloadComplete ? { downloadComplete: true } : {})
+    }
     const downloaderId = getTorrentDownloaderId(t)
     map[t.hash] = speed
     torrentSpeedMap[getTorrentSpeedIdentity(t)] = speed
@@ -423,11 +712,14 @@ export function buildSpeedSnapshot(
       ...(downloaderId ? { downloaderId } : {}),
       downloadSpeed,
       uploadSpeed,
-      progress
+      progress: downloadComplete ? 100 : progress,
+      ...(status ? { status } : {}),
+      ...(downloadComplete ? { downloadComplete: true } : {})
     })
   })
   return {
-    ready: true,
+    ready: !partial,
+    partial,
     activeSpeedMap: map,
     torrentSpeedMap,
     updates,
@@ -486,6 +778,17 @@ export function hasTrackerError(torrent: Torrent | null | undefined): boolean {
 }
 
 /**
+ * 统计本页含 tracker 域名筛选命中标记（后端 matched_domain）的行数。
+ * 供两视图 getList 观察日志汇总，与后端 [tracker-domain-filter] debug 日志对账。
+ */
+export function countMatchedTrackerRows(torrents: Array<Torrent | null | undefined>): number {
+  return torrents.filter(torrent => {
+    const trackers = torrent?.trackerInfo ?? torrent?.tracker_info ?? []
+    return trackers.some(tracker => !!(tracker.matched_domain || tracker.matchedDomain))
+  }).length
+}
+
+/**
  * 状态列是否显示"Tracker异常"标签：
  * status='error' 已有"错误"徽标不重复打；其余状态（如做种中）叠加红色小标签。
  */
@@ -505,7 +808,9 @@ export function getTorrentErrorReason(torrent: Torrent | null | undefined): stri
   if (errorReason) return errorReason
   if (!hasTrackerError(torrent)) return ''
   const announceMsg = torrent.lastAnnounceMsg || torrent.last_announce_msg || ''
-  return announceMsg ? `Tracker 宣告失败：${announceMsg}` : 'Tracker 宣告失败，详见 Tracker 标签页'
+  return announceMsg
+    ? translate('tracker.errorReason.withMessage', { message: announceMsg })
+    : translate('tracker.errorReason.fallback')
 }
 
 // ============ 下载器同源校验（消除转移/改路径的重复校验） ============
@@ -528,10 +833,10 @@ export function assertSameDownloader(torrents: any[]): SameDownloaderResult {
   )
 
   if (downloaderIds.has('') || torrents.some(t => !getDownloaderId(t))) {
-    return { ok: false, reason: '选中种子缺少下载器信息，请刷新后重试' }
+    return { ok: false, reason: translate('torrent.msg.missingDownloader') }
   }
   if (downloaderIds.size > 1) {
-    return { ok: false, reason: '选中的种子必须属于同一下载器' }
+    return { ok: false, reason: translate('torrent.msg.setLocationSingleDownloaderOnly') }
   }
   return { ok: true, reason: '' }
 }
@@ -558,44 +863,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseJsonString(value: unknown, label: string): unknown {
   if (typeof value !== 'string') {
-    throw new AdvancedSearchValidationError(`${label}必须是JSON字符串`)
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.jsonString', { label }))
   }
   try {
     return JSON.parse(value) as unknown
   } catch (_error) {
-    throw new AdvancedSearchValidationError(`${label}不是有效JSON`)
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.notValidJson', { label }))
   }
 }
 
 function parseConditionGroups(value: unknown): NonNullable<
   AdvancedSearchRequest['condition_groups']
 > {
-  const parsed = parseJsonString(value, '搜索条件')
+  const parsed = parseJsonString(value, translate('search.requestValidation.labelConditions'))
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new AdvancedSearchValidationError('至少需要一个条件组')
+    throw new AdvancedSearchValidationError(translate('search.requestValidation.needOneGroup'))
   }
   return parsed.map((rawGroup, groupIndex) => {
     if (!isRecord(rawGroup)) {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}结构无效`
+        translate('search.requestValidation.groupStructureInvalid', { index: groupIndex + 1 })
       )
     }
     const logic = String(rawGroup.logic).toUpperCase()
     if (logic !== 'AND' && logic !== 'OR') {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}逻辑无效`
+        translate('search.requestValidation.groupLogicInvalid', { index: groupIndex + 1 })
       )
     }
     if (!Array.isArray(rawGroup.conditions) || rawGroup.conditions.length === 0) {
       throw new AdvancedSearchValidationError(
-        `条件组${groupIndex + 1}至少需要一个条件`
+        translate('search.requestValidation.groupNeedCondition', { index: groupIndex + 1 })
       )
     }
     const conditions = rawGroup.conditions.map(
       (rawCondition, conditionIndex) => {
         if (!isRecord(rawCondition)) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项结构无效`
+            translate('search.requestValidation.condStructureInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const field = rawCondition.field
@@ -607,12 +914,16 @@ function parseConditionGroups(value: unknown): NonNullable<
           !ADVANCED_SEARCH_FIELDS[field].operators.includes(operator)
         ) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项契约无效`
+            translate('search.requestValidation.condContractInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         if (!Object.prototype.hasOwnProperty.call(rawCondition, 'value')) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项缺少值`
+            translate('search.requestValidation.condMissingValue', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const rawMode = rawCondition.mode
@@ -622,7 +933,9 @@ function parseConditionGroups(value: unknown): NonNullable<
           rawMode !== 'exclude'
         ) {
           throw new AdvancedSearchValidationError(
-            `条件组${groupIndex + 1}第${conditionIndex + 1}项模式无效`
+            translate('search.requestValidation.condModeInvalid', {
+              group: groupIndex + 1, cond: conditionIndex + 1
+            })
           )
         }
         const mode: 'include' | 'exclude' = rawMode === 'exclude'
@@ -640,17 +953,17 @@ function parseBetweenGroupLogics(
   value: unknown,
   groupCount: number
 ): Array<'AND' | 'OR'> {
-  const parsed = parseJsonString(value, '组间逻辑')
+  const parsed = parseJsonString(value, translate('search.requestValidation.labelBetweenLogics'))
   if (!Array.isArray(parsed) || parsed.length !== groupCount - 1) {
     throw new AdvancedSearchValidationError(
-      '组间逻辑数量必须等于条件组数量减一'
+      translate('search.requestValidation.betweenCount')
     )
   }
   return parsed.map((item, index) => {
     const logic = typeof item === 'string' ? item.toUpperCase() : ''
     if (logic !== 'AND' && logic !== 'OR') {
       throw new AdvancedSearchValidationError(
-        `第${index + 1}个组间逻辑无效`
+        translate('search.requestValidation.betweenLogicInvalid', { num: index + 1 })
       )
     }
     return logic
@@ -674,7 +987,7 @@ export function buildAdvancedSearchRequest(
 ): AdvancedSearchRequestResult {
   try {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100000) {
-      throw new AdvancedSearchValidationError('分页大小无效')
+      throw new AdvancedSearchValidationError(translate('search.requestValidation.invalidPageSize'))
     }
     const conditionGroups = parseConditionGroups(searchParams.groups)
     const betweenGroupLogics = parseBetweenGroupLogics(
@@ -689,7 +1002,7 @@ export function buildAdvancedSearchRequest(
       ? 'desc'
       : searchParams.sort_order
     if (sortOrder !== 'asc' && sortOrder !== 'desc') {
-      throw new AdvancedSearchValidationError('排序方向无效')
+      throw new AdvancedSearchValidationError(translate('search.requestValidation.invalidSortOrder'))
     }
     return {
       request: {
@@ -705,7 +1018,7 @@ export function buildAdvancedSearchRequest(
   } catch (error) {
     const message = error instanceof AdvancedSearchValidationError
       ? error.message
-      : '搜索条件格式错误'
+      : translate('search.requestValidation.generic')
     return { request: null, error: message }
   }
 }
@@ -722,12 +1035,12 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
         const logic = String(group.logic).toLowerCase()
         if (logic !== 'and' && logic !== 'or') {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}逻辑无效`
+            translate('search.requestValidation.tplGroupLogicInvalid', { index: groupIndex + 1 })
           )
         }
         if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}没有条件`
+            translate('search.requestValidation.tplGroupNoConditions', { index: groupIndex + 1 })
           )
         }
         const betweenGroupLogic = group.betweenGroupLogic
@@ -737,7 +1050,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
           betweenGroupLogic !== 'or'
         ) {
           throw new AdvancedSearchValidationError(
-            `模板条件组${groupIndex + 1}缺少组间逻辑`
+            translate('search.requestValidation.tplGroupMissingBetween', { index: groupIndex + 1 })
           )
         }
         return {
@@ -749,7 +1062,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
             const field = ADVANCED_SEARCH_FIELDS[condition.field]
             if (!field) {
               throw new AdvancedSearchValidationError(
-                `模板包含未知字段：${condition.field}`
+                translate('search.requestValidation.tplUnknownField', { field: condition.field })
               )
             }
             const operator = normalizeLoadedOperator(
@@ -781,7 +1094,7 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
   } catch (error) {
     const message = error instanceof AdvancedSearchValidationError
       ? error.message
-      : '模板搜索条件格式错误'
+      : translate('search.requestValidation.tplGeneric')
     return { request: null, error: message }
   }
 }
@@ -790,13 +1103,10 @@ export function buildAdvancedSearchRequestFromTemplateGroups(
 // 防回归 P2-I：列表模式 4 等级删除 ~250 行含 API/轮询/loading/UI 提示耦合，
 // 此处把无副作用的「构造请求」与「解析结果」抽为纯函数。
 // API 调用 + $loading 遮罩 + 轮询（带 Vue 实例依赖）留在 mixin 入口层。
+// 双语 P5：文案全部走 torrent.deleteLevel.* 键（zh 值与原内联中文逐字节一致）。
 
-export const DELETE_LEVEL_NAMES: Record<number, string> = {
-  4: '标记为待删除',
-  3: '移至回收站',
-  2: '删除任务（保留数据）',
-  1: '完全删除'
-}
+/** 4 等级删除合法等级值 */
+const VALID_DELETE_LEVELS = new Set([1, 2, 3, 4])
 
 /**
  * 构造 4 等级删除请求参数（异步批量接口 + 同步接口共用结构）
@@ -817,16 +1127,18 @@ export function buildDeleteLevelRequest(
 }
 
 /**
- * 根据等级生成二次确认提示文案
+ * 根据等级生成二次确认提示文案（双语 P5：按等级独立成键，R01～R04 三要素）
+ * - zh 值与原内联拼接逐字节一致（零回归）；
+ * - en 按等级完整句式（等级号 + 影响对象 + 不可恢复性），不共用模糊文案；
+ * - 未知等级回退 generic 键（防御，理论不可达：入口 level ∈ 1-4）。
  */
 export function buildDeleteConfirmMessage(level: number, count: number): string {
-  const levelName = DELETE_LEVEL_NAMES[level] || '删除'
-  if (count > 1) {
-    return `确定要将选中的 ${count} 个种子${levelName}吗？`
+  const known = VALID_DELETE_LEVELS.has(level)
+  const scope = count > 1 ? 'batch' : 'single'
+  if (known) {
+    return translate(`torrent.deleteLevel.confirm.level${level}.${scope}`, { count })
   }
-  return (level === 1 || level === 3)
-    ? `警告：此操作将${levelName}，是否继续？`
-    : `确定要将种子${levelName}吗？`
+  return translate(`torrent.deleteLevel.confirm.generic.${scope}`, { count })
 }
 
 /** 解析异步批量删除任务结果，返回结构化的提示信息（供调用方 $message/$notify） */
@@ -841,23 +1153,38 @@ export interface ParsedDeleteTaskResult {
   message: string
   /** 失败项详情（前5个名称），供 $notify 展开；无则 null */
   failedDetail: string | null
+  /** 文件缺失详情（等级3未找到种子文件，跳过文件操作直接入回收站），供 $notify；无则 null */
+  fileMissingDetail: string | null
+}
+
+/** 多个名称的本地化拼接（zh 顿号 / en 逗号） */
+function joinNames(names: string[]): string {
+  return names.join(translate('common.listSeparator'))
 }
 
 /**
  * 解析异步批量删除任务结果（completed/failed/partial）
- * @param taskData 后端返回的任务数据 { status, total_count, success_count, failed_count, failed_items, error_message }
+ * @param taskData 后端返回的任务数据 { status, total_count, success_count, failed_count, failed_items, error_message, results }
  * @param list 当前种子列表（用于反查失败项名称，注意用 list 不用 tableData）
  */
 export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteTaskResult {
-  const { status, success_count, failed_count, failed_items, error_message } = taskData
+  const { status, success_count, failed_count, failed_items, error_message, results } = taskData
+
+  const missing = extractFileMissingFromResults(results)
+  const fileMissingDetail = missing.length > 0 ? buildFileMissingDetail(missing) : null
 
   if (status === 'completed') {
     return {
       successCount: success_count,
       failedCount: 0,
       type: 'success',
-      message: `批量删除完成，成功删除 ${success_count} 个种子`,
-      failedDetail: null
+      message: missing.length > 0
+        ? translate('torrent.deleteLevel.result.taskCompletedWithMissing', {
+          count: success_count, missing: missing.length
+        })
+        : translate('torrent.deleteLevel.result.taskCompleted', { count: success_count }),
+      failedDetail: null,
+      fileMissingDetail
     }
   }
 
@@ -866,8 +1193,11 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
       successCount: 0,
       failedCount: failed_count,
       type: 'error',
-      message: `批量删除失败：${error_message || '未知错误'}`,
-      failedDetail: null
+      message: translate('torrent.deleteLevel.result.taskFailed', {
+        error: error_message || translate('torrent.addDialog.msg.unknownError')
+      }),
+      failedDetail: null,
+      fileMissingDetail: null
     }
   }
 
@@ -877,46 +1207,101 @@ export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteT
     const failedNames = failed_items.slice(0, 5).map((item: any) => {
       const torrent = list.find((t: any) => getTorrentId(t) === item.info_id)
       return torrent?.name || item.info_id
-    }).join('、')
+    })
     failedDetail = failed_items.length <= 5
-      ? `以下种子删除失败：${failedNames}`
-      : `以下种子删除失败：${failedNames} 等${failed_items.length}个`
+      ? translate('torrent.deleteLevel.result.failedDetail', { names: joinNames(failedNames) })
+      : translate('torrent.deleteLevel.result.failedDetailMore', {
+        names: joinNames(failedNames), count: failed_items.length
+      })
   }
 
   return {
     successCount: success_count,
     failedCount: failed_count,
     type: 'warning',
-    message: `批量删除部分完成：成功 ${success_count} 个，失败 ${failed_count} 个`,
-    failedDetail
+    message: translate('torrent.deleteLevel.result.taskPartial', {
+      success: success_count, failed: failed_count
+    }),
+    failedDetail,
+    fileMissingDetail
   }
 }
 
-/** 解析同步删除响应（处理降级 + 部分成功 + 成功计数） */
+/** 解析同步删除响应（处理降级 + 文件缺失 + 部分成功 + 成功计数） */
 export interface ParsedSyncDeleteResult {
   type: 'success' | 'warning'
   message: string
   /** 降级详情（等级3备份失败降级为等级4），供 $notify；无则 null */
   downgradeDetail: string | null
+  /** 文件缺失详情（等级3未找到种子文件，跳过文件操作直接入回收站），供 $notify；无则 null */
+  fileMissingDetail: string | null
+}
+
+/** 等级3删除成功但未找到种子文件的条目（后端 level3_file_missing / 异步 results 提取） */
+interface FileMissingItem {
+  torrent_id: string
+  torrent_name: string
+}
+
+/**
+ * 构造等级3"未找到种子文件"提醒文案（已跳过文件操作，种子直接移入回收站）
+ * @param missing 文件缺失条目列表
+ */
+function buildFileMissingDetail(missing: FileMissingItem[]): string {
+  const names = joinNames(
+    (missing.length <= 5 ? missing : missing.slice(0, 5))
+      .map(item => item.torrent_name || item.torrent_id)
+  )
+  return missing.length <= 5
+    ? translate('torrent.deleteLevel.result.fileMissingDetail', { names })
+    : translate('torrent.deleteLevel.result.fileMissingDetailMore', {
+      names, count: missing.length
+    })
+}
+
+/**
+ * 从异步删除任务 results（每项 {info_id, result}）提取等级3文件缺失条目
+ */
+function extractFileMissingFromResults(results: unknown): FileMissingItem[] {
+  if (!Array.isArray(results)) return []
+  return results
+    .filter((item): item is { info_id: string, result: { file_missing?: boolean, torrent_name?: string } } => {
+      const result = (item as { result?: { file_missing?: boolean } })?.result
+      return Boolean(result?.file_missing)
+    })
+    .map(item => ({
+      torrent_id: item.info_id || '',
+      torrent_name: item.result?.torrent_name || ''
+    }))
 }
 
 /**
  * 解析同步删除接口响应（deleteTorrentsWithLevel）
- * 处理等级3降级、部分成功、各等级成功计数。
+ * 处理等级3降级、文件缺失提醒、部分成功、各等级成功计数。
  * @param data 响应数据
  * @param level 删除等级
  */
 export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDeleteResult {
   let downgradeDetail: string | null = null
+  let fileMissingDetail: string | null = null
 
   // 等级3降级处理
   if (level === 3 && data?.level4_downgraded && data.level4_downgraded.length > 0) {
     const downgraded = data.level4_downgraded
-    const names = (downgraded.length <= 5 ? downgraded : downgraded.slice(0, 5))
-      .map((d: any) => d.torrent_name).join('、')
+    const names = joinNames(
+      (downgraded.length <= 5 ? downgraded : downgraded.slice(0, 5))
+        .map((d: any) => d.torrent_name)
+    )
     downgradeDetail = downgraded.length <= 5
-      ? `以下种子备份失败，已降级为等级4：${names}`
-      : `以下种子备份失败，已降级为等级4：${names} 等${downgraded.length}个`
+      ? translate('torrent.deleteLevel.result.downgradeDetail', { names })
+      : translate('torrent.deleteLevel.result.downgradeDetailMore', {
+        names, count: downgraded.length
+      })
+  }
+
+  // 等级3文件缺失：未找到种子文件，已跳过文件操作直接移入回收站
+  if (level === 3 && Array.isArray(data?.level3_file_missing) && data.level3_file_missing.length > 0) {
+    fileMissingDetail = buildFileMissingDetail(data.level3_file_missing as FileMissingItem[])
   }
 
   // 统计各等级成功数
@@ -928,24 +1313,49 @@ export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDel
 
   // 有降级时不显示成功消息（已在 downgradeDetail 提示）
   if (downgradeDetail) {
-    return { type: 'warning', message: `已将 ${data.level4_downgraded.length} 个种子降级为等级4删除（备份失败）`, downgradeDetail }
+    return {
+      type: 'warning',
+      message: translate('torrent.deleteLevel.result.downgraded', {
+        count: data.level4_downgraded.length
+      }),
+      downgradeDetail,
+      fileMissingDetail
+    }
   }
 
   // 部分失败
   if (data?.failed && data.failed.length > 0) {
-    return { type: 'warning', message: `删除完成：失败 ${data.failed.length} 个`, downgradeDetail: null }
+    return {
+      type: 'warning',
+      message: translate('torrent.deleteLevel.result.syncPartialFailed', { count: data.failed.length }),
+      downgradeDetail: null,
+      fileMissingDetail
+    }
   }
 
   // 完全成功
   if (level === 3) {
     const level3Count = data?.level3_success?.length || 0
+    const missingCount = fileMissingDetail ? data.level3_file_missing.length : 0
     return {
       type: 'success',
-      message: level3Count > 0 ? `等级3删除成功 ${level3Count} 个` : `删除完成，成功 ${successCount} 个`,
-      downgradeDetail: null
+      message: missingCount > 0
+        ? translate('torrent.deleteLevel.result.level3SuccessWithMissing', {
+          count: level3Count, missing: missingCount
+        })
+        : (level3Count > 0
+          ? translate('torrent.deleteLevel.result.level3Success', { count: level3Count })
+          : translate('torrent.deleteLevel.result.deleteDone', { count: successCount })),
+      downgradeDetail: null,
+      fileMissingDetail
     }
   }
-  return { type: 'success', message: `等级${level}删除完成，成功 ${successCount} 个`, downgradeDetail: null }
+  return {
+    type: 'success',
+    message: translate('torrent.deleteLevel.result.levelDone', { level, count: successCount }),
+    downgradeDetail: null,
+    fileMissingDetail
+  }
 }
 
 
