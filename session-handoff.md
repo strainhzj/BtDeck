@@ -1,4 +1,4 @@
-## 2026-09-21 交接：两项 UI 修复完成（未提交，待用户指令）
+## 2026-09-21 交接：两项 UI 修复完成（已提交 59f3fde + a501970；推送由用户自行执行）
 
 ### 已完成（用户确认两项假设后实施）
 
@@ -11,7 +11,7 @@
 
 1. 用户浏览器/手机实测两项 UI 效果（375×812 /m/downloader/settings/new 与桌面 /login 中英切换+主题切换不重叠）。
 2. 存量红：i18n-leftover-guard 的 scheduled-tasks.ts 注释中文命中（P6-5 后某会话引入，与双语审计集翻转相关），需单独批次决定入白名单或键化。
-3. 本批未 Git 提交；另有前会话遗留未提交改动（frontend/README.md、package.json、serve-demo.mjs 等 demo 相关）一并待用户处置。
+3. 本批已提交 59f3fde（feat）+ a501970（docs roadmap），未推送；另有前会话遗留未提交改动（frontend/README.md、package.json、serve-demo.mjs 等 demo 相关）一并待用户处置。
 
 ### 坑位（下会话注意）
 

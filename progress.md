@@ -7,7 +7,7 @@
 - **登录页语言切换（`views/login/index.vue`）**：重叠根因为 `.lang-selector` 绝对定位魔法偏移 `right: calc(--spacing-lg + 52px)` 撞上带文字的主题胶囊（~110px+）。改为 Navbar 同款 el-dropdown（languages 图标 + 当前语言自名 + chevron，选项语言自名），语言+主题收进 `.login-topbar` 右上角 flex 容器；动作源不变（handleLanguageSelect→SetLanguage + resolvePageTitle），navbar-language-switcher.spec 登录页契约锚点全保留。
 - **验证**：前端 typecheck / lint 三项 / build 全绿；全量 Jest **124 套 1813/1814**——唯一失败 i18n-leftover-guard（`src/types/scheduled-tasks.ts:23` 注释「失败」）经 **stash 对照证实为 HEAD 存量**，与本批无关；相关套件（navbar-language-switcher/downloader-settings-dialog-init/mobile-downloader×2/downloader-settings×2/downloader-settings-mobile-layout）全绿。
 - **坑**：本仓工作区文件为 LF，但本机 git autocrlf 会在 stash/checkout 时写入 CRLF；编辑工具写入与 stash pop 均会引入 \r\n，导致直读源码的正则契约（如 downloader-settings-dialog-init 的 780 媒体块锚点 `\n  }\n\}`）红——改后/还原后需 `sed -i 's/\r$//'` 规范化再跑测试。
-- **文档**：feature_list 新增 ui-fixes-2026-09-21（done + evidence）；roadmap 三处同步（根 README 本次新增、views README 下载器/登录两行）；session-handoff 更新。未执行 Git 提交（待用户指令）。
+- **文档**：feature_list 新增 ui-fixes-2026-09-21（done + evidence）；roadmap 三处同步（根 README 本次新增、views README 下载器/登录两行）；session-handoff 更新。Git 提交：59f3fde（feat，5 文件）+ a501970（docs roadmap，2 文件），未推送。
 
 ---
 ## 2026-09-20（P7 收口·前置准备）：全量回归证据 + 验收清单产出
@@ -1740,7 +1740,7 @@ Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）�
 - 后端：`tests/core/test_torrent_status_mapper.py` 60 passed（映射表完整性/参数化用例同步更新，seeding 来源计数 4→5）；`tests/api/test_transmission_error_sync.py` 32 passed；mypy/black/flake8 通过。`test_path_mapping_validation.py` 直接用原始 state 字符串不走映射器，不受影响（已核）。
 - 前端：`shared-utils.spec.ts`（+14 折叠用例）/`status-config.spec.ts`/`traditional-view-component.spec.ts`/`torrent-list-view-component.spec.ts`/`torrent-error-reason-ui.spec.ts` 共 **111 passed**；改动文件 eslint 零问题；`tsc --noEmit` 通过。
 - roadmap 同步：`backend/core/README.md` status-mapper 行（L103→L112/L138→L147 漂移修正 + 变更摘要）、`frontend/utils-types/README.md` formatters 行（L571→L589）与 status-config 行。
-- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+- 无 schema 变更，无新迁移；Git 提交：59f3fde（feat，5 文件）+ a501970（docs roadmap，2 文件），未推送。
 
 ## 2026-08-16 - 副本位置弹窗行级删除硬链接副本
 
@@ -1767,7 +1767,7 @@ Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）�
 - 质量：black/flake8/ruff/lint_btdeck 通过；mypy 全量 1563=基线 1563（stash 实测对比零新增）。
 - 前端：`orphan-files.spec.ts` **99 passed**（新增 7 用例）；全量 **44 suites / 754 passed**；typecheck 通过；三个改动文件 `eslint --max-warnings 0` 零问题。
 - roadmap 三层更新（根 README 功能域/元信息 + services README orphan 行 + `orphan_file_service.md` 全量行号实测 3809 行 + api README orphan 行）；顺带修正根 README 端点模块计数漂移（38→37 实测）。feature_list.json 新增 feature `orphan-hardlink-copy-delete`（3 tasks）；`./init.sh`（ci）通过。
-- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+- 无 schema 变更，无新迁移；Git 提交：59f3fde（feat，5 文件）+ a501970（docs roadmap，2 文件），未推送。
 
 ## 2026-08-15 - 已定位副本快捷筛选 + 预扫描范围收紧
 
