@@ -29,6 +29,11 @@
 | `app/src/test/.../ui/FileChooserTest.kt`、`ui/WebViewActivityContractTest.kt` | ✨2026-09-12 | JVM 回归：MIME 通配钉死（禁回退 createIntent 扩展名当 MIME）、MODE_OPEN_MULTIPLE→allowMultiple 决策、取消/零选中判无效（null 语义防 WebView 锁死）、mode 显式 opt-in；接线契约（webChromeClient/onShowFileChooser/launcher、回调恰一次四路径 onReceiveValue(null) 恰 4 处、APK 版本纪律锚点 versionCode≥3 + bat 产物名同源）——Intent/ClipData 装配 JVM 不可测由真机兜底；✨2026-09-13 +2 返回双入口契约（箭头开关/onSupportNavigateUp 直调不走 super/custom view 挂点击/禁 supportActionBar?.subtitle 回退）+ 标题布局契约 |
 | `app/src/test/java/com/btdeck/companion/ServerProfileTest.kt` | `ServerProfileTest:8` | username 元数据与旧构造器默认值回归 |
 
+## 服务端配合（backend 侧 Android 形态）✨2026-09-21 补录
+
+- **主机能力矩阵**（1986d51，2026-08-30 dual-mode-client Phase 4）：`app/core/platform_capabilities.py` 单一真相源（`CAPABILITY_DEFINITIONS` L36 矩阵冻结基线 + `require_capability` L217 统一门禁 + `capability_payload` L225，schemaVersion=2）+ `api/endpoints/platform_capabilities.py`（`GET /platform/capabilities`）+ `api/platform_guard.py`（认证+能力检查依赖工厂）。Android 主服务端对路径映射/孤儿/备份/转移/三级删除等主机文件系域能力统一降级；设置页/任务列表/创建表单三处消费同一来源一致降级。
+- **远端文件系能力硬禁用**（3ac6f54，2026-09-07）：Android server 形态下硬禁用远端文件系统特性（平台门禁 fail-closed，服务层保留同能力二次检查）。
+
 ## 约束
 
 - `android:allowBackup="false"` 与 Keystore 绑定保证凭据不会通过系统备份迁移。

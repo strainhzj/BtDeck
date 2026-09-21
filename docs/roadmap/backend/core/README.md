@@ -9,6 +9,7 @@
 |--------|------|-----------|
 | 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署）；`create_task_if_idle()` L109 原子占用下载器 pending/running 任务，`start_task_runner()` L140 保留 asyncio runner 强引用并消费异常，`execute_task()` L215 把结构化 failed/cancelled 结果映射为真实终态 |
 | 全局配置 config | `config.py` | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
+| 构建身份 build-info ✨2026-09-21 补录 | `build_info.py` | 构建身份读取（release 门禁 G1）：按 env `BTDECK_BUILD_INFO` → PyInstaller `sys._MEIPASS` → `release/build-info.json` → `/app/build-info.json` 顺序查找；fail-closed（命中但畸形抛 `BuildInfoError`，未命中 dev 模式 `source_mode=True` 不伪造身份），供健康接口透出 Git SHA/产品版本/Alembic head/前端 manifest 指纹 |
 | 主机能力矩阵 platform-capability | `platform_capabilities.py` | Android 主服务端/桌面能力单一真相源（L36）；`require_capability` L217 对路径映射、孤儿、备份、转移、三级删除执行统一门禁，能力载荷 schemaVersion=2 |
 | DB 结果封装 database-result | `database_result.py` | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
 | 迁移备份 db-backup | `db_backup.py` | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用 |

@@ -1,3 +1,22 @@
+## 2026-09-21 交接：roadmap 全量维护完成（代码零改动，未提交）
+
+### 已完成（用户确认全量方案 A+B+B+ + C1/C2，roadmap-maintain 技能二次确认后实施）
+
+- **13 个 roadmap 文件 +261/-211**：第二层补 9 缺失文件行 + views mobile/ 子树节 15 行、划线 BasicSettingsTab.vue；计数重测 12 处（endpoints 39、前端 api 14、alembic 31、.vue 108、后端测试 236、前端 124 套/128 spec 等）；第三层 2 样例行号全量重测（torrent_crud.md 按服务化后 485 行重写；orphan_file_service.md 72 处 L 声称分段移位 + 6 处冒号定位行补移）；test-coverage 后端 223→236、前端 105→112 + 补录 23 历史未收录 spec 行；android-companion 新增服务端能力矩阵节；根 README 元信息双条目前插。
+- **验证**：双向审计脚本全分支无遗漏/无陈旧；陈旧值清查零命中；torrent_crud.md 行号 9/9 + 定位行 6/6；orphan_file_service.md 抽验 9/9；表格列数标记项均为既有风格非本次引入。
+
+### 下一步
+
+1. 用户浏览器抽查 roadmap 渲染（根 README 元信息两条长行、views mobile/ 新节、test-coverage 补录表）。
+2. 提交建议拆分：docs(roadmap) 单提交（含 progress/handoff），待用户指示；工作区另有用户本地改动（build-images.sh chmod、未跟踪 data/）勿混入。
+3. 既有待办不变：i18n-leftover-guard 存量红（scheduled-tasks.ts:23）、R01～R06 签认、P7 收口、Android 嵌入服务 stage-server.py。
+
+### 坑位（下会话注意）
+
+- orphan_file_service.md 类行号移位要同时覆盖 `L123` 与 `文件.py:123` 两种格式（本次冒号格式首次漏移、二次补移）。
+- 本机 git autocrlf 坑照旧：编辑后跑正则契约前 `sed -i 's/\r$//'`。
+
+---
 ## 2026-09-21 交接：两项 UI 修复完成（已提交 59f3fde + a501970；推送由用户自行执行）
 
 ### 已完成（用户确认两项假设后实施）

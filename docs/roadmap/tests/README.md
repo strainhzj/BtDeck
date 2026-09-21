@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（206 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（91 个 spec，当前源码实测）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（236 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（124 套，spec 文件 128 个：unit 112 + 组件内嵌 12 + e2e/mobile 4；2026-09-21 实测）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（65 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（76 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -22,10 +22,11 @@
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 79 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 112 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard） |
+| 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 4 个 spec（移动端端到端场景，与 unit 分目录组织） |
 | 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 12 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤各 1 个 |
 
-## backend/tests/（206 个 test_*.py + 支持文件）
+## backend/tests/（236 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -60,7 +61,7 @@
 ```bash
 cd backend && pytest                          # 全量
 cd backend && pytest tests/services/ -v       # 按目录
-cd backend && pytest tests/api/               # API 层（65 个 test_*.py）
+cd backend && pytest tests/api/               # API 层（76 个 test_*.py）
 ```
 
 ## frontend/tests/
@@ -111,7 +112,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 206 个 test_*.py，按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 236 个 test_*.py（2026-09-21 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

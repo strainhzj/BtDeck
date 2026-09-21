@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### utils/（14 个 .ts 文件，实测 2026-09-21）
+### utils/（16 个 .ts 文件，实测 2026-09-21）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -25,6 +25,9 @@
 | 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制）；P6-5 双语：两种失败 throw 走 common.clipboard.* 键 |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 | 通知事件展示 notification-display | `notification-display.ts` ✨2026-09-21 | 双语 P4（E03）系统通知事件展示层：按 `extra_data.event`（torrent_batch_add_completed/orphan_scan_completed/version_update/welcome）+ 参数本地化 title/content（`notificationDisplayTitle/Content`，经 i18n translate + formatFileSize），未登记事件/无 extra_data 历史通知原文兜底（旧内容不改写） |
+
+| 通知渲染 notification-markdown ✨2026-09-21 补录 | `notification-markdown.ts` | 通知 Markdown-lite 渲染：`renderNotificationContent()`（按行分块：标题 #/##/###、分隔线、无序列表、段落，输入先 HTML 转义再内联替换粗体/行内代码防注入）、`plainNotificationContent()` 摘要纯文本化（记号剥离）、`notificationFailureTarget()` 失败明细目标回退链（P6-5 兑底走 common.notifications.*）；桌面/移动通知详情同源 |
+| UI 模式 ui-mode ✨2026-09-21 补录 | `ui-mode.ts` | 移动/桌面视图选择（dual-mode-client Phase 4 M1）：`resolveUiMode()`——偏好持久化（localStorage）优先、auto 按视口 `MOBILE_VIEWPORT_BREAKPOINT=768` 判定、伴侣 App WebView（UA 含 App 注入标记）恒 mobile（2026-09-12 用户决策，顺带覆盖旧 APK 写入的 desktop 偏好） |
 
 #### request.ts 关键（axios/Demo 分流封装，L1-300）
 

@@ -1,6 +1,6 @@
 # frontend/components-layout — 通用组件与布局骨架
 
-> 通用可复用组件（22 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
+> 通用可复用组件（24 个 .vue，实测 2026-09-21）+ 布局骨架（layout/ 下 9 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/components-layout/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -24,7 +24,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| Monaco 编辑器 monaco | `MonacoEditor.vue` | Monaco 代码编辑器通用封装（`MonacoEditor extends Vue`，L12） |
+| 主机能力面板 platform-capability ✨2026-09-21 补录 | `settings/PlatformCapabilityPanel.vue` | 设置页「主机能力」面板（dual-mode-client Phase 4）：消费 `api/platform-capabilities.ts` 单例缓存，按平台形态展示各能力支持级别/降级计数，加载中/不可用两态；桌面 ≥768 表格、窄屏卡片双形态；文案走 settings.capability.* |
 | 批量按钮 batch-button | `BatchButton/index.vue` | 批量操作按钮（含下拉菜单） |
 | 批量按钮测试 batch-button-test | `BatchButton/__tests__/BatchButton.spec.ts` | BatchButton 回归测试：提供 `lucide-icon`/`lucide-size` props 时用 LucideIcon 渲染、未提供时回退 el-icon、disabled 抑制点击 |
 | 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航（标题经 `routeTitle()`：titleKey 双语键优先，双语 P1） |
@@ -41,7 +41,7 @@
 | Python 类选择器 python-class | `PythonClassSelector.vue` | Python 类/方法选择器（`PythonClassSelector`）；✨2026-09-20 双语 P6-4a：预定义类树改由后端 type-config pythonClasses 驱动（getTaskTypeConfig 零调用→接线，~170 行硬编码假类树删除——BackupTask 等类后端不存在选择必失败；后端中文描述 Q02 原文透传，参数字典归一化兼容 string/object），快捷模板由真实类前 6 派生；UI 文案全量走 tasks.pythonSelector.* 键 |
 | 任务 Monaco 编辑器 tasks-monaco | `MonacoEditor.vue` | 任务专用 Monaco 编辑器（含 Python 高亮）；✨2026-09-20 双语 P6-4a：降级告警/重试/本地启发式消息走 tasks.monaco.* 键；死字段删除（中文标识符 代码语法正确/可以正常执行 与 write-only 的 syntaxStatus/executionStatus） |
 
-#### components/torrents/（11 个 .vue + 2 个业务 .ts + 7 个测试）
+#### components/torrents/（10 个 .vue + 2 个业务 .ts + 7 个测试）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -52,6 +52,7 @@
 | 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应；2026-08-15 新增 `placeholder` prop 定制未选提示语（种子页筛选下拉：下载器/种子状态/tracker） |；2026-09-21 P3-1 双语（common.multiSelect，分隔符示例绕开 vue-i18n 竖线按 locale 常量直出）
 | 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（741 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；兼容旧模板的多选、标签 token 与超级做种布尔值；构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反；2026-09-21 P3-2 校验消息 52 处 translate 化（search.validation.*，zh 输出与原内联逐字节一致；`buildAdvancedSearchParams` 回退组名保持内联中文——属 API 载荷非展示文案，T01 两语言 groups 一致） |
 | 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |；2026-09-21 P3-1 双语
+| 快捷删重 quick-delete | `QuickDeleteDuplicatesDialog.vue` | 快捷删除重复种子确认对话框（同内容排查模式快捷操作消费；组件不在 views 内，见本表 torrents 目录） |
 | 大小过滤 size-range | `SizeRangeFilter.vue` | 种子大小范围过滤器（`SizeRangeFilter` class）；2026-09-21 P3-2 双语：标签/占位/快捷预设 label 改 search.sizeRange.*（预设 key 化） |
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
@@ -67,6 +68,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 布局根容器 layout | `index.vue` | 布局根容器（Sidebar + Navbar + AppMain 组合） |
+| 移动布局壳 mobile-layout ✨2026-09-21 补录 | `mobile/index.vue` | 移动端布局壳：顶部头部（二级页返回/功能菜单抽屉）+ 底部悬浮 Tab 栏 + 内容区；与桌面 layout 平行，路由按 `ui-mode.ts` 解析结果分流 |
 
 #### layout/components/
 

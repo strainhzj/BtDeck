@@ -1,5 +1,20 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-21：roadmap 全量维护（审计 + 三层同步 + 补录，代码零改动）
+
+- **范围（用户确认全量方案 A+B+B+ + C1/C2，并以 roadmap-maintain 技能二次确认）**：docs/roadmap 13 文件，+261/-211 行。
+- **第二层文件级同步（A）**：backend/api README 补 `api/platform_guard.py` + `endpoints/platform_capabilities.py` 两行（Phase 4 能力矩阵批漏同步）+ torrent_crud 行行号重测（L597→L325 等）；backend/core 补 `build_info.py`；frontend api 补 `health.ts`；utils-types 补 `notification-markdown.ts`/`ui-mode.ts`；components-layout 补 `settings/PlatformCapabilityPanel.vue` + `layout/mobile/index.vue` + `QuickDeleteDuplicatesDialog.vue` 行，删陈旧顶层 MonacoEditor 重复行；views 补 mobile/ 子树节 15 行 + 划线已删 BasicSettingsTab.vue。
+- **计数重测（B）**：endpoints 37→39、前端 api 12→14、alembic 29→31（最新 preset_key 双迁移）、.vue 87→108（class 105+Options 2+Vue.extend 1）、utils 14→16、components 22→24、layout 8→9、views .vue 76→74、backend tests 206→236（api 层 65→76）、前端 91→124 套（128 spec 文件）。
+- **第三层行号重测（B+）**：torrent_crud.md 重写贴合 485 行现状（服务化后 INV 八项证据/调用图/tracker-domains TTL 缓存段全更新，符号表 9/9 + 定位行 6/6 验证通过）；orphan_file_service.md 3902→3911 行，72 处 L 声称按 6 插入点分段 +1~+9 移位，另修 6 处冒号格式定位行漏移位（首次正则只覆盖 L 前缀），hardlink-copies/delete 端点 352→362。
+- **漂移修复**：Options API 计数两处 3→2 与 L373/L299→L374/L300、_tracker-table.scss 路径 views/styles→src/styles、frontend/api README 13→14。
+- **C1 test-coverage 补录**：后端分布表 223→236（api 76/services 52/tasks 24/core 28/downloader 5、endpoints 1 对 39）；前端 unit 105→112 spec 并补录 23 个历史未收录 spec 行（含 i18n-message-parity/navbar-language-switcher 门禁、demo 六件套等）；torrents 内嵌测试行数 2637→2775。
+- **C2 android-companion**：新增「服务端配合」节（能力矩阵单一真相源 + remote FS 硬禁用）。
+- **校验**：双向审计脚本（README 反引号文件 vs 磁盘）全分支无遗漏/无陈旧；陈旧值清查（87/37 endpoints/223/91 spec 等）零命中；torrent_crud.md 行号 9/9 通过；表格列数标记项均为既有混合管道符风格或合法 `\|` 转义，非本次引入。
+- **误报澄清**：app-root.md 的 yamlConfig.py 为审计脚本小写正则误报（实际已有行），未改。
+- **未动**：feature_list.json（非功能任务）；git 提交待用户指示；工作区另有用户本地改动（build-images.sh chmod + 未跟踪 data/）。
+
+---
+
 ## 2026-09-21：两项 UI 修复（移动下载器表单地址上移 + 登录页语言切换统一胶囊）
 
 - **范围（用户确认两项假设）**：①移动端新增/设置下载器时地址应排在端口上方（桌面布局不动）；②登录页中英文切换按钮与主题切换器重叠（渲染问题）且与登录后 Navbar 形态不一致，统一为 Navbar 同款下拉胶囊。

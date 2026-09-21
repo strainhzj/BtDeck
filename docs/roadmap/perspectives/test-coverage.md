@@ -2,29 +2,29 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 223 个 test_*.py）
+## 后端测试分布（共 236 个 test_*.py，2026-09-21 重测）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 67 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 53 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 23 | `app/tasks/` | 🟡 部分覆盖（22 对 34）；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
-| `tests/core/` | 26 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/api/` | 76 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归；双语 P2~P6b reasonCode 契约六批 |
+| `tests/services/` | 52 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
+| `tests/tasks/` | 24 | `app/tasks/` | 🟡 部分覆盖；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
+| `tests/core/` | 28 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
 | `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
 | `tests/auth/` | 6 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
-| `tests/downloader/` | 4 | `app/downloader/` | ⚠ 薄弱（4 对 9） |
-| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 37，仅 `test_active_only_filter.py`） |
+| `tests/downloader/` | 5 | `app/downloader/` | ⚠ 薄弱（5 对 9） |
+| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 39，仅 `test_active_only_filter.py`） |
 | `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **223** 个 test_*.py（2026-09-05 OOM 治理+Tier-1 后重数）。
+> 合计：当前实测 **236** 个 test_*.py（2026-09-21 重测；2026-09-05 后新增双语 P2/P4/P5/P6/P6b/P6_tasks reasonCode 契约六批等）。
 
-> 注：`tests/api/`（67 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（76 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -159,7 +159,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（105 个 spec，实测 2026-09-21）
+### `frontend/tests/unit/`（112 个 spec，实测 2026-09-21）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -244,7 +244,37 @@
 | `keyword-quick-action-dialog.spec.ts` ✨2026-08-16 | 关键词快捷删除/移动：preview→确认→执行→emit success |
 | `keywords-board.spec.ts` ✨2026-08-16 | 关键词看板：快捷操作打开对话框与成功后精准刷新 |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2637 行）
+### 补录：历史批次未收录的 unit spec（2026-09-21 全量对齐，23 行）
+
+> 以下 spec 已存在于仓库但此前未入表，本批补录；创建批次已知的一幵标注。
+
+| 测试文件 | 覆盖范围 |
+|---------|---------|
+| `api-torrent-detail-contract.spec.ts` ✨2026-09-06 批，2026-09-21 补录 | 详情明细 API 契约：`/torrents/detail/{hash}/files\|peers` 信封与归一化字段 |
+| `condition-edit-sheet.spec.ts` ✨2026-09-06，2026-09-21 补录 | ConditionEditSheet 底部弹层：草稿克隆/确认回写、字段操作符联动 |
+| `core-demo-flow.spec.ts` 2026-09-21 补录 | Demo 核心页面流（内存 fixture 渲染与导航） |
+| `demo-auth.spec.ts` 2026-09-21 补录 | Demo 构建认证旁路（不访问后端） |
+| `demo-config.spec.ts` 2026-09-21 补录 | Demo 配置（`VUE_APP_DEMO_MODE` 分流） |
+| `demo-request.spec.ts` 2026-09-21 补录 | Demo request 分流层（fixture 响应形态） |
+| `demo-store.spec.ts` 2026-09-21 补录 | Demo 内存状态仓库（重置/读写） |
+| `detail-tabs-data.spec.ts` ✨2026-09-06，2026-09-21 补录 | TrackerDetailDataMixin：文件页签懒加载+键控缓存、Peers 5s 链式轮询与生命周期 |
+| `downloader-settings-dialog-init.spec.ts` 2026-09-21 补录 | DownloaderSettingsDialog 整页复用初始化契约（visible 初始 true） |
+| `downloader-settings-mobile-layout.spec.ts` 2026-09-21 补录 | PathMappingTab ≤780 / TagManagementTab ≤640 移动布局源码契约 |
+| `extended-demo-flow.spec.ts` 2026-09-21 补录 | Demo 扩展/只读页面流 |
+| `i18n-locale.spec.ts` ✨2026-09-18 P1，2026-09-21 补录 | L01 语言解析顺序 + L02 持久化与安全回退 + L05/F01 |
+| `i18n-message-parity.spec.ts` ✨2026-09-18 P1，2026-09-21 补录 | L05 中英消息树一致性门禁：键集合/插值/复数支数/空串，el vendor 子树排除 |
+| `mobile-advanced-search.spec.ts` ✨2026-09-06，2026-09-21 补录 | MobileAdvancedSearch 构建器：已保存搜索胶囊/条件组摘要/AND/OR/请求构造 |
+| `mobile-settings.spec.ts` 2026-09-21 补录 | MobileSettings 整页复用桌面设置（挂载与返回） |
+| `mobile-tasks-capability-hint.spec.ts` 2026-09-21 补录 | 移动任务页降级提示条（能力矩阵驱动显隐） |
+| `navbar-language-switcher.spec.ts` ✨2026-09-18 P2，2026-09-21 补录 | Navbar 语言切换器 + 登录页语言入口源码契约（2026-09-21 胶囊统一后锚点保持） |
+| `request-transient-retry.spec.ts` ✨2026-09-10，2026-09-21 补录 | 幂等 GET 瞬态失败静默重试一次（注入 axios adapter；超时/写操作不重试） |
+| `search-shared-layer-i18n.spec.ts` ✨2026-09-21 P3-1 | 契约源 label/labelEn 成对完整、操作符展示名按 locale 解析（稳定值映射，禁中文匹配） |
+| `settings-diagnosis-export.spec.ts` ✨2026-09-07，2026-09-21 补录 | 设置页状态诊断导出（blob 下载与文件名生成） |
+| `tasks-capability-wiring.spec.ts` 2026-09-21 补录 | 任务类型降级接线源码契约（P6-4a 曾迁移其断言语义） |
+| `tracker-operation-dialog.spec.ts` ✨2026-09-12，2026-09-21 补录 | TrackerOperationDialog：常规模式（selectedTorrents）桌面行为不变 + 按下载器触发模式 |
+| `transfer-set-location-dialogs.spec.ts` ✨2026-09-12，2026-09-21 补录 | TransferDialog/SetLocationDialog 移动端适配与移动种子页透传清理源码契约 |
+
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2775 行，2026-09-21 重测）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|

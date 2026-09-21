@@ -1,9 +1,9 @@
 # frontend/api — axios API 封装
 
-> 13 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`。
+> 14 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 关键词速查（13 个 .ts，跳过 torrents_patch.txt）
+## 关键词速查（14 个 .ts，跳过 torrents_patch.txt）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -20,6 +20,7 @@
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
 | 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
+| 诊断导出 health ✨2026-09-21 补录 | `health.ts` | `exportDiagnosisFile()` 导出故障转储/排查/状态分析快照（axios blob 携带认证头；后端 `GET /health/diagnosis` attachment 返回诊断 JSON，文件名前端生成——blob 响应经拦截器只回传原始数据读不到响应头），settings 状态诊断页签消费 |
 
 > 所有文件均 `import request from '@/utils/request'`（行号见上表）。`torrents.ts` 是最大且最核心的 API 模块。
 

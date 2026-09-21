@@ -1,6 +1,6 @@
 # frontend/views — 页面视图
 
-> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 76 个，含子组件/mixin）；views 分支仅 2 处 Options API（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 删除）。
+> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 74 个，含子组件/mixin，2026-09-21 重测）；views 分支仅 2 处 Options API（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 删除）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/views/README.md`，命中行即含模块入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -8,7 +8,7 @@
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
 | 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 24 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区、Tracker 完整详情弹框与状态语义；错误原因 tooltip 滚动主动收起，查询期间全屏蒙版锁定页面滚动；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss）；实时速度 200/206 快照按 downloader_id+hash 合并，终态证据强制 100%，连续未命中任务低频核验；新活动复合键与批量添加完成信号均可触发权威列表自愈刷新 |；2026-09-21 P3-1 双语：筛选/排查条/工具栏/列头/分页/列设置/视图切换与操作反馈（删除确认与结果链路留 P5），columnSettings 去 label 改键渲染
-| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（17 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化；✨2026-09-19 遗留清扫：控制台操作反馈 17 条键化（测试连接三态/同步链路/启停/删除确认走 downloader.msg.*，禁 response.msg 中文兜底）；✨2026-09-19 P6-2：设置弹窗页签骨架与速度/高级/路径管理/路径映射/路径维护/标签/模板八子树全量键化（含键化数据数组与 template-presets 预设展示映射），BasicSettingsTab.vue 死代码删除；✨2026-09-21 移动表单顺序：连接配置卡 ≤780 折单列时地址上移至端口上方（flex column + el-row display:contents + col-* order 重排，卡片水平内边距 12px→4px 补偿 gutter；桌面双列不变） |
+| 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（16 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效；手动同步按钮在后台任务终态前保持占用，与移动页共用 `sync-task.ts` 跟踪真实结果；✨2026-09-18 桌面双语 P2：页面文案/图例/空态/卡片/设置弹窗 basic 页签全量 i18n 化；✨2026-09-19 遗留清扫：控制台操作反馈 17 条键化（测试连接三态/同步链路/启停/删除确认走 downloader.msg.*，禁 response.msg 中文兜底）；✨2026-09-19 P6-2：设置弹窗页签骨架与速度/高级/路径管理/路径映射/路径维护/标签/模板八子树全量键化（含键化数据数组与 template-presets 预设展示映射），BasicSettingsTab.vue 死代码删除；✨2026-09-21 移动表单顺序：连接配置卡 ≤780 折单列时地址上移至端口上方（flex column + el-row display:contents + col-* order 重排，卡片水平内边距 12px→4px 补偿 gutter；桌面双列不变） |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（13 文件；12 class + ⚠ 1 Options API）；✨2026-09-20 双语 P6-3：全域全量 i18n（错误展示接 apiErrorMessage/apiResponseMessage） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志；✨2026-09-20 双语 P6-4a：模板/脚本全量走 tasks.* 键（任务状态展示按 taskStatus 码位、类型名按 taskType 码位、分页分片键、危险确认「不可恢复」明示），错误展示接 apiErrorMessage/apiResponseMessage |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页；✨2026-09-20 双语 P6-4b 全量 i18n（筛选/操作栏/统计/表头/详情与归档弹窗；操作类型 19 项按稳定 value 键化双形态（短标签/筛选长标签）；错误展示接 apiResponseMessage/apiErrorMessage） |
@@ -36,7 +36,7 @@
 | `../mobile/search.vue` | 移动高级搜索页（`MobileSearch` L87，248 行）：✨2026-09-06 方案三移动原生重构——不再整页复用桌面 `AdvancedSearchWorkspace`，改挂移动构建器（摘要卡+底部弹层）；search 事件 → `buildAdvancedSearchRequest` → POST advancedSearch，下拉刷新双分支（已搜过重放/未搜过刷新候选）保留；搜索完成后 `scrollToResults()` L143 自动滚动定位结果锚点（scroll-margin-top 让开吸顶头部，jsdom 无 scrollIntoView 静默跳过） |
 | `../mobile/components/MobileAdvancedSearch.vue` | 移动高级搜索构建器（`MobileAdvancedSearch` L354，1232 行，2026-09-06 新增）：已保存搜索横滑胶囊（同源 `getSearchTemplates({is_public:true})` 过滤 source=advanced、点击应用）+ ⚙ 管理抽屉（保存更改/删除，权限语义同桌面 L479）+ 条件组摘要卡（`describeCondition` 一行文案、点击弹 `ConditionEditSheet` 编辑、✕ 删除）+ 组内/组间 AND/OR 分段钮 + 吸底“执行搜索”玻璃浮条（避开悬浮 Tab 栏，次要操作收进 ⋯ 菜单）；字段/操作符/校验/请求构造与桌面共享 `components/torrents/advancedSearchFields.ts`，对外 onSearch()/refreshFieldOptions()/applyTemplateGroups()/resetConditions() 与桌面工作区同签名 |
 | `../mobile/components/ConditionEditSheet.vue` | 移动单条条件编辑底部弹层（`ConditionEditSheet` L139，336 行，2026-09-06 新增）：el-drawer btt（76% 高、内容行主题色强调、40px 触控目标）；打开时克隆条件为草稿、确认才回写；字段/操作符/值联动与桌面同源（`onFieldChange()` L194 重置语义一致），值输入复用 `ConditionValueInput` |
-| `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
+| `../../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin（位于 `src/styles/`）：紧凑字号/间距、状态色、URL 截断和操作列冻结；✨2026-08-27 新增 `tracker-row-matched` 命中行浅主色高亮（sticky 操作列同色跟随、hover 让位）与 `tracker-matched-tag`「命中筛选」标签 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件备份管理（`FileManagement` L310）；路由由 `torrent_backup` 能力门控，Android 主服务端隐藏入口；✨2026-09-19 双语 P6-1：页面/筛选/表格/详情与导入弹窗/删除确认全量走 fileManagement.* 键 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框；✨2026-08-30 在 202 返回后由 `watchBatchCompletion()` L226 保存 `task_id`，`pollBatchCompletions()` L247 轮询既有系统完成通知并发出 `batch-complete`；10 分钟超时兜底刷新，销毁时清理计时器；✨2026-09-12 新增「跳过校验」复选框（默认关，`form.skip_hash_check` 透传 addTorrentsBatch——qB 对保存路径已有数据的种子强制 CheckingDL 校验，勾选跳过直接做种；关闭弹窗重置回安全默认；仅 qB 生效，TR 的 add_args 无校验跳过参数）；同批 ≤768 移动端适配（自定义 modal 非 el-dialog，m-reuse-dialog 覆盖不适用——overlay 顶铆+自身可滚接管 85vh、dialog 全宽 !important 压制内联 600px、底部双钮 44px 等宽、文件移除钮 36px 触控） |；2026-09-21 P3-1 双语（含跳过校验策略提示与校验消息）
@@ -77,7 +77,7 @@
 | `components/SpeedSettingsTab.vue` | 全局与分时段速度策略工作台 |
 | `components/AdvancedSettingsTab.vue` | 兼容保留的高级设置 Tab，应用图标已迁移 Lucide |
 | `components/TemplateSelectionDialog.vue` | 高密度模板选择对话框，含自定义标题、加载与空状态 |
-| `components/BasicSettingsTab.vue` | 兼容保留的基础设置 Tab，应用图标已迁移 Lucide |
+| ~~`components/BasicSettingsTab.vue`~~ | 基础设置 Tab；2026-09-19 P6-2 死代码删除（内容已并入 DownloaderSettingsDialog basic 页签） |
 | `components/DownloaderCard.vue` | 单节点遥测卡片，集中展示连接、吞吐、任务、延迟与全部管理动作；✨2026-09-18 桌面双语 P2：卡片文案/aria i18n 化 |
 | ~~`components/DownloaderDialog.vue`~~ | 旧 6 字段新增/编辑对话框；2026-09-10 删除（桌面与移动均已统一走 DownloaderSettingsDialog） |
 | `components/PathManagementTab.vue` | 路径映射/路径资产双视图容器 |
@@ -110,7 +110,7 @@
 |-----------|------|
 | `tasks/index.vue` | 任务管理主页（`TaskManage` L1002）：任务日志统计摘要使用 `btdeck_task_log_stats_collapsed` 持久化折叠状态；`handleViewLogs` L1316 记录可见任务筛选，`resetLogQuery` L1901 / `clearLogTaskFilter` L1917 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮；✨2026-09-20 双语 P6-4a：双页签/筛选/工具栏/表格/操作菜单/任务表单（清理配置/高级配置/启用开关）/执行详情/清理预览/日志清理弹窗全量走键；getStatusName 改收 row 按 taskStatus 码位本地化（未知码回退后端原文 Q02）、getTaskTypeName/getLogTaskTypeName 按 taskType 码位；taskTypeOptions 键化（labelKey）+ taskOptions 死数组删除 |
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs` L585）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐）；✨2026-09-20 双语 P6-4b：全量文案走 auditLogs.* 键；操作类型 19 项键化数据驱动（OPERATION_GROUPS L509 + 短标签 operationType/筛选长标签 operationTypeFull 双形态，未知值回退原文 Q02）；错误展示接 apiResponseMessage/apiErrorMessage（response.msg 直读清零） |
-| `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L373）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
+| `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L374）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
 | `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |；2026-09-21 P3-2 双语：页头/筛选/列头/删除确认走 queryTemplate.list.*，系统预设名称/描述按 preset_key 本地化（presetDisplayName/presetDisplayDescription），formatTime 按 getLocale 本地化日期
@@ -123,12 +123,36 @@
 
 ---
 
-## ⚠ Options API 技术债（全仓库仅 3 处）
+## mobile/ 详情（移动页子系统，✨2026-09-21 补录）
+
+> 移动子系统与桌面共用 API 层与共享层（sync-task/notification-markdown/ui-mode 等）；路由按 `utils/ui-mode.ts` 解析结果分流。已有行覆盖的文件见上方 torrents/downloader 详情表的 `../mobile/*` 行。
+
+| 文件 | 一句话职责 |
+|------|-----------|
+| `dashboard.vue` | 移动仪表盘（380 行）：复用桌面 /dashboard API 的卡片化展示 + 下拉刷新 |
+| `downloader-settings.vue` | 移动下载器设置页（109 行）：整页复用桌面 DownloaderSettingsDialog（fullscreen 近似形态），覆盖基本/速度（含分时段调度）/路径维护/标签管理全部能力 |
+| `login.vue` | 移动登录页（153 行，`MobileLogin extends WideViewport`） |
+| `logs.vue` | 移动审计日志（309 行）：复用 /audit-logs 查询与操作类型 API 的卡片流，操作类型/结果/种子名称筛选与分页加载；导出与统计保留桌面版承载 |
+| `orphan-files.vue` | 移动孤儿文件（730 行）：双 Tab（孤儿文件/隔离区）与桌面同构；清理走桌面同款两段式（cleanupPreview → cleanupOrphans） |
+| `recycle-bin.vue` | 移动回收站（284 行）：卡片列表 + 单条恢复/彻底删除（降低误触；批量与手动上传保留桌面承载） |
+| `settings.vue` | 移动系统设置页（38 行）：包装桌面 settings/index.vue（2FA/改密/强制改密同源同逻辑） |
+| `tasks.vue` | 移动定时任务（429 行）：任务卡片流 + 启用筛选/名称过滤；立即执行/启停（PUT 部分更新）/中断/删除，最近结果六态 |
+| `tracker-keywords.vue` | 移动 Tracker 关键词看板（368 行）：四池切换 + 卡片流；桌面拖拽移池改关键词卡片下拉「移动到X池」 |
+| `tracker-keywords-search.vue` | 移动关键词全局搜索（296 行）：复用 searchAllPools 全池检索，关键词/池子/时间/排序筛选 |
+| `components/PullIndicator.vue` | 移动下拉刷新指示条（52 行）：拉动高度随 distance 增长（封顶 80px），刷新中固定 36px；状态由 pull-to-refresh mixin 提供 |
+| `mixins/pull-to-refresh.ts` | 移动端下拉刷新 mixin（152 行）：手写轻量 touch 下拉（Element UI 无移动组件），仅当滚动容器在顶部时触发 |
+| `mixins/wide-viewport.ts` | 宽视口检测 mixin（60 行）：显式偏好 mobile 时宽视口仍停留移动版（ui-mode 原则：偏好优先于视口；2026-09-12 桌面版出口回归修复） |
+| `torrent-detail-cache.ts` | 种子详情快照缓存（20 行）：列表页点击卡片写入整行，详情页优先立即渲染（含 trackerInfo） |
+| `torrent-status.ts` | 移动端种子状态展示共享映射（49 行）：列表卡片与详情页两页共用（桌面端在 views/torrents 各组件内自持） |
+
+---
+
+## ⚠ Options API 技术债（全仓库仅 2 处）
 
 | 文件 | 行号 | 说明 |
 |------|------|------|
-| `recycle-bin/index.vue` | L373 `export default {` | 回收站页面 |
-| `tracker/reannounce-config.vue` | L299 `export default {` | Tracker 重宣告配置页 |
+| `recycle-bin/index.vue` | L374 `export default {` | 回收站页面 |
+| `tracker/reannounce-config.vue` | L300 `export default {` | Tracker 重宣告配置页 |
 
 > 详见 [../../perspectives/risks.md](../../perspectives/risks.md) "文档/代码漂移" 章节。
 
