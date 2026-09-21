@@ -7919,3 +7919,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 数据库变更口径：v1.0.5→HEAD 新增 3 个 Alembic 迁移（c1d2e3f4a5b6 孤儿 Schema 自愈、b3e5f7a9c1d2 查询模板 preset_key、d1e2f3a4b5c6 设置模板 preset_key），发布说明数据库变更节如实登记。
 - 验证：backend venv python 编译 version.py + tests/release/test_version_consistency.py 全绿（版本一致性六处校验不受影响）；README 变更 diff 逐块复核。
 - 未执行 Git 提交（4 文件在工作区待用户指示）。
+
+## 2026-09-21（续四）：v1.0.6 Docker 镜像构建并推送 Docker Hub（dockerhub-push-v1.0.6）
+
+- 输入：用户要求镜像制品上传 strainthomas/btdeck-backend、strainthomas/btdeck-frontend；本机未登录，用户自行 docker login 后执行推送。
+- 唯一前端构建（release 纪律）：宿主 Node 24 与锁定线 22 不符 → 以 digest 锁定 node:22-bookworm-slim + USTC 源装 python3 造 btdeck-fe-builder 临时容器，宿主用户身份运行 scripts/release/build_frontend.py——365 文件，frontend manifest sha256=a7ecfd113cae…，meta 记录 node v22.23.2/npm 10.9.8。
+- 镜像构建：./build-images.sh --release（干净工作区，data/ 属噪音前缀不致 dirty）。网络三坑逐一绕行：①官方 apt/PyPI 直连限速 43kB/s → BTDECK_APT_MIRROR=mirrors.ustc.edu.cn；②USTC pypi 包文件重定向清华 403 → BTDECK_PIP_INDEX_URL=阿里云；③会话超时两次杀掉前台构建 + pkill 自匹配误杀壳 → 后台 nohup + 日志轮询重跑。
+- 产物与身份：btdeck-backend a7e617da4727（480MB）/ btdeck-frontend ab849821f403（237MB）；双镜像 build-info 一致 1.0.6@6e68fbe、dirty=False、git_tag v1.0.6、alembic_head d1e2f3a4b5c6、frontend_manifest_sha256 同源 a7ecfd11…；OCI label 强校验通过，镜像 ID 已记录 release/build/docker-images.txt。
+- 运行时冒烟：共享网络组合启动——backend /health/live 身份块完整；frontend 200 且线上 index.html sha256=28ba4efb… 与 manifest 逐字节一致；nginx→backend /api 代理通。前端镜像单独启动因 upstream btdeck-backend 解析失败退出属预期（需 compose 网络配套）。
+- 推送与复核：四标签（backend/frontend × v1.0.6/latest）全部推送成功，push digest 与本地镜像 ID 一致；shell 直连 registry 复核被网络阻断，改 docker pull 回拉验证 Image is up to date；registry digest 已补记 release/build/docker-images.txt。
+- 注意：本批镜像身份为 dev@6e68fbe（含发布说明提交，早于 PR #6 合并与 v1.0.6 正式标签）；若正式 RC 门禁按受保护标签重出制品，Hub 上本批应视为预发布/晋级前占位，届时须对齐 digest 或重新推送。
+- 未执行 Git 提交（progress.md 与 release/build/ 为忽略区/待指示；docker-images.txt 在 gitignored release/build/ 下不入库）。
