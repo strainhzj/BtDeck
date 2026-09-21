@@ -7930,3 +7930,9 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 推送与复核：四标签（backend/frontend × v1.0.6/latest）全部推送成功，push digest 与本地镜像 ID 一致；shell 直连 registry 复核被网络阻断，改 docker pull 回拉验证 Image is up to date；registry digest 已补记 release/build/docker-images.txt。
 - 注意：本批镜像身份为 dev@6e68fbe（含发布说明提交，早于 PR #6 合并与 v1.0.6 正式标签）；若正式 RC 门禁按受保护标签重出制品，Hub 上本批应视为预发布/晋级前占位，届时须对齐 digest 或重新推送。
 - 未执行 Git 提交（progress.md 与 release/build/ 为忽略区/待指示；docker-images.txt 在 gitignored release/build/ 下不入库）。
+
+## 2026-09-21（续五）：compose 切换 Docker Hub 官方镜像 + master 打 v1.0.6 标签（tag-v1.0.6）
+
+- docker-compose.yml：backend/frontend `image:` 由本地 `btdeck-*:latest` 改为 `strainthomas/btdeck-{backend,frontend}:v1.0.6`（Hub 官方镜像，版本标签而非 latest，对齐发布纪律 §0.5）；保留 build: 段供本地源码构建（compose up --build 覆盖）。`docker compose config` 校验通过。
+- 分支流转：PR #6 已合并（9b48e03，CI 双绿）→ dev 提交续四记录（f7cf3a0）并合并 master（15f0686）→ compose 变更提交 → 推 dev → master 合并 dev → 在 master 打 annotated tag v1.0.6（"Release v1.0.6"）并推送。
+- 身份口径提示：Hub 镜像身份为 1.0.6@6e68fbe，tag 落在含 compose 变更的合并提交上；若后续 RC 门禁按受保护标签全量重出制品，需重出镜像对齐 digest。
