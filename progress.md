@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-21：两项 UI 修复（移动下载器表单地址上移 + 登录页语言切换统一胶囊）
+
+- **范围（用户确认两项假设）**：①移动端新增/设置下载器时地址应排在端口上方（桌面布局不动）；②登录页中英文切换按钮与主题切换器重叠（渲染问题）且与登录后 Navbar 形态不一致，统一为 Navbar 同款下拉胶囊。
+- **移动表单重排（`views/downloader/components/DownloaderSettingsDialog.vue`）**：根因连接配置区 DOM 行序为 昵称|端口 / 地址|类型，≤780 折单列后呈 昵称→端口→地址。仅 CSS 修复：连接卡（新附 `.connection-card`）flex column + el-row `display:contents` + 四列新附 `col-*` class 按 order 重排为 昵称→地址→端口→类型→HTTPS；行盒消失后 gutter 负边距失效，卡片水平内边距 12px→4px 补偿对齐其他卡片。桌面双列布局零变化。
+- **登录页语言切换（`views/login/index.vue`）**：重叠根因为 `.lang-selector` 绝对定位魔法偏移 `right: calc(--spacing-lg + 52px)` 撞上带文字的主题胶囊（~110px+）。改为 Navbar 同款 el-dropdown（languages 图标 + 当前语言自名 + chevron，选项语言自名），语言+主题收进 `.login-topbar` 右上角 flex 容器；动作源不变（handleLanguageSelect→SetLanguage + resolvePageTitle），navbar-language-switcher.spec 登录页契约锚点全保留。
+- **验证**：前端 typecheck / lint 三项 / build 全绿；全量 Jest **124 套 1813/1814**——唯一失败 i18n-leftover-guard（`src/types/scheduled-tasks.ts:23` 注释「失败」）经 **stash 对照证实为 HEAD 存量**，与本批无关；相关套件（navbar-language-switcher/downloader-settings-dialog-init/mobile-downloader×2/downloader-settings×2/downloader-settings-mobile-layout）全绿。
+- **坑**：本仓工作区文件为 LF，但本机 git autocrlf 会在 stash/checkout 时写入 CRLF；编辑工具写入与 stash pop 均会引入 \r\n，导致直读源码的正则契约（如 downloader-settings-dialog-init 的 780 媒体块锚点 `\n  }\n\}`）红——改后/还原后需 `sed -i 's/\r$//'` 规范化再跑测试。
+- **文档**：feature_list 新增 ui-fixes-2026-09-21（done + evidence）；roadmap 三处同步（根 README 本次新增、views README 下载器/登录两行）；session-handoff 更新。未执行 Git 提交（待用户指令）。
+
+---
 ## 2026-09-20（P7 收口·前置准备）：全量回归证据 + 验收清单产出
 
 - **自动化回归（本轮实测）**：后端 `pytest -q --cov=app --cov-fail-under=40`（CI 同参数）**4832 passed / 17 skipped / 0 failed**，覆盖率 65.38%；前端全量 Jest **124 套 1814 例**、typecheck、lint 三项、build 全绿；根 `./init.sh`（ci）通过。P6-5 后零回归。

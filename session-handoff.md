@@ -1,3 +1,23 @@
+## 2026-09-21 交接：两项 UI 修复完成（未提交，待用户指令）
+
+### 已完成（用户确认两项假设后实施）
+
+- **移动下载器表单重排**：`DownloaderSettingsDialog.vue` 连接配置卡 ≤780 折单列时顺序改为 昵称→地址→端口→类型→HTTPS（flex column + el-row display:contents + col-* order；卡片水平内边距 12px→4px 补偿 gutter）；桌面双列零变化。
+- **登录页语言切换**：`login/index.vue` 改 Navbar 同款下拉胶囊（languages 图标+当前语言+chevron），语言+主题收进右上角 `.login-topbar` flex 容器，根除旧 52px 魔法偏移与主题胶囊重叠；动作源与 navbar-language-switcher.spec 契约锚点不变。
+- **验证**：typecheck / lint 三项 / build / 全量 Jest 1813/1814（唯一红为 i18n-leftover-guard，stash 对照证实 HEAD 存量，指向 `src/types/scheduled-tasks.ts:23`，待后续会话处理）。
+- **文档**：feature_list 新增 ui-fixes-2026-09-21（done）；progress/roadmap/handoff 已同步。
+
+### 下一步
+
+1. 用户浏览器/手机实测两项 UI 效果（375×812 /m/downloader/settings/new 与桌面 /login 中英切换+主题切换不重叠）。
+2. 存量红：i18n-leftover-guard 的 scheduled-tasks.ts 注释中文命中（P6-5 后某会话引入，与双语审计集翻转相关），需单独批次决定入白名单或键化。
+3. 本批未 Git 提交；另有前会话遗留未提交改动（frontend/README.md、package.json、serve-demo.mjs 等 demo 相关）一并待用户处置。
+
+### 坑位（下会话注意）
+
+- 本机 git autocrlf：stash/checkout/编辑写入会引入 CRLF，直读源码的正则契约会红——改后需 `sed -i 's/\r$//'` 规范化两文件。
+
+---
 ## 2026-09-20 交接：桌面双语 P6-5 收口批完成（已提交 4cbaccc + d1295e2；推送由用户自行执行）
 
 ### 已完成（用户确认四决策：三部分全做/死代码删除/banner 翻译/p6 不标 done）

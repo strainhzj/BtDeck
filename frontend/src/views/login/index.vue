@@ -7,23 +7,31 @@
       <div class="bg-circle bg-circle-3"></div>
     </div>
 
-    <!-- 主题切换器 -->
-    <div class="theme-selector">
+    <!-- 顶栏：语言 + 主题切换（flex 并排，避免与主题胶囊重叠） -->
+    <div class="login-topbar">
+      <!-- 语言切换（与登录后 Navbar 同款胶囊下拉；选项用语言自名，不随界面语言翻译；切换后刷新页面标题） -->
+      <el-dropdown class="lang-selector" trigger="click" @command="handleLanguageSelect">
+        <div
+          class="lang-wrapper"
+          :aria-label="$t('navigation.navbar.language')"
+          :title="$t('navigation.navbar.language')"
+        >
+          <LucideIcon name="languages" :size="18" :stroke-width="1.8" />
+          <span class="lang-current">{{ localeLabels[activeLocale] }}</span>
+          <LucideIcon name="chevron-down" :size="12" :stroke-width="1.8" class="lang-chevron" />
+        </div>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item
+            v-for="locale in supportedLocales"
+            :key="locale"
+            :command="locale"
+            :class="{'lang-active': locale === activeLocale}"
+          >
+            {{ localeLabels[locale] }}
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
       <theme-switcher />
-    </div>
-
-    <!-- 语言切换（选项用语言自名，不随界面语言翻译；切换后刷新页面标题） -->
-    <div class="lang-selector">
-      <button
-        v-for="locale in supportedLocales"
-        :key="locale"
-        type="button"
-        class="lang-option"
-        :class="{'lang-option-active': locale === activeLocale}"
-        @click="handleLanguageSelect(locale)"
-      >
-        {{ localeLabels[locale] }}
-      </button>
     </div>
 
     <!-- 登录卡片 -->
@@ -373,44 +381,48 @@ export default class extends Vue {
   }
 }
 
-// 主题切换器
-.theme-selector {
+// 顶栏（右上角语言 + 主题并排；flex 布局天然防重叠，替代旧绝对定位魔法偏移）
+.login-topbar {
   position: absolute;
   top: var(--spacing-lg);
   right: var(--spacing-lg);
   z-index: 10;
-}
-
-// 语言切换器（与主题切换器同一顶栏带，紧邻其左侧）
-.lang-selector {
-  position: absolute;
-  top: var(--spacing-lg);
-  right: calc(var(--spacing-lg) + 52px);
-  z-index: 10;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
 }
 
-.lang-option {
-  padding: 6px 10px;
-  font-size: 13px;
-  line-height: 1;
-  color: var(--color-text-secondary, #6B7280);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md, 8px);
+// 语言切换器（与登录后 Navbar 同款胶囊形态）
+.lang-selector {
   cursor: pointer;
+}
+
+.lang-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 20px;
+  color: var(--color-text-secondary, #6B7280);
   transition: all var(--transition-base, 200ms);
 
   &:hover {
-    color: var(--color-text-primary, #1F2937);
     background: var(--color-bg-hover, #F3F4F6);
+    color: var(--color-text-primary, #1F2937);
   }
 }
 
-.lang-option-active {
-  color: var(--color-primary, #2563EB);
-  border-color: var(--color-primary, #2563EB);
+.lang-current {
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lang-chevron {
+  color: var(--color-text-tertiary, #9CA3AF);
 }
 
 // 登录卡片

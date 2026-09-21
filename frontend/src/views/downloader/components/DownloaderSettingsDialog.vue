@@ -78,9 +78,9 @@
                 <LucideIcon name="cable" :size="18" :stroke-width="1.8" class="section-icon" />
                 {{ $t('downloader.dialog.connectionConfig') }}
               </div>
-              <div class="form-section-card">
+              <div class="form-section-card connection-card">
                 <el-row :gutter="16">
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-nickname">
                     <el-form-item :label="$t('downloader.dialog.nickname')" prop="nickname">
                       <el-input
                         v-model="formData.nickname"
@@ -93,7 +93,7 @@
                       </el-input>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-port">
                     <el-form-item :label="$t('downloader.dialog.port')" prop="port">
                       <el-input-number
                         v-model="formData.port"
@@ -107,7 +107,7 @@
                 </el-row>
 
                 <el-row :gutter="16">
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-host">
                     <el-form-item :label="$t('downloader.dialog.host')" prop="host">
                       <el-input
                         v-model="formData.host"
@@ -120,7 +120,7 @@
                       </el-input>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-type">
                     <el-form-item :label="$t('downloader.dialog.type')" prop="downloader_type">
                       <el-select
                         v-model="formData.downloader_type"
@@ -136,7 +136,7 @@
                 </el-row>
 
                 <el-row :gutter="16">
-                  <el-col :span="12">
+                  <el-col :span="12" class="col-ssl">
                     <el-form-item label="HTTPS" prop="is_ssl">
                       <div class="switch-control">
                         <span class="switch-label-text">{{ formData.is_ssl === '1' ? $t('downloader.dialog.sslOn') : $t('downloader.dialog.sslOff') }}</span>
@@ -2355,6 +2355,33 @@ export default class DownloaderSettingsDialog extends Vue {
   /* 基本信息内层 el-row 双列（下载器名/类型等）整段手机宽度折单列 */
   .workspace-basic-form ::v-deep .el-col {
     width: 100%;
+  }
+
+  /* 连接配置卡：地址上移至端口上方（2026-09 用户反馈，仅手机重排，桌面双列布局不变）
+     DOM 行序为 昵称|端口 / 地址|类型，折单列后呈 昵称→端口→地址→类型，与
+     「地址在端口上方」的填写直觉不符；行容器 display:contents 让各列直接参与
+     卡片 flex 排序，按 order 重排为 昵称→地址→端口→类型→HTTPS。行盒消失
+     后 el-row gutter 的负边距随之失效，卡片水平内边距 12px→4px 补偿，保持
+     输入框与其他卡片（认证信息等）左右边缘对齐。 */
+  .connection-card {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 4px;
+
+    ::v-deep .el-row {
+      display: contents;
+
+      &::before,
+      &::after {
+        display: none;
+      }
+    }
+
+    ::v-deep .col-nickname { order: 1; }
+    ::v-deep .col-host { order: 2; }
+    ::v-deep .col-port { order: 3; }
+    ::v-deep .col-type { order: 4; }
+    ::v-deep .col-ssl { order: 5; }
   }
 
   .footer-hint {

@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-20",
+  "last_updated": "2026-09-21",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,37 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "ui-fixes-2026-09-21",
+      "name": "两项 UI 修复：移动端下载器表单地址上移至端口上方 + 登录页语言切换统一 Navbar 同款胶囊",
+      "description": "用户反馈两项：①移动端（/m/downloader/settings/:id|new 整页复用 DownloaderSettingsDialog）连接配置区折单列后顺序为 昵称→端口→地址→类型，地址排在端口下方与填写直觉不符；②登录页语言切换为两个平铺文字按钮且绝对定位魔法偏移（right: calc(--spacing-lg + 52px)）与带文字的主题切换胶囊（约 110px+ 宽）重叠，且形态与登录后 Navbar 的图标+当前语言+下拉箭头胶囊不一致。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "ui-fixes.1",
+          "name": "移动端连接配置卡字段重排：地址在端口上方（桌面双列布局不变）",
+          "description": "仅 CSS 实现：≤780 媒体块内连接配置卡（.connection-card）改 flex column，el-row display:contents 让各列直接参与卡片排序，按 order 重排为 昵称→地址→端口→类型→HTTPS；行盒消失后 gutter 负边距失效，卡片水平内边距 12px→4px 补偿保持与其他卡片左右对齐。桌面布局零变化（不动 DOM 顺序，仅附加 col-* class）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue"
+          ],
+          "evidence": "npm run typecheck/lint/build 全绿；全量 Jest 124 套 1813/1814（唯一失败 i18n-leftover-guard 为 HEAD 存量，stash 对照证实与本批无关）；downloader-settings-dialog-init 780 媒体块源码契约锚点保持绿。"
+        },
+        {
+          "id": "ui-fixes.2",
+          "name": "登录页语言切换改 Navbar 同款下拉胶囊 + 顶栏 flex 消除重叠",
+          "description": "两个平铺按钮（中文/English）改为与 Navbar 完全同款 el-dropdown：languages 图标 + 当前语言自名 + chevron-down 胶囊，下拉选项语言自名；语言与主题切换收进 .login-topbar 右上角 flex 容器（gap 布局）替代两个独立绝对定位，根除 52px 魔法偏移重叠。动作源不变（handleLanguageSelect→AppModule.SetLanguage + isSupportedLocale 守卫 + resolvePageTitle 刷新标题），navbar-language-switcher.spec 登录页源码契约锚点（class=\"lang-selector\" 等）全部保留。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/login/index.vue"
+          ],
+          "evidence": "navbar-language-switcher.spec（登录页语言入口契约）+ i18n-locale + i18n-leftover-guard（登录页无新增中文）全绿；typecheck/lint/build 全绿。"
+        }
+      ]
+    },
     {
       "id": "desktop-bilingual-20260918",
       "name": "桌面 Web 中英双语（核心试用 M1 → 全部桌面 M2）",
