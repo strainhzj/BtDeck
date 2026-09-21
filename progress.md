@@ -7906,3 +7906,16 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 结果：btdeck-backend:latest 475MB（符合 <550MB 目标）+ btdeck-frontend:latest 236MB；tar 导出 116M/51M；OCI label 双镜像一致 v1.0.6@7e275c5cb8d2；悬空镜像已清理。
 - 本次运行模式说明：①部署禁用（无 SSH 密钥且无 .btdeck-deploy-credentials.sh，非交互会话无法输密码；跑完已恢复 DEFAULT_DEPLOY_ENABLED=1）；②BTDECK_ALLOW_DIRTY_IDENTITY=1（工作区含 .gitignore/.bat 变更未提交，严格模式会拦截；dirty=true 为 WIP 身份，/health/ready 会 503，正式部署前需先提交再重跑）。
 - 后续待办：干净工作区重跑获得有效身份；如需远程部署创建 .btdeck-deploy-credentials.sh（export SSH_PASSWORD=...）并交互式运行。
+
+## 2026-09-21（续三）：v1.0.6 发布说明拟定与落盘（release-notes-v1.0.6）
+
+- 输入：用户要求发布 v1.0.6 并先拟定发布说明。调研 v1.0.5 标签（2026-08-23，29c6f6f）以来 352 提交（763 文件，+145k/-17.6k），按 feature_list/PLANS 归纳为四大主题：安卓双模式客户端（v1.0.6-dual-mode-client）、移动端全面移动化（mobile-ux-enhancements/mobile-ux-fixes 及 09-08~12 批次）、桌面中英双语（desktop-bilingual-20260918，P0~P6 代码批全完成）、发布工程加固（release-artifact-equivalence-gate W0~W6 收口）。
+- 草稿经用户四点确认：①README 版本历史 + GitHub Release 正文两者都要；②安卓 APK 正常独立版本号发布、不加注 debug 签名说明；③桌面双语 P7 人工验收已通过；④MCP 服务（pending）不提及。
+- 落盘四处：
+  - `backend/app/version.py`：v1.0.6 VERSION_HISTORY 占位补全（release_date 2026-09-21、summary、完整 content 九节，v1.0.5 同构）；
+  - `docs/release/v1.0.6.md`（新增）：GitHub Release 正文底稿，与 version.py content 保持一致，头部注明同步义务；
+  - `README.md`：版本历史表加 v1.0.6 行（已发布 2026-09-21）+ v1.0.6 更新亮点小节（v1.0.5 同风格）+ 版本号唯一输入说明改指 release/release-config.json + 构建产物示例名更新（Windows setup/Linux 包 v1.0.6、Android APK 0.2.5）；
+  - `progress.md`：本条目。
+- 数据库变更口径：v1.0.5→HEAD 新增 3 个 Alembic 迁移（c1d2e3f4a5b6 孤儿 Schema 自愈、b3e5f7a9c1d2 查询模板 preset_key、d1e2f3a4b5c6 设置模板 preset_key），发布说明数据库变更节如实登记。
+- 验证：backend venv python 编译 version.py + tests/release/test_version_consistency.py 全绿（版本一致性六处校验不受影响）；README 变更 diff 逐块复核。
+- 未执行 Git 提交（4 文件在工作区待用户指示）。
