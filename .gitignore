@@ -117,3 +117,7 @@ release/evidence/
 
 # Demo dist 本地恢复产物（演示环境回滚用 zip，勿入库；2026-09-06 曾被 git add frontend/ 误带入后剔除）
 frontend/BtDeck-demo-dist-*.zip
+
+# 2026-09-21：本地构建工具链（用户要求忽略）：容器镜像定义与 ISCC 包装脚本
+deploy/docker/
+deploy/iscc
