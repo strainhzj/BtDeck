@@ -12,6 +12,14 @@
 - **坑**：①`is_mcp_api_key_format` 初版把 `"A-Za-z0-9_-"` 当正则字符类做成员检查（实际是字面串成员）——43 位 base64url 全被误判，契约测试当场抓住，改 `re.fullmatch`；②`secrets.token_urlsafe(32)` 产出恰 43 字符（无 padding），与常量自洽；③demo-request.spec 行内类型字面量的 member-delimiter-style 规则是「单行 comma/多行 none」，两种写法交替报错，最终单行 comma 通过；④tests/api/test_mcp_apikey.py 的 `_rotate` 助手初版 `headers or _auth()` 把 `{}` 当缺省导致 401 用例拿到 200；⑤`decrypt()` 失败原样返回密文（encryption.py 兼容通道）——查看出口必须以密钥格式自检兜底，否则 secret_key 轮换后会把 `sm4:hex...` 当密钥返回。
 - **待办**：MCP-G3/G11 门禁片段随下次发布制品流程由 aggregate_mcp_gates.py 汇聚重跑（runbook §8.2 配方已就位）；Git 提交待用户指示。
 
+### 2026-09-22 收尾：完整 CI + 推送（3 提交，远端双 job 全绿）
+
+- **提交**（用户指示「请提交修改」后执行，未混入无关改动）：`0125aef` feat(bilingual) W5 代码+测试（26 文件 +1841/-53）→ `1eb0ed9` docs 计划/威胁模型/runbook/roadmap/feature_list/progress/handoff（17 文件 +372/-24）→ `4b9df77` fix(ci) lint_btdeck BTD103 白名单登记（+12）。
+- **完整 CI 复跑（regression.yml 同参数）抓出并修复一个真问题**：`scripts/lint_btdeck.py --show-allowed` 拦下 4 个 BTD103 启发式误报（新常量/枚举名含 apikey：contracts.py MCP_APIKEY_CONFIG_KEY、audit_enums.py MCP_APIKEY_ROTATE/VIEW、mcp_apikey_service.py MCP_APIKEY_DESCRIPTION）——CI 架构检查步骤会红。按既有先例（mcp/errors.py McpErrorCode、principal.py REASON_*）以文件级白名单登记并注明理由（稳定标识符非密钥材料），lint exit 0（15 白名单 0 阻塞）；black 对该脚本的重排为存量差异（脚本不受 black 门禁管辖），已回退无关重排仅留 +12 行。
+- **本地全量**：后端 `pytest --cov=app --cov-fail-under=40` **5253 passed / 18 skipped / 0 failed**（cov 66.91%）+ lint exit 0；前端 typecheck、test:coverage（125 套 1844 例，阈值 40%）、build 全绿。
+- **推送**：`fb80de1..4b9df77 dev -> dev`（HTTPS 凭据本次可用；历史 SSH 替代键 /home/huangzj/.ssh 在本机不存在，piagent 自有密钥无仓库写权限）。
+- **远端 CI**（run 35746261336，push 触发）：**Backend ✓ 10m22s + Frontend ✓ 3m27s 双 job 全绿**。登记存量抖动项：前一推送（fb80de1）曾因 AdvancedMultiSelect.performance.spec 的 500ms 阈值在共享 runner 上跑到 785ms 而红（环境抖动，与本批无关；3c7d6c0 与本次均通过），后续再红优先怀疑该性能例。
+
 ---
 ## 2026-09-21：roadmap 全量维护（审计 + 三层同步 + 补录，代码零改动）
 

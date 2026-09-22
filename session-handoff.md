@@ -10,10 +10,10 @@
 
 ### 下一步
 
-1. Git 提交（用户指示）：建议拆 `feat(bilingual): MCP 服务密钥 + 目录双语化（W5）` 与 `docs: W5 计划/威胁模型/runbook/roadmap/feature_list 同步` 两提交；工作区另有用户本地改动勿混入。
-2. MCP-G3/G11 门禁片段随下次发布汇聚重跑（aggregate_mcp_gates.py；runbook §8.2 配方）。
-3. 浏览器人工验收：设置页密钥卡三态/复制/旋转确认 + 英文界面能力描述 + 移动端（views/mobile/settings 包装自动同源）。
-4. 既有待办不变：i18n-leftover-guard 存量红（scheduled-tasks.ts:23）、R01～R06 签认、P7 收口、Android stage-server.py。
+1. ~~Git 提交~~ **已完成**（2026-09-22）：0125aef feat + 1eb0ed9 docs + 4b9df77 fix(ci)，已推送 origin/dev（fb80de1..4b9df77）；远端 CI run 35746261336 双 job 全绿（Backend 10m22s / Frontend 3m27s）。
+2. 浏览器人工验收（自动绿≠人工通过）：设置页密钥卡三态/复制/旋转确认 + 英文界面能力描述 + 移动端（views/mobile/settings 包装自动同源）。
+3. MCP-G3/G11 门禁片段随下次发布汇聚重跑（aggregate_mcp_gates.py；runbook §8.2 配方）。
+4. 既有待办不变：i18n-leftover-guard 存量红（scheduled-tasks.ts:23）、R01～R06 签认、P7 收口、Android stage-server.py；另注意 AdvancedMultiSelect.performance.spec 为共享 runner 环境抖动项（fb80de1 曾红、3c7d6c0/本次绿）。
 
 ### 坑位（下会话注意）
 
