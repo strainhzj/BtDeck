@@ -35,7 +35,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L13，`error_reason` Text L25，`auxiliary_seed_count` Integer L28)、`TrackerInfo`(L257)、`TrackerKeywordConfig`(L315)、`TrackerMessageLog`(L401)、`TrackerReannounceConfig`(L490) |
-| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 48 成员) + `AuditOperationResult`(L257) |
+| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 55 成员；✨2026-09-22 实测校准 48→53→55，W1/W3 MCP 两项 + MoviePilot 三项 + W5 服务密钥查看/刷新两项为历史漂移补正) + `AuditOperationResult`(L257) |
 | 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L22) 种子审计日志表 |
 | 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L39 与 `auxiliary_seed_count` L46 自动输出为 camelCase |
 | Tracker VO tracker-vo | `trackerVO.py` | `TrackerInfoVO`(L5) |
@@ -55,7 +55,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 认证依赖 auth-dependency | `dependencies.py` | 🔵 FastAPI 认证依赖：`AuthenticatedUserInfo`(L23) + `require_authenticated_user`(L83) + `get_current_user`(L102) |
-| 认证内核 auth-principal ✨2026-09-05 | `principal.py` | 协议无关认证内核：`AuthenticatedPrincipal`(L29) + `authenticate_access_token(token, db)`(L49)，统一 token→principal 并补 is_active/must_change_password 校验（稳定拒绝原因码），HTTP 依赖语义不变 |
+| 认证内核 auth-principal ✨2026-09-05 | `principal.py` | 协议无关认证内核：`AuthenticatedPrincipal`(L29) + `authenticate_access_token(token, db)`(L49)，统一 token→principal 并补 is_active/must_change_password 校验（稳定拒绝原因码），HTTP 依赖语义不变；✨2026-09-22 W5：抽 `build_principal_for_username(username, db, *, token, payload)`(L73)——用户状态加载两路共用（JWT 全链 + MCP 服务密钥路径），密钥路径不传原始密钥（token 空串、payload 仅 auth_method 溯源） |
 | JWT/TOTP auth-utils | `utils.py` | JWT + TOTP：`create_access_token`(L54)、`verify_access_token`(L66)、`generate_totp_secret`(L134)、`verify_totp`(L139) |
 | 密码/SM4 auth-security | `security.py` | 密码 + SM4：`generate_sm4_key`、`sm4_encrypt/decrypt`、`verify_password`、`get_password_hash` |
 | 用户 ORM auth-model | `models.py` | ORM：`User`(L11)、`LoginLog`(L45)、`Config`(L57) |

@@ -1,4 +1,28 @@
-## 2026-09-21 交接：roadmap 全量维护完成（代码零改动，未提交）
+## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
+
+### 已完成（用户要求「先子代理独立审查计划」，审查结论需修改后执行，P0 四项补齐后实施）
+
+- **需求 1（服务密钥）**：设置页 MCP 面板新增「服务密钥（API Key）」卡——生成/查看（掩码+复制）/刷新（危险确认，旧密钥立即失效）；后端 `mcp.apikey.v1` 配置键（SHA-256 哈希=认证事实源 + SM4 加密副本=查看出口 + revision CAS + 归属追溯，无迁移）；`GET/POST /api/v1/mcp/apikey[/rotate]`；transport 认证新增 `btdmcp_` 前缀路径（与 Web JWT 并存，`AUTH_API_KEY_INVALID` 稳定码）。
+- **需求 2（i18n 缺口）**：能力目录描述中英成对（contracts `description_en` → catalog `descriptionEn` → 面板按 locale 选取）；已排查 MCP 面其余文案（面板壳层/风险/msg/页签/errors.byCode）双语齐全；协议面（工具描述/错误文案）与 demo fixtures 按范围外维持。
+- **安全设计**：secret_key 轮换后密文失效 ⇒ 查看置 `unreadable`（认证不受影响、rotate 自愈）；查看仅 active 写审计；明文不驻留 principal/日志/审计/浏览器存储；密钥入脱敏字典+泄漏 canary；威胁模型登记「app.db+secret_key 泄露 ⇒ 密钥可还原」。
+- **验证**：后端全量 5249 passed/0 failed + mypy/black/flake8 净；前端 typecheck/lint/build + 全量 Jest 125 套 1844 例 + init.sh --ci 全绿；i18n parity/leftover 门禁通过。
+- **文档**：计划 W5+§12、威胁模型 S3/E3、key-rotation-runbook §2.1、mcp-runbook §3.1/§5/§6/§8.2、roadmap 12 处、feature_list 新 feature、progress 详录。
+
+### 下一步
+
+1. Git 提交（用户指示）：建议拆 `feat(bilingual): MCP 服务密钥 + 目录双语化（W5）` 与 `docs: W5 计划/威胁模型/runbook/roadmap/feature_list 同步` 两提交；工作区另有用户本地改动勿混入。
+2. MCP-G3/G11 门禁片段随下次发布汇聚重跑（aggregate_mcp_gates.py；runbook §8.2 配方）。
+3. 浏览器人工验收：设置页密钥卡三态/复制/旋转确认 + 英文界面能力描述 + 移动端（views/mobile/settings 包装自动同源）。
+4. 既有待办不变：i18n-leftover-guard 存量红（scheduled-tasks.ts:23）、R01～R06 签认、P7 收口、Android stage-server.py。
+
+### 坑位（下会话注意）
+
+- `is_mcp_api_key_format` 曾把字符类字符串当成员集合（43 位 base64url 全误判）——正则必须 `re.fullmatch`。
+- `decrypt()` 失败原样返回密文：任何「解密后按值决策」的出口都必须格式自检。
+- demo-request.spec 行内类型字面量 delimiter 规则：单行 comma、多行 none。
+- tests 助手 `headers={}` 会被 `or` 当缺省——认证负向用例用 `is not None` 判定。
+
+---## 2026-09-21 交接：roadmap 全量维护完成（代码零改动，未提交）
 
 ### 已完成（用户确认全量方案 A+B+B+ + C1/C2，roadmap-maintain 技能二次确认后实施）
 

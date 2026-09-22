@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-22：MCP 服务密钥（API Key）查看/刷新 + 能力目录双语化（feature mcp-service-apikey-2026-09-22，W5 波次，全绿未提交）
+
+- **范围（用户确认「先子代理独立审查计划」后实施）**：①系统设置 MCP 面板新增服务密钥查看/刷新（供其它 agent 对接）；②MCP 相关文本 i18n 缺口补齐（能力目录描述英文界面原为中文直显）。审查结论「需修改后执行」，P0 四项（错误码决策/威胁模型登记/已封版 feature 文档纪律/demo 失败面）全部纳入。
+- **后端**：`contracts.py` 增 `mcp.apikey.v1` 键常量与密钥 helper（generate/hash/格式校验/前缀路由）+ CapabilitySpec 增 `description_en`（6 项成对）+ 脱敏字典增 `mcp_api_key`；`errors.py` 增 `AUTH_API_KEY_INVALID`（枚举/HTTP_ALIGNMENT/DEFAULT_MESSAGES 三件套，validate_alignment_completeness 覆盖）；新建 `app/services/mcp_apikey_service.py`（三态视图 absent/active/unreadable、rotate revision CAS、resolve_owner 恒定哈希比对、SM4 解密格式自检）；`mcp_settings.py` 增 `GET /mcp/apikey`（active 才返回明文并写查看审计）与 `POST /mcp/apikey/rotate`（409+reasonCode MCP_APIKEY_CONFLICT、previousOwner/rotatedBy 审计、禁记密钥本体）；`mcp/auth.py` 按 `btdmcp_` 前缀路由密钥路径（与 JWT 并存）；`principal.py` 抽 `build_principal_for_username` 两路共用（密钥路径不持原始密钥）；`redaction.py` 泄漏扫描增密钥 canary；审计枚举增 MCP_APIKEY_VIEW/ROTATE（计数测试校准 53→55）。
+- **前端**：`api/mcp-settings.ts` 增 getMcpApiKey/rotateMcpApiKey + McpApiKeyView 类型 + descriptionEn；`McpSettingsPanel.vue` 服务密钥卡（端点/认证头提示按 origin 动态展示、三态引导、el-input show-password 掩码+复制走 clipboard util、危险确认 $confirm、409 重载、明文仅组件内存）+ capDescription 按 locale 取 descriptionEn；zh/en mcp 包扩 apikey 子树 24 键 + msg 4 键，errors.byCode 扩 2 键；demo 层同形分支（DEMO_MCP_API_KEY 固定演示密钥 + revision CAS + fixtures README 登记）。
+- **关键设计**：哈希=认证唯一事实源（secret_key 轮换后密文失效只影响查看、不影响认证，rotate 自愈）；归属=最近 rotate 者（createdAt/createdBy 保留首次生成）；查看仅 active 写审计（absent/unreadable 不写，避免面板挂载噪音）；协议面（catalog.py 工具描述/errors.py 文案）维持中文。
+- **测试**：新 `tests/api/test_mcp_apikey.py` 21 例（三态/CAS 409/归属漂移/控制面 401·403 门禁/审计禁记密钥/descriptionEn 成对 ASCII）；`tests/mcp/test_auth.py` 扩 12 例（密钥矩阵：有效/错密钥/无行/损坏 JSON/前缀残缺/归属不存在·禁用·强制改密/rotate 即失效/归属改绑/密文损坏下认证仍有效/双认证并存）；`test_contracts.py` 3 例（密钥常量/helper/描述成对）；`test_redaction.py` 1 例（密钥 canary）；前端 `mcp-settings.spec.ts` 16 例（密钥卡七类 + 描述 locale 切换）、`demo-request.spec.ts` 13 例。
+- **验证**：后端全量 `pytest -q --cov=app --cov-fail-under=40` **5249 passed / 18 skipped / 0 failed**（cov 66.91%），mypy/black/flake8 净；前端 typecheck、lint 三项、build、全量 Jest **125 套 1844 例**全绿；根 `./init.sh --ci` 通过；i18n-message-parity 与 i18n-leftover-guard 门禁通过。
+- **文档**：PLANS/mcp-service-capabilities.md W5 波次 + §12 实施记录 + §4.2/4.4/4.5/7/9 同步；威胁模型 §2 资产/S3/E3/缺口 6/§7 回滚/§8 变更记录；key-rotation-runbook §2.1；mcp-runbook §3.1/§5/§6/§8.2 黑盒配方；roadmap 12 处同步（根功能域补 MCP 行 + 元信息、backend api/services/domain、frontend api/views/entry/demo、tests 计数实测 236→256 与 Jest 124→125、perspectives/architecture 认证链）；feature_list.json 新 feature（3 任务 done + evidence）；session-handoff 更新。
+- **坑**：①`is_mcp_api_key_format` 初版把 `"A-Za-z0-9_-"` 当正则字符类做成员检查（实际是字面串成员）——43 位 base64url 全被误判，契约测试当场抓住，改 `re.fullmatch`；②`secrets.token_urlsafe(32)` 产出恰 43 字符（无 padding），与常量自洽；③demo-request.spec 行内类型字面量的 member-delimiter-style 规则是「单行 comma/多行 none」，两种写法交替报错，最终单行 comma 通过；④tests/api/test_mcp_apikey.py 的 `_rotate` 助手初版 `headers or _auth()` 把 `{}` 当缺省导致 401 用例拿到 200；⑤`decrypt()` 失败原样返回密文（encryption.py 兼容通道）——查看出口必须以密钥格式自检兜底，否则 secret_key 轮换后会把 `sm4:hex...` 当密钥返回。
+- **待办**：MCP-G3/G11 门禁片段随下次发布制品流程由 aggregate_mcp_gates.py 汇聚重跑（runbook §8.2 配方已就位）；Git 提交待用户指示。
+
+---
 ## 2026-09-21：roadmap 全量维护（审计 + 三层同步 + 补录，代码零改动）
 
 - **范围（用户确认全量方案 A+B+B+ + C1/C2，并以 roadmap-maintain 技能二次确认）**：docs/roadmap 13 文件，+261/-211 行。

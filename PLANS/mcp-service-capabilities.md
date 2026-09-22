@@ -2,6 +2,7 @@
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
 > **状态**: **已收官（2026-09-09）**：W0~W4 全部落地，六工具 6/6，G0～G11 门禁 12/12 PASS → 聚合 verdict=READY，feature 终态 done（§11）。2026-09-08 完成 W0~W3 + W4 代码/测试/文档面；2026-09-09 W4-d 完成 G10 制品黑盒全矩阵（EXE/DEB/RPM/Docker）+ 锁 pywin32 平台标记根修（b7bba8d）
+> **W5 追加波次（2026-09-22，§12）**：外部 agent 对接所需的「服务密钥（API key）」查看/刷新能力 + 能力目录描述双语化（descriptionEn）。W0~W4 结论不变；本波次为净新增认证路径与配置键，按契约变更流程同步威胁模型与 runbook。
 > **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
@@ -100,7 +101,36 @@ HTTP settings API ─> McpSettingsService ─> configs(mcp.runtime.v1)
 }
 ```
 
-约束：
+W5 追加第二个版本化 JSON 键 `mcp.apikey.v1`（服务密钥，§4.2-2/§12）：
+
+```json
+{
+  "schemaVersion": 1,
+  "keyHash": "<sha256 hex>",
+  "keyEncrypted": "sm4:<hex>",
+  "revision": 1,
+  "createdAt": "...",
+  "createdBy": "admin",
+  "updatedAt": "...",
+  "updatedBy": "admin"
+}
+```
+
+约束（W5）：
+
+- `keyHash` 是认证校验唯一事实源；`keyEncrypted` 仅服务控制面「查看」出口
+  （SM4 可逆副本，与下载器密码同模式；威胁模型 §2/§3 已登记该资产）。
+- 行缺失/JSON 损坏/schemaVersion 未知/关键字段缺失 ⇒ 视图态 `absent`（引导
+  生成），认证拒绝；解密失败或明文不符合 `btdmcp_` 格式（secret_key 轮换后
+  存量密文集体失效场景）⇒ 视图态 `unreadable`：查看拒绝、**认证不受影响**，
+  引导 rotate 自愈（decrypt() 失败原样返回密文，服务层以格式自检兜底）。
+- rotate 携带 `expectedRevision` 走同款 CAS（无密钥行时为 0），冲突 409 +
+  `reasonCode=MCP_APIKEY_CONFLICT` + `data.currentRevision`，杜绝并发
+  last-write-wins 静默覆盖；rotate 后归属=操作者（updatedBy），createdAt/
+  createdBy 保留首次生成信息。
+- 不新建表、无 Alembic 迁移（复用 configs 表，与 mcp.runtime.v1 同模式）。
+
+约束（W1，全局开关）：
 
 - 记录缺失、JSON 损坏、schemaVersion 未知、字段缺失均 fail-closed：全局关闭且全部能力关闭。
 - `PUT /mcp/settings` 必须携带 `expectedRevision`，单事务比较并递增 revision，冲突返回 409。
@@ -137,7 +167,23 @@ HTTP settings API ─> McpSettingsService ─> configs(mcp.runtime.v1)
 - token 缺失、过期、登录密钥不一致、用户不存在/禁用、强制改密中均拒绝。
 - 工具参数中的 `user_id/operator` 一律忽略或拒绝，操作者只能来自 principal。
 
+W5 追加（§12 服务密钥路径，与 JWT 并存）：
+
+- 密钥形态 `btdmcp_` + 43 位 base64url（`secrets.token_urlsafe(32)`）；transport 按前缀
+  路由：命中即走密钥校验（SHA-256 恒定比对 + 归属用户状态校验），其余走 JWT 全链。
+- 密钥归属=生成/刷新的用户（`updatedBy`）；该用户不存在/禁用/强制改密时复用既有
+  `USER_*` 原因码拒绝（principal 内核 `build_principal_for_username` 两条路径共用）。
+- 密钥无效/不存在/行损坏 ⇒ 稳定错误码 `AUTH_API_KEY_INVALID`（与 JWT 失败分开，
+  agent 侧可区分「密钥需刷新」与「会话过期」）。
+- 原始密钥不进入 principal 对象与任何日志/审计明细（`token` 字段传空串，payload 仅
+  溯源标记 `auth_method=api_key`）。
+- 控制面（查看/刷新）仍要求 active 且非强制改密的认证用户（与 settings 端点同门禁，
+  现状无角色概念——威胁模型 E1 现状缺口，引入角色后再收紧）。
+
 ### 4.5 敏感数据最小化与脱敏
+
+W5 追加：服务密钥列入 `REDACTION_DATA_DICTIONARY`（`mcp_api_key`）——永不进入
+MCP 工具输出，泄漏扫描器按 `btdmcp_` 格式 canary 拦截（redaction._MCP_APIKEY_RE）。
 
 MCP 不直接序列化现有 TorrentInfoVO、TrackerInfoVO、ORM 对象或异常对象。每个工具必须输出
 显式 allowlist DTO，并在最终序列化前经过统一 sanitizer 和泄漏扫描器。
@@ -303,6 +349,42 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
 - `backend/tests/release/`
 - `docs/operations/mcp-runbook.md`
 
+### W5：服务密钥（API key）控制面与目录双语化（2026-09-22 追加波次）
+
+背景：W0~W4 的 MCP transport 认证复用 Web 会话 JWT（短时效、登录才有），外部
+agent 无法实用对接；且设置页能力目录描述仅中文，英文界面不可读。
+
+交付：
+
+- 第二个版本化配置键 `mcp.apikey.v1`（§4.2-2）：SHA-256 哈希（认证事实源）+
+  SM4 加密明文副本（仅查看出口）+ revision CAS + 归属追溯；无 Alembic 迁移。
+- 控制面两端点（同 `require_mcp_control_plane_user` 门禁，CommonResponse 信封
+  不变、错误带 `data.reasonCode`）：`GET /mcp/apikey`（三态视图，active 才返回
+  明文并写查看审计）、`POST /mcp/apikey/rotate`（生成/刷新，409 CAS，
+  previousOwner/rotatedBy 入审计）。
+- transport 认证新增密钥路径（`btdmcp_` 前缀路由；`AUTH_API_KEY_INVALID` 稳定码，
+  errors.py 三件套同步）；principal 内核抽出 `build_principal_for_username` 两路共用。
+- 密钥纳入脱敏字典与泄漏扫描 canary；能力目录 `description_en` 成对下发
+  （控制面 `descriptionEn`，前端按 locale 选取；MCP 协议面工具描述维持中文）。
+- 前端：`McpSettingsPanel` 服务密钥卡（端点/认证头提示、掩码+复制、危险确认刷新、
+  三态引导、内存-only 明文）+ zh/en 语言包 + demo 拦截层同形分支。
+- 文档：威胁模型（资产/STRIDE/回滚/变更记录）、key-rotation-runbook（secret_key
+  轮换联动）、mcp-runbook（审计事件/错误码/黑盒配方）、本计划 §12。
+
+预期文件：
+
+- `backend/app/mcp/contracts.py`、`backend/app/mcp/errors.py`、`backend/app/mcp/auth.py`、
+  `backend/app/mcp/redaction.py`、`backend/app/auth/principal.py`
+- `backend/app/services/mcp_apikey_service.py`（新增）、`backend/app/api/endpoints/mcp_settings.py`
+- `backend/app/torrents/audit_enums.py`
+- `backend/tests/api/test_mcp_apikey.py`（新增）、`backend/tests/mcp/test_auth.py`、
+  `backend/tests/mcp/test_contracts.py`、`backend/tests/mcp/test_redaction.py`、
+  `backend/tests/enums/test_audit_enums.py`
+- `frontend/src/api/mcp-settings.ts`、`frontend/src/views/settings/components/McpSettingsPanel.vue`、
+  `frontend/src/i18n/locales/{zh-CN,en}/mcp.ts`、`frontend/src/i18n/locales/{zh-CN,en}/errors.ts`
+- `frontend/src/demo/{demo-request.ts,demo-store.ts,types.ts,fixtures/*}`、
+  `frontend/tests/unit/{mcp-settings,demo-request}.spec.ts`
+
 ---
 
 ## 7. 测试矩阵
@@ -321,6 +403,10 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
   qB/TR 成功/超时、幂等重放。
 - Cron：不存在、禁用、运行中、内置 allowlist、脚本类型、恶意 executor、重复触发、run_id 与审计。
 - 生命周期：MCP 先于 store 就绪、服务关闭、应用 shutdown、在途读写。
+- 服务密钥（W5）：absent/active/unreadable 三态视图；rotate 建行/CAS 409/归属漂移；
+  认证矩阵（有效/错密钥/无行/损坏 JSON/归属用户不存在·禁用·强制改密/rotate 后旧密钥
+  即失效/密文损坏下认证仍有效）；两种认证并存；审计明细禁记密钥本体与哈希；catalog
+  descriptionEn 成对且 ASCII。
 - 制品：源码、Docker、Windows/Linux 打包环境中的默认关闭、部分能力发现和脱敏 smoke。
 
 ---
@@ -347,6 +433,9 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
 3. 回滚代码前保留 `configs.mcp.runtime.v1`；旧版本忽略该键，不影响启动。
 4. 若发现敏感数据泄漏，按安全事件处理：立即全局关闭、轮换疑似暴露 token/passkey、保留脱敏后的
    审计 ID，不在工单/日志复制原始泄漏值。
+5. W5 服务密钥疑似泄露：设置页「刷新服务密钥」（或 `POST /mcp/apikey/rotate`）立即使
+   旧密钥失效（agent 断联即生效）；`configs.mcp.apikey.v1` 行可随代码回滚一并废弃
+   （旧版本忽略该键，不影响启动）。
 5. 已提交的下载器/Cron 副作用不以关闭服务作为自动回滚手段，按各领域既有审计和补偿流程处理。
 
 ---
@@ -480,6 +569,7 @@ verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
 | W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
 | W2 | done（2026-09-08） | 官方 mcp SDK 1.30.0 + streamable HTTP stateless 同进程挂载落地（/mcp 先于 SPA fallback，SDK 缺失 try-import 跳过=不挂载；父 lifespan 手动进入 session_manager.run()）；runtime 双会话工厂+就绪/关闭状态（RUNTIME_NOT_READY）+ fail-closed 配置快照现读；principal 认证接入（映射+未知码兜底）；双门禁（list 过滤/call 复核，别名旧名统一 CAPABILITY_DISABLED）+ FORBIDDEN_ARGUMENT + 契约预算；redaction 全套（tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径/泄漏扫描器/1MiB 预算）。tests/mcp 179 项绿；MCP-G0/G2/G3 片段 PASS（聚合 BLOCKED 待 W3/W4）。SDK 缓存刷新旁路坑：call 装饰器内部以 handler(None) 调 list 处理器——手动注册区分两路径 |
 | W3 | done（2026-09-08，①②③ 三批） | ①高级查询/查询模板/仪表盘三处理器落地（tools/ 包 + conditions 输入巡检：tracker_msg 永拒、tracker_url 仅域名+contains 族；catalog 级 confirm 门禁；模板幂等=进程内 512 LRU + MCP_TOOL_CALL 审计；处理器签名 (spec, principal, arguments, runtime, call_context)）。②等级 4 标记与 Cron 触发（写/高风险）。③分层债收尾（add 家族辅助迁 app/services/torrent_add_helpers，torrent_status 正向依赖，新模块入 async_downloader_calls 守卫）+ torrent_add_file 落地（校验链：路径/URL/磁力先于解码 SERVER_PATH_FORBIDDEN、10/64MiB 双上限 env 钳制、bencode/info hash to_thread；共用 TorrentAddService；TorrentAddResult 扩展领域字段 HTTP 零影响；契约修正 downloader_id integer→string——主键实为 UUID 字符串）。tests/mcp 280 项；G7/G8 片段 PASS，聚合 5/12（余 7 门 W4） |
+| W5 | done（2026-09-22，§12） | 服务密钥查看/刷新（mcp.apikey.v1：哈希+SM4 副本+revision CAS+归属追溯；GET/POST 两端点同控制面门禁；btdmcp_ 前缀认证路径 + AUTH_API_KEY_INVALID；principal 内核抽 build_principal_for_username 两路共用；密钥入脱敏字典+泄漏 canary）+ catalog descriptionEn 成对 + 设置页密钥卡（三态引导/掩码复制/危险确认/内存-only）+ demo 同形分支。测试：后端 test_mcp_apikey 21 例 + test_auth 扩 12 例 + contracts/redaction/enums 锚定；前端 mcp-settings 16 例 + demo-request 13 例。mypy/black/flake8、typecheck/lint/build、全量 pytest 5249 passed、全量 Jest 125 套 1844 例全绿 |
 | W4 | done（2026-09-09，a/b/c/d 四段收官） | G1/G4/G5/G6/G9/G11 PASS（2026-09-08 三段）；G10 PASS（2026-09-09 W4-d）：依赖锁定（mcp~=1.30.0+pyjwt[crypto]~=2.10.1 连动升级，锁 --generate-hashes 重生成）+双 spec hiddenimports+**锁 pywin32 平台标记根修 b7bba8d**（pip-compile 在 Windows 丢 mcp 双分支 win32 约束标记→Linux 三产线 pip --require-hashes 全断；补标记+回归锚定，Windows dry-run+Linux 双实装验证）+**四制品黑盒全矩阵**：EXE（W4-c 构建制品，A 复验+B/C 补齐三段）、Docker（干净树镜像 65bf9a9e 三段）、DEB（本地实构 node22+fpm 容器跑 build-linux.sh，debian:12 解包运行三段）、RPM（与 DEB 二进制逐字节一致 sha256+包内 kind=linux-rpm+A 段）。**聚合 12/12 PASS → verdict=READY**；runbook 交付+§8.1 黑盒三段配方。 |
 
 ### 11.1 前置交付与未闭合边界
@@ -515,3 +605,56 @@ schema v2、fastmcp 评估等）按新 feature 立项。
 每批产出 MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py`
 汇聚（逐门回填转绿，12 门全 PASS → READY），才可更新任务及 Gate 状态。
 
+
+---
+
+## 12. W5 实施记录（2026-09-22）：服务密钥与目录双语化
+
+### 12.1 背景与验收口径
+
+- 背景：W2 transport 认证仅接受 Web 会话 JWT（`X-Access-Token`/`Authorization:
+  Bearer`，受 `ACCESS_TOKEN_EXPIRE_MINUTES` 约束）——外部 agent 长期对接不现实；
+  能力目录描述（`contracts.CAPABILITY_CATALOG.description`）经 `_catalog_meta()`
+  直出中文，英文界面下 6 项能力描述仍为中文。
+- 验收口径：密钥可随时查看（贴给其它 agent 配置）并可刷新（旧密钥立即失效）；
+  英文界面能力描述英文化；G0~G11 既有结论不回退（本波次为净新增面）。
+
+### 12.2 关键决策（独立审查后修订）
+
+| # | 决策 | 结论 | 理由 |
+|---|------|------|------|
+| 1 | 无效密钥错误码 | 新增 `AUTH_API_KEY_INVALID`（errors.py 枚举/对齐表/默认文案三件套 + `validate_alignment_completeness` 覆盖） | agent 侧可区分「密钥需刷新」与「JWT 过期」；契约测试零豁免 |
+| 2 | 密钥存储 | SM4 可逆副本（查看）+ SHA-256 哈希（认证）；威胁模型登记「app.db + secret_key 泄露 ⇒ 密钥可还原」 | 用户明确要求「随时查看」；与下载器密码同存储模式，不新造机制 |
+| 3 | rotate 并发 | revision CAS（409 + `MCP_APIKEY_CONFLICT` + `currentRevision`） | 两个浏览器同时 rotate 的 last-write-wins 会静默断联对方 agent |
+| 4 | 归属模型 | 归属=最近 rotate 者（`updatedBy`）；`createdAt/createdBy` 保留首次生成；审计记 `previousOwner/rotatedBy` | 多用户漂移可追溯；现状无角色（威胁模型 E1），不伪造 RBAC |
+| 5 | 查看审计 | 仅 active（真实明文披露）写 `mcp_apikey_view`；absent/unreadable 不写 | 面板挂载读取不刷审计噪音；敏感披露有痕 |
+| 6 | 协议面文案 | `catalog.py` 工具描述与 `errors.py` DEFAULT_MESSAGES 维持中文 | 协议消费者按稳定工具名/错误码对接；Web UI 面才做双语 |
+| 7 | demo fixtures | 目录描述补 `descriptionEn`（镜像后端数据形状，非 UI 文案）；密钥用固定演示值 | demo 面板 en 模式需正确数据形状；fixtures 本体仍在双语范围外 |
+
+### 12.3 失效模式与自愈（审查发现，已实现）
+
+- **secret_key 轮换联动**：`decrypt()` 失败时原样返回密文（encryption.py 兼容通道
+  语义）——服务层以 `is_mcp_api_key_format` 自检解密结果，不匹配置视图态
+  `unreadable`（查看拒绝、引导刷新），**认证走哈希不受影响**；key-rotation-runbook
+  已补该场景处置（rotate 即自愈）。
+- **无密钥首装语义**：GET 返回 200 + `status=absent`（非 404），前端展示生成引导。
+- **客户端约定**：端点 `/mcp/`（无斜杠 307，W2 实证）+ `Authorization: Bearer
+  btdmcp_...` 或 `X-Access-Token`；UI 端点提示按 `window.location.origin` 动态展示。
+- **明文驻留面**：仅组件内存（禁 localStorage/Vuex）；principal 不持原始密钥；
+  审计明细禁记密钥本体与哈希；服务端日志禁记密钥值。
+
+### 12.4 门禁与证据
+
+- G3（认证）：`tests/mcp/test_auth.py` 扩 12 例（有效/错密钥/无行/损坏 JSON/前缀
+  残缺/归属不存在·禁用·强制改密/rotate 即失效/归属改绑/密文损坏下认证仍有效/
+  JWT 与密钥并存/None 仍 AUTH_REQUIRED）；控制面门禁 `tests/api/test_mcp_apikey.py`
+  401/403 矩阵。
+- G11（审计）：rotate 全量（previousOwner/rotatedBy/revision，禁记密钥）、查看仅
+  active、冲突不写审计。
+- 双语门禁：`i18n-message-parity`（新键 zh/en 成对自动覆盖）、`i18n-leftover-guard`
+  （面板新增区块零硬编码中文；demo 目录在排除区）。
+- 全量：后端 `pytest -q --cov=app --cov-fail-under=40` 5249 passed / 18 skipped /
+  0 failed（覆盖率 66.91%）；mypy/black/flake8 净；前端 typecheck/lint 三项/build、
+  全量 Jest 125 套 1844 例、根 `./init.sh --ci` 全绿。
+- 门禁片段（MCP-G<n>.json）随下次发布制品流程由
+  `scripts/release/aggregate_mcp_gates.py` 汇聚重跑（runbook §8 已补 W5 黑盒配方）。

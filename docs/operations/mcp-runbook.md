@@ -39,6 +39,19 @@
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
   ```
 
+### 3.1 服务密钥（W5：外部 agent 对接）
+
+1. 设置页 → MCP 服务 → 「服务密钥（API Key）」：`absent` 时点「生成服务密钥」，
+   `active` 时密钥默认掩码，可「复制」或悬停眼睛图标查看明文。
+2. 端点：`<实例 origin>/mcp/`（Streamable HTTP；无斜杠会 307）。
+3. 认证头二选一：`Authorization: Bearer btdmcp_...` 或 `X-Access-Token: btdmcp_...`。
+4. 「刷新服务密钥」立即使旧密钥失效（正在使用的 agent 会断联），刷新后需把新密钥
+   重新配置到各 agent；刷新走 revision CAS，并发冲突返回 409，刷新页面重试。
+5. 安全提示（UI 同文）：密钥以可逆加密存储于本机数据库，泄露数据库文件或实例
+   配置密钥等同于泄露该密钥；明文仅在页面内存中展示，不写入浏览器存储。
+6. `unreadable` 态说明实例 `security.secret_key` 已轮换（查看不可用、认证仍有效），
+   刷新生成新密钥即自愈（key-rotation-runbook §2.1）。
+
 ## 4. 紧急关闭（优先级从高到低）
 
 1. **环境 kill switch**（最高优先级，UI 不可覆盖）：
@@ -54,6 +67,10 @@
     （info_id/info_hash/task_code/downloader_id）、结果码与幂等键 sha256 前 16 位——
     **不含工具参数原文、文件内容、领域 payload**。
   - `mcp_settings_update`：控制面 PUT（best-effort）。
+  - `mcp_apikey_view`：服务密钥**明文查看**（仅 active 态真实披露时记录；absent/
+    unreadable 读取不记，避免面板挂载噪音）；detail 只含 revision。
+  - `mcp_apikey_rotate`：服务密钥生成/刷新；detail 含 `revision`/`previousOwner`/
+    `rotatedBy`——**禁记密钥本体与哈希**（防泄露面）。
 - **日志允许面**（`app.mcp` logger）：capability/principal/revision/结果码；
   上游异常文本（下载器 msg、正则超时文本）只进服务端 `logger.warning`，不进响应与审计。
 - **失败排查**：响应稳定错误码（见 §6）；`RUNTIME_NOT_READY`=store/调度器未就绪或关闭中，
@@ -65,7 +82,7 @@
 |---|---|---|
 | `SERVICE_DISABLED` | 503 | 全局关 / kill switch |
 | `CAPABILITY_DISABLED` | 404 | 能力关（含缓存旧定义直调） |
-| `AUTH_*` / `PASSWORD_CHANGE_REQUIRED` | 401/403 | 认证矩阵 |
+| `AUTH_*` / `PASSWORD_CHANGE_REQUIRED` | 401/403 | 认证矩阵（`AUTH_API_KEY_INVALID`=服务密钥无效/已刷新，W5） |
 | `RUNTIME_NOT_READY` | 503 | store 未就绪 / 关闭中 / MCP 先于 store |
 | `CONFIRM_REQUIRED` / `IDEMPOTENCY_KEY_REQUIRED` | 428/400 | 写操作缺确认/幂等键 |
 | `UPLOAD_TOO_LARGE` / `UPLOAD_INVALID_CONTENT` | 413/422 | 种子上限（默认 10MiB，env `BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES` 可调、恒 ≤64MiB）/ 伪 bencode |
@@ -98,5 +115,21 @@ C:/software/anaconda3/python.exe scripts/release/aggregate_mcp_gates.py \
 1. **A 默认关闭**（免认证）：`POST /mcp/` `initialize` → `serverInfo {name: BtDeck, version: <mcp SDK 版>}`（SDK 捆载）；`tools/list` → JSON-RPC `-32000` + `data.error_code=SERVICE_DISABLED`。
 2. **B 部分开启**（真实控制面链路）：`admin` 首登（默认口令 + `must_change_password=true`）→ `/api/v1/user/changePassword` 清标志（请求体必带 `userId` 字段，端点忽略其值）→ `PUT /api/v1/mcp/settings` 仅开一项能力（`expectedRevision` 取自 GET）→ 带 Bearer `tools/list` 应**只**列出该能力。
 3. **C 脱敏 smoke**：预置含 canary 的种子行（tracker_url 埋 passkey、save_path 埋绝对路径、info_hash 埋 40 位哈希；制品内无 python 时用字面量 `INSERT`——注意 `torrent_info.has_tracker_error` 等列为迁移层 NOT NULL 无模型默认，字面量 SQL 必须显式补值）→ `tools/call torrent_advanced_search` → 断言 `tracker_domains` 仅规范化域名、整包响应无 canary/passkey/hash/announce 原文。
+
+### 8.2 服务密钥黑盒配方（2026-09-22 W5 实证流程）
+
+D 段（密钥面，接 B 段已认证会话）：
+
+1. `GET /api/v1/mcp/apikey` → `status=absent`、无 `key` 字段；
+2. `POST /api/v1/mcp/apikey/rotate {"expectedRevision":0}` → `status=active`、
+   `key` 匹配 `^btdmcp_[A-Za-z0-9_-]{43}$`、`revision=1`；
+3. 再次 `POST .../rotate {"expectedRevision":0}` → HTTP 409 + `data.reasonCode=
+   MCP_APIKEY_CONFLICT` + `data.currentRevision=1`（并发 CAS）；
+4. 带 `Authorization: Bearer <新密钥>` 请求 `POST /mcp/` `tools/list` → 与 B 段
+   JWT 会话**同样的能力发现结果**（两种认证等价）；
+5.  rotate 到第二把密钥后，旧密钥请求 `tools/list` → JSON-RPC `-32000` +
+   `data.error_code=AUTH_API_KEY_INVALID`（旧密钥即失效）；
+6. 审计页存在 `mcp_apikey_rotate`（detail 含 previousOwner/rotatedBy、无密钥本体）
+   与 `mcp_apikey_view` 行。
 
 注意事项：探测客户端 `trust_env=false`（注册表系统代理会劫持 loopback）；deb/rpm 包内二进制应先做 sha256 一致性对齐再抽测；dirty 身份（dev 构建）制品 `/health/ready` 会 503（身份门禁预期），就绪探测改用 `initialize` 握手。

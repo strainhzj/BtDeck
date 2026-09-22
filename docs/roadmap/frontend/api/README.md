@@ -18,7 +18,7 @@
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 健康诊断 health ✨2026-09-07 | `health.ts` | 诊断导出 blob 下载（携带认证头；本行 2026-09-09 补记漂移） |
-| MCP 配置 mcp-settings ✨2026-09-08 | `mcp-settings.ts` | MCP 配置 GET/PUT（CAS，409 语义注释；能力目录元数据随 GET 下发单一事实源；本行 2026-09-09 补记漂移） |
+| MCP 配置 mcp-settings ✨2026-09-08 | `mcp-settings.ts` | MCP 配置 GET/PUT（CAS，409 语义注释；能力目录元数据随 GET 下发单一事实源；本行 2026-09-09 补记漂移）；✨2026-09-22 W5：服务密钥 `getMcpApiKey`/`rotateMcpApiKey`（三态视图类型 McpApiKeyView，rotate 带 expectedRevision）+ 能力元数据增 `descriptionEn`（面板按 locale 选取） |
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.ts` | MoviePilot 联动：设置 GET/PUT（CAS）/实例列表/更新/删除、正向关联（downloaderId+hash）、路径反查（src/dest/both）；分页信封 {total,page,pageSize,list} |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |

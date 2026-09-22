@@ -78,6 +78,20 @@ MCP tools/call torrent_add_file（2026-09-08 W3-③）
        └─ 复用同一 TorrentAddService（G4：与 HTTP 同一 service；operator=principal.username）
 ```
 
+MCP transport 认证双路径（2026-09-22 W5）
+```
+POST /mcp/（Authorization: Bearer <token> 或 X-Access-Token）
+  └─ app/mcp/auth.py  extract_token_from_request → authenticate_token
+       ├─ looks_like_mcp_api_key(token)（btdmcp_ 前缀）
+       │    └─ McpApiKeyService.resolve_owner（SHA-256 恒定比对 configs.mcp.apikey.v1.keyHash）
+       │         └─ principal.build_principal_for_username（用户存在/启用/强制改密；token 不驻留主体）
+       │              └─ 失败：AUTH_API_KEY_INVALID（密钥面）/ USER_*（归属状态面）
+       └─ 其余（Web 会话 JWT）
+            └─ auth_utils.verify_access_token → build_principal_for_username（同一用户状态加载）
+                 └─ 失败：AUTH_TOKEN_INVALID / AUTH_REQUIRED / USER_*
+  └─ server.py 门禁链：effective_enabled（kill switch 优先）→ 能力门禁 → 认证 → 就绪
+```
+
 > 详见第三层样例 [../backend/api/endpoints/torrent_crud.md](../backend/api/endpoints/torrent_crud.md)。
 
 ## 链 3：种子删除流程（多等级）

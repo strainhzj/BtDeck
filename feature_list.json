@@ -1070,6 +1070,85 @@
       "summary": "W0~W3 全部落地（六工具齐套）；W4 代码/测试/文档面完成：G1/G4/G5/G6/G9/G11 新增 PASS，聚合 11/12（G0/G2/G3/G1/G4/G5/G6/G7/G8/G9/G11），G10 INDETERMINATE——依赖锁定+双 spec+Windows EXE 黑盒（默认关闭+SDK 捆载实证）已验，Docker/DEB/RPM 黑盒被本机网络环境阻断（Docker VM trixie apt 404 + 出网劣化；github 失联同根源），待网络恢复由发布管线复验；verdict=BLOCKED 保持。详见计划 §11。"
     },
     {
+      "id": "mcp-service-apikey-2026-09-22",
+      "name": "MCP 服务密钥（API Key）查看/刷新 + 能力目录双语化",
+      "description": "为外部 agent 对接 MCP 服务提供长期有效的专用服务密钥：设置页 MCP 面板新增「服务密钥」卡，支持随时查看明文（复制给其它 agent）、生成与刷新（旧密钥立即失效）；transport 认证新增 btdmcp_ 前缀密钥路径（SHA-256 哈希校验 + 归属用户状态全链），与 Web 会话 JWT 并存；密钥经 SM4 加密存储（威胁模型登记可逆副本风险）+ revision CAS（并发 rotate 409）；查看/刷新全量审计（禁记密钥本体）。同时补齐 i18n 缺口：能力目录描述中英成对下发（descriptionEn），英文界面不再回退中文。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/mcp-service-capabilities.md",
+      "implementation_review": {
+        "date": "2026-09-22",
+        "workspace_branch": "dev",
+        "summary": "W5 波次（计划 §12）：新增 configs 键 mcp.apikey.v1（哈希=认证事实源 + SM4 密文=查看出口 + revision CAS + 归属追溯，无 Alembic 迁移）；McpApiKeyService 三态视图（absent/active/unreadable，unreadable=secret_key 轮换后密文失效，查看拒绝但认证不受影响、rotate 自愈）；控制面 GET /mcp/apikey（active 才返回明文并写查看审计）与 POST /mcp/apikey/rotate（409+reasonCode MCP_APIKEY_CONFLICT、previousOwner/rotatedBy 审计）；transport 按 btdmcp_ 前缀路由（AUTH_API_KEY_INVALID 新稳定码，errors.py 三件套同步），principal 内核抽 build_principal_for_username 两路共用，原始密钥不驻留 principal/日志/审计/浏览器存储；密钥入脱敏字典+泄漏 canary；catalog description_en 成对下发（协议面工具描述维持中文）；设置页密钥卡（端点/认证头提示、掩码+复制、危险确认、三态引导）+ zh/en 语言包 + demo 同形分支。威胁模型/ runbook/ key-rotation-runbook 同步（S3/E3、§2.1、§8.2 黑盒配方）。",
+        "evidence": "后端 tests/api/test_mcp_apikey.py 21 例（三态/CAS/归属/门禁/审计/双语目录）+ tests/mcp/test_auth.py 扩 12 例（密钥认证矩阵含损坏密文下认证有效、两种认证并存）+ test_contracts 3 例（密钥常量/helper/描述成对）+ test_redaction 1 例（密钥 canary）+ enums 计数校准 55；全量 pytest 5249 passed/18 skipped/0 failed（cov 66.91%），mypy/black/flake8 净。前端 mcp-settings.spec 16 例（密钥卡七类 + 描述 locale 选取）+ demo-request.spec 13 例（demo 密钥三态/CAS）；typecheck/lint 三项/build/全量 Jest 125 套 1844 例/根 init.sh --ci 全绿；i18n-message-parity 与 i18n-leftover-guard 门禁通过。"
+      },
+      "planning_evidence": "2026-09-22 独立审查（子代理）后修订计划：错误码新增 AUTH_API_KEY_INVALID（不复用 AUTH_TOKEN_INVALID，保排障分辨力）；存储维持可逆副本（用户明确要求随时查看，风险登记威胁模型）；rotate 增 revision CAS（防并发 last-write-wins 静默断联）；demo 分支补齐失败面说明；已封版 feature 的契约/威胁模型/门禁证据同步义务落 W5 波次。",
+      "implementation_gates": [
+        "密钥认证 fail-closed：无效/缺失/行损坏统一 AUTH_API_KEY_INVALID，归属用户不存在/禁用/强制改密复用 USER_* 原因码",
+        "kill switch（BTDECK_MCP_FORCE_DISABLED）优先级不变：服务关闭时密钥路径同样不可用",
+        "查看仅 active 返回明文；审计禁记密钥本体与哈希；明文不驻留 principal/日志/浏览器存储",
+        "catalog descriptionEn 与 description 成对且非空 ASCII；MCP 协议面工具描述与 errors.py 文案维持中文不动",
+        "demo 模式新端点同形分支（固定演示密钥 + revision CAS），无独立面板实现"
+      ],
+      "tasks": [
+        {
+          "id": "mcp-service-apikey-2026-09-22.1",
+          "name": "后端：服务密钥契约/服务/端点/transport 认证",
+          "description": "contracts 增 mcp.apikey.v1 键与密钥格式 helper（generate/hash/格式校验/前缀路由）；errors 增 AUTH_API_KEY_INVALID 三件套；principal 抽 build_principal_for_username；新建 McpApiKeyService（三态视图/rotate CAS/哈希校验/SM4 解密自检）；mcp_settings 端点增 GET/POST apikey（CommonResponse + reasonCode + 审计）；mcp/auth 前缀路由；密钥入脱敏字典+泄漏 canary；审计枚举两项。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/mcp/contracts.py",
+            "backend/app/mcp/errors.py",
+            "backend/app/mcp/auth.py",
+            "backend/app/mcp/redaction.py",
+            "backend/app/auth/principal.py",
+            "backend/app/services/mcp_apikey_service.py",
+            "backend/app/api/endpoints/mcp_settings.py",
+            "backend/app/torrents/audit_enums.py"
+          ],
+          "evidence": "tests/api/test_mcp_apikey.py 21 例 + tests/mcp/test_auth.py 扩 12 例 + contracts/redaction/enums 锚定全绿；mypy/black/flake8 净。"
+        },
+        {
+          "id": "mcp-service-apikey-2026-09-22.2",
+          "name": "前端：密钥卡 + 目录双语 + demo 同形",
+          "description": "api/mcp-settings.ts 增类型与两 API；McpSettingsPanel 服务密钥卡（端点/认证头提示、三态引导、掩码+复制、危险确认、409 重载、内存-only）+ capDescription 按 locale 取 descriptionEn；zh/en mcp 与 errors.byCode 成对；demo-request/demo-store/types/fixtures 同形分支（固定演示密钥+CAS）+ spec。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/mcp-settings.ts",
+            "frontend/src/views/settings/components/McpSettingsPanel.vue",
+            "frontend/src/i18n/locales/zh-CN/mcp.ts",
+            "frontend/src/i18n/locales/en/mcp.ts",
+            "frontend/src/i18n/locales/zh-CN/errors.ts",
+            "frontend/src/i18n/locales/en/errors.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/types.ts",
+            "frontend/src/demo/fixtures/index.ts"
+          ],
+          "evidence": "mcp-settings.spec 16 例 + demo-request.spec 13 例全绿；typecheck/lint 三项/build 全绿；i18n parity 与 leftover-guard 门禁通过。"
+        },
+        {
+          "id": "mcp-service-apikey-2026-09-22.3",
+          "name": "文档与门禁同步（计划 W5/威胁模型/runbook/roadmap）",
+          "description": "PLANS/mcp-service-capabilities.md W5 波次 + §12 实施记录 + §4.2/4.4/4.5/7/9 同步；威胁模型资产/S3/E3/缺口/回滚/变更记录；key-rotation-runbook §2.1；mcp-runbook §3.1/§5/§6/§8.2；docs/roadmap 分层同步；progress.md 与 session-handoff.md 回填。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "PLANS/mcp-service-capabilities.md",
+            "docs/security/mcp-threat-model.md",
+            "docs/security/key-rotation-runbook.md",
+            "docs/operations/mcp-runbook.md",
+            "docs/roadmap",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "契约变更流程（contracts.py 头部纪律）三项文档同步 + roadmap-maintain 技能分层回填；MCP-G 片段随下次发布汇聚重跑（runbook §8.2 配方已就位）。"
+        }
+      ]
+    },
+    {
       "id": "test-debt-capability-drift-2026-09-10",
       "name": "存量测试债清偿：能力矩阵 fail-closed 致 5 套件 spec 漂移 + request mock 缺 default 致守卫 TypeError",
       "description": "mobile-ux-fixes 批次受控基线对照发现的存量红套件（HEAD 即 12 failed）：4 套件（mobile-delete-level-dialog/permission-guard/torrent-list-view-component/traditional-view-component）因主机能力矩阵批次落地后 level3_recycle fail-closed（矩阵未加载=unknown=隐藏等级3/重定向回收站路由）而断言漂移，注入 setPlatformCapabilityCacheForTesting(desktop+supported) 还原健康态；permission-force-change-deadlock 因其 @/utils/request mock 未提供可调用 default，守卫 loadPlatformCapabilities 真实调用 TypeError 炸导航，整体桩掉 @/api/platform-capabilities。附带消解 Node22 unhandled-rejection 进程崩溃链（at(3) 抛错→预置 rejected promise 无人消费）。",

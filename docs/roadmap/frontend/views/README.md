@@ -13,7 +13,7 @@
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志；✨2026-09-20 双语 P6-4a：模板/脚本全量走 tasks.* 键（任务状态展示按 taskStatus 码位、类型名按 taskType 码位、分页分片键、危险确认「不可恢复」明示），错误展示接 apiErrorMessage/apiResponseMessage |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页；✨2026-09-20 双语 P6-4b 全量 i18n（筛选/操作栏/统计/表头/详情与归档弹窗；操作类型 19 项按稳定 value 键化双形态（短标签/筛选长标签）；错误展示接 apiResponseMessage/apiErrorMessage） |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选）；路由由 `level3_recycle` 能力门控；✨2026-09-19 双语 P5 全量双语（recycleBin 模块 78 键：筛选/工具栏/表格/清理预览/手动上传弹窗/危险确认链路/三态结果；错误展示走 apiErrorMessage/apiResponseMessage 禁中文 msg 直读） |
-| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-18 桌面双语 P2：2FA/改密/诊断页签文案全量 i18n 化；✨2026-09-22 dev1.0.7 合入：新增 MCP 服务与 MoviePilot 页签（自治面板，中文硬编码待双语另立项），移除主机能力页签（282f494） |
+| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693）；2FA 二维码缺失（Pillow 不可用信封）时降级手动录入块（secret+复制+TOTP 参数，2026-09-04）；✨2026-09-18 桌面双语 P2：2FA/改密/诊断页签文案全量 i18n 化；✨2026-09-22 dev1.0.7 合入：新增 MCP 服务与 MoviePilot 页签（自治面板；213bafa 双语化后中文硬编码清零），移除主机能力页签（282f494） |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |；2026-09-21 P3-1 双语（卡片/状态/快捷操作/aria + 本地化日期）
 | 登录 login | `login/index.vue` | 登录页；✨2026-09-18 桌面双语 P2：表单/校验/消息 i18n 化；✨2026-09-21 语言切换改 Navbar 同款下拉胶囊（languages 图标+当前语言+chevron），与主题切换收进右上角 topbar flex 容器（根除旧 52px 魔法偏移与主题胶囊重叠；动作源 SetLanguage 不变） |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
@@ -112,7 +112,7 @@
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs` L585）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐）；✨2026-09-20 双语 P6-4b：全量文案走 auditLogs.* 键；操作类型 19 项键化数据驱动（OPERATION_GROUPS L509 + 短标签 operationType/筛选长标签 operationTypeFull 双形态，未知值回退原文 Q02）；错误展示接 apiResponseMessage/apiErrorMessage（response.msg 直读清零） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L374）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`；✨2026-09-09 新增 MoviePilot 页签；2026-09-22 合入 MCP 服务页签并移除主机能力页签） |
-| `settings/components/McpSettingsPanel.vue` | MCP 服务配置面板（W1；全局/能力开关+CAS+kill switch 横幅；2026-09-09 补记漂移；中文硬编码待双语另立项） |
+| `settings/components/McpSettingsPanel.vue` | MCP 服务配置面板（W1；全局/能力开关+CAS+kill switch 横幅；2026-09-09 补记漂移；✨2026-09-22 双语 213bafa 后硬编码清零 + W5 服务密钥卡：端点/认证头提示、三态引导 absent/unreadable、掩码+复制（clipboard util）、危险确认 rotate 409 重载、明文仅组件内存；capDescription 按 locale 取 descriptionEn） |
 | `settings/components/MoviePilotPanel.vue` ✨2026-09-09 | MoviePilot 集成面板：全局开关 CAS（409 自动重载）、实例卡片（启用开关/删除二次确认/同步统计与错误）、MP→BtDeck 下载器映射内联编辑（保存触发后端重解析）、路径反查卡（任务快照/未关联标签）；demo 只读占位；移动端经包装自动同源；中文硬编码待双语另立项 |
 | `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |；2026-09-21 P3-2 双语：页头/筛选/列头/删除确认走 queryTemplate.list.*，系统预设名称/描述按 preset_key 本地化（presetDisplayName/presetDisplayDescription），formatTime 按 getLocale 本地化日期

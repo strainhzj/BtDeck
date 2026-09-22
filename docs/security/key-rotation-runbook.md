@@ -35,6 +35,23 @@ python -c "import secrets; print(secrets.token_hex(16))"   # login_status_secret
 
 > 轮换 `login_status_secret` 会使所有已签发 JWT 失效（全员重新登录，符合预期）。
 
+### 2.1 MCP 服务密钥联动（W5，2026-09-22）
+
+`configs.mcp.apikey.v1.keyEncrypted`（MCP 服务密钥的 SM4 密文）同样依赖
+`security.secret_key`。轮换 secret_key 后的行为（by design）：
+
+- **认证不受影响**：transport 校验 SHA-256 哈希（`keyHash`），不依赖密文；
+  已生成密钥继续有效，外部 agent 无感。
+- **查看置 `unreadable`**：`GET /api/v1/mcp/apikey` 返回 `status=unreadable`
+  （不返回明文）——`decrypt()` 失败会原样返回密文，服务层以密钥格式自检兜底，
+  不会把密文垃圾当密钥展示。
+- **自愈**：在设置页「刷新服务密钥」（或 `POST /api/v1/mcp/apikey/rotate`，
+  携带 GET 返回的 revision 做 CAS）生成新密钥，密文以新 secret_key 加密，
+  视图恢复 active；旧密钥同时失效（需同步更新各 agent 配置）。
+
+> 若轮换 secret_key 的目的正是「怀疑密钥已泄露」：直接 rotate 生成新 MCP 服务
+> 密钥（不依赖旧密文可读），两者叠加即完成凭据面刷新。
+
 ## 三、锁死自救（先轮换后升级导致无法登录）
 
 ```bash
@@ -66,7 +83,7 @@ git push --force --mirror origin
 
 | 密钥 | 来源 | 能解密什么 |
 |------|------|-----------|
-| `[REDACTED-SECRET]` | git HEAD 的 backend/config/config.yaml | 用该文件初始化部署的 users.password（AES-ECB 旧格式）、下载器密码（SM4） |
+| `[REDACTED-SECRET]` | git HEAD 的 backend/config/config.yaml | 用该文件初始化部署的 users.password（AES-ECB 旧格式）、下载器密码（SM4）、MCP 服务密钥密文（W5） |
 | `[REDACTED-SECRET]` | backend/app/config.yaml（无代码消费，死文件） | 无运行时作用（仅模板误导风险） |
 | `[REDACTED-SECRET]` | auth/utils.py 旧兜底常量（已改为随机值） | 配置丢失场景的登录密钥比对值（不参与签名，低危） |
 
