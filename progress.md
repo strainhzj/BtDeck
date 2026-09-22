@@ -7951,3 +7951,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - deploy/build-windows.sh --release 全链路实测通过：G5 内容级验证 PASS（build-info 1.0.6@d0d3046 kind=windows-exe/前端逐文件哈希/禁入扫描）；ISCC 首跑绝对路径被解析为选项前缀（Invalid option: rv/...）→ 改相对路径修复；32 位 ISCC 对 43MB 载荷 lzma2/ultra64 OOM → 临时副本降 lzma2/max（不动 tracked btdeck.iss）。
 - Release v1.0.6 七资产终态：BtDeck-v1.0.6-windows-amd64.exe（便携版，@d0d3046 真实历史提交）+ windows-x64-setup.exe（44.4MB）+ 双 APK 0.2.5 + DEB/RPM + SHA256SUMS（--clobber 更新）。
 - dev 推送 d0d3046 + PR #8 合并（master 626d509）；ISCC 相对路径修复为本批最后一笔（工作区待提交）。
+
+## 2026-09-22（续二）：Release/README 双语化 + codex 分支清理（repo-bilingual-polish）
+
+- 网络背景：本机直连 github.com:443 超时（TLS/连接失败），git fetch 经 ghfast.top 镜像一次性 insteadOf 完成；gh api（api.github.com）可用，远程写操作全部经 gh CLI 执行。
+- 删除远程 codex 分支两条：codex/frontend-static-showcase-demo、codex/release-v1.0.5-repo-url（rev-list 确认均 0 个未合并提交后，经 gh api DELETE git/refs 完成）；远程现仅剩 dev / dev1.0.7 / master。
+- 删除 v1.0.5 草稿 Release（id 374942748；用户确认 v1.0.5 已发布，git 标签 v1.0.5 保留）；Releases 现仅剩 v1.0.6 正式版。
+- GitHub Release v1.0.6 正文追加完整英文翻译（body 4710→7610 字节，中文在前 `---` 分隔英文）；docs/release/v1.0.6.md 底稿同步为双语，version.py VERSION_HISTORY 中文唯一来源口径不变。
+- 新建 README_EN.md（全量翻译：核心特性/技术栈/快速开始/代码路线图/项目结构/安装包构建/版本历史 v1.0.4~v1.1.0 及 v1.0.6、v1.0.5 亮点）；README.md 与 README_EN.md 顶部互加 简体中文|English 切换链接。

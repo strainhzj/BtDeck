@@ -5,6 +5,8 @@
 [![Vue](https://img.shields.io/badge/vue-2.6.12-brightgreen)](https://vuejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green)](https://fastapi.tiangolo.com/)
 
+**简体中文** | [English](./README_EN.md)
+
 统一管理多种 BitTorrent 客户端（qBittorrent、Transmission）的全栈 Web 应用。
 
 ## 核心特性
