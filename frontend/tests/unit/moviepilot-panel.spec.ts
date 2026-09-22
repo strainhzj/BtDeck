@@ -14,6 +14,8 @@
 
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
 import ElementUI from 'element-ui'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import MoviePilotPanel from '@/views/settings/components/MoviePilotPanel.vue'
 import {
@@ -49,6 +51,7 @@ const mockGetDownloaders = getDownloaderList as jest.MockedFunction<typeof getDo
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
+localVue.use(VueI18n)
 
 /** class 组件的 private 成员运行时即实例成员，经接口重声明访问 */
 interface PanelVm {
@@ -218,7 +221,7 @@ async function mountPanel(): Promise<Wrapper<Vue>> {
   mockGetSettings.mockResolvedValue(settingsResponse())
   mockGetInstances.mockResolvedValue(instancesResponse())
   mockGetDownloaders.mockResolvedValue(downloadersResponse())
-  const wrapper = mount(MoviePilotPanel, { localVue })
+  const wrapper = mount(MoviePilotPanel, { localVue, i18n })
   await flushPromises()
   await wrapper.vm.$nextTick()
   return wrapper

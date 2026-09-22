@@ -14,6 +14,8 @@
 
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
 import ElementUI from 'element-ui'
+import VueI18n from 'vue-i18n'
+import i18n from '@/i18n'
 
 import McpSettingsPanel from '@/views/settings/components/McpSettingsPanel.vue'
 import { getMcpSettings, updateMcpSettings, McpCapabilityMeta } from '@/api/mcp-settings'
@@ -29,6 +31,7 @@ const mockUpdate = updateMcpSettings as jest.MockedFunction<typeof updateMcpSett
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
+localVue.use(VueI18n)
 
 /** class 组件的 private 成员运行时即实例成员，经接口重声明访问 */
 interface PanelVm {
@@ -96,7 +99,7 @@ function findButton(wrapper: Wrapper<Vue>, text: string): Wrapper<Vue> {
 
 /** 挂载并等待 mounted 内的首次 load 完成 */
 async function mountPanel(): Promise<Wrapper<Vue>> {
-  const wrapper = mount(McpSettingsPanel, { localVue })
+  const wrapper = mount(McpSettingsPanel, { localVue, i18n })
   await flushPromises()
   await wrapper.vm.$nextTick()
   return wrapper

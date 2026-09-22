@@ -200,7 +200,7 @@ export default class TrackerDetailDataMixin extends Vue {
         this.detailMediaState = {
           ...this.detailMediaState,
           loading: false,
-          error: res.msg || '获取媒体库关联失败'
+          error: res.msg || translate('moviepilot.media.loadFailedFallback')
         }
       }
     } catch (error) {

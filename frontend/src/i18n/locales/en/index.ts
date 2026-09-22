@@ -28,6 +28,8 @@ import { dashboard } from './dashboard'
 import { downloader } from './downloader'
 import { errors } from './errors'
 import { fileManagement } from './fileManagement'
+import { mcp } from './mcp'
+import { moviepilot } from './moviepilot'
 import { navigation } from './navigation'
 import { orphanFiles } from './orphanFiles'
 import { queryTemplate } from './queryTemplate'
@@ -48,6 +50,8 @@ const messages: MessageTree = {
   downloader,
   errors,
   fileManagement,
+  mcp,
+  moviepilot,
   navigation,
   orphanFiles,
   queryTemplate,
