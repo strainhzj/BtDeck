@@ -8170,3 +8170,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - P5 文档：.gitignore 并集（+/data/）；PLANS/README.md 重建（桌面双语状态更正为 P1~P6-5 完成、MCP 更正为已完成、并入 MoviePilot/双模式/Demo/v1.0.8 行、合并任务行、归档注记）；roadmap 10 文件语义合并（dev i18n 行为主 + dev1.0.7 MCP/MoviePilot 行；根 README「本次新增」以合并批次重写，两侧历史批次日志保留于分支提交史；主机能力行双处删除；api 计数 16/endpoints 41 待 P6 重测）；feature_list.json 双语 feature 全取 dev evidence + 追加合并任务条目（#82）；progress/session-handoff 并集。
 - 遗留（另立项，见计划 §8）：MCP/MoviePilot 前端界面双语化（键包扩 mcp/moviepilot 模块）；其后端端点 reasonCode 契约；语言包主机能力残留键清扫；双语 P7 收口。
 - 全量验证终局（2026-09-22）：后端 pytest 5215 passed/18 skipped、覆盖率 66.79%（门禁 40%）；flake8(app) 通过（mypy 11 错与 black 3 文件均为 dev 存量债，文件与 dev 尖端逐字节一致，CI 不跑）；前端 typecheck/jest 125 套 1833 例/lint/build 全绿；./init.sh exit=0。过程中修复：两个 preset_key 测试 EXPECTED_HEAD 改动态 head；本地 venv 补装 mcp~=1.30.0 + pyjwt[crypto]~=2.10.1，starlette 按钉版回落 0.41.3、sse-starlette 用 2.1.3（pip check 无冲突）；mcp 生命周期 1 例为套件负载下时序抖动（单跑与套件复跑均绿）。
+
+## 2026-09-22（续）：合并遗留项收口——MCP/MoviePilot 双语化 + reasonCode 契约 + 残留键清扫
+
+- §8-3 残留键清扫：settings.capability 子树（zh/en 各 16 键）随面板删除清扫，代码零引用。
+- §8-1 前端双语化（提交 213bafa）：新增 mcp/moviepilot 语言模块（zh+en）；McpSettingsPanel/MoviePilotPanel 全量键化（zh 与原内联逐字节一致，14 例面板回归零改动通过）；种子详情媒体库页签（含 trackerTabLabel 扩 media）+ detailTabsData 兜底 + settings 页签 label；审计门禁移除排除 2 条/白名单 16 条（面回归审计覆盖），页签回退常量'媒体库'按 files 先例行级登记；两 spec 接入真实 i18n 挂载。
+- §8-2 后端契约（提交 0314687）：mcp_settings 409/400 + moviepilot _map_service_error 六类/PUT settings/反查 400 共 12 个 reasonCode；动态 str(exc) 收敛只进日志；前端 errors.byCode 12 键 + MoviePilotPanel 反查走 apiErrorMessage。
+- §8-4 P7 收口：p7-acceptance-checklist.md 增 §〇 合并后复测节（前端 125 套 1833 例、后端 5215 passed/66.80%、init.sh 绿），M2 范围扩界记录；**浏览器视觉验收与 R01~R06 签认仍待用户执行**（建议把 MCP/MoviePilot 设置页与媒体库页签纳入抽查）。
+- 终局验证：后端全量 5215 passed/18 skipped、覆盖率 66.80%；前端 jest 1833/typecheck/lint/build 绿；./init.sh exit=0。

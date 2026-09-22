@@ -6724,7 +6724,7 @@
             "PLANS/README.md",
             "docs/roadmap/"
           ],
-          "evidence": "2026-09-22 合并执行：P0 对账 37 冲突与计划一致；P2 重挂后 alembic 单 HEAD=053003337878（32 迁移，链尾顺序断言通过）；P3 迁移测试 40 passed + 端点 56 passed + reason/add 契约 166 passed；P4 i18n 门禁 20 passed（含改写后 PlatformCapabilityPanel 反向守卫与排除/白名单登记生效）、lint/build 绿；flake8 通过。独立审查（reviewer 子代理）8 项事实核验与 2 Critical 已吸收进计划正文（附录 A）。"
+          "evidence": "2026-09-22 合并执行：P0 对账 37 冲突与计划一致；P2 重挂后 alembic 单 HEAD=053003337878（32 迁移，链尾顺序断言通过）；P3 迁移测试 40 passed + 端点 56 passed + reason/add 契约 166 passed；P4 i18n 门禁 20 passed（含改写后 PlatformCapabilityPanel 反向守卫与排除/白名单登记生效）、lint/build 绿；flake8 通过。独立审查（reviewer 子代理）8 项事实核验与 2 Critical 已吸收进计划正文（附录 A）。 遗留项收口（2026-09-22）：§8-1 前端双语化（mcp/moviepilot 语言模块 + 面板/媒体库页签/页签 label 键化，提交 213bafa）；§8-2 后端 reasonCode 契约（MCP_SETTINGS_*×2 + MOVIEPILOT_*×10 + errors.byCode 12 键，提交 0314687）；§8-3 主机能力残留键清扫（settings.capability 子树 zh/en 删除）。终局复测：后端 5215 passed/66.80%、前端 1833 例、build/init.sh 绿。§8-4（P7 人工视觉验收）待用户执行。"
         }
       ]
     }
