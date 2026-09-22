@@ -47,9 +47,36 @@ export const mcp = {
     noteHigh: 'High-risk capability: external side effects or task execution; calls require explicit confirmation and an idempotency key plus mandatory audit. Confirm you trust the caller before enabling.',
     noteWrite: 'Write operation: calls require explicit confirmation and an idempotency key, and are audit-logged.'
   },
+  apikey: {
+    title: 'Service Key (API Key)',
+    description: 'External AI clients (agents) use this dedicated key to connect to the MCP service, independently of the login session. The key is long-lived; rotating it invalidates the previous key immediately.',
+    endpointLabel: 'Endpoint',
+    endpointHint: '{origin}/mcp/ (Streamable HTTP)',
+    authLabel: 'Authentication',
+    authHint: 'Send the key in a request header: Authorization: Bearer <key> (or X-Access-Token: <key>)',
+    loading: 'Loading...',
+    statusAbsent: 'No service key has been generated yet. Generate one to let external agents connect to the MCP service.',
+    statusUnreadable: 'A service key exists but cannot be read right now (the instance security key may have been rotated). Rotating generates a new key and invalidates the previous one immediately.',
+    generate: 'Generate service key',
+    rotate: 'Rotate service key',
+    copy: 'Copy',
+    copied: 'Key copied to clipboard',
+    copyFailed: 'Copy failed; please select the key text and copy manually',
+    createdInfo: 'Created {time} ({by})',
+    updatedInfo: 'Last rotated {time} ({by})',
+    securityNote: 'Security note: the key is stored with reversible encryption in the local database, so leaking the database file or the instance security key is equivalent to leaking this key. The key is shown in page memory only and is never written to browser storage. Rotating invalidates the previous key immediately and disconnects every agent still using it.',
+    confirmRotateTitle: 'Rotate MCP service key',
+    confirmRotateMessage: 'After rotating, the new key takes effect and the previous key is invalidated immediately; every agent still using the old key will be disconnected. Continue?',
+    confirmGenerateTitle: 'Generate MCP service key',
+    confirmGenerateMessage: 'A new service key will be generated and displayed on this page for external agents to connect to the MCP service. Continue?'
+  },
   msg: {
     saved: 'MCP configuration saved',
     conflict: 'The configuration was modified in another session; the latest configuration has been reloaded — review it and retry',
-    saveFailed: 'Failed to save MCP configuration; please try again later'
+    saveFailed: 'Failed to save MCP configuration; please try again later',
+    generated: 'Service key generated',
+    rotated: 'Service key rotated; the previous key is now invalid',
+    rotateFailed: 'Failed to rotate the service key; please try again later',
+    apikeyConflict: 'The service key was changed in another session and has been reloaded — review it and retry'
   }
 }

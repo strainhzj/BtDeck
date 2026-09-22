@@ -221,3 +221,38 @@ def test_config_key_constants():
     assert contracts.MCP_CONFIG_KEY == "mcp.runtime.v1"
     assert contracts.MCP_CONFIG_SCHEMA_VERSION == 1
     assert contracts.MCP_FORCE_DISABLED_ENV == "BTDECK_MCP_FORCE_DISABLED"
+
+
+def test_apikey_config_key_constants():
+    """W5 §4.2-2 服务密钥配置键与密钥格式常量锚定。"""
+    assert contracts.MCP_APIKEY_CONFIG_KEY == "mcp.apikey.v1"
+    assert contracts.MCP_APIKEY_SCHEMA_VERSION == 1
+    assert contracts.MCP_APIKEY_PREFIX == "btdmcp_"
+    assert contracts.MCP_APIKEY_BODY_LENGTH == 43
+
+
+def test_apikey_generation_hash_and_format():
+    """W5：生成/哈希/格式校验三 helper 的契约（认证与解密自检共用口径）。"""
+    key = contracts.generate_mcp_api_key()
+    assert key.startswith(contracts.MCP_APIKEY_PREFIX)
+    assert contracts.is_mcp_api_key_format(key)
+    # 哈希确定且与明文不同形态（SHA-256 十六进制）
+    digest = contracts.hash_mcp_api_key(key)
+    assert digest == contracts.hash_mcp_api_key(key)
+    assert len(digest) == 64 and digest != key
+    # 形态拒绝：错前缀/错长度/非法字符/非字符串
+    assert not contracts.is_mcp_api_key_format("jwt." + "a" * 43)
+    assert not contracts.is_mcp_api_key_format(contracts.MCP_APIKEY_PREFIX + "a" * 42)
+    assert not contracts.is_mcp_api_key_format(contracts.MCP_APIKEY_PREFIX + "a" * 42 + "+")
+    assert not contracts.is_mcp_api_key_format(None)
+    # 前缀路由判定与完整格式判定分离（transport 只认前缀）
+    assert contracts.looks_like_mcp_api_key(contracts.MCP_APIKEY_PREFIX + "x")
+    assert not contracts.looks_like_mcp_api_key("not-a-key")
+
+
+def test_capability_descriptions_have_paired_english():
+    """W5 双语化：目录描述必须中英成对且非空（控制面 catalog 下发口径）。"""
+    for spec in contracts.CAPABILITY_CATALOG:
+        assert spec.description, spec.code
+        assert spec.description_en, spec.code
+        assert spec.description_en.isascii(), spec.code

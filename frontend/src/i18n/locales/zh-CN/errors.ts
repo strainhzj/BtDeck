@@ -210,6 +210,8 @@ export const errors = {
     // ── v1.0.7 合入批（MCP/MoviePilot 端点错误契约，2026-09-22）──
     mcpSettingsConflict: '配置已被其他会话修改，请刷新后重试',
     mcpSettingsInvalid: 'MCP 配置载荷无效，请检查能力码与取值',
+    mcpApiKeyConflict: '服务密钥已被其他会话变更，请刷新后重试',
+    mcpApiKeyInvalid: '服务密钥生成失败，请检查请求或服务器加密组件配置',
     moviepilotSettingsConflict: '配置已被其他会话修改，请刷新后重试',
     moviepilotSettingsInvalid: '集成开关载荷无效',
     moviepilotIntegrationDisabled: 'MoviePilot 集成未启用（请在设置中开启）',

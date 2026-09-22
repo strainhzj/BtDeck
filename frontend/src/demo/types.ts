@@ -352,9 +352,24 @@ export interface DemoMcpCapabilityMeta {
   tool: string
   risk: 'read' | 'write' | 'high'
   description: string
+  /** 与后端 contracts.py 成对下发的英文描述（面板按 locale 选取） */
+  descriptionEn: string
   defaultEnabled: boolean
   requiresConfirm: boolean
   requiresIdempotencyKey: boolean
+}
+
+/** MCP 服务密钥（demo 固定演示密钥；revision 与真实端点 CAS 语义一致） */
+export interface DemoMcpApiKey {
+  status: 'absent' | 'active' | 'unreadable'
+  exists: boolean
+  revision: number
+  createdAt: string | null
+  createdBy: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+  keyPrefix: string
+  key?: string
 }
 
 /** MCP 服务配置存储意图（effectiveEnabled 由请求层按 enabled && !forceDisabled 推导） */
@@ -445,6 +460,7 @@ export interface DemoFixtureBundle {
   trackerReannounceConfigs: DemoTrackerReannounceConfig[]
   backups: DemoBackup[]
   mcpSettings: DemoMcpSettings
+  mcpApiKey: DemoMcpApiKey
   moviepilotSettings: DemoMoviePilotSettings
   moviepilotInstances: DemoMoviePilotInstance[]
   moviepilotAssociations: DemoMoviePilotAssociation[]

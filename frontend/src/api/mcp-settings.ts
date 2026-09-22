@@ -19,6 +19,8 @@ export interface McpCapabilityMeta {
   tool: string
   risk: McpCapabilityRisk
   description: string
+  /** W5 双语化：与 description 成对的英文文案（后端成对下发，前端按 locale 选取） */
+  descriptionEn: string
   defaultEnabled: boolean
   requiresConfirm: boolean
   requiresIdempotencyKey: boolean
@@ -65,5 +67,48 @@ export function updateMcpSettings(
     url: '/mcp/settings',
     method: 'put',
     data: payload
+  })
+}
+
+/** 服务密钥视图态：absent 未生成 / active 可查看 / unreadable 密文损坏（引导刷新） */
+export type McpApiKeyStatus = 'absent' | 'active' | 'unreadable'
+
+export interface McpApiKeyStatePayload {
+  status: McpApiKeyStatus
+  /** 行存在性（active 与 unreadable 均为已生成；absent 从未生成） */
+  exists: boolean
+  revision: number
+  createdAt: string | null
+  createdBy: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+  /** 密钥前缀（格式提示用，如 btdmcp_） */
+  keyPrefix: string
+}
+
+export interface McpApiKeyView extends McpApiKeyStatePayload {
+  /** 明文密钥（仅 status=active 时存在；absent/unreadable 不含该字段） */
+  key?: string
+}
+
+/** 查看 MCP 服务密钥（absent/unreadable 为引导态，不含明文） */
+export function getMcpApiKey(): Promise<ApiEnvelope<McpApiKeyView>> {
+  return request<ApiEnvelope<McpApiKeyView>>({
+    url: '/mcp/apikey',
+    method: 'get'
+  })
+}
+
+/**
+ * 生成/刷新 MCP 服务密钥（revision CAS；冲突 HTTP 409 → ApiError.code === '409'）。
+ * 成功后旧密钥立即失效；返回值为唯一携带新明文密钥的响应（组件应即时展示）。
+ */
+export function rotateMcpApiKey(
+  expectedRevision: number
+): Promise<ApiEnvelope<McpApiKeyView>> {
+  return request<ApiEnvelope<McpApiKeyView>>({
+    url: '/mcp/apikey/rotate',
+    method: 'post',
+    data: { expectedRevision }
   })
 }

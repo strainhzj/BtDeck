@@ -46,6 +46,55 @@ class PrincipalAuthenticationError(Exception):
         self.message = message
 
 
+def build_principal_for_username(
+    username: str,
+    db: Session,
+    *,
+    token: str = "",
+    payload: Optional[Dict[str, Any]] = None,
+) -> AuthenticatedPrincipal:
+    """按用户名加载用户状态并构造认证主体（W5 起 JWT 与服务密钥两条路径共用）。
+
+    校验链：用户存在 → ``is_active`` → ``must_change_password``，任一失败抛
+    ``PrincipalAuthenticationError``（稳定原因码由调用方映射）。
+
+    ``user_id`` 口径：优先取 ``payload['user_id']``（JWT 新 token 携带），
+    缺失/非法回退数据库主键；API 密钥路径不传 payload，恒取主键。
+
+    ``token``/``payload`` 仅作主体溯源字段：密钥路径不传入原始密钥（避免
+    凭据驻留主体对象），传空串 + 溯源 payload。
+    """
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise PrincipalAuthenticationError(REASON_USER_NOT_FOUND, "用户不存在")
+
+    if not user.is_active:
+        raise PrincipalAuthenticationError(REASON_USER_INACTIVE, "用户已禁用")
+
+    if user.must_change_password:
+        raise PrincipalAuthenticationError(REASON_PASSWORD_CHANGE_REQUIRED, "用户处于强制改密状态")
+
+    user_id: Optional[int] = None
+    if payload:
+        raw_user_id = payload.get("user_id")
+        if raw_user_id is not None:
+            try:
+                user_id = int(raw_user_id)
+            except (TypeError, ValueError):
+                user_id = None
+    if user_id is None:
+        user_id = user.id
+
+    return AuthenticatedPrincipal(
+        user_id=user_id,
+        username=username,
+        is_active=True,
+        must_change_password=False,
+        token=token,
+        payload=dict(payload) if payload else {"sub": username},
+    )
+
+
 def authenticate_access_token(token: Optional[str], db: Session) -> AuthenticatedPrincipal:
     """校验访问 token 并加载用户状态，返回认证主体。
 
@@ -68,31 +117,4 @@ def authenticate_access_token(token: Optional[str], db: Session) -> Authenticate
     if not username or not isinstance(username, str):
         raise PrincipalAuthenticationError(REASON_TOKEN_INVALID, "访问令牌缺少有效主体")
 
-    user = db.query(User).filter(User.username == username).first()
-    if user is None:
-        raise PrincipalAuthenticationError(REASON_USER_NOT_FOUND, "用户不存在")
-
-    if not user.is_active:
-        raise PrincipalAuthenticationError(REASON_USER_INACTIVE, "用户已禁用")
-
-    if user.must_change_password:
-        raise PrincipalAuthenticationError(REASON_PASSWORD_CHANGE_REQUIRED, "用户处于强制改密状态")
-
-    raw_user_id = payload.get("user_id")
-    user_id: Optional[int] = None
-    if raw_user_id is not None:
-        try:
-            user_id = int(raw_user_id)
-        except (TypeError, ValueError):
-            user_id = None
-    if user_id is None:
-        user_id = user.id
-
-    return AuthenticatedPrincipal(
-        user_id=user_id,
-        username=username,
-        is_active=True,
-        must_change_password=False,
-        token=token,
-        payload=payload,
-    )
+    return build_principal_for_username(username, db, token=token, payload=payload)

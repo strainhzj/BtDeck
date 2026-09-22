@@ -210,6 +210,8 @@ export const errors = {
     // v1.0.7 merge batch (MCP/MoviePilot endpoint error contract, 2026-09-22)
     mcpSettingsConflict: 'The configuration was modified in another session; refresh and try again',
     mcpSettingsInvalid: 'Invalid MCP configuration payload; check the capability codes and values',
+    mcpApiKeyConflict: 'The service key was changed in another session; refresh and retry',
+    mcpApiKeyInvalid: 'Failed to generate the service key; check the request or the server encryption component configuration',
     moviepilotSettingsConflict: 'The configuration was modified in another session; refresh and try again',
     moviepilotSettingsInvalid: 'Invalid integration switch payload',
     moviepilotIntegrationDisabled: 'MoviePilot integration is disabled (enable it in settings)',

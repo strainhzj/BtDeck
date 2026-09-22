@@ -30,6 +30,7 @@ class McpErrorCode(str, Enum):
     # ---- 认证（G3）----
     AUTH_REQUIRED = "AUTH_REQUIRED"
     AUTH_TOKEN_INVALID = "AUTH_TOKEN_INVALID"
+    AUTH_API_KEY_INVALID = "AUTH_API_KEY_INVALID"  # W5：服务密钥无效/已被刷新/归属用户失效
     AUTH_USER_NOT_FOUND = "AUTH_USER_NOT_FOUND"
     AUTH_USER_INACTIVE = "AUTH_USER_INACTIVE"
     PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED"
@@ -76,6 +77,9 @@ class HttpAlignment:
 HTTP_ALIGNMENT: Dict[McpErrorCode, HttpAlignment] = {
     McpErrorCode.AUTH_REQUIRED: HttpAlignment(401, "未携带 Bearer token；HTTP 侧为 401 未认证"),
     McpErrorCode.AUTH_TOKEN_INVALID: HttpAlignment(401, "token 过期/签名或登录密钥不一致"),
+    McpErrorCode.AUTH_API_KEY_INVALID: HttpAlignment(
+        401, "MCP 服务密钥不存在/已被刷新/密文损坏；与 JWT 失败分开以便排障"
+    ),
     McpErrorCode.AUTH_USER_NOT_FOUND: HttpAlignment(401, "token 有效但用户已不存在"),
     McpErrorCode.AUTH_USER_INACTIVE: HttpAlignment(403, "用户被禁用；现状仅在登录拦截，MCP 侧认证内核统一拦截"),
     McpErrorCode.PASSWORD_CHANGE_REQUIRED: HttpAlignment(403, "强制改密期间拒绝业务调用"),
@@ -105,6 +109,7 @@ HTTP_ALIGNMENT: Dict[McpErrorCode, HttpAlignment] = {
 DEFAULT_MESSAGES: Dict[McpErrorCode, str] = {
     McpErrorCode.AUTH_REQUIRED: "缺少访问令牌。",
     McpErrorCode.AUTH_TOKEN_INVALID: "访问令牌无效或已过期。",
+    McpErrorCode.AUTH_API_KEY_INVALID: "MCP 服务密钥无效或已被刷新。",
     McpErrorCode.AUTH_USER_NOT_FOUND: "访问令牌对应的用户不存在。",
     McpErrorCode.AUTH_USER_INACTIVE: "用户已被禁用。",
     McpErrorCode.PASSWORD_CHANGE_REQUIRED: "用户处于强制改密状态，需先完成改密。",

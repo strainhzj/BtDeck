@@ -116,7 +116,8 @@ class TestAuditOperationTypeMemberCount:
     def test_member_count(self):
         # 2026-09-08 校准：此前计数漂移（W1 MCP_SETTINGS_UPDATE 与 MoviePilot 三项
         # 增员未同步）；当前真实值 53（含 MCP_TOOL_CALL，mcp W3）。
-        assert len(AuditOperationType) == 53
+        # 2026-09-22 校准：W5 服务密钥查看/刷新两项增员（MCP_APIKEY_VIEW/ROTATE）。
+        assert len(AuditOperationType) == 55
 
 
 class TestAuditOperationTypeIsValid:

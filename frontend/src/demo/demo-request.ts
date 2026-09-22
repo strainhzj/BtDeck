@@ -985,6 +985,22 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
   if (path === '/tags/tags' || path === '/tags/all') return success(demoStore.getTags())
   if (path.startsWith('/tags/')) return success({ success: true, demo: true }, 'Demo 标签操作已模拟完成')
 
+  // MCP 服务密钥（查看/刷新；demo 固定演示密钥，revision CAS 与真实端点一致）
+  if (path === '/mcp/apikey' && method === 'GET') {
+    return success(demoStore.getMcpApiKey())
+  }
+  if (path === '/mcp/apikey/rotate' && method === 'POST') {
+    const current = demoStore.getMcpApiKey()
+    if (asNumber(input.expectedRevision, -1) !== current.revision) {
+      throw new ApiError('Demo 模式：服务密钥已被其他会话变更，请刷新后重试', { code: '409', httpStatus: 409 })
+    }
+    const rotated = demoStore.rotateMcpApiKey(asNumber(input.expectedRevision, -1))
+    if (!rotated) {
+      throw new ApiError('Demo 模式：服务密钥已被其他会话变更，请刷新后重试', { code: '409', httpStatus: 409 })
+    }
+    return success(rotated, 'Demo MCP 服务密钥已刷新')
+  }
+
   // MCP 服务配置（目录元数据镜像后端 contracts.py，revision CAS 与真实端点一致）
   if (path === '/mcp/settings') {
     if (method === 'PUT') {

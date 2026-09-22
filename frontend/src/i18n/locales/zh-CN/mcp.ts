@@ -47,9 +47,36 @@ export const mcp = {
     noteHigh: '高风险能力：外部副作用或任务执行，调用需要显式确认与幂等键并强制审计，启用前请确认信任调用方。',
     noteWrite: '写操作：调用需要显式确认与幂等键，并记录审计日志。'
   },
+  apikey: {
+    title: '服务密钥（API Key）',
+    description: '外部 AI 客户端（Agent）使用该专用密钥对接 MCP 服务，与登录会话相互独立；密钥长期有效，刷新后旧密钥立即失效。',
+    endpointLabel: '服务端点',
+    endpointHint: '{origin}/mcp/（Streamable HTTP）',
+    authLabel: '认证方式',
+    authHint: '请求头携带 Authorization: Bearer <密钥>（或 X-Access-Token: <密钥>）',
+    loading: '加载中…',
+    statusAbsent: '尚未生成服务密钥。生成后即可供外部 Agent 对接 MCP 服务。',
+    statusUnreadable: '服务密钥已生成，但当前无法读取（实例安全密钥可能已轮换）；刷新生成新密钥后，旧密钥立即失效。',
+    generate: '生成服务密钥',
+    rotate: '刷新服务密钥',
+    copy: '复制',
+    copied: '密钥已复制到剪贴板',
+    copyFailed: '复制失败，请手动选择密钥文本复制',
+    createdInfo: '创建于 {time}（{by}）',
+    updatedInfo: '最近刷新 {time}（{by}）',
+    securityNote: '安全提示：密钥经可逆加密存储于本机数据库，泄露数据库文件或实例配置密钥等同于泄露该密钥；密钥仅在当前页面内存中展示，不会写入浏览器存储。刷新会使旧密钥立即失效，正在使用旧密钥的 Agent 将全部断联。',
+    confirmRotateTitle: '刷新 MCP 服务密钥',
+    confirmRotateMessage: '刷新后新密钥立即生效、旧密钥同时失效，正在使用旧密钥的 Agent 将全部断联。确认刷新？',
+    confirmGenerateTitle: '生成 MCP 服务密钥',
+    confirmGenerateMessage: '将生成新的服务密钥并显示在本页面，用于外部 Agent 对接 MCP 服务。确认生成？'
+  },
   msg: {
     saved: 'MCP 配置已保存',
     conflict: '配置已被其他会话修改，已重新加载最新配置，请确认后重试',
-    saveFailed: '保存 MCP 配置失败，请稍后重试'
+    saveFailed: '保存 MCP 配置失败，请稍后重试',
+    generated: '服务密钥已生成',
+    rotated: '服务密钥已刷新，旧密钥已失效',
+    rotateFailed: '服务密钥刷新失败，请稍后重试',
+    apikeyConflict: '服务密钥已被其他会话变更，已重新加载，请确认后重试'
   }
 }

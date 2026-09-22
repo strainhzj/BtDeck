@@ -111,6 +111,38 @@ describe('demo request', () => {
     })
   })
 
+  describe('MCP service key', () => {
+    it('serves the demo key in active view shape', async() => {
+      const response = await demoRequest<DemoApiEnvelope<{ status: string, exists: boolean, revision: number, key: string, keyPrefix: string }>>({ url: '/mcp/apikey', method: 'get' })
+
+      expect(response.code).toBe('200')
+      expect(response.data.status).toBe('active')
+      expect(response.data.exists).toBe(true)
+      expect(response.data.key.startsWith('btdmcp_')).toBe(true)
+      expect(response.data.keyPrefix).toBe('btdmcp_')
+    })
+
+    it('rotates via revision CAS and bumps revision; stale revision yields 409', async() => {
+      const current = await demoRequest<DemoApiEnvelope<{ revision: number }>>({
+        url: '/mcp/apikey', method: 'get'
+      })
+      const revision = current.data.revision
+
+      const rotated = await demoRequest<DemoApiEnvelope<{ revision: number }>>({
+        url: '/mcp/apikey/rotate',
+        method: 'post',
+        data: { expectedRevision: revision }
+      })
+      expect(rotated.data.revision).toBe(revision + 1)
+
+      await expect(demoRequest({
+        url: '/mcp/apikey/rotate',
+        method: 'post',
+        data: { expectedRevision: revision }
+      })).rejects.toMatchObject({ code: '409' })
+    })
+  })
+
   describe('MoviePilot integration', () => {
     it('serves settings, instance page and forward associations with task snapshots', async() => {
       const settings = await demoRequest<DemoApiEnvelope<{ settings: { enabled: boolean }, protocolVersion: number }>>({

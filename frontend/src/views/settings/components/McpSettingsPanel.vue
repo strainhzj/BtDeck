@@ -43,7 +43,7 @@
                 {{ riskLabel(cap.risk) }}
               </el-tag>
             </div>
-            <div class="mcp-capability-desc">{{ cap.description }}</div>
+            <div class="mcp-capability-desc">{{ capDescription(cap) }}</div>
             <div v-if="cap.risk !== 'read'" class="mcp-capability-note">{{ riskNote(cap.risk) }}</div>
           </div>
         </div>
@@ -57,16 +57,86 @@
         </div>
       </template>
     </div>
+
+    <!-- W5 服务密钥卡：独立加载态（设置加载失败不影响密钥查看/生成） -->
+    <div class="mcp-card mcp-apikey-card">
+      <h3 class="mcp-card-title">{{ $t('mcp.apikey.title') }}</h3>
+      <p class="mcp-description">
+        {{ $t('mcp.apikey.description') }}
+      </p>
+
+      <div v-if="apikeyLoading" class="mcp-hint">{{ $t('mcp.apikey.loading') }}</div>
+      <div v-else-if="!apikeyLoaded" class="mcp-hint">
+        {{ $t('mcp.panel.loadFailed') }}
+        <el-button size="mini" @click="loadApiKey">{{ $t('mcp.panel.retry') }}</el-button>
+      </div>
+
+      <template v-else-if="apikeyView">
+        <div class="mcp-apikey-meta-row">
+          <span class="mcp-apikey-label">{{ $t('mcp.apikey.endpointLabel') }}</span>
+          <code class="mcp-apikey-value">{{ endpointHint }}</code>
+        </div>
+        <div class="mcp-apikey-meta-row">
+          <span class="mcp-apikey-label">{{ $t('mcp.apikey.authLabel') }}</span>
+          <span class="mcp-apikey-value">{{ $t('mcp.apikey.authHint') }}</span>
+        </div>
+
+        <div v-if="apikeyView.status === 'absent'" class="mcp-hint">
+          {{ $t('mcp.apikey.statusAbsent') }}
+        </div>
+        <div v-else-if="apikeyView.status === 'unreadable'" class="mcp-hint mcp-apikey-warn">
+          {{ $t('mcp.apikey.statusUnreadable') }}
+        </div>
+        <template v-else>
+          <div class="mcp-apikey-row">
+            <el-input
+              :value="apikeyView.key"
+              type="password"
+              show-password
+              readonly
+              class="mcp-apikey-input"
+            />
+            <el-button size="small" @click="copyKey">{{ $t('mcp.apikey.copy') }}</el-button>
+          </div>
+          <div class="mcp-apikey-times">
+            <span v-if="apikeyView.createdAt">
+              {{ $t('mcp.apikey.createdInfo', {time: formatApiKeyTime(apikeyView.createdAt), by: apikeyView.createdBy || ''}) }}
+            </span>
+            <span v-if="apikeyView.updatedAt" class="mcp-apikey-times-second">
+              {{ $t('mcp.apikey.updatedInfo', {time: formatApiKeyTime(apikeyView.updatedAt), by: apikeyView.updatedBy || ''}) }}
+            </span>
+          </div>
+        </template>
+
+        <p class="mcp-description mcp-apikey-note">{{ $t('mcp.apikey.securityNote') }}</p>
+
+        <div class="mcp-actions">
+          <el-button
+            type="danger"
+            size="small"
+            :loading="apikeyRotating"
+            @click="confirmRotate"
+          >
+            {{ apikeyView.status === 'absent' ? $t('mcp.apikey.generate') : $t('mcp.apikey.rotate') }}
+          </el-button>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
+import { getLocale } from '@/i18n'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import {
+  McpApiKeyView,
   McpCapabilityMeta,
   McpCapabilityRisk,
   McpSettingsData,
+  getMcpApiKey,
   getMcpSettings,
+  rotateMcpApiKey,
   updateMcpSettings
 } from '@/api/mcp-settings'
 import { ApiError } from '@/types/api'
@@ -75,12 +145,15 @@ import { ApiError } from '@/types/api'
 type CapabilityDraftMap = Record<string, boolean>
 
 /**
- * MCP 服务设置面板（mcp-service-capabilities W1）。
+ * MCP 服务设置面板（mcp-service-capabilities W1；W5 增服务密钥卡）。
  *
  * - 能力目录文案/风险分级全部来自后端 GET 下发（单一事实源 contracts.py），
- *   前端不维护能力清单副本；
+ *   前端不维护能力清单副本；描述按 locale 在 description/descriptionEn 间选取
+ *   （W5 双语化，与高级搜索契约 labelEn 同模式）；
  * - 保存携带 expectedRevision 做 CAS，409 冲突提示后自动重载最新配置；
  * - kill switch（forceDisabled）只读展示，保存仍允许（保留意图）；
+ * - 服务密钥卡独立加载：查看（GET，active 才返回明文）/ 生成 / 刷新（rotate，
+ *   CAS 冲突 409 后重载）；明文仅存组件内存，不落 localStorage/Vuex；
  * - demo 模式经 @/demo 拦截层提供同形数据，无独立分支；
  * - 移动端经 views/mobile/settings.vue 包装桌面设置页自动同源，无独立实现。
  */
@@ -103,6 +176,12 @@ export default class extends Vue {
   private draftEnabled = false
   private draftCapabilities: CapabilityDraftMap = {}
 
+  // 服务密钥态（W5；明文仅在组件内存，刷新页面后需重新查看）
+  private apikeyLoading = false
+  private apikeyLoaded = false
+  private apikeyRotating = false
+  private apikeyView: McpApiKeyView | null = null
+
   get dirty(): boolean {
     if (!this.loaded) return false
     if (this.draftEnabled !== this.settingsEnabled) return true
@@ -121,8 +200,15 @@ export default class extends Vue {
     return this.$t('mcp.panel.revisionInfo', { revision: this.revision, time, by }).toString()
   }
 
+  /** 客户端对接端点提示（当前部署 origin + /mcp/，Streamable HTTP） */
+  get endpointHint(): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return this.$t('mcp.apikey.endpointHint', { origin }).toString()
+  }
+
   mounted(): void {
     this.load()
+    this.loadApiKey()
   }
 
   private async load(): Promise<void> {
@@ -180,6 +266,11 @@ export default class extends Vue {
     }
   }
 
+  /** 能力描述按 locale 选取（W5：后端成对下发 description/descriptionEn） */
+  private capDescription(cap: McpCapabilityMeta): string {
+    return getLocale() === 'en' ? cap.descriptionEn || cap.description : cap.description
+  }
+
   private riskLabel(risk: McpCapabilityRisk): string {
     if (risk === 'high') return this.$t('mcp.risk.high').toString()
     if (risk === 'write') return this.$t('mcp.risk.write').toString()
@@ -197,6 +288,76 @@ export default class extends Vue {
       return this.$t('mcp.risk.noteHigh').toString()
     }
     return this.$t('mcp.risk.noteWrite').toString()
+  }
+
+  // ------------------------------------------------------------------ 服务密钥（W5）
+
+  private async loadApiKey(): Promise<void> {
+    this.apikeyLoading = true
+    try {
+      const res = await getMcpApiKey()
+      this.apikeyView = res.data
+      this.apikeyLoaded = true
+    } catch (error) {
+      // 失败保持 !apikeyLoaded 占位（重试按钮），不弹全局错误（请求层已节流提示）
+      this.apikeyLoaded = false
+      console.error('加载 MCP 服务密钥失败:', error)
+    } finally {
+      this.apikeyLoading = false
+    }
+  }
+
+  private formatApiKeyTime(value: string): string {
+    return value.slice(0, 19).replace('T', ' ')
+  }
+
+  private async copyKey(): Promise<void> {
+    const key = this.apikeyView?.key
+    if (!key) return
+    try {
+      await copyTextToClipboard(key)
+      this.$message.success(this.$t('mcp.apikey.copied').toString())
+    } catch (error) {
+      console.error('复制 MCP 服务密钥失败:', error)
+      this.$message.error(this.$t('mcp.apikey.copyFailed').toString())
+    }
+  }
+
+  /** 生成（absent）/ 刷新（active·unreadable）前的危险确认 */
+  private confirmRotate(): void {
+    const generating = this.apikeyView?.status === 'absent'
+    const title = generating ? this.$t('mcp.apikey.confirmGenerateTitle') : this.$t('mcp.apikey.confirmRotateTitle')
+    const message = generating ? this.$t('mcp.apikey.confirmGenerateMessage') : this.$t('mcp.apikey.confirmRotateMessage')
+    this.$confirm(message.toString(), title.toString(), {
+      confirmButtonText: generating ? this.$t('mcp.apikey.generate').toString() : this.$t('mcp.apikey.rotate').toString(),
+      cancelButtonText: this.$t('common.cancel').toString(),
+      type: 'warning'
+    })
+      .then(async() => {
+        await this.rotateApiKey()
+      })
+      .catch(() => undefined) // 用户取消：MessageBox 以 'cancel' 拒绝，无需处理
+  }
+
+  private async rotateApiKey(): Promise<void> {
+    if (this.apikeyRotating || !this.apikeyView) return
+    const generating = this.apikeyView.status === 'absent'
+    this.apikeyRotating = true
+    try {
+      const res = await rotateMcpApiKey(this.apikeyView.revision)
+      this.apikeyView = res.data
+      this.$message.success(this.$t(generating ? 'mcp.msg.generated' : 'mcp.msg.rotated').toString())
+    } catch (error) {
+      if (error instanceof ApiError && error.code === '409') {
+        this.$message.warning(this.$t('mcp.msg.apikeyConflict').toString())
+        await this.loadApiKey()
+      } else {
+        console.error('刷新 MCP 服务密钥失败:', error)
+        this.$message.error(this.$t('mcp.msg.rotateFailed').toString())
+      }
+    } finally {
+      this.apikeyRotating = false
+    }
   }
 }
 </script>
@@ -216,6 +377,10 @@ export default class extends Vue {
   box-shadow: var(--shadow-md);
 }
 
+.mcp-apikey-card {
+  margin-top: var(--spacing-lg);
+}
+
 .mcp-card-title {
   font-size: 20px;
   font-weight: 700;
@@ -233,6 +398,10 @@ export default class extends Vue {
 .mcp-hint {
   color: var(--color-text-secondary, #909399);
   padding: 12px 0;
+}
+
+.mcp-apikey-warn {
+  color: var(--el-color-warning, #e6a23c);
 }
 
 .mcp-alert {
@@ -309,5 +478,50 @@ export default class extends Vue {
   font-size: 12px;
   color: var(--color-text-secondary, #909399);
   margin-right: auto;
+}
+
+.mcp-apikey-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+.mcp-apikey-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mcp-apikey-value {
+  color: var(--color-text-secondary, #909399);
+  word-break: break-all;
+}
+
+.mcp-apikey-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: var(--spacing-sm);
+}
+
+.mcp-apikey-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-apikey-times {
+  font-size: 12px;
+  color: var(--color-text-secondary, #909399);
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.mcp-apikey-times-second {
+  margin-left: 12px;
+}
+
+.mcp-apikey-note {
+  margin-bottom: 0;
 }
 </style>

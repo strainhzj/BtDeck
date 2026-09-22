@@ -9,7 +9,7 @@
 - 自由文本清洗（URL 凭据、完整 URL、敏感参数、三类绝对路径）；
 - 输出 allowlist 点路径裁剪（裸键整树放行 / items.* 逐元素 / 白名单外丢弃）；
 - 泄漏扫描器 canary 矩阵（嵌套集合、URL 编码 passkey、camel/snake 键、
-  40/64 位 hex 哈希、bytes、无泄漏放行）；
+  40/64 位 hex 哈希、btdmcp_ 服务密钥、bytes、无泄漏放行）；
 - finalize 流水线（allowlist 后命中 = 实现缺陷级失败；1 MiB 预算整体失败）。
 
 本文件不依赖 MCP SDK（脱敏层必须可在无 SDK 环境下被门禁加载）。
@@ -253,6 +253,16 @@ class TestScanForLeaks:
         assert scan_for_leaks({"hash": "b" * 64}) != []
         # 短 hex（info_id 序列化形态）不误报
         assert scan_for_leaks({"hash": "abcd1234"}) == []
+
+    def test_mcp_api_key_detected(self):
+        # W5：服务密钥格式 canary（密钥永不进入工具输出）
+        from app.mcp.contracts import generate_mcp_api_key
+
+        key = generate_mcp_api_key()
+        findings = scan_for_leaks({"note": f"token={key}"})
+        assert any("mcp_api_key" in f for f in findings)
+        # 前缀但长度不足（非完整密钥）不误报
+        assert scan_for_leaks({"note": "btdmcp_short"}) == []
 
     def test_bytes_flagged(self):
         assert scan_for_leaks({"blob": b"\x00\x01"}) != []

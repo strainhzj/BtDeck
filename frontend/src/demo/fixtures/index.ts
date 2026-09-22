@@ -774,6 +774,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'torrent_advanced_search',
     risk: 'read',
     description: '按字段白名单条件高级查询种子（脱敏摘要，默认省略种子 hash）。',
+    descriptionEn: 'Advanced torrent search by whitelisted field conditions (redacted summary; torrent hash omitted by default).',
     defaultEnabled: false,
     requiresConfirm: false,
     requiresIdempotencyKey: false
@@ -783,6 +784,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'torrent_mark_pending_delete',
     risk: 'write',
     description: '为下载器与数据库中的种子添加 pending_delete 标签；仅添加标签，不删除任务或文件。',
+    descriptionEn: 'Add the pending_delete tag to torrents in the downloader and the database; tagging only, no tasks or files are deleted.',
     defaultEnabled: false,
     requiresConfirm: true,
     requiresIdempotencyKey: true
@@ -792,6 +794,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'torrent_add_file',
     risk: 'high',
     description: '添加 .torrent 种子文件（仅二进制内容，不接受磁力/URL/服务器路径）。',
+    descriptionEn: 'Add a .torrent seed file (binary content only; magnet links, URLs, and server paths are rejected).',
     defaultEnabled: false,
     requiresConfirm: true,
     requiresIdempotencyKey: true
@@ -801,6 +804,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'advanced_search_template_create',
     risk: 'write',
     description: '创建高级查询组合/查询模板（模板归属认证主体）。',
+    descriptionEn: 'Create an advanced-search condition group / query template (owned by the authenticated principal).',
     defaultEnabled: false,
     requiresConfirm: true,
     requiresIdempotencyKey: true
@@ -810,6 +814,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'dashboard_get',
     risk: 'read',
     description: '读取仪表盘聚合数据（脱敏聚合，无下载器地址与审计敏感字段）。',
+    descriptionEn: 'Read dashboard aggregates (redacted; no downloader addresses or audit-sensitive fields).',
     defaultEnabled: false,
     requiresConfirm: false,
     requiresIdempotencyKey: false
@@ -819,6 +824,7 @@ export const DEMO_MCP_CATALOG: DemoMcpCapabilityMeta[] = [
     tool: 'cron_task_trigger',
     risk: 'high',
     description: '立即触发一个内置定时任务（仅白名单 task_code）。',
+    descriptionEn: 'Trigger a built-in scheduled task immediately (allowlisted task_code only).',
     defaultEnabled: false,
     requiresConfirm: true,
     requiresIdempotencyKey: true
@@ -840,6 +846,24 @@ export const DEMO_MCP_SETTINGS: DemoFixtureBundle['mcpSettings'] = {
   updatedAt: DEMO_YESTERDAY,
   updatedBy: '演示管理员',
   forceDisabled: false
+}
+
+/**
+ * demo 专用服务密钥（格式对齐真实 btdmcp_ + 43 位 base64url，仅演示用；
+ * demo 面板「刷新」返回同形新值，不进任何真实认证链）。
+ */
+export const DEMO_MCP_API_KEY = 'btdmcp_' + 'demo'.repeat(10) + 'Key'
+
+export const DEMO_MCP_APIKEY: DemoFixtureBundle['mcpApiKey'] = {
+  status: 'active',
+  exists: true,
+  revision: 1,
+  createdAt: DEMO_YESTERDAY,
+  createdBy: '演示管理员',
+  updatedAt: DEMO_YESTERDAY,
+  updatedBy: '演示管理员',
+  keyPrefix: 'btdmcp_',
+  key: DEMO_MCP_API_KEY
 }
 
 export const DEMO_MOVIEPILOT_SETTINGS: DemoFixtureBundle['moviepilotSettings'] = {
@@ -993,6 +1017,7 @@ export const DEMO_FIXTURE_BUNDLE: DemoFixtureBundle = {
   trackerReannounceConfigs: DEMO_TRACKER_REANNOUNCE_CONFIGS,
   backups: DEMO_BACKUPS,
   mcpSettings: DEMO_MCP_SETTINGS,
+  mcpApiKey: DEMO_MCP_APIKEY,
   moviepilotSettings: DEMO_MOVIEPILOT_SETTINGS,
   moviepilotInstances: DEMO_MOVIEPILOT_INSTANCES,
   moviepilotAssociations: DEMO_MOVIEPILOT_ASSOCIATIONS,

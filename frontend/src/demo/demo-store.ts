@@ -5,6 +5,7 @@ import {
   DemoDashboardData,
   DemoDownloader,
   DemoFixtureBundle,
+  DemoMcpApiKey,
   DemoMcpSettings,
   DemoMoviePilotAssociation,
   DemoMoviePilotInstance,
@@ -824,6 +825,25 @@ export class DemoStore {
       updatedBy: input.updatedBy
     }
     return this.getMcpSettings()
+  }
+
+  // ====== MCP 服务密钥（demo 固定演示密钥；rotate 的 revision CAS 与真实端点一致） ======
+
+  public getMcpApiKey(): DemoMcpApiKey {
+    return clone(this.state.mcpApiKey)
+  }
+
+  /** CAS 刷新：revision 不匹配返回 null（请求层转 409）；成功后 revision+1、更换演示密钥尾串 */
+  public rotateMcpApiKey(expectedRevision: number): DemoMcpApiKey | null {
+    if (expectedRevision !== this.state.mcpApiKey.revision) return null
+    const rotated: DemoMcpApiKey = {
+      ...this.state.mcpApiKey,
+      revision: this.state.mcpApiKey.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: '演示管理员'
+    }
+    this.state.mcpApiKey = rotated
+    return clone(rotated)
   }
 
   // ====== MoviePilot 集成（全局开关 CAS + 实例/关联镜像） ======

@@ -9,6 +9,9 @@ PLANS/mcp-service-capabilities.md §4.3/§4.5/§4.6 与 docs/security/mcp-threat
 结论记录于计划 §10.4），仅依赖 stdlib，保证在无 SDK 环境下可被静态门禁加载。
 """
 
+import hashlib
+import re
+import secrets
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -20,6 +23,18 @@ MCP_CONFIG_KEY = "mcp.runtime.v1"
 MCP_CONFIG_SCHEMA_VERSION = 1
 # 只读环境紧急开关，优先级最高，UI 不得覆盖（§4.2）
 MCP_FORCE_DISABLED_ENV = "BTDECK_MCP_FORCE_DISABLED"
+
+# ==============================================================================
+# 服务密钥（API key）持久化（W5，计划 §4.2-2）：复用 configs 表第二个版本化
+# JSON 键。存储 = SHA-256 哈希（认证校验唯一事实源）+ SM4 加密明文副本
+# （仅控制面「查看」出口解密；密文不可解密不影响认证，只影响查看）。
+# ==============================================================================
+
+MCP_APIKEY_CONFIG_KEY = "mcp.apikey.v1"
+MCP_APIKEY_SCHEMA_VERSION = 1
+# 固定前缀使密钥与 JWT 天然可分（transport 认证据此路由），并便于泄漏扫描识别
+MCP_APIKEY_PREFIX = "btdmcp_"
+MCP_APIKEY_RANDOM_BYTES = 32  # secrets.token_urlsafe(32) → 43 位 base64url 无填充
 
 # ==============================================================================
 # 资源预算（§4.6/§4.7）：MCP 侧独立预算，不沿用 HTTP 上限
@@ -41,6 +56,10 @@ class CapabilitySpec:
     tool_name: str
     risk: str  # "read" | "write" | "high"
     description: str
+    # W5 双语化：与 description 成对的英文文案（控制面 catalog 下发
+    # descriptionEn，前端按 locale 选取；缺失必须被契约测试拦下，
+    # 不允许静默回落中文）。
+    description_en: str
     extra_gates: Tuple[str, ...]
     requires_confirm: bool = False
     requires_idempotency_key: bool = False
@@ -53,6 +72,10 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="torrent_advanced_search",
         risk="read",
         description="按字段白名单条件高级查询种子（脱敏摘要，默认省略种子 hash）。",
+        description_en=(
+            "Advanced torrent search by whitelisted field conditions "
+            "(redacted summary; torrent hash omitted by default)."
+        ),
         extra_gates=(
             "字段白名单（与 HTTP 高级搜索共用 service 的条件校验）",
             "pageSize 默认 20 / 最大 200，响应 ≤1 MiB",
@@ -64,6 +87,10 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="torrent_mark_pending_delete",
         risk="write",
         description=("为下载器与数据库中的种子添加 pending_delete 标签；" "仅添加标签，不删除任务或文件。"),
+        description_en=(
+            "Add the pending_delete tag to torrents in the downloader and the database; "
+            "tagging only, no tasks or files are deleted."
+        ),
         extra_gates=(
             "单次最多 100 项（info_id 列表）",
             "逐项结果：下载器成功但 DB 失败必须保留 partial 语义",
@@ -77,6 +104,9 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="torrent_add_file",
         risk="high",
         description="添加 .torrent 种子文件（仅二进制内容，不接受磁力/URL/服务器路径）。",
+        description_en=(
+            "Add a .torrent seed file (binary content only; magnet links, URLs, " "and server paths are rejected)."
+        ),
         extra_gates=(
             "默认 10 MiB / 硬上限 64 MiB，bencode、扩展名、空文件与 info hash 校验",
             "禁止服务器本地路径与任意 URL 输入",
@@ -90,6 +120,7 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="advanced_search_template_create",
         risk="write",
         description="创建高级查询组合/查询模板（模板归属认证主体）。",
+        description_en="Create an advanced-search condition group / query template (owned by the authenticated principal).",
         extra_gates=(
             "user_id 只能来自 principal，参数携带即 FORBIDDEN_ARGUMENT",
             "严格条件校验复用共用 service，与 HTTP 侧一致",
@@ -103,6 +134,7 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="dashboard_get",
         risk="read",
         description="读取仪表盘聚合数据（脱敏聚合，无下载器地址与审计敏感字段）。",
+        description_en=("Read dashboard aggregates (redacted; no downloader addresses " "or audit-sensitive fields)."),
         extra_gates=(
             "仅脱敏聚合 DTO，不含下载器连接信息与绝对路径",
             "复用 DashboardService（RuntimeContext 注入版）",
@@ -113,6 +145,7 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         tool_name="cron_task_trigger",
         risk="high",
         description="立即触发一个内置定时任务（仅白名单 task_code）。",
+        description_en="Trigger a built-in scheduled task immediately (allowlisted task_code only).",
         extra_gates=(
             "仅 MCP 显式 allowlist 中的内置 task_code；task_type 一律不作为放行依据",
             "任务必须 enabled、未运行且通过执行器策略检查",
@@ -128,6 +161,33 @@ TOOL_NAMES: Tuple[str, ...] = tuple(spec.tool_name for spec in CAPABILITY_CATALO
 
 # 所有能力的默认状态：全局关闭 + 逐能力关闭（G1 fail-closed 的代码侧锚点）
 DEFAULT_CAPABILITY_STATES: Dict[str, bool] = {code: False for code in CAPABILITY_CODES}
+
+# 服务密钥完整格式：前缀 + 43 位 base64url（token_urlsafe(32) 的无填充形态）
+MCP_APIKEY_BODY_LENGTH = 43
+_APIKEY_BODY_RE = re.compile(r"[A-Za-z0-9_-]{%d}" % MCP_APIKEY_BODY_LENGTH)
+
+
+def generate_mcp_api_key() -> str:
+    """生成新服务密钥（密码学随机；格式见 MCP_APIKEY_PREFIX 注释）。"""
+    return MCP_APIKEY_PREFIX + secrets.token_urlsafe(MCP_APIKEY_RANDOM_BYTES)
+
+
+def hash_mcp_api_key(key: str) -> str:
+    """服务密钥的 SHA-256 十六进制摘要（认证校验唯一事实源）。"""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def is_mcp_api_key_format(token: object) -> bool:
+    """完整格式校验（前缀 + 长度 + base64url 字符集）；服务层解密自检共用。"""
+    if not isinstance(token, str) or not token.startswith(MCP_APIKEY_PREFIX):
+        return False
+    return _APIKEY_BODY_RE.fullmatch(token[len(MCP_APIKEY_PREFIX) :]) is not None
+
+
+def looks_like_mcp_api_key(token: object) -> bool:
+    """仅前缀判定（transport 认证路由用：前缀命中即走密钥路径，其余走 JWT）。"""
+    return isinstance(token, str) and token.startswith(MCP_APIKEY_PREFIX)
+
 
 # 操作者身份只能来自认证 principal；这些参数名出现在工具参数中即拒绝（§4.4）
 FORBIDDEN_INPUT_ARGUMENTS: Tuple[str, ...] = ("user_id", "operator", "username")
@@ -427,6 +487,11 @@ REDACTION_DATA_DICTIONARY: Tuple[RedactionRule, ...] = (
         data_type="free_text_error",
         sources=("下游客户端异常文本", "上游错误响应"),
         policy="先移除 URL 凭据、passkey/token、绝对路径与客户端异常细节，再映射为稳定错误码。",
+    ),
+    RedactionRule(
+        data_type="mcp_api_key",
+        sources=("服务密钥（控制面查看/rotate 响应；格式 btdmcp_ + 43 位 base64url）",),
+        policy="永不进入 MCP 工具输出；泄漏扫描器按密钥格式 canary 拦截（redaction._MCP_APIKEY_RE）。",
     ),
     RedactionRule(
         data_type="tool_payload_in_logs",

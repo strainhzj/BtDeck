@@ -10,8 +10,8 @@
   白名单外字段（含下游 service 误塞的敏感字段）一律丢弃。
 - **泄漏扫描器**：最终序列化前的纵深防线——对已过滤结构做 canary 扫描
   （scheme URL、URL 内凭据、passkey/token 参数、URL 编码变体、Windows/UNC/
-  Unix 绝对路径、40/64 位 hex 种子哈希），命中即抛 ``LeakScanError``（工具
-  调用整体失败 INTERNAL_ERROR，绝不截断放行）。
+  Unix 绝对路径、40/64 位 hex 种子哈希、btdmcp_ 服务密钥），命中即抛
+  ``LeakScanError``（工具调用整体失败 INTERNAL_ERROR，绝不截断放行）。
 - **finalize_tool_output**：allowlist → 泄漏扫描 → 1 MiB 序列化预算
   （RESULT_TOO_LARGE 整体失败，不截断为不合法 JSON，§4.6）。
 
@@ -197,6 +197,8 @@ _UNC_PATH_SCAN_RE = re.compile(r"\\\\[a-z0-9_.$-]+\\", re.IGNORECASE)
 _UNIX_ABS_SCAN_RE = re.compile(r"(?i)(?<![\w])/(?:home|root|mnt|media|srv|opt|var|tmp|data|Users)/")
 _URL_SCHEME_SCAN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://")
 _HEX_HASH_SCAN_RE = re.compile(r"\b[0-9a-fA-F]{40}\b|\b[0-9a-fA-F]{64}\b")
+# MCP 服务密钥 canary（W5：字典 mcp_api_key 策略——密钥永不进入工具输出）
+_MCP_APIKEY_RE = re.compile(r"btdmcp_[A-Za-z0-9_-]{43}")
 
 
 def _scan_string(value: str, path: str, findings: List[str]) -> None:
@@ -212,6 +214,8 @@ def _scan_string(value: str, path: str, findings: List[str]) -> None:
         findings.append(f"{path}: unix_path")
     if _HEX_HASH_SCAN_RE.search(value):
         findings.append(f"{path}: torrent_hash")
+    if _MCP_APIKEY_RE.search(value):
+        findings.append(f"{path}: mcp_api_key")
 
 
 def scan_for_leaks(value: Any, path: str = "$") -> List[str]:
