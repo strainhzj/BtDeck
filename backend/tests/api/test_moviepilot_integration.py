@@ -249,6 +249,7 @@ class TestSettings:
         )
         assert resp.status_code == 409
         assert resp.json()["detail"]["data"]["currentRevision"] == 1
+        assert resp.json()["detail"]["data"]["reasonCode"] == "MOVIEPILOT_SETTINGS_CONFLICT"
 
     def test_corrupted_row_falls_back_closed(self, client, db_session):
         _make_user(db_session, "admin")

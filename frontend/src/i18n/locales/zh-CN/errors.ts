@@ -206,6 +206,19 @@ export const errors = {
     orphanPurgeJobNotFound: '任务不存在',
     orphanPurgeJobQueryFailed: '查询任务状态失败，请稍后重试',
     orphanCleanupJobNotFound: '任务不存在',
-    orphanCleanupJobQueryFailed: '查询任务状态失败，请稍后重试'
+    orphanCleanupJobQueryFailed: '查询任务状态失败，请稍后重试',
+    // ── v1.0.7 合入批（MCP/MoviePilot 端点错误契约，2026-09-22）──
+    mcpSettingsConflict: '配置已被其他会话修改，请刷新后重试',
+    mcpSettingsInvalid: 'MCP 配置载荷无效，请检查能力码与取值',
+    moviepilotSettingsConflict: '配置已被其他会话修改，请刷新后重试',
+    moviepilotSettingsInvalid: '集成开关载荷无效',
+    moviepilotIntegrationDisabled: 'MoviePilot 集成未启用（请在设置中开启）',
+    moviepilotInstanceDisabled: '该实例已被禁用，握手/同步将被拒绝',
+    moviepilotInstanceBindingConflict: '实例已绑定其他集成账号，无法以当前账号写入',
+    moviepilotInstanceNotFound: '实例不存在或已被删除',
+    moviepilotPayloadInvalid: '请求载荷无效，请检查后重试',
+    moviepilotMappingInvalid: '下载器映射无效，请检查后重试',
+    moviepilotPathInvalid: '反查路径或参数无效',
+    moviepilotInternal: '服务器内部错误，请稍后重试'
   }
 }

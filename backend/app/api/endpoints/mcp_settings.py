@@ -159,15 +159,26 @@ async def update_mcp_settings(
             status_code=status.HTTP_409_CONFLICT,
             detail=CommonResponse(
                 status="error",
-                msg=f"配置已被其他会话修改，请刷新后重试（当前 revision={exc.current_revision}）",
+                msg="配置已被其他会话修改，请刷新后重试",
                 code="409",
-                data={"currentRevision": exc.current_revision},
+                data={
+                    "currentRevision": exc.current_revision,
+                    # 双语错误契约：前端按 reasonCode 本地化（revision 移出 msg，只进 data）
+                    "reasonCode": "MCP_SETTINGS_CONFLICT",
+                },
             ).model_dump(),
         )
     except McpSettingsStateError as exc:
+        # 动态 str(exc)（未知/缺失能力码等）只进日志不进 msg（防泄露/可本地化）
+        logger.warning("MCP 配置载荷校验失败: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=CommonResponse(status="error", msg=str(exc), code="400", data=None).model_dump(),
+            detail=CommonResponse(
+                status="error",
+                msg="MCP 配置载荷无效，请检查能力码与取值",
+                code="400",
+                data={"reasonCode": "MCP_SETTINGS_INVALID"},
+            ).model_dump(),
         )
     await _log_settings_audit(
         adb=adb,

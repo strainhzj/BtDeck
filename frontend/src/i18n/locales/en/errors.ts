@@ -206,6 +206,19 @@ export const errors = {
     orphanPurgeJobNotFound: 'Task not found',
     orphanPurgeJobQueryFailed: 'Failed to query the task status, please try again later',
     orphanCleanupJobNotFound: 'Task not found',
-    orphanCleanupJobQueryFailed: 'Failed to query the task status, please try again later'
+    orphanCleanupJobQueryFailed: 'Failed to query the task status, please try again later',
+    // v1.0.7 merge batch (MCP/MoviePilot endpoint error contract, 2026-09-22)
+    mcpSettingsConflict: 'The configuration was modified in another session; refresh and try again',
+    mcpSettingsInvalid: 'Invalid MCP configuration payload; check the capability codes and values',
+    moviepilotSettingsConflict: 'The configuration was modified in another session; refresh and try again',
+    moviepilotSettingsInvalid: 'Invalid integration switch payload',
+    moviepilotIntegrationDisabled: 'MoviePilot integration is disabled (enable it in settings)',
+    moviepilotInstanceDisabled: 'This instance is disabled; handshakes/syncs are rejected',
+    moviepilotInstanceBindingConflict: 'The instance is bound to another integration account and cannot be written with the current account',
+    moviepilotInstanceNotFound: 'The instance does not exist or has been deleted',
+    moviepilotPayloadInvalid: 'Invalid request payload; check it and try again',
+    moviepilotMappingInvalid: 'Invalid downloader mapping; check it and try again',
+    moviepilotPathInvalid: 'Invalid reverse-lookup path or parameters',
+    moviepilotInternal: 'Internal server error; please try again later'
   }
 }

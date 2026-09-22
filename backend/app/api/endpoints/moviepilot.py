@@ -73,10 +73,14 @@ def require_moviepilot_integration_user(request: Request, db: Session = Depends(
         )
 
 
-def _http_error(http_status: int, message: str, data: Any = None) -> HTTPException:
+def _http_error(http_status: int, message: str, data: Any = None, reason_code: Optional[str] = None) -> HTTPException:
+    """统一错误信封；reason_code 进 data.reasonCode（前端按码本地化，插件面原文透传）。"""
+    payload = dict(data) if isinstance(data, dict) else data
+    if reason_code and isinstance(payload, dict):
+        payload["reasonCode"] = reason_code
     return HTTPException(
         status_code=http_status,
-        detail=CommonResponse(status="error", msg=message, code=str(http_status), data=data).model_dump(),
+        detail=CommonResponse(status="error", msg=message, code=str(http_status), data=payload).model_dump(),
     )
 
 
@@ -183,16 +187,22 @@ async def _log_audit(
 
 
 def _map_service_error(exc: Exception) -> HTTPException:
-    """服务层异常 → HTTP 错误（信封语义与 mcp_settings 一致）。"""
-    if isinstance(
-        exc, (MoviePilotIntegrationDisabledError, MoviePilotInstanceDisabledError, MoviePilotInstanceBindingError)
-    ):
-        return _http_error(status.HTTP_403_FORBIDDEN, str(exc))
+    """服务层异常 → HTTP 错误（信封语义与 mcp_settings 一致；管理面 UI 按 reasonCode 本地化）。"""
+    if isinstance(exc, MoviePilotIntegrationDisabledError):
+        return _http_error(status.HTTP_403_FORBIDDEN, str(exc), reason_code="MOVIEPILOT_INTEGRATION_DISABLED")
+    if isinstance(exc, MoviePilotInstanceDisabledError):
+        return _http_error(status.HTTP_403_FORBIDDEN, str(exc), reason_code="MOVIEPILOT_INSTANCE_DISABLED")
+    if isinstance(exc, MoviePilotInstanceBindingError):
+        return _http_error(status.HTTP_403_FORBIDDEN, str(exc), reason_code="MOVIEPILOT_INSTANCE_BINDING_CONFLICT")
     if isinstance(exc, MoviePilotInstanceNotFoundError):
-        return _http_error(status.HTTP_404_NOT_FOUND, str(exc))
-    if isinstance(exc, (MoviePilotSyncPayloadError, MoviePilotMappingError)):
-        return _http_error(status.HTTP_400_BAD_REQUEST, str(exc))
-    return _http_error(status.HTTP_500_INTERNAL_SERVER_ERROR, f"服务端内部错误: {exc}")
+        return _http_error(status.HTTP_404_NOT_FOUND, str(exc), reason_code="MOVIEPILOT_INSTANCE_NOT_FOUND")
+    if isinstance(exc, MoviePilotSyncPayloadError):
+        return _http_error(status.HTTP_400_BAD_REQUEST, str(exc), reason_code="MOVIEPILOT_PAYLOAD_INVALID")
+    if isinstance(exc, MoviePilotMappingError):
+        return _http_error(status.HTTP_400_BAD_REQUEST, str(exc), reason_code="MOVIEPILOT_MAPPING_INVALID")
+    # 动态 str(exc) 只进日志不进 msg（防泄露；前端按 reasonCode 兜底本地化）
+    logger.error("MoviePilot 管理面服务异常: %s", exc)
+    return _http_error(status.HTTP_500_INTERNAL_SERVER_ERROR, "服务器内部错误", reason_code="MOVIEPILOT_INTERNAL_ERROR")
 
 
 # ==============================================================================
@@ -283,11 +293,16 @@ async def update_moviepilot_settings(
     except MoviePilotSettingsRevisionConflict as exc:
         raise _http_error(
             status.HTTP_409_CONFLICT,
-            f"配置已被其他会话修改，请刷新后重试（当前 revision={exc.current_revision}）",
+            "配置已被其他会话修改，请刷新后重试",
             data={"currentRevision": exc.current_revision},
+            reason_code="MOVIEPILOT_SETTINGS_CONFLICT",
         ) from exc
     except MoviePilotSettingsStateError as exc:
-        raise _http_error(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        # 动态 str(exc) 只进日志不进 msg（防泄露/可本地化）
+        logger.warning("MoviePilot 设置载荷校验失败: %s", exc)
+        raise _http_error(
+            status.HTTP_400_BAD_REQUEST, "集成开关载荷无效", reason_code="MOVIEPILOT_SETTINGS_INVALID"
+        ) from exc
 
     await _log_audit(
         adb=adb,
@@ -411,7 +426,10 @@ def reverse_lookup_associations(
     try:
         items, total = service.reverse_lookup(path, mode, page, pageSize)
     except MoviePilotSyncPayloadError as exc:
-        raise _http_error(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        logger.warning("MoviePilot 反查参数校验失败: %s", exc)
+        raise _http_error(
+            status.HTTP_400_BAD_REQUEST, "反查路径或参数无效", reason_code="MOVIEPILOT_PATH_INVALID"
+        ) from exc
     return CommonResponse(
         status="success",
         msg="获取成功",

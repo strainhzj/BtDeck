@@ -337,14 +337,14 @@ class TestPutValidation:
         caps = _all_caps(False) | {"torrent.magic": True}
         resp = client.put("/api/v1/mcp/settings", json=_put_body(0, True, caps), headers=_auth())
         assert resp.status_code == 400
-        assert "torrent.magic" in resp.json()["detail"]["msg"]
+        assert resp.json()["detail"]["data"]["reasonCode"] == "MCP_SETTINGS_INVALID"
 
     def test_missing_capability_code_rejected(self, client, db_session):
         _make_user(db_session)
         caps = {k: False for k in CAPABILITY_CODES if k != "cron.trigger"}
         resp = client.put("/api/v1/mcp/settings", json=_put_body(0, True, caps), headers=_auth())
         assert resp.status_code == 400
-        assert "cron.trigger" in resp.json()["detail"]["msg"]
+        assert resp.json()["detail"]["data"]["reasonCode"] == "MCP_SETTINGS_INVALID"
 
     def test_non_bool_enabled_rejected_by_schema(self, client, db_session):
         _make_user(db_session)

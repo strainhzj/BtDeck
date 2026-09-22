@@ -216,6 +216,7 @@ import {
 } from '@/api/moviepilot'
 import { getDownloaderList, type DownloaderSimple } from '@/api/torrents'
 import { ApiError } from '@/types/api'
+import { apiErrorMessage } from '@/i18n'
 
 /** 映射编辑行（草稿态） */
 interface MappingDraftRow {
@@ -489,7 +490,9 @@ export default class MoviePilotPanel extends Vue {
     } catch (error) {
       this.reverseItems = []
       this.reverseLoaded = true
-      this.reverseError = error instanceof ApiError ? error.msg : this.$t('moviepilot.reverse.failed').toString()
+      this.reverseError = error instanceof ApiError
+        ? apiErrorMessage(error, this.$t('moviepilot.reverse.failed').toString())
+        : this.$t('moviepilot.reverse.failed').toString()
       console.error('MoviePilot 反查失败:', error)
     } finally {
       this.reverseLoading = false
