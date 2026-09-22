@@ -8162,10 +8162,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 
 ## 2026-09-22：dev1.0.7 → dev 分支语义合并（MCP+MoviePilot 线并入双语主干）
 
-- 计划先行：`PLANS/merge-dev107-into-dev.md`（37 冲突四类策略 + 迁移链重挂方案）；经 reviewer 子代理独立审查（8 项事实核验 F1~F8，附录 A），吸收 2 Critical（guard spec B 节 ENOENT 必崩、排除清单机制落地为 4 文件排除 + 3 处白名单行级登记）与冲突计数更正（35→37）后执行。
+- 合并提交：`dbe7f65`（双亲 9318adf+53119be）；计划先行：`PLANS/merge-dev107-into-dev.md`（37 冲突四类策略 + 迁移链重挂方案）；经 reviewer 子代理独立审查（8 项事实核验 F1~F8，附录 A），吸收 2 Critical（guard spec B 节 ENOENT 必崩、排除清单机制落地为 4 文件排除 + 3 处白名单行级登记）与冲突计数更正（35→37）后执行。
 - P0/P1：合并发起，37 冲突与计划逐一对账一致；类 A 13 文件取 dev（i18n P6-5 完成态，dev1.0.7 P1 期键结构弃用）、类 B 2 文件删除（主机能力面板组件+spec，按 282f494 刻意移除）。
 - P2 迁移链重挂：`053003337878.down_revision` c1d2e3f4a5b6 → d1e2f3a4b5c6；约束文档 HEAD 标注同步；断言通过（单 HEAD、32 迁移、链尾五节点顺序正确）。安全性：moviepilot 两表纯建表+索引无外键，与 preset_key 列迁移零相互依赖，自带 has_table 幂等守卫。
 - P3 后端：`torrent_add_service.py` 并集（dev reasonCode 防泄露契约 + 固定 msg + logging.exception 形态保留；MCP 领域字段 info_hash/info_id/name/downloader_nickname/created 与 db_torrent_created 追踪并入；import 取新位置 torrent_add_helpers）；4 个 tests/core 统一 dev 集中式动态 head 方案 + moviepilot 幂等守卫；表计数断言 33→35、docstring 26→35。验证：迁移 40 passed、端点（mcp/moviepilot）56 passed、reason/add 契约 166 passed、flake8 绿。
 - P4 前端：settings/index.vue 三步合并（dev i18n 基底 − 主机能力页签 + MCP/MoviePilot 页签与 Demo 渲染）；guard spec B 节改写为「组件保持移除」反向守卫；排除清单 +4 文件（api/mcp-settings.ts、api/moviepilot.ts、McpSettingsPanel.vue、MoviePilotPanel.vue）、白名单 +17 条（TrackerDetailCard 媒体库段 15 + detailTabsData 1 + settings MCP 页签 label 1）。验证：i18n 门禁 20 passed、shared-utils/navbar/tracker-card 90 passed、lint/build 绿。
 - P5 文档：.gitignore 并集（+/data/）；PLANS/README.md 重建（桌面双语状态更正为 P1~P6-5 完成、MCP 更正为已完成、并入 MoviePilot/双模式/Demo/v1.0.8 行、合并任务行、归档注记）；roadmap 10 文件语义合并（dev i18n 行为主 + dev1.0.7 MCP/MoviePilot 行；根 README「本次新增」以合并批次重写，两侧历史批次日志保留于分支提交史；主机能力行双处删除；api 计数 16/endpoints 41 待 P6 重测）；feature_list.json 双语 feature 全取 dev evidence + 追加合并任务条目（#82）；progress/session-handoff 并集。
 - 遗留（另立项，见计划 §8）：MCP/MoviePilot 前端界面双语化（键包扩 mcp/moviepilot 模块）；其后端端点 reasonCode 契约；语言包主机能力残留键清扫；双语 P7 收口。
+- 全量验证终局（2026-09-22）：后端 pytest 5215 passed/18 skipped、覆盖率 66.79%（门禁 40%）；flake8(app) 通过（mypy 11 错与 black 3 文件均为 dev 存量债，文件与 dev 尖端逐字节一致，CI 不跑）；前端 typecheck/jest 125 套 1833 例/lint/build 全绿；./init.sh exit=0。过程中修复：两个 preset_key 测试 EXPECTED_HEAD 改动态 head；本地 venv 补装 mcp~=1.30.0 + pyjwt[crypto]~=2.10.1，starlette 按钉版回落 0.41.3、sse-starlette 用 2.1.3（pip check 无冲突）；mcp 生命周期 1 例为套件负载下时序抖动（单跑与套件复跑均绿）。

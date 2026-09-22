@@ -5563,7 +5563,7 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - vue-jest 下 console.error spy 按参数匹配断言（同流程多次调用常态），勿断言调用次数。
 - eslint --max-warnings 0 对测试文件同样生效：空 arrow `() => {}` 报 no-empty-function，用 `() => undefined`；`--fix` 会把插值对象 `{ count: x }` 收敛为 `{count: x}`，源码契约断言以 fix 后形态为锚。
 
-## 2026-09-22 交接：dev1.0.7 → dev 合并完成（本地合并提交，未推送）
+## 2026-09-22 交接：dev1.0.7 → dev 合并完成（合并提交 dbe7f65，双亲 9318adf+53119be，未推送）
 
 - 分支状态：dev 已包含 origin/dev1.0.7 全部内容（MCP W0~W4-d、MoviePilot 整理联动、双语 P0/P1 文档线）；双语实现取 dev P6-5 完成态；迁移链单 HEAD=053003337878（32 迁移）。
 - 关键决策备查：①主机能力面板按 dev1.0.7 提交 282f494 移除（组件/spec/页签/roadmap 行四清，guard spec 改为反向守卫防复活）；②MCP/MoviePilot 新面暂入 i18n 审计排除清单与白名单，双语另立项（PLANS/merge-dev107-into-dev.md §8）；③根 roadmap README「本次新增」以合并批次重写（两侧历史批次日志在分支提交史，未展开）。
