@@ -7944,3 +7944,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - Java 21 用户级安装：USTC apt 下载 deb + dpkg -x 至 ~/.btdeck-tools/jdk-21，修复 25 个指向 /etc 的绝对符号链接（改相对），cacerts 从系统 CA 包 150 证书重建 JKS；JAVA_HOME 已写入 profile。
 - Android 工具链用户级安装：Gradle 8.9（腾讯镜像）+ cmdline-tools/sdkmanager（platforms;android-35 + build-tools;35.0.0，dl.google.com 直连可达）+ buildPython 3.12（USTC Ubuntu noble deb 解压 + EXTERNALLY-MANAGED 移除 + get-pip；venv home 记录 shim 目录导致 encodings 失联，改为同目录符号链接修复）。
 - 产物：btdeck-companion-0.2.5-{strict,lan-cleartext}-debug.apk（versionCode 7，apksigner/aapt2 双验证通过，JVM 单测绿）已上传 GitHub Release v1.0.6 并更新 SHA256SUMS；EXE/安装器构建进行中（待本提交入库解除 dirty 拦截）。
+
+## 2026-09-22（续）：Windows EXE/安装器产出并上传 Release（v1.0.6-windows-artifacts）
+
+- btdeck-windows-builder 镜像（6.19GB）构建成功：wine + Miniconda py311_26.7.1 Windows 版（NSIS /S 静默装入 wineprefix；python.org 官方安装器 burn 引擎在 wine 下崩溃改道）+ PyInstaller 烘焙；运行时依赖经 pip 自带 certifi + 阿里云源（跨平台轮子库方案因 bencodepy 无 win wheel 放弃）。
+- deploy/build-windows.sh --release 全链路实测通过：G5 内容级验证 PASS（build-info 1.0.6@d0d3046 kind=windows-exe/前端逐文件哈希/禁入扫描）；ISCC 首跑绝对路径被解析为选项前缀（Invalid option: rv/...）→ 改相对路径修复；32 位 ISCC 对 43MB 载荷 lzma2/ultra64 OOM → 临时副本降 lzma2/max（不动 tracked btdeck.iss）。
+- Release v1.0.6 七资产终态：BtDeck-v1.0.6-windows-amd64.exe（便携版，@d0d3046 真实历史提交）+ windows-x64-setup.exe（44.4MB）+ 双 APK 0.2.5 + DEB/RPM + SHA256SUMS（--clobber 更新）。
+- dev 推送 d0d3046 + PR #8 合并（master 626d509）；ISCC 相对路径修复为本批最后一笔（工作区待提交）。

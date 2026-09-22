@@ -198,7 +198,9 @@ run_in_builder "wine /work/.venv-packaging/Scripts/python.exe /work/deploy/analy
 if [ "$BUILD_INSTALLER" = "1" ]; then
     info "[4/4] Building Windows installer (Inno Setup in container)..."
     mkdir -p "$DIST_DIR"
-    BTDECK_ISCC_IMAGE="$ISCC_IMAGE" "${DEPLOY_DIR}/iscc" "${DEPLOY_DIR}/btdeck.iss" \
+    # 注意：必须传相对路径（相对仓库根=/work 容器 cwd）——绝对 POSIX 路径
+    # 以 / 开头会被 ISCC 解析为选项前缀（如 /s）导致 Invalid option
+    BTDECK_ISCC_IMAGE="$ISCC_IMAGE" "${DEPLOY_DIR}/iscc" deploy/btdeck.iss \
         || {
             if [ "$RELEASE_MODE" = "1" ]; then
                 fail "Inno Setup build failed in release mode - failing the build"
