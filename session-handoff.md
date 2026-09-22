@@ -649,7 +649,155 @@ gradle processDebugResources + compileDebugKotlin 绿；merged_manifest 实证�
 - 尚未执行 Git commit；工作区还包含此前未提交的其他批次变更，提交时请按文件范围审阅。
 
 ---
+## 2026-09-10：插件已公开发布（独立仓库 MoviePilot-Plugins-BtDeck）
 
+- 插件源码自 BtDeck 仓库根 `moviepilot-plugin/` 拆出为同级独立仓库并推送：https://github.com/strainhzj/MoviePilot-Plugins-BtDeck（public，main=ed828bb，GPL-3.0，package.v2.json 含 history v1.0.0；线上索引经 GitHub API 验证）。
+- 市场安装：PLUGIN_MARKET 加入仓库地址；本地联调仍可挂载目录走 PLUGIN_LOCAL_REPO_PATHS。
+- BtDeck 侧引用（PLANS/roadmap/feature_list/progress）已同步；BtDeck 未执行 git 提交。剩余待办：真实宿主联调（task .4，阻塞于部署信息四问）。
+
+---
+
+## 2026-09-09（续十）：MCP W4-d G10 收官——12/12 READY、feature 终态 done（本批含一笔已提交修复 b7bba8d + 收官笔待提交）
+
+### 交付内容
+
+- **锁跨平台根修（b7bba8d 已提交）**：requirements-lock.txt pywin32==312 补 `; sys_platform == "win32"`——pip-compile 在 Windows 解析 mcp 1.30.0 双 python_version 分支 win32 约束时丢标记，Linux 侧 --require-hashes 全断（Docker/DEB/RPM 三产线；上会话 apt 阻挡掩蔽）；test_dependency_lock.py 补锚定。12 锁测试 + checker + Windows dry-run + Linux 双实装全绿。
+- **G10 四制品黑盒全矩阵**（Docker 干净树镜像 65bf9a9e 三段 / DEB debian:12 解包运行三段 / RPM 二进制逐字节一致+kind+A 段 / EXE W4-c 制品 A 复验+B/C 补齐）：A initialize→BtDeck/1.30.0+SERVICE_DISABLED；B 控制面 PUT 部分开启→tools/list 仅见开启能力；C canary 种子脱敏零泄漏。黑盒编排与种子脚本沉淀 release/build/（gitignored 本地件：run-docker-smoke.sh / run-deb-rpm-smoke.sh / run-exe-smoke.sh / mcp_g10_smoke.py / mcp_g10_seed.py / gen_seed_sql.py / run-deb-rpm-build.sh）。
+- **门禁终态**：MCP-G10.json 片段 PASS（evidence 八条含 deb/rpm sha256）→ aggregate **12/12 PASS → verdict=READY**（release/build/mcp-gate-report.json）。
+- **收官**：feature_list 任务 .9+feature 顶层 done；PLANS §11 终态（W4 done 行+§11.3 收官注记）；runbook §8.1 黑盒三段配方；progress.md 续十。
+
+### 工作区红线遵守情况
+
+- 用户并行 MoviePilot 件（backend/app/**moviepilot**、alembic、api.py、前端详情页签、moviepilot-plugin/、PLANS/moviepilot-integration.md、roadmap README 日期）全程未触碰、未 add。
+- 混合文件（feature_list.json/progress.md/session-handoff.md）部分暂存提交，提交前对并行工作内容做双模式关键词零泄漏自检通过。
+- DEB/RPM 构建在干净 clone（release/build/deb-src @ b7bba8d）容器内进行，宿主 frontend/dist 未动。
+
+### 坑位（本批新增七条，详见 progress.md 续十）
+
+MSYS 路径转换改写容器绝对路径（MSYS_NO_PATHCONV=1）；docker cp 目录静默拷空（tar 管道）；Windows clone 须 --config core.autocrlf=false；node 基底缺 libpython3.11.so（PyInstaller）；制品库字面量种子须显式补迁移层 NOT NULL 列（has_tracker_error，INSERT OR IGNORE 静默吞行）；deb.debian.org trixie 间歇 404→NJU 镜像稳；build-linux.sh dev 模式过不了 verify-package（dirty 硬拒无逃生舱，干净树唯一路径）。
+
+### 下一批入口
+
+- MCP feature 已收官，无既定下一批。可选跟进：CI w2-strict-linux-build（workflow_dispatch）跑一遍 Linux 制品管线对 b7bba8d 后树做正式 CI 级复验；正式发布时 build-images.sh --release 六处版本一致+干净树要求适用。
+- 用户并行线（MoviePilot 联调 task .4）仍阻塞于部署信息。
+
+## 2026-09-09：MoviePilot 整理联动第一版闭环（代码+自动化测试完成，联调待部署信息）
+
+### 交付内容（本批，未提交；与未提交 MCP W0~W3 改动共存于 dev1.0.7 工作区）
+
+- **BtDeck 后端**：moviepilot_instance/moviepilot_transfer_history 两表 + 迁移 053003337878（head 前进，空库 35 表）；设置服务（moviepilot.integration.v1 fail-closed+CAS）+ 集成服务（握手/幂等 upsert/映射重解析/正反查）；/api/v1/moviepilot/*（principal 门禁已登记路由鉴权覆盖表）；审计枚举 +3。
+- **BtDeck 前端**：MoviePilotPanel 设置页签（开关 CAS/实例/映射/反查）+ 种子详情卡「媒体库」页签（detailTabsData media 分支）。
+- **插件**：moviepilot-plugin/（BtDeckBridge 1.0.0，市场仓库结构根可直接作 PLUGIN_LOCAL_REPO_PATHS 挂载源）；取数自调用宿主 API、凭据复用 BtDeck 登录/刷新、水位+断点+全量重扫。
+- **测试**：后端 28（幂等三态/多下载器不串联/映射重解析/认证矩阵/审计）+ 迁移对称；前端 32 spec+lint+typecheck（不跑 build 防 demo dist）；插件 38 spec。真实宿主联调未执行（task .4 pending）。
+
+### 对上会话未提交 MCP 文件的两处最小修复（非本批功能，已上报）
+
+- app/mcp/catalog.py：`_empty_audit_context` 定义顺序 NameError（模块不可 import）→ 移至类前；补 `spec_by_tool_name`（confirm 门禁引用的未定义函数）。tests/mcp 4 失败 → 1 失败（余 test_concurrent_snapshot_switch_never_tears 属 W3 未竟）。
+
+### 下一批入口
+
+- **联调（task .4）**：需用户提供 MoviePilot V2 完整版本号/部署方式/插件目录挂载可行性/BtDeck 地址容器内可达性；步骤见 PLANS/moviepilot-integration.md §6 与插件 README。
+- 后续功能（保留标记/辅种识别/删除影响预览/事件触发同步）依赖联调后关联数据成型。
+
+## 2026-09-08（续五）：MCP W3-② 写/高风险工具已落地，待 W3-③ 添加种子
+
+### 交付内容（本批，未提交）
+
+- **torrent_mark_pending_delete**：逐项复用 delete_by_level(...,4)；already_marked 跳过下载器调用；partial 语义逐项保留（db_ok=False 不折叠）；error_code 稳定映射；幂等 LRU；DELETE_L4 + MCP_TOOL_CALL 双层审计。
+- **cron_task_trigger**：复用 trigger_task_by_code + MCP 显式 allowlist（6 个只读/同步任务；孤儿清理/路径扫描/重通告不开放）；五路拒绝码映射；accepted/run_id=null 不伪报完成；幂等+审计。
+- **共享层**：idempotency.py（LRU）、common.py（log_tool_audit）；模板工具重构接入。
+- **真缺陷根修**：trigger_task_by_code 判空与 CRUD 返回形态错配（未命中返回 truthy {total:0,list:[]}→旧代码必崩 TRIGGER_ERROR）；单测 mock 形态漂移掩盖生产路径——mock 已校准真实信封。cron_trigger 另加 session_factory 注入参数。
+- **测试**：tests/mcp 231 项（write 单元 20 + wire 拒绝 4）+ tests/tasks 7 项校准；相邻 360+714 绿；lint/mypy/black 干净。
+- **门禁**：G0/G2/G3 片段更新至五工具；G7/G8 留 W3-③ 补全第三类写操作与上传面。
+
+### 下一批：W3-③（计划 §6-W3.3）
+
+- torrent_add_file：TorrentAddService 的 torrent_helpers 辅助函数归属收尾（§11.1 记录的分层债）后接入；10/64MiB 双上限、bencode/info hash 校验、base64 输入、禁止服务器路径（SERVER_PATH_FORBIDDEN）、与 HTTP /torrent/add 共用边界；G7/G8 证据随后可补全。
+
+---
+
+## 2026-09-08（续四）：MCP W3-① 只读三工具已落地，待 W3-②③（写/高风险工具）
+
+### 交付内容（本批，未提交）
+
+- **app/mcp/tools/**：三处理器注册入 catalog.TOOL_HANDLERS，签名定稿 `(spec, principal, arguments, runtime, call_context)`（call_context 携审计四元组）。①torrent_advanced_search 复用 search_torrents（dict→模型 model_validate 经 service 命名空间，G0 合规）；②advanced_search_template_create 复用 create_search_template + catalog 级 confirm 门禁 + 进程内 512 LRU 幂等 + MCP_TOOL_CALL 审计（创建/重放两行，detail 无 conditions 原文）；③dashboard_get 复用 DashboardService，仅脱敏聚合。
+- **输入隐私巡检 conditions.py**：tracker_msg 永拒；tracker_url 仅域名+contains 族；搜索顶层 17 键白名单，未知键拒绝。
+- **测试**：tests/mcp 207 项（read 单元 21 + wire E2E 6 含 G5 全响应零泄漏），5 连跑稳定；相邻 383+566 绿。
+- **坑位**：StaticPool 单连接并发竞态（→临时文件库）；审计 log_id uuid4 无序（→按内容断言）；枚举计数既有漂移 48→53 校准。
+- **门禁**：MCP-G0/G2/G3 片段更新含 tools 层；G4/G5 留 W3-②③/W4（聚合 BLOCKED 保持）。
+
+### 下一批：W3-②（计划 §6-W3.2）
+
+- torrent_mark_pending_delete（等级 4 标签标记：info_ids≤100、逐项结果、partial 语义、already_marked 幂等）与 cron_task_trigger（allowlist 数据源 default_scheduled_tasks.py+task_profiles.py、enabled/未运行/执行器策略、run_id 返回、task_type 0-3 永拒）。
+- 复用 torrent_deletion_by_level 与 trigger_task_by_code；写工具审计沿 MCP_TOOL_CALL；处理器签名与注册模式照 W3-①。
+- W3-③：TorrentAddService 的 torrent_helpers 辅助函数归属收尾后接入 torrent_add_file。
+
+---
+
+## 2026-09-08（续三）：MCP W2（同进程挂载/三重门禁/脱敏层）已落地，待 W3 六工具接入
+
+### 交付内容（本批，未提交）
+
+- **同进程挂载**：`backend/app/mcp/server.py`（官方 mcp 1.30.0 lowlevel Server + StreamableHTTPSessionManager(stateless=True, json_response=True)→Starlette 子应用）+ `factory._mount_mcp_service`（SPA fallback 之前挂 /mcp；**SDK 缺失 try-import 跳过=不挂载**，W4 前生产默认态）+ `startup/lifecycle.py`（父 lifespan 手动 __aenter__ 子应用 lifespan=进入 session_manager.run()；mark_ready/mark_closed；清理段最末 __aexit__）。
+- **runtime.py**：McpRuntime——双会话工厂（默认 SessionLocal/AsyncSessionLocal 可注入）+ 惰性 RuntimeContext（torrent_stats 三态哨兵保留）+ fail-closed 配置快照现读（每次 list/call 读 mcp.runtime.v1，PUT 后立即生效）+ require_ready/require_store（RUNTIME_NOT_READY）。
+- **三重门禁**：全局（SERVICE_DISABLED）→ 能力（list 过滤 + call 复核；目录外/别名/旧名统一 CAPABILITY_DISABLED）→ principal 认证（principal 内核+双头 token；未知原因码兜底 AUTH_TOKEN_INVALID）。入参：FORBIDDEN_ARGUMENT + 类型/未知/缺必填 + 契约预算（page_size≤200/info_ids≤100）。
+- **redaction.py**：tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径（裸键=整树放行）/泄漏扫描器（URL 凭据/passkey 含 URL 编码/三类绝对路径/40+64 hex/bytes）/finalize_tool_output（扫描命中=INTERNAL_ERROR 整体失败；>1MiB=RESULT_TOO_LARGE）。
+- **测试**：tests/mcp 179 项全绿（auth 16/gates 单元 21+线上 20——真实 JSON-RPC 握手矩阵含并发快照切换零撕裂、factory 路由序断言；redaction 43 含 canary 负例）。相邻回归 127 项绿；mypy/flake8/black 全绿。
+- **门禁片段**：release/build/mcp-gate-fragments/MCP-G{0,2,3}.json PASS；聚合 verdict=BLOCKED（9 门 NOT_RUN 待 W3/W4）。
+- **状态回填**：feature_list .3/.4 → done；计划 §11 W2→done、§11.3 指向 W3；progress.md 续三。
+
+### 下一批：W3（计划 §6-W3）
+
+- 六工具按风险三批接入 `catalog.TOOL_HANDLERS`（签名 `(spec, principal, arguments, runtime) -> dict`，出口统一 finalize_tool_output）：①高级查询/查询模板/仪表盘 → ②等级 4 标记+Cron 触发（confirm/幂等/审计）→ ③TorrentAddService 共用边界收尾后接入添加种子。
+- W2 遗留观察：G5 工具级 E2E canary、G9 在途写收尾语义随 W3 工具落地补证；G1 升级矩阵与 G6~G11 制品面在 W4。
+
+### 环境要点（新设备必读）
+
+- 后端质量门用 anaconda base（本机 `C:/software/anaconda3/python.exe`，pytest 8.3.5/mypy/black 24.10/flake8）；**W2 起 anaconda base 已装 mcp==1.30.0**（线上层 wire 测试依赖；无 SDK 环境自动 skip）。跑服务用 btpManager。
+- 本机 git 代理 192.168.5.60:10808 失联期间，fetch 走 `https://ghfast.top/https://github.com/strainhzj/BtDeck.git`（仓库 public）；代理恢复后 origin 照常。
+- tests/mcp/test_sdk_compatibility.py 的就地 selfcheck 在未装 fastmcp/mcp 时自动 skip（锁定组合证据以仓库内 4 份 JSON 为准）。
+- 前端 Node 22.23.2；门禁 `npm run lint -- --no-fix` + `npm run typecheck`；勿跑 npm run build（覆盖 demo dist）。W2 纯后端未涉及前端。
+- pytest-timeout 未安装（勿用 --timeout 参数）。
+
+### W2 关键坑位（勿重踩）
+
+- **SDK 缓存刷新旁路**：call_tool 装饰器在工具定义缓存未命中时内部以 `handler(None)` 调 list 处理器——list 处理器必须手动注册（不用 @server.list_tools()），req=None 视为缓存刷新只回 schema 元数据不做授权；执行门禁在 call 路径独立强制。
+- SDK 两处异常路径都会把 str(exc) 渲染进响应文本（call_tool 装饰器 except Exception 与 _handle_request ErrorData）——处理器必须自捕获一切并渲染固定文案。
+- McpError 在 `mcp.shared.exceptions`（非 mcp.types）；JSON-RPC 应用级错误码 -32000，稳定字符串码放 data.error_code。
+- allowlist 点路径：裸键=整树放行（dashboard totals/status_counts），带子路径=逐元素过滤——初版把裸键当"无子路径全清空"是错的。
+
+---
+
+## 2026-09-08（续）：MCP W0（契约/SDK 选型/G0 门禁/Gate 骨架）+ W1（配置控制面）已落地待推送后进入 W2
+
+### 交付内容（本会话两批，随本条目一并提交）
+
+- **W0**：`backend/app/mcp/contracts.py`（6 工具目录/输入契约/输出 allowlist/脱敏字典/预算常量）+ `errors.py`（23 稳定错误码+HTTP 对齐表+principal 映射）；SDK 探针 `backend/scripts/mcp_sdk_probe.py` + 4 份锁定组合证据 JSON（`backend/tests/mcp/evidence/`）；G0 静态门禁 + 契约/证据锚定测试（`backend/tests/mcp/`）；威胁模型 `docs/security/mcp-threat-model.md`；MCP-G0~G11 Gate 骨架（`release/schemas/mcp-gate-fragment.schema.json` + `scripts/release/aggregate_mcp_gates.py` + `backend/tests/release/test_mcp_gate_skeleton.py`，空片段目录=12×NOT_RUN=BLOCKED）。
+- **W1**：`McpSettingsService`（configs 表首个版本化 JSON 键 `mcp.runtime.v1`，fail-closed 整体回落/revision CAS/kill switch 只读覆盖）+ `GET/PUT /api/v1/mcp/settings`（principal 认证门禁 401/403、能力目录元数据下发、best-effort 审计 `MCP_SETTINGS_UPDATE`）+ `BTDECK_MCP_FORCE_DISABLED` 配置 + 前端 `McpSettingsPanel.vue` 设置页签（移动端经 mobile/settings.vue 包装自动同源，零新代码）。
+- **SDK 选型结论（计划 §10.4）**：官方 `mcp` SDK **1.30.0** + streamable HTTP stateless。fastmcp 2.14.3 因打包摩擦落选（未声明依赖 packaging、--copy-metadata 后再缺 burner_redis、29.7MB vs 10.9MB）。**SDK 依赖未入生产 requirements（W0 纪律），W4 才锁定。**
+
+### 下一批：W2（计划 §6-W2 + §10.3/§10.4 接线实证）
+
+- 以官方 mcp SDK 在 SPA fallback 前挂载同进程 MCP 应用到根 `/mcp`；**父 lifespan 内手动进入 `session_manager.run()`**（挂载的子应用 lifespan 不会被 FastAPI 自动运行）；客户端端点按 `/mcp/`（无斜杠会 307）。
+- runtime 暴露同步+异步双会话工厂；tools/list 与 tools/call 即时消费 McpSettingsService 快照（G1/G2 的 kill switch、revision 热更新在本波获得运行时证据）。
+- 认证接线复用 `app/auth/principal.py` 内核（HTTP 侧 dependencies.py 仍不接，语义不破坏，见 §10.1-3/§11.1）。
+- 脱敏层（redaction.py）按 contracts.py 脱敏字典实现 + 泄漏扫描器。
+- 预期文件见计划 §6 W2；每批产出 MCP-G<n>.json 片段由 aggregate_mcp_gates.py 汇聚。
+
+### 环境要点（新设备必读）
+
+- 后端质量门用 anaconda base（pytest 8.3.5/mypy/black 24.10/flake8；Windows `C:/Users/thoma/anaconda3/python.exe`）；跑服务用 btpManager。新设备按 backend/scripts/init.sh 重建。
+- tests/mcp/test_sdk_compatibility.py 的就地 selfcheck 在未安装 fastmcp/mcp 的环境自动 skip（锁定组合证据以仓库内 4 份 JSON 为准，不依赖本地重跑）。
+- 前端 Node 22.23.2（engines >=22.23.2 <23）；`npm run lint -- --no-fix` + `npm run typecheck` 为门禁；全量 test:unit --runInBand 在干净 HEAD 亦有 FilterGroup.spec 既有隔离问题（progress 2026-09-07 续三）。
+- 本批有意未跑 `npm run build`（防覆盖 20260907 demo dist）；W2 后端为主不涉及。
+
+---
+
+## 2026-09-08：MCP 计划现状同步
+
+- 已更新 PLANS/mcp-service-capabilities.md §2/§10/§11、计划索引、feature implementation_review 和 progress；所有 MCP 任务/Gate 保持 pending。
+- 前置 service 解耦已落地（ba8408f），本会话 20 项回归通过；尚无 MCP runtime/tools/settings/redaction 或专项测试。init.sh 返回 0 含环境警告。
+- 下一步为计划 §10.2 W0 契约、SDK 探针、威胁模型及门禁骨架；避免重复抽取已存在 service。当前工作区有其他既有改动，未执行 Git 提交。
 ## 2026-09-07（续五）：Docker 时区统一 UTC（RCA④ 环境层根治）+ 远端 compose 配置详情（未提交）
 
 ### 交付内容
@@ -1624,7 +1772,7 @@ JSON 小改 workflow 双同步）、批次 F（RC 演练六类故障注入+runbo
 
 ### 结论
 
-- 详细实施计划已落到 `PLANS/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
+- 详细实施计划已落到 `PLANS/archive/release-artifact-equivalence-gate.md`，当前状态为“已规划，待实施”。
 - v1.0.6 在 G0～G10 非豁免门禁全部 PASS 前不得发布；测试失败、制品/证据缺失和基础设施不确定都按阻断处理。
 - 升级基线使用正式标签 `v1.0.5@29c6f6f68ab35e25f8cf7237ee187de359c77714`；若只能从标签重建旧制品，必须标记 reconstructed，不能冒充正式历史制品。
 
@@ -2365,7 +2513,7 @@ Jest 33 passed（shell 11 + ui-mode 11 + permission-guard 11）；tsc/ESLint/bui
 ### 变更
 
 - `PLANS/dual-mode-client.md`：评审修订版，补全风险闸门、平台无关改造、伴侣 WebView MVP、Chaquopy/FGS 壳、移动 UI、桌面对齐及发布 DoD。
-- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/v1.0.6.md` 链接。
+- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/archive/v1.0.6.md` 链接。
 - `progress.md`：记录本次计划入册与验证结果。
 
 ### 下一步
@@ -3193,7 +3341,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ## 2026-08-10 交接：W4-2 实施完成（liveness/readiness/同步业务健康接口）
 
-当前任务：`PLANS/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。
+当前任务：`PLANS/archive/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。
 
 ### 本次改动
 
@@ -3507,7 +3655,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ### 产物
 
-- [同步任务数据库阻塞与接口超时修复计划](PLANS/sync-database-blocking-remediation.md)
+- [同步任务数据库阻塞与接口超时修复计划](PLANS/archive/sync-database-blocking-remediation.md)
 - [数据库阻塞与同步问题评估](backend/docs/operations/database-blocking-and-sync-issues-2026-08.md)
 
 ### 计划决策
@@ -3526,7 +3674,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ### 变更边界
 
-- 本次仅改动 PLANS/sync-database-blocking-remediation.md、PLANS/README.md、progress.md 和 session-handoff.md。
+- 本次仅改动 PLANS/archive/sync-database-blocking-remediation.md、PLANS/README.md、progress.md 和 session-handoff.md。
 - 源评估与计划的 19 个风险编号逐项一致；计划链接检查、git diff --check 和 ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning。
 - 未修改业务源码、Schema、迁移或运行配置；未执行 Git stage、commit 或 push。
 
@@ -4543,7 +4691,7 @@ v1.0.6.25 后端补了 TestOperatorContractGuard，但前端无对偶守卫。�
 
 **当前任务**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）
 **状态**: done。6 阶段全部完成。
-**计划文件**: `PLANS/v1.0.6.md`（基于代码现状重写，废弃 2024-04-22 旧计划）
+**计划文件**: `PLANS/archive/v1.0.6.md`（基于代码现状重写，废弃 2024-04-22 旧计划）
 **分支**: dev
 
 ### 本轮完成
@@ -4958,13 +5106,13 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - **根因四层**（两端回归测试实证）：init_db 启动自检置位默认口令标志（database.py:185-192，保留不动）→ 标志仅随登录响应下发、7 天 refresh token 窗口掩盖 → 守卫重定向/白名单写父路径 /settings 而真实改密页在 /settings/index（落点内容区 <!----> 白屏、真实路径与菜单均被弹回 = 死锁）→ 守卫 GetUserInfo 分支首导航放行缺口（双代理审查发现）。
 - **修复 6+1 处**：router.ts /settings 加 redirect:'/settings/index'；permission.ts 守卫目标/白名单改子路由 + GetUserInfo 分支补拦截（抽 isForceChangeBlocked/forceChangeRedirect）+ 拦截弹 Message.warning"请先修改密码：完成修改前仅可访问系统设置页"（3 秒节流——拦截重定向回同一路径时设置页不重新挂载，点其它菜单被弹回原本无任何反馈；设置页 mounted 旧提示移除避免双弹）；cuser.py /user/info 下发 mustChangePassword（双前缀）；users.ts UserInfoData 类型；user.ts GetUserInfo 同步（undefined 不写防滚动部署误清）；settings/index.vue 改密成功清 forceChange query。
 - **发布约束**：router redirect 与守卫白名单必须原子交付（单发前者 → /settings ↔ /settings/index 无限重定向循环，vue-router 3 无环检测已实证）。
-- **生产解困 runbook** 在 PLANS/force-change-deadlock-fix.md 第四节（含 SQL 路径、会话残留必须重登、SQLite 先停后写、bcrypt 哈希生成命令）。
+- **生产解困 runbook** 在 PLANS/archive/force-change-deadlock-fix.md 第四节（含 SQL 路径、会话残留必须重登、SQLite 先停后写、bcrypt 哈希生成命令）。
 
 ### 验证
 
 - 后端：test_login_throttle_and_change_password（12，含 /users/info 两态新用例）+ test_w9_force_change_reproduction（4）+ test_auth_protection_extended 共 97 passed；black/flake8 通过；mypy 44 errors 为既有基线（stash 对比零新增）。
 - 前端：permission-force-change-deadlock.spec 6/6（拦截落点可达/首导航拦截/父 redirect/直达放行/改密闭环/对照）；user-store-must-change-password.spec 7/7（GetUserInfo 三态）；permission-guard/store-user/api-contracts/request-auth 回归 60 passed；改动文件 eslint 通过；npm run typecheck 通过。
-- 文档：PLANS/force-change-deadlock-fix.md 新建并在 PLANS/README 注册；progress.md/feature_list.json（force-change-deadlock-fix-2026-08-18，2 tasks）已更新；roadmap 同步（entry README 路由表行号实测重测+permission 小节补拦截描述、frontend README 行数、backend api README cuser 行、test-coverage 补登与扩展、根 README 元信息）；./init.sh 通过。
+- 文档：PLANS/archive/force-change-deadlock-fix.md 新建并在 PLANS/README 注册；progress.md/feature_list.json（force-change-deadlock-fix-2026-08-18，2 tasks）已更新；roadmap 同步（entry README 路由表行号实测重测+permission 小节补拦截描述、frontend README 行数、backend api README cuser 行、test-coverage 补登与扩展、根 README 元信息）；./init.sh 通过。
 
 ### 回归保护矩阵（本事故全部修改点，2026-08-18 补齐）
 
@@ -5176,6 +5324,51 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - 本轮验证：后端定向 39 passed；前端能力/任务 4 suites 30 passed；frontend lint/typecheck/build、flake8/mypy/ruff format、git diff --check 通过；根 `bash ./init.sh --ci` 通过但保留既有 null-byte 警告。
 - 工作区未提交；本轮新增/修改文件需与既有历史修改一起审阅。未跟踪 `data/` 保持不动。
 
+## 2026-09-08 交接：MCP W3-③ 添加种子工具（六工具齐套，未提交）
+
+### 已完成
+
+- **分层债收尾**：add 家族六辅助（calculate_info_hash / get_transmission_torrent_info / create_qb|tr_torrent_record / _write_audit_log_async / _safe_write_audit_log）自 `app/api/endpoints/torrent_helpers.py` 逐字迁至新模块 `app/services/torrent_add_helpers.py`（tr_client 注解 trClient→Any）；`torrent_add_service` / `torrent_batch_add_service` 改依赖服务层，`torrent_status.py` 端点正向依赖新模块；新模块登记 `tests/architecture/test_async_downloader_calls.py` 守卫。迁移回归 121 项绿。
+- **契约修正**：`torrent_add_file.downloader_id` integer→string（下载器主键实为 `str(uuid.uuid4())`，integer 契约永远无法命中）。
+- **处理器**：`app/mcp/tools/torrent_add.py` + `register_all()` 注册。校验链（SERVER_PATH_FORBIDDEN 先于解码→strict base64→10/64MiB 双上限（env `BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES` 恒钳制硬顶）→bencode/info hash（to_thread））→ require_store → 共享 LRU 幂等 → 共用 `TorrentAddService`（operator=principal.username）→ 领域码映射（404/400→INVALID_ARGUMENT、408/503→DOWNSTREAM_FAILURE、500/未知→INTERNAL_ERROR；上游 msg 只进服务端日志）。输出 allowlist：added/duplicate/info_id/name/downloader_id/downloader_nickname。
+- **TorrentAddResult 扩展**：info_hash/info_id/name/downloader_nickname/created 字段（HTTP 端点只读 status/code/msg，零行为变化）。
+- **测试**：新增 49（单元 44 + wire 5）；tests/mcp 280 全绿；迁移+相邻回归合计 448 passed。既有锚点更新：处理器注册断言六工具、无处理器空档测试改临时摘除注册表锚定、`_ToolStack.create` 加可选 store 参数。
+- **顺手修复**：`app/core/runtime_context.py` 未用 Dict import（ba8408f 遗留，整 app/ flake8 红线）。
+- **门禁**：MCP-G7/G8 片段新增 PASS；G0/G2/G3 摘要与 sha256 证据刷新至六工具；聚合 5/12 PASS、verdict=BLOCKED（余 G1/G4/G5/G6/G9/G10/G11 待 W4）。
+- **文档**：feature_list .8→done、progress.md 续六、计划 §11（W3 done/§11.1 债务收口/§11.3 改指 W4）。
+
+### 提交与红线
+
+- 未执行 Git 提交；本批改动文件=torrent_add_helpers.py（新）/torrent_add.py（新）/test_tools_torrent_add.py（新）+ torrent_add_service / torrent_batch_add_service / torrent_helpers / torrent_status / contracts / tools/__init__ / runtime_context + 四处测试锚点 + 三份记录文件。提交时用显式文件列表，**勿 add 用户并行改动**（MoviePilot 集成 + 前端详情页签，git status 可见）。
+- 本地积压未推送：c0c15b9（W2）/46b09a5（W3-①）/6e45e89（W3-②）+ 本批；github 直连与代理均失联，fetch 走 ghfast.top 镜像（远端 dev1.0.7 顶端 bce0ca9 已核对无新提交），push 待代理恢复。
+- 质量门禁：mypy/black（本批文件）/flake8（整 app/）全绿；`test_torrent_crud_add_fallback.py` 的 black 存量漂移非本批 hunk（stash 验证），未触碰。
+
+### 下一批（W4，task .9）
+
+G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残余 api 依赖清理）、G5 六工具 canary、G1 升级矩阵、G6 查询预算、G9 生命周期、G10 制品（mcp SDK 入 requirements + 两 spec + 黑盒）、G11 runbook + 观测回滚；同键在途幂等完整矩阵复核（现口径：LRU 只保证完成后重放，在途窗口两次执行，有专项锚定测试）。
+
+## 2026-09-08 交接：MCP W4 三段（a/b/c）——11/12 门 PASS，G10 制品黑盒环境阻断
+
+### 已完成（本段四笔提交 + W4-c 待提交见下）
+
+- **W4-a（7c8492a）**：VO 转换族迁 `app/services/torrent_vo_conversion.py`（G4 前置）；G4（test_service_parity 10：AST 纯度守卫+映射表+四能力等价，添加种子双跑同库成功路径兑现）；G6（test_query_budget_gates 8）；G9（test_lifecycle_gates 6，在途写一致性收尾）。
+- **W4-b（451c29f）**：G1 升级矩阵（test_upgrade_gates 5：遗留共存/降级 fail-closed/重启保持/生产供给器 wire 首装默认关→热生效→kill switch 优先级）；G5 六工具 canary（test_canary_gates 2：响应+caplog 零泄漏、拒绝不回显、种子名 canary 命中扫描整体 fail-closed）。
+- **W4-c（待提交文件见下）**：mcp~=1.30.0 入 requirements.txt（**pyjwt 连动 2.8.0→2.10.1[crypto]**，auth 回归 116 绿）+ requirements-lock.txt pip-compile 重生成（+14 新钉、既有钉零漂移、哈希 dry-run+打包 venv 实装双验）；双 spec mcp hiddenimports；**Windows EXE 本地实构黑盒**（initialize→BtDeck/1.30.0、tools/list→SERVICE_DISABLED）；G11（test_rollback_gates 4 + runbook）；探针 trust_env=False 根修。
+- **门禁终态**：11/12 PASS（G0~G9+G11）+ **G10 INDETERMINATE** → BLOCKED。G10 残项=Docker/DEB/RPM 黑盒：Docker VM trixie apt 404+出网 1.3KB/s（宿主 Packages.xz 200 证明仓库正常=纯 Docker Desktop 网络问题）；DEB/RPM 是 Linux CI 制品。feature .9=in_progress。
+
+### 关键坑（勿重踩）
+
+- Windows 桌面 EXE（desktop_main 入口）冒烟必须 `BTDECK_MODE=server`（否则卡首次模式向导等交互，py-spy dump 定位）+ 隔离 CONFIG_DIR；build-windows.bat 整跑会自建前端**覆盖 demo dist**（红线），只跑后端 PyInstaller 段。
+- pip-compile 在本机必须 `no_proxy='*'`（注册表系统代理 192.168.5.60 失联，urllib.getproxies 会拖死）；生成走阿里 pypi 源正常。
+- flake8 必须在 backend/ 目录跑（.flake8 目录级配置）；probe/wire 测试栈缺 TrackerInfo/SearchTemplate/CronTask(异步) 表会以 INTERNAL_ERROR 假阳性出现。
+- 读工具不产生 MCP_TOOL_CALL 审计（设计），断言审计留痕要用写工具。
+
+### 提交与红线
+
+- W4-c 待提交：backend/requirements.txt、requirements-lock.txt、deploy/btdeck.spec、deploy/btdeck-windows.spec、backend/tests/mcp/test_rollback_gates.py、docs/operations/mcp-runbook.md、backend/scripts/mcp_sdk_probe.py（trust_env 修复，若未随 W4-a 提交）、feature_list/progress/session-handoff/PLANS。用户并行改动（MoviePilot+前端页签）零触碰。
+- 本地积压未推送：c0c15b9/46b09a5/6e45e89/df40661/7c8492a/451c29f+本批；github 直连与代理均失联，fetch 走 ghfast.top。
+- 下一步：网络恢复→Docker/DEB/RPM 黑盒（G10 转 PASS→READY）+ 推送积压；容器构建可用 mirrors 腾讯源替代阿里 trixie 试试。
+
 ## 2026-09-13 交接：本机服务端启动等待优化（prewarm 预热 + 轮询收敛）
 
 ### 已完成
@@ -5369,3 +5562,10 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 - buble 模板编译器不支持 `?.` 可选链——模板表达式内可选链必须避免（页面无挂载测试时不暴露，jest 挂载即炸）。
 - vue-jest 下 console.error spy 按参数匹配断言（同流程多次调用常态），勿断言调用次数。
 - eslint --max-warnings 0 对测试文件同样生效：空 arrow `() => {}` 报 no-empty-function，用 `() => undefined`；`--fix` 会把插值对象 `{ count: x }` 收敛为 `{count: x}`，源码契约断言以 fix 后形态为锚。
+
+## 2026-09-22 交接：dev1.0.7 → dev 合并完成（本地合并提交，未推送）
+
+- 分支状态：dev 已包含 origin/dev1.0.7 全部内容（MCP W0~W4-d、MoviePilot 整理联动、双语 P0/P1 文档线）；双语实现取 dev P6-5 完成态；迁移链单 HEAD=053003337878（32 迁移）。
+- 关键决策备查：①主机能力面板按 dev1.0.7 提交 282f494 移除（组件/spec/页签/roadmap 行四清，guard spec 改为反向守卫防复活）；②MCP/MoviePilot 新面暂入 i18n 审计排除清单与白名单，双语另立项（PLANS/merge-dev107-into-dev.md §8）；③根 roadmap README「本次新增」以合并批次重写（两侧历史批次日志在分支提交史，未展开）。
+- 已验证：后端迁移 40 + mcp/moviepilot 56 + reason 契约 166 + flake8；前端 i18n 门禁 20 + 目标 spec 90 + lint + build。全量 pytest/jest 与 ./init.sh 待合并提交前执行（见 PLANS P7）。
+- 推送：按规约由用户决定；回滚预案见计划 §6（提交前 merge --abort / 提交后 reset --hard ORIG_DEV=9318adf / 推送后 revert -m 1）。

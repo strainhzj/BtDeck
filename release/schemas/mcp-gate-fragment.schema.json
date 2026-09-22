@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/strainhzj/BtDeck/release/schemas/mcp-gate-fragment.schema.json",
+  "title": "BtDeck MCP gate fragment",
+  "description": "MCP 能力开放门禁片段（feature mcp-service-capabilities-2026-08-28，MCP-G0~MCP-G11）。各波次产出 MCP-G<n>.json 片段，由 scripts/release/aggregate_mcp_gates.py 校验汇聚。语义对齐 gate-fragment.schema.json（发布制品 G0~G10 流水线）；fail-closed 加强：status=PASS 必须携带非空 evidence（无证据不得宣告通过）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gate", "status", "generated_at", "summary", "evidence"],
+  "properties": {
+    "gate": {
+      "enum": [
+        "MCP-G0",
+        "MCP-G1",
+        "MCP-G2",
+        "MCP-G3",
+        "MCP-G4",
+        "MCP-G5",
+        "MCP-G6",
+        "MCP-G7",
+        "MCP-G8",
+        "MCP-G9",
+        "MCP-G10",
+        "MCP-G11"
+      ]
+    },
+    "status": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE", "NOT_RUN"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "logs": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "PASS" } }
+      },
+      "then": {
+        "properties": {
+          "evidence": { "minItems": 1 }
+        }
+      }
+    }
+  ]
+}

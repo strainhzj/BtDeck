@@ -1,10 +1,13 @@
-import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE } from '@/demo/fixtures'
+import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE, DEMO_TIME } from '@/demo/fixtures'
 import {
   DemoActivity,
   DemoAuditLog,
   DemoDashboardData,
   DemoDownloader,
   DemoFixtureBundle,
+  DemoMcpSettings,
+  DemoMoviePilotAssociation,
+  DemoMoviePilotInstance,
   DemoNotification,
   DemoOrphanFile,
   DemoPage,
@@ -115,6 +118,19 @@ export interface DemoOrphanCleanupResult {
 }
 
 export type DemoRestoreResult = DemoDeleteResult
+
+/** 关联镜像 + 任务快照（linked 且任务存在时由 store 附带，供面板/详情页展示） */
+export interface DemoMoviePilotAssociationWithTask extends DemoMoviePilotAssociation {
+  task?: {
+    infoId: string
+    name: string | null
+    status: string | null
+    downloaderId: string
+    downloaderName: string | null
+    savePath: string | null
+    size: number | null
+  }
+}
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -783,6 +799,155 @@ export class DemoStore {
 
   public listReannounceConfigs(params: DemoPageParams = {}): DemoPage<DemoTrackerReannounceConfig> {
     return paginate(this.state.trackerReannounceConfigs, params)
+  }
+
+  // ====== MCP 服务配置（demo 全局/能力开关，revision CAS 与真实端点一致） ======
+
+  public getMcpSettings(): DemoMcpSettings {
+    return clone(this.state.mcpSettings)
+  }
+
+  /** CAS 更新；revision 不匹配返回 null（请求层转 409），成功后 revision+1 */
+  public updateMcpSettings(input: {
+    enabled: boolean
+    capabilities: Record<string, boolean>
+    expectedRevision: number
+    updatedBy: string
+  }): DemoMcpSettings | null {
+    if (input.expectedRevision !== this.state.mcpSettings.revision) return null
+    this.state.mcpSettings = {
+      ...this.state.mcpSettings,
+      enabled: input.enabled,
+      capabilities: { ...input.capabilities },
+      revision: this.state.mcpSettings.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: input.updatedBy
+    }
+    return this.getMcpSettings()
+  }
+
+  // ====== MoviePilot 集成（全局开关 CAS + 实例/关联镜像） ======
+
+  public getMoviePilotSettings(): DemoFixtureBundle['moviepilotSettings'] {
+    return clone(this.state.moviepilotSettings)
+  }
+
+  /** CAS 更新；revision 不匹配返回 null（请求层转 409），成功后 revision+1 */
+  public updateMoviePilotSettings(input: {
+    enabled: boolean
+    expectedRevision: number
+    updatedBy: string
+  }): DemoFixtureBundle['moviepilotSettings'] | null {
+    if (input.expectedRevision !== this.state.moviepilotSettings.revision) return null
+    this.state.moviepilotSettings = {
+      ...this.state.moviepilotSettings,
+      enabled: input.enabled,
+      revision: this.state.moviepilotSettings.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: input.updatedBy
+    }
+    return this.getMoviePilotSettings()
+  }
+
+  public listMoviePilotInstances(params: DemoPageParams = {}): DemoPage<DemoMoviePilotInstance> {
+    return paginate(this.state.moviepilotInstances, params)
+  }
+
+  public updateMoviePilotInstance(
+    instanceId: string,
+    input: { name?: string, enabled?: boolean, downloaderMapping?: Record<string, string> }
+  ): DemoMoviePilotInstance | null {
+    const instance = this.state.moviepilotInstances.find(item => item.instanceId === instanceId)
+    if (!instance) return null
+    if (input.name !== undefined) instance.name = input.name
+    if (input.enabled !== undefined) instance.enabled = input.enabled
+    if (input.downloaderMapping !== undefined) instance.downloaderMapping = { ...input.downloaderMapping }
+    instance.updatedAt = DEMO_TIME
+    // 映射变化后 linked/unmapped 状态按新映射重解析（与真实端点语义一致）
+    this.state.moviepilotAssociations.forEach(item => this.reresolveAssociation(item))
+    return clone(instance)
+  }
+
+  public deleteMoviePilotInstance(instanceId: string): { instanceId: string, deletedHistories: number } | null {
+    const index = this.state.moviepilotInstances.findIndex(item => item.instanceId === instanceId)
+    if (index < 0) return null
+    this.state.moviepilotInstances.splice(index, 1)
+    const before = this.state.moviepilotAssociations.length
+    this.state.moviepilotAssociations = this.state.moviepilotAssociations.filter(
+      item => item.instanceId !== instanceId
+    )
+    return { instanceId, deletedHistories: before - this.state.moviepilotAssociations.length }
+  }
+
+  /** 正向：(downloaderId, hash) → 整理历史；linked 项附带任务快照 */
+  public listMoviePilotAssociations(
+    params: DemoPageParams & { downloaderId?: string, hash?: string }
+  ): DemoPage<DemoMoviePilotAssociationWithTask> {
+    const items = this.state.moviepilotAssociations
+      .filter(item =>
+        (!params.downloaderId || item.btDownloaderId === params.downloaderId) &&
+        (!params.hash || item.downloadHash === params.hash))
+      .map(item => this.withTaskSnapshot(item))
+    return paginate(items, params)
+  }
+
+  /** 反向：媒体库/源路径前缀匹配 → 关联历史（含任务快照） */
+  public reverseMoviePilotAssociations(
+    params: DemoPageParams & { path?: string, mode?: 'src' | 'dest' | 'both' }
+  ): DemoPage<DemoMoviePilotAssociationWithTask> {
+    const prefix = (params.path || '').trim()
+    const mode = params.mode || 'both'
+    const items = this.state.moviepilotAssociations
+      .filter(item => {
+        if (!prefix) return false
+        const srcHit = mode !== 'dest' && Boolean(item.srcPath && item.srcPath.startsWith(prefix))
+        const destHit = mode !== 'src' && Boolean(item.destPath && item.destPath.startsWith(prefix))
+        return srcHit || destHit
+      })
+      .map(item => this.withTaskSnapshot(item))
+    return paginate(items, params)
+  }
+
+  /** linked 项按 (btDownloaderId, downloadHash) 反查 demo 种子生成任务快照 */
+  private withTaskSnapshot(item: DemoMoviePilotAssociation): DemoMoviePilotAssociationWithTask {
+    if (item.associationStatus !== 'linked' || !item.downloadHash) return { ...item }
+    const torrent = this.state.torrents.find(candidate => candidate.hash === item.downloadHash)
+    if (!torrent) return { ...item }
+    return {
+      ...item,
+      task: {
+        infoId: torrent.infoId,
+        name: torrent.name,
+        status: torrent.status,
+        downloaderId: torrent.downloaderId,
+        downloaderName: torrent.downloaderName,
+        savePath: torrent.savePath,
+        size: torrent.size
+      }
+    }
+  }
+
+  /** 映射变化后按 (mpDownloader → btDownloaderId) 重解析关联状态 */
+  private reresolveAssociation(item: DemoMoviePilotAssociation): void {
+    if (!item.downloadHash || !item.mpDownloader) {
+      item.associationStatus = 'unassociated'
+      return
+    }
+    const instance = this.state.moviepilotInstances.find(candidate => candidate.instanceId === item.instanceId)
+    const mappedDownloaderId = instance?.downloaderMapping[item.mpDownloader]
+    if (!mappedDownloaderId) {
+      item.associationStatus = 'unmapped'
+      item.btDownloaderId = null
+      return
+    }
+    const torrent = this.state.torrents.find(candidate => candidate.hash === item.downloadHash)
+    if (!torrent) {
+      item.associationStatus = 'unmapped'
+      item.btDownloaderId = null
+      return
+    }
+    item.btDownloaderId = mappedDownloaderId
+    item.associationStatus = torrent.downloaderId === mappedDownloaderId ? 'linked' : 'unmapped'
   }
 
   public getCategories(): string[] {

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-qB 移除标记统一写治理测试（W1-3，PLANS/sync-database-blocking-remediation.md）
+qB 移除标记统一写治理测试（W1-3，PLANS/archive/sync-database-blocking-remediation.md）
 
 【覆盖目标】
 1. 无移除（removed_hashes 空）→ 不查询不 commit，返回零值 WriteStats。

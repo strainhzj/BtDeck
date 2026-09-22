@@ -198,14 +198,14 @@ def _runtime_spy(side_effects: Optional[Dict[Any, Exception]] = None):
 def _patch_runtime(calls: List[Dict[str, Any]], fake_call):
     """同时 patch 三个模块的 call_downloader_api 引用。
 
-    get_transmission_torrent_info 在 torrent_helpers 模块内调用自身导入的
+    get_transmission_torrent_info 在 torrent_add_helpers（W3-③ 自 torrent_helpers 迁移）模块内调用自身导入的
     call_downloader_api（import 绑定）；/add 端点主体 2026-09-05 起抽取至
     torrent_add_service（符号随之迁移），状态控制端点在 torrent_status——
     三处都必须 patch。
     """
     with (
         patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call),
-        patch("app.api.endpoints.torrent_helpers.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_helpers.call_downloader_api", side_effect=fake_call),
         patch("app.api.endpoints.torrent_status.call_downloader_api", side_effect=fake_call),
     ):
         yield
@@ -352,7 +352,7 @@ async def test_create_torrent_tr_success_runtime():
     assert add_call is not None, "add_torrent 必须经 runtime 调用"
     assert add_call["downloader_id"] == DL_ID
     assert add_call["opts"]["operation"] == "add_torrent"
-    # 轮询 helper 内的 get_torrents 也必须经 runtime（torrent_helpers 模块引用）
+    # 轮询 helper 内的 get_torrents 也必须经 runtime（torrent_add_helpers 模块引用）
     get_call = _find_call(calls, client.get_torrents)
     assert get_call is not None, "get_transmission_torrent_info 内的 get_torrents 必须经 runtime 调用"
     assert get_call["opts"]["operation"] == "get_transmission_torrent_info"

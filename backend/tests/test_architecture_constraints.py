@@ -167,7 +167,7 @@ def test_no_sql_injection():
 # 请求探针 endpoint（dashboard / torrent list 等）不得直接调用治理锁
 # （admission_controller.task_scope / db_write_scope），否则会让请求侧被
 # 后台同步任务阻塞，违背治理目标"不让后台任务挤占请求侧资源"。
-# 详见 PLANS/sync-resource-governance.md 阶段 3。
+# 详见 PLANS/archive/sync-resource-governance.md 阶段 3。
 
 # 请求侧路径白名单：这些模块是"请求探针"，禁止 import resource_guard /
 # 调用 admission_controller（read-only 查询路径不需要写锁串行化）。

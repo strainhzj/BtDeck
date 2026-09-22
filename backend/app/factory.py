@@ -64,6 +64,28 @@ def _mount_frontend_static(app: FastAPI) -> None:
     app.state.frontend_static_mounted = True
 
 
+def _mount_mcp_service(app: FastAPI) -> None:
+    """挂载同进程 MCP 服务（计划 §4.1：必须早于 SPA fallback）。
+
+    mcp SDK 至 W4 才入生产 requirements（§10.2 纪律）——SDK 缺失时整体跳过
+    挂载：HTTP 应用不受影响，MCP 面等效"服务未启用"（fail-closed）。挂载成功
+    后句柄存 ``app.state.mcp_bundle``，由父应用 lifespan 手动进入子应用
+    lifespan（FastAPI 不自动运行挂载子应用的 lifespan，§10.4 接线实证）。
+    """
+    if getattr(app.state, "mcp_mounted", False):
+        return
+    try:
+        from app.mcp.server import create_mcp_server_bundle
+    except ImportError:
+        logger.info("mcp SDK 未安装，MCP 服务未挂载（W4 前生产环境默认态）")
+        return
+    bundle = create_mcp_server_bundle(app.state)
+    app.mount("/mcp", bundle.sub_asgi)
+    app.state.mcp_bundle = bundle
+    app.state.mcp_mounted = True
+    logger.info("MCP 服务已挂载到 /mcp（stateless streamable HTTP）")
+
+
 def configure_routes_and_static(app: FastAPI) -> None:
     """按 API 路由优先、SPA fallback 最后的顺序完成路由挂载。"""
     api_module = sys.modules.get("app.api.api")
@@ -81,6 +103,9 @@ def configure_routes_and_static(app: FastAPI) -> None:
     if not getattr(app.state, "api_routers_initialized", False):
         init_routers(app)
         app.state.api_routers_initialized = True
+
+    # MCP 挂载必须早于 SPA catch-all（否则 /mcp 会被前端 fallback 吞掉，G0）
+    _mount_mcp_service(app)
 
     _mount_frontend_static(app)
 

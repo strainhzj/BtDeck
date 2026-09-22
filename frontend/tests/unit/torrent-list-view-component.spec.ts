@@ -1566,15 +1566,16 @@ describe('详情卡片文件/Peers 页签数据接线（TrackerDetailDataMixin �
     return wrapper.findComponent(TrackerDetailCard)
   }
 
-  it('行点击打开卡片：layout=list、默认 Tracker 页签、透传三个页签与空的双页签状态', async() => {
+  it('行点击打开卡片：layout=list、默认 Tracker 页签、透传四个页签与空的三页签状态', async() => {
     const card = await openDetailCard()
     expect(card.exists()).toBe(true)
     expect(card.props('layout')).toBe('list')
     expect(card.props('visible')).toBe(true)
     expect(card.props('activeTab')).toBe('tracker')
-    expect(card.props('tabs').map((tab: { value: string }) => tab.value)).toEqual(['tracker', 'files', 'peers'])
+    expect(card.props('tabs').map((tab: { value: string }) => tab.value)).toEqual(['tracker', 'files', 'peers', 'media'])
     expect(card.props('filesState')).toEqual({ list: [], loading: false, error: '' })
     expect(card.props('peersState')).toEqual({ list: [], loading: false, error: '' })
+    expect(card.props('mediaState')).toEqual({ list: [], loading: false, error: '' })
   })
 
   it('切文件页签按 hash+downloaderId 懒加载一次并透传 files-state；同键不重取；refresh 事件强制重取', async() => {

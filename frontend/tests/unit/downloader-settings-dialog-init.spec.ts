@@ -8,11 +8,12 @@
 import fs from 'fs'
 import path from 'path'
 
+// 行尾归一化：Windows autocrlf 检出为 CRLF 时多行/正则契约断言不受影响
 const readSource = (): string =>
   fs.readFileSync(
     path.resolve(__dirname, '../../src/views/downloader/components/DownloaderSettingsDialog.vue'),
     'utf-8'
-  )
+  ).replace(/\r\n/g, '\n')
 
 /** 契约锚点缺失即红（与 mobile-shell 几何契约同款失败语义） */
 const mustMatch = (source: string, re: RegExp, label: string): string => {

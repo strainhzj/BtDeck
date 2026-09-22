@@ -1147,7 +1147,7 @@ task_logs 增补候选字段：
 - feature_list.json
 - progress.md
 - session-handoff.md
-- PLANS/sync-resource-governance.md
+- PLANS/archive/sync-resource-governance.md
 - backend/docs/constraints/sync-db-write-governance.md
 - backend/docs/operations/database-blocking-and-sync-issues-2026-08.md
 - docs/roadmap/ 相关三层路线图

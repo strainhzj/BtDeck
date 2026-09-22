@@ -346,6 +346,89 @@ export interface DemoBackup {
   uploader_username: string
 }
 
+/** MCP 能力目录元数据（镜像后端 contracts.py CAPABILITY_CATALOG，demo 只读展示） */
+export interface DemoMcpCapabilityMeta {
+  code: string
+  tool: string
+  risk: 'read' | 'write' | 'high'
+  description: string
+  defaultEnabled: boolean
+  requiresConfirm: boolean
+  requiresIdempotencyKey: boolean
+}
+
+/** MCP 服务配置存储意图（effectiveEnabled 由请求层按 enabled && !forceDisabled 推导） */
+export interface DemoMcpSettings {
+  schemaVersion: number
+  enabled: boolean
+  capabilities: Record<string, boolean>
+  revision: number
+  updatedAt: string | null
+  updatedBy: string | null
+  forceDisabled: boolean
+}
+
+/** MoviePilot 集成全局开关（revision 供 demo CAS 演练） */
+export interface DemoMoviePilotSettings {
+  schemaVersion: number
+  enabled: boolean
+  revision: number
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+export interface DemoMoviePilotInstance {
+  id: number
+  instanceId: string
+  name: string
+  enabled: boolean
+  protocolVersion: number | null
+  pluginVersion: string | null
+  moviepilotVersion: string | null
+  /** MoviePilot 下载器名 → BtDeck downloader_id */
+  downloaderMapping: Record<string, string>
+  boundUsername: string | null
+  lastHandshakeAt: string | null
+  lastSyncAt: string | null
+  lastSyncStats: {
+    inserted?: number
+    updated?: number
+    skipped?: number
+    failed?: number
+  }
+  syncedHistoryCount: number
+  lastError: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/** MoviePilot 整理历史关联镜像（linked 项按 downloadHash 关联 demo 种子） */
+export interface DemoMoviePilotAssociation {
+  id: number
+  instanceId: string
+  instanceName: string | null
+  historyId: number
+  srcStorage: string | null
+  srcPath: string | null
+  destStorage: string | null
+  destPath: string | null
+  transferMode: string | null
+  mediaType: string | null
+  title: string | null
+  year: string | null
+  seasons: string | null
+  episodes: string | null
+  tmdbId: number | null
+  doubanId: string | null
+  mpDownloader: string | null
+  downloadHash: string | null
+  btDownloaderId: string | null
+  associationStatus: 'linked' | 'unmapped' | 'unassociated'
+  status: boolean | null
+  errmsg: string | null
+  recordedAt: string | null
+}
+
 export interface DemoFixtureBundle {
   user: DemoUser
   downloaders: DemoDownloader[]
@@ -361,6 +444,10 @@ export interface DemoFixtureBundle {
   trackerMessages: DemoTrackerMessage[]
   trackerReannounceConfigs: DemoTrackerReannounceConfig[]
   backups: DemoBackup[]
+  mcpSettings: DemoMcpSettings
+  moviepilotSettings: DemoMoviePilotSettings
+  moviepilotInstances: DemoMoviePilotInstance[]
+  moviepilotAssociations: DemoMoviePilotAssociation[]
   categories: string[]
   tags: string[]
   trackerDomains: string[]

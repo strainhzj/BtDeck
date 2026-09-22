@@ -32,8 +32,10 @@ from app.services.advanced_search import SearchTemplateModel
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 
+from tests.core.alembic_head import current_head  # noqa: E402（需在 BACKEND_ROOT 定义后）
+
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
-EXPECTED_HEAD = "d1e2f3a4b5c6"
+EXPECTED_HEAD = current_head()  # 动态读取（dev1.0.7 合入后 head 前移至 053003337878）
 
 # 中文名 → 稳定键（与迁移/初始化数据同源）
 PRESETS = {

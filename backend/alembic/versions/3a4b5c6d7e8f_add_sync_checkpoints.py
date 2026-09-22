@@ -1,6 +1,6 @@
 """add sync checkpoints
 
-【可回滚】纯新增表与索引（W3-2，PLANS/sync-database-blocking-remediation.md）：
+【可回滚】纯新增表与索引（W3-2，PLANS/archive/sync-database-blocking-remediation.md）：
 sync_checkpoints 按 (downloader_id, sync_type) 持久化同步进度，供中断/重启
 后从最后 durable checkpoint 续跑（P1-03）。downgrade 删除该表不影响既有
 业务数据；唯一约束与查询索引随表一并回退。

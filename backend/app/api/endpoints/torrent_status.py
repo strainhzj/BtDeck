@@ -11,7 +11,7 @@ from app.database import get_db
 from app.services.audit_service import extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo as torrentInfoModel
-from app.api.endpoints.torrent_helpers import _safe_write_audit_log
+from app.services.torrent_add_helpers import _safe_write_audit_log
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 

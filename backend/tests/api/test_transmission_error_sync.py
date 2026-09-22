@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.api.endpoints.torrent_helpers import create_transmission_torrent_record
+from app.services.torrent_add_helpers import create_transmission_torrent_record
 from app.api.endpoints.torrent_sync import sync_add_tracker
 from app.api.endpoints.torrents_async import extract_tracker_rows_from_torrent, sync_add_tracker_async
 from app.core.tracker_mapper import resolve_transmission_tracker_status_code

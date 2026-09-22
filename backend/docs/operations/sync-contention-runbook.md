@@ -1,6 +1,6 @@
 # SQLite 争用基准与回归门 Runbook（W4-3）
 
-> 对应计划：`PLANS/sync-database-blocking-remediation.md` W4-3（P1-07）
+> 对应计划：`PLANS/archive/sync-database-blocking-remediation.md` W4-3（P1-07）
 >
 > 基准脚本：`backend/scripts/sync_contention_benchmark.py`
 > 回归测试：`backend/tests/integration/test_sqlite_sync_contention.py`

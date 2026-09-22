@@ -1,6 +1,6 @@
 # BtDeck Release Gate（W0 探针阶段）
 #
-# 职责（PLANS/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
+# 职责（PLANS/archive/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
 #   w0-windows-runner : windows-2022 上验证 Inno Setup 安装/静默安装卸载 + NSSM 服务生命周期
 #   w0-linux-systemd  : ubuntu Runner 上验证 Debian 12 / Rocky 9 systemd 特权容器拓扑
 #   w0-node-matrix    : Node 22 下前端全量矩阵（contract:check/typecheck/Jest/build）
@@ -480,10 +480,25 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'EOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           EOF
 
       - name: Run deploy/build-linux.sh --release (fail-closed)
@@ -670,10 +685,25 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -882,10 +912,25 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1098,10 +1143,25 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1253,10 +1313,25 @@ jobs:
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
           FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e

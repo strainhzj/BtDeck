@@ -296,10 +296,18 @@
         </div>
       </el-tab-pane>
 
-      <!-- 主机能力（dual-mode-client Phase 4：一致降级单一来源，移动端经包装自动同源） -->
-      <el-tab-pane :label="$t('settings.tabs.platform')" name="platform">
+      <!-- MCP 服务（mcp-service-capabilities W1：全局/能力开关 + 风险说明；移动端经包装自动同源）
+           （v1.0.7 新功能面，中文硬编码待双语化另立项；见 PLANS/merge-dev107-into-dev.md） -->
+      <el-tab-pane label="MCP 服务" name="mcp">
         <div class="settings-content">
-          <platform-capability-panel />
+          <mcp-settings-panel />
+        </div>
+      </el-tab-pane>
+
+      <!-- MoviePilot 集成（moviepilot-integration：全局开关/实例与下载器映射/关联反查；移动端经包装自动同源） -->
+      <el-tab-pane label="MoviePilot" name="moviepilot">
+        <div class="settings-content">
+          <movie-pilot-panel />
         </div>
       </el-tab-pane>
 
@@ -333,7 +341,8 @@ import { UserModule } from '@/store/modules/user'
 import { changePassword } from '@/api/users'
 import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
-import PlatformCapabilityPanel from '@/components/settings/PlatformCapabilityPanel.vue'
+import McpSettingsPanel from './components/McpSettingsPanel.vue'
+import MoviePilotPanel from './components/MoviePilotPanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import { apiErrorMessage } from '@/i18n'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -341,7 +350,7 @@ import request from '@/utils/request'
 
 @Component({
   name: 'Settings',
-  components: { PlatformCapabilityPanel }
+  components: { McpSettingsPanel, MoviePilotPanel }
 })
 export default class extends Vue {
   // 当前激活的标签页

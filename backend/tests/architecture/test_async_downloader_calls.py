@@ -81,6 +81,14 @@ _ENDPOINT_RULES = {
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),
         "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
     },
+    # W3-③ 分层债收尾：add 家族辅助（info hash/TR 轮询/记录构造/审计写入）自
+    # torrent_helpers 迁入服务层，MCP torrent_add_file 与 HTTP/批量添加共用。
+    # tr_client 类型注解改 Any（recycle_bin_service 先例），模块级客户端 import 禁止。
+    "app/services/torrent_add_helpers.py": {
+        "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
+        "client_object_names": ("client", "qb_client", "tr_client"),
+        "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
+    },
     "app/api/endpoints/torrent_status.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),

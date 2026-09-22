@@ -24,7 +24,6 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 主机能力面板 platform-capability ✨2026-09-21 补录 | `settings/PlatformCapabilityPanel.vue` | 设置页「主机能力」面板（dual-mode-client Phase 4）：消费 `api/platform-capabilities.ts` 单例缓存，按平台形态展示各能力支持级别/降级计数，加载中/不可用两态；桌面 ≥768 表格、窄屏卡片双形态；文案走 settings.capability.* |
 | 批量按钮 batch-button | `BatchButton/index.vue` | 批量操作按钮（含下拉菜单） |
 | 批量按钮测试 batch-button-test | `BatchButton/__tests__/BatchButton.spec.ts` | BatchButton 回归测试：提供 `lucide-icon`/`lucide-size` props 时用 LucideIcon 渲染、未提供时回退 el-icon、disabled 抑制点击 |
 | 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航（标题经 `routeTitle()`：titleKey 双语键优先，双语 P1） |

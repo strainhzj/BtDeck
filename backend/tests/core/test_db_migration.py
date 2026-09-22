@@ -58,7 +58,8 @@ def _clean_database_path_env():
 #       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
 #       → b3e5f7a9c1d2(search_templates preset_key, bilingual system preset identity)
 #       → d1e2f3a4b5c6(setting_templates preset_key, bilingual system preset identity)
-EXPECTED_HEAD = "d1e2f3a4b5c6"
+#       → 053003337878(moviepilot integration tables; dev1.0.7 合入后重挂至 d1e2f3a4b5c6)
+EXPECTED_HEAD = "053003337878"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
@@ -73,6 +74,7 @@ def _cfg_for_head() -> Config:
     from tests.core.alembic_head import build_alembic_config
 
     return build_alembic_config()
+
 
 def _make_alembic_config(db_path: str) -> Config:
     """构造指向指定 DB 的 Alembic Config（编程式调用）。"""
@@ -185,7 +187,7 @@ class TestMigrationChainIntegrity:
         assert GHOST_VERSION not in valid_revs, f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
 
     def test_empty_db_upgrade_head_builds_full_schema(self, tmp_path):
-        """空库 alembic upgrade head 应建起完整 schema（26 张业务表）。
+        """空库 alembic upgrade head 应建起完整 schema（35 张业务表）。
 
         这是删除 create_all 的核心前提：迁移链能独立承担建库。
         """
@@ -202,9 +204,10 @@ class TestMigrationChainIntegrity:
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
         # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
+        # + 053003337878 加 moviepilot_instance + moviepilot_transfer_history = 35
         assert (
-            count == 33
-        ), f"空库 upgrade 应建 33 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens），实际 {count}"
+            count == 35
+        ), f"空库 upgrade 应建 35 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -802,7 +805,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 33
+        assert _table_count(str(target_db)) == 35
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

@@ -195,6 +195,15 @@ hiddenimports = [
     'qrcode.image.pil',
     # 审计日志 Excel 导出用 openpyxl 直写（延迟导入），PyInstaller 静态分析检测不到
     'openpyxl',
+    # === MCP 服务（feature mcp-service-capabilities，官方 mcp SDK streamable HTTP）===
+    # factory._mount_mcp_service 以 try-import 惰性挂载 /mcp，显式声明防漏收集；
+    # fastmcp 保持 excludes（W0 §10.4 弃选，防传递依赖回流）。
+    'mcp',
+    'mcp.types',
+    'mcp.server',
+    'mcp.server.lowlevel',
+    'mcp.server.streamable_http_manager',
+    'mcp.shared.exceptions',
     # === app 包及其子包（确保 PyInstaller 收集所有子模块）===
     'app',
     'app.api',

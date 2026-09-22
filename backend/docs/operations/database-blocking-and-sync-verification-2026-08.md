@@ -1,7 +1,7 @@
 # 同步数据库阻塞修复从头实现验证（W0-W4-2）
 
 > 验证日期：2026-08-10
-> 验证范围：`PLANS/sync-database-blocking-remediation.md` 的 W0、W1、W2、W3、W4-1、W4-2
+> 验证范围：`PLANS/archive/sync-database-blocking-remediation.md` 的 W0、W1、W2、W3、W4-1、W4-2
 > 验证方式：独立源码审计、架构扫描、全量测试、真实文件型 SQLite 基准；不修改业务代码、不执行数据库迁移。
 
 ## 1. 结论先行

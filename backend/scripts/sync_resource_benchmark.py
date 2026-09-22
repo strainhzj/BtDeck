@@ -29,7 +29,7 @@ sync-resource-governance 阶段 3 压测脚本
 【输出】
     stdout 表格 + 写入 /tmp/sync_resource_benchmark_<timestamp>.json 供对比
 
-详见 PLANS/sync-resource-governance.md 第四节"手动压测矩阵"。
+详见 PLANS/archive/sync-resource-governance.md 第四节"手动压测矩阵"。
 """
 
 from __future__ import annotations

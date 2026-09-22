@@ -4,7 +4,7 @@
  * 验证 P0-1 的核心契约：无论后端返回何种形态的错误，前端都能拿到
  * 统一的 ApiError（含 code/httpStatus/message，并兼容 msg/response getter）。
  *
- * 对应 PLANS/v1.0.5-audit.md 手动 e2e 清单第 2/3/5/6 项的自动化等价物。
+ * 对应 PLANS/archive/v1.0.5-audit.md 手动 e2e 清单第 2/3/5/6 项的自动化等价物。
  */
 import {
   SUCCESS_CODES,

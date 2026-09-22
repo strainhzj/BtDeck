@@ -1,6 +1,7 @@
 import type { AxiosRequestConfig } from 'axios'
 import { ApiError } from '@/types/api'
 import { demoSession, emitDemoReset } from '@/demo/config'
+import { DEMO_MCP_CATALOG } from '@/demo/fixtures'
 import {
   demoStore,
   DemoDownloaderInput,
@@ -983,6 +984,91 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
   if (path === '/tags/categories') return success(demoStore.getCategories().map((name, index) => ({ id: index + 1, name })))
   if (path === '/tags/tags' || path === '/tags/all') return success(demoStore.getTags())
   if (path.startsWith('/tags/')) return success({ success: true, demo: true }, 'Demo 标签操作已模拟完成')
+
+  // MCP 服务配置（目录元数据镜像后端 contracts.py，revision CAS 与真实端点一致）
+  if (path === '/mcp/settings') {
+    if (method === 'PUT') {
+      const current = demoStore.getMcpSettings()
+      if (asNumber(input.expectedRevision, -1) !== current.revision) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      const updated = demoStore.updateMcpSettings({
+        enabled: asBoolean(input.enabled),
+        capabilities: isRecord(input.capabilities) ? input.capabilities as Record<string, boolean> : {},
+        expectedRevision: asNumber(input.expectedRevision),
+        updatedBy: '演示管理员'
+      })
+      if (!updated) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      return success({ settings: { ...updated, effectiveEnabled: updated.enabled && !updated.forceDisabled }, catalog: DEMO_MCP_CATALOG }, 'Demo MCP 配置已保存')
+    }
+    const settings = demoStore.getMcpSettings()
+    return success({
+      settings: { ...settings, effectiveEnabled: settings.enabled && !settings.forceDisabled },
+      catalog: DEMO_MCP_CATALOG
+    })
+  }
+
+  // MoviePilot 集成（全局开关 CAS + 实例映射 + 正向/反查关联）
+  if (path === '/moviepilot/settings') {
+    if (method === 'PUT') {
+      const current = demoStore.getMoviePilotSettings()
+      if (asNumber(input.expectedRevision, -1) !== current.revision) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      const updated = demoStore.updateMoviePilotSettings({
+        enabled: asBoolean(input.enabled),
+        expectedRevision: asNumber(input.expectedRevision),
+        updatedBy: '演示管理员'
+      })
+      if (!updated) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      return success({ settings: updated, protocolVersion: 1 }, 'Demo MoviePilot 配置已保存')
+    }
+    return success({ settings: demoStore.getMoviePilotSettings(), protocolVersion: 1 })
+  }
+  if (path === '/moviepilot/instances' && method === 'GET') {
+    return success(demoStore.listMoviePilotInstances(toPageParams(input)))
+  }
+  if (path.startsWith('/moviepilot/instances/')) {
+    const instanceId = extractPathId(path, '/moviepilot/instances/')
+    if (method === 'PUT') {
+      const updated = demoStore.updateMoviePilotInstance(instanceId, {
+        name: input.name === undefined ? undefined : asString(input.name),
+        enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled),
+        downloaderMapping: isRecord(input.downloaderMapping)
+          ? input.downloaderMapping as Record<string, string>
+          : undefined
+      })
+      return updated
+        ? success(updated, 'Demo 实例已更新，历史关联状态已重新解析')
+        : unsupported(method, path)
+    }
+    if (method === 'DELETE') {
+      const deleted = demoStore.deleteMoviePilotInstance(instanceId)
+      return deleted
+        ? success(deleted, 'Demo 实例及其同步历史已删除')
+        : success({ instanceId, deletedHistories: 0 }, 'Demo 实例不存在')
+    }
+  }
+  if (path === '/moviepilot/associations' && method === 'GET') {
+    return success(demoStore.listMoviePilotAssociations({
+      ...toPageParams(input),
+      downloaderId: asString(input.downloaderId) || undefined,
+      hash: asString(input.hash) || undefined
+    }))
+  }
+  if (path === '/moviepilot/associations/reverse' && method === 'GET') {
+    const mode = asString(input.mode)
+    return success(demoStore.reverseMoviePilotAssociations({
+      ...toPageParams(input),
+      path: asString(input.path) || undefined,
+      mode: mode === 'src' || mode === 'dest' ? mode : 'both'
+    }))
+  }
+
   // 完整桌面矩阵：demo 模式应展示全部能力门控 UI（设置弹窗路径管理页签/回收站/孤儿文件等），
   // 此前返回空 capabilities 会让 FILESYSTEM 能力 fail-closed、相关页签在 demo 里不渲染
   if (path === '/platform/capabilities') {

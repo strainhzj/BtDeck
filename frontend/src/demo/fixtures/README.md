@@ -16,6 +16,8 @@
 | `recycleBin` / `orphanFiles` | 名称/路径、大小、状态、置信度 | 路径只使用 `/demo/*` |
 | `tracker*` | 关键词、消息、池统计、汇报配置 | Tracker 域名使用 `.example.invalid` |
 | `backups` / `categories` / `tags` | 备份摘要和筛选选项 | 不生成或读取真实 torrent 文件 |
+| `mcpSettings` + `DEMO_MCP_CATALOG` | 全局/逐能力开关、revision、能力目录元数据 | 目录镜像后端 `contracts.py` 六项能力，仅展示用 |
+| `moviepilotSettings` / `moviepilotInstances` / `moviepilotAssociations` | 集成开关、实例映射、整理历史关联 | `linked` 关联按 `downloadHash` 挂 demo 种子，路径只使用 `/demo/*` |
 
 ## 使用规则
 

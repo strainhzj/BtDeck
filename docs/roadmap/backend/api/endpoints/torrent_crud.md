@@ -279,8 +279,14 @@ torrent_crud.py
   ├─→ app.services.audit_service.extract_audit_info_from_request  (批量审计信息)
   │
   ├─→ app.api.endpoints.torrent_helpers          (横向复用)
-  │     ├─ get_torrent_infos                     (getList 共享查询)
-  │     └─ convert_to_vo                         (get_torrent 信封转换)
+  │     └─ get_torrent_infos
+  ├─→ app.services.torrent_vo_conversion.convert_to_vo  (VO 转换族，2026-09-08 W4/G4 自 torrent_helpers 迁入服务层)
+  ├─→ app.services.torrent_add_service.{TorrentAddService, TorrentAddParams}  (单添加协议无关主体，2026-09-05 抽取；MCP torrent_add_file 共用；2026-09-22 合并后携双语 P4 reason_code 与 MCP 领域事实字段并存)
+  ├─→ app.services.torrent_add_helpers           (add 家族辅助，2026-09-08 自 torrent_helpers 迁入服务层)
+  │     ├─ calculate_info_hash
+  │     ├─ get_transmission_torrent_info
+  │     ├─ create_qbittorrent_torrent_record
+  │     └─ create_transmission_torrent_record
   ├─→ app.core.reannounce_config_operations.extract_domains_from_trackers (主机域名归一)
   ├─→ app.api.endpoints.torrent_speed.get_active_keys_snapshot  (活动种子快照)
   └─→ app.api.endpoints.torrent_sync.{qb_add_torrents, tr_add_torrents}  (/list 同步)

@@ -7,7 +7,7 @@
 > - `app/tasks/scheduler/tracker_message_logger.py`（Tracker 消息记录：4 处 commit 包 `db_write_scope`）
 > - `app/tasks/scheduler/tracker_reannounce_task.py`（Tracker 汇报：读段 `to_thread` + 写段 `to_thread` + `db_write_scope`）
 > - `app/tasks/scheduler/downloader_path_scan.py`（路径扫描：6 处 commit 包 `db_write_scope` + 同步 HTTP `to_thread` + 远程调用移出写 session）
-> 关联计划：`PLANS/sync-resource-governance.md` 阶段 1（DB 写入治理）/ 阶段 2.6（to_thread 止血 + db_write_scope 收尾）
+> 关联计划：`PLANS/archive/sync-resource-governance.md` 阶段 1（DB 写入治理）/ 阶段 2.6（to_thread 止血 + db_write_scope 收尾）
 > 强制级别：改造同步函数 commit 点时**必须**遵循本文档；新建同步函数**必须**遵循本文档
 
 ---

@@ -586,10 +586,29 @@ async def lifespan(app: FastAPI):
         app.state.process_memory_task = process_memory_task
         print("[OK] 进程 RSS 周期采样任务已启动")
 
+    # MCP 子应用 lifespan（W2）：FastAPI 挂载不自动运行子应用 lifespan，
+    # 父 lifespan 手动进入（内部即 StreamableHTTPSessionManager.run()，§10.4）。
+    # teardown 放在清理段最末：先 mark_closed 拒绝新调用，业务任务收尾后
+    # 最后拆卸会话管理器（在途请求可完成，§4.2 关闭语义）。
+    mcp_bundle = getattr(app.state, "mcp_bundle", None)
+    mcp_lifespan_cm = None
+    if mcp_bundle is not None:
+        mcp_lifespan_cm = mcp_bundle.sub_asgi.router.lifespan_context(mcp_bundle.sub_asgi)
+        try:
+            await mcp_lifespan_cm.__aenter__()
+        except Exception:
+            mcp_lifespan_cm = None
+            print("[WARN] MCP 子应用 lifespan 启动失败，MCP 服务不可用（不阻塞主应用）")
+        else:
+            mcp_bundle.runtime.mark_ready()
+            print("[OK] MCP 服务会话管理器已启动（/mcp，stateless）")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
     finally:
+        if mcp_bundle is not None:
+            mcp_bundle.runtime.mark_closed()
         # ✅ 清理：取消未完成的后台任务
         print("=== 清理后台任务 ===")
         torrent_batch_tasks = list(getattr(app.state, "torrent_batch_tasks", set()))
@@ -728,6 +747,15 @@ async def lifespan(app: FastAPI):
             print("✅ 事件循环 lag 采样器已关闭")
         except Exception as e:
             print(f"⚠️  关闭事件循环 lag 采样器时出错: {e}")
+
+        # 拆卸 MCP 会话管理器（W2）：放在清理段最末（mark_closed 已在最前生效，
+        # 在途请求在 session_manager.run() 退出时收尾）；异常不阻断关闭。
+        if mcp_lifespan_cm is not None:
+            try:
+                await mcp_lifespan_cm.__aexit__(None, None, None)
+                print("✅ MCP 服务会话管理器已关闭")
+            except Exception as e:
+                print(f"⚠️  关闭 MCP 会话管理器时出错: {e}")
 
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())

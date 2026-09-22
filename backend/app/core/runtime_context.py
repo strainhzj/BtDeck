@@ -7,7 +7,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # 三态哨兵：app.state.torrent_stats「属性不存在」与「属性存在但为 None」在原
 # DashboardService 中行为不同（前者返回零值字典、后者原样返回 None，被

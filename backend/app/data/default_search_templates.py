@@ -3,7 +3,7 @@
 系统预设搜索模板（v1.0.5 查询模板系统）
 
 提供 4 个精选常用查询模板，在 init_db() 时幂等初始化。
-模板 conditions 遵循"前端形态"约定（见 PLANS/v1.0.5.md query_config 设计）：
+模板 conditions 遵循"前端形态"约定（见 PLANS/archive/v1.0.5.md query_config 设计）：
   - source=simple：与 index.vue 的 listQuery 1:1 对齐，数组保留数组形态
   - source=advanced：AdvancedSearchBuilder 的 condition_groups 结构
 

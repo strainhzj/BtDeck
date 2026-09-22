@@ -1,8 +1,8 @@
 # MCP 服务与可选能力开放实施计划
 
 > **Feature ID**: `mcp-service-capabilities-2026-08-28`
-> **状态**: 已规划，经 2026-09-05 基线复核修订（§10），W0 待启动
-> **规划日期**: 2026-08-28（2026-09-05 复核）
+> **状态**: **已收官（2026-09-09）**：W0~W4 全部落地，六工具 6/6，G0～G11 门禁 12/12 PASS → 聚合 verdict=READY，feature 终态 done（§11）。2026-09-08 完成 W0~W3 + W4 代码/测试/文档面；2026-09-09 W4-d 完成 G10 制品黑盒全矩阵（EXE/DEB/RPM/Docker）+ 锁 pywin32 平台标记根修（b7bba8d）
+> **规划日期**: 2026-08-28（2026-09-05 复核；2026-09-08 W0 交付）
 > **范围**: 后端同进程 MCP 服务、实例级开关、逐能力开放、统一鉴权、敏感数据脱敏、设置 UI、测试与交付制品
 > **原则**: 默认拒绝；服务关闭或能力未启用时不可发现、不可调用；任何门禁失败或证据缺失均不得开放
 
@@ -31,12 +31,12 @@ MCP 工具发现结果中消失，并在服务端执行入口再次拒绝缓存�
 |------|------------|----------|
 | 高级查询 | `app/services/advanced_search.py:971` `AdvancedSearchService(db: Session)` 同步会话；`search_torrents(request, user_id) -> Dict`（:989） | 可直接复用业务核心；MCP 需限制返回规模并转换为脱敏 DTO |
 | 创建查询模板 | 同文件 `create_search_template(request, user_id) -> Dict`（:1120） | 可直接复用业务核心；用户 ID 必须来自认证主体 |
-| 仪表盘 | `app/services/dashboard_service.py:18` `DashboardService(db: AsyncSession, app)` 直接探测 `app.state.store`（:38-40） | 小改：改为注入运行时上下文/store，不让工具自行导入全局 app；注意与高级查询的同步会话差异 |
-| 等级 4 | `app/services/torrent_deletion_by_level.py:46` `(db, request: Optional[Request] = None)` 已部分解耦但多路径仍 `raise ValueError`（:95 等 6 处）；`async_deletion_executor.py:31` 仍必传 Request | 中改：以 store + AuditContext 替换 FastAPI Request；保留部分成功语义 |
-| Cron 触发 | `app/tasks/cron_executor.py:1054` `start_task_immediately(task_id) -> bool`（enabled/运行中前检 :1063-1075）；`CronTask.task_code` unique（`app/tasks/cron_models.py:17`，模型不在 app/models/）；内置注册表 `app/data/default_scheduled_tasks.py` + 资源准入 `app/tasks/task_profiles.py` | 中改：task_code 已存在；补策略前检、审计和 run_id/accepted 结果 |
-| 添加种子 | 单种主体仍内联 `app/api/endpoints/torrent_crud.py:138`（嵌套函数 :208/:252/:441）；批量 `torrent_batch_add_service.py` 依赖 `UploadFile`（:16/:58）与 `app.state`（:99/:335） | 必须先抽协议无关 service，再由 HTTP/MCP 共用 |
+| 仪表盘 | 2026-09-08 核验：`app/services/dashboard_service.py:19` 已改为 `DashboardService(db: AsyncSession, runtime: RuntimeContext)`，HTTP 端点已注入上下文 | 前置解耦完成；仍需 MCP 工具、脱敏 DTO 与同步/异步会话工厂 |
+| 等级 4 | 2026-09-08 核验：`app/services/torrent_deletion_by_level.py:47` 与 `async_deletion_executor.py:31` 构造已改 store + AuditContext 注入，HTTP 调用点已适配 | 前置解耦完成；仍需工具确认、幂等、100 项限制、partial 映射与审计契约测试 |
+| Cron 触发 | `app/tasks/cron_trigger.py:48` 已新增 `trigger_task_by_code(task_code)`；复用全局执行器，检查内置注册表与非脚本类型，返回 accepted/task_id/reason | 前置助手完成；HTTP 仍按 task_id 触发；MCP 专用 allowlist、确认/幂等、principal 审计和本次 run_id 返回仍待实现 |
+| 添加种子 | `app/services/torrent_add_service.py:73` 已抽取 TorrentAddService；`app/api/endpoints/torrent_crud.py:152` 已调用；批量添加仍有 UploadFile/app.state 依赖 | 单种 HTTP 前置解耦完成；批量共用边界、MCP 上传限制、幂等、脱敏及工具接入仍待实现 |
 
-核验环境：根 `./init.sh --ci` 通过；高级搜索/模板/仪表盘 46 项、等级删除/添加 57 项、
+历史核验（2026-08-28，非本次重跑）：根 `./init.sh --ci` 通过；高级搜索/模板/仪表盘 46 项、等级删除/添加 57 项、
 Cron 安全与执行器 36 项，共 139 项定向回归通过。当前仓库没有 MCP 实现或依赖声明，
 且 PyInstaller 规格显式排除了 `fastmcp`，交付制品接入必须单独过门禁。
 
@@ -353,6 +353,8 @@ G1、G2、G3、G5、G7、G8 不允许豁免。
 
 ## 10. 2026-09-05 基线复核与 W0 代码调整计划
 
+> 本节保留 2026-09-05 前置解耦之前的历史判断；认证内核、Dashboard/删除/添加服务现状以 §2、§11 为准。W0 契约与探针交付仍待启动。
+
 > 复核环境：dev @ 9ccd12f。核心架构判断（六能力复用面、SPA fallback 挂载顺序、
 > 默认关闭、仓库零 MCP 依赖、两 spec 显式排除 fastmcp）全部成立；以下为漂移修正与
 > W0 启动批次。**按批次纪律：本节经确认后才动代码。**
@@ -417,4 +419,99 @@ W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应�
 - W3：cron.trigger allowlist 数据源改 `default_scheduled_tasks.py` + `task_profiles.py`；
   task_type 4/5/6 一律不作为放行依据，仅显式 task_code 白名单。
 - W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。
+
+### 10.4 W0 交付与 SDK 选型结论（2026-09-08）
+
+§10.2 六项交付物全部落地；本节为选型结论的权威记录（证据 JSON 在
+`backend/tests/mcp/evidence/`，被 `tests/mcp/test_sdk_compatibility.py` 锚定防删改）。
+
+**交付清单**：
+
+| # | 交付物 | 实际文件 |
+|---|--------|----------|
+| 1 | 能力契约 | `backend/app/mcp/contracts.py`（6 工具目录/输入契约/输出 allowlist/脱敏字典/预算常量/配置键）+ `backend/app/mcp/__init__.py` |
+| 2 | 错误码 | `backend/app/mcp/errors.py`（23 码 + HTTP 对齐表 + 默认文案 + principal 原因码映射） |
+| 3 | SDK 探针 | `backend/scripts/mcp_sdk_probe.py`（隔离 venv + selfcheck 重入 + 可选 onefile）+ 4 份证据 JSON |
+| 4 | G0 静态门禁 | `backend/tests/mcp/test_mcp_architecture_constraints.py`（§10.1-8 定夺：包 `__init__.py` + 差异化文件名双保险，根级同名文件零冲突） |
+| 5 | 威胁模型 | `docs/security/mcp-threat-model.md`（STRIDE 矩阵、W0 现状缺口、prompt 注入面、门禁映射、回滚引用） |
+| 6 | Gate 骨架 | `release/schemas/mcp-gate-fragment.schema.json` + `scripts/release/aggregate_mcp_gates.py` + `backend/tests/release/test_mcp_gate_skeleton.py`（fail-closed：PASS 必须带非空 evidence；空片段目录=12×NOT_RUN=BLOCKED，exit≠0） |
+
+**SDK 兼容矩阵**（隔离 venv，仓库锁定 fastapi 0.115.6 + starlette 0.41.3 + pydantic 2.12.4 + httpx 0.28.1 + uvicorn 0.35.0 + packaging 24.2）：
+
+| 组合 | C1 import/C2 挂载顺序/C3 lifespan 共存/C4 协议握手 | C5 PyInstaller onefile (py3.12) |
+|------|------|------|
+| py3.11 + fastmcp 2.14.3 | 全 PASS | — |
+| py3.11 + mcp 1.30.0 | 全 PASS | — |
+| py3.12 + fastmcp 2.14.3 | 全 PASS | **FAIL**：29.7MB；运行时 `PackageNotFoundError('fastmcp')`；手动补 `--copy-metadata fastmcp mcp` 后再缺 `burner_redis` 隐藏导入（连环补救未穷尽） |
+| py3.12 + mcp 1.30.0 | 全 PASS | **PASS**：10.9MB、构建 17.6s、**零附加打包参数** |
+
+**选型结论：官方 `mcp` SDK（探针锁定 1.30.0），transport 用 streamable HTTP stateless 模式**（W4 才入 requirements/spec，遵守 §10.2 "W0 不动生产依赖"）。理由：
+
+1. W2 必须自建的深度定制（逐能力发现/执行双门禁、principal 认证、脱敏 DTO、稳定错误码）本就要在工具 dispatch 层重写，fastmcp 的高层便利（客户端/代理/Bearer 处理）对 BtDeck 价值低。
+2. 依赖足迹：fastmcp 额外拖入 rich/cyclopts/websockets/py-key-value-aio/pydocket/authlib 等，且实测有**未声明运行时依赖**（`packaging`——仓库恰好已锁，纯探针 venv 缺它即崩）；官方 SDK 直依赖少。
+3. 打包实证（上表 C5）：fastmcp 需未声明依赖 + copy-metadata + 隐藏导入连环补救，G10 要过 EXE/DEB/RPM/Docker 四制品矩阵，此摩擦不可接受；官方 mcp 零参数通过。
+4. fastmcp 2.x API 演进快（其文档中的 `FastMCPManager` 在 2.14.3 已不存在，实际机制是 `http_app()` 返回 `StarletteWithLifespan` + 父 lifespan 手动进入 `sub_asgi.lifespan(sub_asgi)`），锁定维护成本高；官方 SDK 是协议参考实现，fastmcp 自身也依赖它。
+5. 两个 PyInstaller spec 的 `fastmcp` 排除条目**保持有效**（防御性瘦身清单），W4 只需把 `mcp` 入锁并验证。
+
+**W2 接线实证**（探针 C3/C4 已证，供 runtime.py 直接采用）：
+
+- 父应用 lifespan 内手动进入子应用 lifespan（官方 SDK：`async with session_manager.run()` 包进根 lifespan；挂载的 Starlette 子应用 lifespan 不会被 FastAPI 自动运行）。
+- 挂载点 `/mcp` + 子应用路由 `/` 时，`POST /mcp` 会 307 到 `/mcp/`——服务端路由与客户端文档都按 `/mcp/` 对齐。
+- 工具函数可读取父 lifespan 写入的共享标记（marker 回传成功），验证 RuntimeContext 注入前提成立。
+- `StreamableHTTPSessionManager` 的参数名是 `stateless`（官方 SDK）而非 fastmcp 的 `stateless_http`。
+
+**W0 完成判据对账**：契约/错误码/目录/数据字典已固化并经 26 项 `test_contracts.py` 锚定（含 feature_list.json 单一事实源交叉校验）；本节即选型结论；G0 静态门禁基线绿（15 项：3 条规则 × 12 负向反例 + 6 合法引用防误报对照 + 全包扫描）；threat-model 已交付；Gate 骨架 NOT_RUN 即红实证。**契约与威胁模型的人工评审通过后，W0 方可标记 done 并启动 W1。**
+
+## 11. 2026-09-08 实施现状与后续入口
+
+审计基线：当前工作区 `dev1.0.7`，包含既有未提交改动；前置解耦已在提交 `ba8408f` 落地。
+feature 及 9 项任务保持 pending，12 个 Gate 均无完整 PASS 证据，可用 MCP 工具为 0/6。
+这是验收完成数量，不代表前置工程工作量为零，也不应据此估算剩余工时。
+**同日更新：W0~W3 全部落地（六工具 6/6）；W4 代码/测试/文档面完成——Gate 11/12 PASS
+（G0~G9+G11），G10 INDETERMINATE（EXE 黑盒+依赖锁定已验；Docker/DEB/RPM 黑盒环境阻断待复验），
+verdict=BLOCKED。SDK=官方 mcp 1.30.0 已入 requirements/锁/双 spec。**
+**2026-09-09 W4-d 收官更新：G10 转 PASS——锁 pywin32 平台标记根修（b7bba8d，Linux 三产线
+解锁）+ Docker/DEB/RPM 本地实构黑盒全矩阵 + EXE B/C 段补测；聚合 12/12 PASS → verdict=READY；
+任务 .9 与 feature 终态 done。**
+
+| 波次 | 当前状态 | 已有证据 / 剩余工作 |
+|------|----------|----------------------|
+| W0 | done（2026-09-08） | 六项交付物落地（§10.4），选型官方 mcp 1.30.0；契约/威胁模型随 W1 启动获得接受 |
+| W1 | done（2026-09-08） | McpSettingsService（fail-closed/CAS/kill switch）+ 认证设置 API（principal 门禁+审计）+ 设置页 MCP 页签（桌面+移动同源）落地；28 项 API 回归 + 8 项前端 spec 绿。Gate 整体 PASS 待 W2~W4 补证（运行时尚未挂载，升级/重启矩阵后补） |
+| W2 | done（2026-09-08） | 官方 mcp SDK 1.30.0 + streamable HTTP stateless 同进程挂载落地（/mcp 先于 SPA fallback，SDK 缺失 try-import 跳过=不挂载；父 lifespan 手动进入 session_manager.run()）；runtime 双会话工厂+就绪/关闭状态（RUNTIME_NOT_READY）+ fail-closed 配置快照现读；principal 认证接入（映射+未知码兜底）；双门禁（list 过滤/call 复核，别名旧名统一 CAPABILITY_DISABLED）+ FORBIDDEN_ARGUMENT + 契约预算；redaction 全套（tracker 域名归一/路径 pathDisplay/自由文本清洗/allowlist 点路径/泄漏扫描器/1MiB 预算）。tests/mcp 179 项绿；MCP-G0/G2/G3 片段 PASS（聚合 BLOCKED 待 W3/W4）。SDK 缓存刷新旁路坑：call 装饰器内部以 handler(None) 调 list 处理器——手动注册区分两路径 |
+| W3 | done（2026-09-08，①②③ 三批） | ①高级查询/查询模板/仪表盘三处理器落地（tools/ 包 + conditions 输入巡检：tracker_msg 永拒、tracker_url 仅域名+contains 族；catalog 级 confirm 门禁；模板幂等=进程内 512 LRU + MCP_TOOL_CALL 审计；处理器签名 (spec, principal, arguments, runtime, call_context)）。②等级 4 标记与 Cron 触发（写/高风险）。③分层债收尾（add 家族辅助迁 app/services/torrent_add_helpers，torrent_status 正向依赖，新模块入 async_downloader_calls 守卫）+ torrent_add_file 落地（校验链：路径/URL/磁力先于解码 SERVER_PATH_FORBIDDEN、10/64MiB 双上限 env 钳制、bencode/info hash to_thread；共用 TorrentAddService；TorrentAddResult 扩展领域字段 HTTP 零影响；契约修正 downloader_id integer→string——主键实为 UUID 字符串）。tests/mcp 280 项；G7/G8 片段 PASS，聚合 5/12（余 7 门 W4） |
+| W4 | done（2026-09-09，a/b/c/d 四段收官） | G1/G4/G5/G6/G9/G11 PASS（2026-09-08 三段）；G10 PASS（2026-09-09 W4-d）：依赖锁定（mcp~=1.30.0+pyjwt[crypto]~=2.10.1 连动升级，锁 --generate-hashes 重生成）+双 spec hiddenimports+**锁 pywin32 平台标记根修 b7bba8d**（pip-compile 在 Windows 丢 mcp 双分支 win32 约束标记→Linux 三产线 pip --require-hashes 全断；补标记+回归锚定，Windows dry-run+Linux 双实装验证）+**四制品黑盒全矩阵**：EXE（W4-c 构建制品，A 复验+B/C 补齐三段）、Docker（干净树镜像 65bf9a9e 三段）、DEB（本地实构 node22+fpm 容器跑 build-linux.sh，debian:12 解包运行三段）、RPM（与 DEB 二进制逐字节一致 sha256+包内 kind=linux-rpm+A 段）。**聚合 12/12 PASS → verdict=READY**；runbook 交付+§8.1 黑盒三段配方。 |
+
+### 11.1 前置交付与未闭合边界
+
+- ~~`TorrentAddService` 仍导入 `app.api.endpoints.torrent_helpers` 中的辅助函数~~ **已收尾（W3-③，2026-09-08）**：add 家族六辅助迁至 `app/services/torrent_add_helpers.py`，单添加/批量添加服务与 torrent_status 端点全部改依赖服务层/正向依赖；新模块登记 async_downloader_calls 架构守卫。剩余服务层→endpoint 层债务仅 `app/services/advanced_search.py → torrent_helpers.convert_to_vos_with_trackers`（查询路径，非写路径；G4 AST 守卫落地时一并处置）。
+- ~~`trigger_task_by_code` 使用整个内置注册表，尚非单独的 MCP allowlist~~ **已收尾（W3-②）**：MCP 侧显式 allowlist（tools/cron.py）+ 6e45e89 根修 CRUD 形态错配并加 session_factory 注入。
+- `app/services/audit_context.py` 的值对象仍带 `from_request(Request)` 适配方法（HTTP 侧构造入口）；MCP 侧以空 AuditContext + 传输层四元组（ToolCallContext.audit）注入，G4 AST 守卫落地时须明确该适配边界不算 service 依赖 Request。
+- 契约修正（W3-③）：`torrent_add_file.downloader_id` 原 W0 契约误标 integer，实际下载器主键为 UUID 字符串——已改 string 并同步约束描述；契约变更随工具落地生效，无已发布客户端受影响。
+- 幂等首版口径（G7 已声明）：共享 LRU 只保证"完成后重放返回首次结果"；**同键在途并发窗口无在途去重**（两次执行、负载一致），专项测试锚定；完整重放/并发矩阵 W4 复核（idempotency.py 模块注释）。
+- 上传默认上限可调面：`BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES` env 覆盖（恒钳制 64MiB 硬顶内）；未纳入 mcp.runtime.v1 配置面（首版口径，W4 若需要再评估 schema 演进）。
+- 输出 DTO、最终泄漏扫描、日志脱敏、查询预算、写入确认/幂等及生命周期矩阵均需在 MCP 接入时补齐。既有 HTTP 行为测试不能替代这些门禁证据。
+
+### 11.2 本次验证证据
+
+- 检查 31 个 MCP 专项目标文件，均不存在；`backend/app/mcp/` 与 `backend/tests/mcp/` 尚未建立。
+- `python -m pytest tests/auth/test_principal.py tests/services/test_torrent_add_service.py tests/tasks/test_cron_trigger.py -q`：20 passed、23 warnings（Python 3.13.5；认证 8、添加 5、Cron 7）。仅验证前置模块，不覆盖计划要求的 Python 3.11/3.12 SDK/制品矩阵。
+- Git Bash 执行根 `./init.sh` 返回 0，但提示 jq 缺失、虚拟环境未激活、数据库版本“未初始化”及前端 npm 检查警告；该轻量检查不代表完整构建、数据库或前端门禁通过。
+- 本次未运行完整后端/前端质量门禁及发布制品验证；历史 139 项回归与本次 20 项测试分开记录。
+
+### 11.3 下一批工作
+
+**已无下一批——feature 收官（2026-09-09 W4-d）**。原 §11.3 残项全部闭合：
+Docker 镜像黑盒（干净树 b7bba8d 实构镜像 65bf9a9e，三段 PASS）、DEB/RPM（本地
+node22+fpm 工具链容器实构双包，debian:12 解包运行三段/同二进制验证+A 段）、
+锁的 Linux 侧 --require-hashes 安装验证（Docker builder pip wheel + DEB 打包 venv
+pip install 双实装）；另根修锁 pywin32 平台标记缺陷（b7bba8d，G10 黑盒抓出的
+生产缺陷——pip-compile 在 Windows 丢标记致 Linux 三产线全断）。聚合 12/12 PASS
+→ verdict=READY；任务 .9 与 feature 终态 done。后续 MCP 相关演进（新能力、
+schema v2、fastmcp 评估等）按新 feature 立项。
+
+历史残项处置记录：同键在途幂等完整矩阵复核结论=维持首版口径（W4-a/G7 已锚定
+在途窗口行为）；七笔积压已于 2026-09-09 会话前全部推送（顶端 cc1c8c4）。
+每批产出 MCP-G<n>.json 片段并由 `scripts/release/aggregate_mcp_gates.py`
+汇聚（逐门回填转绿，12 门全 PASS → READY），才可更新任务及 Gate 状态。
 

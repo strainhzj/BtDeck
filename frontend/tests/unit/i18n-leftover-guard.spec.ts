@@ -47,7 +47,12 @@ const EXCLUDED_DIRS: Array<{ dir: string, reason: string }> = [
 
 const EXCLUDED_FILE_PATTERNS: Array<{ pattern: RegExp, reason: string }> = [
   { pattern: /\.generated\.ts$/, reason: '后端生成契约（禁直改；展示层按稳定值双取 label/labelEn）' },
-  { pattern: /__tests__\//, reason: '同目录测试（非运行时代码）' }
+  { pattern: /__tests__\//, reason: '同目录测试（非运行时代码）' },
+  // v1.0.7 合入（dev1.0.7）的 MCP/MoviePilot 新功能面：dev1.0.7 双语线仅到 P1，
+  // 这些文件整体为中文硬编码，双语化另立项（见 PLANS/merge-dev107-into-dev.md §8）。
+  // 注意：settings/index.vue 主体是 dev P6 双语成果，禁整文件排除，仅页签 label 走白名单。
+  { pattern: /^src\/api\/(mcp-settings|moviepilot)\.ts$/, reason: 'MCP/MoviePilot API 层：后端契约错误文案，随端点双语化另立项' },
+  { pattern: /^src\/views\/settings\/components\/(McpSettingsPanel|MoviePilotPanel)\.vue$/, reason: 'MCP/MoviePilot 设置面板：v1.0.7 新功能面，双语另立项' }
 ]
 
 /** 收集扫描集：全部桌面 src 下 .vue/.ts，减去排除范围 */
@@ -384,6 +389,88 @@ const ALLOWLIST: Array<{ file: string, contains: string, reason: string }> = [
     contains: 'name: group.name || `条件组${groupIndex + 1}`',
     reason: 'T01 冻结：回退组名进入 API 载荷（groups[].name 业务参数），与后端预设组名同语义层，'
       + '两语言 groups 保持一致（行内已有注释钉住）'
+  },
+  // ── v1.0.7 合入（dev1.0.7）的 MCP/MoviePilot 增量：种子详情「媒体库」页签与设置页新页签 label。
+  // 属新功能面待双语另立项（PLANS/merge-dev107-into-dev.md P4.3）；行级登记保留文件其余部分的审计覆盖。
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '媒体库',
+    reason: 'v1.0.7 媒体库页签：加载/失败/空态/表头「媒体库路径」与页签 label 常量，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '整理',
+    reason: 'v1.0.7 媒体库页签：整理记录计数/整理方式表头/整理失败标记，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '刷新',
+    reason: 'v1.0.7 媒体库页签：手动刷新按钮，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '更新失败，显示上次数据',
+    reason: 'v1.0.7 媒体库页签：降级提示，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '媒体标题',
+    reason: 'v1.0.7 媒体库页签：表头，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '季 / 集',
+    reason: 'v1.0.7 媒体库页签：表头，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '源文件路径',
+    reason: 'v1.0.7 媒体库页签：表头，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '实例',
+    reason: 'v1.0.7 媒体库页签：表头（MoviePilot 实例），待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '未知标题',
+    reason: 'v1.0.7 媒体库页签：标题回退，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '复制',
+    reason: 'v1.0.7 媒体库页签：整理方式展示名（copy），待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '移动',
+    reason: 'v1.0.7 媒体库页签：整理方式展示名（move），待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '软链接',
+    reason: 'v1.0.7 媒体库页签：整理方式展示名（link），待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '硬链接',
+    reason: 'v1.0.7 媒体库页签：整理方式展示名（hardlink），待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: '未找到 MoviePilot 整理记录',
+    reason: 'v1.0.7 媒体库页签：空态说明，待双语另立项'
+  },
+  {
+    file: 'src/views/torrents/mixins/detailTabsData.ts',
+    contains: "error: res.msg || '获取媒体库关联失败'",
+    reason: 'v1.0.7 媒体库页签：错误兑底文案，待双语另立项'
+  },
+  {
+    file: 'src/views/settings/index.vue',
+    contains: 'label="MCP 服务"',
+    reason: 'v1.0.7 设置页新页签 label（MCP/MoviePilot 面板已整体排除，此行保留文件其余部分审计）'
   }
 ]
 
@@ -662,14 +749,11 @@ describe('遗留补译 - 源码契约（壳层/控制台/store 走 i18n 键）',
     expect(src).toContain("$t('common.pwa.dismiss')")
   })
 
-  it('PlatformCapabilityPanel：面板文案走 settings.capability 键，服务端 note 原文透传', () => {
-    const src = read('src/components/settings/PlatformCapabilityPanel.vue')
-    expect(src).toContain("$t('settings.capability.title')")
-    expect(src).toContain("$t('settings.capability.levelUnsupported')")
-    expect(src).toContain("$t('settings.capability.platformAndroidServer')")
-    // 服务端下发的能力 label/note 必须原样透传（E03 语义）
-    expect(src).toContain('{{ row.note }}')
-    expect(src).toContain('{{ row.label }}')
+  it('PlatformCapabilityPanel：组件已按 dev1.0.7 282f494 移除，禁止从历史恢复（合并 PLANS/merge-dev107-into-dev.md 类 B）', () => {
+    // 设置页「主机能力」页签与组件在 dev1.0.7 刻意移除（能力矩阵保留 API，仅去 UI 入口）；
+    // 若误恢复组件，此处的源码契约（settings.capability 键）已随语言包演进漂移，
+    // 必红提醒重新评估，而不是静默放行。
+    expect(existsSync(resolve(__dirname, '../../src/components/settings/PlatformCapabilityPanel.vue'))).toBe(false)
   })
 
   it('downloader 控制台：操作反馈走 downloader.msg 键，禁 response.msg 中文兜底', () => {

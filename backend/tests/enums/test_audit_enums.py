@@ -114,7 +114,9 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 48  # 含 TRANSFER（W5-4）和 SCHEDULED_TASK_INTERRUPT
+        # 2026-09-08 校准：此前计数漂移（W1 MCP_SETTINGS_UPDATE 与 MoviePilot 三项
+        # 增员未同步）；当前真实值 53（含 MCP_TOOL_CALL，mcp W3）。
+        assert len(AuditOperationType) == 53
 
 
 class TestAuditOperationTypeIsValid:

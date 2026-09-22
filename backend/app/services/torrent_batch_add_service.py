@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from fastapi import UploadFile
 from sqlalchemy.exc import OperationalError
 
-from app.api.endpoints.torrent_helpers import (
+from app.services.torrent_add_helpers import (
     _write_audit_log_async,
     calculate_info_hash,
     create_qbittorrent_torrent_record,

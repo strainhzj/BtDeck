@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（49 个文件，不计 `__init__.py`）
+### services/ 根（54 个文件，不计 `__init__.py`；✨2026-09-09 计数校准：含本批 moviepilot 两服务与 mcp_settings/torrent_add_helpers 等历史漂移）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -15,11 +15,14 @@
 | 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
-| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志） |
+| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志）；✨2026-09-08（MCP W3-③，随 dev1.0.7 合入）：`TorrentAddResult` 扩领域字段 （info_hash/info_id/name/downloader_nickname/created + db_torrent_created 追踪与末尾回填，HTTP 端点零影响），add 家族辅助迁至 `torrent_add_helpers.py`（本服务 import 同步改向） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
+| MCP 运行时配置 mcp-settings ✨2026-09-08 | `mcp_settings_service.py` | `mcp.runtime.v1` 版本化 JSON 键读写：fail-closed 加载（缺失/损坏/未知 schemaVersion/字段非法整体回落默认全关）+ revision CAS（`McpSettingsRevisionConflict`→409）+ `BTDECK_MCP_FORCE_DISABLED` kill switch 只读覆盖（本行 2026-09-09 补记漂移） |
+| MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot_integration_service.py` | MoviePilot 整理联动核心：握手注册（UUID 身份+集成账号绑定校验，绑定失效允许改绑）、批量幂等 upsert（`(instance_id, history_id)` 唯一 + 服务端 content_hash 判 skip/update/insert）、下载器映射校验与变更后全量重解析（分块）、正向关联（严格 (bt_downloader_id, download_hash) 不跨下载器串联）与路径反查（精确/目录前缀 + torrent_info 任务快照批量 join）；实例删除连带历史镜像（显式管理动作） |
+| MoviePilot 全局开关 moviepilot-settings ✨2026-09-09 | `moviepilot_settings_service.py` | `moviepilot.integration.v1` 版本化 JSON 键：fail-closed（默认关闭）+ revision CAS，镜像 mcp_settings_service 模式（单 enabled 字段，无能力开关/kill switch） |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查）；✨2026-09-21 双语 P4（E03）：版本更新通知 extra_data 补稳定 event=version_update 键（前端按事件本地化标题；历史通知无 event 原文展示） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L65 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L174 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
 | 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；列表/硬链接/清理链路由 `orphan_files` 能力统一门禁，Android 主服务端不访问下载器目录；桌面端保留原有分批生命周期与 fail-closed 文件操作 |

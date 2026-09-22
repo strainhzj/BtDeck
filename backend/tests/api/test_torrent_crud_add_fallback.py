@@ -508,7 +508,7 @@ class TestCreateQbittorrentRecordAddedDateFallback:
     def test_added_on_zero_falls_back_to_now(self):
         from datetime import datetime
 
-        from app.api.endpoints.torrent_helpers import create_qbittorrent_torrent_record
+        from app.services.torrent_add_helpers import create_qbittorrent_torrent_record
 
         downloader = SimpleNamespace(nickname="qb")
         qb_torrent = SimpleNamespace(
@@ -536,7 +536,7 @@ class TestCreateQbittorrentRecordAddedDateFallback:
     def test_added_on_valid_keeps_downloader_timestamp(self):
         from datetime import datetime
 
-        from app.api.endpoints.torrent_helpers import create_qbittorrent_torrent_record
+        from app.services.torrent_add_helpers import create_qbittorrent_torrent_record
 
         downloader = SimpleNamespace(nickname="qb")
         qb_torrent = SimpleNamespace(

@@ -12,7 +12,7 @@
 4. 结构化日志输出准入结果，便于阶段 0 基线观测。
 
 接入点：app/tasks/cron_executor.py::_run_python_internal_class
-详见 PLANS/sync-resource-governance.md 阶段 0+1。
+详见 PLANS/archive/sync-resource-governance.md 阶段 0+1。
 """
 
 import asyncio

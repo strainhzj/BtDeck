@@ -3,12 +3,12 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-21",
+  "last_updated": "2026-09-22",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
     "scope": "backend lint + 全量 pytest + 前端 lint/build",
-    "report": "PLANS/security-remediation.md",
+    "report": "PLANS/archive/security-remediation.md",
     "gate_status": "pending_final_verify",
     "evidence": "security-remediation-2026-08"
   },
@@ -727,9 +727,15 @@
       "id": "mcp-service-capabilities-2026-08-28",
       "name": "MCP 服务与可选能力开放（默认关闭 + 强制脱敏）",
       "description": "在 FastAPI 同进程内提供 MCP 服务，首批开放高级种子查询、等级4 pending_delete 标记、添加种子、创建高级查询组合、仪表盘读取和定时任务触发。服务全局开关与6项预置能力均可独立配置且默认关闭；关闭能力不可发现、缓存直调仍拒绝。所有 MCP 查询结果、错误与日志强制执行数据最小化和脱敏，首版不允许返回原始 Tracker URL/消息、passkey/token、绝对路径或下载器凭据。G0～G11 任一门禁失败、未运行或证据缺失均阻止开放或进入发布制品。",
-      "status": "pending",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/mcp-service-capabilities.md",
+      "implementation_review": {
+        "date": "2026-09-08",
+        "workspace_branch": "dev1.0.7",
+        "summary": "终态（2026-09-09）：W0~W4 全部落地，六工具 6/6 可用，G0～G11 门禁 12/12 PASS → 聚合 verdict=READY（G10 残项 Docker/DEB/RPM 黑盒与锁 Linux 侧哈希安装已于 W4-d 闭合；另根修 pip-compile 丢 pywin32 平台标记致 Linux 产线全断的锁缺陷 b7bba8d）。EXE/DEB/RPM/Docker 四制品完成默认关闭+部分能力发现+脱敏 smoke 黑盒矩阵。历史：W0 契约/错误码/G0/威胁模型/Gate 骨架/SDK 选型（官方 mcp 1.30.0）→ W1 配置控制面+设置 UI → W2 同进程挂载/三重门禁/脱敏层 → W3 六工具三批 → W4 等价/预算/生命周期/升级矩阵/canary/回滚+runbook。详见计划 §10.4/§11。",
+        "evidence": "backend/app/mcp/ 契约层 + McpSettingsService + /api/v1/mcp/settings（28 项 API 回归）；SDK 探针矩阵 4 份锁定组合证据 JSON；tests/release MCP Gate 骨架（NOT_RUN=BLOCKED 实证）；后端受影响回归 150 passed、black/flake8/mypy 绿；前端 mcp-settings.spec 8 项、lint/typecheck 绿。"
+      },
       "planning_evidence": "2026-08-28 只读核验：torrents_async.py 实测4510行且0路由；app.state.store 在应用 lifespan 内初始化，首批实时能力必须同进程共享；高级查询/模板可直接复用业务核心，仪表盘小改，等级4与Cron中改，单种添加必须先抽 service。当前无 MCP 实现或依赖声明，PyInstaller 规格显式排除 fastmcp。根 ./init.sh --ci 通过；高级搜索/模板/仪表盘46项、等级删除/添加57项、Cron安全与执行器36项，共139项定向回归通过。",
       "security_defaults": {
         "global_enabled": false,
@@ -887,21 +893,31 @@
           "id": "mcp-service-capabilities-2026-08-28.1",
           "name": "W0 架构、威胁模型与 MCP 运行时兼容探针",
           "description": "固化6项工具schema、错误码、风险分级、能力目录和隐私数据字典；选择并锁定MCP SDK/transport，验证FastAPI lifespan、路由顺序、PyInstaller和现有依赖兼容；建立G0～G11门禁骨架。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "PLANS/mcp-service-capabilities.md",
+            "backend/app/mcp/__init__.py",
             "backend/app/mcp/contracts.py",
             "backend/app/mcp/errors.py",
-            "backend/tests/mcp/test_architecture_constraints.py",
+            "backend/scripts/mcp_sdk_probe.py",
+            "backend/tests/mcp/__init__.py",
+            "backend/tests/mcp/test_mcp_architecture_constraints.py",
+            "backend/tests/mcp/test_contracts.py",
+            "backend/tests/mcp/test_sdk_compatibility.py",
+            "backend/tests/mcp/evidence/",
+            "backend/tests/release/test_mcp_gate_skeleton.py",
+            "scripts/release/aggregate_mcp_gates.py",
+            "release/schemas/mcp-gate-fragment.schema.json",
             "docs/security/mcp-threat-model.md"
-          ]
+          ],
+          "evidence": "2026-09-08 W0 六项交付落地（选型结论详见计划 §10.4）：①契约 contracts.py（6 工具目录/输入契约/输出 allowlist/脱敏字典含 TrackerMessageLog.msg+sample_urls/预算常量）；②错误码 errors.py（23 码+HTTP 对齐表+principal 原因码映射）；③SDK 探针 mcp_sdk_probe.py：隔离 venv 矩阵 py3.11/3.12 × fastmcp 2.14.3/mcp 1.30.0（仓库锁定 fastapi 0.115.6+starlette 0.41.3）C1~C4 全 PASS，C5 onefile 官方 mcp 零附加参数 PASS（10.9MB/17.6s）、fastmcp FAIL（PackageNotFoundError→补 --copy-metadata 再缺 burner_redis，29.7MB）→ 选型官方 mcp SDK 1.30.0 + streamable HTTP stateless；证据 4 份 JSON 在 tests/mcp/evidence/；④G0 静态门禁 15 项绿（禁全局 app/禁 app.api/禁下载器客户端构造 + 12 负向反例 + 6 合法对照）；⑤威胁模型 STRIDE+现状缺口+prompt 注入面；⑥Gate 骨架：mcp-gate-fragment.schema.json（PASS 必须带 evidence）+ aggregate_mcp_gates.py（空目录=12×NOT_RUN=BLOCKED exit 1）+ 12 项测试。质量门禁：black/flake8/mypy 9 文件绿；新增+相邻回归 pytest 132 passed。契约与威胁模型人工评审通过后转 done 并启动 W1。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.2",
           "name": "W1 默认关闭配置、逐能力控制面与设置 UI",
           "description": "复用configs表的mcp.runtime.v1版本化JSON，实现revision CAS、fail-closed默认、内存原子快照和BTDECK_MCP_FORCE_DISABLED；设置页提供全局与6项能力开关、风险说明和环境强制关闭提示，移动端复用桌面设置组件。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/app/services/mcp_settings_service.py",
@@ -909,18 +925,21 @@
             "backend/app/data/default_mcp_settings.py",
             "backend/app/api/api.py",
             "backend/app/core/config.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/api/test_mcp_settings.py",
+            "backend/tests/api/test_auth_route_coverage.py",
             "frontend/src/api/mcp-settings.ts",
             "frontend/src/views/settings/components/McpSettingsPanel.vue",
             "frontend/src/views/settings/index.vue",
-            "backend/tests/api/test_mcp_settings.py",
             "frontend/tests/unit/mcp-settings.spec.ts"
-          ]
+          ],
+          "evidence": "2026-09-08 W1 落地：①McpSettingsService——configs 表首个版本化 JSON 键 mcp.runtime.v1，fail-closed 加载（缺失/损坏/未知 schemaVersion/字段缺失或类型非法整体回落全关，不部分采信）、revision CAS（expectedRevision 不符 409；无行基线 revision 0 可建行/修复损坏行）、kill switch 覆盖（BTDECK_MCP_FORCE_DISABLED 只读覆盖 effectiveEnabled，允许落库保留意图）；②GET/PUT /api/v1/mcp/settings——principal 内核认证门禁（无/坏 token/用户不存在 401，禁用/强制改密 403，X-Access-Token 双兼容复用 _extract_access_token 防 BTD201），GET 下发能力目录元数据（单一事实源 contracts.py），PUT best-effort 审计（新增 AuditOperationType.MCP_SETTINGS_UPDATE）；③设置页新增 MCP 服务页签（全局+6 能力开关、风险分级标签与说明、kill switch 只读横幅、409 冲突自动重载、demo 只读占位、dirty 跟踪禁用保存）；移动端经既有 mobile/settings.vue 包装桌面页自动同源零复制；④测试：后端 test_mcp_settings 28 项（G1 fail-closed 7 形态参数化/G2 CAS 与载荷校验/G3 认证矩阵/G11 审计正反向）+ auth 路由覆盖门禁登记新依赖全绿；前端 mcp-settings.spec 8 项 + 相邻 settings/mobile specs 19 项绿；质量门禁：后端 black/flake8/mypy 全部改动文件绿、受影响回归 150 passed；前端 lint(--max-warnings 0)/typecheck 绿。注：Gate 整体 PASS 仍待 W2~W4（MCP 运行时尚未挂载，G1 的升级/重启矩阵在 W2/W4 补证）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.3",
           "name": "W2 同进程 MCP、RuntimeContext 与统一认证",
           "description": "在SPA fallback前挂载同进程MCP应用，显式注入父应用store/统计/cron/session factory；抽取HTTP/MCP共用token→principal认证内核，落实全局开关、能力开关和认证三重执行门禁。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/server.py",
@@ -930,88 +949,105 @@
             "backend/app/factory.py",
             "backend/app/auth/dependencies.py",
             "backend/tests/mcp/test_auth.py",
-            "backend/tests/mcp/test_capability_gates.py"
+            "backend/tests/mcp/test_capability_gates.py",
+            "backend/app/auth/principal.py",
+            "backend/app/core/runtime_context.py",
+            "backend/app/services/audit_context.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（W2 统一认证前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。 || 2026-09-08 W2 落地（官方 mcp SDK 1.30.0 + streamable HTTP stateless）：server.py lowlevel Server + StreamableHTTPSessionManager(stateless=True, json_response=True) 挂载为 Starlette 子应用，factory._mount_mcp_service 在 SPA fallback 之前挂载到 /mcp（SDK 缺失 try-import 跳过，W4 前生产默认态）；lifespan 手动进入 sub_asgi.router.lifespan_context（FastAPI 不自动运行挂载子应用 lifespan），mark_ready/mark_closed 驱动 RUNTIME_NOT_READY 稳定拒绝，清理段最末拆卸会话管理器；runtime.py 双会话工厂（SessionLocal/AsyncSessionLocal 可注入）+ 惰性 RuntimeContext（torrent_stats 三态哨兵保留）+ fail-closed 配置快照供给（每次 list/call 现读 mcp.runtime.v1，PUT 后立即生效无需重启）；auth.py 复用 principal 内核与 _extract_access_token（X-Access-Token/Bearer 双兼容），PRINCIPAL_REASON_TO_ERROR 映射 + 未知原因码兜底 AUTH_TOKEN_INVALID；catalog.py 双门禁（tools/list 过滤 + tools/call 复核，目录外/别名/旧名统一 CAPABILITY_DISABLED 防枚举）+ FORBIDDEN_ARGUMENT（user_id/operator/username）+ 契约级预算（page_size≤200/info_ids≤100）；SDK 缓存刷新以 handler(None) 形态旁路进入 list 处理器——手动注册区分真实请求与缓存刷新，刷新只供 schema 验证元数据不做授权，执行门禁在 call 路径独立强制。测试：tests/mcp 179 项全绿（新增 auth 16 + capability_gates 单元20/线上20）；相邻回归 route-coverage/architecture/factory-frontend/mcp-settings/principal 67 项 + cron-trigger/gate-skeleton/audit 60 项绿。门禁片段：release/build/mcp-gate-fragments/MCP-G{0,2,3}.json PASS（聚合 verdict=BLOCKED，余 9 门 NOT_RUN 待 W3/W4）。质量门：mypy/flake8/black 全绿（anaconda base，mcp 1.30.0）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.4",
           "name": "W2 MCP 输出 DTO、Tracker/路径脱敏与泄漏扫描",
           "description": "所有工具使用显式allowlist DTO；Tracker只返回域名和规范状态，移除原始消息/passkey；绝对路径和下载器连接信息不输出；自由错误文本与日志统一清洗，最终序列化前fail-closed扫描敏感canary。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/redaction.py",
             "backend/app/mcp/contracts.py",
-            "backend/tests/mcp/test_redaction.py",
-            "backend/tests/mcp/test_redaction_mutations.py"
-          ]
+            "backend/tests/mcp/test_redaction.py"
+          ],
+          "evidence": "2026-09-08 W2 落地：redaction.py 按 REDACTION_DATA_DICTIONARY 实现——redact_tracker_url（scheme/userinfo/端口/路径/query/passkey/fragment 全剥离仅留小写合规 hostname，含 punycode）；is_safe_tracker_domain（输入侧仅域名，禁 :/?#@\\ 与 passkey 载体，FQDN 尾点归一）；redact_path_to_display（盘符/UNC/挂载根/父目录全剥离仅留末段）；redact_free_text（URL 凭据/完整 URL/passkey 类参数/三类绝对路径 → 固定占位符）；apply_output_allowlist（点路径语义：裸键=整树放行，items.*=逐元素过滤，契约外字段丢弃）；scan_for_leaks 最终序列化前泄漏扫描器（scheme URL/URL 凭据/敏感参数含 URL 编码变体 unquote 复检/Windows 盘符/UNC/Unix 挂载路径/40 与 64 位 hex 种子哈希/bytes）；finalize_tool_output 统一出口：allowlist→泄漏扫描（命中即 LeakScanError→INTERNAL_ERROR 整体失败不截断放行）→1MiB 序列化预算（RESULT_TOO_LARGE 整体失败）。变异式 canary 矩阵并入 test_redaction.py（嵌套集合/URL 编码 passkey/camelCase 键/哈希/路径六类负例，未拆独立 mutations 文件）；测试 43 项全绿。W3 工具接入后由真实工具响应复验 G5（canary 变异在 W4）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.5",
           "name": "W3 高级查询、查询模板与仪表盘工具",
           "description": "优先接入3项低改造能力；高级查询限制pageSize≤200和响应≤1MiB，Tracker输入仅允许域名；模板用户ID来自principal；DashboardService改注入RuntimeContext并只返回脱敏聚合数据。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
+            "backend/app/mcp/tools/__init__.py",
+            "backend/app/mcp/tools/conditions.py",
             "backend/app/mcp/tools/torrents.py",
             "backend/app/mcp/tools/search_templates.py",
             "backend/app/mcp/tools/dashboard.py",
-            "backend/app/services/advanced_search.py",
-            "backend/app/services/dashboard_service.py",
-            "backend/tests/mcp/test_query_tools.py",
-            "backend/tests/mcp/test_dashboard_tool.py"
-          ]
+            "backend/app/mcp/catalog.py",
+            "backend/app/mcp/server.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/mcp/test_tools_read.py",
+            "backend/tests/mcp/test_tools_wire.py"
+          ],
+          "evidence": "2026-09-08 W3-① 落地（只读三工具，官方 mcp 1.30.0 线上全链验证）：app/mcp/tools/{torrents,search_templates,dashboard}.py 三处理器注册入 catalog.TOOL_HANDLERS（签名 (spec, principal, arguments, runtime, call_context)，server.py 构造 ToolCallContext 含审计四元组）；torrent_advanced_search 复用 AdvancedSearchService.search_torrents（dict→EnhancedAdvancedSearchRequest.model_validate 经 service 命名空间导入，G0 不碰 app.api；tracker_msg 条件永拒、tracker_url 仅域名+contains 族），输出映射 camelCase VO→脱敏 DTO（tracker 域名去重/save_path→path_display/hash 不构造，线上断言全响应零泄漏）；advanced_search_template_create 复用 create_search_template（user_id 取 principal 与 HTTP 同语义），confirm 门禁入 catalog 共享校验（CONFIRM_REQUIRED）、进程内有界幂等缓存（512 条 LRU，单 Worker 前提）、MCP_TOOL_CALL 审计两行（创建+重放，detail 仅工具名/模板 id/幂等键 sha256 摘要，不含 conditions 原文）；dashboard_get 复用 DashboardService（AsyncSession+RuntimeContext），仅脱敏聚合 DTO（downloader_list/activities 不进输出，storage 双键 service 无源省略）。测试：tests/mcp 207 项全绿（新增 read 单元 21 + wire E2E 6——真实 JSON-RPC 握手驱动三工具：搜索含 tracker 域名条件命中与隐私拒绝、模板创建+重放单行+审计、仪表盘聚合键集），5 连跑稳定性验证。坑修：测试栈 StaticPool 单连接在并发 to_thread 认证下竞态（import 时序暴露）→改临时文件库；审计 log_id 为 uuid4 无时间序→断言改按内容不依赖行序；枚举计数测试既有漂移（48→真实 53）校准。门禁：MCP-G0/G2/G3 片段更新纳入 tools 层证据（聚合仍 BLOCKED，G4 等价守卫与 G5 全工具 canary 留 W3-②③/W4）。质量门 mypy/flake8/black 全绿；相邻回归 383+566 项绿（enums/audit_logs/advanced_search/mcp_settings/architecture）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.6",
           "name": "W3 等级4 pending_delete 标记工具",
           "description": "以store+AuditContext替换TorrentDeletionByLevelService/AsyncDeletionExecutor的FastAPI Request依赖；工具明确不删除任务/文件，要求confirm和幂等键、最多100项，并把下载器成功但DB失败返回partial。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/tools/torrents.py",
-            "backend/app/services/torrent_deletion_by_level.py",
-            "backend/app/services/async_deletion_executor.py",
-            "backend/app/api/endpoints/torrent_deletion.py",
-            "backend/tests/mcp/test_pending_delete_tool.py"
+            "backend/app/mcp/tools/idempotency.py",
+            "backend/app/mcp/tools/common.py",
+            "backend/app/mcp/tools/__init__.py",
+            "backend/tests/mcp/test_tools_write.py",
+            "backend/tests/mcp/test_tools_wire.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（等级4 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-08 W3-② 落地（等级4标记工具）：torrents.py handle_mark_pending_delete 逐项复用 TorrentDeletionByLevelService.delete_by_level(...,4)（G4 同一 service 同一标签语义，store 经 runtime.require_store 注入）；已含 pending_delete 标签的种子按 already_marked 直报且不再触发下载器调用（幂等）；逐项结果保留 partial——下载器成功但 db_update_success=False 时 db_ok=False 不折叠（§4.7）；items.error_code 稳定码映射（不存在→INVALID_ARGUMENT/适配器与下载器→DOWNSTREAM_FAILURE/其他→INTERNAL_ERROR，上游 error 文本不透传）；overall result=success/partial/failed 三态；幂等键进程内 LRU（与模板工具共享 idempotency.py）；逐项 DELETE_L4 领域审计（service 内）+ 每调用 MCP_TOOL_CALL 汇总审计（detail 仅计数/结果/幂等键摘要）。测试：单元 20 项（already_marked 跳过服务调用/混合批次 partial 保留/全失败/replay 不重调/store 缺失 RUNTIME_NOT_READY/confirm+100 上限门禁）+ 线上拒绝路径（store 未就绪/confirm false/101 项超限）。真实下载器成功路径留 W4 等价批（需适配器桩）。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.7",
           "name": "W3 内置定时任务触发工具",
           "description": "按稳定task_code解析显式MCP allowlist；启动前校验enabled/running/执行策略，永拒task_type 0-3；返回accepted+run_id并记录真实principal审计，不开放任务定义和启停修改。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/mcp/tools/cron.py",
-            "backend/app/tasks/cron_executor.py",
-            "backend/app/api/endpoints/cron_tasks.py",
-            "backend/tests/mcp/test_cron_tool.py"
-          ]
+            "backend/app/tasks/cron_trigger.py",
+            "backend/tests/mcp/test_tools_write.py",
+            "backend/tests/mcp/test_tools_wire.py",
+            "backend/tests/tasks/test_cron_trigger.py"
+          ],
+          "evidence": "2026-09-08 W3-② 落地（Cron 触发工具）：cron.py handle_cron_trigger 复用协议无关 trigger_task_by_code（G4；enabled/运行中前检由其内部承担），其上再收敛 MCP 显式 allowlist——6 个内置只读/同步维护类任务（cached_downloader_sync/Tag_Data_Sync/TORRENT_TRACKER_STATUS_JUDGE/torrent_info_sync_ac608e4d/tracker_sync_598b784c/refresh_token_cleanup；孤儿清理/路径扫描/重宣告等副作用面大的任务首版不开放；内置但未开放与目录外名字统一 CRON_TASK_NOT_ALLOWED 防枚举）；拒绝码映射（NOT_FOUND/TRIGGER_REJECTED→CRON_TASK_NOT_TRIGGERABLE，NOT_BUILTIN/TYPE_NOT_ALLOWED→CRON_TASK_NOT_ALLOWED，TRIGGER_ERROR→INTERNAL_ERROR，message 不透传）；accepted 语义返回 run_id=null（执行期写 CronTask.last_run_id，不伪报完成）；幂等 LRU + MCP_TOOL_CALL 审计（接受与拒绝均记）。**根修真缺陷**：trigger_task_by_code 对 get_cron_task_by_code 返回形态判空错配（CRUD 未命中返回 truthy {total:0,list:[]}，旧代码 not data 永不命中→AttributeError→TRIGGER_ERROR），单测 mock 形态漂移（SimpleNamespace ORM 形态）掩盖生产路径缺陷——已按真实契约校准 mock 并根修；另加可选 session_factory 注入参数（MCP runtime 统一连接治理）。测试：单元 12（allowlist 门/accepted/5 拒绝码映射/重放/allowlist⊂内置且副作用任务不开放）+ 线上 2（非白名单内置任务拒/白名单任务无行拒）+ tests/tasks/test_cron_trigger 既有 7 项校准后全绿。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.8",
           "name": "W3 统一 TorrentAddService 与添加种子工具",
           "description": "从torrent_crud单添加和batch service抽取协议无关TorrentAddService，HTTP/MCP共用；首版只接收受控.torrent内容，不接受磁力/URL/服务器路径，实施10MiB默认/64MiB硬上限、bencode/info hash、确认、幂等和审计。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/services/torrent_add_service.py",
-            "backend/app/mcp/tools/torrents.py",
-            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/services/torrent_add_helpers.py",
+            "backend/app/mcp/tools/torrent_add.py",
+            "backend/app/mcp/tools/__init__.py",
+            "backend/app/mcp/contracts.py",
             "backend/app/services/torrent_batch_add_service.py",
-            "backend/tests/mcp/test_torrent_add_tool.py",
-            "backend/tests/services/test_torrent_add_service.py"
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/api/endpoints/torrent_status.py",
+            "backend/tests/mcp/test_tools_torrent_add.py",
+            "backend/tests/mcp/test_tools_wire.py",
+            "backend/tests/mcp/test_capability_gates.py",
+            "backend/tests/mcp/test_tools_read.py",
+            "backend/tests/architecture/test_async_downloader_calls.py"
           ],
-          "evidence": "2026-09-05 前置 service 层解耦已落地（本批未建任何 MCP 接口，行为零变化）：（TorrentAddService 前置）RuntimeContext(app/core)+AuditContext(app/services)+authenticate_access_token(app/auth/principal,补 is_active/must_change_password)+TorrentAddService(/torrent/add 主体原样抽取)+trigger_task_by_code(内置白名单+task_type 0-3 永拒)；DashboardService/等级4删除服务/异步执行器全部去 Request 改 store+audit_context 注入。详见 progress.md 2026-09-05（续三）与 roadmap 同步条目。"
+          "evidence": "2026-09-08 W3-③ 落地（六工具齐套）：①分层债收尾——add 家族辅助（calculate_info_hash/get_transmission_torrent_info/create_qb|tr_torrent_record/_write_audit_log_async/_safe_write_audit_log）自 app/api/endpoints/torrent_helpers 原样迁至 app/services/torrent_add_helpers（tr_client 注解改 Any，recycle_bin 先例），torrent_add_service/torrent_batch_add_service 改依赖服务层，torrent_status 端点正向依赖；新模块登记 async_downloader_calls 架构守卫（模块级客户端 import 禁止）。②契约修正——torrent_add_file.downloader_id integer→string（下载器主键实为 UUID 字符串，str(uuid.uuid4())，integer 契约永远无法命中）。③处理器 app/mcp/tools/torrent_add.py：输入校验链（磁力/URL/UNC/盘符/Unix 路径形态先于解码 SERVER_PATH_FORBIDDEN、合法 base64 以 / 开头不误判、strict b64 validate、默认 10MiB+硬顶 64MiB 双上限（BTDECK_MCP_TORRENT_UPLOAD_MAX_BYTES env 覆盖恒钳制硬顶）、空文件/非 bencode/缺 info dict → UPLOAD_INVALID_CONTENT，bencode 解析 to_thread 化）→ require_store → 共享 LRU 幂等重放 → 共用 TorrentAddService（operator=principal.username，audit_context=call_context.audit）→ 领域码映射（404/400→INVALID_ARGUMENT、408/503→DOWNSTREAM_FAILURE、500/未知→INTERNAL_ERROR 固定文案，上游 msg 只进服务端日志）；输出 allowlist added/duplicate/info_id/name/downloader_id/downloader_nickname（仅昵称）。④TorrentAddResult 扩展 info_hash/info_id/name/downloader_nickname/created 字段（HTTP 端点只读 status/code/msg，行为零变化）。⑤测试：新增单元 44（校验矩阵/错误映射/幂等重放/并发不同键隔离/同键在途首版口径锚定/审计无文件内容）+ wire 5（RUNTIME_NOT_READY/SERVER_PATH_FORBIDDEN/UPLOAD_TOO_LARGE/UPLOAD_INVALID_CONTENT/CONFIRM_REQUIRED/未知下载器→INVALID_ARGUMENT 带审计行）；既有锚点更新（处理器注册六工具齐套、无处理器空档语义改临时摘除注册表锚定）；tests/mcp 280 项 + 迁移回归（add_service/status_migration/add_fallback/transmission_error_sync/batch_add/async_downloader_calls/mcp_settings/gate_skeleton/cron_trigger）合计 448 项全绿；mypy/black/flake8 全绿（含修复 ba8408f 遗留的 runtime_context.py F401 未用 import，恢复整 app/ flake8 门禁）。⑥门禁：MCP-G7（三类写操作确认/幂等/部分失败/审计，同键在途窗口为文档化首版口径、完整重放矩阵 W4）与 MCP-G8（Cron allowlist + 上传安全负测）片段 PASS；G0/G2/G3 摘要与证据刷新至六工具；聚合 5/12 PASS、verdict=BLOCKED（余 7 门 W4）。未执行 Git 提交。"
         },
         {
           "id": "mcp-service-capabilities-2026-08-28.9",
           "name": "W4 等价回归、负向安全、制品与上线回滚门禁",
           "description": "完成6能力HTTP/MCP领域结果等价、开关组合、认证、脱敏canary/变异、启停竞态、prompt注入和资源边界测试；锁定依赖并修正PyInstaller/Docker，验证EXE/DEB/RPM/Docker默认关闭、部分能力与脱敏黑盒；交付runbook和G0～G11证据。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/requirements.txt",
@@ -1027,9 +1063,11 @@
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
-          ]
+          ],
+          "evidence": "2026-09-08 W4（代码/测试/文档面，G10 制品黑盒留残项）：①W4-a：VO 转换族迁 app/services/torrent_vo_conversion（分层债第二笔）+ G4（AST 纯度守卫动态闭包+负向变异、六工具↔HTTP 同 service 映射、四能力等价契约——含添加种子 HTTP 薄壳与 MCP 双跑同库 duplicate 指向同一行的成功路径兑现）+ G6（pageSize 0/200/201、1MiB 整体失败不截断、RegexSearchTimeout 固定文案、慢查询不阻塞 list、软删除排除）+ G9（未就绪/store 缺失矩阵、关闭拒绝、在途写一致性收尾含审计）。②W4-b：G1 升级矩阵（遗留行共存/未知 schemaVersion 降级/重启保持/生产供给器 wire 首装默认关→落库热生效→kill switch 优先级）+ G5 六工具 canary 清扫（passkey/token/路径/URL 编码变体埋种子数据，响应+caplog 零泄漏；携带 canary 非法输入不回显；种子名 canary 命中扫描整体fail-closed）。③W4-c：G10——mcp~=1.30.0 入 requirements.txt（连动 pyjwt 2.8.0→2.10.1[crypto]，auth 回归116 绿）+ pip-compile --generate-hashes 重生成锁（+14 传递钉、既有钉零漂移、哈希 dry-run 全解析+打包 venv 实装）+ 双 spec mcp hiddenimports + 打包契约/依赖结构 25 项绿 + Windows EXE 本地实构黑盒（initialize→BtDeck/1.30.0；tools/list→SERVICE_DISABLED 默认关闭）；**残项：Docker/DEB/RPM 黑盒（Docker VM trixie apt 404+出网 1.3KB/s 环境劣化、宿主 .xz 200 证明仓库正常；DEB/RPM 为 Linux CI 制品）**。G11——回滚演练（热关闭立即生效+写路径审计留痕）+供给器故障注入 fail-closed+prompt 注入载荷（数据保真不执行+描述静态）+runbook 交付。④tests/mcp 315 项全绿（280→315：升级矩阵 5+canary 2+回滚/注入 4+等价 10+预算 8+生命周期 6）；探针 loopback trust_env=False 根修（注册表系统代理劫持 127.0.0.1 实证）。聚合 11/12 PASS、verdict=BLOCKED（G10 INDETERMINATE fail-closed）。⑤W4-d（2026-09-09，G10 收官）：**锁跨平台缺陷根修**——上会话 apt 阻挡掩蔽的生产缺陷：pip-compile 在 Windows 解析 mcp 1.30.0 双 python_version 分支 pywin32 约束时丢失环境标记，锁内 pywin32==312 成无条件钉，Linux 侧 pip wheel/install --require-hashes 直接 No matching distribution、Docker/DEB/RPM 三条产线全断；修复 b7bba8d（条目补 ; sys_platform == \"win32\"，哈希不变 Windows 语义不变）+ test_dependency_lock 锚定防复发，12 锁测试绿 + Windows dry-run 全解析 + Linux 双实装（Docker builder pip wheel / DEB 打包 venv pip install）= §11.3 残项锁 Linux 侧哈希安装验证闭合。**Docker 黑盒**：干净树 b7bba8d 上下文实构镜像（identity dirty=false；deb.debian.org trixie 404 用 NJU 镜像绕开），容器三段全 PASS——A initialize→BtDeck/1.30.0 + tools/list→SERVICE_DISABLED；B 首登改密→PUT 仅开高级查询（revision 0→1）→tools/list 仅见该工具；C canary 种子（passkey/绝对路径/hash 埋雷）advanced_search 命中且整包零泄漏。**DEB/RPM 本地实构**（node:22-bookworm+ruby fpm 工具链容器跑 build-linux.sh，干净树 verify dirty=false 通过）：debian:12 解包真实 .deb 跑包内二进制三段全 PASS；RPM 解包验证二进制与 DEB 逐字节一致（sha256 同值）+ 包内 kind=linux-rpm + A 段独立 PASS。**EXE 补测**：W4-c 制品 A 复验 + B/C 补齐三段全 PASS。聚合 **12/12 PASS → verdict=READY**（release/build/mcp-gate-report.json）。runbook §8.1 沉淀黑盒三段配方。坑位：MSYS 路径转换改写容器绝对路径（MSYS_NO_PATHCONV=1）、docker cp 目录静默拷空（tar 管道）、Windows clone 须 core.autocrlf=false、node 基底缺 libpython3.11、制品库字面量种子须显式补 has_tracker_error 等迁移层 NOT NULL 列。"
         }
-      ]
+      ],
+      "summary": "W0~W3 全部落地（六工具齐套）；W4 代码/测试/文档面完成：G1/G4/G5/G6/G9/G11 新增 PASS，聚合 11/12（G0/G2/G3/G1/G4/G5/G6/G7/G8/G9/G11），G10 INDETERMINATE——依赖锁定+双 spec+Windows EXE 黑盒（默认关闭+SDK 捆载实证）已验，Docker/DEB/RPM 黑盒被本机网络环境阻断（Docker VM trixie apt 404 + 出网劣化；github 失联同根源），待网络恢复由发布管线复验；verdict=BLOCKED 保持。详见计划 §11。"
     },
     {
       "id": "test-debt-capability-drift-2026-09-10",
@@ -1178,7 +1216,7 @@
       "description": "移动端实测审查后的 P0+P1 改进：种子卡片实时速度行（SpeedPollingMixin 复用+未命中清零）、仪表盘/通知静默自动刷新（后台暂停）、通知分页追加、无限滚动+返回顶部、二级页 header 固定映射返回、Tab 图标、44px 触控区、空状态 CTA、任务删除按钮分隔、下拉刷新指示条跳变修复。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/mobile-ux-enhancements.md",
+      "plan_file": "PLANS/archive/mobile-ux-enhancements.md",
       "tasks": [
         {
           "id": "mobile-ux.1",
@@ -1310,7 +1348,7 @@
       "description": "将用户提供的 Logo 接入桌面/移动前端、浏览器 favicon 与 PWA 图标体系。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.6.md",
+      "plan_file": "PLANS/archive/v1.0.6.md",
       "tasks": [
         {
           "id": "brand-logo-2026-08.1",
@@ -1391,7 +1429,7 @@
       "description": "①active-torrents 只在种子列表页轮询（详情死路由跳过+后台标签暂停）②标签/分类创建/重命名同步下载器（qB 立即、TR 使用时）③新种子添加时间兜底+首轮快照水合+存量回填 ④路径清理宽限期+auto 来源自动恢复（disabled_by 字段）⑤转移返回值检查+目标查重+批量 400+审计并入 torrent_audit_log ⑥双令牌 refresh 体系（refresh_tokens 表+轮换+登出撤销+前端 401 单飞刷新重放）⑦删除审计补 IP/UA/真实操作者 ⑧CollapsiblePanel 通用折叠组件+偏好持久化",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/verified-bugfix-remediation.md",
+      "plan_file": "PLANS/archive/verified-bugfix-remediation.md",
       "tasks": [
         {
           "id": "verified-bugfix-2026-08.1",
@@ -2308,7 +2346,7 @@
       "description": "种子列表实时速度显示，活跃种子优先排序，1秒轮询",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.4.md",
+      "plan_file": "PLANS/archive/v1.0.4.md",
       "tasks": [
         {
           "id": "v1.0.4.1",
@@ -2453,7 +2491,7 @@
       "description": "支持保存和复用常用查询条件（简单查询 + 高级搜索），含系统预设模板",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.5.md",
+      "plan_file": "PLANS/archive/v1.0.5.md",
       "deviation_from_plan": {
         "reason": "方向转变：探索阶段发现后端与前端已存在完整的 search_templates 基础设施（表 + CRUD 端点 + 服务 + 前端 API），仅前端入口 handleSaveSearchTemplate 是空函数。改为补全现有系统而非从零新建 query_templates，避免重复造轮子。原计划（从零建模型/服务/端点/迁移）废弃。",
         "changes": [
@@ -2621,7 +2659,7 @@
       "description": "基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化。原独立分支 fix/contract-audit 已全部合并入 dev 并删除（2026-06-27）。不覆盖 P2 REST 路由迁移 / P3 前端类型收敛（推迟）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.5-audit.md",
+      "plan_file": "PLANS/archive/v1.0.5-audit.md",
       "deviation_from_plan": {
         "reason": "范围聚焦 P0+P1，P2/P3 推迟；3 个独立子代理审查后修正了 10 项 Blocker（版本号撞号、实施顺序反转、测试改造缺失、ApiError 兼容性、回滚策略等）",
         "audit_corrections": [
@@ -3089,7 +3127,7 @@
       "description": "解决 tracker 与种子信息同步期间其它接口请求容易超时的问题。按方案二（调度器/资源背压）优先，方案三（下载器 API 调用隔离与调度层）后续推进。DBWriteQueue 暂不实现，仅作为后续独立版本候选。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-resource-governance.md",
+      "plan_file": "PLANS/archive/sync-resource-governance.md",
       "tasks": [
         {
           "id": "sync-resource-governance.0",
@@ -3271,7 +3309,7 @@
       "description": "合并原 v1.0.6孤儿文件 + v1.0.7路径扫描增强 + v1.1.0自动清理。自动发现不在任何种子文件清单中的磁盘文件，支持手动清理和定时自动清理超期文件。复用现有 cron_executor 调度（不新建 AutomationService），接入 sync-resource-governance 治理体系。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/v1.0.6.md",
+      "plan_file": "PLANS/archive/v1.0.6.md",
       "deviation_from_plan": {
         "reason": "旧计划（2024-04-22）全部过时：前端用 Composition API 违反 Options API 约束、AutomationService 与 cron_executor 重复、引用不存在的 PathMapping ORM 模型、未考虑 sync-resource-governance 治理体系。基于代码现状重写计划，合并三版本为一个功能集群。",
         "changes": [
@@ -4261,10 +4299,10 @@
     {
       "id": "sync-database-blocking-remediation-w1",
       "name": "同步任务数据库阻塞修复 W1：SQLite 写事务短事务化（P0）",
-      "description": "修复计划第一批 W1（PLANS/sync-database-blocking-remediation.md，G1 门）：通用批量写入改为真实分批提交、Tracker 关键词状态只写变化行、qB removed 标记纳入统一写治理，并建立最小文件型 SQLite 争用回归。对应风险 P0-02/P0-03/P0-06（部分）、P1-04（部分）、P1-07（部分）。",
+      "description": "修复计划第一批 W1（PLANS/archive/sync-database-blocking-remediation.md，G1 门）：通用批量写入改为真实分批提交、Tracker 关键词状态只写变化行、qB removed 标记纳入统一写治理，并建立最小文件型 SQLite 争用回归。对应风险 P0-02/P0-03/P0-06（部分）、P1-04（部分）、P1-07（部分）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w1.1",
@@ -4323,10 +4361,10 @@
     {
       "id": "sync-database-blocking-remediation-w2",
       "name": "同步任务数据库阻塞修复 W2：统一同步路径与请求响应性（P0）",
-      "description": "修复计划第二批 W2（PLANS/sync-database-blocking-remediation.md，G2 门）：统一 SyncCoordinator 消除手动同步旁路、交互下载器 API 容量保留、清除 async 请求端同步下载器调用与漏 await、SQLite 单 Worker 启动约束。对应风险 P0-01/P0-04/P0-05/P0-06 全部覆盖。",
+      "description": "修复计划第二批 W2（PLANS/archive/sync-database-blocking-remediation.md，G2 门）：统一 SyncCoordinator 消除手动同步旁路、交互下载器 API 容量保留、清除 async 请求端同步下载器调用与漏 await、SQLite 单 Worker 启动约束。对应风险 P0-01/P0-04/P0-05/P0-06 全部覆盖。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w2.1",
@@ -4408,7 +4446,7 @@
       "description": "修复计划 W4-3（G4 门部分）：真实文件型 SQLite 争用基准脚本（三档数据 22k/30k、场景 A/B/C 真实 DML、故障注入 busy/cancel/slow-downloader、SLO 发布门 --assert-slo、JSON 对比输出）、响应性集成测试（后台同步期间 CRUD P95/lag 验收）、故障注入集成回归、运维手册。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-3.1",
@@ -4443,7 +4481,7 @@
       "description": "修复计划 W3-2（G3 门部分）：新增 sync_checkpoints 表（Alembic 迁移 3a4b5c6d7e8f）持久化同步进度，SyncCoordinator 集成（读取/乐观锁推进/终态落库/取消语义），中断与重启后从最后 durable checkpoint 继续；detail_json 白名单清洗防敏感数据。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-2.1",
@@ -4599,7 +4637,7 @@
       "description": "修复计划 W3-1（G3 门部分）：qB Tracker 拉取改为有界 worker 队列（禁止全量 create_task），单轮数量/时间预算硬上限，持久化 cursor 续跑（复用 W3-2 sync_checkpoints），cycle 语义（last_full_sync_at + 清 cursor），RID 确认与 durable commit 对齐，Coordinator 预算透传。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-1.1",
@@ -4636,7 +4674,7 @@
       "description": "修复计划 W3-3（G3 门部分）：info-only 下载器并发配置化（SQLite 默认 1）、现有记录分页读取、内存/单轮硬上限（数量/时间/缓冲）、分阶段流水线验证（fetch 不持写锁/write 无下载器调用）、内存峰值有界测试、RID 增量完整性验证（顺序已正确）。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-3.1",
@@ -4672,7 +4710,7 @@
       "description": "修复计划 W3-4（G3 门部分）：统一 outcome 六态（success/partial/skipped/failed/no_action/cancelled）持久化与 API 映射、skip_reason 机器码、数据新鲜度计算（cron_plan 间隔 ×2 周期阈值 + 配置兜底）、前端任务页结果标签/陈旧告警展示。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w3-4.1",
@@ -4718,7 +4756,7 @@
       "description": "修复计划 W4-1（G4 门部分）：新建 sync_observability.py（稳定事件名/字段白名单/敏感脱敏/lag 采样器/WAL 快照）、run_id contextvars 贯穿全部同步阶段、lag 采样器与 WAL 快照生命周期挂载、阈值告警（lag>500ms/P99>100ms/commit>500ms）、_attach_done_stats CancelledError 缺口修复。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-1.1",
@@ -4747,7 +4785,7 @@
       "description": "修复计划 W4-2（G4 门）：增加不访问外部下载器的进程存活探针、严格超时 SELECT 1 + SQLite 单 Worker + event-loop lag 就绪探针，Docker/Compose 健康检查迁移到 /health/ready；增加受认证同步业务健康视图，复用 outcome/freshness、活动 run/phase、checkpoint age 与缓存下载器离线告警。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "plan_file": "PLANS/archive/sync-database-blocking-remediation.md",
       "tasks": [
         {
           "id": "sync-database-blocking-remediation-w4-2.1",
@@ -5413,7 +5451,7 @@
       "description": "修复两轮对抗验证确认的 8 项高危 + 中危发现：serve_frontend 未认证路径穿越、cron task_type=4 认证后 RCE、备份导入任意写入、source_file_path 任意读取、下载器密码明文入库 + encrypt fail-open、git 公开真实密钥 + 密码可逆存储、默认凭据无强制改密 + 登录无限速、发行包内嵌 config 目录；另含审计归档/导出穿越、2FA 端点越权、DEBUG/docs/compose 配置加固、starlette CVE 升级、删错文件兜底与前端两处加固。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/security-remediation.md",
+      "plan_file": "PLANS/archive/security-remediation.md",
       "tasks": [
         {
           "id": "w1-serve-frontend-traversal",
@@ -5669,7 +5707,7 @@
       "description": "生产事故：默认口令部署被启动自检置 must_change_password=1 后，重新登录被锁死在 /#/settings?forceChange=1 且设置页不可达。修复：①守卫重定向目标与白名单改用真实页面子路由 /settings/index（原父路径落点内容区空白、真实路径被弹回形成死锁）②/settings 父路由补 redirect（与守卫改动原子交付，单发会无限循环）③守卫 GetUserInfo 分支补拦截（登录后/F5 后首次导航不再放行业务页）④后端 /user/info 实时下发 mustChangePassword、前端 GetUserInfo 同步 store（undefined 不写，防滚动部署误清）⑤改密成功后清除 URL forceChange query。init_db 置位逻辑（W9 安全意图）保留不动。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/force-change-deadlock-fix.md",
+      "plan_file": "PLANS/archive/force-change-deadlock-fix.md",
       "tasks": [
         {
           "id": "force-change-deadlock-fix-2026-08-18.1",
@@ -6070,7 +6108,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "2026-09-05 自动化回归复跑：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 99 suites / 1339 tests 全部通过。制品：npm run build:demo 生成 dist 175 文件 / 34.71 MiB（index.html 标题 BtDeck Demo、绝对 /assets 路径），打包 frontend/BtDeck-demo-dist-20260905.zip（5.68 MiB，未跟踪交付物）。人工验收环境：本机静态服务（stdlib SPA fallback，等效 nginx.demo.conf try_files）127.0.0.1:8080 已起，冒烟 index/SPA fallback(/torrents、/query-templates)/asset 均 200；待用户按清单完成首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击人工复验后回填结果并收口。已知限制（沿承 2026-09-02）：根 ./init.sh --ci 卡 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用（Nginx 容器交付路径未本地复现，Dockerfile.demo 已静态审查）。"
+          "evidence": "2026-09-05 自动化回归复跑：npm run lint（contract check + ESLint + Vuex Action 检查）通过，npm run typecheck 通过，npm run test:unit -- --silent 99 suites / 1339 tests 全部通过。制品：npm run build:demo 生成 dist 175 文件 / 34.71 MiB（index.html 标题 BtDeck Demo、绝对 /assets 路径），打包 frontend/BtDeck-demo-dist-20260905.zip（5.68 MiB，未跟踪交付物）。人工验收环境：本机静态服务（stdlib SPA fallback，等效 nginx.demo.conf try_files）127.0.0.1:8080 已起，冒烟 index/SPA fallback(/torrents、/query-templates)/asset 均 200；待用户按清单完成首次进入/刷新/前进后退/退出/重置数据/窄屏/重复点击人工复验后回填结果并收口。已知限制（沿承 2026-09-02）：根 ./init.sh --ci 卡 WSL E_ACCESSDENIED；Docker Desktop Linux engine 不可用（Nginx 容器交付路径未本地复现，Dockerfile.demo 已静态审查）。 2026-09-18 设置页 demo 覆盖扩展（用户需求：demo 展示 MCP 服务与 MoviePilot 配置页）：McpSettingsPanel/MoviePilotPanel 移除 isDemo 只读占位分支，改由 @/demo 拦截层供数（fixtures 新增 mcpSettings + DEMO_MCP_CATALOG 镜像后端 contracts.py 六能力、moviepilotSettings/Instances/Associations，demo-store 提供 revision CAS 与映射重解析，demo-request 新增 /mcp/settings、/moviepilot/settings|instances|associations|associations/reverse 处理器）；同步移除设置页主机能力页签（PlatformCapabilityPanel 组件与 unit/e2e 规格删除，能力矩阵 API 保留供其他入口门控）。回归：npm run lint / typecheck 通过，demo-request.spec 新增 MCP 2 用例 + MoviePilot 5 用例全过，mcp-settings / moviepilot-panel spec 更新 demo 分支断言，全量 Jest 1593 过（traditional-view/torrent-list-view/tracker-detail-card/downloader-settings-dialog-init 4 套件 5 用例为改动前基线即红的存量失败，git stash 对照确认），npm run build:demo 通过。"
         }
       ]
     },
@@ -6198,7 +6236,7 @@
       "description": "为 Windows EXE/Inno Setup、DEB、RPM、Docker backend/frontend 建立同一 Git SHA、统一依赖和唯一前端构建的证据链；补齐首次安装、同版本重装、v1.0.5 升级、重启、卸载、数据保留、跨制品黑盒契约、安全扫描、签名与不可变晋级。G0～G10 任一非豁免门禁失败、未运行或证据缺失均阻断发布。",
       "status": "done",
       "branch": "dev",
-      "plan_file": "PLANS/release-artifact-equivalence-gate.md",
+      "plan_file": "PLANS/archive/release-artifact-equivalence-gate.md",
       "planning_evidence": "2026-08-28 审计确认：现有 EXE 可启动但内嵌前端哈希与当前源码产物不同；Docker/源码与 Windows/Linux 包的 qbittorrent-api 依赖分叉；CI 无 Windows、PyInstaller、Inno、DEB/RPM 安装和 Docker 组合门禁；历史仅有旧 DEB 首装、RPM 构建、Docker 后端与 EXE 冒烟证据。正式 v1.0.5 标签存在，SHA=29c6f6f68ab35e25f8cf7237ee187de359c77714，可作为升级基线。同日 W0 本地探针批次完成（详见 task .1 evidence；原 release/evidence/w0/ 已于 2026-09-05 移出仓库）：R10 治理方案定格 bullseye 单二进制、Node 锁 22.23.2、v1.0.5 本地制品集对账可用、systemd 容器拓扑成立、release-gate.yml 待推送。 收口语义（2026-09-04，父项置 done）：done 表示**等价性门禁系统与证据链已建成**（九子任务全 done，完整 DAG RC 演练 run 33873168198@2787462：G0~G8 PASS + G9/G10 INDETERMINATE=drill 无生产签名/审批的正确语义，problems=[]），**不代表任何 RC 已 CERTIFIED 或允许发布**——CERTIFIED 需生产 Authenticode/cosign 凭据（GH secrets BTDECK_SIGN_PFX_B64/BTDECK_COSIGN_KEY_B64+PASSWORD，用户侧前置）、release manifest 人工填写 approver/approved_at、G0~G10 全 PASS 三条件齐备，取得前发布链保持 INDETERMINATE 阻断（runbook §1.3）。",
       "tasks": [
         {
@@ -6208,7 +6246,7 @@
           "status": "done",
           "scope": "fullstack",
           "files": [
-            "PLANS/release-artifact-equivalence-gate.md",
+            "PLANS/archive/release-artifact-equivalence-gate.md",
             "release/release-config.json",
             ".github/workflows/release-gate.yml"
           ],
@@ -6525,314 +6563,76 @@
       "notes": "单颗添加 torrent_add_service.py 首个 DB 语句在网络调用之后、快照新鲜，确认无同构风险未改动；未接 db_write_scope（用户选定范围为根修+兜底+观测，短事务窗口下无必要）；H2（>15s 长写锁）/H3（外部进程共库）备择假设凭 sqlite_errorcode 观测口鉴别。未执行 Git 提交。"
     },
     {
-      "id": "packaging-brand-icons-2026-09-11",
-      "name": "品牌图标补齐 Android/DEB/RPM 打包（logo 此前缺失）",
-      "status": "done",
-      "branch": "dev",
+      "id": "moviepilot-integration-2026-09-09",
+      "name": "MoviePilot 整理联动（BtDeckBridge 插件 + 镜像同步 + 任务关联查询）",
+      "description": "MoviePilot V2 插件 BtDeckBridge 将整理历史只读同步到 BtDeck，建立媒体库文件/整理源文件/BT 任务关联：幂等镜像（实例+历史ID 身份、内容哈希变更判定、水位+周期全量重扫+断点续跑）、MoviePilot→BtDeck 下载器映射解析、种子详情媒体库页签与路径反查。全程零写入两侧生产数据；凭据复用 BtDeck 用户令牌体系（专用集成账号）。",
+      "status": "in-progress",
+      "branch": "dev1.0.7",
+      "plan_file": "PLANS/moviepilot-integration.md",
       "tasks": [
         {
-          "id": "brand-icons.1",
-          "name": "Android 启动图标 + 通知小图标接入品牌标志",
-          "description": "原 AndroidManifest 用系统默认 sym_def_app_icon（机器人）、前台服务通知用系统 stat_notify_sync_noanim，APK 无任何品牌图标。新增 mipmap 全密度传统图标（48/72/96/144/192px，圆角方+圆双形态）与 mipmap-anydpi-v26 自适应图标（品牌绿 #059669 背景层 + 白色 btdeck 标志矢量前景，前景笔画端点最远距画布中心 28.9dp 处于 33dp 安全区内；monochrome 复用前景供 Android 13+ 主题化图标），manifest 改引 @mipmap/ic_launcher 并补 roundIcon，通知小图标改用 drawable/ic_stat_btdeck（纯白矢量 24dp，状态栏按 alpha 着色）。图标风格经用户确认：品牌绿底+白色单色标志。",
-          "status": "done",
-          "scope": "android",
-          "files": [
-            "android/app/src/main/AndroidManifest.xml",
-            "android/app/src/main/java/com/btdeck/companion/server/ServerService.kt",
-            "android/app/src/main/res/drawable/ic_launcher_background.xml",
-            "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
-            "android/app/src/main/res/drawable/ic_stat_btdeck.xml",
-            "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
-            "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
-            "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
-            "android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
-            "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
-            "android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
-            "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
-            "android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
-            "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
-            "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
-            "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
-            "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
-          ],
-          "evidence": "gradle :app:processDebugResources + :app:compileDebugKotlin BUILD SUCCESSFUL（aapt2 校验矢量 pathData 与 manifest 图标引用，Kotlin 校验 R.drawable.ic_stat_btdeck）；merged_manifest 实证 android:icon=@mipmap/ic_launcher + android:roundIcon=@mipmap/ic_launcher_round；PNG 像素校验 5 抽样全过（绿底 72-79%、白色标志包围盒中心偏差<3%、圆角外 alpha=0、中心排白色笔画存在、几何居中）。"
-        },
-        {
-          "id": "brand-icons.2",
-          "name": "DEB/RPM hicolor 图标 + .desktop 桌面集成；图标生成器入库",
-          "description": "原 build-linux.sh fpm staging 仅装二进制+systemd unit+maintainer 脚本，无图标无 .desktop；deploy/btdeck.spec 挂 icon=None TODO。新增 deploy/btdeck.desktop（Name/Icon=btdeck，Exec=xdg-open http://127.0.0.1:5001 打开 Web 控制台）与 deploy/icons/（btdeck.svg scalable + hicolor 48/64/128/256 PNG），build-linux.sh Step 5 staging 增装 usr/share/applications + usr/share/icons/hicolor，两条 fpm 命令源列表 etc opt → etc opt usr（与 etc/opt 同构：-C staging --prefix /）；图标文件随包由 dpkg/rpm 按文件归属自动清理，无需 maintainer script 参与。tools/generate_brand_icons.py 入库：参数化复刻 btdeck-mark.svg 几何（D 形轨道参数化折线+圆帽保证描边居中语义、8x 超采样 LANCZOS 降采样），产物预生成入库，构建环境不引入 Pillow 依赖。btdeck.spec TODO 消化为注释：Linux ELF 无内嵌图标约定，品牌图标经包管理器交付。Windows EXE 原本已有 favicon.ico（PyInstaller icon + Inno Setup SetupIconFile）、Docker 镜像无图标概念且 Web UI 品牌资产随前端 dist 打入，二者确认无需改动。",
-          "status": "done",
-          "scope": "deploy",
-          "files": [
-            "deploy/build-linux.sh",
-            "deploy/btdeck.spec",
-            "deploy/btdeck.desktop",
-            "deploy/icons/btdeck.svg",
-            "deploy/icons/hicolor/48x48/apps/btdeck.png",
-            "deploy/icons/hicolor/64x64/apps/btdeck.png",
-            "deploy/icons/hicolor/128x128/apps/btdeck.png",
-            "deploy/icons/hicolor/256x256/apps/btdeck.png",
-            "tools/generate_brand_icons.py"
-          ],
-          "evidence": "bash -n build-linux.sh 通过；7 个新增/修改 XML+SVG 良构校验通过；deb/rpm 对称增装 usr/ 不引入等价性漂移（verify_release_bundle 仅抽取 /opt/btdeck/btdeck 二进制比对哈希，不受新增文件影响）。制品级（dpkg -c / rpm -ql 见图标、桌面显示）验证待下次 Linux 构建/CI G6/G10 矩阵复跑。"
-        }
-      ],
-      "evidence_summary": "Android 资源链 gradle 双任务绿 + 像素几何校验绿；DEB/RPM 接线静态验证绿（制品黑盒属 CI/Linux 产线）",
-      "notes": "图标风格 2026-09-11 用户确认：品牌绿 #059669 底 + 白色单色标志。DEB/RPM 与 APK 需各产线下次构建才会带上图标（本批只改产线配置与资产）。"
-    },
-    {
-      "id": "speed-snapshot-flap-suppression-2026-09-11",
-      "name": "断速种子快照振荡双修复：补查退避缓存填充 + 新键滞回宽限",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "flap.1",
-          "name": "后端：补查退避只节流查询，快照不缺席",
-          "description": "根因：active-torrents 的补查退避（_SUPPLEMENT_RETRY_INTERVAL=2s）让断速种子在退避期轮次从快照缺席，前端完整快照基线被替换后，种子回归被误判为'新出现的未展示键'，反复触发整表 getList（用户实测 ~5s 一次、半小时 65 次）。修复：_TTLQueue 条目新增 last_supplement 缓存，get_disappeared 返回 (待实际补查分组, 退避期缓存填充条目) 二元组，端点补查成功后 update_supplement_cache 写回；put（速度恢复）清缓存以实时数据为准。下载器补查失败时保留旧缓存撑住快照连续；种子删除后的残留缓存由 TTL 60s 过期兜底回收（期间以 0 速度填充，无刷新副作用）。",
+          "id": "moviepilot-integration-2026-09-09.1",
+          "name": "后端镜像与关联 API",
+          "description": "两张新表（moviepilot_instance / moviepilot_transfer_history，(instance_id, history_id) 唯一）+ Alembic 迁移 053003337878；设置服务（configs 版本化键 moviepilot.integration.v1，fail-closed+CAS）+ 集成服务（握手注册/绑定校验/幂等 upsert/映射变更重解析/正向反向关联查询）；/api/v1/moviepilot/* 端点（principal 内核门禁 + 查询面轻量门禁）+ 审计枚举 3 项。",
           "status": "done",
           "scope": "backend",
           "files": [
-            "backend/app/api/endpoints/torrent_speed.py",
-            "backend/tests/api/test_torrent_speed_regression.py",
-            "backend/tests/endpoints/test_active_only_filter.py"
-          ]
+            "backend/app/models/moviepilot_instance.py",
+            "backend/app/models/moviepilot_transfer_history.py",
+            "backend/app/data/default_moviepilot_settings.py",
+            "backend/app/services/moviepilot_settings_service.py",
+            "backend/app/services/moviepilot_integration_service.py",
+            "backend/app/api/endpoints/moviepilot.py",
+            "backend/alembic/versions/053003337878_add_moviepilot_integration_tables.py",
+            "backend/tests/api/test_moviepilot_integration.py"
+          ],
+          "evidence": "2026-09-09：test_moviepilot_integration 28 项绿（设置 fail-closed/CAS/409；握手注册/禁用 403/绑定冒名 403/失效改绑；同步 insert-skip-update 三态/批内单条失败不中断/审计行；映射非法 400+变更重解析 unmapped→linked；正向查询同 hash 双下载器不串联；反查精确/目录前缀/mode 过滤/过短 400/未关联 task=null；认证矩阵 401/403；信封分页字段）。迁移链临时库 upgrade→downgrade→upgrade 对称、空库 35 表、单 head 053003337878（EXPECTED_HEAD+表数断言已更新）。路由鉴权登记 require_moviepilot_integration_user。相邻回归 tests/api+core/test_db_migration+架构约束 1225 passed/19 失败（回收站 a2cb083 存量基线，与本批无关）。black(24.10.0)/flake8/mypy 改动文件全绿。 2026-09-18（第三批）：本地全量 CI 复刻发现并修复 moviepilot 迁移幂等缺陷——053003337878 upgrade 无条件 create_table 缺 has_table 守卫，破坏版本戳回退后重升级 no-op 不变量（governance 测试拦截），补齐守卫；同批 5 个迁移测试硬编码旧 head 改为 _current_head() 动态取、lint 放行表补登 mcp/errors.py 枚举误报 2 条、MCP parity 测试补 runtime 单例隔离（先行 TestClient lifespan shutdown 污染，换新实例保持真实链路）。全量后端 5054 用例 0 失败基线见 progress.md 第三批。"
         },
         {
-          "id": "flap.2",
-          "name": "前端：RuntimeListMembershipTracker 新键判定加 30s 滞回宽限",
-          "description": "防御层：键掉出快照后 REAPPEAR_GRACE_MS(30s) 内再出现不判为新键（读取刷新前旧时间戳判定），离开超过宽限再回来才触发权威刷新。对后端一切快照抖动（补查退避缺席、完成态移除、下载器瞬时失败）免疫。lastSeenAt 仅在完整快照轮回收超宽限条目防 Map 无界增长；部分快照（206）不清理不替换基线，缺席不当真实离开。",
+          "id": "moviepilot-integration-2026-09-09.2",
+          "name": "前端设置页签与种子详情媒体库页签",
+          "description": "api/moviepilot.ts；MoviePilotPanel.vue（全局开关 CAS/409 自动重载、实例卡片+启用开关+删除二次确认、下载器映射内联编辑保存后重解析、路径反查卡）+ settings 页签注册（移动端经包装自动同源）；TrackerDetailCard 新增媒体库页签（detailTabsData media 分支：键控懒加载+竞态守卫+空列表合法态）。",
           "status": "done",
           "scope": "frontend",
           "files": [
-            "frontend/src/views/torrents/utils/torrentBatch.ts",
-            "frontend/tests/unit/torrent-batch.spec.ts"
-          ]
-        }
-      ],
-      "evidence": {
-        "backend": "定向 pytest 三文件 119 passed（test_torrent_speed_regression + test_active_only_filter + test_active_torrents_endpoint）；mypy no issues；flake8 通过。回归保护加固（2026-09-12）：_TTLQueue 新增 5 性质用例（缓存填充不受查询配额限制/完成移除不复活/TTL 过期不填充/active_keys 短路防双条目/填充条目拷贝隔离）+ 端点闭环 2 例（断速种子退避期连续 4 轮在场且零补查查询、速度恢复弃缓存回归实时数据）；变异验证 2/2 检出（退避不收集缓存→4 红、put 不清缓存→2 红）",
-        "frontend": "torrent-batch.spec.ts 132 passed（新增 2 例：宽限期内抖动不触发/超 30s 回归触发）；npm run lint 全量通过。回归保护加固（2026-09-12）：滞回新增性质用例 4 例（恰 30_000ms 边界 >= 语义、206 部分快照在场计入滞回、lastSeenAt 回收不误伤在场键、rebaseline 刷新时间戳）+ 振荡循环模拟 1 例（秒级在场/缺席交替 8 轮全程零触发、超宽限回归触发一次）；变异验证 1/1 检出（滞回判定回退→6 红）"
-      }
-    },
-    {
-      "id": "downloader-settings-mobile-polish-2026-09-12",
-      "name": "下载器设置页移动端适配优化（外壳页签横滑/速度页签折单列/标签页签弹窗与网格/路径表格可读性）",
-      "description": "mobile-ux-fixes.7 后续打磨：用户反馈设置页在手机上难以查看、排布不友好。375×812 实测问题——①顶部页签导航 388px 超容器 334px 被裁切；②弹窗横向溢出（scrollWidth 464 > 374）；③速度设置双列挤压、限速规则操作按钮不换行；④标签管理三个内嵌 el-dialog 固定 500px/400px 超屏；⑤底栏三按钮同行拥挤。全部 CSS 层修复，无逻辑变更。",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "downloader-settings-mobile-polish.1",
-          "name": "设置弹窗外壳：页签横滑导航 + 横向收口 + 底栏纵排全宽 + 基本表单折行捉到 780",
-          "description": "DownloaderSettingsDialog ≤780 媒体块：el-tabs__nav-scroll 改 overflow-x:auto + 触控惯性 + 隐藏滚动条 + 右缘渐隐 mask 提示可滑，nav 折 flex/nowrap；弹窗 max-width:100vw + overflow-x:hidden 收口；底栏 .dialog-footer 纵排、左右组全宽、按钮 flex:1 + min-height:40px（高特异性胜 520 图标按钮规则）+ 安全区 padding；.workspace-basic-form .el-col width:100% 折行断点从 520 上提到 780（与 tabsPosition 联动断点一致）。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue"
+            "frontend/src/api/moviepilot.ts",
+            "frontend/src/views/settings/components/MoviePilotPanel.vue",
+            "frontend/src/views/settings/index.vue",
+            "frontend/src/views/torrents/mixins/detailTabsData.ts",
+            "frontend/src/views/torrents/components/TrackerDetailCard.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/moviepilot-panel.spec.ts",
+            "frontend/tests/unit/detail-tabs-data.spec.ts"
           ],
-          "evidence": "375×812 视觉复验：页签横滑可用（nav-scroll overflow-x:auto 实测）、无可见裁切、底栏两行全宽 40px 按钮、基本表单单列；lint/typecheck 绿。"
+          "evidence": "2026-09-09：moviepilot-panel.spec 8 项（渲染/CAS 保存收敛/409 重载/实例开关/映射空行校验与载荷/反查渲染任务快照与未关联标签/失败提示/demo 零请求）+ detail-tabs-data 扩展 4 项（media 懒加载键控缓存/空列表不重拉/换种子失效/错误保留旧数据）全绿；npm run typecheck 绿；npm run lint 绿（contract:check+eslint --max-warnings 0+vuex 检查）。npm run build 有意未跑（保护 20260907 demo dist）。 2026-09-18 demo 展示与页签收敛（用户需求）：设置页移除主机能力页签（frontend/src/views/settings/index.vue；删除 components/settings/PlatformCapabilityPanel.vue 及 tests/unit/platform-capability-panel.spec.ts、tests/e2e/mobile/settings-capability.spec.ts）；MoviePilotPanel 移除 isDemo 占位、demo 模式经拦截层渲染完整配置页（全局开关 CAS/实例映射编辑/关联反查，映射变更后 linked/unmapped 状态重解析），回证据见 frontend-static-showcase-demo-2026-08-23.7。回归 lint/typecheck/Jest/build:demo 通过（存量失败套件同基线）。 2026-09-18（第二批）：media 页签规格补齐——9442d5c 经 0e307ee 合入后三个视图规格仍断言三页签致 4 用例存量红，断言数组补 'media'+标题同步+mediaState 空态透传断言+卡片第 4 按钮文案断言；同批修复 downloader-settings-dialog-init 源码契约正则 CRLF 失配（readSource 行尾归一化，pwa-manifest 同款预防加固）。全量 Jest 112 套件/1598 用例 0 失败（首绿基线），typecheck/lint 绿。"
         },
         {
-          "id": "downloader-settings-mobile-polish.2",
-          "name": "速度设置页签 ≤768 折单列：限速输入组换行 + 规则卡片操作/内容纵排",
-          "description": "SpeedSettingsTab ≤768：.speed-limit-form .el-col 全宽；.speed-input-group flex-wrap + 单位下拉定宽 96px + 数字输入 flex 撑满；.rule-header/.rule-actions 换行、按钮加 min-height:34px；.rule-content 折单列。",
+          "id": "moviepilot-integration-2026-09-09.3",
+          "name": "MoviePilot V2 插件 BtDeckBridge",
+          "description": "独立仓库 strainhzj/MoviePilot-Plugins-BtDeck（市场仓库结构：package.v2.json + plugins.v2/btdeckbridge）：宿主适配器自调用 /api/v1/history/transfer（apikey，V2 版本边界）；BtDeck 客户端复用登录/刷新令牌轮换（401 单次重试、令牌脱敏日志）；同步引擎水位+断点+重试分类（4xx 不重试）+停止信号；插件装配（配置页/状态页/周期服务 BackgroundScheduler 线程池/手动 API/防重复锁/实例 UUID 持久化）。",
           "status": "done",
-          "scope": "frontend",
+          "scope": "plugin",
           "files": [
-            "frontend/src/views/downloader/components/SpeedSettingsTab.vue"
+            "MoviePilot-Plugins-BtDeck/package.v2.json（独立仓库 https://github.com/strainhzj/MoviePilot-Plugins-BtDeck）",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/__init__.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/moviepilot_adapter.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/btdeck_client.py",
+            "MoviePilot-Plugins-BtDeck/plugins.v2/btdeckbridge/sync.py",
+            "MoviePilot-Plugins-BtDeck/tests/"
           ],
-          "evidence": "375×812 实测含一条限速规则的卡片：时间选择器单列、星期复选框自然换行、下载/上传限速输入组不拥挤，无横向溢出。"
+          "evidence": "2026-09-09：插件单测 38 项全绿（test_adapter 6：取数/错误分类/字段映射完整性与劣化容错；test_btdeck_client 9：登录存储+Bearer、坏凭据 401、401→refresh→重试链、握手/同步载荷形状、403 包装提示、网络不可达净文案、令牌永不出现于错误与日志；test_sync 10：全量分批/水位推进/服务端幂等 skipped/增量只推新于水位/整页低于水位早停/auto 模式选择/瞬断保留断点并从断点页续跑/4xx 即停无重试/握手失败短路/停止信号；test_plugin_init 13：状态开关/服务注册与间隔钳制/stop+reinit 事件复位/实例 UUID 生成一次且跨重载稳定/无 URL 拒跑/全链路 fake 装配/在途防重复/失败释放锁/表单模型键全覆盖/状态页/API 注册）。MoviePilot V2 源码事实核验：BackgroundScheduler+ThreadPoolExecutor（同步服务函数）、apikey 查询参数鉴权、/transfer date 倒序分页无 ID 范围查询。 2026-09-10 追记：经用户授权公开发布——插件目录拆出为独立仓库 https://github.com/strainhzj/MoviePilot-Plugins-BtDeck（main=ed828bb，GPL-3.0，package.v2.json 增 history v1.0.0，README 改市场安装优先；38 单测在新位置复跑全绿；线上索引经 GitHub API 验证）。上述 files 路径现位于该独立仓库，BtDeck 仓库内已移除。"
         },
         {
-          "id": "downloader-settings-mobile-polish.3",
-          "name": "标签管理页签：三个内嵌弹窗 custom-class 92% 宽 + 标签网格单列 + 类型页签换行",
-          "description": "TagManagementTab 三个 el-dialog（新增/编辑 500px、删除确认 400px）加 custom-class=\"tag-mgmt-dialog\"，追加非 scoped 样式块（弹窗挂 body，scoped 够不到）≤768 宽 92%/max-width 500px、表单 label 顶置、底栏按钮 flex 全宽 40px；640 媒体 .type-tabs 换行 + .tag-grid 折 1fr 单列。",
-          "status": "done",
-          "scope": "frontend",
+          "id": "moviepilot-integration-2026-09-09.4",
+          "name": "真实宿主联调与验收",
+          "description": "独立 MoviePilot V2 测试实例 + BtDeck 测试库 + 测试下载器上的端到端验收：单电影任务/三集合集多文件/同 hash 双下载器不串联/路径映射/硬链接-复制-移动关系/重复同步与网络中断恢复/重启配置重载不重复起任务/历史缺失-文件缺失-hash 缺失八类场景。",
+          "status": "pending",
+          "scope": "integration",
           "files": [
-            "frontend/src/views/downloader/components/TagManagementTab.vue"
+            "PLANS/moviepilot-integration.md"
           ],
-          "evidence": "375×812 实测新增标签弹窗 getBoundingClientRect left=15/width=345（恰 92%）居中；标签卡片单列、类型筛选不溢出。"
-        },
-        {
-          "id": "downloader-settings-mobile-polish.4",
-          "name": "路径管理两组件：路径资产弹窗 92% 宽 + 两表格移动可读性",
-          "description": "DownloaderPathManagement 500px 弹窗同 custom-class 方案（path-mgmt-dialog 非scoped 768 媒体块）；PathMappingTab 与 DownloaderPathManagement 的 el-table ≤780 cell 字号 12px/行高 1.5、mini 按钮加高 30px 保触控。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/downloader/components/DownloaderPathManagement.vue",
-            "frontend/src/views/downloader/components/PathMappingTab.vue"
-          ],
-          "evidence": "lint/typecheck 绿；downloader-settings/mobile-downloader-settings/downloader-control-room-ui 三套件 36 用例全绿；npm run build 成功。"
-        }
-      ]
-    },
-    {
-      "id": "mobile-desktop-mode-escape-2026-09-12",
-      "name": "桌面浏览器进移动版后无法回桌面——宽视口桌面版出口（偏好单向锁死回归修复）",
-      "description": "mobile-ux-fixes.5 移除移动布局全部桌面版入口的回归：桌面侧栏 switchToMobile 写显式偏好 mobile 后，守卫按偏好（优先于视口）把桌面页全部分流到 /m/*，而移动端再无出口写回 desktop——偏好单向锁死，桌面 web 用户进移动版后回不去。ui-mode 三原则第 3 条（不自锁）被破坏。修复：宽视口（≥768px）条件渲染桌面版出口（手机窄屏仍不渲染，保住「app 不显示桌面版」决策），出口写 desktop 偏好后进桌面页。",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "mobile-desktop-mode-escape.1",
-          "name": "WideViewport mixin + 移动布局顶栏/移动登录页宽视口桌面版出口",
-          "description": "新建 views/mobile/mixins/wide-viewport.ts（matchMedia(min-width:768) 初值+change 监听随窗口宽即时显隐；matchMedia 不可用兜底隐藏；class mixin 生命周期合并惯例同 PullToRefresh）。MobileLayout 顶栏右侧重建 .mobile-header-desktop 胶囊按钮（v-if=isWideViewport）→ setStoredUiMode('desktop') + push /dashboard；MobileLogin 卡片下加「使用桌面版登录」文字链（同门控）→ 写偏好 + replace /login。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/mobile/mixins/wide-viewport.ts",
-            "frontend/src/layout/mobile/index.vue",
-            "frontend/src/views/mobile/login.vue",
-            "frontend/tests/unit/mobile-shell.spec.ts",
-            "frontend/tests/e2e/mobile/login.spec.ts"
-          ],
-          "evidence": "mobile-shell.spec 36 用例全绿（「全部移除」用例改写为窄视口隐藏契约 + 新增宽视口渲染/写偏好/跳转/解绑监听 2 例）；Playwright 三场景实measured：锁死态点击回 /#/dashboard 且偏好变 desktop、375px 窄视口 count=0、宽→窄缩窗即时隐藏；前端全量 107 套件 1521 用例全绿；lint/typecheck/build 绿；e2e 补宽视口回归守护用例（CI 真后端语境，demo 模式自动登录会绕过登录页）。"
-        }
-      ]
-    },
-    {
-      "id": "mobile-ux-followups-2026-09-12",
-      "name": "下载器设置与快捷删重三项跟进修复（删重弹窗事件触发预览+删除后关闭/移动设置页无数据/页签纯文字）",
-      "description": "用户验收三项：①快捷删除重复种子弹窗预览改为\"完成待检测+保留下载器选择\"后事件自动触发（去手动预览按钮），确认删除提交后关闭弹窗（移动/桌面一致）；②移动端点设置进 /m/downloader/settings/:id 无数据——根因弹窗以 visible=true 创建时 @Watch('visible') 不为初始值触发、initDialog 从未执行；③新增/设置下载器页顶部页签图标窄屏被截断，改纯文字。",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "mobile-ux-followups.1",
-          "name": "QuickDeleteDuplicatesDialog：选择完成事件触发预览 + 确认删除后关闭",
-          "description": "删手动\"预览重复\"按钮，配置区加自动预览提示；@Watch detect/keep（deep）→ scheduleAutoPreview（250ms 防抖合并联动剪裁的连续变更；canPreview 不满足时清过期预览）；fetchPreview 加 previewSeq 过期响应丢弃防旧结果覆盖新选择。handleDelete 成功路径（任务受理/无可删项）均 handleClose()（dialogVisible=false + emit close），后台轮询不中断，结果仍走 toast/通知。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/components/torrents/QuickDeleteDuplicatesDialog.vue",
-            "frontend/tests/unit/quick-delete-duplicates-dialog.spec.ts"
-          ],
-          "evidence": "spec 6 用例全绿（新增 4：自动触发/未完成不触发+失效清预览/删除后关闭 emit close/源码契约无 handlePreview）；浏览器实测弹窗无手动按钮、提示文案可见。"
-        },
-        {
-          "id": "mobile-ux-followups.2",
-          "name": "移动设置页无数据根修：弹窗 visible 初始 true 时 mounted 补 initDialog",
-          "description": "/m/downloader/settings/:id|new 整页复用形态下弹窗创建即 visible=true，watcher 不为初始值触发 → 表单从未回填。mounted() 开头 if (this.visible) void this.initDialog()（桌面 visible=false 挂载不受影响，打开仍走 watch 路径）。该 SFC 模板含 ?. 无法过 jest buble 编译，spec 用源码契约（沿用 downloader-control-room-ui 模式）。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
-            "frontend/tests/unit/downloader-settings-dialog-init.spec.ts"
-          ],
-          "evidence": "浏览器实测 375×812 /m/downloader/settings/demo-downloader-001：名称输入框回填\"实验室节点 A\"（修复前空白）；新增契约 spec 3 用例（mounted 补初始化/watch 路径保留/页签纯文字）全绿。"
-        },
-        {
-          "id": "mobile-ux-followups.3",
-          "name": "设置弹窗顶部页签移动端纯文字化",
-          "description": "≤780 媒体块 .workspace-tab-label 隐藏 __icon 图标盒与 __copy 副标题（small），仅保留标题文字；桌面左侧页签（icon+标题+副标题）不变。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue"
-          ],
-          "evidence": "浏览器实测 computed display：icons ×3 none、smalls ×3 none；截图页签单行纯文字无截断。"
-        }
-      ]
-    },
-    {
-      "id": "downloader-settings-mobile-layout-2026-09-12",
-      "name": "设置页移动端两页签布局优化 + 能力缓存响应式根修（路径按钮触控友好/标签搜索并排）",
-      "description": "用户反馈：①路径管理页签的刷新配置、添加映射按钮对移动端更友好；②标签/分类管理的新增标签与搜索并排。实施中发现并根修一个深层缺陷：能力缓存为模块级普通变量，能力门控 computed（pathMappingAvailable/mobileMenuItems）依赖它属非响应式依赖——首次求值（缓存未加载 fail-closed）后被 Vue 永久缓存，$forceUpdate 不重算 computed，缓存后到也救不回（demo 快速路径必现，真实环境慢加载同样可能中招）。",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "downloader-settings-mobile-layout.1",
-          "name": "路径映射页签按钮触控友好 + 标签页签搜索与新增并排",
-          "description": "PathMappingTab ≤780 媒体块 header-actions 按钮压过全局紧凑重制的 30px 高/9px 字号——min-height 40px、font 13px、flex:1 并排全宽、margin-left:0 配 gap；TagManagementTab ≤640 工具栏由纵向堆叠改 flex 行布局——toolbar-left（搜索框）弹性撑满 + toolbar-right（新增标签按钮）收缩，同行并排。后续补强：header-actions 与描述文案 margin-top 12px 拉开间距（用户复验反馈按钮贴描述）；新增源码契约 spec（downloader-settings-mobile-layout.spec.ts 5 用例）保护两页签全部移动布局声明——按钮 40px/13px/::v-deep 压制机制、间距 ≥10px、工具栏 flex 并排几何前提（toolbar-left flex:1/toolbar-right flex:0 0 auto/el-input 100% !important），变异验证（删 margin-top 契约即红）通过。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/downloader/components/PathMappingTab.vue",
-            "frontend/src/views/downloader/components/TagManagementTab.vue",
-            "frontend/tests/unit/downloader-settings-mobile-layout.spec.ts"
-          ],
-          "evidence": "375×812 浏览器实测：刷新配置/添加映射各 154px 宽 × 40px 高、13px 字号并排；搜索框与新增标签同行（inputRight=250/btnLeft=256）。 布局契约 spec 5 用例 + 变异验证 1/1 检出；全量 109 套件 1539 用例全绿。"
-        },
-        {
-          "id": "downloader-settings-mobile-layout.2",
-          "name": "能力缓存响应式根修（Vue.observable）+ demo 完整能力矩阵",
-          "description": "platform-capabilities.ts 缓存改 Vue.observable<{data}> 容器（读写全部走 reactiveCache.data），缓存写入自动触发依赖它的能力门控 computed 重算；demo-request.ts /platform/capabilities 由空 capabilities（fail-closed 全隐藏）改完整桌面矩阵（六项 FILESYSTEM 能力全 supported），demo 模式可展示全部能力门控 UI。诊断过程：插桩证缓存写入成功但 computed 仍 false → __vue__ 直读 pathMappingAvailable 实锤冻结。",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/api/platform-capabilities.ts",
-            "frontend/src/demo/demo-request.ts",
-            "frontend/tests/unit/platform-capabilities-api.spec.ts"
-          ],
-          "evidence": "platform-capabilities-api.spec 16 用例（新增响应式回归 1 例：缓存写入/清空触发 computed true/false 翻转）；浏览器实测修复前 3 页签（路径管理隐藏）→修复后 4 页签且移动抽屉能力项随缓存到位；全量 108 套件 1534 用例全绿、lint/typecheck/build 绿。"
-        }
-      ]
-    },
-    {
-      "id": "mobile-ux-pending-fixes-2026-09-12",
-      "name": "移动端验收两遗留修复（App 文件选择器 + 转移/修改路径弹窗适配）；复验批：UI 移动化 + versionCode 递增",
-      "description": "用户真机验收发现两问题（根因诊断见 session-handoff 续8，本批为实施）：①App WebView 添加种子点选择文件无反应——WebViewActivity 只设 webViewClient 无 WebChromeClient，<input type=\"file\"> 点击被静默忽略；②移动页转移/修改路径弹窗 600/650px 桌面宽度原样怼手机屏——SetLocationDialog 根节点 div 包裹致透传 custom-class 经 $attrs 落到外层 div 永不到 el-dialog（收窄从未生效），TransferDialog 壳虽经 m-reuse-dialog 94vw 生效但内部 label-width 桌面表单与嵌套删除确认弹窗未适配；两组件 @media 规则数为 0。",
-      "status": "done",
-      "branch": "dev",
-      "tasks": [
-        {
-          "id": "mobile-ux-pending-fixes.1",
-          "name": "Android：WebView 文件选择器（onShowFileChooser + ActivityResultLauncher + FileChooser 纯函数）",
-          "status": "done",
-          "scope": "android",
-          "files": [
-            "android/app/src/main/java/com/btdeck/companion/ui/FileChooser.kt",
-            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
-            "android/app/src/test/java/com/btdeck/companion/ui/FileChooserTest.kt"
-          ],
-          "description": "WebViewActivity 补 WebChromeClient.onShowFileChooser + StartActivityForResult launcher：回调恰好投递一次（launcher 取出即清空；新请求先作废旧回调投 null；onDestroy 补投；无文件管理器 catch ActivityNotFoundException 同样投 null 解锁后续）；支持多选（EXTRA_ALLOW_MULTIPLE，SAF MIME 陷阱对策=意图恒 */* 不透传 accept 扩展名当 MIME——FileChooser 纯函数承载决策与结果解析，android.webkit 在 JVM 是 not-mocked stub 故独立实现）；allowContentAccess 维持 false（只门控页面内 content:// 资源引用，上传读取走 ContentResolver+SAF 临时授权，代码注释写明取舍——真机验收复核点）。",
-          "evidence": "FileChooserTest 3 用例绿（MIME 通配钉死禁回退 createIntent/MODE_OPEN_MULTIPLE 多选决策/取消与零选中收敛 null 防双重投递锁死）+ 全套件 testDebugUnitTest BUILD SUCCESSFUL；Intent/ClipData 装配 JVM 不可测由真机验收兜底；双变体构建与真机验收项记录见 session-handoff 续9。"
-        },
-        {
-          "id": "mobile-ux-pending-fixes.2",
-          "name": "前端：TransferDialog/SetLocationDialog 组件内自治 ≤768 适配 + 移动页透传清理",
-          "status": "done",
-          "scope": "frontend",
-          "files": [
-            "frontend/src/views/torrents/components/TransferDialog.vue",
-            "frontend/src/views/torrents/components/SetLocationDialog.vue",
-            "frontend/src/views/mobile/torrents.vue",
-            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
-          ],
-          "description": "照 TorrentAddDialog 2026-09-12 模式组件自治：SetLocationDialog 根节点 div 包裹根修（el-dialog 升为模板根，$attrs 陷阱消除）；两弹窗自有 custom-class（transfer-dialog/set-location-dialog）+ 组件内非 scoped ≤768 块（94vw !important 压内联 width、margin-top 5vh、body 64vh 内滚；TransferDialog 嵌套删除确认 transfer-delete-confirm 88vw，append-to-body 脱离组件树故必须非 scoped）+ scoped 块（label-width 110/120px 表单标签上堆、底部双钮 44px 等宽、路径建议行 36px 触控；SetLocationDialog 长路径 el-tag 折行）。移动页 torrents.vue 移除两处已失效/将自治的 m-reuse-dialog 透传（该类仅余 Tracker操作/全局替换）；源码契约 spec 钉死 custom-class 落在 el-dialog 开标签（防根 div 包裹回退）+ 媒体块关键规则 + 移动页使用处恰 2。",
-          "evidence": "transfer-set-location-dialogs.spec 5 用例绿；相关 4 套件（含 mobile-torrents 57）73 用例绿；typecheck/lint(--max-warnings 0 含 contract:check) 绿；全量 111 套件 / 1570 用例绿（+1 套件 +5 用例）。"
-        },
-        {
-          "id": "mobile-ux-pending-fixes.3",
-          "name": "真机复验修复：两弹窗 UI 移动化 + 文件选择器诊断增强 + versionCode 递增",
-          "status": "done",
-          "scope": "fullstack",
-          "files": [
-            "android/app/build.gradle.kts",
-            "android/app/src/main/java/com/btdeck/companion/ui/WebViewActivity.kt",
-            "frontend/src/views/torrents/components/TransferDialog.vue",
-            "frontend/src/views/torrents/components/SetLocationDialog.vue",
-            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
-          ],
-          "description": "用户真机复验两反馈：①「适配了尺寸但没适配 UI」——两弹窗非 scoped ≤768 块从仅骨架收窄扩为 UI 移动化（头部 padding 收敛+标题 16px 加粗+关闭钮 36px 触控区+圆角 12px+体/底 padding 收敛+divider/表单间距收紧），scoped 块补复选框触控行（删除原种子/移动已下载的文件）、长路径折行、嵌套删除确认 icon 48→36px；②「添加种子仍不弹文件管理器」——前端触发链核实为同步 DOM click（手势保留）无缺陷，弹窗尺寸适配走服务器前端恰好生效而文件选择器在原生层：判定真机仍运行旧 APK（新旧包 versionCode 同为 2 无法分辨装没装上）。处置：versionCode 2→3、versionName 0.2.0→0.2.1（设置-应用可核对）；onShowFileChooser 入口 Toast+Log 诊断（可判定原生层是否触发：无 Toast=旧包或手势链问题，有 Toast 无选择器=ROM 特例）；launch 兜底补 SecurityException 分支（同样投 null 解锁）。SAF（ACTION_GET_CONTENT）机制上免存储权限，不加冗余权限申请。",
-          "evidence": "契约 spec 6 用例（新增 UI 移动化断言：headerbtn 36px/标题 16px/圆角/body padding/复选框触控行）+ 全量 111 套件 1571 用例绿 + lint/typecheck 绿；安卓全套件 testDebugUnitTest BUILD SUCCESSFUL；双变体构建（versionCode=3）与真机复验待提交后执行，结果记 session-handoff 续9 更新。"
-        },
-        {
-          "id": "mobile-ux-pending-fixes.4",
-          "name": "回归测试保护补强（真机验证通过后）",
-          "status": "done",
-          "scope": "fullstack",
-          "files": [
-            "android/app/src/test/java/com/btdeck/companion/ui/FileChooserTest.kt",
-            "android/app/src/test/java/com/btdeck/companion/ui/WebViewActivityContractTest.kt",
-            "frontend/tests/unit/transfer-set-location-dialogs.spec.ts"
-          ],
-          "description": "安卓侧把前端仓「源码契约」模式移植到 JVM 测试（Intent/ClipData 无法 JVM 端到端、仓内无 Robolectric）：新 WebViewActivityContractTest 4 用例——webChromeClient/onShowFileChooser/ActivityResultLauncher 接线、回调恰好一次的四条路径（onReceiveValue(null) 恰 4 处 + launcher 回调先取引用再清空再投递）、FileChooser 禁回退 createIntent（MIME 陷阱）+ EXTRA_ALLOW_MULTIPLE 保留、APK 版本纪律锚点（versionCode ≥3 下限 + bat BTDECK_APK_VERSION 与 versionName 同源，防再次脱钩）；FileChooserTest 补 mode 显式 opt-in 用例（OPEN/SAVE/未知值均单选）。前端侧补挂载行为测试 4 用例（注册带 props 的 ElDialog 占位组件）：自有 custom-class 真实到达 ElDialog（customClass prop）、嵌套删除确认第二枚 el-dialog 的 customClass 与 appendToBody、两组件 visible 置真打开流程（按下载器拉路径建议/拉可用下载器）。变异验证 3/3 检出（WebViewActivity 删作废旧回调→红；bat 版本回退脱钩→红；SetLocationDialog 根 div 包裹回退→源码契约红）。",
-          "evidence": "安卓 testDebugUnitTest 全套件绿（FileChooserTest 4 + WebViewActivityContractTest 4，bat 同源断言生效 0 skipped）；前端全量 111 套件 / 1575 用例绿（本 spec 6→10）；typecheck/lint 绿；变异验证后生产代码逐字节还原（git diff 空）。"
+          "evidence": "阻塞于部署信息（未获得，不编造）：MoviePilot V2 完整版本号、部署方式（compose/裸机）、插件目录挂载与 PLUGIN_LOCAL_REPO_PATHS/PLUGIN_AUTO_RELOAD 可行性、BtDeck 地址自 MoviePilot 容器的可达性。联调未执行，不宣称通过。"
         }
       ]
     },
@@ -6899,6 +6699,34 @@
           "evidence": "2026-09-19：①head 硬编码漂移（4 例）——新增 tests/core/alembic_head.py（current_head/revision_count 动态读链路），test_db_rollback_scenarios.REV_HEAD / test_orphan_migration_production_shape.EXPECTED_HEAD / test_orphan_schema_repair_migration.REPAIR_HEAD 改动态；test_db_migration.EXPECTED_HEAD 保留为唯一写死点。②漂移库 fixture 保真不足（2 例）——_build_head_marked_drift_db 补 search_templates + setting_templates 表（后续迁移加列依赖），修复 migrate_database() 返回 False。③跨用例泄漏（1 例）——进程级共享测试库下 TestBatchCommit 两用例固定 /tmp 作扫描根会误收其它用例残留候选，改每次唯一 uuid 专属根，断言语义不变。④新增防漂移门禁 3 例（约束文档 HEAD/计数一致、唯一写死点一致、三测试必须用 current_head 防回流）。验证：CI 同参数 pytest -q --cov=app --cov-fail-under=40 → 4750 passed/17 skipped/0 failed，覆盖率 64.81%；定向（rollback+orphan 四文件）82 passed；零 app 代码改动。 ⑤远端复核：干净克隆 baaa696 全量 4750 passed/0 failed；推送后 CI run #292 双 job 全绿（Frontend type+Jest+build ✅ / Backend pytest ✅），远端后端长期红终结。"
         }
       ]
+    },
+    {
+      "id": "merge-dev107-into-dev-2026-09-22",
+      "name": "dev1.0.7 → dev 分支语义合并（MCP+MoviePilot 线并入双语主干）",
+      "description": "将 origin/dev1.0.7（MCP 服务 W0~W4-d 全量 + MoviePilot 整理联动 + 双语 P0/P1 文档线）合并入 dev（桌面双语 P1~P6-5 完成态）。含 Alembic 迁移链重挂（053003337878 挂至 d1e2f3a4b5c6 保单 HEAD）、i18n 完成态保留为主干、主机能力面板按 282f494 移除、torrent_add_service reasonCode 契约与 MCP 领域字段并存、i18n 审计门禁排除清单/白名单登记 MCP/MoviePilot 新面（双语另立项）。完整方案与独立审查见 PLANS/merge-dev107-into-dev.md。",
+      "created": "2026-09-22",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "1",
+          "name": "37 冲突分类解决 + 迁移链重挂 + 门禁适配",
+          "files": [
+            "backend/alembic/versions/053003337878_add_moviepilot_integration_tables.py",
+            "backend/docs/constraints/database-migration.md",
+            "backend/app/services/torrent_add_service.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/tests/core/test_orphan_schema_repair_migration.py",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/i18n-leftover-guard.spec.ts",
+            ".gitignore",
+            "PLANS/README.md",
+            "docs/roadmap/"
+          ],
+          "evidence": "2026-09-22 合并执行：P0 对账 37 冲突与计划一致；P2 重挂后 alembic 单 HEAD=053003337878（32 迁移，链尾顺序断言通过）；P3 迁移测试 40 passed + 端点 56 passed + reason/add 契约 166 passed；P4 i18n 门禁 20 passed（含改写后 PlatformCapabilityPanel 反向守卫与排除/白名单登记生效）、lint/build 绿；flake8 通过。独立审查（reviewer 子代理）8 项事实核验与 2 Critical 已吸收进计划正文（附录 A）。"
+        }
+      ]
     }
   ],
   "tasks": [
@@ -6953,7 +6781,7 @@
       "evidence": {
         "tests": "后端全量 3826 passed/7 skipped（新增 test_init_config_file/test_cuser_business_codes/test_token_cleanup/test_refresh_token_cleanup_task + test_security_config_defaults 扩9用例）；前端全量 872 passed（store-user/permission-guard/request-auth/session/api-contracts 调整与新增，含 F6 级联防护锚点与逃生计数清零用例）",
         "lint": "black/flake8 通过；mypy 零新增错误；eslint 通过（request.ts 自动格式修复）",
-        "verification": "./init.sh 通过；PLANS/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
+        "verification": "./init.sh 通过；PLANS/archive/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
       },
       "files": [
         "backend/app/database.py",

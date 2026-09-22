@@ -2,7 +2,7 @@
  * API 错误归一化纯逻辑（无副作用，便于单测）。
  *
  * 从 request.ts 抽出，避免单测时引入 Vuex store / element-ui Message 副作用。
- * 详见审计修复 PLANS/v1.0.5-audit.md P0-1。
+ * 详见审计修复 PLANS/archive/v1.0.5-audit.md P0-1。
  */
 
 import { ApiError } from '@/types/api'

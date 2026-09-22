@@ -691,7 +691,7 @@ describe('TraditionalView component regressions', () => {
 
     expect(vm.currentRow).toBe(row)
     expect(vm.activeDetailTab).toBe('tracker')
-    expect(vm.detailTabs.map(tab => tab.value)).toEqual(['tracker', 'files', 'peers'])
+    expect(vm.detailTabs.map(tab => tab.value)).toEqual(['tracker', 'files', 'peers', 'media'])
     expect(trackerCard.props('visible')).toBe(true)
     expect(trackerCard.props('activeTab')).toBe('tracker')
   })
@@ -1937,13 +1937,13 @@ describe('详情卡片文件/Peers 页签数据接线（TrackerDetailDataMixin �
     return wrapper.findComponent(TrackerDetailCard)
   }
 
-  it('行点击打开卡片：layout=traditional、visible 随 currentRow、透传三个页签', async() => {
+  it('行点击打开卡片：layout=traditional、visible 随 currentRow、透传四个页签', async() => {
     const card = await openDetailCard()
     expect(card.exists()).toBe(true)
     expect(card.props('layout')).toBe('traditional')
     expect(card.props('visible')).toBe(true)
     expect(card.props('activeTab')).toBe('tracker')
-    expect(card.props('tabs').map((tab: { value: string }) => tab.value)).toEqual(['tracker', 'files', 'peers'])
+    expect(card.props('tabs').map((tab: { value: string }) => tab.value)).toEqual(['tracker', 'files', 'peers', 'media'])
   })
 
   it('切文件页签懒加载并透传 files-state；refresh 事件强制重取', async() => {

@@ -23,7 +23,7 @@ from app.database import AsyncSessionLocal
 from app.services.audit_context import AuditContext
 from app.services.audit_service import get_audit_service
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
-from app.api.endpoints.torrent_helpers import (
+from app.services.torrent_add_helpers import (
     calculate_info_hash,
     get_transmission_torrent_info,
     create_qbittorrent_torrent_record,
@@ -63,12 +63,23 @@ class TorrentAddResult:
 
     reason_code 为双语 P4 错误契约增量：失败路径携带稳定 reasonCode，由端点映射进
     CommonResponse.data.reasonCode（信封四字段不变，仅 data 新增字段；成功路径 None）。
+    以下补充字段供 MCP（W3-③ torrent_add_file）读取领域事实；HTTP 端点只消费
+    status/code/msg，新增字段对其零影响。失败路径保持缺省 None。
     """
 
     status: str = "success"
     code: str = "200"
     msg: str = "种子添加成功"
     reason_code: Optional[str] = None
+    # 种子 info hash（十六进制小写）
+    info_hash: Optional[str] = None
+    # 数据库记录标识与种子名（成功路径必填）
+    info_id: Optional[str] = None
+    name: Optional[str] = None
+    # 下载器昵称（仅昵称；连接信息永不进入领域结果）
+    downloader_nickname: Optional[str] = None
+    # True=新建 DB 记录；False=记录已存在（重复添加语义）
+    created: Optional[bool] = None
 
     @property
     def ok(self) -> bool:
@@ -116,6 +127,7 @@ class TorrentAddService:
         tmp_file_path: Optional[str] = None
         info_hash: Optional[str] = None
         db_torrent: Optional[TorrentInfo] = None
+        db_torrent_created = False
         downloader: Any = None
 
         # ========== 从注入的 store 获取缓存的下载器（强制规范） ==========
@@ -263,6 +275,7 @@ class TorrentAddService:
                     self.db.add(db_torrent)
                     self.db.commit()
                     self.db.refresh(db_torrent)
+                    db_torrent_created = True
                 else:
                     # 已存在：使用现有记录
                     db_torrent = existing_torrent
@@ -368,6 +381,7 @@ class TorrentAddService:
                     self.db.add(db_torrent)
                     self.db.commit()
                     self.db.refresh(db_torrent)
+                    db_torrent_created = True
                 else:
                     # 已存在：使用现有记录
                     db_torrent = existing_torrent
@@ -443,5 +457,14 @@ class TorrentAddService:
                 os.unlink(tmp_file_path)
             except OSError:
                 pass
+
+        # 领域事实回填（MCP 消费；HTTP 端点只读 status/code/msg 不受影响）
+        result.info_hash = info_hash
+        result.created = db_torrent_created
+        if db_torrent is not None:
+            result.info_id = db_torrent.info_id
+            result.name = db_torrent.name
+        if downloader is not None:
+            result.downloader_nickname = downloader.nickname
 
         return result

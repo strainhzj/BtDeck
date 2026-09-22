@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-持久化同步检查点模型（W3-2，PLANS/sync-database-blocking-remediation.md）
+持久化同步检查点模型（W3-2，PLANS/archive/sync-database-blocking-remediation.md）
 
 覆盖问题：P1-03（全量同步状态仅在内存，重启后重复工作）。
 
