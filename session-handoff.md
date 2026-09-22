@@ -5569,3 +5569,9 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - 关键决策备查：①主机能力面板按 dev1.0.7 提交 282f494 移除（组件/spec/页签/roadmap 行四清，guard spec 改为反向守卫防复活）；②MCP/MoviePilot 新面暂入 i18n 审计排除清单与白名单，双语另立项（PLANS/merge-dev107-into-dev.md §8）；③根 roadmap README「本次新增」以合并批次重写（两侧历史批次日志在分支提交史，未展开）。
 - 已验证：后端迁移 40 + mcp/moviepilot 56 + reason 契约 166 + flake8；前端 i18n 门禁 20 + 目标 spec 90 + lint + build。全量 pytest/jest 与 ./init.sh 待合并提交前执行（见 PLANS P7）。
 - 推送：按规约由用户决定；回滚预案见计划 §6（提交前 merge --abort / 提交后 reset --hard ORIG_DEV=9318adf / 推送后 revert -m 1）。
+
+## 2026-09-22 交接（续）：合并与遗留项收口已推送 origin/dev
+
+- 推送范围：`9318adf..3c7d6c0`（35 提交），含合并提交 dbe7f65（双亲 9318adf+53119be）、双语化 213bafa、reasonCode 契约 0314687、P7 证据刷新 3c7d6c0。
+- 直连 github.com 推送成功（本会话未需镜像）。
+- 远端 CI（regression.yml：后端 pytest+覆盖率 / 前端 typecheck+jest+build / lint_btdeck 架构检查）建议关注首轮结果；本地等效门禁已全绿。
