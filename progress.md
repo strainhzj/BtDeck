@@ -7936,3 +7936,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - docker-compose.yml：backend/frontend `image:` 由本地 `btdeck-*:latest` 改为 `strainthomas/btdeck-{backend,frontend}:v1.0.6`（Hub 官方镜像，版本标签而非 latest，对齐发布纪律 §0.5）；保留 build: 段供本地源码构建（compose up --build 覆盖）。`docker compose config` 校验通过。
 - 分支流转：PR #6 已合并（9b48e03，CI 双绿）→ dev 提交续四记录（f7cf3a0）并合并 master（15f0686）→ compose 变更提交 → 推 dev → master 合并 dev → 在 master 打 annotated tag v1.0.6（"Release v1.0.6"）并推送。
 - 身份口径提示：Hub 镜像身份为 1.0.6@6e68fbe，tag 落在含 compose 变更的合并提交上；若后续 RC 门禁按受保护标签全量重出制品，需重出镜像对齐 digest。
+
+## 2026-09-22：Windows/Android 构建脚本 sh 移植 + 工具链用户级安装（build-scripts-sh-port）
+
+- 交付：deploy/build-windows.sh（新增，bat 逐段移植：--release fail-closed 语义/身份生成/PyInstaller/verify-package/ISCC；Windows 环节经 wine 容器编排）+ deploy/docker/windows-builder/Dockerfile（wine + Miniconda py311 Windows 版 + PyInstaller，参照 fpm/iscc 容器模式）。build-android.sh 前批已入库，本轮验证保真（双变体/单测/验签/badging 全对应）。
+- 镜像构建四轮试错定案：python.org 官方安装器 burn 引擎在 wine 下崩溃 → 改 Miniconda NSIS /S（wine 下成熟）；华为云 anaconda 路径返回 200 HTML 页 → 改 repo.anaconda.com 官方源（可达）+ 50MB 体积断言；pip download 跨平台限制（bencodepy 无 win wheel）→ 放弃离线轮子库，运行时 pip 自带 certifi + 阿里云源。
+- Java 21 用户级安装：USTC apt 下载 deb + dpkg -x 至 ~/.btdeck-tools/jdk-21，修复 25 个指向 /etc 的绝对符号链接（改相对），cacerts 从系统 CA 包 150 证书重建 JKS；JAVA_HOME 已写入 profile。
+- Android 工具链用户级安装：Gradle 8.9（腾讯镜像）+ cmdline-tools/sdkmanager（platforms;android-35 + build-tools;35.0.0，dl.google.com 直连可达）+ buildPython 3.12（USTC Ubuntu noble deb 解压 + EXTERNALLY-MANAGED 移除 + get-pip；venv home 记录 shim 目录导致 encodings 失联，改为同目录符号链接修复）。
+- 产物：btdeck-companion-0.2.5-{strict,lan-cleartext}-debug.apk（versionCode 7，apksigner/aapt2 双验证通过，JVM 单测绿）已上传 GitHub Release v1.0.6 并更新 SHA256SUMS；EXE/安装器构建进行中（待本提交入库解除 dirty 拦截）。
