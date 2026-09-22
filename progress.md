@@ -8178,3 +8178,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - §8-2 后端契约（提交 0314687）：mcp_settings 409/400 + moviepilot _map_service_error 六类/PUT settings/反查 400 共 12 个 reasonCode；动态 str(exc) 收敛只进日志；前端 errors.byCode 12 键 + MoviePilotPanel 反查走 apiErrorMessage。
 - §8-4 P7 收口：p7-acceptance-checklist.md 增 §〇 合并后复测节（前端 125 套 1833 例、后端 5215 passed/66.80%、init.sh 绿），M2 范围扩界记录；**浏览器视觉验收与 R01~R06 签认仍待用户执行**（建议把 MCP/MoviePilot 设置页与媒体库页签纳入抽查）。
 - 终局验证：后端全量 5215 passed/18 skipped、覆盖率 66.80%；前端 jest 1833/typecheck/lint/build 绿；./init.sh exit=0。
+
+## 2026-09-22（续三）：个人部署——build-and-export-images 构建导出 + Unraid 部署
+
+- 发布身份重新生成：generate_build_info.py（docker-backend/docker-frontend）→ HEAD a43cb1d、dirty=false、**alembic_head=053003337878**（合并后新链尾首次进入制品元数据；产品版本仍为 release-config 声明的 1.0.6，升 1.0.7 属发布决策未动）。
+- 构建：双镜像均一次过（profile 2 aliyun，无镜像源重试）；导出 tar：backend 130M / frontend 51M；悬空镜像已清理。
+- 部署：sshpass 单会话上传 + 远端 compose（docker-compose.yml）拉起，旧标记镜像清理，健康检查 3 轮 starting → **healthy**。
+- 实战验证：远端库原 head=d1e2f3a4b5c6（昨日构建），本次启动经重挂后的链升级至 053003337878（moviepilot 两表在存量库落盘）并健康——迁移重挂在真实存量库验证通过。
+- OCI 标签：btdeck-backend:latest revision=a43cb1d568e8800a9e995b56b820952980be3c9b / v1.0.6。
