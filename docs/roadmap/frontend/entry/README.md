@@ -38,25 +38,25 @@
 | `/m`（MobileLayout，redirect → `/m/dashboard`，L49-51；13 children） | dashboard / downloader / torrents(+detail) / search / query-templates(redirect→`/m/search`) / recycle-bin / logs / downloader-settings / tracker×2 / tasks / orphan-files / notifications / settings | L53-147 |
 | `/` → `/dashboard`（Layout） | `@/views/dashboard/index.vue` | L150 |
 | `/downloader` | `@/views/downloader/index.vue` | L160 |
-| `/torrents`（4 children，redirect → `/torrents/index`） | TorrentViewSwitcher / TraditionalView / FileManagement / index(detail) | L175 |
-| `/tasks` | `@/views/tasks/index.vue` | L226 |
-| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L241 |
-| `/task-logs` | redirect `/tasks?tab=logs` | L291 |
-| `/logs/audit` | `@/views/logs/audit.vue` | L298 |
-| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L319 |
-| `/orphan-files` | `@/views/orphan-files/index.vue` | L336 |
-| `/settings`（redirect → `/settings/index`） | `@/views/settings/index.vue` | L354 |
-| `/query-templates` | `@/views/query-templates/index.vue` | L372 |
-| `*` | redirect `/404` | L388 |
+| `/torrents`（5 children，redirect → `/torrents/index`；✨2026-09-23 查询模板归组，可见顺序 种子列表→查询模板→种子文件管理） | TorrentViewSwitcher / TraditionalView(hidden) / QueryTemplates / FileManagement / index(detail) | L175 |
+| `/tasks` | `@/views/tasks/index.vue` | L237 |
+| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L252 |
+| `/task-logs` | redirect `/tasks?tab=logs` | L302 |
+| `/logs/audit` | `@/views/logs/audit.vue` | L309 |
+| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L330 |
+| `/orphan-files` | `@/views/orphan-files/index.vue` | L347 |
+| `/settings`（redirect → `/settings/index`） | `@/views/settings/index.vue` | L365 |
+| `/query-templates`（✨2026-09-23 归入 /torrents 组，旧顶层深链兑底） | redirect `/torrents/query-templates`（`/query-templates/index` 同目标） | L385/L390 |
+| `*` | redirect `/404` | L395 |
 
-> `/m/query-templates` 移动查询模板页已裁撤（仅保留高级搜索）：路由表保留深链 redirect 到 `/m/search`；`/m/settings`（L137）整页复用桌面设置组件（双因素认证 + 修改密码）。
+> `/m/query-templates` 移动查询模板页已裁撤（仅保留高级搜索）：路由表保留深链 redirect 到 `/m/search`；桌面 `/query-templates` 2026-09-23 归入 `/torrents` 组（`/torrents/query-templates`），旧顶层两路径保留 redirect 兑底，移动模式经 `toMobilePath()` 精确分支落 `/m/search`；`/m/settings`（L137）整页复用桌面设置组件（双因素认证 + 修改密码）。
 
 文件末尾 L404-463 自定义 `router.push`（及 `router.replace`）捕获 `NavigationFailure`（守卫改道/中止/重复导航不再作为异常上抛）；L465 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
 
 ## permission.ts 关键（L1-301）
 
 - L15 `loginPaths = ['/login', '/m/login']`（双模式登录白名单）
-- L24 `uiModeRedirectPath()`（UI 模式分流，认证前执行）：移动模式访问已移动化桌面顶层页（含 `/settings` 与裁撤后的 `/query-templates`）经 `toMobilePath()` 落对应 `/m/*` 页；桌面模式访问 `/m/*` 回对应桌面页（`/m/torrents`→`/torrents`、`/m/settings`→`/settings`，其余落 `/dashboard`）
+- L24 `uiModeRedirectPath()`（UI 模式分流，认证前执行）：移动模式访问已移动化桌面顶层页（含 `/settings`；`/torrents/query-templates` 在 `/torrents` 通配前精确拦截落 `/m/search`，旧顶层 `/query-templates*` 路径 redirect 解析后同链路）经 `toMobilePath()` 落对应 `/m/*` 页；桌面模式访问 `/m/*` 回对应桌面页（`/m/torrents`→`/torrents`、`/m/settings`→`/settings`，其余落 `/dashboard`）
 - L56 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings', '/m/settings']`（放行白名单，含移动设置页）+ `isForceChangeBlocked()` 判定 + `forceChangeTargetPath()` 按当前 UI 模式选落点（移动 `/m/settings`、桌面 `/settings/index`）+ `forceChangeRedirect()`（L70）重定向 `?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
 - L89 `isTransientError`（ApiError 网络 '0' 与业务 5xx 瞬时失败判定）+ L97 `abortNavigation`：`next(false)` 中止导航 + 网络波动提示 + 手动 `NProgress.done()`（中止导航 afterEach 不触发，进度条须手动收尾），保留令牌与会话现场
 - L130 `router.beforeEach`：

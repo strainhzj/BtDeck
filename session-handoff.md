@@ -1,3 +1,25 @@
+## 2026-09-23 交接：前端 UI 调整——查询模板菜单归组 + 设置页页签布局统一（全绿未提交）
+
+### 已完成（用户确认方案后实施，feature #87 frontend-ui-refresh-2026-09-23）
+
+- **查询模板归组**：路由移入 `/torrents` children（URL `/torrents/query-templates`，可见顺序 种子列表→查询模板→种子文件管理）；旧顶层 `/query-templates` 与 `/query-templates/index` 双 redirect 兜底；`toMobilePath()` 在 `/torrents` 通配前精确拦截落 `/m/search`；demo 路由清单同步。
+- **设置页重构**：页签改左侧垂直导航（Lucide 图标，clapperboard 新补注册；≤768px resize 切顶部横排，移动端 /m/settings 复用自动受益）；新增 `styles/settings-panel.scss` 占位符规范（960px 卡片/渐变竖条标题/14px 描述），settings/index.vue + McpSettingsPanel + MoviePilotPanel 三组件 @extend 同规范；表单收窄 480px 行宽。
+- **验证**：typecheck、lint（--max-warnings 0）、build、全量 Jest 126 套 1852 例（+settings-tabs-layout 7 例 +ui-mode 扩 1 例）全绿；./init.sh exit 0。
+
+### 坑位（下会话注意）
+
+- vue-class-component 的 class 属性箭头函数捕获原始实例，写入不走响应式代理——需在 mounted 内创建箭头（参照 PageSizeCombobox onResize 模式）。
+- element-ui 左侧页签默认右对齐 + active 右缘竖线：需 `.el-tabs__item.is-left` flex 左对齐 + 隐藏原生 active-bar/nav 底线改胶囊底色；nav 在 mounted 后异步重渲染，测试断言需 await Vue.nextTick。
+- 测试 localVue 需手动补注册 main.ts 全局注册的 LucideIcon（真渲染 svg 还能守护图标名注册完整性）。
+- 旧深链兑底要覆盖原子路径形态（本项目历史路径多为 `/xxx/index`，仅精确 redirect 会漏书签）。
+
+### 下一步
+
+1. Git 提交待用户指示（建议一个提交：feat(frontend) UI 调整 + docs roadmap/追踪）。
+2. 用户可在浏览器实际目视验收（左侧竖排页签/960px 卡片/窄屏切换）。
+
+---
+
 ## 2026-09-23 交接：rTorrent 接入前置 P0 清扫完成（全绿未提交）
 
 ### 已完成（评估→验证→清扫三阶段）

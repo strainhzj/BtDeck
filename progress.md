@@ -1,5 +1,16 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-23：前端 UI 调整（查询模板菜单归组 + 系统设置页签布局统一，feature frontend-ui-refresh-2026-09-23，全绿未提交）
+
+- **范围（用户确认方案后实施）**：①查询模板菜单移入种子管理组（可见顺序 种子列表→查询模板→种子文件管理）；②设置页页签改左侧垂直导航 + 五页签 UI 风格统一（卡片宽度按用户指示大胆取宽 960px）。
+- **路由归组**：`/query-templates` 顶层路由移入 `/torrents` children（URL 变 `/torrents/query-templates`，位于 traditional 隐藏项与 file-management 之间）；旧顶层 `/query-templates` 与 `/query-templates/index` 双 redirect 兜底（原唯一子路径是 /index，只加精确 redirect 会漏旧书签）；`toMobilePath()` 在 `/torrents` 通配之前精确拦截新路径落 `/m/search`（否则移动模式会误入 /m/torrents）；permission.ts 旧条目防御性保留（redirect 解析期完成，守卫本就只见新路径）；demo/types.ts DEMO_ROUTE_MATRIX 行同步。
+- **设置页重构**：el-tabs 去掉 type=card 改 `:tab-position="tabPosition"`——桌面左侧垂直导航（分栏底色+右分隔线，页签胶囊选中态 rgba(--color-primary-rgb)，五页签带 Lucide 图标 shield-check/key-round/plug-zap/clapperboard/activity，clapperboard 新补注册）；≤768px 经 resize 监听切回顶部横排（移动端 /m/settings 整页复用自动受益）。
+- **风格统一**：新增 `styles/settings-panel.scss` 占位符规范（%settings-card 960px 宽 / %settings-card-title 20px+渐变竖条 / %settings-card-description 14px），settings/index.vue、McpSettingsPanel、MoviePilotPanel 三组件 scoped 内 `@import + @extend` 继承（此前 600/760px 宽、18/20px 标题、13/14px 描述三套不一致）；settings-content 由居中改左对齐卡片列（多卡片间距统一 gap），表单收窄 480px 行宽。
+- **坑**：①vue-class-component 的 class 属性箭头函数捕获原始实例，写入不走响应式代理（resize 后 tabPosition 不变）——改 mounted 内创建箭头（参照 PageSizeCombobox onResize 模式）；②element-ui 左侧页签默认右对齐 + active 右缘竖线，需 `.is-left` 项 flex 左对齐 + 隐藏原生 active-bar/nav 底线；③el-tabs nav 在 mounted 后异步重渲染，测试断言需 await Vue.nextTick；④测试 localVue 需补注册 main.ts 全局的 LucideIcon。
+- **验证**：typecheck、lint（--max-warnings 0）、build、全量 Jest **126 套 1852 例**全绿（+1 新套件 8 新例：settings-tabs-layout 7 例 + ui-mode 扩 1 例）；根 ./init.sh exit 0。
+- **文档**：roadmap 6 文件同步（根元信息新批次、frontend 根 router 349→483 行、entry 路由表行号实测全量重排 + /torrents 5 children、views 设置/查询模板行 + settings-panel.scss 新行、components-layout LucideIcon 补图标、tests 126 套/129 spec + test-coverage unit 114 实测校正 e2e 3）；feature_list.json feature #87。
+- **待办**：Git 提交待用户指示。
+
 ## 2026-09-23：rTorrent 接入前置 P0 清扫（架构缺陷修复 + hash 口径统一）
 
 - 背景：用户要求评估 rTorrent 适配工作量与阻塞点 → 全面勘察后确认三类架构级障碍（子代理因 Pi 0.85.1 < 0.87.0 扩展不兼容不可用，改为直接取证验证）：①DownloaderTypeEnum 三件套静默误判（to_name else 回退 transmission、normalize 未知值静默归 0、from_value 抛错），15 处消费点分三类失败形态；②两处 not in [0,1] 硬校验 + 前端 else 回退与 0|1 联合类型；③hash 大小写混存（qB 落库 .lower()、TR 原样大写 hashString，唯一索引与 (downloader_id, hash) 复合键均大小写敏感）——torrent_added_date_backfill 已按小写匹配印证既有隐性失配。

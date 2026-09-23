@@ -159,7 +159,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（112 个 spec，实测 2026-09-21）
+### `frontend/tests/unit/`（114 个 spec，实测 2026-09-23）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -236,6 +236,7 @@
 | `ui-mode.spec.ts` ✨2026-08-23 | `utils/ui-mode.ts`：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流 |
 | `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转 |
 | `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧） |
+| `settings-tabs-layout.spec.ts` ✨2026-09-23 | 设置页页签布局（左侧垂直导航/窄屏切顶部/五页签顺序与图标）+ 查询模板菜单归组（/torrents 子顺序/meta/旧深链 redirect/ui-mode 精确分支） |
 | `settings-twofa-manual-entry.spec.ts` ✨2026-09-04 | `views/settings/index.vue` 2FA 二维码缺失降级手动录入（secret+复制+重置+源码契约） |
 | `advanced-search-contract.spec.ts` ✨2026-09-04 | `scripts/generate-advanced-search-contract.js` 行尾规范化（LF/CRLF 检出双形态 current、内容变异双形态 stale、纯 LF 写出、幂等） |
 | `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |

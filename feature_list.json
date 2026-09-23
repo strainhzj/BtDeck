@@ -6947,6 +6947,38 @@
           "file": "backend/app/services/__init__.py, backend/app/desktop_companion/credentials.py, backend/app/core/torrent_file_backup.py, backend/app/torrents/responseVO.py, backend/app/auth/utils.py, backend/tests/utils/test_log_sanitizer.py, backend/tests/utils/test_yaml_config.py"
         }
       ]
+    },
+    {
+      "id": "frontend-ui-refresh-2026-09-23",
+      "title": "前端 UI 调整：查询模板菜单归组 + 系统设置页签布局统一",
+      "status": "done",
+      "scope": "frontend",
+      "description": "两项前端 UI 调整（用户确认方案：页签左侧竖排 + 卡片宽度大胆取宽 960px）：①查询模板菜单从顶层移入种子管理组，可见顺序为 种子列表 → 查询模板 → 种子文件管理（路由改为 /torrents/query-templates，旧顶层 /query-templates 与 /query-templates/index 双 redirect 兜底，toMobilePath 在 /torrents 通配前精确拦截落 /m/search，demo 路由清单同步）；②系统设置页页签由顶部 card 式横排改为左侧垂直导航（每页签带 Lucide 图标，≤768px resize 切回顶部横排，兼容移动端整页复用），并统一各页签内容风格：新增 styles/settings-panel.scss 占位符规范（960px 卡片壳/渐变竖条标题/14px 描述），2FA、改密、MCP、MoviePilot、诊断五页签经 @extend 同规范（此前 600/760px 宽度与 18/20px 标题、13/14px 描述不一致），表单收窄 480px 行宽。",
+      "files": [
+        "frontend/src/router.ts",
+        "frontend/src/utils/ui-mode.ts",
+        "frontend/src/demo/types.ts",
+        "frontend/src/views/settings/index.vue",
+        "frontend/src/views/settings/components/McpSettingsPanel.vue",
+        "frontend/src/views/settings/components/MoviePilotPanel.vue",
+        "frontend/src/styles/settings-panel.scss",
+        "frontend/src/components/common/LucideIcon.vue",
+        "frontend/tests/unit/settings-tabs-layout.spec.ts",
+        "frontend/tests/unit/ui-mode.spec.ts",
+        "docs/roadmap/README.md",
+        "docs/roadmap/frontend/README.md",
+        "docs/roadmap/frontend/entry/README.md",
+        "docs/roadmap/frontend/views/README.md",
+        "docs/roadmap/frontend/components-layout/README.md",
+        "docs/roadmap/tests/README.md",
+        "docs/roadmap/perspectives/test-coverage.md"
+      ],
+      "evidence": {
+        "tests": "新增 settings-tabs-layout.spec.ts 7 例（页签竖排/窄屏切换/顺序与图标/菜单归组顺序/meta/旧深链 redirect/路由解析）+ ui-mode.spec.ts 扩 1 例（/torrents/query-templates 精确分支）；全量 Jest 126 套 1852 例全绿（此前 125 套 1844 例）。",
+        "quality_gates": "typecheck（tsc --noEmit）通过；npm run lint（含 --max-warnings 0）通过；npm run build 通过；根 ./init.sh 退出码 0。",
+        "behavior": "侧栏种子管理组内可见顺序变为 种子列表→查询模板→种子文件管理；旧书签 /query-templates* 自动 redirect；移动模式访问新路径落 /m/search 不再误入 /m/torrents；设置页桌面为左侧竖排图标页签 + 统一 960px 卡片，窄屏/移动端切顶部横排胶囊。",
+        "pitfalls": "①vue-class-component 的 class 属性箭头函数（resizeHandler = () => ...）捕获原始实例，写入不走响应式代理——改在 mounted 内创建箭头（参照 PageSizeCombobox onResize 模式）；②element-ui 左侧页签默认右对齐且 active 指示条为右缘竖线，需 .is-left 项覆盖 display:flex 左对齐并隐藏原生 active-bar/nav 底线改用胶囊底色；③el-tabs 的 nav 在 mounted 后异步重渲染，测试断言需 await Vue.nextTick；④测试 localVue 需手动补注册 main.ts 全局注册的 LucideIcon。"
+      }
     }
   ],
   "tasks": [
