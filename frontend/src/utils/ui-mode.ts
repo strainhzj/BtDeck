@@ -52,12 +52,16 @@ export function currentUiMode(): ResolvedUiMode {
 
 /** 桌面顶层页 → 移动版对应页；无对应关系的页面兜底到移动仪表盘 */
 export function toMobilePath(path: string): string {
+  // 查询模板已并入 /torrents 组（须在 /torrents 通配之前精确拦截，否则会落 /m/torrents）：
+  // 移动端查询模板页已裁撤，模板能力收敛进 /m/search 工作区
+  if (path.startsWith('/torrents/query-templates')) return '/m/search'
   if (path.startsWith('/torrents')) return '/m/torrents'
   if (path.startsWith('/dashboard')) return '/m/dashboard'
   // M2 已移动化的管理页（与守卫重定向清单保持同步）
   if (path.startsWith('/recycle-bin')) return '/m/recycle-bin'
   if (path.startsWith('/logs')) return '/m/logs'
   // 移动端查询模板页已裁撤（仅保留高级搜索）：模板能力收敛进 /m/search 工作区
+  //（旧顶层深链经路由 redirect 已并入 /torrents 组，此分支防御性保留旧路径直调）
   if (path.startsWith('/query-templates')) return '/m/search'
   // 系统设置已移动化（/m/settings 整页复用桌面设置组件）
   if (path.startsWith('/settings')) return '/m/settings'

@@ -1,8 +1,14 @@
 <template>
   <div class="settings-container">
-    <el-tabs v-model="activeTab" type="card" class="settings-tabs">
+    <!-- 页签排布：桌面左侧垂直导航，窄视口（移动端整页复用本页）切回顶部横排；
+         各页签内容统一使用 settings-panel.scss 规范的卡片壳/标题/描述 -->
+    <el-tabs v-model="activeTab" :tab-position="tabPosition" class="settings-tabs">
       <!-- 双因素认证标签页 -->
-      <el-tab-pane :label="$t('settings.tabs.twofa')" name="2fa">
+      <el-tab-pane name="2fa">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="shield-check" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.twofa') }}
+        </span>
         <div class="settings-content">
           <div class="settings-card">
             <h3 class="settings-card-title">{{ $t('settings.twofa.title') }}</h3>
@@ -255,7 +261,11 @@
       </el-tab-pane>
 
       <!-- 修改密码标签页 -->
-      <el-tab-pane :label="$t('settings.tabs.password')" name="password">
+      <el-tab-pane name="password">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="key-round" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.password') }}
+        </span>
         <div class="settings-content">
           <div class="settings-card">
             <h3 class="settings-card-title">{{ $t('settings.password.title') }}</h3>
@@ -298,21 +308,33 @@
 
       <!-- MCP 服务（mcp-service-capabilities W1：全局/能力开关 + 风险说明；移动端经包装自动同源；
            2026-09-22 双语化：面板文案走 mcp.* 键） -->
-      <el-tab-pane :label="$t('settings.tabs.mcp')" name="mcp">
+      <el-tab-pane name="mcp">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="plug-zap" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.mcp') }}
+        </span>
         <div class="settings-content">
           <mcp-settings-panel />
         </div>
       </el-tab-pane>
 
       <!-- MoviePilot 集成（moviepilot-integration：全局开关/实例与下载器映射/关联反查；移动端经包装自动同源） -->
-      <el-tab-pane :label="$t('settings.tabs.moviepilot')" name="moviepilot">
+      <el-tab-pane name="moviepilot">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="clapperboard" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.moviepilot') }}
+        </span>
         <div class="settings-content">
           <movie-pilot-panel />
         </div>
       </el-tab-pane>
 
       <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
-      <el-tab-pane :label="$t('settings.tabs.diagnosis')" name="diagnosis">
+      <el-tab-pane name="diagnosis">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="activity" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.diagnosis') }}
+        </span>
         <div class="settings-content">
           <div class="settings-card">
             <h3 class="settings-card-title">{{ $t('settings.diagnosis.title') }}</h3>
@@ -355,6 +377,16 @@ import request from '@/utils/request'
 export default class extends Vue {
   // 当前激活的标签页
   private activeTab = '2fa'
+
+  // 页签排布：桌面左侧垂直导航；窄视口（≤768px，含移动端整页复用）切回顶部横排。
+  // 监听须在 mounted 内创建（class 属性箭头函数捕获的是原始实例，写入不走响应式，
+  // 参照 PageSizeCombobox 的 onResize 模式）；样式断点与之一致
+  private isNarrowViewport = false
+  private resizeHandler: (() => void) | null = null
+
+  get tabPosition(): 'left' | 'top' {
+    return this.isNarrowViewport ? 'top' : 'left'
+  }
 
   // 2FA相关状态
   private currentStep = 1 // 1:验证密码 2:扫描二维码 3:绑定成功
@@ -423,6 +455,13 @@ export default class extends Vue {
   }
 
   mounted() {
+    // 页签方位初始化 + 监听视口变化
+    this.resizeHandler = () => {
+      this.isNarrowViewport = window.innerWidth <= 768
+    }
+    this.resizeHandler()
+    window.addEventListener('resize', this.resizeHandler)
+
     // 从localStorage恢复失败次数
     this.restoreFailedAttempts()
 
@@ -435,6 +474,11 @@ export default class extends Vue {
   }
 
   beforeDestroy() {
+    // 解除视口监听
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler)
+    }
+
     // 清理定时器
     if (this.lockTimer) {
       clearInterval(this.lockTimer)
@@ -844,54 +888,77 @@ export default class extends Vue {
 </script>
 
 <style lang="scss" scoped>
+@import '@/styles/settings-panel';
+
 .settings-container {
   max-width: 1920px;
   margin: 0 auto;
   padding: var(--spacing-xl);
 }
 
+// 页签容器：外层统一卡片壳；桌面为「左侧垂直导航栏 + 内容区」布局，
+// ≤768px 时 tabPosition 切回 top（见下方媒体查询），页签变横向胶囊
 .settings-tabs {
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
+  overflow: hidden;
 
   ::v-deep .el-tabs__header {
     margin: 0;
-    padding: var(--spacing-lg) var(--spacing-xl) 0;
     background: var(--color-bg-secondary);
-    border-bottom: 1px solid var(--color-border-primary);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  // 左侧导航栏：分栏底色 + 右侧分隔线（圆角由外层 overflow:hidden 裁切）
+  ::v-deep .el-tabs__header.is-left {
+    padding: var(--spacing-lg) var(--spacing-md);
+    border-right: 1px solid var(--color-border-primary);
   }
 
   ::v-deep .el-tabs__nav {
     border: none;
   }
 
+  // 隐藏 element 原生 active 指示条与 nav 底线，选中态统一用胶囊底色表达
+  ::v-deep .el-tabs__active-bar,
+  ::v-deep .el-tabs__nav-wrap::after {
+    display: none;
+  }
+
   ::v-deep .el-tabs__item {
-    border: 1px solid var(--color-border-primary);
-    border-bottom: none;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    margin-right: var(--spacing-md);
-    padding: 0 var(--spacing-xl);
-    height: 48px;
-    line-height: 48px;
+    height: 44px;
+    line-height: 44px;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 0 var(--spacing-md);
     font-size: 14px;
     font-weight: 600;
     color: var(--color-text-secondary);
-    background: var(--color-bg-tertiary);
     transition: all var(--transition-base);
 
     &:hover {
       color: var(--color-primary);
-      background: var(--color-bg-secondary);
+      background: rgba(var(--color-primary-rgb), 0.06);
     }
 
     &.is-active {
       color: var(--color-primary);
-      background: var(--color-bg-primary);
-      border-bottom: 1px solid var(--color-bg-primary);
-      margin-bottom: -1px;
+      background: rgba(var(--color-primary-rgb), 0.1);
+    }
+  }
+
+  // 左侧页签：element 默认右对齐，改左对齐并拉开纵向间距
+  ::v-deep .el-tabs__item.is-left {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    min-width: 168px;
+    margin-bottom: var(--spacing-xs);
+
+    &:last-child {
+      margin-bottom: 0;
     }
   }
 
@@ -900,45 +967,32 @@ export default class extends Vue {
   }
 }
 
-.settings-content {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
+// 页签文字 + 图标统一排布（横竖两种方位共用）
+.settings-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
+// 页签内容统一外层：左对齐卡片列，多卡片面板（MCP/MoviePilot）间距统一
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+}
+
+// 卡片壳/标题/描述：统一继承 settings-panel.scss 规范（960px 宽 + 渐变竖条标题）
 .settings-card {
-  width: 100%;
-  max-width: 600px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
-  box-shadow: var(--shadow-md);
+  @extend %settings-card;
 }
 
 .settings-card-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-md);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-
-  &::before {
-    content: '';
-    width: 4px;
-    height: 20px;
-    background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
-    border-radius: var(--radius-sm);
-  }
+  @extend %settings-card-title;
 }
 
 .settings-description {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-lg);
-  line-height: 1.6;
+  @extend %settings-card-description;
 }
 
 .step-container {
@@ -956,8 +1010,10 @@ export default class extends Vue {
   }
 }
 
+// 表单控件统一收窄到可读行宽（卡片加宽到 960px 后避免输入拉满全宽）
 .verify-form {
   margin-top: var(--spacing-lg);
+  max-width: 480px;
 }
 
 .lock-alert,
@@ -1117,6 +1173,7 @@ export default class extends Vue {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  max-width: 480px;
 }
 
 .form-actions {
@@ -1126,15 +1183,24 @@ export default class extends Vue {
   justify-content: flex-end;
 }
 
-// 响应式
+// 响应式：窄视口页签切回顶部横排（与 tabPosition 计算的 768px 断点一致）
 @media (max-width: 768px) {
   .settings-container {
     padding: var(--spacing-md);
   }
 
   .settings-tabs {
-    ::v-deep .el-tabs__header {
-      padding: var(--spacing-md) var(--spacing-md) 0;
+    // 横排胶囊页签 + 底部分隔线
+    ::v-deep .el-tabs__header.is-top {
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-bottom: 1px solid var(--color-border-primary);
+    }
+
+    ::v-deep .el-tabs__item.is-top {
+      height: 36px;
+      line-height: 36px;
+      margin-right: var(--spacing-xs);
+      padding: 0 var(--spacing-md);
     }
 
     ::v-deep .el-tabs__content {

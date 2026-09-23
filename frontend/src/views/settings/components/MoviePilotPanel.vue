@@ -528,6 +528,8 @@ export default class MoviePilotPanel extends Vue {
 </script>
 
 <style lang="scss" scoped>
+@import '@/styles/settings-panel';
+
 .mp-panel {
   width: 100%;
   display: flex;
@@ -535,14 +537,9 @@ export default class MoviePilotPanel extends Vue {
   gap: var(--spacing-lg, 16px);
 }
 
+// 卡片壳/标题/描述：统一继承系统设置页签规范（960px 宽 + 渐变竖条标题 + 14px 描述）
 .mp-card {
-  width: 100%;
-  max-width: 760px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
-  box-shadow: var(--shadow-md);
+  @extend %settings-card;
 }
 
 .mp-card-head {
@@ -552,17 +549,11 @@ export default class MoviePilotPanel extends Vue {
 }
 
 .mp-card-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-sm);
+  @extend %settings-card-title;
 }
 
 .mp-description {
-  color: var(--color-text-secondary, #909399);
-  font-size: 13px;
-  line-height: 1.6;
-  margin: var(--spacing-sm) 0 var(--spacing-md);
+  @extend %settings-card-description;
 }
 
 .mp-hint {

@@ -202,6 +202,17 @@ const router = new Router({
           }
         },
         {
+          // 查询模板（v1.0.5）移入种子管理组：位于种子列表与种子文件管理之间（2026-09-23 调整）
+          path: 'query-templates',
+          component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: '查询模板',
+            titleKey: 'navigation.routes.queryTemplates',
+            icon: 'layout-template'
+          }
+        },
+        {
           path: 'file-management',
           component: () => import(/* webpackChunkName: "file-management" */ '@/views/torrents/FileManagement.vue'),
           meta: {
@@ -369,20 +380,16 @@ const router = new Router({
       ]
     },
     {
+      // 查询模板移入 /torrents 组后的旧深链兜底（原路由唯一子路径为 /query-templates/index）：
+      // redirect 在路由解析期完成，守卫只见新路径（移动模式经 toMobilePath 精确分支落 /m/search）
       path: '/query-templates',
-      component: Layout,
-      children: [
-        {
-          path: 'index',
-          component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
-          meta: {
-            keepAlive: true,
-            title: '查询模板',
-            titleKey: 'navigation.routes.queryTemplates',
-            icon: 'layout-template'
-          }
-        }
-      ]
+      redirect: '/torrents/query-templates',
+      meta: { hidden: true }
+    },
+    {
+      path: '/query-templates/index',
+      redirect: '/torrents/query-templates',
+      meta: { hidden: true }
     },
     {
       path: '*',

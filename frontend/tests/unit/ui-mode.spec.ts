@@ -61,6 +61,13 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/torrents/traditional')).toBe('/m/torrents')
     })
 
+    it('查询模板已并入 /torrents 组：在 /torrents 通配之前精确拦截落 /m/search', () => {
+      expect(uiMode.toMobilePath('/torrents/query-templates')).toBe('/m/search')
+      // 同组其它 /torrents 子路径不受影响
+      expect(uiMode.toMobilePath('/torrents/index')).toBe('/m/torrents')
+      expect(uiMode.toMobilePath('/torrents/file-management')).toBe('/m/torrents')
+    })
+
     it('M2 已移动化管理页映射到对应移动页；查询模板裁撤后落高级搜索', () => {
       expect(uiMode.toMobilePath('/recycle-bin')).toBe('/m/recycle-bin')
       expect(uiMode.toMobilePath('/recycle-bin/index')).toBe('/m/recycle-bin')

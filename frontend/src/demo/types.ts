@@ -484,7 +484,7 @@ export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/torrents/index', title: '种子列表', category: 'core', summary: '筛选、分页、排序、视图切换、详情与状态操作' },
   { path: '/torrents/traditional', title: '种子传统视图', category: 'core', summary: '与列表视图共享 Demo 种子状态' },
   { path: '/torrents/detail/:hash', title: '种子详情', category: 'core', summary: '详情、Tracker、文件和 Peers 的静态展示' },
-  { path: '/query-templates/index', title: '查询模板', category: 'core', summary: '新增、编辑、应用、删除均只更新本地状态' },
+  { path: '/torrents/query-templates', title: '查询模板', category: 'core', summary: '新增、编辑、应用、删除均只更新本地状态' },
   { path: 'notification-drawer', title: '通知中心', category: 'core', summary: '未读角标、详情、已读/未读、删除' },
   { path: '/tracker/*', title: 'Tracker 管理', category: 'extended', summary: '关键词、消息、汇报配置使用脱敏静态数据' },
   { path: '/tasks/index', title: '定时任务', category: 'extended', summary: '任务、日志与校验结果静态展示' },

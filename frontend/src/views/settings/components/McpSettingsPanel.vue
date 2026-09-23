@@ -363,36 +363,27 @@ export default class extends Vue {
 </script>
 
 <style lang="scss" scoped>
+@import '@/styles/settings-panel';
+
+// 多卡片列间距统一交由父层 .settings-content 的 gap 控制
 .mcp-settings-panel {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
+// 卡片壳/标题/描述：统一继承系统设置页签规范（960px 宽 + 渐变竖条标题 + 14px 描述）
 .mcp-card {
-  width: 100%;
-  max-width: 600px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
-  box-shadow: var(--shadow-md);
-}
-
-.mcp-apikey-card {
-  margin-top: var(--spacing-lg);
+  @extend %settings-card;
 }
 
 .mcp-card-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-md);
+  @extend %settings-card-title;
 }
 
 .mcp-description {
-  color: var(--color-text-secondary, #909399);
-  font-size: 13px;
-  line-height: 1.6;
-  margin: var(--spacing-sm) 0 var(--spacing-md);
+  @extend %settings-card-description;
 }
 
 .mcp-hint {

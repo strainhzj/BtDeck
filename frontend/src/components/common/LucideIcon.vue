@@ -115,7 +115,8 @@ import {
   ListFilter,
   WandSparkles,
   ArrowLeft,
-  Smartphone
+  Smartphone,
+  Clapperboard
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -236,7 +237,8 @@ const ICONS: Record<string, unknown> = {
   'list-filter': ListFilter,
   'wand-sparkles': WandSparkles,
   'arrow-left': ArrowLeft,
-  smartphone: Smartphone
+  smartphone: Smartphone,
+  clapperboard: Clapperboard
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]
