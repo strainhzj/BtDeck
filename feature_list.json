@@ -6838,6 +6838,45 @@
           "file": "frontend/src/store/modules/downloaderSettings.ts(删), frontend/src/i18n/locales/zh-CN/downloader.ts, frontend/src/i18n/locales/en/downloader.ts, frontend/tests/unit/p6-c01-mobile-chinese-regression.spec.ts"
         }
       ]
+    },
+    {
+      "id": "python-toolchain-unify-312-2026-09-23",
+      "name": "Python 工具链统一 3.12 契约（3.11 退役，减技术债）",
+      "description": "制品（Docker/W0 bullseye/本地 Linux 打包 3.11）与检查（CI 双 workflow 3.11 / mypy 3.11 / black py311）落后于已达标面（Windows 3.12.4 / Android Chaquopy 3.12 / 依赖锁 3.12 生成），版本号并存构成持续技术债（双目标维护、语法禁令人肉约束、升级路径翻倍、漂移窗口永存）。用户批准统一为单一 3.12 契约：最低支持 = 制品运行时 = CI 检查 = 类型检查目标，3.11 正式退役，PEP 701 等 3.12 语法解禁。镜像 digest 经 Docker Hub API 核实（python:3.12-slim @ sha256:2f17fc04…、python:3.12-bullseye @ sha256:7cc92904…，bullseye 冻结语义与原 3.11-bullseye 一致，glibc 2.31 下限保持兼容 Rocky 9）。",
+      "created": "2026-09-23",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "mypy app/（清 .mypy_cache Windows 遗留污染后修复 6 预存错误：services __all__ 注解、credentials windll×4 平台 ignore、torrent_file_backup backup_dir 中间变量、responseVO tracker_info 收紧非 Optional、auth get_login_secret 缺键 fail-safe 补全）+ black app/ + flake8 app/ 三门禁全绿；black 对 tests/scripts 的 71 文件预存漂移回退（超 CLAUDE.md 门禁口径 app/，另批治理）；全量 pytest 5271：共享 FS 上 49 失败 100% 归因 vboxsf 不支持 hardlink/unlink（同代码同 venv 在本地 FS 对照 186 过 0 失败）；受影响套件 release/mcp/tracker_budget/batch_add/auth 696+178+116 全过；根 init.sh 退出码 0；本机开发环境重建为 uv CPython 3.12.14（~/btdeck-venv312，共享目录禁 symlink 故 venv 外置），black 24.10 卡死问题随 3.13 环境弃用而消除",
+      "tasks": [
+        {
+          "id": "unify312.1",
+          "name": "构建/CI/工具配置硬统一",
+          "description": "Dockerfile 双 FROM digest 换 3.12-slim 新 digest + LABEL×2；release-gate.yml 13 处 python-version + 10 处 bullseye + 3 处 slim stub；regression.yml 主回归 3.12（反转'3.12 不再作主回归版本'旧注释）；pyproject mypy python_version=3.12 + black py312；build-linux.sh 默认 3.12；w4-stub compose；backend init.sh 门槛 >=3.12",
+          "status": "done",
+          "file": "backend/Dockerfile, .github/workflows/release-gate.yml, .github/workflows/regression.yml, backend/pyproject.toml, deploy/build-linux.sh, scripts/release/lifecycle/docker-compose.w4-stub.yml, backend/scripts/init.sh"
+        },
+        {
+          "id": "unify312.2",
+          "name": "测试与探针联动",
+          "description": "release 三测试 fixture 3.11.9→3.12.4；tracker_budget 版本容差注释改 3.12 语义（保守上界保留防抖动）；SDK 探针 docstring 标注 py3.11 证据转为退役版本历史锚定（证据 JSON 不动防篡改）",
+          "status": "done",
+          "file": "backend/tests/release/test_build_info.py, backend/tests/release/test_verify_package.py, backend/tests/release/test_health_build_identity.py, backend/tests/api/test_torrents_async_tracker_budget.py, backend/tests/mcp/test_sdk_compatibility.py, backend/scripts/mcp_sdk_probe.py"
+        },
+        {
+          "id": "unify312.3",
+          "name": "契约与文档统一",
+          "description": "toolchain-matrix.md 重写为单一 3.12 契约（含决策记录：废止双版本边界与'禁止机械改 pyproject'，动因/语义/镜像核实全留档；语法下限 3.12，PEP 701 解禁）；target-matrix 同步；release-config.json 活契约字段（python_target/drift 清零/基线/digest 注册表）更新且 w0_probes 历史记录保留；README×2 badge+技术栈+特性、backend README/AGENTS/CLAUDE、docker-compose 注释、runbook 建议、build-windows.sh wine 注释修正（容器实装版本用户侧自行核验）；PLANS 双计划加修订注记不篡改历史",
+          "status": "done",
+          "file": "docs/android/toolchain-matrix.md, docs/android/target-matrix.md, release/release-config.json, README.md, README_EN.md, backend/README.md, backend/AGENTS.md, backend/CLAUDE.md, docker-compose.yml, backend/docs/operations/sync-contention-runbook.md, deploy/build-windows.sh, PLANS/dual-mode-client.md, PLANS/mcp-service-capabilities.md"
+        },
+        {
+          "id": "unify312.4",
+          "name": "门禁恢复与预存债务清理",
+          "description": "本机 uv 安装 + CPython 3.12.14 + 全依赖 venv（修复共享目录无 pip 无 venv 的空测试环境）；清 Windows 遗留 .mypy_cache 污染；修复 mypy app/ 6 个预存错误（含 auth get_login_secret 缺键返回 None 的潜在缺陷）；black app/ 3 文件格式化；flake8 2 处预存 F401 顺手清（log_sanitizer/yaml_config 未用 pytest import）",
+          "status": "done",
+          "file": "backend/app/services/__init__.py, backend/app/desktop_companion/credentials.py, backend/app/core/torrent_file_backup.py, backend/app/torrents/responseVO.py, backend/app/auth/utils.py, backend/tests/utils/test_log_sanitizer.py, backend/tests/utils/test_yaml_config.py"
+        }
+      ]
     }
   ],
   "tasks": [

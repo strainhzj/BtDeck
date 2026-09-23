@@ -1,7 +1,7 @@
 # BtDeck - BitTorrent Management Platform
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python](https://img.shields.io/badge/python-3.11+-brightgreen)](https://python.org/)
+[![Python](https://img.shields.io/badge/python-3.12+-brightgreen)](https://python.org/)
 [![Vue](https://img.shields.io/badge/vue-2.6.12-brightgreen)](https://vuejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green)](https://fastapi.tiangolo.com/)
 
@@ -25,7 +25,7 @@ A full-stack web application for unified management of multiple BitTorrent clien
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11+ / FastAPI / SQLAlchemy / SQLite |
+| Backend | Python 3.12+ / FastAPI / SQLAlchemy / SQLite |
 | Frontend | Vue 2.6.12 / TypeScript / Element UI / Vuex |
 | Deployment | Docker Compose / PyInstaller / Inno Setup / fpm |
 
@@ -174,7 +174,7 @@ Builds local images only (`btdeck-backend:latest` / `btdeck-frontend:latest`, ve
 - **Mobile web** - Phone browsers automatically enter the new mobile UI: dashboard, torrent list & details, downloader monitoring, tracker keywords, query templates, recycle bin, audit logs, orphan files, and system settings are all mobilized; PWA install, gestures (swipeable tabs, drawer gestures), pull-to-refresh, infinite scrolling, and empty-state guidance; advanced search rebuilt with native mobile interactions (summary card + bottom-sheet condition editor)
 - **Desktop bilingual (Chinese/English)** - The desktop web fully supports Chinese/English switching (login page and top-bar toggles, automatic browser-language detection with preference memory); query template presets, notification events, and form validation errors are localized; backend API errors now use stable error codes (reasonCode) + fixed messages, consistent and readable in both languages, with raw exceptions logged only
 - **Performance & stability** - Memory governance at scale: 100k-torrent sync peak memory down from ~270MB to 36MB, tracker reannounce down to 5MB from full load; Android on-device server steady-state memory down from 2.2GB to 400–700MB; cron-task timeout force-kill, true cancellation, and downloader-level circuit breakers; fixed stalling-torrent status oscillation, occasional bulk-add database lockups, terminal-state list refresh loops, runaway mobile infinite loading, and service startup crashes on Western-locale Windows
-- **Packages & deployment** - All four artifact types (Windows EXE/installer, DEB, RPM, Docker images) share unified version numbers and build provenance, queryable via the health endpoint; the single Linux binary supports both Debian 12 and Rocky Linux 9, and DEB/RPM upgrades no longer interrupt service; unified Python 3.11 / Node 22 toolchain with hash-pinned dependencies; established a release gate system (version consistency, artifact equivalence, install lifecycle, SBOM security scanning)
+- **Packages & deployment** - All four artifact types (Windows EXE/installer, DEB, RPM, Docker images) share unified version numbers and build provenance, queryable via the health endpoint; the single Linux binary supports both Debian 12 and Rocky Linux 9, and DEB/RPM upgrades no longer interrupt service; unified Python 3.12 / Node 22 toolchain with hash-pinned dependencies; established a release gate system (version consistency, artifact equivalence, install lifecycle, SBOM security scanning)
 - **Operations & troubleshooting** - New fault-diagnosis export (`/health/diagnosis`) for one-click runtime snapshots; Docker images standardized on UTC timezone and build-identity labels; BtDeck brand icons across installers and the Android app
 - **Torrent management enhancements** - Torrent details gain Files/Peers tabs (sorting and fuzzy search); tracker domain filter hit highlighting; mobile support for seed count badges, single-torrent transfer, save-path changes, per-downloader tracker batch operations, a "skip verification" option when adding torrents, and one-tap notification mark-all-read
 

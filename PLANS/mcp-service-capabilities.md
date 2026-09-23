@@ -473,6 +473,8 @@ agent 无法实用对接；且设置页能力目录描述仅中文，英文界�
    3.12（非"3.11 桌面 + 3.12 Android"）。SDK 需同时兼容 3.11/3.12 +
    fastapi 0.115.6 + starlette 0.41.3，并在两个 spec（btdeck.spec:212、
    btdeck-windows.spec:279 的 `excludes=['fastmcp', …]`）上评估解除路径。
+   （**2026-09-23 修订**：仓库已升级为统一 3.12 契约，3.11 退役；本条所述 3.11
+   面仅保留为当时矩阵事实，现行矩阵见 `docs/android/toolchain-matrix.md`）
 8. **测试落点**：`backend/tests/` 已 238 个文件、根级已有 `test_architecture_constraints.py`；
    新增 `tests/mcp/test_architecture_constraints.py` 时需处理 pytest 同名模块收集
    （加 `__init__.py` 或改名 `test_mcp_architecture_constraints.py`，W0 实测定夺）。
@@ -507,7 +509,7 @@ W3（六工具三批）→ W4（等价/制品/演练）推进，每批过对应�
   `AuthenticatedUserInfo` 扩展字段（HTTP 侧不改变现有语义，避免牵动 4466 项测试）。
 - W3：cron.trigger allowlist 数据源改 `default_scheduled_tasks.py` + `task_profiles.py`；
   task_type 4/5/6 一律不作为放行依据，仅显式 task_code 白名单。
-- W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。
+- W4：制品矩阵按 10.1-7 的真实 Python 版本（3.11 Docker/Linux、3.12 Windows 打包）验证。（**2026-09-23 修订**：现行契约为统一 3.12）
 
 ### 10.4 W0 交付与 SDK 选型结论（2026-09-08）
 

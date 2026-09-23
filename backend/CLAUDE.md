@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- **Python**: 3.11+ | **FastAPI**: 0.115.0 | **SQLAlchemy**: 2.0.15
+- **Python**: 3.12+ | **FastAPI**: 0.115.0 | **SQLAlchemy**: 2.0.15
 - **数据库**: SQLite | **认证**: JWT + OAuth2 + TOTP
 
 ## 核心约束

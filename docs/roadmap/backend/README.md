@@ -1,6 +1,6 @@
 # backend 分支 — FastAPI 后端总览
 
-> Python 3.11+ / FastAPI 0.115 / SQLAlchemy + SQLite（异步 + 同步双引擎）。本分支是 BtDeck 的服务端，含 HTTP API、WebSocket、定时任务调度、ORM、数据迁移与下载器/Tracker 业务逻辑。
+> Python 3.12+ / FastAPI 0.115 / SQLAlchemy + SQLite（异步 + 同步双引擎）。本分支是 BtDeck 的服务端，含 HTTP API、WebSocket、定时任务调度、ORM、数据迁移与下载器/Tracker 业务逻辑。（工具链统一 3.12 契约：2026-09-23）
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/README.md`，命中行即含子分支 + 职责，无需 Read 全文。
 
 ## 关键词速查

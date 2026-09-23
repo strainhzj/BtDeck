@@ -24,7 +24,7 @@
 | 迁移与静态资源 | 启动迁移依赖 `alembic.ini`、`alembic/` 和模型导入；前端静态目录由 `factory` 按候选路径寻找 | APK 必须显式打包并测试 Alembic 资源、契约 JSON、frontend dist；为 Android 增加稳定的包内资源解析路径 |
 | 连通性探测 | `downloader.py` 与 `initialization.py` 都直接使用 `ping3` ICMP；安卓不能假定有 raw socket 或 shell ping | 统一为按下载器端口的 TCP connect 计时；桌面 ICMP 只能作为可选优化，安卓禁止依赖系统命令 |
 | Excel 导出 | `audit_service.py` 已在函数内导入 pandas，但部署依赖仍会带入 pandas/numpy | 优先用 openpyxl 直写；删除 pandas 前同步核对 requirements、部署 requirements、PyInstaller spec 和 Excel 回归 |
-| Python 工具链 | 桌面 Docker/打包链仍有 Python 3.11；安卓目标为 Chaquopy Python 3.12 | 建立明确的 3.11 桌面 + 3.12 Android 兼容矩阵；不能只把 pyproject 的目标版本机械改成 3.12 |
+| Python 工具链 | 桌面 Docker/打包链仍有 Python 3.11；安卓目标为 Chaquopy Python 3.12 | 建立明确的 3.11 桌面 + 3.12 Android 兼容矩阵；不能只把 pyproject 的目标版本机械改成 3.12。（**2026-09-23 修订**：已升级为统一 3.12 契约，见 `docs/android/toolchain-matrix.md` 决策记录） |
 | Monaco | 活跃任务编辑器已有动态导入，webpack plugin 仍是全局配置；“高级搜索编辑器”定位不准确 | 先测真实 chunk/首屏收益，再决定是否改 plugin 或组件，不把没有收益的改动列为门禁 |
 | 主机能力 | 自定义脚本路径仍涉及 bash、PowerShell、cmd 和宿主文件系统 | 建立 Android capability matrix；脚本执行、任意宿主路径和不适用的定时能力必须显式禁用或降级，并有 API/UI 提示 |
 | 远程前端 | 当前 Axios `baseURL` 是构建时环境变量，token/cookie 按 WebView origin 隔离 | 伴侣 MVP 直接加载服务器自己的前端；若未来内置前端连接远程 API，另立 runtime baseURL、CORS、版本兼容和凭据隔离任务 |
@@ -60,7 +60,7 @@
 1. **统一下载器探测**：新增可复用的 TCP probe，尊重下载器 host/port；桌面可在权限允许时先 ICMP，失败回退 TCP；安卓不调用 `ping` 子进程。覆盖连接成功、拒绝、超时、`PermissionError` 和两个现有调用链的回归测试。
 2. **配置与路径**：保留 `CONFIG_DIR` 环境变量优先语义；补齐 `TORRENTS_DIR`/隔离区等所有可写根目录；本地服务默认 loopback。LAN 开关变化必须触发受控重绑或服务重启，不能只改数据库配置而继续监听旧地址。
 3. **依赖瘦身**：确认全仓零 import、部署 spec 和 transitive dependency 后再删除 `sympy`、`common`；将 Excel 导出改为 openpyxl 直写并移除 pandas/numpy 的打包入口；保留一套 Excel 内容回归。
-4. **工具链矩阵**：明确桌面 Python 3.11 与 Android Python 3.12 的支持边界，更新 CI/打包说明及真正需要的类型检查配置；不破坏现有桌面发行版。
+4. **工具链矩阵**：明确桌面 Python 3.11 与 Android Python 3.12 的支持边界，更新 CI/打包说明及真正需要的类型检查配置；不破坏现有桌面发行版。（**2026-09-23 修订**：已升级为统一 3.12 契约，见 `docs/android/toolchain-matrix.md` 决策记录）
 5. **Android 打包契约**：补充包内 `alembic.ini`、迁移目录、contracts JSON、frontend dist 的启动测试；校验 `factory`、migration、`CONFIG_DIR`、`TORRENTS_DIR` 在 frozen/package 环境中的解析。
 6. **前端资源审计**：以构建产物大小和首屏加载数据为依据处理 Monaco；当前活跃任务编辑器已懒加载，不预设“高级搜索编辑器”存在。
 7. **能力矩阵**：标注自定义脚本、宿主任意路径、SAF 文件选择、下载/上传、通知、定时任务和本地服务的 Android 支持级别；不支持项在 API、设置页和任务列表一致降级。

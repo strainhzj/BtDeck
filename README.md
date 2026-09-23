@@ -1,7 +1,7 @@
 # BtDeck - BitTorrent Management Platform
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python](https://img.shields.io/badge/python-3.11+-brightgreen)](https://python.org/)
+[![Python](https://img.shields.io/badge/python-3.12+-brightgreen)](https://python.org/)
 [![Vue](https://img.shields.io/badge/vue-2.6.12-brightgreen)](https://vuejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green)](https://fastapi.tiangolo.com/)
 
@@ -25,7 +25,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Python 3.11+ / FastAPI / SQLAlchemy / SQLite |
+| 后端 | Python 3.12+ / FastAPI / SQLAlchemy / SQLite |
 | 前端 | Vue 2.6.12 / TypeScript / Element UI / Vuex |
 | 部署 | Docker Compose / PyInstaller / Inno Setup / fpm |
 
@@ -182,7 +182,7 @@ chmod +x build-linux.sh
 - **移动端网页版** - 手机浏览器访问自动进入全新移动版：仪表盘、种子列表与详情、下载器监控、Tracker 关键词、查询模板、回收站、审计日志、孤儿文件、系统设置等页面全部移动化；支持 PWA 安装、手势操作（标签页滑动切换、抽屉手势）、下拉刷新、无限滚动与空态引导；高级搜索重构为移动原生交互（摘要卡片 + 底部条件编辑弹层）
 - **桌面中英双语** - 桌面 Web 全量支持中文/英文切换（登录页与顶栏入口，自动识别浏览器语言并记住偏好）；查询模板内置预设、通知事件、表单校验错误等随语言本地化；后端接口错误改用稳定错误码（reasonCode）+ 固定文案，两种语言下提示一致可读，原始异常只进日志
 - **性能与稳定性** - 大规模种子场景内存治理：10 万种子同步内存峰值从约 270MB 降至 36MB，Tracker 重宣告从全量加载降至 5MB；安卓本机服务端内存稳态从 2.2GB 降至 400~700MB；定时任务超时强杀、真取消与下载器级熔断；修复断速种子状态振荡、批量添加偶发数据库锁死、种子列表终态刷新循环、移动端无限加载失控、西文 Windows 服务启动崩溃等多项缺陷
-- **安装包与部署** - 四类制品（Windows EXE/安装版、DEB、RPM、Docker 镜像）统一版本号与构建溯源，健康接口可查产品版本与源码提交；Linux 单二进制同时兼容 Debian 12 与 Rocky Linux 9，DEB/RPM 升级不再中断服务；统一 Python 3.11 / Node 22 工具链与带哈希依赖锁定；建立发布门禁体系（版本一致性、制品等价性、安装生命周期、SBOM 安全扫描）
+- **安装包与部署** - 四类制品（Windows EXE/安装版、DEB、RPM、Docker 镜像）统一版本号与构建溯源，健康接口可查产品版本与源码提交；Linux 单二进制同时兼容 Debian 12 与 Rocky Linux 9，DEB/RPM 升级不再中断服务；统一 Python 3.12 / Node 22 工具链与带哈希依赖锁定；建立发布门禁体系（版本一致性、制品等价性、安装生命周期、SBOM 安全扫描）
 - **运维与排查** - 新增故障诊断导出（`/health/diagnosis`）一键导出状态快照；Docker 镜像统一 UTC 时区与构建身份标签；安装包接入 BtDeck 品牌图标
 - **种子管理增强** - 种子详情新增文件/节点页签（排序与模糊搜索）；Tracker 域名筛选命中标记；移动端支持辅种数量展示、单种转移、修改保存路径、Tracker 批量操作按下载器触发、添加种子「跳过校验」选项与通知一键已读
 

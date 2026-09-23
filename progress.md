@@ -8217,3 +8217,16 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 部署：sshpass 单会话上传 + 远端 compose（docker-compose.yml）拉起，旧标记镜像清理，健康检查 3 轮 starting → **healthy**。
 - 实战验证：远端库原 head=d1e2f3a4b5c6（昨日构建），本次启动经重挂后的链升级至 053003337878（moviepilot 两表在存量库落盘）并健康——迁移重挂在真实存量库验证通过。
 - OCI 标签：btdeck-backend:latest revision=a43cb1d568e8800a9e995b56b820952980be3c9b / v1.0.6。
+
+## 2026-09-23：Python 工具链统一 3.12 契约（3.11 退役）+ 门禁恢复与预存债清理
+
+- 背景与决策：制品（Docker 3.11 / W0 bullseye 3.11 / 本地 Linux 打包默认 3.11）与检查（CI 双 workflow 3.11 / mypy 3.11 / black py311）落后于已达标面（Windows 3.12.4 / Android Chaquopy 3.12 / 依赖锁本就 3.12 生成，无需重锁）。用户批准统一为单一 3.12 契约并确认"语法仍守 3.11 会持续引入技术债"（双目标维护负担、语法禁令人肉约束、升级路径翻倍、漂移窗口永存）→ 3.11 正式退役，语法下限升 3.12（PEP 701 解禁）。决策记录落档 `docs/android/toolchain-matrix.md`（重写，废止原"双版本边界/禁止机械改 pyproject"决策）。
+- 镜像查证（用户指定 tinyfish）：Docker Hub API 实测 python:3.12-slim（活跃，digest sha256:2f17fc04…ebbe06a9）与 python:3.12-bullseye（存在但 2025-07 冻结——与原 3.11-bullseye 同冻结语义非倒退；bullseye 保留为 glibc 2.31 下限兼容 Rocky 9）；digest 双落档 Dockerfile 与 release-config.json w1_pinned（顺带修复 Dockerfile 注释 digest 与 FROM 不一致的预存漂移）。
+- 硬统一（unify312.1）：Dockerfile 双 FROM+LABEL、release-gate.yml（13 python-version+10 bullseye+3 slim stub）、regression.yml（反转"3.12 不再作主回归版本"旧注释）、pyproject（mypy 3.12/black py312）、build-linux.sh、w4-stub compose、backend init.sh 门槛。
+- 测试/探针联动（unify312.2）：release 三测试 fixture 3.11.9→3.12.4；tracker_budget 容差注释改 3.12 语义（保守上界保留防抖动，实测 3.12 采样恒 4）；SDK 探针 docstring 标注 py3.11 证据为退役版本历史锚定（证据 JSON 不动防篡改）。
+- 契约/文档（unify312.3）：release-config.json 活字段更新（python_target=3.12、drift 清零、linux_build_baseline、digest 注册表；w0_probes 历史记录保留）；README×2/backend README+AGENTS+CLAUDE/compose 注释/runbook/PLANS 双计划（修订注记不篡改历史）；build-windows.sh wine 注释 3.11→3.12（容器实装版本移交用户核验）。
+- 本机环境重建（用户决策 4）：uv 安装 + CPython 3.12.14 + 全依赖 venv。坑：共享目录 vboxsf 禁 symlink（uv venv/venv --copies 均失败）→ venv 外置 ~/btdeck-venv312；顺带消除 progress.md:4197 记录的 black 24.10 在 3.13 环境卡死问题（原 dev venv 已不存在，系统 3.13 无 pip）。
+- 门禁恢复与预存债清理（unify312.4，2026-09-22 合并批已登记"mypy 11 错与 black 3 文件为 dev 存量债"）：清 Windows 遗留 .mypy_cache 污染后 mypy 实为 6 错，全部真修——services __all__ 注解、credentials windll×4 平台 ignore（Linux 宿主检查 Windows 分支）、torrent_file_backup backup_dir 中间变量（mypy 对 inline or-chain 的推断怪癖）、responseVO tracker_info 收紧非 Optional（唯一构造点恒为 list）、auth get_login_secret YAML 缺键路径 fail-safe 补全（潜在 None 泄出缺陷，与 except 分支同语义随机值兜底）；black app/ 3 文件格式化；flake8 app/ 绿 + 2 处预存 F401 顺手清。black 对 tests/scripts 的 71 文件预存漂移回退（超出 CLAUDE.md L117 门禁口径 app/，留待另批治理）。
+- 验证：mypy/black/flake8 app/ 三门禁全绿；受影响套件（release/mcp/tracker_budget/batch_add 696、auth+filename 116、backup/duplicate/auth_ext 178）全过；全量 pytest 5271 收集：共享 FS 49 失败 100% 归因环境（47 hardlink 类 vboxsf 禁 os.link 实证 + 2 集成时序类；同代码同 venv 在 home FS 对照 186 过 0 败）；根 init.sh exit=0。
+- 历史保护清单（未动）：docs/release/v1.0.6.md、app/version.py changelog、make_v105_baseline.sh、PLANS/archive、sdk-probe-py3.11 证据 JSON、progress 旧记录、feature_list 旧 evidence。
+- 遗留移交：wine 构建容器 btdeck-windows-builder 的 winpython 实装版本由用户侧核验对齐 3.12（build-windows.sh 注释已改）；black tests/scripts 71 文件漂移与 flake8 tests 面 ~70 F401/F841 为下一批 lint 治理候选；v1.0.7 依赖升级治理批次（security-exceptions 134 条）不受本次影响。

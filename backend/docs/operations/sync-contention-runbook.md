@@ -151,7 +151,7 @@ lag/RSS/WAL 作为观测指标随 JSON 输出，不进入硬门禁（阈值见 W
 - 故障注入可作每周诊断：`--fault busy / slow-downloader / cancel`（小档即可）。
 - 注意：Windows 下 `python` 不在 PATH 时用完整解释器路径，例如
   `C:\software\python\python.exe scripts\sync_contention_benchmark.py ...`；
-  CI 建议固定 Python 3.11+ 与 SQLite ≥ 3.35（WAL 并发语义）。
+  CI 建议固定 Python 3.12+ 与 SQLite ≥ 3.35（WAL 并发语义）。
 
 ## 8. 环境校准系数
 

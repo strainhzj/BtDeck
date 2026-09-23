@@ -1,4 +1,28 @@
-## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
+## 2026-09-23 交接：Python 工具链统一 3.12 契约（3.11 退役）+ 门禁恢复（全绿未提交）
+
+### 已完成（用户批准统一 3.12；tinyfish 镜像查证；venv 重建；PLANS 同步）
+
+- **契约**：单一 3.12（最低支持=制品运行时=CI 检查=类型检查），3.11 退役、PEP 701 解禁；决策记录落档 `docs/android/toolchain-matrix.md`（重写，废止双版本边界）；release-config.json 活字段同步（python_target=3.12、drift 清零、digest 注册表双镜像新值）；w0_probes 历史保留。
+- **硬统一**：Dockerfile（双 FROM digest sha256:2f17fc04…+LABEL）、release-gate.yml（13+10+3 处）、regression.yml、pyproject（mypy 3.12/black py312）、build-linux.sh、w4-stub、backend init.sh 门槛；镜像 digest 经 Docker Hub API 核实（python:3.12-bullseye 存在但冻结，与原 3.11-bullseye 同语义非倒退，glibc 2.31 下限保持）。
+- **门禁恢复**：本机 uv + CPython 3.12.14 venv（~/btdeck-venv312，vboxsf 禁 symlink 故外置）；mypy app/ 6 预存错全真修（含 auth get_login_secret 缺键 None 泄出潜在缺陷）；black app/ 3 文件；flake8 app/ +2 预存 F401；三门禁全绿。
+- **验证**：受影响套件 696+116+178 全过；全量 5271：共享 FS 49 败 100% 环境归因（47 hardlink（vboxsf 禁 os.link 实证）+2 时序；home FS 同代码同 venv对照 186 过 0 败）；根 init.sh exit=0。
+- **文档**：feature_list #85（unify312.1~.4）、progress 详录、roadmap 技术栈行+元信息、PLANS 双计划修订注记（不篡改历史）。
+
+### 下一步
+
+1. **用户侧核验**（已约定）：wine 容器 btdeck-windows-builder 的 winpython 实装版本是否 3.12（build-windows.sh 注释已改，容器在仓库外）。
+2. CI 首跑将验证 3.12 全链（regression + release-gate W0 的 python:3.12-bullseye 构建）；python:3.12-slim digest 随下次构建漂移治理周期重锁。
+3. Git 提交待用户指示（建议拆分：chore(toolchain) 硬统一+测试 / docs 契约+追踪 / fix 门禁预存债）。
+4. 遗留候选（另批）：black tests/scripts 71 文件预存漂移（超门禁口径 app/）；flake8 tests 面 ~70 F401/F841；i18n-leftover-guard 存量红、R01～R06 签认、Android stage-server.py 等既有待办不变。
+
+### 坑位（下会话注意）
+
+- 共享目录 vboxsf 禁 symlink/hardlink/unlink（Protocol error）：venv 必须外置；git checkout/批量恢复用 `git show HEAD:path > file` 覆写而非 unlink；hardlink 类 49 测试在本机必环，归因时先想 FS。
+- 仓库内 .mypy_cache 可能有 Windows 机器遗留（带 C:\ 路径），跨平台检查前先 rm -rf .mypy_cache，否则错误清单失真（本次 11 假→实 6）。
+- mypy 对 `backup_dir or os.environ.get(...)` inline or-chain 推断出 str|None 的怪癖：拆中间变量即解。
+- black 门禁口径是 app/（CLAUDE.md L117）；tests/scripts 的漂移不在门禁内，勿顺手全量重排（diff 噪声）。
+
+---## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
 
 ### 已完成（用户要求「先子代理独立审查计划」，审查结论需修改后执行，P0 四项补齐后实施）
 
