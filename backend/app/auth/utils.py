@@ -37,6 +37,10 @@ def get_login_secret() -> str:
             # fail-safe：配置丢失时生成一次性随机值（旧 token 全部失效需重新登录），
             # 而不是历史硬编码常量（可预测、长期有效）
             _cached_login_secret = secrets.token_hex(16)
+        if _cached_login_secret is None:
+            # fail-safe：YAML 可读但缺 security.login_status_secret 键——与读取异常同语义，
+            # 避免把 None 泄出给 str 返回类型调用方
+            _cached_login_secret = secrets.token_hex(16)
 
     return _cached_login_secret
 

@@ -53,7 +53,8 @@ class TorrentFileBackupService:
             backup_dir: 备份目录路径（优先级高于环境变量）
             path_mapping_service: 路径映射服务（可选）
         """
-        self.backup_dir = backup_dir or os.environ.get("BACKUP_TORRENT_DIR", self.DEFAULT_BACKUP_DIR)
+        env_backup_dir = os.environ.get("BACKUP_TORRENT_DIR", self.DEFAULT_BACKUP_DIR)
+        self.backup_dir = backup_dir or env_backup_dir
         self.path_mapping_service = path_mapping_service
 
         # 确保备份目录存在

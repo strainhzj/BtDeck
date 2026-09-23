@@ -135,8 +135,7 @@ class TrackerSyncTask(BaseSyncTask):
             # 记录任务结果
             completion_logger = logger.warning if result_errors else logger.info
             completion_logger(
-                "[%s] 任务完成: 成功 %s, 失败 %s, 总计 %s 个下载器, "
-                "error_count=%d, errors=%s",
+                "[%s] 任务完成: 成功 %s, 失败 %s, 总计 %s 个下载器, " "error_count=%d, errors=%s",
                 self.name,
                 result.get("successful_syncs", 0),
                 result.get("failed_syncs", 0),

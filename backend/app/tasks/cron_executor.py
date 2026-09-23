@@ -446,9 +446,7 @@ class CronTaskExecutor:
                             await self.add_task_to_scheduler(task)
                         else:
                             rejected.append(task)
-                    logger.info(
-                        f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务"
-                    )
+                    logger.info(f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务")
                     if rejected:
                         await self._notify_policy_rejected_tasks(db, rejected)
                     if capability_rejected:
