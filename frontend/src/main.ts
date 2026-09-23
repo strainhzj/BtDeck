@@ -20,7 +20,6 @@ import Vue from 'vue'
 import 'normalize.css'
 import ElementUI from 'element-ui'
 import ElementLocale from 'element-ui/lib/locale'
-import SvgIcon from 'vue-svgicon'
 
 import i18n from '@/i18n'
 import '@/styles/element-variables.scss'
@@ -35,7 +34,6 @@ initTheme()
 import App from '@/App.vue'
 import store from '@/store'
 import router from '@/router'
-import '@/icons/components/index'
 import '@/permission'
 import waves from '@/directive/waves' // waves directive
 import LucideIcon from '@/components/common/LucideIcon.vue'
@@ -56,12 +54,6 @@ Vue.use(ElementUI)
 Vue.component('LucideIcon', LucideIcon)
 // 全局注册通用可折叠面板（W8：各页面展开/收缩 + 用户习惯持久化）
 Vue.component('CollapsiblePanel', () => import('@/components/CollapsiblePanel.vue'))
-Vue.use(SvgIcon, {
-  tagName: 'svg-icon',
-  defaultWidth: '1em',
-  defaultHeight: '1em'
-})
-
 // 注册waves指令
 Vue.directive('waves', waves)
 

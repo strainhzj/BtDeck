@@ -47,18 +47,6 @@ export const downloader = {
     /** 终态附带的后端 detail 拼接（：detail） */
     detailSuffix: '：{detail}'
   },
-  /** Vuex action 错误兜底（P6-5：后端 msg 缺失时的当前语言提示） */
-  store: {
-    getSettingsFailed: '获取设置失败',
-    updateSettingsFailed: '更新设置失败',
-    getCapabilitiesFailed: '获取能力信息失败',
-    getTemplatesFailed: '获取模板列表失败',
-    getTemplateDetailFailed: '获取模板详情失败',
-    createTemplateFailed: '创建模板失败',
-    updateTemplateFailed: '更新模板失败',
-    deleteTemplateFailed: '删除模板失败',
-    applyTemplateFailed: '应用模板失败'
-  },
   page: {
     management: '下载器管理',
     filters: '下载器筛选与操作',

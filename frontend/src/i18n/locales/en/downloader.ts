@@ -47,18 +47,6 @@ export const downloader = {
     /** Backend detail appended to terminal notices (: detail) */
     detailSuffix: ': {detail}'
   },
-  /** Vuex action fallbacks (P6-5: current-language message when backend msg is missing) */
-  store: {
-    getSettingsFailed: 'Failed to load settings',
-    updateSettingsFailed: 'Failed to update settings',
-    getCapabilitiesFailed: 'Failed to load capability info',
-    getTemplatesFailed: 'Failed to load the template list',
-    getTemplateDetailFailed: 'Failed to load template details',
-    createTemplateFailed: 'Failed to create the template',
-    updateTemplateFailed: 'Failed to update the template',
-    deleteTemplateFailed: 'Failed to delete the template',
-    applyTemplateFailed: 'Failed to apply the template'
-  },
   page: {
     management: 'Downloader Management',
     filters: 'Downloader filters and actions',
