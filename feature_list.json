@@ -6808,6 +6808,76 @@
       ]
     },
     {
+      "id": "rtorrent-preflight-p0-2026-09-23",
+      "name": "rTorrent 接入前置 P0 清扫（类型链修复 + hash 小写口径统一）",
+      "description": "rTorrent 适配评估后确认的架构级障碍清扫（适配本体另立项）：①DownloaderTypeEnum 扩展 RTORRENT=2 并修复三件套静默误判缺陷（to_name else 回退 transmission / normalize 未知值静默归 0 / from_value 抛错），消费点三路显式化（tracker 状态展示、vo 转换、判定策略、judge 任务、旧同步入口）；②设置模板与设置端点 not in [0,1] 硬校验放行为枚举域，测试连接补未适配 else 分支；③前端 downloaderType.ts 与 6 文件联合类型 0|1→0|1|2、8 处 label 三路化、demo 层收窄修复；④种子 hash 全链统一小写（qB 原生小写/TR 存量大写混存导致唯一索引与复合键两套身份），TR 同步/速度/旧同步/添加/孤儿/统计缓存路径 .lower() + 数据迁移 a1f7c9e3d2b4 （torrent_info.hash / torrent_file_backup.info_hash / sync_checkpoints.cursor_value，UPDATE OR IGNORE + inspector 缺表容错 + downgrade no-op），head 053003337878 → a1f7c9e3d2b4。",
+      "created": "2026-09-23",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "1",
+          "name": "P0-A/B/C 枚举链 + 硬校验 + 前端类型链修复",
+          "files": [
+            "backend/app/models/setting_templates.py",
+            "backend/app/enums/tracker_status.py",
+            "backend/app/core/tracker_status_policy.py",
+            "backend/app/services/torrent_vo_conversion.py",
+            "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/services/template_service.py",
+            "backend/app/api/endpoints/downloader_settings.py",
+            "backend/app/downloader/models.py",
+            "backend/app/downloader/request.py",
+            "frontend/src/utils/downloaderType.ts",
+            "frontend/src/views/downloader/types.ts",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/src/views/downloader/components/TemplateSelectionDialog.vue",
+            "frontend/src/views/downloader/components/SpeedSettingsTab.vue",
+            "frontend/src/views/downloader/components/AdvancedSettingsTab.vue",
+            "frontend/src/views/downloader/components/DownloaderCard.vue",
+            "frontend/src/views/dashboard/index.vue",
+            "frontend/src/views/mobile/dashboard.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/store/modules/downloaderSettings.ts",
+            "frontend/src/demo/types.ts",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/demo-request.ts"
+          ],
+          "evidence": "DownloaderTypeEnum.RTORRENT=2；to_name 成员名派生显式映射；normalize 未知值抛 ValueError（None 兼容归 0），from_value 覆盖 2；tracker_status 未知类型返回原始值字符串；tracker_display_failed/not_contacted/working 三路（rtorrent 不采信 qB/TR 中性码语义）；template_service L88/L201 + downloader_settings L971 改 [e.value for e in DownloaderTypeEnum]；测试连接 else 返回「rTorrent 测试连接暂未适配」；前端 downloaderTypeToString(2)=='rtorrent'、未知值 'unknown'/-1 告警；8 处组件 label 加 type===2 分支"
+        },
+        {
+          "id": "2",
+          "name": "P0-D hash 小写口径统一（代码链路 + 数据迁移）",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/services/torrent_add_helpers.py",
+            "backend/app/services/orphan_manifest.py",
+            "backend/app/downloader/torrent_fetcher.py",
+            "backend/alembic/versions/a1f7c9e3d2b4_hash_lowercase_normalization.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "evidence": "TR 路径 hashString 全部落库/匹配/缓存键/备份 info_hash/游标字典序 .strip().lower()；迁移 a1f7c9e3d2b4：三表 UPDATE OR IGNORE lower()，inspector 缺表容错（漂移库升级不中断），downgrade no-op 保持链可回退；约束文档 HEAD 声明 053003337878 → a1f7c9e3d2b4"
+        },
+        {
+          "id": "3",
+          "name": "回归门禁（新测试 + 存量断言更新）",
+          "files": [
+            "backend/tests/core/test_hash_lowercase_migration.py",
+            "backend/tests/downloader/test_torrent_fetcher_hash_lowercase.py",
+            "backend/tests/models/test_setting_templates.py",
+            "backend/tests/enums/test_tracker_status.py",
+            "backend/tests/services/test_downloader_settings_manager.py",
+            "backend/tests/services/test_template_service.py",
+            "backend/tests/core/test_db_migration.py",
+            "frontend/tests/unit/shared-utils.spec.ts"
+          ],
+          "evidence": "新测试 6 例（迁移归一/幂等/head 锚点 + fetcher 批量/recently_active 小写）；存量断言更新：normalize 无效值默认 0→抛 ValueError、tracker 状态未知回退→原值、模板无效类型 2→99、EXPECTED_HEAD 前移 a1f7c9e3d2b4、约束文档 head 校验通过、前端 shared-utils 回退断言→-1；全量后端 5255 passed/18 skipped、black/flake8 净、前端 typecheck/lint/Jest 125 套 1845 例、./init.sh exit=0"
+        }
+      ]
+    },
+    {
       "id": "frontend-dead-code-cleanup-2026-09-23",
       "name": "前端死代码清理（Vue 3 评估副产物，计划外）",
       "description": "Vue 3 升级可行性评估（4 子代理验证）确认延后升级后，删除评估发现的零引用代码：vue-svgicon 生态（依赖 + src/icons/ 28 文件 + 零引用 Hamburger 组件 + main.ts 注册 3 处 + vsvg 脚本 + jest 覆盖率排除项）、vue-clipboard2 死依赖（src 零引用，实际剪贴板走 navigator.clipboard）、store/modules/downloaderSettings.ts 零消费传统 namespaced 模块（双轨制终结）+ i18n downloader.store 九键双语连坐清理。npm 连坐移除 90 个传递依赖包。",

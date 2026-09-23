@@ -1,5 +1,18 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-23：rTorrent 接入前置 P0 清扫（架构缺陷修复 + hash 口径统一）
+
+- 背景：用户要求评估 rTorrent 适配工作量与阻塞点 → 全面勘察后确认三类架构级障碍（子代理因 Pi 0.85.1 < 0.87.0 扩展不兼容不可用，改为直接取证验证）：①DownloaderTypeEnum 三件套静默误判（to_name else 回退 transmission、normalize 未知值静默归 0、from_value 抛错），15 处消费点分三类失败形态；②两处 not in [0,1] 硬校验 + 前端 else 回退与 0|1 联合类型；③hash 大小写混存（qB 落库 .lower()、TR 原样大写 hashString，唯一索引与 (downloader_id, hash) 复合键均大小写敏感）——torrent_added_date_backfill 已按小写匹配印证既有隐性失配。
+- P0-A 枚举链：RTORRENT=2；to_name 改成员名小写派生（单一事实源，无 else 回退）；normalize 未知值抛 ValueError（None 保持兼容归 0）；消费点三路显式化：tracker_status.py（未知返回原值）、torrent_vo_conversion.py announce/scrape、tracker_status_policy.py tracker_display_failed（rtorrent 按消息证据覆写）、judge 任务 not_contacted/working（不采信 qB/TR 中性码）、torrent_sync.py L704 直接构造补 normalize。
+- P0-B 硬校验放行：template_service.py L88/L201 与 downloader_settings.py L971 改枚举域校验；测试连接 if/elif 补 else（rTorrent 显式返回"暂未适配"，修复悬空 None）；type_mapping 补 2/rtorrent/rt。
+- P0-C 前端：utils/downloaderType.ts 重写为显式三路（未知 'unknown'/-1 + console.warn，导出 DownloaderTypeName/DownloaderTypeValue 类型）；6 文件联合 0|1→0|1|2（settings/types/store/demo 四文件）；8 处 label 三路化（dashboard 双端/卡片/模板选择/设置弹窗/移动下载器）；demo-request/demo-store 收窄修复（原 ===1?:0 会把 2 压成 0）。
+- P0-D hash 口径：TR 全链 .strip().lower()（torrents_async 落库/cache/备份 info_hash/cursor 字典序四组 sort、torrent_speed 快照与补查 hash_set、torrent_sync 旧同步、add_helpers、orphan_manifest _torrent_identity、fetcher 批量+recently_active）；数据迁移 a1f7c9e3d2b4（三表 UPDATE OR IGNORE lower()；inspector 缺表容错——漂移库 fixture 升级不中断；downgrade no-op 保持链可回退，参照基线"可执行"惯例）；head 053003337878 → a1f7c9e3d2b4，约束文档 HEAD 声明同步。
+- 测试与门禁：新 test_hash_lowercase_migration（归一/幂等/head 锚点 3 例）+ test_torrent_fetcher_hash_lowercase（3 例）；存量断言更新 6 处（normalize 默认 0→抛错、tracker 未知回退→原值、模板无效类型 2→99、settings manager 无效→抛错、EXPECTED_HEAD 前移、前端 shared-utils 回退→-1 并补 rtorrent 用例）；初跑迁移测试踩两坑修正（表名 bt_torrents→torrent_info 实测纠正；downgrade raise RuntimeError→no-op 以保迁移链测试可跑）。
+- 验证终局：后端全量 5255 passed/18 skipped（black 重排 5 文件后复绿）；flake8 净；mypy 11 错经核实与改动文件零交集（dev 存量债，CI 不跑）；前端 typecheck/lint/全量 Jest 125 套 1845 例全绿；./init.sh exit=0。制品元数据 alembic_head 将于下次构建自动前移。
+- 文档同步：roadmap infra README（alembic 计数 31→33 实测 + 补 053003337878 遗漏行 + 新迁移行）、根 README 元信息两行插入本批次；feature_list.json 追加 feature #84（3 任务含 evidence）。
+- 遗留（rTorrent 适配本体，另立项）：客户端封装（SCGI/XML-RPC）、initialization.py 缓存层第三分支（当前 type=2 会被 _check_and_add_new_downloader 拒绝——这是有意保留到适配批次的门）、同步函数对、操作/删除/标签/设置适配、能力矩阵默认值。
+
+
 ## 2026-09-23：Vue 3 升级可行性评估（4 子代理验证）+ 前端死代码清理（feature frontend-dead-code-cleanup-2026-09-23，全绿未提交）
 
 - **评估结论（用户拍板：升级延后）**：技术上可行但不划算——①97% 组件（106/109 .vue + 9 mixin）为 class 装饰器风格，vue-property-decorator 已归档（2024-02）、vue-class-component v8 停在 RC 近 6 年且标 DEPRECATED；②element-ui 无 Vue 3 版，92 文件 × 58 种 el- 组件 + 250 处字体图标 + $message×639 + SCSS 主题定制→Element Plus 重写；③模板侧机械改造 ~738 处（v-model×273 + .sync×96 + 旧 slot×119 + el-icon×250）；④~125 个 spec 改写 + vue.config 8 类 webpack 定制重写 + PWA SW 协议回归。短期建议升 Vue 2.7（向后兼容含 Composition API）。4 子代理（3 scout 代码实测 + 1 worker 联网核实 10 项库状态）并行验证，修正初评 4 处（$set 36→31、filters 1→0、svgicon 使用面 36→实质 1、测试 116→128 套）。

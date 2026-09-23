@@ -1,3 +1,36 @@
+## 2026-09-23 交接：rTorrent 接入前置 P0 清扫完成（全绿未提交）
+
+### 已完成（评估→验证→清扫三阶段）
+
+- **评估阶段**：rTorrent 适配全面勘察（工作量约 8~13K 行 / 8~12 批次；阻塞点排序：Tracker 域 per-tracker 明细缺失 > 删除语义 > SCGI 连接模型 > 枚举链陷阱 > 客户端库陈旧）。用户确认降级可接受，聚焦"除适配外是否需要改架构代码"。
+- **验证阶段**：子代理不可用（stepcode-harness 需 Pi≥0.87.0，环境为 0.85.1，单/并行均失败）→ 直接取证验证全部证实：to_name else 回退 transmission（12 文件 15 处）、normalize 未知值静默归 0、from_value 抛错、_check_and_add_new_downloader 对 type=2 拒绝、hash 大小写混存（qB .lower() vs TR 原样大写，唯一索引/复合键大小写敏感）；另发现 3 处评估时遗漏：template_service L88/L201 与 downloader_settings L971 硬校验 not in [0,1]。
+- **P0 清扫（本批提交内容，feature #84）**：
+  - P0-A 枚举链：RTORRENT=2 + to_name 成员名派生 + normalize 未知值抛错（None 兼容归 0）+ 消费点三路显式化（tracker_status/torrent_vo_conversion/tracker_status_policy/judge/torrent_sync L704）。
+  - P0-B 硬校验放行：template_service ×2 + downloader_settings ×1 改枚举域；测试连接补 else（rTorrent 显式"暂未适配"，修复悬空 None）；type_mapping 补 2。
+  - P0-C 前端：downloaderType.ts 显式三路 + 6 文件联合类型扩 2 + 8 处 label 三路化 + demo 四文件收窄修复。
+  - P0-D hash 口径：TR 全链 .lower()（6 文件）+ 迁移 a1f7c9e3d2b4（三表归一，head 前移；约束文档/infra README/EXPECTED_HEAD 同步）。
+- **验证终局**：后端 5255 passed/18 skipped、black/flake8 净（mypy 11 错为 dev 存量债零交集）、前端 typecheck/lint/Jest 125 套 1845 例、init.sh exit=0。
+
+### 下一步（rTorrent 适配本体，另立项；建议顺序）
+
+1. 客户端封装（SCGI/XML-RPC 自封装，PyPI rTorrent-python 年久失修）+ initialization.py 缓存层第三分支（_check_and_add_new_downloader 目前对 type=2 拒绝——有意保留的门）+ 连通性检测。
+2. 只读链路（列表/详情/速度）→ 同步函数对（rt_add_torrents_info_only_async 等，参照 torrents_async qb/tr 模式）。
+3. 操作类（增删/暂停/转移/备份）→ 删除语义决策（d.erase 不删数据文件，依赖 ruTorrent execute 插件或降级）。
+4. Tracker 域降级方案（rTorrent 无 per-tracker 统计；本次已铺好的三路分派使 rtorrent 走"原值/unknown"中性路径，不会误贴 qB/TR 标签）。
+5. 标签（d.custom1 约定）+ 设置/能力矩阵默认值 + 前端设置页签。
+
+### 坑位（下会话注意）
+
+- 枚举 normalize 语义已改：未知值抛 ValueError——新调用点必须 try/except 或先校验；None 仍归 0（兼容层）。
+- TR hash 落库必须 .strip().lower()；cursor 字典序也按小写（大写序≠小写序，混用会导致增量续跑全量重扫）。
+- 迁移链测试会 downgrade 全链再 upgrade——不可回滚迁移的 downgrade 必须可执行（no-op 模式，参照 a1f7c9e3d2b4），raise 会打断 12 个链测试。
+- 漂移库 fixture（test_orphan_schema_repair_migration）故意缺业务表——数据迁移必须 inspector 检查表存在。
+- torrent 表名是 torrent_info（不是 bt_torrents；bt_ 前缀只有 bt_downloaders）。
+- 前端 downloaderTypeToString 返回类型含 'unknown'——若调用方 switch 依赖三值穷尽需注意。
+
+---
+
+## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
 ## 2026-09-23 交接：Python 工具链统一 3.12 契约（3.11 退役）+ 门禁恢复（全绿未提交）
 
 ### 已完成（用户批准统一 3.12；tinyfish 镜像查证；venv 重建；PLANS 同步）
@@ -22,7 +55,9 @@
 - mypy 对 `backup_dir or os.environ.get(...)` inline or-chain 推断出 str|None 的怪癖：拆中间变量即解。
 - black 门禁口径是 app/（CLAUDE.md L117）；tests/scripts 的漂移不在门禁内，勿顺手全量重排（diff 噪声）。
 
----## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
+---
+
+## 2026-09-22 交接：MCP 服务密钥（W5）完成（全绿未提交）
 
 ### 已完成（用户要求「先子代理独立审查计划」，审查结论需修改后执行，P0 四项补齐后实施）
 
