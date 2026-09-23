@@ -26,7 +26,7 @@ PACKAGE_REQUIREMENTS="${DEPLOY_DIR}/requirements-linux-package.txt"
 PACKAGE_VENV="${PROJECT_DIR}/.venv-packaging-linux"
 PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
 PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
-PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
+PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.12}"
 
 # 产品版本唯一输入：release/release-config.json（candidate.product_version），
 # 本变量必须与之一致（版本一致性检查强制）

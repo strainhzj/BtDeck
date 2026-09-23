@@ -4,7 +4,7 @@
 # BtDeck Windows 构建脚本（deploy/build-windows.bat 的 Linux 移植版）
 #
 # PyInstaller 无法跨平台编译，Windows EXE 必须由 Windows Python 产出。本脚本用
-# wine 容器（btdeck-windows-builder，wine + 官方 Windows Python 3.11 + 预下载
+# wine 容器（btdeck-windows-builder，wine + 官方 Windows Python 3.12 + 预下载
 # Windows 轮子库）在 Linux 上完成全部 Windows 制品构建；安装器（Inno Setup）
 # 经 deploy/iscc 包装脚本在 btdeck-iscc 容器内编译。步骤、参数与 .bat 一一对应。
 #

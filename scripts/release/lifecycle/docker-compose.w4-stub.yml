@@ -13,7 +13,7 @@
 #     -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
 services:
   w4-stub:
-    image: python:3.11-slim
+    image: python:3.12-slim
     container_name: w4-stub
     working_dir: /stub
     volumes:

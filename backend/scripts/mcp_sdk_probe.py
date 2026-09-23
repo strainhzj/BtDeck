@@ -3,7 +3,8 @@
 目的：在仓库锁定组合（fastapi 0.115.6 + starlette 0.41.3，见 backend/requirements.txt）
 下实证候选 MCP SDK 的四项关键兼容性，产出可追溯证据 JSON 与选型结论：
 
-  C1 import      —— SDK 及其依赖在目标 Python 下可导入（版本矩阵 3.11/3.12+）；
+  C1 import      —— SDK 及其依赖在目标 Python 下可导入（现行契约 3.12；
+                    矩阵中 3.11 组合为退役版本历史证据）；
   C2 mount       —— SDK 的 ASGI 应用可挂载进 FastAPI 子路径，且挂载顺序先于 SPA catch-all；
   C3 lifespan    —— 父应用 lifespan 与 MCP 子应用会话管理共存（各自恰好启动一次，
                     工具可读取父应用 lifespan 写入的共享上下文——W2 RuntimeContext 注入前提）；

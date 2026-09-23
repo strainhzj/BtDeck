@@ -55,7 +55,7 @@ def _build_entries(verifier) -> tuple:
         "artifact_kind": "linux-deb",
         "target_os": "linux",
         "target_arch": "amd64",
-        "python_version": "3.11.9",
+        "python_version": "3.12.4",
         "node_version": "22.23.2",
         "alembic_head": "c1d2e3f4a5b6",
         "frontend_manifest_sha256": manifest_sha,

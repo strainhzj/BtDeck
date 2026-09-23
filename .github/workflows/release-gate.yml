@@ -4,7 +4,7 @@
 #   w0-windows-runner : windows-2022 上验证 Inno Setup 安装/静默安装卸载 + NSSM 服务生命周期
 #   w0-linux-systemd  : ubuntu Runner 上验证 Debian 12 / Rocky 9 systemd 特权容器拓扑
 #   w0-node-matrix    : Node 22 下前端全量矩阵（contract:check/typecheck/Jest/build）
-#   w0-glibc-bullseye : python:3.11-bullseye 构建 Linux 二进制并在两发行版运行验证
+#   w0-glibc-bullseye : python:3.12-bullseye 构建 Linux 二进制并在两发行版运行验证
 #
 # 本文件当前只承载 W0 能力探针；G0～G10 完整门禁 DAG 在后续批次（W2+/W5）加入。
 # 语义：fail-closed —— 任一探针失败/超时/证据缺失即 job 失败，不允许跳过。
@@ -92,7 +92,7 @@ concurrency:
 env:
   # W0 探针锁定的工具链（与 release/release-config.json 对齐；W1 起由 config 单一来源化）
   W0_NODE_VERSION: "22.23.2"
-  W0_PYTHON_BUILD_IMAGE: python:3.11-bullseye
+  W0_PYTHON_BUILD_IMAGE: python:3.12-bullseye
   W0_TEST_DISTROS: '["debian:12", "rockylinux:9"]'
 
 jobs:
@@ -395,10 +395,10 @@ jobs:
           python3 scripts/release/generate_build_info.py --artifact-kind linux-binary
           --output-dir release/build/linux-binary --allow-dirty
 
-      - name: PyInstaller build in python:3.11-bullseye
+      - name: PyInstaller build in python:3.12-bullseye
         run: |
           docker volume rm w0out >/dev/null 2>&1 || true
-          docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.11-bullseye bash -c "\
+          docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.12-bullseye bash -c "\
             pip install --no-cache-dir --prefer-binary --require-hashes -r backend/requirements-lock.txt \
             && pip install --no-cache-dir --prefer-binary -r deploy/requirements-linux-package.txt \
             && pyinstaller --clean --noconfirm --distpath /out --workpath /tmp/pyi-build deploy/btdeck.spec"
@@ -418,7 +418,7 @@ jobs:
             ' _ "$distro"
           done
           cat > w0-glibc-bullseye.json <<EOF
-          {"probe":"w0-glibc-bullseye","build_image":"python:3.11-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
+          {"probe":"w0-glibc-bullseye","build_image":"python:3.12-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
           EOF
 
       - name: Write G0 gate fragment
@@ -470,7 +470,7 @@ jobs:
       - name: Setup Python (release tooling)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         run: |
@@ -479,7 +479,7 @@ jobs:
       - name: Build Linux strict toolchain image (bullseye + fpm + rpmbuild)
         run: |
           docker build -t w2-linux-builder - <<'EOF'
-          FROM python:3.11-bullseye
+          FROM python:3.12-bullseye
           # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
           # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
           # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
@@ -551,7 +551,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         shell: pwsh
@@ -615,7 +615,7 @@ jobs:
       - name: Setup Python (release tooling)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         run: python scripts/release/build_frontend.py
@@ -676,7 +676,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -684,7 +684,7 @@ jobs:
       - name: Build strict Linux packages
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
+          FROM python:3.12-bullseye
           # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
           # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
           # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
@@ -753,7 +753,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -796,7 +796,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         shell: pwsh
@@ -903,7 +903,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -911,7 +911,7 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
+          FROM python:3.12-bullseye
           # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
           # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
           # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
@@ -971,7 +971,7 @@ jobs:
           docker rm -f w4-stub-host >/dev/null 2>&1 || true
           docker run -d --name w4-stub-host --network w4net-deb --network-alias w4-stub \
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
-            python:3.11-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
+            python:3.12-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
           docker network connect --alias w4-stub w4net-rpm w4-stub-host
 
           # 等待逻辑用仓库内脚本文件（scripts/release/lifecycle/w4_install_wait.sh）：
@@ -1076,14 +1076,14 @@ jobs:
           docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
           docker run -d --name w4-mut-proxy --network w4life_w3life_net \
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
-            python:3.11-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
+            python:3.12-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
             --upstream http://w3-life-backend:5001 --mutate-route /health/live \
             --mutate-field data.version --mutate-value 1.0.6-mutated >/dev/null
           sleep 2
           docker run --rm --network w4life_w3life_net \
             -v "$PWD/release/evidence/w4:/out" \
             -v "$PWD/scripts/release/contract_runner.py:/runner/contract_runner.py:ro" \
-            python:3.11-slim python /runner/contract_runner.py \
+            python:3.12-slim python /runner/contract_runner.py \
             --base-url http://w4-mut-proxy:5002 --scenarios C01 --output /out/m2-mutated-c01.json
           python scripts/release/slice_snapshot.py --input release/evidence/w4/snapshot-docker.json \
             --scenarios C01_health_identity --output /tmp/m2-baseline-c01.json
@@ -1134,7 +1134,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -1142,7 +1142,7 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
+          FROM python:3.12-bullseye
           # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
           # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
           # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
@@ -1210,7 +1210,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         shell: pwsh
@@ -1284,7 +1284,7 @@ jobs:
       - name: Setup Python (release tooling + jsonschema)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install manifest validation deps
         run: pip install jsonschema
@@ -1312,7 +1312,7 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
+          FROM python:3.12-bullseye
           # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
           # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
           # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
@@ -1441,7 +1441,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install aggregator deps
         run: pip install jsonschema

@@ -29,9 +29,9 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          # G3/工具链统一（release-artifact-equivalence-gate W1）：目标运行时 3.11
-          # 与 Docker/Linux 制品一致；3.12 不再作为主回归版本
-          python-version: "3.11"
+          # 工具链统一 3.12（2026-09-23 契约修订）：目标运行时 3.12
+          # 与 Docker/Linux/Windows/Android 制品一致；3.11 已退役
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt

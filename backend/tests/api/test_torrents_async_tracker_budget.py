@@ -99,10 +99,10 @@ def _completion_log(mock_info):
 async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
     """10k hash + worker_count=2：拉取期间活跃 asyncio 任务数为固定上界，不随 hash 总量增长。
 
-    任务拓扑：当前协程 + 生产者(1) + worker(2)。Python 3.11 的 asyncio.wait_for 会为
-    每个在飞的 put/get 额外包一层 wrapper task（3.12 起改用 timeout 上下文不再创建）——
-    CI 跑 3.11（工具链锁定版本）采样到 6 属预期，本地 3.12 恒为 4；上界放行 wrapper
-    余量但保持固定常数（CI run 33765218992 实证 growth=6）。
+    任务拓扑：当前协程 + 生产者(1) + worker(2)。历史背景：Python 3.11 的 asyncio.wait_for
+    会为每个在飞的 put/get 额外包一层 wrapper task；工具链统一 3.12（2026-09-23）后代码
+    已改用 timeout 上下文不再创建，实测采样恒为 4；上界保留保守余量但保持固定常数
+    （CI run 33765218992 于 3.11 实证 growth=6，仅作历史参照）。
     """
     worker_count = 2
     monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", worker_count)
@@ -124,7 +124,7 @@ async def test_10k_hashes_active_tasks_bounded(fake_client, monkeypatch):
         await torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_1")
 
     growth = max_seen["value"] - baseline
-    # 设计拓扑（生产者+workers）+ 3.11 wait_for wrapper 余量（producer put + 每 worker get）
+    # 设计拓扑（生产者+workers）+ 调度瞬态保守余量（3.12 契约下实测恒为 4）
     allowed_growth = worker_count + 1 + worker_count + 1
     assert growth <= allowed_growth
     # 不变量：10k hash 下仍是小固定常数，绝无随 hash 总量的任务增长
