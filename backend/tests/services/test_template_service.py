@@ -346,14 +346,14 @@ class TestCreateTemplate:
             service.create_template(user_id=1, data=_valid_create_data(description="x" * 501))
 
     def test_无效下载器类型抛出异常(self):
-        """无效下载器类型应抛出"""
+        """无效下载器类型应抛出（99 超出枚举域；2=rTorrent 已合法）"""
         from app.services.template_service import TemplateService
 
         db = MagicMock()
         service = TemplateService(db=db)
 
         with pytest.raises(ValueError, match="下载器类型"):
-            service.create_template(user_id=1, data=_valid_create_data(downloader_type=2))
+            service.create_template(user_id=1, data=_valid_create_data(downloader_type=99))
 
     def test_模板配置为空抛出异常(self):
         """模板配置为空应抛出"""

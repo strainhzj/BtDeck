@@ -19,8 +19,8 @@ export interface Downloader {
   password?: string         // 密码（getList接口不返回）
   is_ssl?: '0' | '1'        // 是否SSL（detail接口返回，getList接口返回 isSearch）
   isSearch?: '0' | '1' | null   // 是否启用搜索（驼峰命名，后端返回）
-  downloaderType: number    // 下载器类型（数字枚举：0=qbittorrent, 1=transmission，驼峰命名）
-  downloaderTypeName?: 'qbittorrent' | 'transmission'  // 下载器类型名称（用于显示，匹配后端字段）
+  downloaderType: number    // 下载器类型（数字枚举：0=qbittorrent, 1=transmission, 2=rtorrent，驼峰命名）
+  downloaderTypeName?: 'qbittorrent' | 'transmission' | 'rtorrent'  // 下载器类型名称（用于显示，匹配后端字段）
   enabled?: '0' | '1' | null     // 是否启用（可能为null）
   status?: string           // 下载器状态
   version?: string          // 下载器版本（用户填写，可选）
@@ -68,7 +68,7 @@ export interface DownloaderFormData {
   password: string
   is_ssl: '0' | '1'
   is_search: '0' | '1'
-  downloader_type: 0 | 1  // 下载器类型（数字枚举：0=qbittorrent, 1=transmission）
+  downloader_type: 0 | 1 | 2  // 下载器类型（数字枚举：0=qbittorrent, 1=transmission, 2=rtorrent）
   enabled: '0' | '1'
   path_mapping_rules?: string  // 路径映射规则配置（多行文本）
   torrent_save_path?: string  // 种子保存目录路径（应用运行环境可直接访问的绝对路径）
@@ -199,7 +199,7 @@ export interface DownloaderSettings {
  */
 export interface DownloaderCapabilities {
   downloader_id: string
-  downloader_type: 0 | 1  // 0 = qBittorrent, 1 = Transmission
+  downloader_type: 0 | 1 | 2  // 0 = qBittorrent, 1 = Transmission, 2 = rTorrent
   // 能力字段（从嵌套的 capabilities 对象中读取）
   supports_speed_scheduling?: boolean  // 是否支持分时段限速
   supports_connection_limits?: boolean

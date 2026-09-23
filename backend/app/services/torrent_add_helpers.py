@@ -152,7 +152,7 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         downloader_id=downloader_id,
         downloader_name=downloader.nickname,
         torrent_id=tr_torrent.id,
-        hash=tr_torrent.hashString,
+        hash=str(tr_torrent.hashString or "").strip().lower(),
         name=tr_torrent.name,
         save_path=tr_torrent.download_dir,
         size=tr_torrent.total_size,

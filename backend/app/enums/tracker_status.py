@@ -113,5 +113,7 @@ def get_tracker_status_text(status_value: int, downloader_type: str = "qbittorre
     elif type_name == "transmission":
         return TransmissionTrackerStatus.get_display_text(status_value)
     else:
-        # 未知类型，尝试 qBittorrent 作为默认
-        return QBittorrentTrackerStatus.get_display_text(status_value)
+        # rTorrent 等未适配类型：状态码语义尚未定义（rTorrent RPC 无 per-tracker
+        # 明细，状态码模型待适配落地时补充）。返回原始数值字符串，
+        # 避免误用 qB/TR 的中文语义（静默误判是 P0 修复对象）
+        return str(status_value)

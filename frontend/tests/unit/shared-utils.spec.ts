@@ -283,9 +283,20 @@ describe('状态、下载器与校验工具', () => {
     expect(downloaderTypeToString(0)).toBe('qbittorrent')
     expect(downloaderTypeToString(1)).toBe('transmission')
     expect(downloaderStringToType('qbittorrent')).toBe(0)
-    expect(downloaderStringToType(undefined)).toBe(1)
+    // P0-C 修复：未知/缺失值不再回退 Transmission，返回 -1 并告警
+    expect(downloaderStringToType(undefined)).toBe(-1)
     expect(getDownloaderTypeLabel('qbittorrent')).toBe('qBittorrent')
     expect(getDownloaderTypeLabel('transmission')).toBe('Transmission')
+  })
+
+  it('rTorrent 类型（2）三路显式映射不回退（P0-C）', () => {
+    expect(downloaderTypeToString(2)).toBe('rtorrent')
+    expect(downloaderStringToType('rtorrent')).toBe(2)
+    expect(getDownloaderTypeLabel('rtorrent')).toBe('rTorrent')
+    // 未知数字不再回退 qbittorrent/transmission
+    expect(downloaderTypeToString(99)).toBe('unknown')
+    expect(downloaderStringToType('bogus')).toBe(-1)
+    expect(getDownloaderTypeLabel('bogus')).toBe('Unknown')
   })
 
   it('查询状态文本、图标和有效性', () => {

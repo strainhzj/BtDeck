@@ -44,8 +44,8 @@ export interface DemoDownloader {
   nickname: string
   host: string
   port: string
-  downloaderType: 0 | 1
-  downloaderTypeName: 'qbittorrent' | 'transmission'
+  downloaderType: 0 | 1 | 2
+  downloaderTypeName: 'qbittorrent' | 'transmission' | 'rtorrent'
   isSearch: '0' | '1'
   enabled: '0' | '1'
   status: 'online' | 'offline'
@@ -142,7 +142,7 @@ export interface DemoDashboardData {
   downloader_list: Array<{
     downloader_id: string
     nickname: string
-    downloader_type: 0 | 1
+    downloader_type: 0 | 1 | 2
     status: 'online' | 'offline'
     downloading: number
     seeding: number

@@ -59,7 +59,8 @@ def _clean_database_path_env():
 #       → b3e5f7a9c1d2(search_templates preset_key, bilingual system preset identity)
 #       → d1e2f3a4b5c6(setting_templates preset_key, bilingual system preset identity)
 #       → 053003337878(moviepilot integration tables; dev1.0.7 合入后重挂至 d1e2f3a4b5c6)
-EXPECTED_HEAD = "053003337878"
+#       → a1f7c9e3d2b4(hash lowercase normalization; P0-D rTorrent 接入前置，数据迁移 no-op downgrade)
+EXPECTED_HEAD = "a1f7c9e3d2b4"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"

@@ -845,11 +845,15 @@ class TorrentManifestBuilder:
 
     @classmethod
     def _torrent_identity(cls, downloader_type: str, torrent: Any) -> Tuple[str, str, Optional[List[str]]]:
+        # hash 统一小写口径：qB 原生小写、TR/rTorrent 大写（P0-D）
         if isinstance(torrent, dict):
-            torrent_hash = torrent.get("hash") or torrent.get("hashString")
+            torrent_hash = str(torrent.get("hash") or torrent.get("hashString") or "").strip().lower() or None
             save_path = torrent.get("save_path") or torrent.get("downloadDir") or torrent.get("download_dir")
         else:
-            torrent_hash = getattr(torrent, "hash", None) or getattr(torrent, "hashString", None)
+            torrent_hash = (
+                str(getattr(torrent, "hash", None) or getattr(torrent, "hashString", None) or "").strip().lower()
+                or None
+            )
             save_path = (
                 getattr(torrent, "save_path", None)
                 or getattr(torrent, "download_dir", None)

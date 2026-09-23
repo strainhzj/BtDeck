@@ -802,7 +802,12 @@ export default class DownloaderSettingsDialog extends Vue {
   }
 
   get downloaderTypeLabel(): string {
-    return this.formData.downloader_type === 1 ? 'Transmission' : 'qBittorrent'
+    // 三路显式：未知值不再回退 qBittorrent（rTorrent 接入前置修复）
+    const type = this.formData.downloader_type
+    if (type === 1) return 'Transmission'
+    if (type === 2) return 'rTorrent'
+    if (type === 0) return 'qBittorrent'
+    return 'Unknown'
   }
 
   // 计算属性：标签页签标题（Transmission只有标签，显示纯分类入口）

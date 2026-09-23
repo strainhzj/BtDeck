@@ -186,12 +186,13 @@ class TestNormalizeDownloaderType:
         )
         assert manager._normalize_downloader_type() == 1
 
-    def test_无效类型默认返回0(self):
-        """无效类型（如 99）应默认返回 0（qBittorrent）"""
+    def test_无效类型抛出异常(self):
+        """无效类型（如 99）应抛 ValueError（P0 修复：不再静默归 0）"""
         manager = _create_manager_with_mock_wrapper(
             downloader=make_downloader(downloader_type=99)
         )
-        assert manager._normalize_downloader_type() == 0
+        with pytest.raises(ValueError, match="无效的下载器类型"):
+            manager._normalize_downloader_type()
 
     def test_None类型默认返回0(self):
         """None 类型应默认返回 0（qBittorrent）"""

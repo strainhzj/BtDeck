@@ -994,7 +994,12 @@ async def sync_add_tracker_async(
     current_tracker_urls = set()
     tracker_rows = []
     tracker_source = getattr(torrent_info, "_tracker_source", None)
-    torrent_hash = getattr(torrent_info, "hash", None) or getattr(torrent_info, "hashString", None)
+    # hash 统一小写口径：qB 原生小写、TR/rTorrent 大写，DB 唯一索引与复合键均为
+    # 大小写敏感比较，统一 lower 避免同一种子在库中出现两套身份（P0-D）
+    torrent_hash = (
+        str(getattr(torrent_info, "hash", None) or getattr(torrent_info, "hashString", None) or "").strip().lower()
+        or None
+    )
 
     if downloader_type == "qbittorrent":
         try:
@@ -1381,7 +1386,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             setattr(torrent_info, "_tracker_source", tracker_source)
         except Exception:
             pass
-        cached_data = existing_torrents_cache.get(torrent_info.hashString)
+        cached_data = existing_torrents_cache.get(str(torrent_info.hashString or "").strip().lower())
 
         # 计算进度值
         raw_percent_done = (
@@ -1434,7 +1439,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             "downloader_id": bt_downloader.downloader_id,
             "downloader_name": downloader_name_to_use,  # ✅ 使用原始值保持主键一致
             "torrent_id": torrent_info.id,
-            "hash": torrent_info.hashString,
+            "hash": str(torrent_info.hashString or "").strip().lower(),
             "name": torrent_info.name,
             "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
@@ -1588,7 +1593,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                         backup_service.backup_torrent_file,
                         kwargs={
                             "info_id": torrent_info_id,
-                            "torrent_hash": torrent_info.hashString,
+                            "torrent_hash": str(torrent_info.hashString or "").strip().lower(),
                             "torrent_name": torrent_info.name,
                             "downloader_type": "transmission",
                             "save_path": torrent_info.download_dir,
@@ -1619,7 +1624,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                             # 检查是否已存在相同 info_hash + downloader_id 的记录
                             existing_backup = await db.execute(
                                 select(TorrentFileBackup).filter(
-                                    TorrentFileBackup.info_hash == torrent_info.hashString,
+                                    TorrentFileBackup.info_hash == str(torrent_info.hashString or "").strip().lower(),
                                     TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
                                     TorrentFileBackup.is_deleted.is_(False),
                                 )
@@ -1630,7 +1635,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                                 # 不存在则插入新记录
                                 backup_manager = TorrentFileBackupManagerService(db=db)
                                 await backup_manager.repository.create(
-                                    info_hash=torrent_info.hashString,
+                                    info_hash=str(torrent_info.hashString or "").strip().lower(),
                                     file_path=backup_result["backup_file_path"],
                                     file_size=None,  # 可选：如果需要文件大小可以获取
                                     task_name=torrent_info.name,
@@ -1660,7 +1665,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                 # 检查是否已存在相同 info_hash + downloader_id 的记录
                 existing_backup = await db.execute(
                     select(TorrentFileBackup).filter(
-                        TorrentFileBackup.info_hash == torrent_info.hashString,
+                        TorrentFileBackup.info_hash == str(torrent_info.hashString or "").strip().lower(),
                         TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
                         TorrentFileBackup.is_deleted.is_(False),
                     )
@@ -1680,7 +1685,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                         # 补录历史数据
                         backup_manager = TorrentFileBackupManagerService(db=db)
                         await backup_manager.repository.create(
-                            info_hash=torrent_info.hashString,
+                            info_hash=str(torrent_info.hashString or "").strip().lower(),
                             file_path=backup_file_path,
                             file_size=file_size,
                             task_name=torrent_info.name,
@@ -3811,7 +3816,9 @@ async def tr_add_torrents_info_only_async(
     # 全序锚点（游标语义依赖 hash 字典序）：slim base 排序后切批（批间有序），
     # 每批 detail 结果再按 hashString 重排（TR 服务端按 id 序返回，id 序≠hash
     # 序），批内有序——两者叠加与旧实现"全量收齐后整体排序"严格等价。
-    base_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
+    # 每批 detail 结果再按 hashString 重排（TR 服务端按 id 序返回，id 序≠hash
+    # 序；小写口径与 cursor 字典序一致，P0-D）
+    base_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or "").strip().lower())
 
     phase_times["fetch"] = (time.monotonic() - phase_start) * 1000.0
     phase_start = time.monotonic()
@@ -3851,7 +3858,8 @@ async def tr_add_torrents_info_only_async(
     pending_torrent_count = sum(
         1
         for torrent in base_torrents
-        if (torrent_hash := str(getattr(torrent, "hashString", "") or ""))
+        # hash 统一小写口径（与 DB 唯一索引/cursor 字典序一致，P0-D）
+        if (torrent_hash := str(getattr(torrent, "hashString", "") or "").strip().lower())
         and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
     )
     last_processed_hash: Optional[str] = None
@@ -3887,11 +3895,12 @@ async def tr_add_torrents_info_only_async(
         phase_times["fetch"] += (time.monotonic() - detail_fetch_start) * 1000.0
 
         # 批内重排：TR 服务端按 id 序返回，须恢复 hash 字典序（游标前缀依赖）
-        detail_batch.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+        # 批内重排：TR 服务端按 id 序返回，须恢复 hash 字典序（小写口径，游标前缀依赖）
+        detail_batch.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or "").strip().lower())
 
         diff_start = time.monotonic()
         for torrent_info in detail_batch:
-            torrent_hash = str(getattr(torrent_info, "hashString", "") or "")
+            torrent_hash = str(getattr(torrent_info, "hashString", "") or "").strip().lower()
             if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
                 continue
             # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
@@ -4628,8 +4637,8 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             "nickname": nickname,
         }
 
-    # 全序锚点：slim 按 hashString 排序后切批，批间 hash 字典序稳定
-    slim_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
+    # 全序锚点：slim 按 hashString 排序后切批，批间 hash 字典序稳定（小写口径）
+    slim_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or "").strip().lower())
 
     # === 第3步：过滤已存在种子并同步 tracker ===
     tracker_count = 0
@@ -4681,11 +4690,11 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
         )
         detail_fetch_duration += (datetime.now() - detail_fetch_start).total_seconds()
 
-        # 批内按 hashString 重排（TR 服务端按 id 序返回），与 slim 全序对齐
-        torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+        # 批内按 hashString 重排（TR 服务端按 id 序返回），与 slim 全序对齐（小写口径）
+        torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or "").strip().lower())
 
         for torrent_info in torrent_info_list:
-            torrent_hash = getattr(torrent_info, "hashString", None)
+            torrent_hash = str(getattr(torrent_info, "hashString", None) or "").strip().lower() or None
             if not torrent_hash:
                 continue
             info_id = hash_to_info_id.get(torrent_hash)

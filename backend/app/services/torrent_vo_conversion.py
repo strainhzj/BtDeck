@@ -161,14 +161,16 @@ def convert_to_vo_with_trackers(
         announce_status_raw = tracker.last_announce_succeeded
         scrape_status_raw = tracker.last_scrape_succeeded
 
-        # 映射 announce 状态
+        # 映射 announce 状态（三路显式分派：未适配类型不误用 qB/TR 语义，返回原值）
         if announce_status_raw is not None:
             try:
                 announce_status_int = int(announce_status_raw)
                 if downloader_type == "qbittorrent":
                     announce_status_text = QBittorrentTrackerStatus.get_display_text(announce_status_int)
-                else:  # transmission
+                elif downloader_type == "transmission":
                     announce_status_text = TransmissionTrackerStatus.get_display_text(announce_status_int)
+                else:
+                    announce_status_text = str(announce_status_raw)
             except (ValueError, TypeError):
                 # 如果无法转换为整数，保持原样
                 announce_status_text = str(announce_status_raw)
@@ -187,14 +189,16 @@ def convert_to_vo_with_trackers(
         ):
             announce_status_text = FAILED_DISPLAY_TEXT
 
-        # 映射 scrape 状态
+        # 映射 scrape 状态（同 announce 三路口径）
         if scrape_status_raw is not None:
             try:
                 scrape_status_int = int(scrape_status_raw)
                 if downloader_type == "qbittorrent":
                     scrape_status_text = QBittorrentTrackerStatus.get_display_text(scrape_status_int)
-                else:  # transmission
+                elif downloader_type == "transmission":
                     scrape_status_text = TransmissionTrackerStatus.get_display_text(scrape_status_int)
+                else:
+                    scrape_status_text = str(scrape_status_raw)
             except (ValueError, TypeError):
                 # 如果无法转换为整数，保持原样
                 scrape_status_text = str(scrape_status_raw)

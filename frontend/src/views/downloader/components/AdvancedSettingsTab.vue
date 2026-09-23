@@ -220,11 +220,11 @@ export default class AdvancedSettingsTab extends Vue {
     utp_enabled: false
   }
 
-  // 计算属性：下载器类型
-  get downloaderType(): 0 | 1 {
+  // 计算属性：下载器类型（三路：2=rTorrent 未知语义不回退 qB/TR）
+  get downloaderType(): 0 | 1 | 2 {
     // 优先使用驼峰命名（后端API返回格式），如果不存在则使用蛇形命名（兼容旧数据）
     const type = this.downloader.downloaderType ?? this.downloader.downloader_type
-    return type ?? 0  // 默认 qBittorrent
+    return (type === 1 || type === 2) ? type : 0  // 非法/缺失值保守归 qBittorrent
   }
 
   // 监听设置变化
@@ -285,7 +285,7 @@ export default class AdvancedSettingsTab extends Vue {
 
   private normalizeAdvancedSettings(
     advancedSettings: Record<string, any>,
-    downloaderType: 0 | 1
+    downloaderType: 0 | 1 | 2
   ): Record<string, any> {
     if (!advancedSettings || typeof advancedSettings !== 'object') {
       return {}

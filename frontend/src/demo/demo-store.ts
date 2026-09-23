@@ -58,8 +58,8 @@ export interface DemoDownloaderInput {
   nickname?: string
   host?: string
   port?: string | number
-  downloaderType?: 0 | 1
-  downloader_type?: 0 | 1
+  downloaderType?: 0 | 1 | 2
+  downloader_type?: 0 | 1 | 2
   isSearch?: '0' | '1'
   is_search?: '0' | '1'
   isSsl?: '0' | '1'
@@ -272,7 +272,8 @@ export class DemoStore {
 
   public createDownloader(input: DemoDownloaderInput): DemoDownloader {
     const nextId = `demo-downloader-local-${this.state.downloaders.length + 1}`
-    const downloaderType = input.downloaderType ?? input.downloader_type ?? 0
+    const rawType = input.downloaderType ?? input.downloader_type ?? 0
+    const downloaderType: 0 | 1 | 2 = (rawType === 1 || rawType === 2) ? rawType : 0
     const isSearch = input.isSearch ?? input.is_search ?? '1'
     const item: DemoDownloader = {
       downloaderId: nextId,
@@ -280,7 +281,7 @@ export class DemoStore {
       host: input.host || 'new-node.example.invalid',
       port: String(input.port || '8080'),
       downloaderType,
-      downloaderTypeName: downloaderType === 1 ? 'transmission' : 'qbittorrent',
+      downloaderTypeName: downloaderType === 1 ? 'transmission' : (downloaderType === 2 ? 'rtorrent' : 'qbittorrent'),
       isSearch,
       enabled: input.enabled ?? '1',
       status: 'online',
@@ -307,7 +308,7 @@ export class DemoStore {
     if (input.downloaderType !== undefined || input.downloader_type !== undefined) {
       const downloaderType = input.downloaderType ?? input.downloader_type ?? item.downloaderType
       item.downloaderType = downloaderType
-      item.downloaderTypeName = downloaderType === 1 ? 'transmission' : 'qbittorrent'
+      item.downloaderTypeName = downloaderType === 1 ? 'transmission' : (downloaderType === 2 ? 'rtorrent' : 'qbittorrent')
     }
     if (input.isSearch !== undefined || input.is_search !== undefined) {
       item.isSearch = input.isSearch ?? input.is_search ?? item.isSearch

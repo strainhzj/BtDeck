@@ -168,6 +168,7 @@ export default class DownloaderCard extends Vue {
     const type = this.info.downloaderType
     if (type === 0) return 'qBittorrent'
     if (type === 1) return 'Transmission'
+    if (type === 2) return 'rTorrent'
 
     // 未知类型兜底
     return this.$t('downloader.card.unknownType')

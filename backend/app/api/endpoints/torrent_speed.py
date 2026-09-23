@@ -423,7 +423,7 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
             )
             result.append(
                 {
-                    "hash": getattr(t, "hashString", ""),
+                    "hash": str(getattr(t, "hashString", "") or "").strip().lower(),
                     "downloadSpeed": dl_speed,
                     "uploadSpeed": ul_speed,
                     "progress": progress_percent,
@@ -493,11 +493,12 @@ def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, A
         "error",
     ]
     # Transmission 不支持按 hash 批量查询，需要获取所有再过滤
-    hash_set = set(hashes)
+    # （hash 小写口径：调用方传入的 hash 可能来自大小写混合来源，统一 lower 后比较，P0-D）
+    hash_set = {str(h or "").strip().lower() for h in hashes}
     all_torrents = client.get_torrents(arguments=fields)
     result = []
     for t in all_torrents:
-        h = getattr(t, "hashString", "")
+        h = str(getattr(t, "hashString", "") or "").strip().lower()
         if h not in hash_set:
             continue
         progress_raw = getattr(t, "percent_done", 0) or 0

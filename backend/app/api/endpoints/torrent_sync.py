@@ -546,7 +546,9 @@ def tr_add_torrents(db, downloaders, app=None):
         #     db.query(torrent_info_model.info_id).filter(torrent_info_model.hash == torrent_info.hashString).filter(
         #         torrent_info_model.downloader_id == downloaders[0].downloader_id).filter(
         #         torrent_info_model.dr == 1).all()
-        result_info = get_torrent_by_hash(db, torrent_info.hashString, bt_downloader.downloader_id)
+        result_info = get_torrent_by_hash(
+            db, str(torrent_info.hashString or "").strip().lower(), bt_downloader.downloader_id
+        )
         if result_info is None:
             mode = "insert"
             torrent_info_id = str(uuid.uuid4())
@@ -567,7 +569,7 @@ def tr_add_torrents(db, downloaders, app=None):
             downloader_id=bt_downloader.downloader_id,
             downloader_name=bt_downloader.nickname,
             torrent_id=torrent_info.id,
-            hash=torrent_info.hashString,
+            hash=str(torrent_info.hashString or "").strip().lower(),
             name=torrent_info.name,
             status=TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             error_reason=TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
@@ -624,8 +626,9 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
     current_tracker_urls = set()
     tracker_rows = []
 
-    # 使用统一的枚举类方法进行类型判断
-    type_name = DownloaderTypeEnum(downloader_type).to_name()
+    # 使用统一的枚举类方法进行类型判断（旧实现直接构造会因非 0/1 值抛
+    # ValueError 中断同步；normalize 对合法形态全兼容，未知值显式抛错）
+    type_name = DownloaderTypeEnum(DownloaderTypeEnum.normalize(downloader_type)).to_name()
     if type_name == "qbittorrent":
         trackers_data = getattr(torrent_info, "trackers", None)
         if callable(trackers_data):

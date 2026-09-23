@@ -469,7 +469,11 @@ export default class extends Vue {
   }
 
   private getDownloaderTypeLabel(type: number): string {
-    return type === 1 ? 'Transmission' : 'qBittorrent'
+    // 三路显式：未知值不再回退 qBittorrent（rTorrent 接入前置修复）
+    if (type === 0) return 'qBittorrent'
+    if (type === 1) return 'Transmission'
+    if (type === 2) return 'rTorrent'
+    return 'Unknown'
   }
 }
 </script>

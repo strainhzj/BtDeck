@@ -253,6 +253,7 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   private downloaderTypeLabel(type?: number | null): string {
     if (type === 1) return 'Transmission'
     if (type === 0) return 'qBittorrent'
+    if (type === 2) return 'rTorrent'
     return '未知类型'
   }
 }

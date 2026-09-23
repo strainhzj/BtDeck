@@ -105,7 +105,7 @@ type DemoDownloaderPayload = DemoDownloader & {
   type: string
   is_ssl: '0' | '1'
   is_search: '0' | '1'
-  downloader_type: 0 | 1
+  downloader_type: 0 | 1 | 2
   username: string
   isSsl: '0' | '1'
   isSearch: '0' | '1'
@@ -127,16 +127,19 @@ const toDownloaderPayload = (item: DemoDownloader): DemoDownloaderPayload => ({
   pathMappingRules: ''
 })
 
-const toDownloaderInput = (input: DemoRecord): DemoDownloaderInput => ({
-  id: asString(input.id) || undefined,
-  nickname: asString(input.nickname) || undefined,
-  host: asString(input.host) || undefined,
-  port: input.port === undefined ? undefined : asString(input.port),
-  downloaderType: asNumber(input.downloaderType, asNumber(input.downloader_type, 0)) === 1 ? 1 : 0,
-  isSearch: asString(input.isSearch || input.is_search) === '0' ? '0' : '1',
-  isSsl: asString(input.isSsl || input.is_ssl) === '1' ? '1' : '0',
-  enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled) ? '1' : '0'
-})
+const toDownloaderInput = (input: DemoRecord): DemoDownloaderInput => {
+  const rawDownloaderType = asNumber(input.downloaderType, asNumber(input.downloader_type, 0))
+  return {
+    id: asString(input.id) || undefined,
+    nickname: asString(input.nickname) || undefined,
+    host: asString(input.host) || undefined,
+    port: input.port === undefined ? undefined : asString(input.port),
+    downloaderType: (rawDownloaderType === 1 || rawDownloaderType === 2) ? rawDownloaderType : 0,
+    isSearch: asString(input.isSearch || input.is_search) === '0' ? '0' : '1',
+    isSsl: asString(input.isSsl || input.is_ssl) === '1' ? '1' : '0',
+    enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled) ? '1' : '0'
+  }
+}
 
 const toTorrentPayload = (item: DemoTorrent): DemoTorrent & {
   info_id: string
