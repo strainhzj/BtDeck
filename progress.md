@@ -1,5 +1,15 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-09-23：Vue 3 升级可行性评估（4 子代理验证）+ 前端死代码清理（feature frontend-dead-code-cleanup-2026-09-23，全绿未提交）
+
+- **评估结论（用户拍板：升级延后）**：技术上可行但不划算——①97% 组件（106/109 .vue + 9 mixin）为 class 装饰器风格，vue-property-decorator 已归档（2024-02）、vue-class-component v8 停在 RC 近 6 年且标 DEPRECATED；②element-ui 无 Vue 3 版，92 文件 × 58 种 el- 组件 + 250 处字体图标 + $message×639 + SCSS 主题定制→Element Plus 重写；③模板侧机械改造 ~738 处（v-model×273 + .sync×96 + 旧 slot×119 + el-icon×250）；④~125 个 spec 改写 + vue.config 8 类 webpack 定制重写 + PWA SW 协议回归。短期建议升 Vue 2.7（向后兼容含 Composition API）。4 子代理（3 scout 代码实测 + 1 worker 联网核实 10 项库状态）并行验证，修正初评 4 处（$set 36→31、filters 1→0、svgicon 使用面 36→实质 1、测试 116→128 套）。
+- **本批删除（评估副产物，用户指示）**：①vue-svgicon 生态全退场——依赖、src/icons/ 28 文件（27 生成组件 + svg 源 + README）、零引用 Hamburger 组件（侧栏已 Lucide 化，downloader-control-room-ui.spec L167 契约守护「侧栏不消费 svg-icon」）、main.ts 三处（import SvgIcon / import icons / Vue.use）、package.json vsvg 脚本、jest collectCoverageFrom 排除项；②vue-clipboard2 死依赖（src 零引用，实际走 utils/clipboard navigator API）；③store/modules/downloaderSettings.ts 零消费传统 namespaced 死模块（391 行）+ zh/en downloader.ts store 九键连坐删除 + p6-c01 回归 spec 九键冻结用例组移除（15→14 例）；npm 连坐移除 90 包。
+- **验证**：lint 三项 + typecheck 净；Jest 125 套 1844 例唯一失败 i18n-leftover-guard 扫描门禁为 **HEAD 既有问题**（git worktree 对照：未修改 HEAD 同样红，500 条泄露 vs 本批后 487，删除反消除 13 条）；i18n-message-parity / downloader-settings-dialog 通过；init.sh 退出码 0。
+- **文档**：roadmap 5 文件同步（entry/main.ts L1-95→L1-87 与三处行号重测 + SvgIcon 行删、store 分支双轨制段落改单轨 + 死模块行/节删、components-layout Hamburger 行删、frontend 根分支双轨注册节改单轨、根 README store 树行 + 元信息两处前插）；feature_list.json 新 feature（3 任务 done + evidence）。
+- **坑**：①edit 工具对 zh-CN/downloader.ts 连续两次匹配失败（疑似不可见字符），改 python 行号删除一次成功；②roadmap store 分支表格编辑时误将「通知抽屉 notification」行首改成「用户认证 user」，当即发现修复——表格行编辑必须以行首关键词为锚点逐一核对。
+- **待办**：Git 提交待用户指示；既有 i18n-leftover-guard 扫描门禁失败（~487 条桌面面中文泄露，HEAD 即红）建议另立任务处置。
+
+---
 ## 2026-09-22：MCP 服务密钥（API Key）查看/刷新 + 能力目录双语化（feature mcp-service-apikey-2026-09-22，W5 波次，全绿未提交）
 
 - **范围（用户确认「先子代理独立审查计划」后实施）**：①系统设置 MCP 面板新增服务密钥查看/刷新（供其它 agent 对接）；②MCP 相关文本 i18n 缺口补齐（能力目录描述英文界面原为中文直显）。审查结论「需修改后执行」，P0 四项（错误码决策/威胁模型登记/已封版 feature 文档纪律/demo 失败面）全部纳入。

@@ -10,7 +10,7 @@
 | 应用入口 entry | [entry/](./entry/README.md) | 应用入口（main.ts / router.ts / permission.ts / App.vue / registerServiceWorker.ts / shims-vue.d.ts，6 文件） |
 | API 封装 api axios | [api/](./api/README.md) | axios 封装的 14 个领域 API 模块 |
 | 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 2 处 Options API） |
-| Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 5 个 module，双轨注册） |
+| Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 4 个 module，统一 vuex-module-decorators 动态注册；2026-09-23 删除零消费死模块 downloaderSettings） |
 | 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 22 个 .vue + layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
 | 静态展示 Demo demo | [demo/](./demo/README.md) | typed fixture、内存状态仓库、集中式 request 分流、Demo 构建配置与安全边界 |
 | 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 13 + types 8 + constants 1 + directive 1 |
@@ -31,10 +31,9 @@
 
 > ⚠ 注意：根目录 `frontend/CLAUDE.md` 与 `AGENTS.md` 约束写的是"必须使用 Options API，禁止 Composition API 和 `<script setup>`"，但**实际代码库以 class-component 为主**。这是文档/代码漂移点，路线图如实记录，详见 [../perspectives/risks.md](../perspectives/risks.md)。
 
-### 2. Vuex store 双轨注册
+### 2. Vuex store 模块注册
 
-- `app` / `user` / `notification` / `viewMode`：走 `vuex-module-decorators`（`@Module({dynamic:true, store})` + `getModule`）
-- `downloaderSettings`：走传统 `namespaced: true` Module（`export default`）
+- `app` / `user` / `notification` / `viewMode`：走 `vuex-module-decorators`（`@Module({dynamic:true, store})` + `getModule`）；2026-09-23 删除零消费的传统 namespaced 死模块 `downloaderSettings`，双轨制终结
 
 ### 3. axios 封装
 

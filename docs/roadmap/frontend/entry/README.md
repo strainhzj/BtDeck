@@ -7,7 +7,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、**Element Locale 挂接 vue-i18n（L52）**、Demo 会话旁路、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue({ router, store, i18n, ... })`） |
+| 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、**Element Locale 挂接 vue-i18n（L50）**、Demo 会话旁路、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue({ router, store, i18n, ... })`）；2026-09-23 死代码清理：SvgIcon/vue-svgicon 注册退出（侧栏图标已全部 Lucide 化，由 i18n-leftover-guard 契约守护） |
 | 路由表 router | `router.ts` | 路由表（default export）+ `requiredCapability` 元数据（回收站/孤儿/种子备份）+ **桌面路由 `titleKey` 双语键（21 处，移动路由不带保持中文）** + `router.push` 修补 + 部署后旧 chunk 一次恢复 |
 | 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流；加载 `/platform/capabilities` 后对受限文件系统能力 fail-closed，Android 不支持入口重定向并提示；保留 GetUserInfo 瞬时错误分流、白名单、NProgress、**页面标题（L300 走 `resolvePageTitle`：titleKey 双语键优先）** |
 | 双语 i18n | `i18n/` | 双语基础设施（P1 基础 + P2 首次使用闭环）：vue-i18n@8.28.2 单例 + zh-CN/en 消息树（P1 navigation/time/el；P2 新增 auth/common/settings/downloader/errors）+ 语言解析（手动偏好>浏览器语言>默认中文，localStorage `btdeck-lang`）+ 缺译回退 + `translate/translateChoice/routeTitle/resolvePageTitle` 同源入口 + `apiErrorMessage`（P2 错误契约：reasonCode→errors.byCode 本地化，禁中文匹配）；选型与风险见 PLANS/bilingual/p1-i18n-decision.md |；2026-09-21 P3-1：新增 search/torrent/dashboard 模块与 common.multiSelect/pageSize，契约链 labelEn（38 操作符，生成器+契约守卫同步）；2026-09-21 P3-2：新增 tracker/queryTemplate 模块，search 扩 builder/workspace/valueInput/sizeRange/templateDialog/validation/presets，torrent 扩 detail；2026-09-21 P4：errors.byCode 扩 33 键（种子操作/Tracker/查询模板/添加链路）+ errors.validation（E17 422 按 pydantic type/loc 字典化），`apiErrorMessage` 集成 422 分支 + 新增 `apiResponseMessage`（resolved 业务错误响应同源入口）；2026-09-19 P5：新增 recycleBin 模块、torrent 扩 deleteLevel 子树（四级删除确认按等级独立成键）、common.listSeparator、errors.byCode 扩 14 键（删除链路/回收站，累计 72 键）；2026-09-19 遗留清扫：新增 navigation.sidebar、common.pwa、downloader.msg、settings.capability、search.requestValidation 五个子树 + auth 4 键 + errors（http 状态表/httpFallback/unknown/contextFailed/network.checkSettings），并新增 `tests/unit/i18n-leftover-guard.spec.ts` 审计门禁（已译面扫描非注释中文 + 白名单 6 条含理由 + 腐化守卫，P6 计划内文件排除）；2026-09-19 P6-1：新增 transfer/fileManagement 模块与 tracker.replace 子树、torrent 扩传统视图键；审计集扩至 35 面并新增**全仓键可达性门禁**（1280 键；动态拼接键跳过）——抓出 Navbar `navbar.*` 错前缀（应为 navigation.navbar.*，8 处文案/aria 空串）与 SizeRangeFilter `search.sizeRange.unitPlaceholder` 错路径（应为 search.valueInput.*）；2026-09-19 P6-2：downloader 模块新增 tabs/speed/advanced/pathMapping/pathMaintenance/pathManagement/tag/template 八子树（~300 键）+ template.presets（5 内置模板预设，按 preset_key 展示映射，Q02 未识别原文回退）；2026-09-20 P6-3：tracker 模块新增十五子树（~500 条），errors.byCode 扩 18 键；2026-09-20 P6-4a：新增 tasks 模块（~330 键：任务页/日志/表单/三弹窗/cronEditor/monaco/pythonSelector），errors.byCode 扩 29 键（TASKS_*，后端 cron_tasks 契约对齐）；2026-09-20 P6-4b：新增 auditLogs/orphanFiles 两模块（操作类型 19 项双形态短/长标签、危险链路三要素、扫描状态与快捷操作），errors.byCode 扩 29 键（AUDIT_LOG_* 7 + ORPHAN_* 22，后端 audit_logs/orphan_files 契约对齐）；2026-09-20 P6-5 收口：common 扩 theme（三套名/描述/切换 toast）/demo（横幅四条）/clipboard（两态）/notFound.supportComing/notifications.failureRecord·failureUnknown，downloader 扩 sync（四态终态+detailSuffix）与 store（九条 action 兑底），errors 扩 paramValidation/requestError，torrent.list.filters 扩 activeStatus；审计门禁翻转为全桌面负向排除（原正向 65 面，详 test-coverage）；2026-09-22 dev1.0.7 合入：i18n 文件取 dev 完成态，dev1.0.7 的 P1 期版本弃用（见 PLANS/merge-dev107-into-dev.md）；✨2026-09-22 W5（MCP 服务密钥）：213bafa 新增 mcp 模块（面板/风险/msg 子树）+ moviepilot 模块后，本批扩 mcp.apikey 子树（服务密钥卡 24 键：端点/认证头提示/三态引导/复制/危险确认/安全提示）与 msg 四键（generated/rotated/rotateFailed/apikeyConflict），errors.byCode 扩 2 键（mcpApiKeyConflict/mcpApiKeyInvalid，后端 reasonCode 对齐）；能力目录描述双语改由后端成对下发 descriptionEn（面板 capDescription 按 locale 选取，与 P3-1 labelEn 同模式），语言包不再维护能力描述副本 |
@@ -17,12 +17,11 @@
 
 ---
 
-## main.ts 关键（L1-95）
+## main.ts 关键（L1-87）
 
-- L28-31：先 `initTheme()` 再 import 其它（主题早期初始化）
-- L52 `ElementLocale.i18n(...)` 先于 L53 `Vue.use(ElementUI)`（Element 内置文案随界面语言响应式切换）
-- L52-55 `Vue.use(SvgIcon, {tagName:'svg-icon', ...})`
-- L59 `Vue.directive('waves', waves)`
+- L29-32：先 `initTheme()` 再 import 其它（主题早期初始化）
+- L50 `ElementLocale.i18n(...)` 先于 L51 `Vue.use(ElementUI)`（Element 内置文案随界面语言响应式切换）
+- L58 `Vue.directive('waves', waves)`
 - L72 `retireLegacyServiceWorkers()` 只清退根作用域旧注册与 BtDeck Workbox cache
 - L65-66 Demo 模式初始化固定脱敏会话；真实模式仍在 L78 启用 `initSessionWatch()` 双令牌会话监听
 - L82-83 初始异步路由成功后清理 chunk 恢复 query

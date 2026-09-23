@@ -28,7 +28,6 @@
 | 批量按钮测试 batch-button-test | `BatchButton/__tests__/BatchButton.spec.ts` | BatchButton 回归测试：提供 `lucide-icon`/`lucide-size` props 时用 LucideIcon 渲染、未提供时回退 el-icon、disabled 抑制点击 |
 | 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航（标题经 `routeTitle()`：titleKey 双语键优先，双语 P1） |
 | 可折叠面板 collapsible-panel | `CollapsiblePanel.vue` | 通用可折叠面板（management-panel 风格标题区 + Lucide 折叠箭头，`aria-expanded`/`aria-controls` 无障碍）：折叠状态按 `storageKey` prop 经 getStorage/setStorage 持久化 |
-| 侧边栏折叠 hamburger | `Hamburger/index.vue` | 侧边栏折叠按钮 |
 | 分页 pagination | `Pagination/index.vue` | 分页组件封装 |
 | 主题切换 theme-switcher | `ThemeSwitcher/index.vue` | 主题色切换器（翡翠绿/活力橙/石墨灰），触发器与选项图标统一使用 Lucide；2026-09-20 P6-5 双语：主题名/描述/切换 toast 走 common.theme.*（theme.ts 改 nameKey/descriptionKey） |
 
