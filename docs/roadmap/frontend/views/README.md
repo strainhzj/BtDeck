@@ -70,9 +70,10 @@
 | `index.vue` | 下载器节点控制室主入口（`DownloaderManager`）：聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效；`handleSync()` L772 只将 sync-single 返回视为“已受理”，由任务跟踪器在真实终态提示成功/部分/失败/取消并释放占用 |
 | `sync-task.ts` | 下载器手动同步共享跟踪器；`buildSyncTaskNotice()` L30 统一终态文案（P6-5 双语：downloader.sync.* 四态 + detailSuffix，桌面/移动同源），`trackSyncTaskStatus()` L54 以 1s 间隔轮询，支持取消、10 分钟超时与连续查询错误上限 |
 | `../mobile/downloader.vue` | 移动下载器页；`syncOne()` L198 同样区分“任务已受理”与真实后台终态，任务进行期禁用所有同步按钮，组件销毁时取消轮询；✨2026-09-10 新增/编辑弃用旧 6 字段弹窗，统一跳 `/m/downloader/settings/:id|new`（DownloaderSettingsDialog 整页承载全部页签） |
-| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列）；✨2026-09-18 桌面双语 P2：basic 页签（连接/认证/测试/开关/存储/路径映射）i18n 化 |
+| `components/DownloaderSettingsDialog.vue` | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径、标签与 RSS 订阅 Tab（✨2026-09-24 新增 rssSubscription 页签，`rssTabAvailable` 门控类型 0/1，rTorrent 待适配后放开）；新增模式锁定依赖节点 ID 的页签；✨2026-09-10 `:tab-position` 响应式（≤780 顶部横向页签带文字，宽屏仍左列）；✨2026-09-18 桌面双语 P2：basic 页签（连接/认证/测试/开关/存储/路径映射）i18n 化 |
 | `components/PathMappingTab.vue` | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
 | `components/TagManagementTab.vue` | 标签/分类检索、过滤、排序、同步与维护工作台 |
+| `components/RssSubscriptionTab.vue` ✨2026-09-24 | RSS 订阅工作台（feature rss-subscription-2026-09-24 Phase 1）：订阅源表格（enabled 开关/抓取状态三态/待添加计数）+ 新增/编辑源弹窗 + 文章抽屉（状态筛选分页）+ 推送参数弹窗（目标下载器覆盖 qB/TR/保存路径/标签）；≤780 抽屉全宽适配 |
 | `components/DownloaderPathManagement.vue` | 下载器路径资产管理面板（筛选、状态、刷新、增删改） |
 | `components/SpeedSettingsTab.vue` | 全局与分时段速度策略工作台 |
 | `components/AdvancedSettingsTab.vue` | 兼容保留的高级设置 Tab，应用图标已迁移 Lucide |

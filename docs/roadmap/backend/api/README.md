@@ -1,6 +1,6 @@
 # backend/api — HTTP 路由层
 
-> FastAPI 路由聚合层，按业务域组织 39 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
+> FastAPI 路由聚合层，按业务域组织 40 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -34,6 +34,7 @@
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
+| RSS 订阅 rss ✨2026-09-24 | `rss_subscriptions.py` | BtDeck 自建 RSS 引擎 Phase 1（feature rss-subscription-2026-09-24）：订阅源 CRUD（同下载器 URL 去重）/手动刷新（httpx 超时 15s + 2MB 上限 + feedparser 解析 + (feed_id,guid) 去重）/文章分页/推送下载器（链接直传：qB `torrents_add(urls=)`、TR `add_torrent(torrent=)`，支持 savePath/tags/downloaderId 覆盖——按类型路由 Phase 2 预留）；失败路径 data.reasonCode（RSS_*）+ 审计五枚举；android-server 形态拒写 |
 | 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务；✨2026-09-20 双语 P6-4b：失败路径 data.reasonCode 22 键（ORPHAN_*，覆盖全部 17 端点）+ 动态 str(e)/scan_id 不进 msg；hardlink 删除 rejected 双形态 200 包裹 + reasonCode 追加进 data（E14 同款）；成功/部分成功计数 msg 保持 B03 原文（前端自行组文案） |
 | 主机能力矩阵 platform-capabilities | `platform_capabilities.py` | ✨2026-09-21 roadmap 同步补录（1986d51，2026-08-30 dual-mode-client Phase 4）：`GET /platform/capabilities` 按服务端主机形态下发能力集合（`capability_payload`，schemaVersion=2），设置页/任务列表/创建表单三处消费同一来源一致降级 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理；✨2026-09-19 双语 P5：五端点失败路径 data.reasonCode（RECYCLE_BIN_*/RECYCLE_RESTORE_FAILED/E16 NOT_IMPLEMENTED 501）+ 动态 str(e) msg 收敛 |
@@ -98,6 +99,7 @@
 | `/downloaders`（×4：settings/capabilities/capabilities_management/path_maintenance）、`/setting-templates` | downloader_* / setting_templates |
 | `/tags` | tag_management |
 | `/notifications` | notifications |
+| `/rss` | rss_subscriptions |
 | `/orphan-files` | orphan_files |
 | `/torrents` 附加 | duplicate_torrents、duplicate_quick_delete、torrent_backup、seed_transfer |
 

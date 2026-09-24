@@ -6979,6 +6979,92 @@
         "behavior": "侧栏种子管理组内可见顺序变为 种子列表→查询模板→种子文件管理；旧书签 /query-templates* 自动 redirect；移动模式访问新路径落 /m/search 不再误入 /m/torrents；设置页桌面为左侧竖排图标页签 + 统一 960px 卡片，窄屏/移动端切顶部横排胶囊。",
         "pitfalls": "①vue-class-component 的 class 属性箭头函数（resizeHandler = () => ...）捕获原始实例，写入不走响应式代理——改在 mounted 内创建箭头（参照 PageSizeCombobox onResize 模式）；②element-ui 左侧页签默认右对齐且 active 指示条为右缘竖线，需 .is-left 项覆盖 display:flex 左对齐并隐藏原生 active-bar/nav 底线改用胶囊底色；③el-tabs 的 nav 在 mounted 后异步重渲染，测试断言需 await Vue.nextTick；④测试 localVue 需手动补注册 main.ts 全局注册的 LucideIcon。"
       }
+    },
+    {
+      "id": "rss-subscription-2026-09-24",
+      "name": "下载器 RSS 订阅（BtDeck 引擎 Phase 1：最简订阅 + 手动推送）",
+      "description": "为下载器新增 RSS 订阅功能。最终形态双模式（BtDeck 自建引擎 + qB 原生代理，qB 可二选一）；Phase 1 范围：订阅源 CRUD + 手动刷新 + 文章分页浏览 + 手动推送到下载器（支持保存路径/标签参数，可选目标下载器覆盖，为按类型路由预留）。入口为下载器设置弹窗新增 rssSubscription 页签（qB/TR），含移动端。不做：自动下载规则、定时调度、qB 原生代理、HTML 页面解析。",
+      "status": "done",
+      "branch": "dev",
+      "plan": "PLANS/rss-subscription.md",
+      "planning_evidence": "2026-09-24 用户确认：双模式都需要且 qB 可选 BtDeck 推送；先实现最简 RSS 订阅；新增页签；需要移动端；添加需带参数（保存路径/标签），后期支持按类型选择推送下载器；feedparser 依赖获批。计划已登记 PLANS/rss-subscription.md。",
+      "tasks": [
+        {
+          "id": "rss.1",
+          "name": "后端：RSS 订阅数据层 + 服务 + 端点 + 测试",
+          "description": "feedparser 依赖新增；bt_rss_feeds/bt_rss_articles 两表 ORM + Alembic 迁移；rss_feed_service（CRUD/refresh 抓取解析去重/add_article 链接推送）；/api/v1/rss 端点七接口（统一响应 + RSS_* reasonCode + 审计 + android 伴侣门控）；pytest。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/requirements.txt",
+            "backend/requirements-lock.txt",
+            "backend/app/models/rss_subscription.py",
+            "backend/app/models/__init__.py",
+            "backend/alembic/env.py",
+            "backend/alembic/versions/8fabba8687b0_rss_subscription_feeds_and_articles.py",
+            "backend/app/services/rss_feed_service.py",
+            "backend/app/api/endpoints/rss_subscriptions.py",
+            "backend/app/api/api.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/api/test_rss_subscriptions.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_hash_lowercase_migration.py",
+            "backend/tests/enums/test_audit_enums.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "evidence": "feedparser==6.0.14+feedparser-sgmllib==2.1.0 入锁（check_dependencies PASS，12 例依赖门禁绿）；bt_rss_feeds/bt_rss_articles 建表迁移 8fabba8687b0（head 前移，has_table 幂等守卫 + 对称 downgrade，upgrade/downgrade/upgrade 三段验证）；rss_feed_service（CRUD/refresh/推送）+ rss_subscriptions 端点（/api/v1/rss 七接口，RSS_* reasonCode 25 键 + 审计五枚举 60 成员 + android-server 门控）；test_rss_subscriptions 20 例 + 存量校准 3 处（枚举/表计数/hash head 语义）；全量 pytest 5281 passed/18 skipped（cov 67.15%）+ mypy 0 错 + black/flake8 净。"
+        },
+        {
+          "id": "rss.2",
+          "name": "前端：设置弹窗 RSS 页签 + 订阅管理组件 + i18n + demo + 测试",
+          "description": "api/rss.ts + demo 同形分支；RssSubscriptionTab.vue（源表格/添加源弹窗/文章抽屉/推送参数）；DownloaderSettingsDialog 新增页签；zh/en 双语（含 errors.byCode RSS_*）；Jest（组件/api/demo/移动布局）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/rss.ts",
+            "frontend/src/views/downloader/components/RssSubscriptionTab.vue",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/i18n/locales/zh-CN/downloader.ts",
+            "frontend/src/i18n/locales/en/downloader.ts",
+            "frontend/src/i18n/locales/zh-CN/errors.ts",
+            "frontend/src/i18n/locales/en/errors.ts",
+            "frontend/src/demo/types.ts",
+            "frontend/src/demo/fixtures/index.ts",
+            "frontend/src/demo/fixtures/README.md",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/tests/unit/rss-subscription-tab.spec.ts",
+            "frontend/tests/unit/rss-tab-integration.spec.ts",
+            "frontend/tests/unit/demo-request.spec.ts"
+          ],
+          "evidence": "api/rss.ts（七接口 + RssPage 信封）；RssSubscriptionTab.vue 828 行（源表格/enabled 开关/抓取状态三态/待添加徽标/文章抽屉状态筛选分页/推送参数弹窗：目标下载器覆盖（qB/TR 过滤）+savePath+tags；≤780 抽屉全宽适配）；DownloaderSettingsDialog 新增 rssSubscription 页签（rssTabAvailable 类型 0/1 门控，rTorrent 待适配后放开）；LucideIcon 补 rss/external-link；zh/en downloader.rss 子树 + tabs 六键 + errors.byCode RSS_* 24 键成对（i18n-message-parity/leftover-guard 门禁绿）；demo 层同形分支（fixtures rssFeeds + demo-store 七方法 + demo-request 路由 + fixtures README 登记）；Jest 新增 rss-subscription-tab 7 例 + rss-tab-integration 3 例 + demo-request 扩 5 例；typecheck/lint/build 净，全量 Jest 128 套 1871 例全绿。"
+        },
+        {
+          "id": "rss.3",
+          "name": "验证与文档：全量门禁 + roadmap/progress 同步",
+          "description": "后端 mypy/black/flake8 + pytest；前端 typecheck/lint/build + Jest；./init.sh；roadmap 同步（backend api/models/services/migration + frontend api/views/tests）；progress.md / session-handoff.md。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/data-models/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/tests/README.md",
+            "PLANS/rss-subscription.md",
+            "PLANS/README.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "roadmap 8 文件同步：根 README（功能域速查 RSS 行 + tests 计数 259/128 套·131 spec + 元信息本批前插）、backend/api（endpoints 39→40 + rss 行 + 路由映射）、backend/services（55→56 + rss_feed_service 行）、backend/data-models（rss_subscription 行）、backend/infra（alembic 33→34 + 8fabba8687b0 行）、frontend/api（16→17 + rss.ts 行）、frontend/views（RssSubscriptionTab 行 + 设置弹窗行更新）、tests README（计数 + api 层 80）；PLANS/rss-subscription.md 实施记录与状态收口；progress.md 会话条目；session-handoff.md 交接；根 ./init.sh 退出码 0。"
+        }
+      ],
+      "last_session_note": "Phase 1 交付（2026-09-24）：双模式中 BtDeck 引擎先行；Phase 2（qB 原生代理/自动规则/按类型路由）待另批。真实下载器联调待用户执行。",
+      "last_updated": "2026-09-24"
     }
   ],
   "tasks": [

@@ -26,6 +26,7 @@
 | 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |
 | 模板 VO template-vo | `setting_templates_vo.py` | 配置模板响应 VO |
 | 限速规则 model speed-schedule | `speed_schedule_rules.py` | `speed_schedule_rules`：分时段限速规则 |
+| RSS 订阅 rss ✨2026-09-24 | `rss_subscription.py` | `bt_rss_feeds`（订阅源：绑定下载器/enabled/last_fetch 状态投影/dr 软删）+ `bt_rss_articles`（文章：(feed_id,guid) UNIQUE 去重、status pending/added、added_downloader_id 推送事实；迁移 8fabba8687b0） |
 | 同步检查点 model sync-checkpoint | `sync_checkpoint.py` | `sync_checkpoints`：按 `(downloader_id, sync_type)` 持久化同步进度检查点（`detail_json` 仅存清洗后聚合统计、version 乐观锁、outcome 六态），中断/重启后可从最后 durable checkpoint 续跑 |
 | 删除审计 model deletion-audit | `torrent_deletion_audit_log.py` | `torrent_deletion_audit_log`：种子删除审计日志 |
 | 备份记录 model torrent-backup | `torrent_file_backup.py` | `torrent_file_backup`：种子文件本地存储记录 |

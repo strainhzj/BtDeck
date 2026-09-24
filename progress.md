@@ -7,6 +7,18 @@
 
 # Progress Log - BtDeck 全栈项目
 
+# Progress Log - BtDeck 全栈项目
+
+## 2026-09-24：下载器 RSS 订阅 Phase 1（feature rss-subscription-2026-09-24，全绿未提交）
+
+- **范围（用户确认方案后实施）**：双模式终态（BtDeck 引擎 + qB 原生代理二选一）中的 **BtDeck 引擎最简订阅**：订阅源 CRUD + 手动刷新 + 文章分页浏览 + 手动推送下载器（savePath/tags 参数 + 目标下载器覆盖——为 Phase 2 按类型路由预留）。入口：下载器设置弹窗新增 rssSubscription 页签（qB/TR；rTorrent 待适配后放开），含移动端。明确不做：自动规则、定时调度、qB 原生代理、HTML 页面解析。
+- **后端**：feedparser==6.0.14 新依赖入锁（手锁哈希，check_dependencies PASS）；`models/rss_subscription.py`（bt_rss_feeds/bt_rss_articles，(feed_id,guid) UNIQUE 去重）+ 迁移 8fabba8687b0（head 前移，has_table 幂等守卫 + 对称 downgrade）；`services/rss_feed_service.py`（httpx 15s+2MB 受限抓取、bittorrent enclosure 优先取链、guid 增量入库、推送经 store 缓存客户端 + INTERACTIVE lane 链接直传：qB `torrents_add(urls=)` 校验 "Ok."、TR `add_torrent(torrent=link)`，成功置 added 不即时写 torrent_info 依赖周期同步回填）；`api/endpoints/rss_subscriptions.py`（`/api/v1/rss` 七接口，统一分页 list/total/pageSize，RSS_* reasonCode 25 键固定 msg + 动态 str(e) 只进日志，审计五枚举 best-effort，android-server 拒写）。
+- **前端**：`api/rss.ts`；`RssSubscriptionTab.vue`（源表格 + enabled 开关 + 抓取状态三态 + 待添加徽标 + 文章抽屉（状态筛选分页）+ 推送参数弹窗（目标下载器覆盖/保存路径/标签）；≤780 抽屉全宽 + 工具栏堆叠）；设置弹窗 `rssSubscription` 页签（`rssTabAvailable` 类型 0/1 门控）；LucideIcon 补 rss/external-link；zh/en `downloader.rss` 子树 + tabs 六键 + `errors.byCode` RSS_* 24 键成对；demo 层同形分支（fixtures rssFeeds 两组 + demo-store 七方法 + demo-request `/rss/*` 路由 + fixtures README 登记）。
+- **测试与门禁**：后端新 `tests/api/test_rss_subscriptions.py` 20 例（CRUD/刷新解析 fixture 去重/推送 qB·TR 参数/目标覆盖/重复 409/链接形态/类型不支持/离线/平台门控/认证 401）；存量校准 3 处（审计枚举 55→60、空库表计数 35→37、hash 迁移 head 断言改继任链挂载语义）；前端 `rss-subscription-tab.spec.ts` 7 例 + `rss-tab-integration.spec.ts` 3 例（源码契约模式）+ `demo-request.spec.ts` 扩 5 例。**验证终局**：后端全量 `pytest --cov=app --cov-fail-under=40` **5281 passed / 18 skipped / 0 failed**（cov 67.15%）+ mypy 297 文件 0 错 + black/flake8 净；前端 typecheck、lint、build、全量 Jest **128 套 1871 例全绿**（基线 126/1852）；i18n parity/leftover 门禁绿；根 `./init.sh` exit=0。
+- **文档**：PLANS/rss-subscription.md 登记与实施记录；PLANS/README 活跃表加行；feature_list.json feature #88（3 任务 done + evidence）；roadmap 8 文件同步（backend api/services/data-models/infra + frontend api/views + tests README + 根 README 功能域行/计数/元信息）；约束文档 database-migration.md HEAD 声明 8fabba8687b0。
+- **坑（6 条，已记 PLANS）**：①服务异常分支变量未预初始化 → UnboundLocalError（content 需先置 None）；②patch.object 替身接收 self 绑定（`fake_fetch(_self, url)`）；③alembic autogenerate 混入既有漂移噪音（refresh_tokens 可空性/索引命名/orphan 硬链表）必须手写收敛；④stamp 回退重升级链测试要求新表迁移带 has_table 守卫；⑤前端 API mock 必须包完整 ApiEnvelope 信封（只 mock 内层 data 会走 catch 静默成空表）；⑥vue 2 模板表达式不支持 TS 标注（buble），事件回调用裸箭头。
+- **待办**：真实 qB/TR 浏览器联调（磁链/直链两形态）；Git 提交待用户指示；Phase 2（qB 原生代理 + 模式切换 + 自动下载规则 + 定时调度 + 按类型路由推送）待另批立项。
+
 ## 2026-09-23：前端 UI 调整（查询模板菜单归组 + 系统设置页签布局统一，feature frontend-ui-refresh-2026-09-23，全绿未提交）
 
 - **范围（用户确认方案后实施）**：①查询模板菜单移入种子管理组（可见顺序 种子列表→查询模板→种子文件管理）；②设置页页签改左侧垂直导航 + 五页签 UI 风格统一（卡片宽度按用户指示大胆取宽 960px）。

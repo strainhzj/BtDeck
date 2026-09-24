@@ -1,3 +1,22 @@
+## 2026-09-24 交接：下载器 RSS 订阅 Phase 1（feature rss-subscription-2026-09-24，全绿未提交）
+
+### 已完成
+
+- **方案**（用户确认）：双模式终态（BtDeck 引擎 + qB 原生代理二选一），本期为 BtDeck 引擎最简订阅——订阅源 CRUD/手动刷新/文章浏览/手动推送（savePath/tags + 目标下载器覆盖预留按类型路由）；入口为下载器设置弹窗新增 rssSubscription 页签（qB/TR，rTorrent 待适配后放开），含移动端。
+- **后端**：feedparser==6.0.14 入锁；bt_rss_feeds/bt_rss_articles 两表（迁移 8fabba8687b0，head 前移，has_table 幂等守卫）；rss_feed_service（受限抓取/解析/guid 去重/链接直传推送经 store 缓存 + INTERACTIVE lane）；/api/v1/rss 七接口（RSS_* reasonCode + 审计五枚举 + android-server 门控）。
+- **前端**：api/rss.ts；RssSubscriptionTab.vue（源表格/文章抽屉/推送参数弹窗，≤780 适配）；设置弹窗新页签 + rssTabAvailable 门控；LucideIcon 补 rss/external-link；zh/en 双语（downloader.rss + errors.byCode RSS_* 24 键）；demo 层同形分支。
+- **验证**：后端全量 5281 passed/18 skipped（cov 67.15%）+ mypy/black/flake8 净；前端 typecheck/lint/build + 全量 Jest 128 套 1871 例；i18n parity/leftover 门禁绿；./init.sh exit 0。
+- **文档**：PLANS/rss-subscription.md（含 6 条坑位记录）；feature_list.json feature #88（3 任务 done）；roadmap 8 文件同步；progress.md 本条目。
+
+### 待办
+
+- 真实 qB/TR 浏览器联调（磁链/直链两种链接形态、添加参数生效）。
+- Git 提交待用户指示（建议：feat(rss) 后端+前端+测试，docs 计划/roadmap/追踪分开或合并均可）。
+- Phase 2 待另批立项：qB 原生 RSS 代理 + 按下载器模式切换 + 自动下载规则 + 定时刷新调度 + 按类型选择推送下载器。
+- 注意：工作区另有历史遗留待写回补丁 /tmp/btdeck-semantic-alignment-20260924.patch（见上条交接），与本批改动无冲突但提交前需确认顺序。
+
+---
+
 ## 2026-09-24 交接：双语语义对齐修复（补丁待写回）
 
 ### 已完成
