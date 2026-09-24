@@ -156,7 +156,7 @@ export const downloader = {
     savePathPlaceholder: 'e.g. /downloads/torrents or C:\\Downloads\\Torrents',
     savePathHint: 'Directory where torrent files are saved. Must be an absolute path accessible from the application runtime environment',
     pathMapping: 'Path mapping rules',
-    pathMappingPlaceholderFull: 'One rule per line, format: source{sep}target\n\nExamples:\n/downloads{sep}/volume1\n/volume1/downloads{sep}/mnt/downloads\n\nConversion type is detected automatically:\n- /downloads{sep}/volume1 → append (result: /volume1/downloads)\n- /downloads{sep}/volume1/downloads → replace (result: /volume1/downloads)\n\nLeave blank to disable path conversion',
+    pathMappingPlaceholderFull: 'One rule per line, format: source{sep}target\n\nThe target path replaces the source prefix and keeps the relative suffix. Examples:\n- Rule /downloads{sep}/volume1: /downloads/movie.mkv → /volume1/movie.mkv\n- Rule /downloads{sep}/volume1/downloads: /downloads/movie.mkv → /volume1/downloads/movie.mkv\n\nThe conversion mode is detected automatically. Leave blank to disable path conversion.',
     pathMappingPlaceholder: 'One rule per line, format: source{#**#}target',
     pathMappingHint: 'Path mapping rules generate external paths automatically when scheduled tasks scan directories. Empty rules mean paths are equal (no conversion).',
     tagsTitle: 'Tags / categories',

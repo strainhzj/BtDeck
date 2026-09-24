@@ -105,7 +105,7 @@ CAPABILITY_CATALOG: Tuple[CapabilitySpec, ...] = (
         risk="high",
         description="添加 .torrent 种子文件（仅二进制内容，不接受磁力/URL/服务器路径）。",
         description_en=(
-            "Add a .torrent seed file (binary content only; magnet links, URLs, " "and server paths are rejected)."
+            "Add a .torrent file (binary content only; magnet links, URLs, " "and server paths are rejected)."
         ),
         extra_gates=(
             "默认 10 MiB / 硬上限 64 MiB，bencode、扩展名、空文件与 info hash 校验",

@@ -113,13 +113,13 @@ describe('P6-1 列设置 labelKey 渲染', () => {
 describe('P6-1 转移/改路径文案（transfer 模块）', () => {
   afterEach(() => setLocale('zh-CN'))
 
-  it('zh：确认/危险/结果文案与原内联逐字节一致', () => {
+  it('zh：确认/源任务移除/结果文案语义一致', () => {
     setLocale('zh-CN')
     expect(translate('transfer.title')).toBe('转移种子')
     expect(translate('transfer.batchTitle', { count: 3 })).toBe('批量转移种子（已选择3个）')
     expect(translate('transfer.torrentCount', { count: 2 })).toBe('(2个种子)')
-    expect(translate('transfer.deleteConfirmQuestion')).toBe('是否删除原下载器中的种子？')
-    expect(translate('transfer.deleteConfirmIrreversible')).toBe('此操作不可逆，请谨慎选择')
+    expect(translate('transfer.deleteConfirmQuestion')).toBe('是否移除原下载器中的种子任务？数据文件将保留。')
+    expect(translate('transfer.deleteConfirmIrreversible')).toBe('此操作只会移除原种子任务，数据文件仍会保留。')
     expect(translate('transfer.resultTitle')).toBe('批量转移完成')
     expect(translate('transfer.resultFailedList')).toBe('失败列表：')
     expect(translate('transfer.validate.sameAsCurrentDownloader')).toBe('目标下载器不能与当前下载器相同')
@@ -132,10 +132,10 @@ describe('P6-1 转移/改路径文案（transfer 模块）', () => {
       .toBe('成功提交5个种子路径修改请求，正在后台处理...')
   })
 
-  it('en：危险语义（数据保留/不可逆）与插值输出英文', () => {
+  it('en：危险语义（任务移除/数据保留）与插值输出英文', () => {
     setLocale('en')
     expect(translate('transfer.deleteConfirmQuestion')).toContain('original downloader')
-    expect(translate('transfer.deleteConfirmIrreversible').toLowerCase()).toContain('cannot be undone')
+    expect(translate('transfer.deleteConfirmIrreversible').toLowerCase()).toContain('data files will remain')
     expect(translate('transfer.batchTitle', { count: 3 })).toContain('3')
     expect(translate('transfer.setLocation.confirmChange', { count: 2 })).toContain('files are not moved')
   })
@@ -257,6 +257,8 @@ describe('P6-1 源码契约', () => {
     expect(transfer.includes("$t('transfer.deleteSourceHint')")).toBe(true)
     expect(transfer.includes("$t('transfer.deleteConfirmTitle')")).toBe(true)
     expect(transfer.includes("$t('transfer.deleteConfirmIrreversible')")).toBe(true)
+    expect(transfer.includes("'删除原种子失败'")).toBe(false)
+    expect(read(FILES.batchTransfer).includes("$t('transfer.msg.batchDeleteSourceFailed')")).toBe(true)
   })
 
   it('文件管理页：删除确认/导入弹窗/筛选全部键化，错误兜底走键', () => {
@@ -267,5 +269,51 @@ describe('P6-1 源码契约', () => {
     expect(src.includes("fileManagement.msg.downloadFailedWithStatus")).toBe(true)
     expect(src.includes("'确认删除该种子文件备份吗？'")).toBe(false)
     expect(src.includes('只能上传 .torrent 文件，支持批量上传')).toBe(false)
+  })
+})
+
+
+describe('语义对齐回归', () => {
+  afterEach(() => setLocale('zh-CN'))
+
+  it('英文多选与删除结果使用总数而不是额外数量', () => {
+    setLocale('en')
+    expect(translate('common.multiSelect.multiSelected', { first: 'Alpha', count: 2 }))
+      .toBe('Alpha (2 selected)')
+    expect(translate('torrent.deleteLevel.result.failedDetailMore', { names: 'A, B, C, D, E', count: 8 }))
+      .toBe('The following torrents failed to delete: A, B, C, D, E (8 torrents in total)')
+    expect(translate('torrent.deleteLevel.result.fileMissingDetailMore', { names: 'A, B, C, D, E', count: 8 }))
+      .toContain('(8 torrents in total)')
+    expect(translate('torrent.deleteLevel.result.downgradeDetailMore', { names: 'A, B, C, D, E', count: 8 }))
+      .toContain('(8 torrents in total)')
+  })
+
+  it('孤儿清理明确是隔离，可在永久删除前恢复', () => {
+    setLocale('zh-CN')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).toContain('移入隔离区')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).toContain('可从隔离区恢复')
+    setLocale('en')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).toContain('to quarantine')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).toContain('restored from quarantine')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).not.toContain('cannot be undone')
+  })
+
+  it('路径映射说明与转换器的实际前缀替换结果一致', () => {
+    expect(translate('downloader.dialog.pathMappingPlaceholderFull', { sep: '{#**#}' }))
+      .toContain('/downloads/movie.mkv')
+    setLocale('en')
+    const text = translate('downloader.dialog.pathMappingPlaceholderFull', { sep: '{#**#}' })
+    expect(text).toContain('/downloads/movie.mkv → /volume1/movie.mkv')
+    expect(text).toContain('/downloads/movie.mkv → /volume1/downloads/movie.mkv')
+    expect(text).not.toContain('append')
+  })
+
+  it('转移源任务提示明确保留数据文件', () => {
+    setLocale('zh-CN')
+    expect(translate('transfer.deleteSourceHint')).toContain('保留数据文件')
+    expect(translate('transfer.deleteConfirmQuestion')).toContain('数据文件将保留')
+    setLocale('en')
+    expect(translate('transfer.deleteSourceHint')).toContain('keep its data files')
+    expect(translate('transfer.deleteConfirmQuestion')).toContain('data files will be kept')
   })
 })

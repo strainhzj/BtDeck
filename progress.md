@@ -1,3 +1,10 @@
+## 2026-09-24：双语语义对齐修复（远程 dev 89fb376，补丁待写回）
+
+- **修复范围**：英文计数文案改为总数表达；孤儿文件清理明确为移入隔离区且永久删除前可恢复，补齐离线低置信度和快捷清理语义；路径映射说明按实际转换器行为改写并补准确示例；转移源端改为移除种子任务但保留数据文件，组件兜底文案全部接入 i18n；辅种统一为 cross-seed；MCP `.torrent` 术语修正。
+- **验证**：语义/Parity 4 套 66 例；跨组件定向 4 套 157 例；前端全量 126 套 1856 例；typecheck、lint、build；后端 MCP 合约 29 例；`git diff --check`，全部通过。
+- **交接限制**：远程 `dev` 已核对为 89fb376。原 `/srv/workspaces/BtDeck` 与 `.git` 属于 `piagent`，当前用户无写权限，因此修复保存在 `/tmp/btdeck-semantic-review-20260924`，补丁为 `/tmp/btdeck-semantic-alignment-20260924.patch`；原工作区保持干净，补丁已通过 `git apply --check`。
+- **下一步**：恢复原工作区写权限后，在仓库根目录执行 `git apply /tmp/btdeck-semantic-alignment-20260924.patch`，再按项目流程运行 `./init.sh --ci`。
+
 # Progress Log - BtDeck 全栈项目
 
 ## 2026-09-23：前端 UI 调整（查询模板菜单归组 + 系统设置页签布局统一，feature frontend-ui-refresh-2026-09-23，全绿未提交）

@@ -90,9 +90,9 @@ export const orphanFiles = {
     high: '高',
     low: '低',
     mixed: '混合',
-    folderLowTip: '文件夹内含离线降级目录粗筛判定的低置信度项，有误判风险',
+    folderLowTip: '文件夹内包含下载器离线时通过备用目录粗筛识别的低置信度文件，可能仍被种子引用。',
     folderHighTip: '文件夹内全部为在线精筛判定，确认未被任何种子引用',
-    lowTip: '离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛',
+    lowTip: '此文件是在下载器离线时通过备用目录粗筛识别的，可能仍被种子引用。手动清理会将其移入隔离区；自动清理须等待下载器上线后进一步核查。',
     highTip: '在线精筛判定，确认未被任何种子引用'
   },
   list: {
@@ -106,7 +106,7 @@ export const orphanFiles = {
     folderView: '按文件夹展示',
     folderViewTip: '开启后同目录下多个文件折叠为文件夹一行（仅影响展示，删除仍按文件）',
     quickAction: '快捷操作',
-    quickCleanup: '快捷删除（按前缀）',
+    quickCleanup: '快捷清理（按路径前缀）',
     quickIgnore: '快捷忽视（按前缀）',
     quickIgnoreTitle: '按路径前缀批量忽视待清理文件',
     clearLocated: '取消有副本筛选',
@@ -185,15 +185,15 @@ export const orphanFiles = {
   },
   cleanup: {
     title: '清理确认',
-    confirmTitle: '确认清理以下孤儿文件？此操作不可恢复！',
+    confirmTitle: '确认将以下孤儿文件移入隔离区？在永久删除前可从隔离区恢复。',
     fileCount: '文件数量: ',
     totalSize: '总大小: ',
-    lowTitle: '其中 {count} 个为低置信度（离线降级目录粗筛判定）',
-    lowText: '低置信度文件有误判风险（可能并非真正的孤儿）。确认清理前请核对路径，避免误删用户数据。',
+    lowTitle: '其中 {count} 个为低置信度（下载器离线时通过备用目录粗筛识别）',
+    lowText: '低置信度文件可能仍被种子引用。移入隔离区前请核对路径，避免将用户数据误判为孤儿文件。',
     confirm: '确认清理'
   },
   quickAction: {
-    cleanupTitle: '快捷删除（按前缀）',
+    cleanupTitle: '快捷清理（按路径前缀）',
     ignoreTitle: '快捷忽视（按前缀）',
     noticeTitle: '按路径前缀左匹配待清理文件',
     noticeLead: '输入路径前缀（绝对路径开头），将匹配所有',
@@ -201,7 +201,7 @@ export const orphanFiles = {
     noticeMid: ' 以此开头的',
     noticePendingStrong: '待清理',
     noticeTail: '文件（排除已忽视/已清理）。',
-    cleanupNote: '删除即移入隔离区，可恢复。',
+    cleanupNote: '清理会将文件移入隔离区；永久删除前可恢复。',
     prefixLabel: '路径前缀',
     prefixPlaceholder: '例如：D:\\downloads\\待清理目录\\ 或 /data/leak/',
     ok: '确定'

@@ -84,9 +84,9 @@ export const orphanFiles = {
     high: 'High',
     low: 'Low',
     mixed: 'Mixed',
-    folderLowTip: 'The folder contains low-confidence items from the offline degraded-directory coarse check, which may misjudge',
+    folderLowTip: 'This folder contains low-confidence files identified by a fallback directory check while the downloader was offline. Some may still be referenced by torrents.',
     folderHighTip: 'All files in the folder passed the online precise check and are confirmed unreferenced by any torrent',
-    lowTip: 'Judged by the offline degraded-directory coarse check and may be misjudged; manual cleanup can delete it, while automatic cleanup waits for the downloader to come online for a precise check',
+    lowTip: 'This file was identified by a fallback directory check while the downloader was offline and may still be referenced by a torrent. Manual cleanup moves it to quarantine; automatic cleanup waits for the downloader to come online for further checks.',
     highTip: 'Judged by the online precise check and confirmed unreferenced by any torrent'
   },
   list: {
@@ -100,7 +100,7 @@ export const orphanFiles = {
     folderView: 'Group by Folder',
     folderViewTip: 'When enabled, multiple files in the same directory collapse into one folder row (display only; deletion still works per file)',
     quickAction: 'Quick Actions',
-    quickCleanup: 'Quick Delete (by Prefix)',
+    quickCleanup: 'Quick Cleanup (by Path Prefix)',
     quickIgnore: 'Quick Ignore (by Prefix)',
     quickIgnoreTitle: 'Batch-ignore pending files by path prefix',
     clearLocated: 'Clear Copy Filter',
@@ -179,15 +179,15 @@ export const orphanFiles = {
   },
   cleanup: {
     title: 'Cleanup Confirmation',
-    confirmTitle: 'Clean up the following orphan files? This cannot be undone!',
+    confirmTitle: 'Move the following orphan files to quarantine? They can be restored from quarantine until permanently deleted.',
     fileCount: 'File count: ',
     totalSize: 'Total size: ',
-    lowTitle: '{count} of them are low-confidence (offline degraded-directory coarse check)',
-    lowText: 'Low-confidence files may be misjudged (they might not be true orphans). Verify the paths before confirming cleanup to avoid deleting user data by mistake.',
+    lowTitle: '{count} of them are low-confidence (identified by a fallback directory check while the downloader was offline)',
+    lowText: 'Low-confidence files may still be referenced by torrents. Verify the paths before moving them to quarantine to avoid misclassifying user data as orphaned.',
     confirm: 'Clean Up'
   },
   quickAction: {
-    cleanupTitle: 'Quick Delete (by Prefix)',
+    cleanupTitle: 'Quick Cleanup (by Path Prefix)',
     ignoreTitle: 'Quick Ignore (by Prefix)',
     noticeTitle: 'Left-match pending files by path prefix',
     noticeLead: 'Enter a path prefix (the start of an absolute path); it matches all',
@@ -195,7 +195,7 @@ export const orphanFiles = {
     noticeMid: ' starting with it that are',
     noticePendingStrong: 'pending cleanup',
     noticeTail: ' (excluding ignored/cleaned).',
-    cleanupNote: 'Deletion moves files into quarantine and is recoverable.',
+    cleanupNote: 'Cleanup moves files to quarantine. They can be restored until permanently deleted.',
     prefixLabel: 'Path Prefix',
     prefixPlaceholder: 'e.g. D:\\downloads\\to-clean\\ or /data/leak/',
     ok: 'OK'

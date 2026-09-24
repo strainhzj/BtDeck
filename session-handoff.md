@@ -1,3 +1,22 @@
+## 2026-09-24 交接：双语语义对齐修复（补丁待写回）
+
+### 已完成
+
+- 基于远程 `dev` 89fb376 完成 15 个源码/测试文件的语义修复：计数、孤儿文件隔离区可恢复性、离线低置信度检查、路径映射、转移源端数据保留、cross-seed 术语和 MCP `.torrent` 术语。
+- 新增/更新语义回归断言，覆盖英文计数总数、隔离区恢复窗口、PathMappingConverter 示例、转移删除数据保留及组件 i18n 兜底。
+- 验证全绿：前端全量 Jest 126 套 1856 例、定向 157 例、语义/Parity 66 例、typecheck、lint、build；后端 MCP 合约 29 例；`git diff --check`。
+
+### 写回状态
+
+- `/srv/workspaces/BtDeck` 当前 `dev...origin/dev` 且无改动；由于目录和 `.git` 属于 `piagent`，当前执行用户无法写回。
+- 可写修复副本：`/tmp/btdeck-semantic-review-20260924`。最终补丁：`/tmp/btdeck-semantic-alignment-20260924.patch`；已在原工作区通过 `git apply --check`。
+- 恢复写权限后执行：`git apply /tmp/btdeck-semantic-alignment-20260924.patch`，随后运行 `./init.sh --ci`。未提交、未推送。
+
+### 待办
+
+- 写回补丁并复跑根验证；按用户指示决定是否提交。
+- P7 浏览器/真实下载器验收及 R06 人工签认仍按既有计划保留。
+
 ## 2026-09-23 交接：前端 UI 调整——查询模板菜单归组 + 设置页页签布局统一（全绿未提交）
 
 ### 已完成（用户确认方案后实施，feature #87 frontend-ui-refresh-2026-09-23）

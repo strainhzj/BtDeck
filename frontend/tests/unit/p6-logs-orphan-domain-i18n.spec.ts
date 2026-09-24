@@ -102,7 +102,7 @@ describe('P6-4b 孤儿文件页文案', () => {
     expect(translate('orphanFiles.filter.statusDegradedTip')).toBe('同时选“待清理”与“已忽视/已清理”会扩大为全部未删除文件')
     expect(translate('orphanFiles.filter.locatedTip')).toBe('按扫描时统计的硬链接副本数过滤；副本位置详情由弹窗实时复核')
     expect(translate('orphanFiles.list.selected', { count: 3 })).toBe('已选择 3 项')
-    expect(translate('orphanFiles.list.quickCleanup')).toBe('快捷删除（按前缀）')
+    expect(translate('orphanFiles.list.quickCleanup')).toBe('快捷清理（按路径前缀）')
     expect(translate('orphanFiles.list.empty')).toBe('暂无孤儿文件，点击“立即扫描”开始检测')
     expect(translate('orphanFiles.list.col.path')).toBe('文件路径')
     expect(translate('orphanFiles.list.filesCount', { count: 5 })).toBe('5 个文件')
@@ -114,10 +114,10 @@ describe('P6-4b 孤儿文件页文案', () => {
     expect(translate('orphanFiles.quarantine.total', { count: 4 })).toBe('共 4 条')
   })
 
-  it('zh：清理/彻底删除/删除副本危险语义三要素逐字节（不可恢复明示）', () => {
+  it('zh：隔离清理/彻底删除/删除副本危险语义分别表达', () => {
     setLocale('zh-CN')
-    expect(translate('orphanFiles.cleanup.confirmTitle')).toBe('确认清理以下孤儿文件？此操作不可恢复！')
-    expect(translate('orphanFiles.cleanup.lowText')).toBe('低置信度文件有误判风险（可能并非真正的孤儿）。确认清理前请核对路径，避免误删用户数据。')
+    expect(translate('orphanFiles.cleanup.confirmTitle')).toBe('确认将以下孤儿文件移入隔离区？在永久删除前可从隔离区恢复。')
+    expect(translate('orphanFiles.cleanup.lowText')).toBe('低置信度文件可能仍被种子引用。移入隔离区前请核对路径，避免将用户数据误判为孤儿文件。')
     expect(translate('orphanFiles.msg.purgeConfirm')).toBe('确认彻底删除选中的文件？此操作不可恢复，文件将被永久删除！')
     expect(translate('orphanFiles.msg.restoreConfirm')).toBe('确认恢复选中的文件到原位置？')
     expect(translate('orphanFiles.hardlink.deleteConfirm', { path: '/lib/a.mkv' })).toBe(
@@ -137,7 +137,7 @@ describe('P6-4b 孤儿文件页文案', () => {
       translate('orphanFiles.quickAction.noticePendingStrong') +
       translate('orphanFiles.quickAction.noticeTail')
     expect(composed).toBe('输入路径前缀（绝对路径开头），将匹配所有文件路径 以此开头的待清理文件（排除已忽视/已清理）。')
-    expect(translate('orphanFiles.quickAction.cleanupNote')).toBe('删除即移入隔离区，可恢复。')
+    expect(translate('orphanFiles.quickAction.cleanupNote')).toBe('清理会将文件移入隔离区；永久删除前可恢复。')
     expect(translate('orphanFiles.quickAction.prefixPlaceholder')).toBe('例如：D:\\downloads\\待清理目录\\ 或 /data/leak/')
   })
 

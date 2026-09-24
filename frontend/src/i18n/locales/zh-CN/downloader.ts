@@ -156,7 +156,7 @@ export const downloader = {
     savePathPlaceholder: '例如: /downloads/torrents 或 C:\\Downloads\\Torrents',
     savePathHint: '保存种子文件的目录路径，必须为应用运行环境可直接访问的绝对路径',
     pathMapping: '路径转换规则',
-    pathMappingPlaceholderFull: '每行一条规则，格式：源路径{sep}目标路径\n\n示例：\n/downloads{sep}/volume1\n/volume1/downloads{sep}/mnt/downloads\n\n转换类型自动判断：\n- /downloads{sep}/volume1 → 加（结果：/volume1/downloads）\n- /downloads{sep}/volume1/downloads → 替换（结果：/volume1/downloads）\n\n留空表示不进行路径转换',
+    pathMappingPlaceholderFull: '每行一条规则，格式：源路径{sep}目标路径\n\n匹配时，目标路径会替换源路径前缀，并保留其后的相对路径。示例：\n- 规则 /downloads{sep}/volume1：/downloads/movie.mkv → /volume1/movie.mkv\n- 规则 /downloads{sep}/volume1/downloads：/downloads/movie.mkv → /volume1/downloads/movie.mkv\n\n转换方式由系统自动判断。留空表示不进行路径转换。',
     pathMappingPlaceholder: '每行一条规则，格式：源路径{#**#}目标路径',
     pathMappingHint: '路径转换规则用于定时任务扫描路径时自动生成外部路径。规则为空时表示路径相等（不转换）。',
     tagsTitle: '标签/分类管理',

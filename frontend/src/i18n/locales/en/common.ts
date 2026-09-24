@@ -114,7 +114,7 @@ export const common = {
     useSeparators: 'Separate multiple values with {separators}',
     separatorJoin: ', ',
     spaceSeparator: 'space',
-    multiSelected: '{first} + {count} more',
+    multiSelected: '{first} ({count} selected)',
     ariaSelect: 'Select multiple values',
     ariaClear: 'Clear selected values'
   },
