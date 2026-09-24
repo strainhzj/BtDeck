@@ -55,6 +55,9 @@ from app.models.sync_checkpoint import SyncCheckpoint
 from app.models.moviepilot_instance import MoviePilotInstance
 from app.models.moviepilot_transfer_history import MoviePilotTransferHistory
 
+# RSS 订阅（feature rss-subscription-2026-09-24）
+from app.models.rss_subscription import RssFeed, RssArticle
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config

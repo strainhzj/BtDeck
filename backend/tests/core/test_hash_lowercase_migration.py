@@ -110,5 +110,15 @@ class TestHashLowercaseNormalization:
         assert len(hashes) == 2 and all(h == h.lower() for h in hashes)
 
     def test_head_is_hash_norm_revision(self):
-        """链尾即 hash 归一迁移（新增迁移后此断言应显式更新，防误挂链）。"""
-        assert current_head() == HASH_NORM_REV
+        """hash 归一迁移的继任链尾应挂在本迁移之后（新增迁移后此断言应显式更新，防误挂链）。
+
+        2026-09-24：head 前移至 8fabba8687b0（RSS 订阅两表，feature
+        rss-subscription-2026-09-24）；hash 归一迁移不再是链尾，改为断言
+        新 head 的 down_revision 指向本迁移。
+        """
+        assert current_head() == "8fabba8687b0"
+        from alembic.script import ScriptDirectory
+
+        script = ScriptDirectory.from_config(_make_alembic_config(":memory:"))
+        revision = script.get_revision("8fabba8687b0")
+        assert revision.down_revision == HASH_NORM_REV

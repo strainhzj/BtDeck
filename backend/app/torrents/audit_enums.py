@@ -74,6 +74,13 @@ class AuditOperationType(str, Enum):
     KEYWORD_RULE_ENABLE = "keyword_rule_enable"  # 启用关键词规则
     KEYWORD_RULE_DISABLE = "keyword_rule_disable"  # 禁用关键词规则
 
+    # ========== RSS 订阅操作（feature rss-subscription-2026-09-24） ==========
+    RSS_FEED_ADD = "rss_feed_add"  # 添加 RSS 订阅源
+    RSS_FEED_UPDATE = "rss_feed_update"  # 修改 RSS 订阅源
+    RSS_FEED_DELETE = "rss_feed_delete"  # 删除 RSS 订阅源
+    RSS_FEED_REFRESH = "rss_feed_refresh"  # 手动刷新 RSS 订阅源
+    RSS_ARTICLE_ADD = "rss_article_add"  # 推送 RSS 文章到下载器
+
     # ========== 系统操作 ==========
     SYNC_STATUS = "sync_status"  # 同步状态
     CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子

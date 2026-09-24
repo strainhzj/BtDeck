@@ -60,7 +60,8 @@ def _clean_database_path_env():
 #       → d1e2f3a4b5c6(setting_templates preset_key, bilingual system preset identity)
 #       → 053003337878(moviepilot integration tables; dev1.0.7 合入后重挂至 d1e2f3a4b5c6)
 #       → a1f7c9e3d2b4(hash lowercase normalization; P0-D rTorrent 接入前置，数据迁移 no-op downgrade)
-EXPECTED_HEAD = "a1f7c9e3d2b4"
+#       → 8fabba8687b0(rss subscription feeds and articles; feature rss-subscription-2026-09-24)
+EXPECTED_HEAD = "8fabba8687b0"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
@@ -188,7 +189,7 @@ class TestMigrationChainIntegrity:
         assert GHOST_VERSION not in valid_revs, f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
 
     def test_empty_db_upgrade_head_builds_full_schema(self, tmp_path):
-        """空库 alembic upgrade head 应建起完整 schema（35 张业务表）。
+        """空库 alembic upgrade head 应建起完整 schema（37 张业务表）。
 
         这是删除 create_all 的核心前提：迁移链能独立承担建库。
         """
@@ -207,8 +208,8 @@ class TestMigrationChainIntegrity:
         # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
         # + 053003337878 加 moviepilot_instance + moviepilot_transfer_history = 35
         assert (
-            count == 35
-        ), f"空库 upgrade 应建 35 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表），实际 {count}"
+            count == 37
+        ), f"空库 upgrade 应建 37 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表 + RSS 订阅两表），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -806,7 +807,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 35
+        assert _table_count(str(target_db)) == 37
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

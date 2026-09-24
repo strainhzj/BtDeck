@@ -483,6 +483,67 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
     return success({ success: true, demo: true }, 'Demo 模式：设置模板操作仅在本地展示')
   }
 
+  // ==================== RSS 订阅（feature rss-subscription-2026-09-24） ====================
+  if (path === '/rss/feeds' && method === 'GET') {
+    const downloaderId = asString(input.downloaderId, 'demo-downloader-001')
+    const page = asNumber(input.page, 1)
+    const pageSize = asNumber(input.pageSize, 20)
+    const feeds = demoStore.listRssFeeds(downloaderId)
+    const start = (page - 1) * pageSize
+    return success({
+      total: feeds.length,
+      pageSize,
+      list: feeds.slice(start, start + pageSize)
+    })
+  }
+  if (path === '/rss/feeds' && method === 'POST') {
+    const feed = demoStore.createRssFeed({
+      downloaderId: asString(input.downloaderId, 'demo-downloader-001'),
+      name: asString(input.name, ''),
+      url: asString(input.url, '')
+    })
+    return success({ feed }, 'Demo 订阅源已创建')
+  }
+  if (path.startsWith('/rss/feeds/') && path.endsWith('/refresh') && method === 'POST') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const result = demoStore.refreshRssFeed(feedId)
+    if (!result) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({ ...result, lastFetchAt: '2026-09-24 12:00:00' }, 'Demo 订阅源已刷新')
+  }
+  if (path.startsWith('/rss/feeds/') && path.endsWith('/articles') && method === 'GET') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const statusInput = asString(input.status, '')
+    const status = statusInput === 'pending' || statusInput === 'added' ? statusInput : undefined
+    const page = demoStore.listRssArticles(feedId, {
+      page: asNumber(input.page, 1),
+      pageSize: asNumber(input.pageSize, 20),
+      status
+    })
+    return success({ total: page.total, pageSize: page.pageSize, list: page.list })
+  }
+  if (path.startsWith('/rss/feeds/') && method === 'PUT') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const feed = demoStore.updateRssFeed(feedId, {
+      name: input.name !== undefined ? asString(input.name, '') : undefined,
+      url: input.url !== undefined ? asString(input.url, '') : undefined,
+      enabled: input.enabled !== undefined ? asBoolean(input.enabled, true) : undefined
+    })
+    if (!feed) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({ feed }, 'Demo 订阅源已更新')
+  }
+  if (path.startsWith('/rss/feeds/') && method === 'DELETE') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const deleted = demoStore.deleteRssFeed(feedId)
+    if (!deleted) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({}, 'Demo 订阅源已删除')
+  }
+  if (path.startsWith('/rss/articles/') && path.endsWith('/add') && method === 'POST') {
+    const articleId = extractPathId(path, '/rss/articles/')
+    const article = demoStore.addRssArticle(articleId)
+    if (!article) return success({ reasonCode: 'RSS_ARTICLE_NOT_FOUND' }, 'Demo 文章不存在或已推送')
+    return success({ article, downloaderId: asString(input.downloaderId, 'demo-downloader-001') }, 'Demo 文章已推送')
+  }
+
   if (path === '/torrents/getList' || path === '/advanced-search/advanced-search') {
     const page = demoStore.listTorrents(toTorrentQuery(input))
     return success({ ...page, list: page.list.map(toTorrentPayload) })

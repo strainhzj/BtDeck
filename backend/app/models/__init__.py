@@ -58,6 +58,9 @@ from app.models.sync_checkpoint import (
     OUTCOME_CANCELLED,
 )
 
+# 导出 RSS 订阅模型（feature rss-subscription-2026-09-24）
+from app.models.rss_subscription import RssFeed, RssArticle
+
 __all__ = [
     "DownloaderTypeEnum",  # 整数枚举
     "SpeedUnitEnum",
@@ -93,4 +96,7 @@ __all__ = [
     "OUTCOME_FAILED",
     "OUTCOME_NO_ACTION",
     "OUTCOME_CANCELLED",
+    # RSS 订阅模型
+    "RssFeed",
+    "RssArticle",
 ]

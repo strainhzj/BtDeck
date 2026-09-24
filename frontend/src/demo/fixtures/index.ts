@@ -11,6 +11,7 @@ import {
   DemoOrphanFile,
   DemoQueryTemplate,
   DemoRecycleItem,
+  DemoRssFeed,
   DemoTask,
   DemoTaskLog,
   DemoTorrent,
@@ -102,6 +103,53 @@ const makeTorrent = (input: Partial<DemoTorrent> & Pick<DemoTorrent, 'infoId' | 
   num_seeds: input.num_seeds || input.seeds || 0,
   num_leechs: input.num_leechs || input.peers || 0
 })
+
+/** RSS 订阅源 demo fixture（feature rss-subscription-2026-09-24；域名 example.invalid，链接为演示占位） */
+export const DEMO_RSS_FEEDS: DemoRssFeed[] = [
+  {
+    feedId: 'demo-rss-feed-001',
+    downloaderId: 'demo-downloader-001',
+    name: '每日剧集推送',
+    url: 'https://rss.example.invalid/daily-shows.xml',
+    enabled: true,
+    lastFetchAt: '2026-09-24 08:30:00',
+    lastFetchStatus: 'ok',
+    lastError: null,
+    articles: [
+      {
+        articleId: 'demo-rss-article-001',
+        feedId: 'demo-rss-feed-001',
+        title: 'Show.S01E01.1080p.WEB-DL',
+        link: 'magnet:?xt=urn:btih:demo0001demo0001demo0001demo0001demo0001',
+        publishedAt: '2026-09-24 08:00:00',
+        fetchedAt: '2026-09-24 08:30:00',
+        status: 'pending',
+        addedAt: null
+      },
+      {
+        articleId: 'demo-rss-article-002',
+        feedId: 'demo-rss-feed-001',
+        title: 'Show.S01E02.1080p.WEB-DL',
+        link: 'magnet:?xt=urn:btih:demo0002demo0002demo0002demo0002demo0002',
+        publishedAt: '2026-09-23 08:00:00',
+        fetchedAt: '2026-09-24 08:30:00',
+        status: 'added',
+        addedAt: '2026-09-24 09:10:00'
+      }
+    ]
+  },
+  {
+    feedId: 'demo-rss-feed-002',
+    downloaderId: 'demo-downloader-002',
+    name: '开源镜像更新',
+    url: 'https://rss.example.invalid/distro-releases.xml',
+    enabled: true,
+    lastFetchAt: '2026-09-23 22:00:00',
+    lastFetchStatus: 'failed',
+    lastError: 'HTTP 503',
+    articles: []
+  }
+]
 
 export const DEMO_DOWNLOADERS: DemoDownloader[] = [
   {
@@ -1007,6 +1055,7 @@ export const DEMO_FIXTURE_BUNDLE: DemoFixtureBundle = {
   torrents: DEMO_TORRENTS,
   notifications: DEMO_NOTIFICATIONS,
   queryTemplates: DEMO_QUERY_TEMPLATES,
+  rssFeeds: DEMO_RSS_FEEDS,
   tasks: DEMO_TASKS,
   taskLogs: DEMO_TASK_LOGS,
   auditLogs: DEMO_AUDIT_LOGS,

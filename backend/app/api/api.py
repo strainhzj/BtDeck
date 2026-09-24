@@ -50,6 +50,9 @@ from app.api.endpoints import mcp_settings
 # MoviePilot 集成（整理历史同步 + 任务关联查询）
 from app.api.endpoints import moviepilot
 
+# RSS 订阅（feature rss-subscription-2026-09-24）
+from app.api.endpoints import rss_subscriptions
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -103,6 +106,8 @@ api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce
 api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=["torrent-status"])
 # 添加通知中心路由
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])
+# 添加 RSS 订阅路由（feature rss-subscription-2026-09-24）
+api_router.include_router(rss_subscriptions.router, prefix="/rss", tags=["RSS订阅"])
 # 添加孤儿文件管理路由
 api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])
 # API 前缀下保留 liveness/readiness 别名；Docker 使用的规范路径仍是根路径 /health/*。

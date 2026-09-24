@@ -520,6 +520,38 @@
           />
         </div>
       </el-tab-pane>
+
+      <!-- 标签页7: RSS 订阅（BtDeck 引擎，qB/TR） -->
+      <el-tab-pane v-if="rssTabAvailable" name="rssSubscription" :disabled="!isEdit">
+        <span slot="label" class="workspace-tab-label">
+          <span class="workspace-tab-label__icon">
+            <LucideIcon name="rss" :size="17" :stroke-width="1.8" />
+          </span>
+          <span class="workspace-tab-label__copy">
+            <strong>{{ $t('downloader.tabs.rssTitle') }}</strong>
+            <small>{{ $t('downloader.tabs.rssDesc') }}</small>
+          </span>
+          <LucideIcon v-if="!isEdit" name="lock-keyhole" :size="12" :stroke-width="1.8" class="workspace-tab-label__lock" />
+        </span>
+        <div class="tab-content">
+          <div class="panel-intro">
+            <div>
+              <span>05 / SUBSCRIPTION</span>
+              <h3>{{ $t('downloader.tabs.rssSectionTitle') }}</h3>
+              <p>{{ $t('downloader.tabs.rssSectionDesc') }}</p>
+            </div>
+            <span class="panel-intro__badge">
+              <LucideIcon name="rss" :size="14" :stroke-width="1.8" />
+              {{ $t('downloader.tabs.rssBadge') }}
+            </span>
+          </div>
+          <!-- RSS 订阅组件 -->
+          <rss-subscription-tab
+            :downloader="downloader"
+            ref="rssSubscriptionTabRef"
+          />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <div slot="footer" class="dialog-footer">
@@ -587,6 +619,7 @@ import SpeedSettingsTab from './SpeedSettingsTab.vue'
 import AdvancedSettingsTab from './AdvancedSettingsTab.vue'
 import PathManagementTab from './PathManagementTab.vue'
 import TagManagementTab from './TagManagementTab.vue'
+import RssSubscriptionTab from './RssSubscriptionTab.vue'
 import TemplateSelectionDialog from './TemplateSelectionDialog.vue'
 import { resolveEnableSchedule } from '../settings'
 import { hasCompleteConnectionInfo } from '../connection'
@@ -630,6 +663,7 @@ const normalizeSpeedUnit = (value: unknown): 0 | 1 => Number(value) === 1 ? 1 : 
     AdvancedSettingsTab,
     PathManagementTab,
     TagManagementTab,
+    RssSubscriptionTab,
     TemplateSelectionDialog
   }
 })
@@ -679,6 +713,14 @@ export default class DownloaderSettingsDialog extends Vue {
 
   get pathMappingAvailable(): boolean {
     return isCapabilityAvailable('path_mapping')
+  }
+
+  // RSS 订阅页签：BtDeck 引擎（qB/TR）；rTorrent 适配本体另立项，类型 2 暂不开放
+  get rssTabAvailable(): boolean {
+    const downloaderType = this.downloader
+      ? Number(this.downloader.downloaderType)
+      : Number(this.formData.downloader_type)
+    return downloaderType === 0 || downloaderType === 1
   }
 
   created(): void {

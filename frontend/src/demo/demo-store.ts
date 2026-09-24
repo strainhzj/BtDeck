@@ -15,6 +15,8 @@ import {
   DemoQueryTemplate,
   DemoQueryTemplateConditions,
   DemoRecycleItem,
+  DemoRssArticle,
+  DemoRssFeed,
   DemoTask,
   DemoTaskLog,
   DemoTorrent,
@@ -44,6 +46,17 @@ export interface DemoTorrentQuery extends DemoPageParams {
   active_only?: boolean
   sort_by?: string
   sort_order?: 'asc' | 'desc'
+}
+
+export interface DemoRssFeedInput {
+  downloaderId?: string
+  name?: string
+  url?: string
+  enabled?: boolean
+}
+
+export interface DemoRssArticleQuery extends DemoPageParams {
+  status?: 'pending' | 'added'
 }
 
 export interface DemoTemplateInput {
@@ -542,6 +555,101 @@ export class DemoStore {
     if (!template) return null
     template.usage_count += 1
     return clone(template)
+  }
+
+  // ==================== RSS 订阅（feature rss-subscription-2026-09-24） ====================
+
+  public listRssFeeds(downloaderId: string): Array<Omit<DemoRssFeed, 'articles'> & { pendingCount: number }> {
+    return this.state.rssFeeds
+      .filter(feed => feed.downloaderId === downloaderId)
+      .map(feed => {
+        const { articles, ...rest } = feed
+        void articles
+        return { ...rest, pendingCount: feed.articles.filter(article => article.status === 'pending').length }
+      })
+  }
+
+  public getRssFeed(feedId: string): DemoRssFeed | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    return feed ? clone(feed) : null
+  }
+
+  public createRssFeed(input: DemoRssFeedInput): DemoRssFeed & { pendingCount: number } {
+    const feedId = `demo-rss-feed-local-${this.state.rssFeeds.length + 1}`
+    const feed: DemoRssFeed = {
+      feedId,
+      downloaderId: input.downloaderId || 'demo-downloader-001',
+      name: input.name || '未命名 Demo 订阅源',
+      url: input.url || 'https://rss.example.invalid/new-feed.xml',
+      enabled: input.enabled !== false,
+      lastFetchAt: null,
+      lastFetchStatus: 'never',
+      lastError: null,
+      articles: []
+    }
+    this.state.rssFeeds.push(feed)
+    return { ...clone(feed), pendingCount: 0 }
+  }
+
+  public updateRssFeed(feedId: string, input: DemoRssFeedInput): DemoRssFeed | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    if (!feed) return null
+    if (input.name !== undefined) feed.name = input.name
+    if (input.url !== undefined) feed.url = input.url
+    if (input.enabled !== undefined) feed.enabled = input.enabled
+    return clone(feed)
+  }
+
+  public deleteRssFeed(feedId: string): boolean {
+    const originalLength = this.state.rssFeeds.length
+    this.state.rssFeeds = this.state.rssFeeds.filter(item => item.feedId !== feedId)
+    return this.state.rssFeeds.length !== originalLength
+  }
+
+  public refreshRssFeed(feedId: string): { newCount: number, articleCount: number } | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    if (!feed) return null
+    // Demo 语义：每次刷新补一篇固定文章（幂等 id 去重），状态改 ok
+    let newCount = 0
+    const demoId = `demo-rss-refresh-${feedId}`
+    if (!feed.articles.some(article => article.articleId === demoId)) {
+      feed.articles.unshift({
+        articleId: demoId,
+        feedId: feed.feedId,
+        title: 'Demo.Refresh.Article.1080p',
+        link: 'magnet:?xt=urn:btih:demorefreshdemo0001demo0001demo0001',
+        publishedAt: '2026-09-24 12:00:00',
+        fetchedAt: '2026-09-24 12:00:00',
+        status: 'pending',
+        addedAt: null
+      })
+      newCount = 1
+    }
+    feed.lastFetchAt = '2026-09-24 12:00:00'
+    feed.lastFetchStatus = 'ok'
+    feed.lastError = null
+    return { newCount, articleCount: feed.articles.length }
+  }
+
+  public listRssArticles(feedId: string, query: DemoRssArticleQuery = {}): DemoPage<DemoRssArticle> {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    const articles = feed
+      ? feed.articles.filter(article => !query.status || article.status === query.status)
+      : []
+    return paginate(articles, query)
+  }
+
+  public addRssArticle(articleId: string): DemoRssArticle | null {
+    for (const feed of this.state.rssFeeds) {
+      const article = feed.articles.find(item => item.articleId === articleId)
+      if (article) {
+        if (article.status === 'added') return null
+        article.status = 'added'
+        article.addedAt = '2026-09-24 12:30:00'
+        return clone(article)
+      }
+    }
+    return null
   }
 
   public listTasks(params: DemoPageParams = {}): DemoPage<DemoTask> {

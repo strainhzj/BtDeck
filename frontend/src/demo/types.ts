@@ -165,6 +165,31 @@ export interface DemoNotification {
   read_at: string | null
 }
 
+/** RSS 订阅文章（feature rss-subscription-2026-09-24 demo 分支；字段与 RssArticle 对齐） */
+export interface DemoRssArticle {
+  articleId: string
+  feedId: string
+  title: string
+  link: string
+  publishedAt: string | null
+  fetchedAt: string | null
+  status: 'pending' | 'added'
+  addedAt: string | null
+}
+
+/** RSS 订阅源（demo 分支内嵌文章，便于会话内推送演示） */
+export interface DemoRssFeed {
+  feedId: string
+  downloaderId: string
+  name: string
+  url: string
+  enabled: boolean
+  lastFetchAt: string | null
+  lastFetchStatus: 'never' | 'ok' | 'failed'
+  lastError: string | null
+  articles: DemoRssArticle[]
+}
+
 export interface DemoQueryTemplateConditions {
   source: 'simple' | 'advanced'
   version: number
@@ -466,6 +491,7 @@ export interface DemoFixtureBundle {
   moviepilotAssociations: DemoMoviePilotAssociation[]
   categories: string[]
   tags: string[]
+  rssFeeds: DemoRssFeed[]
   trackerDomains: string[]
 }
 

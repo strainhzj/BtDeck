@@ -242,4 +242,75 @@ describe('demo request', () => {
       })).rejects.toMatchObject({ code: '409' })
     })
   })
+
+  describe('rss subscriptions', () => {
+    it('lists feeds bound to a downloader with pendingCount and pagination shape', async() => {
+      const response = await demoRequest<DemoApiEnvelope<{ list: Array<{ feedId: string, pendingCount: number }>, total: number, pageSize: number }>>({
+        url: '/rss/feeds',
+        method: 'get',
+        params: { downloaderId: 'demo-downloader-001' }
+      })
+      expect(response.code).toBe('200')
+      expect(response.data.total).toBe(1)
+      expect(response.data.list[0].feedId).toBe('demo-rss-feed-001')
+      expect(response.data.list[0].pendingCount).toBe(1)
+    })
+
+    it('lists articles with status filter and pagination envelope', async() => {
+      const pending = await demoRequest<DemoApiEnvelope<{ list: Array<{ status: string }>, total: number }>>({
+        url: '/rss/feeds/demo-rss-feed-001/articles',
+        method: 'get',
+        params: { status: 'pending', page: 1, pageSize: 10 }
+      })
+      expect(pending.data.total).toBe(1)
+      expect(pending.data.list[0].status).toBe('pending')
+    })
+
+    it('refresh appends one deduped article and marks fetch ok', async() => {
+      const first = await demoRequest<DemoApiEnvelope<{ newCount: number, articleCount: number }>>({
+        url: '/rss/feeds/demo-rss-feed-001/refresh',
+        method: 'post'
+      })
+      expect(first.data.newCount).toBe(1)
+      const second = await demoRequest<DemoApiEnvelope<{ newCount: number }>>({
+        url: '/rss/feeds/demo-rss-feed-001/refresh',
+        method: 'post'
+      })
+      expect(second.data.newCount).toBe(0)
+      expect(demoStore.getRssFeed('demo-rss-feed-001')?.lastFetchStatus).toBe('ok')
+    })
+
+    it('pushes an article once and rejects repeated pushes', async() => {
+      const ok = await demoRequest<DemoApiEnvelope<{ article: { status: string } }>>({
+        url: '/rss/articles/demo-rss-article-001/add',
+        method: 'post',
+        data: { downloaderId: 'demo-downloader-001' }
+      })
+      expect(ok.data.article.status).toBe('added')
+
+      const repeated = await demoRequest<DemoApiEnvelope<{ reasonCode?: string }>>({
+        url: '/rss/articles/demo-rss-article-001/add',
+        method: 'post',
+        data: {}
+      })
+      expect(repeated.data.reasonCode).toBe('RSS_ARTICLE_NOT_FOUND')
+    })
+
+    it('creates and deletes a local feed within the session', async() => {
+      const created = await demoRequest<DemoApiEnvelope<{ feed: { feedId: string } }>>({
+        url: '/rss/feeds',
+        method: 'post',
+        data: { downloaderId: 'demo-downloader-001', name: 'Demo 新源', url: 'https://rss.example.invalid/new.xml' }
+      })
+      const feedId = created.data.feed.feedId
+      expect(feedId).toContain('demo-rss-feed-local')
+
+      const deleted = await demoRequest<DemoApiEnvelope<Record<string, unknown>>>({
+        url: `/rss/feeds/${feedId}`,
+        method: 'delete'
+      })
+      expect(deleted.code).toBe('200')
+      expect(demoStore.getRssFeed(feedId)).toBeNull()
+    })
+  })
 })
