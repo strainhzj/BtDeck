@@ -17,8 +17,9 @@
 
 ### 待办
 
-- W3 报表服务与端点（report_service.py + reports.py + api.py 注册 + tests/api/test_reports_*.py）；W4-W6 前端；W7 demo+文档收口（roadmap 同步归 W7）。
-- 未执行 Git 提交（用户明确要求时在 worktree 根目录执行）；未推送。
+- ~~W3 报表服务与端点~~ ✅ 2026-09-24 完成（report_service.py + reports.py 七端点 + 51 例测试，全量 5342 passed，见 progress.md 续篇；W3 成果待提交或随下批提交）。
+- W4-W6 前端（echarts 5.5.1 钉版 + EChart 封装 + 路由/i18n 与 W5 同批合入 + 四页签 + 趣味报告）；W7 demo+文档收口（roadmap 同步归 W7）。
+- 未推送。
 
 ## 2026-09-24 交接：双语语义对齐修复（补丁待写回）
 

@@ -50,6 +50,9 @@ from app.api.endpoints import mcp_settings
 # MoviePilot 集成（整理历史同步 + 任务关联查询）
 from app.api.endpoints import moviepilot
 
+# 统计报表（statistics-reports W3：/reports/* 聚合端点）
+from app.api.endpoints import reports
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -67,6 +70,8 @@ api_router.include_router(mcp_settings.router, prefix="/mcp", tags=["mcp"])
 api_router.include_router(moviepilot.router, prefix="/moviepilot", tags=["moviepilot"])
 # Dashboard
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+# 统计报表（statistics-reports W3）：/api/v1/reports/*
+api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 # 添加高级搜索路由
 api_router.include_router(advanced_search.router, prefix="/advanced-search", tags=["search"])
 # 添加tracker关键词和消息记录路由

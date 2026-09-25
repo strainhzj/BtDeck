@@ -8274,3 +8274,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试与门禁**：新增 tests/tasks/test_speed_sampler.py 13 例 + tests/api/test_tracker_count_activation.py 13 例 + 迁移②专项 2 例 + stats_paused 扩 2 例 + 白名单契约适配 2 例改写；桩适配——_tr_seed 两文件补 fields={"addedDate": epoch}；localization 测试 patch call_downloader_api（全量序 lifespan shutdown 全局 runtime 惯例，踩坑实录：单跑绿/全序红，bisect 至 executor shutdown RuntimeError 定位）。全量 pytest **5291 passed/18 skipped**；mypy 296 文件 0 错；black 297 文件净；flake8 app/ 通过；alembic 单 HEAD c9e0f1a2b3c4；根 ./init.sh exit=0。
 - 本机环境备注：本批全程借用主工作区 venv（/srv/workspaces/BtDeck/backend/venv，Python 3.13.5，只读使用未触碰其文件）；任务提示中 btpManager/anaconda 分工为 Windows 桌面机记录，本 Linux 机无 conda。
 - 待办（后续批次）：W3 报表服务（report_service + reports.py + api 注册）、W4-W6 前端、W7 demo 收口；roadmap 同步归 W7。
+
+## 2026-09-24（续）：统计报表 W3——报表服务与端点（全绿，已随批提交）
+
+- 提交基线：W1+W2 先行提交 4a17a50（28 文件）；W3 新增 report_service.py（扁平单文件，分区：常量/overview/trends/seeding/tracker_stats/fun/speed）+ reports.py 七端点（/api/v1/reports/{overview,trends,seeding,trackers,fun/summary,fun/yearly,speed/history}，全 CommonResponse + get_current_user，year 越界 400）+ api.py 注册。
+- 口径落地：五桶错误桶优先（status='error' OR has_tracker_error 先判）→ 常量四主桶 → 其他（复用 W2 提升的 torrent_stats_cache 模块级常量）；种子口径 dr=0 AND deleted_at IS NULL、回收站 deleted_at 非空、tracker 行 dr=0 JOIN 活跃种子；勋章半开区间 [0,1)/[1,10)/[10,50)/[50,200)/[200,∞) TB（200-500 空档消除）；蓝光 40GB/高清 8GB/剧集 30GB 换算；host 去端口归一（IPv6 [..] 保留）；save_path 根前缀=前两段非空路径段（保留前导 /，Windows 反斜杠归一）；D14 跨站重复计体积口径锁定（脚注归前端）；D15 errorRate 分母排除 unknown（真机 status 域实测 error/normal/unknown）；D16 均值排除 NULL、count=有效行数；B9 拼接：24h 纯 raw 分钟级，7d/30d hourly 主体+raw 尾段（raw >= max(stat_hour)+1h；无 hourly 全窗口），hourly 点携带 sampleCount/onlineCount（供前端区分全离线小时与停机无行），断点=停机无行不补零；trends 内嵌 speedHistory 默认 24h；liveSpeed 只读 store 快照（在线合计、离线零速行）；空库全零值/空数组契约。
+- 两个实现级发现：①裸 text() SQL 的 DATETIME 列返回存储字符串非 datetime——加 _as_dt 统一解析（含/不含微秒），row._mapping 不可变需转 dict；②BTD305 架构守卫拦 f-string SQL 拼接——速度历史三查询改单条参数化（:dl_id IS NULL OR downloader_id=:dl_id 谓词），非拼接。
+- 测试：新增 5 文件 51 例（overview 17 + trends 11 + seeding 5 + trackers 7 + fun 9 + 共享基建 reports_fixtures.py 1 模块；覆盖计划 §6 全部点名项）。全量 pytest 5342 passed/18 skipped（+51）；mypy 298 文件 0 错；black 299 文件净；flake8 0；./init.sh exit=0。
+- 坑位：overview 端点测试沿用 test_dashboard_api 模式（异步内存库 StaticPool + dependency_overrides + TestClient 跨 loop 可用）；TestClient 路径下服务异常返回 code=500 HTTP 200，排障需直调 service 层看 traceback。

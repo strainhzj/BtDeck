@@ -7028,7 +7028,7 @@
           "id": "statistics-reports-w3",
           "name": "W3 报表服务与端点",
           "description": "report_service（扁平单文件：overview/trends/seeding/tracker_stats/fun/常量分区；host 去端口归一、五桶判定错误桶优先、勋章半开区间）+ reports.py 端点（CommonResponse、鉴权 get_current_user）+ api.py 注册 + pytest 覆盖。",
-          "status": "pending",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/services/report_service.py",
@@ -7040,7 +7040,7 @@
             "backend/tests/api/test_reports_trackers.py",
             "backend/tests/api/test_reports_fun.py"
           ],
-          "evidence": ""
+          "evidence": "report_service.py 扁平单文件（常量/overview/trends/seeding/tracker_stats/fun/speed 分区；勋章半开区间、蓝光 40GB/高清 8GB/剧集 30GB 换算、五桶错误桶优先、host 去端口、save_path 根前缀两段聚合、B9 拼接 24h 纯 raw / 7d/30d hourly 主体+raw 尾段、online_count=0 小时 avg=0 携带 sampleCount/onlineCount、断点语义=停机无行）；reports.py 七端点（overview/trends/seeding/trackers/fun/summary/fun/yearly/speed/history，全 CommonResponse + get_current_user，year 参数 400 校验）；api.py 注册 /reports。pytest tests/api/test_reports_*.py 51 passed（五桶错误桶优先/seeding+has_tracker_error 落错误桶/TR paused 归暂停桶/largest TOP10/回收站条件/categories+tags/save_path 根前缀含 Windows 形态/孤儿下载器 removed 标注/liveSpeed 快照/月桶边界/周桶 %Y-%W/NULL 过滤/未知桶/库龄边界/B9 拼接缝含整点后样本排除/全离线小时 avg=0/无样本空态/downloaderId 过滤+已移除下载器标注/ratio 半开区间边界/NULL 计数/slackers TOP20 封顶/辅种率/host 去端口合并/dr 过滤/errorRate 排除 unknown/均值排除 NULL+count=有效行数/跨站重复计体积口径锁/勋章 1/10/50/200 断点两侧+200-500 空档消除/蓝光换算/火种 min 非 NULL+全 NULL 排除+NULL 不压低/上传估算做种桶限定+错误桶优先剔除/年度 NULL 排除+元老+最忙日站/白嫖慈善榜/year 400 校验）；BTD305 SQL 拼接架构守卫合规（:dl_id IS NULL OR 谓词）；全量 pytest 5342 passed/18 skipped；mypy 298 文件 0 错/black 净/flake8 0；./init.sh exit=0"
         },
         {
           "id": "statistics-reports-w4",
