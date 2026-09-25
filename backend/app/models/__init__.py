@@ -58,6 +58,9 @@ from app.models.sync_checkpoint import (
     OUTCOME_CANCELLED,
 )
 
+# 导出速度采样模型（统计报表 W1）
+from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+
 __all__ = [
     "DownloaderTypeEnum",  # 整数枚举
     "SpeedUnitEnum",
@@ -93,4 +96,7 @@ __all__ = [
     "OUTCOME_FAILED",
     "OUTCOME_NO_ACTION",
     "OUTCOME_CANCELLED",
+    # 速度采样模型（统计报表 W1）
+    "DownloaderSpeedSample",
+    "DownloaderSpeedHourly",
 ]

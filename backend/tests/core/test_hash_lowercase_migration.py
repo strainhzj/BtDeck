@@ -109,6 +109,19 @@ class TestHashLowercaseNormalization:
         hashes = [row[0] for row in _fetch_all(db_path, "SELECT hash FROM torrent_info ORDER BY info_id")]
         assert len(hashes) == 2 and all(h == h.lower() for h in hashes)
 
-    def test_head_is_hash_norm_revision(self):
-        """链尾即 hash 归一迁移（新增迁移后此断言应显式更新，防误挂链）。"""
-        assert current_head() == HASH_NORM_REV
+    def test_hash_norm_revision_in_chain(self):
+        """hash 归一迁移在链上且前驱不变（防误挂链；head 前移后不再写死）。
+
+        2026-09-24 统计报表 W1 新增 b7d8e9f0a1c2 后 head 前移；本文件遵循
+        "head 一律 current_head() 动态读取"约定（见文首注释），断言改为
+        链成员校验：HASH_NORM_REV 在链上、且其 down_revision 仍为 HASH_NORM_PREV
+        （若有人重挂链导致前驱变化，此断言红）。
+        """
+        from alembic.script import ScriptDirectory
+
+        sd = ScriptDirectory.from_config(Config(str(ALEMBIC_INI)))
+        revisions = {r.revision: r for r in sd.walk_revisions()}
+        assert HASH_NORM_REV in revisions, "hash 归一迁移应仍在迁移链上"
+        assert (
+            revisions[HASH_NORM_REV].down_revision == HASH_NORM_PREV
+        ), f"hash 归一迁移前驱应保持 {HASH_NORM_PREV}，实际 {revisions[HASH_NORM_REV].down_revision}"

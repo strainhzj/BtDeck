@@ -730,6 +730,55 @@ async def update_or_restore_tracker_with_retry_async(
         return False
 
 
+def _normalize_tracker_count(value: Any) -> Optional[int]:
+    """scrape 群体计数归一：-1/None/非法 → None（NULL），非负 int 原样。
+
+    qB num_* 未知时为 -1 哨兵；TR trackerStats 的 downloadCount 等也可能为 -1
+    （真机 TTG 实测，2026-09-24 W2 首步）。NULL 表示"未知/不适用"，
+    不压低火种 min 判定（决策 6）。
+    """
+    if value is None:
+        return None
+    try:
+        iv = int(value)
+    except (TypeError, ValueError):
+        return None
+    return iv if iv >= 0 else None
+
+
+def _qb_tracker_counts(tracker: Any) -> Dict[str, Optional[int]]:
+    """qB trackers 负载 → 三列 scrape 计数（决策 6：num_seeds/num_leeches/
+    num_downloaded 为 scrape 群体计数，已连接数是 num_peers；真机 qB v4.3.9
+    API 2.8.2 实测键集 {msg, num_downloaded, num_leeches, num_peers,
+    num_seeds, status, tier, url}）。"""
+    return {
+        "seeder_count": _normalize_tracker_count(tracker.get("num_seeds")),
+        "leecher_count": _normalize_tracker_count(tracker.get("num_leeches")),
+        "download_count": _normalize_tracker_count(tracker.get("num_downloaded")),
+    }
+
+
+def _tr_tracker_counts(tracker_status: Any) -> Dict[str, Optional[int]]:
+    """TR trackerStats → 三列 scrape 计数（seederCount/leecherCount/downloadCount）。
+
+    backup 条目（isBackup=True）保留行与 URL、仅三列计数置 NULL
+    （决策 6 审批 P1-3：批量同步 Step4 会把本批缺失的 tracker 标 dr=1
+    ——元组 IN 语义，直接排除会误删现有展示与健康统计；陈旧计数不可信
+    故置 NULL，也不压低火种 min 判定）。
+    """
+    try:
+        is_backup = bool(tracker_status.fields.get("isBackup", False))
+    except Exception:
+        is_backup = False
+    if is_backup:
+        return {"seeder_count": None, "leecher_count": None, "download_count": None}
+    return {
+        "seeder_count": _normalize_tracker_count(tracker_status.fields.get("seederCount")),
+        "leecher_count": _normalize_tracker_count(tracker_status.fields.get("leecherCount")),
+        "download_count": _normalize_tracker_count(tracker_status.fields.get("downloadCount")),
+    }
+
+
 def extract_tracker_rows_from_torrent(
     torrent_info: Any, torrent_info_id: str, downloader_type: str, current_time: Any
 ) -> tuple[list[dict], set]:
@@ -783,6 +832,7 @@ def extract_tracker_rows_from_torrent(
                         "last_announce_msg": tracker.get("msg"),
                         "last_scrape_succeeded": tracker.get("status"),
                         "last_scrape_msg": tracker.get("msg"),
+                        **_qb_tracker_counts(tracker),
                         "create_time": current_time,
                         "create_by": "admin",
                         "update_time": current_time,
@@ -816,6 +866,7 @@ def extract_tracker_rows_from_torrent(
                     "last_announce_msg": tracker_status.last_announce_result,
                     "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
+                    **_tr_tracker_counts(tracker_status),
                     "create_time": current_time,
                     "create_by": "admin",
                     "update_time": current_time,
@@ -878,6 +929,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
             trackerInfoModel.last_announce_msg,
             trackerInfoModel.last_scrape_succeeded,
             trackerInfoModel.last_scrape_msg,
+            trackerInfoModel.seeder_count,
+            trackerInfoModel.leecher_count,
+            trackerInfoModel.download_count,
         )
         .where(trackerInfoModel.torrent_info_id.in_(batch_info_ids))
         .where(trackerInfoModel.dr == 0)
@@ -890,6 +944,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
             "last_announce_msg": row.last_announce_msg,
             "last_scrape_succeeded": row.last_scrape_succeeded,
             "last_scrape_msg": row.last_scrape_msg,
+            "seeder_count": row.seeder_count,
+            "leecher_count": row.leecher_count,
+            "download_count": row.download_count,
         }
         for row in existing_rows.all()
     }
@@ -943,6 +1000,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
                     "last_announce_msg": stmt.excluded.last_announce_msg,
                     "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
                     "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                    "seeder_count": stmt.excluded.seeder_count,
+                    "leecher_count": stmt.excluded.leecher_count,
+                    "download_count": stmt.excluded.download_count,
                     "update_time": current_time,
                     "update_by": "admin",
                 },
@@ -1031,6 +1091,7 @@ async def sync_add_tracker_async(
                         "last_announce_msg": tracker.get("msg"),
                         "last_scrape_succeeded": tracker.get("status"),
                         "last_scrape_msg": tracker.get("msg"),
+                        **_qb_tracker_counts(tracker),
                         "create_time": current_time,
                         "create_by": "admin",
                         "update_time": current_time,
@@ -1064,6 +1125,7 @@ async def sync_add_tracker_async(
                     "last_announce_msg": tracker_status.last_announce_result,
                     "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
+                    **_tr_tracker_counts(tracker_status),
                     "create_time": current_time,
                     "create_by": "admin",
                     "update_time": current_time,
@@ -1149,6 +1211,9 @@ async def sync_add_tracker_async(
                     "last_announce_msg": stmt.excluded.last_announce_msg,
                     "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
                     "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                    "seeder_count": stmt.excluded.seeder_count,
+                    "leecher_count": stmt.excluded.leecher_count,
+                    "download_count": stmt.excluded.download_count,
                     "update_time": current_time,
                     "update_by": "admin",
                     "dr": 0,
@@ -1447,7 +1512,12 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             "size": torrent_info.total_size,
             "progress": progress_value,
             "torrent_file": torrent_info.torrent_file,
-            "added_date": torrent_info.added_date,
+            # TR added_date 时区写路径修复（统计报表 W2 决策 8）：改用
+            # _parse_qb_epoch 直转 fields["addedDate"] 原始 epoch → naive 本地，
+            # 与 qB 路径同构；transmission_rpc 的 torrent_info.added_date 属性
+            # 返回 aware UTC（库内 fromtimestamp(epoch, timezone.utc)），
+            # 直接落库会偏 8h（done_date 库内 astimezone() 本地转换无此问题）。
+            "added_date": _parse_qb_epoch(torrent_info.fields.get("addedDate")),
             "completed_date": torrent_info.done_date if torrent_info.done_date else None,
             "tags": ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             "category": "",
@@ -3961,7 +4031,9 @@ async def tr_add_torrents_info_only_async(
                 "size": torrent_info.total_size,
                 "progress": progress_value,
                 "torrent_file": torrent_info.torrent_file,
-                "added_date": torrent_info.added_date,
+                # TR added_date 时区写路径修复（统计报表 W2 决策 8）：同全量路径，
+                # epoch 直转 naive 本地（fields["addedDate"] 为 TR_DETAIL_FIELDS 已请求字段）
+                "added_date": _parse_qb_epoch(torrent_info.fields.get("addedDate")),
                 "completed_date": torrent_info.done_date if torrent_info.done_date else None,
                 "tags": (
                     ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else ""

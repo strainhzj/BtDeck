@@ -6979,6 +6979,138 @@
         "behavior": "侧栏种子管理组内可见顺序变为 种子列表→查询模板→种子文件管理；旧书签 /query-templates* 自动 redirect；移动模式访问新路径落 /m/search 不再误入 /m/torrents；设置页桌面为左侧竖排图标页签 + 统一 960px 卡片，窄屏/移动端切顶部横排胶囊。",
         "pitfalls": "①vue-class-component 的 class 属性箭头函数（resizeHandler = () => ...）捕获原始实例，写入不走响应式代理——改在 mounted 内创建箭头（参照 PageSizeCombobox onResize 模式）；②element-ui 左侧页签默认右对齐且 active 指示条为右缘竖线，需 .is-left 项覆盖 display:flex 左对齐并隐藏原生 active-bar/nav 底线改用胶囊底色；③el-tabs 的 nav 在 mounted 后异步重渲染，测试断言需 await Vue.nextTick；④测试 localVue 需手动补注册 main.ts 全局注册的 LucideIcon。"
       }
+    },
+    {
+      "id": "statistics-reports-2026-09",
+      "name": "统计数据与报表（W1-W7：采样数据层 → 数据激活与口径修复 → 报表服务 → 前端 → 收口）",
+      "description": "PLANS/statistics-reports.md（v4，两轮三路审查+用户审批）实施：速度时间采样两表与采样任务（W1）、tracker 计数激活与 TR added_date 口径修复（W2）、报表服务与端点（W3）、echarts 前端基建（W4）、四个正式页签（W5）、趣味报告沉浸页（W6）、demo 与文档收口（W7）。范围=正式报表 A1-A5/B6-B8/C10-C12/D14-D16 + 趣味 24/25/26/27。",
+      "status": "in_progress",
+      "branch": "feature/reports",
+      "plan_file": "PLANS/statistics-reports.md",
+      "tasks": [
+        {
+          "id": "statistics-reports-w1",
+          "name": "W1 采样数据层",
+          "description": "速度两表 downloader_speed_sample/downloader_speed_hourly + 迁移① b7d8e9f0a1c2；SpeedSamplerJob（60s 采样以 DB 有效下载器清单为基准、缓存缺失或 is_online=False 记 online=0 速度 0 行、禁用 fail_time；5min hourly 聚合幂等；每日清理 raw 14d/hourly 730d；db_write_scope + 单轮 add_all 单 commit）；lifecycle 注册三处 + android 守卫名单；全部锚点维护（表数 37 两处、EXPECTED_HEAD、约束文档 HEAD、env.py/models __init__）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/speed_sample.py",
+            "backend/alembic/versions/b7d8e9f0a1c2_speed_samples.py",
+            "backend/app/tasks/scheduler/speed_sampler.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/alembic/env.py",
+            "backend/app/models/__init__.py",
+            "backend/docs/constraints/database-migration.md",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_startup_migration_guard.py",
+            "backend/tests/tasks/test_speed_sampler.py"
+          ],
+          "evidence": "pytest tests/tasks/test_speed_sampler.py 13 passed（DB 基准对齐/300s 剔除后持续记零/is_online 判定不受 fail_time 残留影响/_ScopeSpy 单轮单 commit/聚合幂等/online_count=0→avg=0/清理/节流/store 缺失 skip）；tests/core/test_db_migration.py 28 passed（表数锚点 37 两处 + EXPECTED_HEAD 前移 + 链尾注释）；test_startup_migration_guard android 名单补 run_speed_sampler_loop；隐藏锚点 test_hash_lowercase_migration.py 硬编码 head 断言按其文件内约定动态化（链成员+前驱校验）；alembic heads 单 HEAD b7d8e9f0a1c2→c9e0f1a2b3c4；mypy 296 文件 0 错、black 297 文件净、flake8 app/ 通过；全量 pytest 5291 passed/18 skipped；./init.sh exit=0"
+        },
+        {
+          "id": "statistics-reports-w2",
+          "name": "W2 数据激活与口径修复",
+          "description": "首步实测 qB trackers 负载键名（预期 num_seeds/num_leeches/num_downloaded）+ TR done_date 口径；tracker 计数行构造×3 + upsert set_×2 + 归一 -1/None→NULL + backup 保留行仅计数置 NULL；白名单 _TRACKER_CHANGE_FIELDS 补三列；TR added_date 两路径本地化 _parse_qb_epoch + 迁移② c9e0f1a2b3c4 三段式回填（JOIN 不带 dr=0）；torrent_stats_cache 常量提升 + PAUSED_STATES 扩 paused + dashboard 回归适配；tracker_mapper 文档纠错。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/services/sync_db_write.py",
+            "backend/app/downloader/torrent_stats_cache.py",
+            "backend/alembic/versions/c9e0f1a2b3c4_normalize_tr_added_date.py",
+            "backend/app/core/tracker_mapper.py",
+            "backend/app/api/endpoints/torrent_sync.py"
+          ],
+          "evidence": "W2 首步实测（2026-09-24，真机 qB v4.3.9/API 2.8.2 + TR 4.0.5，探针 /tmp 已记录）：qB trackers 键集 {msg,num_downloaded,num_leeches,num_peers,num_seeds,status,tier,url} 与计划一致；TR trackerStats 含 seederCount/leecherCount/downloadCount（TTG downloadCount=-1 实测）与 isBackup；lib added_date=aware UTC、done_date=aware local（transmission_rpc torrent.py:808/822）——added_date 偏移根因实锤，done_date 口径已本地无需修。pytest tests/api/test_tracker_count_activation.py 13 passed（qB num_*×2 构造/-1→NULL/TR 三列×2 构造/backup 保留行置 NULL/主备切换回归两 URL 行 dr=0 且计数按新角色/batch+add 两路 set_ 落库/白名单 NULL→值回填收敛+防抖）；tests/services/test_sync_db_write.py 白名单 9 字段契约适配；tests/downloader/test_torrent_stats_paused.py +2（'paused' DB 映射值归暂停桶 + 模块级常量互斥导出锁）；tests/core/test_db_migration.py::TestTrAddedDateBackfillMigration 2 passed（含软删下载器/回收站行回填、qB/NULL 不动、downgrade 反向、缺表守卫 stamp no-op）；TR added_date 两路径（全量~L1515+info-only~L4029）改 _parse_qb_epoch(fields['addedDate'])；既有桩适配：_tr_seed 补 fields={'addedDate': epoch}（progress_rounding/info_budget 两文件）；localization 两测试 patch call_downloader_api（全量序 lifespan shutdown 全局 runtime 惯例，test_torrent_speed_regression 同款）；全量 pytest 5291 passed/18 skipped；mypy/black/flake8 净"
+        },
+        {
+          "id": "statistics-reports-w3",
+          "name": "W3 报表服务与端点",
+          "description": "report_service（扁平单文件：overview/trends/seeding/tracker_stats/fun/常量分区；host 去端口归一、五桶判定错误桶优先、勋章半开区间）+ reports.py 端点（CommonResponse、鉴权 get_current_user）+ api.py 注册 + pytest 覆盖。",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/report_service.py",
+            "backend/app/api/endpoints/reports.py",
+            "backend/app/api/api.py",
+            "backend/tests/api/test_reports_overview.py",
+            "backend/tests/api/test_reports_trends.py",
+            "backend/tests/api/test_reports_seeding.py",
+            "backend/tests/api/test_reports_trackers.py",
+            "backend/tests/api/test_reports_fun.py"
+          ],
+          "evidence": ""
+        },
+        {
+          "id": "statistics-reports-w4",
+          "name": "W4 前端基建",
+          "description": "echarts 精确钉版 5.5.1（TS 4.2 实测后锁死）+ EChart.vue Options API 封装（按需懒加载统一 chunk）；types/reports.ts 纯 JSON 契约 + api/reports.ts；路由/菜单/i18n（6 键双语两聚合根）与 W5 首个提交同批合入；jest.config 豁免 (?!lucide|echarts)；permission 移动端守卫。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/package.json",
+            "frontend/src/components/charts/EChart.vue",
+            "frontend/src/router.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/utils/ui-mode.ts",
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/i18n/locales/zh-CN/statistics.ts",
+            "frontend/src/i18n/locales/en/statistics.ts",
+            "frontend/src/i18n/locales/zh-CN/navigation.ts",
+            "frontend/src/i18n/locales/en/navigation.ts",
+            "frontend/src/i18n/locales/zh-CN/index.ts",
+            "frontend/src/i18n/locales/en/index.ts",
+            "frontend/src/types/reports.ts",
+            "frontend/src/api/reports.ts",
+            "frontend/jest.config.js"
+          ],
+          "evidence": ""
+        },
+        {
+          "id": "statistics-reports-w5",
+          "name": "W5 四个正式页签",
+          "description": "views/statistics/{overview,trends,seeding,trackers}/index.vue + components/（StatCard/CaliberNotes 先行创建）+ Jest 测试（4 页签渲染 mock api + 空态 + period/range 切换）。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/statistics/overview/index.vue",
+            "frontend/src/views/statistics/trends/index.vue",
+            "frontend/src/views/statistics/seeding/index.vue",
+            "frontend/src/views/statistics/trackers/index.vue",
+            "frontend/src/views/statistics/components/StatCard.vue",
+            "frontend/src/views/statistics/components/CaliberNotes.vue"
+          ],
+          "evidence": ""
+        },
+        {
+          "id": "statistics-reports-w6",
+          "name": "W6 趣味报告",
+          "description": "el-drawer btt vs fixed 对比实测定稿 + fun-report 沉浸翻页流（决策 10：z-index 1200、根元素即覆盖层、route query 状态持久化）+ FunSlide/YearPicker + 测试（翻页/子模式/年份/query 恢复/z-index 断言）。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/statistics/fun-report/index.vue",
+            "frontend/src/views/statistics/components/FunSlide.vue",
+            "frontend/src/views/statistics/components/YearPicker.vue"
+          ],
+          "evidence": ""
+        },
+        {
+          "id": "statistics-reports-w7",
+          "name": "W7 Demo 与收口",
+          "description": "demo 四件套（fixtures DEMO_REPORT_*、demo-request /reports/* 分支、demo-store getter、DEMO_ROUTE_MATRIX）+ 全量验证 + roadmap/feature_list evidence/progress/session-handoff/PLANS README 同步。W7 仅补 evidence 与 status。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "frontend/src/demo/fixtures/reports.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/types.ts"
+          ],
+          "evidence": ""
+        }
+      ]
     }
   ],
   "tasks": [

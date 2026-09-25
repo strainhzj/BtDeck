@@ -60,7 +60,9 @@ def _clean_database_path_env():
 #       → d1e2f3a4b5c6(setting_templates preset_key, bilingual system preset identity)
 #       → 053003337878(moviepilot integration tables; dev1.0.7 合入后重挂至 d1e2f3a4b5c6)
 #       → a1f7c9e3d2b4(hash lowercase normalization; P0-D rTorrent 接入前置，数据迁移 no-op downgrade)
-EXPECTED_HEAD = "a1f7c9e3d2b4"
+#       → b7d8e9f0a1c2(speed samples 两表 downloader_speed_sample/hourly，统计报表 W1)
+#       → c9e0f1a2b3c4(TR added_date UTC→本地回填数据迁移，统计报表 W2；⚠️ 不可重复执行)
+EXPECTED_HEAD = "c9e0f1a2b3c4"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
@@ -188,7 +190,7 @@ class TestMigrationChainIntegrity:
         assert GHOST_VERSION not in valid_revs, f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
 
     def test_empty_db_upgrade_head_builds_full_schema(self, tmp_path):
-        """空库 alembic upgrade head 应建起完整 schema（35 张业务表）。
+        """空库 alembic upgrade head 应建起完整 schema（37 张业务表）。
 
         这是删除 create_all 的核心前提：迁移链能独立承担建库。
         """
@@ -206,9 +208,10 @@ class TestMigrationChainIntegrity:
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
         # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
         # + 053003337878 加 moviepilot_instance + moviepilot_transfer_history = 35
+        # + b7d8e9f0a1c2 加 downloader_speed_sample + downloader_speed_hourly = 37（统计报表 W1）
         assert (
-            count == 35
-        ), f"空库 upgrade 应建 35 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表），实际 {count}"
+            count == 37
+        ), f"空库 upgrade 应建 37 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表 + 速度采样两表），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -806,7 +809,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 35
+        assert _table_count(str(target_db)) == 37
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)
@@ -1112,3 +1115,107 @@ class TestTaskOutcomeFreshnessMigration:
             names = _column_names(str(db_path), table)
             for col_name in columns:
                 assert col_name in names, f"再次 upgrade 后 {table}.{col_name} 应恢复"
+
+
+# ==================== c9e0f1a2b3c4 TR added_date 时区回填迁移专项 ====================
+
+
+class TestTrAddedDateBackfillMigration:
+    """统计报表 W2 决策 8：TR added_date 存量 UTC 墙钟 → 本地墙钟回填。
+
+    口径锚点（PLANS/statistics-reports.md §3.1 迁移②）：
+    - JOIN 不带 dr=0：软删下载器（dr=1）与回收站行（deleted_at 非空）同样回填；
+    - qB 行（downloader_type=0）不动；NULL 行不动；
+    - downgrade 反向偏移；缺表守卫 no-op；
+    - ⚠️ 不可重复执行（二次偏移）——由 alembic 版本戳保证单次。
+    """
+
+    UTC_WALL = "2026-01-01 04:00:00"  # UTC 墙钟（CN 本地 +8 → 2026-01-01 12:00:00）
+    UTC_WALL_MICROS = "2026-01-01 05:30:00.123456"
+
+    @staticmethod
+    def _to_local(utc_wall: str) -> str:
+        from datetime import datetime, timezone
+
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                stored = datetime.strptime(utc_wall, fmt)
+                break
+            except ValueError:
+                continue
+        local = stored.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+        # 迁移写入格式与 SQLAlchemy sqlite DATETIME 落库一致（6 位微秒）
+        return local.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+    def _seed(self, db_path: str) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executemany(
+                "INSERT INTO bt_downloaders (downloader_id, nickname, downloader_type, dr, enabled) "
+                "VALUES (?, ?, ?, ?, 1)",
+                [("dl-tr", "tr", 1, 0), ("dl-tr-dead", "tr-dead", 1, 1), ("dl-qb", "qb", 0, 0)],
+            )
+            conn.executemany(
+                "INSERT INTO torrent_info (info_id, downloader_id, downloader_name, hash, name, "
+                "added_date, auxiliary_seed_count, dr, deleted_at, has_tracker_error) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0)",
+                [
+                    # TR 正常行：带/不带微秒两种存储形态
+                    ("info-1", "dl-tr", "tr", "a" * 40, "t1", self.UTC_WALL, 0, None),
+                    ("info-2", "dl-tr", "tr", "b" * 40, "t2", self.UTC_WALL_MICROS, 0, None),
+                    # 软删下载器的 TR 行：JOIN 不带 dr=0，必须回填
+                    ("info-3", "dl-tr-dead", "tr-dead", "c" * 40, "t3", self.UTC_WALL, 0, None),
+                    # 回收站行（deleted_at 非空）：同样回填
+                    ("info-4", "dl-tr", "tr", "d" * 40, "t4", self.UTC_WALL, 0, "2026-02-01 00:00:00.000000"),
+                    # NULL 行不动
+                    ("info-5", "dl-tr", "tr", "e" * 40, "t5", None, 0, None),
+                    # qB 行不动（不进 JOIN）
+                    ("info-6", "dl-qb", "qb", "f" * 40, "t6", self.UTC_WALL, 0, None),
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _added_dates(db_path: str) -> dict:
+        conn = sqlite3.connect(db_path)
+        try:
+            return {
+                row[0]: row[1] for row in conn.execute("SELECT info_id, added_date FROM torrent_info ORDER BY info_id")
+            }
+        finally:
+            conn.close()
+
+    def test_backfill_includes_soft_deleted_and_recycle_rows(self, tmp_path):
+        """回填：TR 全量命中（含软删下载器与回收站行），qB/NULL 不动，downgrade 反向。"""
+        db_path = str(tmp_path / "tr_added.db")
+        cfg = _make_alembic_config(str(db_path))
+
+        command.upgrade(cfg, "b7d8e9f0a1c2")  # 迁移②前
+        self._seed(db_path)
+        command.upgrade(cfg, "head")  # 迁移②执行
+
+        values = self._added_dates(db_path)
+        assert values["info-1"] == self._to_local(self.UTC_WALL), "TR 行应回填为本地墙钟"
+        assert values["info-2"] == self._to_local(self.UTC_WALL_MICROS), "带微秒形态应同样回填"
+        assert values["info-3"] == self._to_local(self.UTC_WALL), "软删下载器的 TR 行必须回填（JOIN 不带 dr=0）"
+        assert values["info-4"] == self._to_local(self.UTC_WALL), "回收站行必须回填"
+        assert values["info-5"] is None, "NULL 行不动"
+        assert values["info-6"] == self.UTC_WALL, "qB 行不动（不进 JOIN）"
+
+        # downgrade 反向偏移：本地墙钟 → UTC 墙钟（写入带微秒后缀）
+        command.downgrade(cfg, "b7d8e9f0a1c2")
+        values = self._added_dates(db_path)
+        assert values["info-1"] == self.UTC_WALL + ".000000", "downgrade 后应回到 UTC 墙钟"
+        assert values["info-3"] == self.UTC_WALL + ".000000"
+        assert values["info-6"] == self.UTC_WALL, "qB 行在 downgrade 也不动（原值未动过）"
+
+    def test_missing_tables_guard_noop(self, tmp_path):
+        """缺表守卫：漂移形态库（无 torrent_info/bt_downloaders）升级不中断。"""
+        db_path = str(tmp_path / "tr_added_guard.db")
+        cfg = _make_alembic_config(str(db_path))
+
+        # 空库直接 stamp 到②前（无任何业务表，模拟版本戳正常但 schema 缺失的漂移形态）
+        command.stamp(cfg, "b7d8e9f0a1c2")
+        command.upgrade(cfg, "head")
+        assert _read_version(db_path) == EXPECTED_HEAD

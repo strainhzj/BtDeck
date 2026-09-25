@@ -55,6 +55,9 @@ from app.models.sync_checkpoint import SyncCheckpoint
 from app.models.moviepilot_instance import MoviePilotInstance
 from app.models.moviepilot_transfer_history import MoviePilotTransferHistory
 
+# 速度采样（统计报表 W1）
+from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config

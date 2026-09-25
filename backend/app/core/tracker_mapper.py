@@ -175,16 +175,20 @@ def map_qbittorrent_tracker(tracker: Dict) -> Dict:
     并使用判断引擎基于消息内容进行智能状态判断。
 
     Args:
-        tracker: qBittorrent返回的tracker字典，包含以下字段:
+        tracker: qBittorrent返回的tracker字典（torrents_trackers 负载），包含以下字段:
             - url: tracker URL
             - status: 状态数值(0-4)
             - msg: tracker返回的消息
             - tier: 层级
-            - num_peers: 连接的peer数量
-            - num_seeds: 连接的seed数量
-            - num_leeches: 连接的leech数量
-            - downloaded: 下载量
-            - uploaded: 上传量
+            - num_peers: 已连接的 peer 数量（当前与该 tracker 建立的连接数）
+            - num_seeds: scrape 群体 seed 总数（swarm 内做种者总数，非已连接数。
+              2026-09-24 W2 纠错：此前误标为"连接的seed数量"；已连接数是 num_peers。
+              真机 qB v4.3.9/API 2.8.2 实测键集：
+              {msg, num_downloaded, num_leeches, num_peers, num_seeds, status, tier, url}）
+            - num_leeches: scrape 群体 leech 总数（swarm 内下载者总数，非已连接数）
+            - num_downloaded: scrape 群体累计完播下载数（未知时为 -1 哨兵；
+              下方返回键沿用历史形态 downloaded/uploaded，qB 负载并无这两个键，
+              恒为默认 0，仅为兼容旧消费方保留）
 
     Returns:
         映射后的tracker信息字典，包含:
@@ -192,11 +196,11 @@ def map_qbittorrent_tracker(tracker: Dict) -> Dict:
             - status: 最终判定的状态
             - msg: tracker消息
             - tier: 层级
-            - num_peers: peer数量
-            - num_seeds: seed数量
-            - num_leeches: leech数量
-            - downloaded: 下载量
-            - uploaded: 上传量
+            - num_peers: 已连接 peer 数量
+            - num_seeds: scrape 群体 seed 总数
+            - num_leeches: scrape 群体 leech 总数
+            - downloaded: 兼容保留键（qB 负载无此键，恒 0）
+            - uploaded: 兼容保留键（qB 负载无此键，恒 0）
 
     示例:
         >>> tracker = {
