@@ -116,7 +116,9 @@ import {
   WandSparkles,
   ArrowLeft,
   Smartphone,
-  Clapperboard
+  Clapperboard,
+  Sprout,
+  Radar
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -238,7 +240,9 @@ const ICONS: Record<string, unknown> = {
   'wand-sparkles': WandSparkles,
   'arrow-left': ArrowLeft,
   smartphone: Smartphone,
-  clapperboard: Clapperboard
+  clapperboard: Clapperboard,
+  sprout: Sprout,
+  radar: Radar
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

@@ -7046,7 +7046,7 @@
           "id": "statistics-reports-w4",
           "name": "W4 前端基建",
           "description": "echarts 精确钉版 5.5.1（TS 4.2 实测后锁死）+ EChart.vue Options API 封装（按需懒加载统一 chunk）；types/reports.ts 纯 JSON 契约 + api/reports.ts；路由/菜单/i18n（6 键双语两聚合根）与 W5 首个提交同批合入；jest.config 豁免 (?!lucide|echarts)；permission 移动端守卫。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/package.json",
@@ -7065,7 +7065,7 @@
             "frontend/src/api/reports.ts",
             "frontend/jest.config.js"
           ],
-          "evidence": ""
+          "evidence": "W4 首步实测：echarts 精确钉版 5.5.1（--save-exact，lock +32 行零漂移）；锁定 TS 实为 4.9.5（^4.2.4 在 lock 中解析值，计划写 4.2 为保守假设）；TS 兼容探针通过（echarts/core+charts+components 类型在 tsc 4.9.5 解析 OK；echarts/renderers 无 CanvasExtension 导出且不需要）。lucide@1.27 实测 Sprout/Radar 均存在→注册（sprout 做种/radar Tracker，备选未启用）。EChart.vue：Options API class 风格（vue-property-decorator），echarts/core+Bar/Line/Pie/Scatter+Grid/Tooltip/Legend/DataZoom/Title+CanvasRenderer 全动态 import 统一 webpackChunkName 'echarts'，模块级单例 promise 缓存（多实例一次加载），import 竞态防护（disposed 标志+就绪即 setOption），watch 浅比较跳过顶层同引用重渲染，setOption notMerge:true，ResizeObserver 自适应，beforeDestroy dispose+disconnect，空态具名插槽。types/reports.ts 纯 JSON 契约（禁 echarts import）；api/reports.ts 七函数照 dashboard.ts 信封惯例。i18n：statistics 域包 zh/en 成对（含 calibers.* 口径脚注）+ navigation 6 键 ×2 + 两聚合根对照挂载。jest.config transformIgnorePatterns 扩 (?!lucide|echarts|zrender)（保留 rootDir 锚定）。EChart.spec.ts 7 例（mock 四 echarts 模块经 globalThis 句柄 + resetModules 逐例隔离/注册面 10 模块/竞态/浅比较/空态插槽/loading/dispose+RO 原型 spy/多实例共享加载）。验证：typecheck exit 0；lint（contract+eslint --max-warnings 0+vuex-action）净；全量 Jest 127 套 1863 例（+7）；build exit 0（echarts chunk 随 W5 首个消费方物化，W4 无路由引用属计划内）；体积探针 esbuild 按需面min+gz 188.7KB < 200KB 门禁（webpack 终值 W5 复测）。路由/permission/ui-mode/demo-matrix 按计划合批约束放 W5 首个提交（防侧栏指向不存在组件）"
         },
         {
           "id": "statistics-reports-w5",

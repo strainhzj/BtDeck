@@ -8282,3 +8282,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 两个实现级发现：①裸 text() SQL 的 DATETIME 列返回存储字符串非 datetime——加 _as_dt 统一解析（含/不含微秒），row._mapping 不可变需转 dict；②BTD305 架构守卫拦 f-string SQL 拼接——速度历史三查询改单条参数化（:dl_id IS NULL OR downloader_id=:dl_id 谓词），非拼接。
 - 测试：新增 5 文件 51 例（overview 17 + trends 11 + seeding 5 + trackers 7 + fun 9 + 共享基建 reports_fixtures.py 1 模块；覆盖计划 §6 全部点名项）。全量 pytest 5342 passed/18 skipped（+51）；mypy 298 文件 0 错；black 299 文件净；flake8 0；./init.sh exit=0。
 - 坑位：overview 端点测试沿用 test_dashboard_api 模式（异步内存库 StaticPool + dependency_overrides + TestClient 跨 loop 可用）；TestClient 路径下服务异常返回 code=500 HTTP 200，排障需直调 service 层看 traceback。
+
+## 2026-09-25：统计报表 W4——前端基建（echarts 钉版 + EChart 封装 + 契约类型 + i18n，全绿已提交）
+
+- W4 首步实测记录在案：echarts --save-exact 5.5.1（package.json 无 caret，lock 仅 +32 行零漂移）；仓库锁定 TS 实为 4.9.5（^4.2.4 解析值，计划文档写 4.2 系保守假设）；tsc 探针确认 echarts/core+charts+components 类型面解析通过、echarts/renderers 无 CanvasExtension 导出（亦不需要）；lucide@1.27 Sprout/Radar 均存在，注册 sprout（做种）+ radar（Tracker），orbit/gauge 备选未启用。
+- EChart.vue（class 风格 @Component，与 query-templates 同款）：echarts/core + Bar/Line/Pie/Scatter + Grid/Tooltip/Legend/DataZoom/Title + CanvasRenderer 全部动态 import 且统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty。
+- types/reports.ts 纯 JSON 契约（与 W3 report_service 输出一一对应，禁 echarts 类型 import）；api/reports.ts 七函数照 dashboard.ts 惯例（信封 res.code==='200' && res.data 消费）。
+- i18n：statistics 域包 zh/en 成对（common/overview/trends/seeding/trackers/fun/calibers 七节，calibers 含时区口径/采样启动/断点/在线率/跨站重复体积/回收站排除/完成空覆盖/TR 无分类/上传估算口径十条脚注键）；navigation 6 键 ×2；两聚合根对照挂载（parity 37 例全过）。
+- jest.config transformIgnorePatterns 扩 (?!lucide|echarts|zrender)（保留 <rootDir>/node_modules/ 锚定——照计划防灾难性破坏）。
+- EChart.spec 7 例坑位：jest.mock 工厂禁引用外层变量→句柄经 globalThis.__mocks 存活；组件模块级 promise 缓存→逐例 resetModules 后 require 重取组件；类字段 jest.fn 是实例属性不可 spyOn→RO stub 改原型方法；浅比较契约=顶层值同引用才跳过（新数组引用必重渲染）。
+- 验证：typecheck exit 0；lint 净（auto-fix 三文件后复跑 0 error 0 warning）；全量 Jest 127 套 1863 例（+7）；build exit 0；体积探针 esbuild 按需面 min+gz **188.7KB < 200KB**（echarts chunk 本批不物化——无页面消费方，webpack 终值 W5 复测，属计划内合批约束）。
+- 合批纪律执行：路由/permission/ui-mode/demo-matrix 按 §7 注记放 W5 首个提交（防侧栏指向不存在组件）；W4 只交依赖/EChart/i18n/类型/API 模块。
