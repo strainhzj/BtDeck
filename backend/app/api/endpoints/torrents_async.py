@@ -37,7 +37,7 @@ from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
-from app.core.tracker_mapper import extract_tracker_host, resolve_transmission_tracker_status_code
+from app.core.tracker_mapper import extract_tracker_host, is_valid_tracker_url, resolve_transmission_tracker_status_code
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
@@ -755,7 +755,9 @@ def extract_tracker_rows_from_torrent(
 
     if downloader_type == "qbittorrent":
         try:
-            trackers_data = getattr(torrent_info, "trackers", None)
+            # 本地数据优先读取（规避 TorrentDictionary.trackers property 远程读；
+            # 详见 _qb_read_trackers docstring）
+            trackers_data = _qb_read_trackers(torrent_info)
             if callable(trackers_data):
                 trackers_data = trackers_data()
             trackers_data = trackers_data or []
@@ -763,6 +765,7 @@ def extract_tracker_rows_from_torrent(
             logger.error(f"Failed to get qbittorrent trackers: {str(e)}")
             trackers_data = []
 
+        invalid_tracker_count = 0
         for tracker in trackers_data:
             try:
                 url = tracker.get("url")
@@ -770,6 +773,11 @@ def extract_tracker_rows_from_torrent(
                     continue
                 url = str(url)
                 if "DHT" in url or "PeX" in url or "LSD" in url:
+                    continue
+                if not is_valid_tracker_url(url):
+                    # 历史污染条目（Tracker repr 被当作 URL 写回 qB 5.0+）：拦截入库，
+                    # mark_removed 语义会随同步自愈清理库内既有污染行
+                    invalid_tracker_count += 1
                     continue
                 current_tracker_urls.add(url)
                 tracker_rows.append(
@@ -793,6 +801,7 @@ def extract_tracker_rows_from_torrent(
             except Exception as tracker_err:
                 logger.error(f"Failed to process tracker [{tracker}]: {str(tracker_err)}")
                 continue
+        _log_invalid_trackers_if_any(invalid_tracker_count, torrent_info, "QB_TRACKER_SYNC")
 
     elif downloader_type == "transmission":
         tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
@@ -1003,7 +1012,9 @@ async def sync_add_tracker_async(
 
     if downloader_type == "qbittorrent":
         try:
-            trackers_data = getattr(torrent_info, "trackers", None)
+            # 本地数据优先读取（规避 TorrentDictionary.trackers property 远程读；
+            # 详见 _qb_read_trackers docstring）
+            trackers_data = _qb_read_trackers(torrent_info)
             if callable(trackers_data):
                 trackers_data = trackers_data()
             trackers_data = trackers_data or []
@@ -1011,6 +1022,7 @@ async def sync_add_tracker_async(
             logger.error(f"Failed to get qbittorrent trackers: {str(e)}")
             trackers_data = []
 
+        invalid_tracker_count = 0
         for tracker in trackers_data:
             try:
                 url = tracker.get("url")
@@ -1018,6 +1030,11 @@ async def sync_add_tracker_async(
                     continue
                 url = str(url)
                 if "DHT" in url or "PeX" in url or "LSD" in url:
+                    continue
+                if not is_valid_tracker_url(url):
+                    # 历史污染条目（Tracker repr 被当作 URL 写回 qB 5.0+）：拦截入库，
+                    # mark_removed 语义会随同步自愈清理库内既有污染行
+                    invalid_tracker_count += 1
                     continue
                 current_tracker_urls.add(url)
                 tracker_rows.append(
@@ -1041,6 +1058,7 @@ async def sync_add_tracker_async(
             except Exception as tracker_err:
                 logger.error(f"Failed to process tracker [{tracker}]: {str(tracker_err)}")
                 continue
+        _log_invalid_trackers_if_any(invalid_tracker_count, torrent_info, "QB_TRACKER_SYNC")
 
     elif downloader_type == "transmission":
         tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
@@ -2675,6 +2693,37 @@ def _qb_set_attr(obj: Any, key: str, value: Any, downloader_id: Optional[str] = 
         )
 
 
+def _qb_read_trackers(obj: Any) -> Any:
+    """读取 torrent 对象上的 trackers 数据（本地数据优先，规避不必要的远程读）。
+
+    qbittorrent-api 的 TorrentDictionary.trackers 是 property：读取触发一次
+    远程 torrents_trackers 调用（qBittorrent < 5.1 的 torrents_info 响应不含
+    trackers 字段时需要该兜底）；而属性赋值会触发 add_trackers 远程写
+    （P0 污染根因，写侧已改走 _qb_set_attr）。读取时本地 dict 键优先——
+    _enrich 已写入或 qBittorrent >= 5.1 include_trackers 返回的数据直接使用，
+    避免每种子一次额外远程调用；TorrentDictionary 无本地键时回退 property
+    getter 保持既有兜底行为；普通字典无键时返回 None（不走属性协议）。
+    """
+    if isinstance(obj, dict):
+        if "trackers" in obj:
+            return obj["trackers"]
+        if not hasattr(obj, "add_trackers"):
+            # 普通字典（非 qbittorrent-api TorrentDictionary）且无 trackers 键
+            return None
+    return getattr(obj, "trackers", None)
+
+
+def _log_invalid_trackers_if_any(invalid_count: int, torrent_info: Any, log_prefix: str) -> None:
+    """采集到非法 tracker URL（历史污染条目）时聚合告警一次。"""
+    if invalid_count <= 0:
+        return
+    torrent_hash = str(_qb_get_attr(torrent_info, "hash") or "")[:16]
+    logger.warning(
+        f"[{log_prefix}] 跳过 {invalid_count} 条非法 tracker URL"
+        f"（历史污染条目，可用 cleanupPollutedTrackers 端点清理） torrent={torrent_hash}..."
+    )
+
+
 async def _hydrate_qb_incremental_torrents(
     client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str, strict: bool = True
 ) -> List[Any]:
@@ -3010,7 +3059,10 @@ async def _enrich_qb_torrents_with_trackers(
                 fetched_hash, trackers = result
                 torrent_info = info_by_hash.get(fetched_hash)
                 if torrent_info:
-                    torrent_info.trackers = trackers
+                    # 禁止裸属性赋值：qbittorrent-api 的 TorrentDictionary.trackers
+                    # 是 property，赋值会触发 add_trackers 远程写，把 Tracker 对象
+                    # repr 当作 URL 写回 qB（P0 污染根因）；dict 条目写入绕过 property
+                    _qb_set_attr(torrent_info, "trackers", trackers, downloader_id=downloader_id)
                     _qb_set_attr(
                         torrent_info,
                         "_btdeck_tracker_enriched",

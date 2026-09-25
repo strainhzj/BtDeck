@@ -23,6 +23,36 @@ from app.core.tracker_judgment import judgment_engine, TrackerStatus
 logger = logging.getLogger(__name__)
 
 
+# 合法 tracker URL scheme 白名单（qBittorrent/Transmission 实际可用的 tracker 协议）
+VALID_TRACKER_URL_SCHEMES = frozenset({"http", "https", "udp", "ws", "wss"})
+
+
+def is_valid_tracker_url(tracker_url: str) -> bool:
+    """校验 tracker URL 是否为合法协议 URL。
+
+    用于采集/入库/写回链路过滤污染条目：历史上 qbittorrent-api 的
+    TorrentDictionary.trackers 属性赋值会触发 add_trackers 远程写，把
+    Tracker 对象 repr 整段当作 URL 写回 qBittorrent（形如
+    "Tracker({'msg': '', ..., 'url': 'https://...'})"）；qBittorrent 5.0+
+    的自管 TrackerEntry 模型会原样存储并回显这类无效 URL。所有
+    tracker 入库/写回点统一用本函数拦截，mark_removed 语义会随同步
+    自愈清理库内既有污染行。
+
+    Args:
+        tracker_url: tracker URL 字符串
+
+    Returns:
+        是否合法（scheme 在白名单内；"** [DHT] **" 等伪条目无 scheme，同样不合法）
+    """
+    if not tracker_url:
+        return False
+    try:
+        parsed = urlparse(str(tracker_url))
+    except Exception:
+        return False
+    return (parsed.scheme or "").lower() in VALID_TRACKER_URL_SCHEMES
+
+
 def extract_tracker_host(tracker_url: str) -> str:
     """
     从tracker URL中提取主机名
