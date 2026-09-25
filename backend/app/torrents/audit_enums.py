@@ -81,6 +81,20 @@ class AuditOperationType(str, Enum):
     RSS_FEED_REFRESH = "rss_feed_refresh"  # 手动刷新 RSS 订阅源
     RSS_ARTICLE_ADD = "rss_article_add"  # 推送 RSS 文章到下载器
 
+    # ========== RSS Phase 2 操作（feature rss-subscription-phase2-2026-09-24） ==========
+    RSS_RULE_ADD = "rss_rule_add"  # 添加 RSS 自动下载规则
+    RSS_RULE_UPDATE = "rss_rule_update"  # 修改 RSS 自动下载规则
+    RSS_RULE_DELETE = "rss_rule_delete"  # 删除 RSS 自动下载规则
+    RSS_MODE_SWITCH = "rss_mode_switch"  # 切换下载器 RSS 模式
+    RSS_QB_FEED_ADD = "rss_qb_feed_add"  # qB 原生：添加订阅源
+    RSS_QB_FEED_UPDATE = "rss_qb_feed_update"  # qB 原生：修改订阅源地址
+    RSS_QB_FEED_DELETE = "rss_qb_feed_delete"  # qB 原生：删除订阅源/文件夹
+    RSS_QB_FEED_REFRESH = "rss_qb_feed_refresh"  # qB 原生：刷新订阅源
+    RSS_QB_RULE_ADD = "rss_qb_rule_add"  # qB 原生：添加下载规则
+    RSS_QB_RULE_UPDATE = "rss_qb_rule_update"  # qB 原生：修改/重命名下载规则
+    RSS_QB_RULE_DELETE = "rss_qb_rule_delete"  # qB 原生：删除下载规则
+    RSS_QB_PREF_UPDATE = "rss_qb_pref_update"  # qB 原生：修改 RSS 偏好
+
     # ========== 系统操作 ==========
     SYNC_STATUS = "sync_status"  # 同步状态
     CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子

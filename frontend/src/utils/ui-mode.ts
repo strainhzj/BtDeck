@@ -77,6 +77,8 @@ export function toMobilePath(path: string): string {
   }
   // M4：孤儿文件整页移动化（聚合/副本位置/前缀快捷/批量走桌面完整版）
   if (path.startsWith('/orphan-files')) return '/m/orphan-files'
+  // RSS 统一管理（Phase 2）：/downloader/rss 整页移动化；其余 /downloader 路径保留桌面
+  if (path.startsWith('/downloader/rss')) return '/m/rss'
   return '/m/dashboard'
 }
 

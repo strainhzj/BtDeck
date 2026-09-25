@@ -31,7 +31,13 @@ import httpx
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.rss_subscription import RssArticle, RssFeed
+from app.models.rss_subscription import (
+    RSS_MODE_BTDECK,
+    RSS_MODE_QB_NATIVE,
+    RssArticle,
+    RssFeed,
+    RssMode,
+)
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
@@ -54,6 +60,42 @@ FETCH_STATUS_FAILED = "failed"
 
 # 支持的下载器类型（rTorrent 适配本体另立项，暂不开放）
 _SUPPORTED_DOWNLOADER_TYPES = (0, 1)
+
+# 每源刷新间隔覆盖上下限（分钟）
+REFRESH_INTERVAL_MIN_MINUTES = 5
+REFRESH_INTERVAL_MAX_MINUTES = 1440
+
+
+def get_effective_mode(db: Session, downloader_id: str) -> str:
+    """读取下载器生效的 RSS 模式（无行/异常 = 默认 btdeck）。
+
+    模块级函数：rss_feed_service（推送护栏）与 rss_rule_service（模式端点/
+    自动推送护栏）共用，避免循环依赖。
+    """
+    try:
+        row = db.query(RssMode).filter(RssMode.downloader_id == downloader_id).first()
+    except SQLAlchemyError as e:
+        logger.warning("RSS 模式读取失败 [downloader_id=%s]: %s", downloader_id, e)
+        return RSS_MODE_BTDECK
+    if row is None:
+        return RSS_MODE_BTDECK
+    return row.mode if row.mode in (RSS_MODE_BTDECK, RSS_MODE_QB_NATIVE) else RSS_MODE_BTDECK
+
+
+def is_qb_native(db: Session, downloader_id: str) -> bool:
+    """下载器是否处于 qB 原生 RSS 模式（双模式冲突护栏判定）。"""
+    return get_effective_mode(db, downloader_id) == RSS_MODE_QB_NATIVE
+
+
+def validate_refresh_interval(minutes: Any) -> Tuple[bool, Optional[str]]:
+    """校验每源刷新间隔覆盖（None 合法=用全局节奏）。返回 (ok, msg)。"""
+    if minutes is None:
+        return True, None
+    if not isinstance(minutes, int) or isinstance(minutes, bool):
+        return False, "刷新间隔必须是整数分钟"
+    if not (REFRESH_INTERVAL_MIN_MINUTES <= minutes <= REFRESH_INTERVAL_MAX_MINUTES):
+        return False, f"刷新间隔必须在 {REFRESH_INTERVAL_MIN_MINUTES}-{REFRESH_INTERVAL_MAX_MINUTES} 分钟之间"
+    return True, None
 
 
 @dataclass
@@ -214,9 +256,19 @@ class RssFeedService:
             )
 
     def update_feed(
-        self, feed_id: str, name: Optional[str], url: Optional[str], enabled: Optional[bool]
+        self,
+        feed_id: str,
+        name: Optional[str],
+        url: Optional[str],
+        enabled: Optional[bool],
+        refresh_interval_minutes: Optional[int] = None,
+        refresh_interval_provided: bool = False,
     ) -> RssServiceResult:
-        """部分更新订阅源（name/url/enabled 任一）。"""
+        """部分更新订阅源（name/url/enabled/refresh_interval_minutes 任一）。
+
+        refresh_interval_provided 区分「未传」与「显式置空」（显式 null =
+        恢复全局节奏），与下载器部分更新端点 case-when 语义对齐。
+        """
         feed = self._get_feed(feed_id)
         if feed is None:
             return RssServiceResult(ok=False, code="404", msg="订阅源不存在", reason_code="RSS_FEED_NOT_FOUND")
@@ -259,6 +311,13 @@ class RssFeedService:
                     feed.url = url
             if enabled is not None:
                 feed.enabled = 1 if enabled else 0
+            if refresh_interval_provided:
+                ok, err = validate_refresh_interval(refresh_interval_minutes)
+                if not ok:
+                    return RssServiceResult(
+                        ok=False, code="400", msg=err or "刷新间隔无效", reason_code="RSS_FEED_INTERVAL_INVALID"
+                    )
+                feed.refresh_interval_minutes = refresh_interval_minutes
             self.db.commit()
             self.db.refresh(feed)
             return RssServiceResult(msg="订阅源更新成功", data={"feed": feed.to_dict()})
@@ -465,15 +524,17 @@ class RssFeedService:
         downloader_id: Optional[str] = None,
         save_path: Optional[str] = None,
         tags: Optional[str] = None,
+        rule_id: Optional[str] = None,
     ) -> RssServiceResult:
         """推送文章到下载器（链接直传，下载器自行抓取种子）。
 
         Args:
             article_id: 文章ID
-            downloader_id: 目标下载器（None=订阅源绑定的下载器；覆盖能力为
-                Phase 2 按类型路由预留）
+            downloader_id: 目标下载器（None=订阅源绑定的下载器）
             save_path: 保存路径（可选）
             tags: 标签（可选，逗号分隔；qB=tags，TR=labels）
+            rule_id: 自动规则命中事实（可选，内部参数：规则引擎回填推送
+                携带，手动推送为空——记录进 added_rule_id）
         """
         article = self.db.query(RssArticle).filter(RssArticle.article_id == article_id).first()
         if article is None:
@@ -493,6 +554,16 @@ class RssFeedService:
         if feed is None:
             return RssServiceResult(ok=False, code="404", msg="订阅源不存在", reason_code="RSS_FEED_NOT_FOUND")
         target_downloader_id = downloader_id or feed.downloader_id
+
+        # ========== 双模式冲突护栏（Phase 2） ==========
+        # 目标下载器处于 qB 原生模式时，BtDeck 引擎不得对其推送（避免双份下载）
+        if is_qb_native(self.db, target_downloader_id):
+            return RssServiceResult(
+                ok=False,
+                code="409",
+                msg="目标下载器已切换为 qB 原生 RSS 模式，请在该下载器内管理订阅",
+                reason_code="RSS_MODE_CONFLICT",
+            )
 
         # ========== 从 store 缓存解析下载器客户端（CL-16） ==========
         if self.store is None:
@@ -574,6 +645,8 @@ class RssFeedService:
             article.status = ARTICLE_STATUS_ADDED
             article.added_at = datetime.utcnow()
             article.added_downloader_id = target_downloader_id
+            if rule_id is not None:
+                article.added_rule_id = rule_id
             self.db.commit()
         except SQLAlchemyError as e:
             self.db.rollback()

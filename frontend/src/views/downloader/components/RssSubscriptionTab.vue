@@ -9,6 +9,21 @@
 
     <!-- 订阅管理内容 -->
     <div v-else class="rss-content">
+      <!-- 模式选择（仅 qB；Phase 2 双模式） -->
+      <div v-if="isQb" class="mode-section" v-loading="modeLoading">
+        <span class="mode-section__title">{{ $t('downloader.rss.modeSectionTitle') }}</span>
+        <el-radio-group :value="mode" size="small" @change="value => handleSwitchMode(value)">
+          <el-radio-button label="btdeck">{{ $t('downloader.rss.modeBtdeck') }}</el-radio-button>
+          <el-radio-button label="qb_native" :disabled="!qbNativeAvailable">{{ $t('downloader.rss.modeQbNative') }}</el-radio-button>
+        </el-radio-group>
+        <span class="mode-section__desc">{{ mode === 'qb_native' ? $t('downloader.rss.modeQbNativeDesc') : $t('downloader.rss.modeBtdeckDesc') }}</span>
+      </div>
+
+      <!-- qB 原生面板 -->
+      <rss-qb-native-panel v-if="isQb && mode === 'qb_native'" :downloader="downloader" />
+
+      <!-- BtDeck 引擎区（btdeck 模式 / 非 qB 下载器） -->
+      <template v-if="isEngineMode">
       <!-- 工具栏 -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -103,6 +118,10 @@
           <p>{{ $t('downloader.rss.emptyFeedsDesc') }}</p>
         </div>
       </div>
+
+      <!-- 引擎自动规则（Phase 2） -->
+      <rss-rules-panel :downloader="downloader" />
+      </template>
     </div>
 
     <!-- 新增/编辑订阅源弹窗 -->
@@ -251,11 +270,16 @@ import {
   refreshRssFeed,
   getRssArticles,
   addRssArticle,
+  getRssMode,
+  updateRssMode,
   RssFeed,
-  RssArticle
+  RssArticle,
+  RssModeValue
 } from '@/api/rss'
 import { getList } from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
+import RssQbNativePanel from './RssQbNativePanel.vue'
+import RssRulesPanel from './RssRulesPanel.vue'
 
 interface FeedFormState {
   name: string
@@ -263,10 +287,26 @@ interface FeedFormState {
 }
 
 @Component({
-  name: 'RssSubscriptionTab'
+  name: 'RssSubscriptionTab',
+  components: { RssQbNativePanel, RssRulesPanel }
 })
 export default class RssSubscriptionTab extends Vue {
   @Prop({ default: null }) downloader!: Downloader | null
+
+  // ==================== 模式（Phase 2：仅 qB 双模式） ====================
+
+  private mode: RssModeValue = 'btdeck'
+  private qbNativeAvailable = false
+  private modeLoading = false
+  private switchingMode = false
+
+  private get isQb(): boolean {
+    return Boolean(this.downloader && this.downloader.downloaderType === 0)
+  }
+
+  private get isEngineMode(): boolean {
+    return !this.isQb || this.mode === 'btdeck'
+  }
 
   // ==================== 订阅源列表 ====================
 
@@ -345,6 +385,7 @@ export default class RssSubscriptionTab extends Vue {
 
   mounted() {
     if (this.downloader) {
+      this.loadMode()
       this.loadFeeds()
     }
   }
@@ -353,11 +394,63 @@ export default class RssSubscriptionTab extends Vue {
   onDownloaderChanged(value: Downloader | null) {
     if (value) {
       this.feedPage = 1
+      this.mode = 'btdeck'
+      this.loadMode()
       this.loadFeeds()
     } else {
       this.feeds = []
       this.feedTotal = 0
+      this.mode = 'btdeck'
     }
+  }
+
+  // ==================== 模式操作（Phase 2） ====================
+
+  private async loadMode(): Promise<void> {
+    if (!this.downloader || !this.isQb) return
+    this.modeLoading = true
+    try {
+      const response = await getRssMode(this.downloader.downloaderId)
+      this.mode = response.data.mode
+      this.qbNativeAvailable = response.data.qbNativeAvailable
+    } catch {
+      this.mode = 'btdeck'
+      this.qbNativeAvailable = false
+    } finally {
+      this.modeLoading = false
+    }
+  }
+
+  private handleSwitchMode(value: string | number | boolean | undefined): void {
+    const target = String(value) as RssModeValue
+    if (this.switchingMode || !this.downloader || target === this.mode) return
+    const message = target === 'qb_native'
+      ? this.$t('downloader.rss.modeSwitchToQbNativeMsg').toString()
+      : this.$t('downloader.rss.modeSwitchToBtdeckMsg').toString()
+    MessageBox.confirm(
+      message,
+      this.$t('downloader.rss.modeSwitchConfirmTitle').toString(),
+      { type: 'warning', confirmButtonText: this.$t('common.confirm').toString(), cancelButtonText: this.$t('downloader.rss.cancel').toString() }
+    )
+      .then(async() => {
+        const downloader = this.downloader
+        if (!downloader) return
+        this.switchingMode = true
+        try {
+          await updateRssMode(downloader.downloaderId, target)
+          this.mode = target
+          Message.success(this.$t('downloader.rss.modeSwitched').toString())
+          if (this.isEngineMode) {
+            this.feedPage = 1
+            this.loadFeeds()
+          }
+        } catch (error) {
+          Message.error(extractErrorMessage(error))
+        } finally {
+          this.switchingMode = false
+        }
+      })
+      .catch(() => undefined)
   }
 
   // ==================== 订阅源操作 ====================
@@ -823,6 +916,28 @@ export default class RssSubscriptionTab extends Vue {
 @media (max-width: 780px) {
   .el-drawer.rtl {
     width: 100% !important;
+  }
+}
+
+.mode-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(64, 158, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(64, 158, 255, 0.06);
+
+  &__title {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__desc {
+    font-size: 12px;
+    opacity: 0.65;
   }
 }
 </style>

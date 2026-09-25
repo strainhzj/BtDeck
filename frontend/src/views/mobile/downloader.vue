@@ -3,6 +3,7 @@
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div class="m-toolbar">
       <span class="m-toolbar-title">共 {{ list.length }} 个下载器</span>
+      <el-button size="small" plain icon="el-icon-rank" @click="goRssManager">RSS 管理</el-button>
       <el-button size="small" type="primary" plain icon="el-icon-plus" @click="openCreate">新增下载器</el-button>
     </div>
     <div v-if="loading && !list.length" class="m-hint">加载中…</div>
@@ -211,6 +212,11 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   /** 新增：整页新增模式（DownloaderSettingsDialog downloader=null，含全部页签） */
   private openCreate(): void {
     this.$router.push('/m/downloader/settings/new').catch(() => undefined)
+  }
+
+  /** RSS 统一管理入口（Phase 2）：跨下载器整页复用桌面 RSS 组件 */
+  private goRssManager(): void {
+    this.$router.push('/m/rss').catch(() => undefined)
   }
 
   private removeOne(item: MobileDownloaderItem): void {

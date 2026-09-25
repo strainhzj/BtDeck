@@ -190,6 +190,64 @@ export interface DemoRssFeed {
   articles: DemoRssArticle[]
 }
 
+
+export interface DemoRssRule {
+  ruleId: string
+  downloaderId: string
+  name: string
+  enabled: boolean
+  includeKeywords: string
+  excludeKeywords: string | null
+  useRegex: boolean
+  targetDownloaderId: string | null
+  savePath: string | null
+  tags: string | null
+  feedIds: string[]
+  matchCount: number
+  lastMatchedAt: string | null
+}
+
+export interface DemoRssMode {
+  downloaderId: string
+  mode: 'btdeck' | 'qb_native'
+}
+
+/** qB 原生 RSS 树节点（demo 固定形态） */
+export interface DemoQbRssNode {
+  type: 'folder' | 'feed'
+  name: string
+  path: string
+  articleCount?: number
+  unreadCount?: number
+  children?: DemoQbRssNode[]
+}
+
+export interface DemoQbRssArticle {
+  articleId: string
+  title: string
+  link: string
+  published: string | null
+  isRead: boolean
+}
+
+export interface DemoQbRssRule {
+  name: string
+  enabled?: boolean
+  mustContain?: string
+  mustNotContain?: string
+  affectedFeeds?: string[]
+  savePath?: string
+  assignedCategory?: string
+  addPaused?: boolean
+}
+
+export interface DemoQbRssPreferences {
+  rssProcessingEnabled: boolean
+  rssAutoDownloadingEnabled: boolean
+  rssRefreshInterval: number
+  rssMaxArticlesPerFeed: number
+}
+
 export interface DemoQueryTemplateConditions {
   source: 'simple' | 'advanced'
   version: number
@@ -492,6 +550,13 @@ export interface DemoFixtureBundle {
   categories: string[]
   tags: string[]
   rssFeeds: DemoRssFeed[]
+  rssRules: DemoRssRule[]
+  rssModes: DemoRssMode[]
+  qbRssTree: DemoQbRssNode[]
+  qbRssArticles: Record<string, DemoQbRssArticle[]>
+  qbRssRules: DemoQbRssRule[]
+  qbRssPreferences: DemoQbRssPreferences
+  qbRssReadArticleIds: string[]
   trackerDomains: string[]
 }
 
@@ -507,6 +572,7 @@ export const DEMO_SPEED_TICK_INTERVAL = 5000
 export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/dashboard', title: '仪表盘', category: 'core', summary: '统计卡片、节点状态、活动时间线' },
   { path: '/downloader/index', title: '下载器', category: 'core', summary: '节点矩阵、筛选、连接测试、同步反馈' },
+  { path: '/downloader/rss', title: 'RSS 管理', category: 'extended', summary: '跨下载器统一 RSS：模式切换、引擎规则、qB 原生代理（Phase 2）' },
   { path: '/torrents/index', title: '种子列表', category: 'core', summary: '筛选、分页、排序、视图切换、详情与状态操作' },
   { path: '/torrents/traditional', title: '种子传统视图', category: 'core', summary: '与列表视图共享 Demo 种子状态' },
   { path: '/torrents/detail/:hash', title: '种子详情', category: 'core', summary: '详情、Tracker、文件和 Peers 的静态展示' },

@@ -112,13 +112,14 @@ class TestHashLowercaseNormalization:
     def test_head_is_hash_norm_revision(self):
         """hash 归一迁移的继任链尾应挂在本迁移之后（新增迁移后此断言应显式更新，防误挂链）。
 
-        2026-09-24：head 前移至 8fabba8687b0（RSS 订阅两表，feature
-        rss-subscription-2026-09-24）；hash 归一迁移不再是链尾，改为断言
-        新 head 的 down_revision 指向本迁移。
+        2026-09-24（Phase 2）：head 前移至 d4a7f1c9e2b6（RSS Phase 2 三表两列，
+        feature rss-subscription-phase2-2026-09-24）；hash 归一迁移不再是
+        链尾，改为断言当前 head 沿链回溯可抵达本迁移。
         """
-        assert current_head() == "8fabba8687b0"
+        assert current_head() == "d4a7f1c9e2b6"
         from alembic.script import ScriptDirectory
 
         script = ScriptDirectory.from_config(_make_alembic_config(":memory:"))
-        revision = script.get_revision("8fabba8687b0")
-        assert revision.down_revision == HASH_NORM_REV
+        revision = script.get_revision("d4a7f1c9e2b6")
+        assert revision.down_revision == "8fabba8687b0"
+        assert script.get_revision("8fabba8687b0").down_revision == HASH_NORM_REV

@@ -313,4 +313,139 @@ describe('demo request', () => {
       expect(demoStore.getRssFeed(feedId)).toBeNull()
     })
   })
+
+  describe('rss phase2: mode + rules + qb proxy', () => {
+    it('mode defaults btdeck and switches to qb_native', async() => {
+      const initial = await demoRequest<DemoApiEnvelope<{ mode: string, qbNativeAvailable: boolean }>>({
+        url: '/rss/mode',
+        method: 'get',
+        params: { downloaderId: 'demo-downloader-001' }
+      })
+      expect(initial.data.mode).toBe('btdeck')
+      expect(initial.data.qbNativeAvailable).toBe(true)
+
+      const switched = await demoRequest<DemoApiEnvelope<{ mode: string }>>({
+        url: '/rss/mode',
+        method: 'put',
+        data: { downloaderId: 'demo-downloader-001', mode: 'qb_native' }
+      })
+      expect(switched.data.mode).toBe('qb_native')
+
+      const reread = await demoRequest<DemoApiEnvelope<{ mode: string }>>({
+        url: '/rss/mode',
+        method: 'get',
+        params: { downloaderId: 'demo-downloader-001' }
+      })
+      expect(reread.data.mode).toBe('qb_native')
+
+      // 还原，避免影响后续用例
+      await demoRequest({ url: '/rss/mode', method: 'put', data: { downloaderId: 'demo-downloader-001', mode: 'btdeck' } })
+    })
+
+    it('lists engine rules from fixtures', async() => {
+      const rules = await demoRequest<DemoApiEnvelope<DemoPage<{ ruleId: string, name: string, matchCount: number }>>>({
+        url: '/rss/rules',
+        method: 'get',
+        params: { downloaderId: 'demo-downloader-001' }
+      })
+      expect(rules.data.total).toBeGreaterThanOrEqual(2)
+      expect(rules.data.list[0].name).toBe('剧集 1080p 追更')
+    })
+
+    it('creates a rule with backfill pushing matching pending articles', async() => {
+      const created = await demoRequest<
+        DemoApiEnvelope<{
+          rule: { ruleId: string, name: string }
+          backfill: { matched: number, pushed: number, failed: number, skippedMode: number }
+        }>
+      >({
+        url: '/rss/rules',
+        method: 'post',
+        data: { downloaderId: 'demo-downloader-001', name: '回填规则', includeKeywords: 'Show' }
+      })
+      expect(created.data.backfill.matched).toBeGreaterThan(0)
+      expect(created.data.backfill.pushed).toBe(created.data.backfill.matched)
+
+      const preview = await demoRequest<
+        DemoApiEnvelope<{ list: Array<{ title: string }>, total: number }>
+      >({
+        url: `/rss/rules/${created.data.rule.ruleId}/match-preview`,
+        method: 'post'
+      })
+      expect(preview.data.total).toBe(0) // 回填后无剩余命中
+
+      await demoRequest({ url: `/rss/rules/${created.data.rule.ruleId}`, method: 'delete' })
+    })
+
+    it('backfill skips push when target downloader in qb_native mode', async() => {
+      await demoRequest({ url: '/rss/mode', method: 'put', data: { downloaderId: 'demo-downloader-001', mode: 'qb_native' } })
+      const created = await demoRequest<
+        DemoApiEnvelope<{ rule: { ruleId: string }, backfill: { matched: number, skippedMode: number, pushed: number } }>
+      >({
+        url: '/rss/rules',
+        method: 'post',
+        data: { downloaderId: 'demo-downloader-001', name: '跳过规则', includeKeywords: 'Show' }
+      })
+      expect(created.data.backfill.skippedMode).toBe(created.data.backfill.matched)
+      expect(created.data.backfill.pushed).toBe(0)
+      await demoRequest({ url: `/rss/rules/${created.data.rule.ruleId}`, method: 'delete' })
+      await demoRequest({ url: '/rss/mode', method: 'put', data: { downloaderId: 'demo-downloader-001', mode: 'btdeck' } })
+    })
+
+    it('qb proxy: tree/rules/preferences/articles/mark-read', async() => {
+      const tree = await demoRequest<DemoApiEnvelope<{ list: Array<{ type: string, name: string }> }>>({
+        url: '/rss/qb/demo-downloader-001/feeds',
+        method: 'get'
+      })
+      expect(tree.data.list).toHaveLength(2)
+      expect(tree.data.list[0].type).toBe('folder')
+
+      const rules = await demoRequest<DemoApiEnvelope<{ list: Array<{ name: string, mustContain: string }>, total: number }>>({
+        url: '/rss/qb/demo-downloader-001/rules',
+        method: 'get'
+      })
+      expect(rules.data.total).toBe(1)
+      expect(rules.data.list[0].mustContain).toBe('Drama')
+
+      const prefs = await demoRequest<DemoApiEnvelope<{ preferences: { rssRefreshInterval: number } }>>({
+        url: '/rss/qb/demo-downloader-001/preferences',
+        method: 'get'
+      })
+      expect(prefs.data.preferences.rssRefreshInterval).toBe(30)
+
+      const updated = await demoRequest<DemoApiEnvelope<{ preferences: { rssRefreshInterval: number } }>>({
+        url: '/rss/qb/demo-downloader-001/preferences',
+        method: 'put',
+        data: { rssRefreshInterval: 15 }
+      })
+      expect(updated.data.preferences.rssRefreshInterval).toBe(15)
+
+      const articles = await demoRequest<DemoApiEnvelope<{ list: Array<{ articleId: string, isRead: boolean }>, unreadCount: number }>>({
+        url: '/rss/qb/demo-downloader-001/articles',
+        method: 'get',
+        params: { path: '剧集\\周一剧组' }
+      })
+      expect(articles.data.unreadCount).toBe(1)
+
+      await demoRequest({
+        url: '/rss/qb/demo-downloader-001/items/mark-read',
+        method: 'post',
+        data: { path: '剧集\\周一剧组', articleId: articles.data.list[0].articleId }
+      })
+      const afterRead = await demoRequest<DemoApiEnvelope<{ unreadCount: number }>>({
+        url: '/rss/qb/demo-downloader-001/articles',
+        method: 'get',
+        params: { path: '剧集\\周一剧组' }
+      })
+      expect(afterRead.data.unreadCount).toBe(0)
+    })
+
+    it('qb proxy rejects non-qB downloader', async() => {
+      const rejected = await demoRequest<DemoApiEnvelope<{ reasonCode: string }>>({
+        url: '/rss/qb/demo-downloader-002/rules',
+        method: 'get'
+      })
+      expect(rejected.data.reasonCode).toBe('RSS_QB_TYPE_UNSUPPORTED')
+    })
+  })
 })

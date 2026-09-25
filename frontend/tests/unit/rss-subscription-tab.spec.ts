@@ -40,7 +40,9 @@ jest.mock('@/api/rss', () => ({
   deleteRssFeed: jest.fn(),
   refreshRssFeed: jest.fn(),
   getRssArticles: jest.fn(),
-  addRssArticle: jest.fn()
+  addRssArticle: jest.fn(),
+  getRssMode: jest.fn(),
+  updateRssMode: jest.fn()
 }))
 
 jest.mock('@/api/downloader', () => ({
@@ -91,7 +93,8 @@ const FEED: RssFeed = {
   lastFetchStatus: 'ok',
   lastError: null,
   createdAt: '2026-09-01 00:00:00',
-  pendingCount: 2
+  pendingCount: 2,
+  refreshIntervalMinutes: null
 }
 
 const PENDING: RssArticle = {

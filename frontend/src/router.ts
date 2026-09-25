@@ -86,6 +86,12 @@ const router = new Router({
           meta: { hidden: true }
         },
         {
+          // RSS 统一管理（Phase 2）：整页复用桌面 RSS 管理视图（跨下载器）
+          path: 'rss',
+          component: () => import(/* webpackChunkName: "m-rss" */ '@/views/mobile/rss.vue'),
+          meta: { hidden: true, title: 'RSS 管理' }
+        },
+        {
           // 回收站（Phase 4 M2）：单条恢复/彻底删除
           path: 'recycle-bin',
           component: () => import(/* webpackChunkName: "m-recycle-bin" */ '@/views/mobile/recycle-bin.vue'),
@@ -157,16 +163,35 @@ const router = new Router({
       ]
     },
     {
+      // 下载器管理组（Phase 2 起 RSS 管理并入本组为子菜单，
+      // feature rss-subscription-phase2-2026-09-24）
       path: '/downloader',
       component: Layout,
+      redirect: '/downloader/index',
+      meta: {
+        title: '下载器管理',
+        titleKey: 'navigation.routes.downloaderGroup',
+        icon: 'server'
+      },
       children: [
         {
           path: 'index',
           component: () => import(/* webpackChunkName: "form" */ '@/views/downloader/index.vue'),
           meta: {
-            title: '下载器管理',
-            titleKey: 'navigation.routes.downloader',
+            title: '下载器列表',
+            titleKey: 'navigation.routes.downloaderList',
             icon: 'server'
+          }
+        },
+        {
+          // RSS 统一管理（跨下载器；与下载器设置弹窗 rssSubscription 页签多入口共享组件）
+          path: 'rss',
+          component: () => import(/* webpackChunkName: "rss-manager" */ '@/views/rss/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: 'RSS 管理',
+            titleKey: 'navigation.routes.rssManagement',
+            icon: 'rss'
           }
         }
       ]

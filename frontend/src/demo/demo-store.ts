@@ -17,6 +17,11 @@ import {
   DemoRecycleItem,
   DemoRssArticle,
   DemoRssFeed,
+  DemoRssRule,
+  DemoQbRssNode,
+  DemoQbRssArticle,
+  DemoQbRssRule,
+  DemoQbRssPreferences,
   DemoTask,
   DemoTaskLog,
   DemoTorrent,
@@ -650,6 +655,192 @@ export class DemoStore {
       }
     }
     return null
+  }
+
+  // ==================== RSS Phase 2：模式 + 引擎规则 + qB 代理 ====================
+
+  /** 关键词匹配（与后端语义一致：include OR + exclude AND NOT，大小写不敏感子串） */
+  private static matchesKeywords(title: string, include: string, exclude: string | null): boolean {
+    const parts = (raw: string | null): string[] =>
+      (raw || '').split(',').map(part => part.trim()).filter(part => part.length > 0)
+    const lower = title.toLowerCase()
+    if (!parts(include).some(kw => lower.includes(kw.toLowerCase()))) return false
+    return !parts(exclude).some(kw => lower.includes(kw.toLowerCase()))
+  }
+
+  public getRssMode(downloaderId: string): { mode: 'btdeck' | 'qb_native', qbNativeAvailable: boolean } {
+    const downloader = this.state.downloaders.find(item => item.downloaderId === downloaderId)
+    const row = this.state.rssModes.find(item => item.downloaderId === downloaderId)
+    return {
+      mode: row ? row.mode : 'btdeck',
+      qbNativeAvailable: Boolean(downloader && downloader.downloaderType === 0)
+    }
+  }
+
+  public updateRssMode(downloaderId: string, mode: 'btdeck' | 'qb_native'): void {
+    const row = this.state.rssModes.find(item => item.downloaderId === downloaderId)
+    if (row) {
+      row.mode = mode
+    } else {
+      this.state.rssModes.push({ downloaderId, mode })
+    }
+  }
+
+  public listRssRules(downloaderId: string, params: DemoPageParams = {}): DemoPage<DemoRssRule> {
+    return paginate(
+      this.state.rssRules.filter(rule => rule.downloaderId === downloaderId),
+      params
+    )
+  }
+
+  public getRssRule(ruleId: string): DemoRssRule | null {
+    return clone(this.state.rssRules.find(rule => rule.ruleId === ruleId) || null)
+  }
+
+  public createRssRule(input: Partial<DemoRssRule> & { downloaderId: string }): DemoRssRule & { backfill: { matched: number, pushed: number, failed: number, skippedMode: number } } {
+    const ruleId = `demo-rss-rule-local-${this.state.rssRules.length + 1}`
+    const rule: DemoRssRule = {
+      ruleId,
+      downloaderId: input.downloaderId,
+      name: input.name || '未命名规则',
+      enabled: input.enabled !== false,
+      includeKeywords: input.includeKeywords || '',
+      excludeKeywords: input.excludeKeywords ?? null,
+      useRegex: Boolean(input.useRegex),
+      targetDownloaderId: input.targetDownloaderId ?? null,
+      savePath: input.savePath ?? null,
+      tags: input.tags ?? null,
+      feedIds: input.feedIds ? [...input.feedIds] : [],
+      matchCount: 0,
+      lastMatchedAt: null
+    }
+    this.state.rssRules.push(rule)
+    const backfill = this.backfillRssRule(rule)
+    return clone({ ...rule, backfill })
+  }
+
+  public updateRssRule(ruleId: string, input: Partial<DemoRssRule>): (DemoRssRule & { backfill: { matched: number, pushed: number, failed: number, skippedMode: number } }) | null {
+    const rule = this.state.rssRules.find(item => item.ruleId === ruleId)
+    if (!rule) return null
+    if (input.name !== undefined) rule.name = input.name
+    if (input.enabled !== undefined) rule.enabled = input.enabled
+    if (input.includeKeywords !== undefined) rule.includeKeywords = input.includeKeywords
+    if (input.excludeKeywords !== undefined) rule.excludeKeywords = input.excludeKeywords
+    if (input.useRegex !== undefined) rule.useRegex = input.useRegex
+    if (input.targetDownloaderId !== undefined) rule.targetDownloaderId = input.targetDownloaderId
+    if (input.savePath !== undefined) rule.savePath = input.savePath
+    if (input.tags !== undefined) rule.tags = input.tags
+    if (input.feedIds !== undefined) rule.feedIds = [...input.feedIds]
+    const backfill = this.backfillRssRule(rule)
+    return clone({ ...rule, backfill })
+  }
+
+  public deleteRssRule(ruleId: string): boolean {
+    const index = this.state.rssRules.findIndex(item => item.ruleId === ruleId)
+    if (index === -1) return false
+    this.state.rssRules.splice(index, 1)
+    return true
+  }
+
+  private backfillRssRule(rule: DemoRssRule): { matched: number, pushed: number, failed: number, skippedMode: number } {
+    const counts = { matched: 0, pushed: 0, failed: 0, skippedMode: 0 }
+    if (!rule.enabled) return counts
+    const targetMode = this.getRssMode(rule.targetDownloaderId || rule.downloaderId).mode
+    const feeds = this.state.rssFeeds.filter(
+      feed => feed.downloaderId === rule.downloaderId && (rule.feedIds.length === 0 || rule.feedIds.includes(feed.feedId))
+    )
+    for (const feed of feeds) {
+      for (const article of feed.articles) {
+        if (article.status !== 'pending') continue
+        if (!DemoStore.matchesKeywords(article.title, rule.includeKeywords, rule.excludeKeywords)) continue
+        counts.matched += 1
+        if (targetMode === 'qb_native') {
+          counts.skippedMode += 1
+          continue
+        }
+        article.status = 'added'
+        article.addedAt = '2026-09-24 12:30:00'
+        counts.pushed += 1
+      }
+    }
+    if (counts.pushed > 0) {
+      rule.matchCount += counts.pushed
+      rule.lastMatchedAt = '2026-09-24 12:30:00'
+    }
+    return counts
+  }
+
+  public previewRssRule(ruleId: string): Array<DemoRssArticle & { feedName: string | null }> | null {
+    const rule = this.state.rssRules.find(item => item.ruleId === ruleId)
+    if (!rule) return null
+    if (!rule.enabled) return []
+    const feeds = this.state.rssFeeds.filter(
+      feed => feed.downloaderId === rule.downloaderId && (rule.feedIds.length === 0 || rule.feedIds.includes(feed.feedId))
+    )
+    const items: Array<DemoRssArticle & { feedName: string | null }> = []
+    for (const feed of feeds) {
+      for (const article of feed.articles) {
+        if (article.status !== 'pending') continue
+        if (!DemoStore.matchesKeywords(article.title, rule.includeKeywords, rule.excludeKeywords)) continue
+        items.push({ ...clone(article), feedName: feed.name })
+      }
+    }
+    return items.slice(0, 50)
+  }
+
+  // ==================== qB 原生 RSS 代理（demo） ====================
+
+  public getQbRssTree(): DemoQbRssNode[] {
+    return clone(this.state.qbRssTree)
+  }
+
+  public getQbRssArticles(path: string, onlyUnread: boolean): { list: DemoQbRssArticle[], total: number, unreadCount: number } {
+    const articles = (this.state.qbRssArticles[path] || []).map(article => ({
+      ...clone(article),
+      isRead: article.isRead || this.state.qbRssReadArticleIds.includes(article.articleId)
+    }))
+    const filtered = onlyUnread ? articles.filter(article => !article.isRead) : articles
+    const unreadCount = articles.filter(article => !article.isRead).length
+    return { list: filtered, total: filtered.length, unreadCount }
+  }
+
+  public markQbRssRead(path: string, articleId: string | null): void {
+    if (articleId) {
+      this.state.qbRssReadArticleIds.push(articleId)
+      return
+    }
+    for (const article of this.state.qbRssArticles[path] || []) {
+      this.state.qbRssReadArticleIds.push(article.articleId)
+    }
+  }
+
+  public listQbRssRules(): DemoQbRssRule[] {
+    return clone(this.state.qbRssRules)
+  }
+
+  public setQbRssRule(name: string, ruleDef: Partial<Omit<DemoQbRssRule, 'name'>>): void {
+    const existing = this.state.qbRssRules.find(rule => rule.name === name)
+    if (existing) {
+      Object.assign(existing, clone(ruleDef), { name })
+    } else {
+      this.state.qbRssRules.push(clone({ ...ruleDef, name }))
+    }
+  }
+
+  public deleteQbRssRule(name: string): boolean {
+    const index = this.state.qbRssRules.findIndex(rule => rule.name === name)
+    if (index === -1) return false
+    this.state.qbRssRules.splice(index, 1)
+    return true
+  }
+
+  public getQbRssPreferences(): DemoQbRssPreferences {
+    return clone(this.state.qbRssPreferences)
+  }
+
+  public updateQbRssPreferences(input: Partial<DemoQbRssPreferences>): DemoQbRssPreferences {
+    this.state.qbRssPreferences = { ...this.state.qbRssPreferences, ...input }
+    return clone(this.state.qbRssPreferences)
   }
 
   public listTasks(params: DemoPageParams = {}): DemoPage<DemoTask> {

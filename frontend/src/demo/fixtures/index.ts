@@ -12,6 +12,12 @@ import {
   DemoQueryTemplate,
   DemoRecycleItem,
   DemoRssFeed,
+  DemoRssRule,
+  DemoRssMode,
+  DemoQbRssNode,
+  DemoQbRssArticle,
+  DemoQbRssRule,
+  DemoQbRssPreferences,
   DemoTask,
   DemoTaskLog,
   DemoTorrent,
@@ -105,6 +111,121 @@ const makeTorrent = (input: Partial<DemoTorrent> & Pick<DemoTorrent, 'infoId' | 
 })
 
 /** RSS 订阅源 demo fixture（feature rss-subscription-2026-09-24；域名 example.invalid，链接为演示占位） */
+
+/** 引擎自动下载规则（Phase 2 demo） */
+export const DEMO_RSS_RULES: DemoRssRule[] = [
+  {
+    ruleId: 'demo-rss-rule-001',
+    downloaderId: 'demo-downloader-001',
+    name: '剧集 1080p 追更',
+    enabled: true,
+    includeKeywords: 'Show,1080p',
+    excludeKeywords: 'Repack',
+    useRegex: false,
+    targetDownloaderId: null,
+    savePath: '/downloads/shows',
+    tags: 'rss,shows',
+    feedIds: [],
+    matchCount: 12,
+    lastMatchedAt: '2026-09-24 08:30:00'
+  },
+  {
+    ruleId: 'demo-rss-rule-002',
+    downloaderId: 'demo-downloader-001',
+    name: '纪录片合集',
+    enabled: false,
+    includeKeywords: 'Documentary',
+    excludeKeywords: null,
+    useRegex: false,
+    targetDownloaderId: 'demo-downloader-002',
+    savePath: null,
+    tags: null,
+    feedIds: ['demo-rss-feed-001'],
+    matchCount: 0,
+    lastMatchedAt: null
+  }
+]
+
+/** RSS 模式（Phase 2 demo：qB 演示切换） */
+export const DEMO_RSS_MODES: DemoRssMode[] = []
+
+/** qB 原生 RSS 源树（Phase 2 demo 固定形态） */
+export const DEMO_QB_RSS_TREE: DemoQbRssNode[] = [
+  {
+    type: 'folder',
+    name: '剧集',
+    path: '剧集',
+    children: [
+      {
+        type: 'feed',
+        name: '周一剧组',
+        path: '剧集\\周一剧组',
+        articleCount: 2,
+        unreadCount: 1
+      },
+      { type: 'folder', name: '待整理', path: '剧集\\待整理', children: [] }
+    ]
+  },
+  {
+    type: 'feed',
+    name: 'Weekly Bundle',
+    path: 'Weekly Bundle',
+    articleCount: 1,
+    unreadCount: 1
+  }
+]
+
+/** qB 原生文章（按源路径索引） */
+export const DEMO_QB_RSS_ARTICLES: Record<string, DemoQbRssArticle[]> = {
+  '剧集\\周一剧组': [
+    {
+      articleId: 'demo-qb-article-001',
+      title: 'Drama.S02E03.1080p.WEB-DL',
+      link: 'https://qb.example.invalid/torrents/drama-s02e03.torrent',
+      published: '2026-09-24 09:00:00',
+      isRead: false
+    },
+    {
+      articleId: 'demo-qb-article-002',
+      title: 'Drama.S02E02.1080p.WEB-DL',
+      link: 'https://qb.example.invalid/torrents/drama-s02e02.torrent',
+      published: '2026-09-23 09:00:00',
+      isRead: true
+    }
+  ],
+  'Weekly Bundle': [
+    {
+      articleId: 'demo-qb-article-003',
+      title: 'Weekly.Pack.2026-09-24',
+      link: 'magnet:?xt=urn:btih:demow001demow001demow001demow001demow0',
+      published: '2026-09-24 07:30:00',
+      isRead: false
+    }
+  ]
+}
+
+/** qB 原生下载规则（Phase 2 demo） */
+export const DEMO_QB_RSS_RULES: DemoQbRssRule[] = [
+  {
+    name: '剧集自动下载',
+    enabled: true,
+    mustContain: 'Drama',
+    mustNotContain: 'Repack',
+    affectedFeeds: ['剧集\\周一剧组'],
+    savePath: '/tv/drama',
+    assignedCategory: 'tv',
+    addPaused: false
+  }
+]
+
+/** qB RSS 偏好（Phase 2 demo） */
+export const DEMO_QB_RSS_PREFERENCES: DemoQbRssPreferences = {
+  rssProcessingEnabled: true,
+  rssAutoDownloadingEnabled: true,
+  rssRefreshInterval: 30,
+  rssMaxArticlesPerFeed: 100
+}
+
 export const DEMO_RSS_FEEDS: DemoRssFeed[] = [
   {
     feedId: 'demo-rss-feed-001',
@@ -1056,6 +1177,13 @@ export const DEMO_FIXTURE_BUNDLE: DemoFixtureBundle = {
   notifications: DEMO_NOTIFICATIONS,
   queryTemplates: DEMO_QUERY_TEMPLATES,
   rssFeeds: DEMO_RSS_FEEDS,
+  rssRules: DEMO_RSS_RULES,
+  rssModes: DEMO_RSS_MODES,
+  qbRssTree: DEMO_QB_RSS_TREE,
+  qbRssArticles: DEMO_QB_RSS_ARTICLES,
+  qbRssRules: DEMO_QB_RSS_RULES,
+  qbRssPreferences: DEMO_QB_RSS_PREFERENCES,
+  qbRssReadArticleIds: [],
   tasks: DEMO_TASKS,
   taskLogs: DEMO_TASK_LOGS,
   auditLogs: DEMO_AUDIT_LOGS,

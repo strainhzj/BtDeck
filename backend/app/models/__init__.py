@@ -59,7 +59,7 @@ from app.models.sync_checkpoint import (
 )
 
 # 导出 RSS 订阅模型（feature rss-subscription-2026-09-24）
-from app.models.rss_subscription import RssFeed, RssArticle
+from app.models.rss_subscription import RssFeed, RssArticle, RssMode, RssRule, RssRuleFeed
 
 __all__ = [
     "DownloaderTypeEnum",  # 整数枚举
@@ -99,4 +99,7 @@ __all__ = [
     # RSS 订阅模型
     "RssFeed",
     "RssArticle",
+    "RssMode",
+    "RssRule",
+    "RssRuleFeed",
 ]

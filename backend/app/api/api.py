@@ -53,6 +53,9 @@ from app.api.endpoints import moviepilot
 # RSS 订阅（feature rss-subscription-2026-09-24）
 from app.api.endpoints import rss_subscriptions
 
+# qB 原生 RSS 代理（feature rss-subscription-phase2-2026-09-24）
+from app.api.endpoints import rss_qb_proxy
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -108,6 +111,8 @@ api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])
 # 添加 RSS 订阅路由（feature rss-subscription-2026-09-24）
 api_router.include_router(rss_subscriptions.router, prefix="/rss", tags=["RSS订阅"])
+# qB 原生 RSS 代理路由（feature rss-subscription-phase2-2026-09-24）
+api_router.include_router(rss_qb_proxy.router, prefix="/rss/qb", tags=["RSS订阅"])
 # 添加孤儿文件管理路由
 api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])
 # API 前缀下保留 liveness/readiness 别名；Docker 使用的规范路径仍是根路径 /health/*。

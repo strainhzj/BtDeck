@@ -18,6 +18,8 @@
 | `backups` / `categories` / `tags` | 备份摘要和筛选选项 | 不生成或读取真实 torrent 文件 |
 | `mcpSettings` + `DEMO_MCP_CATALOG` | 全局/逐能力开关、revision、能力目录元数据 | 目录镜像后端 `contracts.py` 六项能力（含 W5 `descriptionEn` 成对文案），仅展示用 |
 | `rssFeeds` | 订阅源与内嵌文章（待添加/已推送、抓取状态投影） | 域名 `rss.example.invalid`，magnet 为演示占位；推送仅在内存改 status |
+| `rssRules` / `rssModes` | 引擎自动下载规则 + 按下载器 RSS 模式（Phase 2） | 规则回填走内存关键词匹配（与后端语义一致）；模式切换影响回填跳过 |
+| `qbRssTree` / `qbRssArticles` / `qbRssRules` / `qbRssPreferences` | qB 原生 RSS 代理静态演示（Phase 2） | 树/规则静态；已读标记与偏好保存内存生效；增删改回执为静态文案 |
 | `mcpApiKey`（`DEMO_MCP_API_KEY`） | 服务密钥三态视图 + revision（查看/刷新 CAS） | 固定演示密钥（`btdmcp_` + 43 位格式对齐），不进真实认证链 |
 | `moviepilotSettings` / `moviepilotInstances` / `moviepilotAssociations` | 集成开关、实例映射、整理历史关联 | `linked` 关联按 `downloadHash` 挂 demo 种子，路径只使用 `/demo/*` |
 

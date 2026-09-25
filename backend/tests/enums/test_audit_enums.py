@@ -118,7 +118,9 @@ class TestAuditOperationTypeMemberCount:
         # 增员未同步）；当前真实值 53（含 MCP_TOOL_CALL，mcp W3）。
         # 2026-09-22 校准：W5 服务密钥查看/刷新两项增员（MCP_APIKEY_VIEW/ROTATE）。
         # 2026-09-24 校准：RSS 订阅五项增员（rss-subscription-2026-09-24）。
-        assert len(AuditOperationType) == 60
+        # 2026-09-24 校准（Phase 2）：RSS 规则三项 + 模式切换 + qB 原生代理八项增员
+        # （rss-subscription-phase2-2026-09-24）。
+        assert len(AuditOperationType) == 72
 
 
 class TestAuditOperationTypeIsValid:
