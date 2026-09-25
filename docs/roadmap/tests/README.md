@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（259 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（128 套，spec 文件 131 个：tests/ 119 + src 组件内嵌 12；✨2026-09-24 RSS 批新增 test_rss_subscriptions 20 例 + rss-subscription-tab 7 例 + rss-tab-integration 3 例 + demo-request 扩 5 例；✨2026-09-23 UI 重构批新增 settings-tabs-layout.spec.ts）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（262 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（130 套，spec 文件 130 个：tests/ 118 + src 组件内嵌 12；✨2026-09-24 RSS Phase 2 批新增 test_rss_rules_mode 21 例 + test_rss_qb_proxy 20 例 + test_rss_refresh_task 10 例 + rss-phase2-panels 14 例 + rss-manager-entry 8 例 + demo-request 扩 6 例；Phase 1 批 test_rss_subscriptions 20 例 + rss-subscription-tab 7 例 + rss-tab-integration 3 例）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（80 个 test_*.py，对应 app/api/（✨2026-09-24 +test_rss_subscriptions：CRUD/刷新解析 fixture 去重/推送 qB·TR 分支参数/目标覆盖/重复 409/平台门控）；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks；✨2026-09-22 W5 test_mcp_apikey 21 例：三态视图/CAS 409/归属漂移/控制面门禁/审计禁记密钥/descriptionEn 成对） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（82 个 test_*.py，对应 app/api/ 43 个端点模块（✨2026-09-24 P2 +test_rss_rules_mode：模式默认/往返/TR 拒/能力键关/规则 CRUD 校验/显式 null 语义/回填推送 addedRuleId/大小写·exclude·正则/源作用域/qb_native 跳过+护栏 409/预览不推送/TR 目标覆盖参数；+test_rss_qb_proxy：树投影/文章排序过滤/校验/透传 kwargs 断言/偏好白名单/门控/android/认证/异常归一）；Phase 1 批 test_rss_subscriptions 20 例；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks；✨2026-09-22 W5 test_mcp_apikey 21 例：三态视图/CAS 409/归属漂移/控制面门禁/审计禁记密钥/descriptionEn 成对） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |

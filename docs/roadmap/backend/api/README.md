@@ -13,7 +13,7 @@
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 | 能力门禁依赖 platform-guard | `platform_guard.py` | ✨2026-09-21 roadmap 同步补录（3ac6f54，Android 主服务端远端文件系能力硬禁用）：`capability_dependency()` 依赖工厂组合“先认证（`require_authenticated_user`）+ 再能力检查（`require_capability`）”，供路径映射/孤儿/备份/转移等主机文件系域能路由组复用；服务层保留同能力二次检查 |
 
-### endpoints/（41 个文件；✨2026-09-09 校准：含本批 moviepilot + W1 mcp_settings 与 torrent_detail 的历史漂移；2026-09-22 合并后待重测）
+### endpoints/（43 个文件；✨2026-09-24 实测：Phase 2 +rss_qb_proxy；原 41 为 2026-09-22 待重测口径，本轮实测对齐）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -34,7 +34,8 @@
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| RSS 订阅 rss ✨2026-09-24 | `rss_subscriptions.py` | BtDeck 自建 RSS 引擎 Phase 1（feature rss-subscription-2026-09-24）：订阅源 CRUD（同下载器 URL 去重）/手动刷新（httpx 超时 15s + 2MB 上限 + feedparser 解析 + (feed_id,guid) 去重）/文章分页/推送下载器（链接直传：qB `torrents_add(urls=)`、TR `add_torrent(torrent=)`，支持 savePath/tags/downloaderId 覆盖——按类型路由 Phase 2 预留）；失败路径 data.reasonCode（RSS_*）+ 审计五枚举；android-server 形态拒写 |
+| RSS 订阅 rss ✨2026-09-24（P2 同日扩） | `rss_subscriptions.py` | Phase 1：订阅源 CRUD/手动刷新（httpx 15s+2MB+feedparser+guid 去重）/文章分页/推送下载器（链接直传，savePath/tags/downloaderId 覆盖）；Phase 2（feature rss-subscription-phase2-2026-09-24）：+`GET/PUT /rss/mode`（btdeck/qb_native 仅 qB+能力键门控）+ 规则 CRUD 与 `POST /rules/{id}/match-preview`（创建/更新后端点层 await 回填推送，响应 backfill camelCase 计数）+ update_feed 扩 refreshIntervalMinutes（显式 null=恢复全局，5-1440 校验）；推送护栏 is_qb_native→409 RSS_MODE_CONFLICT；android-server 拒写 |
+| qB 原生 RSS 代理 rss-qb-proxy ✨2026-09-24 | `rss_qb_proxy.py` | `/api/v1/rss/qb/{downloaderId}` 15 接口（Phase 2）：源树（with_data 投影 folder/feed+未读数；空节点 qB API 歧义按 folder）/加源/加文件夹/改址/删项/移动/刷新（空=全部）/已读（单篇或整源）/文章列表（路径游走+published 倒序+onlyUnread）/规则 CRUD+重命名+命中预览/偏好四键白名单读写（GET 投影+PUT 边界校验+回读确认）；薄壳透传 `services/rss_qb_proxy_service.py`；type==0 门控不校验 mode；android-server 拒写 GET 放行 |
 | 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务；✨2026-09-20 双语 P6-4b：失败路径 data.reasonCode 22 键（ORPHAN_*，覆盖全部 17 端点）+ 动态 str(e)/scan_id 不进 msg；hardlink 删除 rejected 双形态 200 包裹 + reasonCode 追加进 data（E14 同款）；成功/部分成功计数 msg 保持 B03 原文（前端自行组文案） |
 | 主机能力矩阵 platform-capabilities | `platform_capabilities.py` | ✨2026-09-21 roadmap 同步补录（1986d51，2026-08-30 dual-mode-client Phase 4）：`GET /platform/capabilities` 按服务端主机形态下发能力集合（`capability_payload`，schemaVersion=2），设置页/任务列表/创建表单三处消费同一来源一致降级 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理；✨2026-09-19 双语 P5：五端点失败路径 data.reasonCode（RECYCLE_BIN_*/RECYCLE_RESTORE_FAILED/E16 NOT_IMPLEMENTED 501）+ 动态 str(e) msg 收敛 |
@@ -100,6 +101,7 @@
 | `/tags` | tag_management |
 | `/notifications` | notifications |
 | `/rss` | rss_subscriptions |
+| `/rss/qb` | rss_qb_proxy |
 | `/orphan-files` | orphan_files |
 | `/torrents` 附加 | duplicate_torrents、duplicate_quick_delete、torrent_backup、seed_transfer |
 

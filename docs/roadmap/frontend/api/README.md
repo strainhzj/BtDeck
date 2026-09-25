@@ -9,7 +9,7 @@
 |--------|------|-----------|
 | 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 与 downloadComplete 兼容字段；`TorrentListParams.tracker_domain` L201 支持 Tracker 主机域名多选，`single_error_only` L205 支持错误单种全局唯一排查，`getTrackerDomains()` L260 读取定时同步已采集的域名；`getActiveTorrents()` L1379 获取 200/206 实时快照，`reconcileRuntimeTorrentStates()` L1390 低频核验复合键终态；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
-| RSS 订阅 rss ✨2026-09-24 | `rss.ts` | RSS 订阅 Phase 1：订阅源 CRUD/手动刷新/文章分页/推送下载器（savePath/tags/downloaderId 覆盖）；`RssPage<T>` 统一 list/total/pageSize 信封（feature rss-subscription-2026-09-24） |
+| RSS 订阅 rss ✨2026-09-24（P2 同日扩） | `rss.ts` | Phase 1：订阅源 CRUD/手动刷新/文章分页/推送下载器（savePath/tags/downloaderId 覆盖）；`RssPage<T>` 统一信封；Phase 2：+模式 get/update + 规则 CRUD/match-preview（`RssRuleBackfill` camelCase）+ qB 代理 13 函数（RssQbNode/RssQbArticle/RssQbRule/RssQbPreferences，QB_BASE 前缀）；RssFeed.refreshIntervalMinutes/RssArticle.addedRuleId（feature rss-subscription-phase2-2026-09-24） |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；`syncDownloader()` L105 以 `SyncTaskSubmission` 接收异步任务，`getSyncTaskStatus()` L113 对 task_id 编码后查询真实后台终态；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | 回收站 recycle-bin | `recycle-bin.ts` | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |

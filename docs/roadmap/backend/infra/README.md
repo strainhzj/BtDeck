@@ -62,7 +62,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **34 个** revision 文件；当前 head 为 `8fabba8687b0`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末位 8fabba8687b0 为 RSS 订阅两表建表迁移，feature rss-subscription-2026-09-24，has_table 幂等守卫 + 对称 downgrade） |
+| Alembic revisions versions | `versions/` | **35 个** revision 文件；当前 head 为 `d4a7f1c9e2b6`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末位 d4a7f1c9e2b6 为 RSS Phase 2 三表两列迁移，feature rss-subscription-phase2-2026-09-24，has_table/列存在幂等守卫 + 对称 downgrade） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
@@ -103,6 +103,7 @@
 | 预设身份键 preset-key | `b3e5f7a9c1d2_add_search_template_preset_key.py` ✨2026-09-21 | search_templates 加 `preset_key` 稳定身份列（可空+索引，不做唯一约束）+ 一次性按旧中文名回填（仅 is_default=1 恰一行时；歧义/用户同名保持 NULL 不猜，B02）；可回滚（drop 索引与列）；桌面双语 P4 子范围提前，方案见 PLANS/bilingual/system-content.md §1 |
 | MoviePilot 集成建表 moviepilot-integration | `053003337878_add_moviepilot_integration_tables.py` ✨2026-09-22 | moviepilot_instance + moviepilot_transfer_history 两表（dev1.0.7 合入，重挂至 d1e2f3a4b5c6 保持单 head，详见 PLANS/merge-dev107-into-dev.md）；自带 has_table 幂等守卫 |
 | RSS 订阅建表 rss-subscription | `8fabba8687b0_rss_subscription_feeds_and_articles.py` ✨2026-09-24 | 新增 bt_rss_feeds / bt_rss_articles 两表及索引（(feed_id,guid) UNIQUE 去重）；inspector has_table 幂等守卫（版本戳回退后重升级 no-op，对齐 moviepilot 惯例）；downgrade 对称 drop（feature rss-subscription-2026-09-24） |
+| RSS Phase 2 三表两列 rss-phase2 | `d4a7f1c9e2b6_rss_phase2_modes_rules_and_rule_feeds.py` ✨2026-09-24 | 新增 bt_rss_modes / bt_rss_rules / bt_rss_rule_feeds 三表 + bt_rss_articles.added_rule_id / bt_rss_feeds.refresh_interval_minutes 两列；has_table 与列存在双重幂等守卫；downgrade 对称 drop_column/drop_table（feature rss-subscription-phase2-2026-09-24） |
 | hash 小写归一 hash-lowercase | `a1f7c9e3d2b4_hash_lowercase_normalization.py` ✨2026-09-23 | 数据迁移：torrent_info.hash / torrent_file_backup.info_hash / sync_checkpoints.cursor_value 一次性 lower()（qB 路径原生小写幂等；TR 存量大写与 qB 小写同库混存导致唯一索引/复合键两套身份）；UPDATE OR IGNORE 防脏数据冲突、inspector 检查缺表容错（漂移库升级不中断）、downgrade no-op；rTorrent 接入前置 P0-D |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。

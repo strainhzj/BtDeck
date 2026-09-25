@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（56 个文件，不计 `__init__.py`；✨2026-09-09 计数校准：含本批 moviepilot 两服务与 mcp_settings/torrent_add_helpers 等历史漂移；✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service 实测校准）
+### services/ 根（58 个文件，不计 `__init__.py`；✨2026-09-09 计数校准：含 moviepilot 两服务与 mcp_settings/torrent_add_helpers 等历史漂移；✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service、✨2026-09-24 Phase 2 +rss_rule_service/+rss_qb_proxy_service 实测校准）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -22,6 +22,8 @@
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | MCP 运行时配置 mcp-settings ✨2026-09-08 | `mcp_settings_service.py` | `mcp.runtime.v1` 版本化 JSON 键读写：fail-closed 加载（缺失/损坏/未知 schemaVersion/字段非法整体回落默认全关）+ revision CAS（`McpSettingsRevisionConflict`→409）+ `BTDECK_MCP_FORCE_DISABLED` kill switch 只读覆盖（本行 2026-09-09 补记漂移） |
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot_integration_service.py` | MoviePilot 整理联动核心：握手注册（UUID 身份+集成账号绑定校验，绑定失效允许改绑）、批量幂等 upsert（`(instance_id, history_id)` 唯一 + 服务端 content_hash 判 skip/update/insert）、下载器映射校验与变更后全量重解析（分块）、正向关联（严格 (bt_downloader_id, download_hash) 不跨下载器串联）与路径反查（精确/目录前缀 + torrent_info 任务快照批量 join）；实例删除连带历史镜像（显式管理动作） |
+| RSS 规则与模式 rss-rule ✨2026-09-24 P2 | `rss_rule_service.py` | 模式读写（qb_native 仅 qB+`supports_rss_management` 能力键）/规则 CRUD 校验（关键词非空/正则编译/重名 409/跨下载器源/目标类型）/匹配引擎（include OR + exclude AND NOT，ci 子串或 re.search；`find_matching_pending` 有界扫描 yield_per+命中即停+_SCAN_LIMIT 5000 硬上限）/`match_preview` 只读/`apply_rule_to_pending` 回填推送（护栏 skip+计数，复用 add_article_to_downloader 携 rule_id）；get_effective_mode/is_qb_native 模块级助手（feed 服务推送护栏共用，防循环依赖） |
+| qB 原生 RSS 代理 rss-qb-proxy ✨2026-09-24 P2 | `rss_qb_proxy_service.py` | `_with_client` 统一包装（store 快照解析+fail_time/type==0 门控+INTERACTIVE lane+异常归一 RSS_QB_PROXY_FAILED）；`_walk_items` 源树投影（feed 判定+未读数；空节点按 folder 的 qB API 限制）；文章路径游走投影（torrentURL>link>magnetURI）；规则 set 轻校验；偏好白名单四键（GET 投影/PUT 边界 1-9999·1-5000·布尔/空更新拒绝/回读确认）；qB 为事实源不落库 |
 | RSS 订阅 rss-feed ✨2026-09-24 | `rss_feed_service.py` | 订阅源 CRUD/刷新（`_fetch_feed_bytes` httpx 受限抓取 + `_parse_entries` feedparser 解析含 bittorrent enclosure 优先 + `_upsert_articles` guid 去重）/文章分页/`add_article_to_downloader` 链接直传推送（store 缓存客户端 + INTERACTIVE lane；类型 0/1 开放、rTorrent 暂拒；成功置 added 不即时写 torrent_info，依赖周期同步回填） |
 | MCP 服务密钥 mcp-apikey ✨2026-09-22（W5） | `mcp_apikey_service.py` | `mcp.apikey.v1` 版本化 JSON 键：generate/rotate（secrets 随机 `btdmcp_`+43 位；SM4 加密明文副本仅查看出口 + SHA-256 哈希=认证唯一事实源）+ revision CAS（`McpApiKeyRevisionConflict`→409）+ 三态视图（absent/active/unreadable——secret_key 轮换后密文失效只影响查看、rotate 自愈）+ `resolve_owner` 恒定哈希比对（transport 认证用）；无 Alembic 迁移（复用 configs 表） |
 | MoviePilot 全局开关 moviepilot-settings ✨2026-09-09 | `moviepilot_settings_service.py` | `moviepilot.integration.v1` 版本化 JSON 键：fail-closed（默认关闭）+ revision CAS，镜像 mcp_settings_service 模式（单 enabled 字段，无能力开关/kill switch） |

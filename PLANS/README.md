@@ -1,7 +1,7 @@
 # BtDeck 版本计划
 
 > **维护约定**: PLANS/ 只保留有后续开发价值的活跃计划；已完成或整体过时的计划移入 [archive/](./archive/)，最终状态与遗留事项见 [archive/README.md](./archive/)。
-> **最后更新**: 2026-09-18
+> **最后更新**: 2026-09-24（RSS Phase 2 立项）
 
 ## 活跃计划
 
@@ -14,7 +14,8 @@
 | [前端静态展示 Demo](./frontend-static-showcase-demo.md) | 不依赖真实后端的静态 Demo 构建与独立交付 | 🔶 进行中；feature `frontend-static-showcase-demo-2026-08-23`（7 阶段完成 6，剩 Docker demo 镜像构建与浏览器人工验收） |
 | [v1.0.8 数据库升级](./v1.0.8.md) | PostgreSQL 数据源支持（条件演进路线）+ SQLite→PG 迁移 | ⏸️ 暂缓（2026-09-08 决策：数据库源变动暂不处理）。注意：原计划中下载器连接池部分已被 `app.state.store` 缓存 + DownloaderApiRuntime 容量治理覆盖；重启前须先按归档 sync 计划 W5-3 重写对齐当前架构 |
 | [dev1.0.7 → dev 分支合并](./merge-dev107-into-dev.md) | 两线（双语完成态 × MCP+MoviePilot）语义合并、迁移链重挂、门禁适配与全量验证 | ✅ 已完成（2026-09-22；含独立审查核验与附录 A） |
-| [下载器 RSS 订阅](./rss-subscription.md) | BtDeck 自建 RSS 引擎 Phase 1（订阅源 CRUD/文章浏览/手动推送）；Phase 2 预留 qB 原生代理与自动规则 | 🚧 进行中（2026-09-24 立项，feature `rss-subscription-2026-09-24`） |
+| [下载器 RSS 订阅](./rss-subscription.md) | BtDeck 自建 RSS 引擎 Phase 1（订阅源 CRUD/文章浏览/手动推送）；Phase 2 预留 qB 原生代理与自动规则 | ✅ Phase 1 已交付（2026-09-24，feature `rss-subscription-2026-09-24`；真实 qB/TR 联调并入 Phase 2 验收） |
+| [RSS 订阅 Phase 2](./rss-subscription-phase2.md) | qB 原生代理（源/规则/偏好/文章）+ 按下载器模式切换 + 引擎自动规则 + 定时刷新调度 + 按规则目标路由 + RSS 管理统一入口 | ✅ 已交付（2026-09-24，feature `rss-subscription-phase2-2026-09-24`；真实 qB/TR 联调待用户执行） |
 
 ## 说明
 

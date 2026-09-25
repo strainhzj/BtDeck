@@ -1,3 +1,14 @@
+## 2026-09-24：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
+
+- **范围（实现假设经用户确认后实施）**：双模式收口——①按下载器 RSS 模式切换（btdeck/qb_native 仅 qB；冲突护栏：目标 qb_native 时自动推送 skip+计数、手动 409 RSS_MODE_CONFLICT，源绑定下载器 qb_native 冻结跳过调度不删数据）②引擎自动下载规则（include OR + exclude AND NOT + 正则开关 + 目标下载器/savePath/tags；多选源空=全部；保存即回填匹配推送）③qB 原生 RSS 代理（源树/文件夹/改址/删除/移动/刷新/已读含单篇/文章浏览/规则 CRUD+命中预览/偏好四键白名单透传，qB 为事实源不落库）④定时刷新调度（全局 cron 错峰 + 每源 refresh_interval_minutes 覆盖）⑤按规则目标下载器路由。⑥RSS 管理统一入口：/downloader 菜单组双 children（index+rss）跨下载器统一管理，与设置弹窗 rssSubscription 页签多入口共享组件，移动端 /m/rss。用户拍板：rss_management 能力键加（extended JSON）；qB 文章浏览做。
+- **后端**：迁移 d4a7f1c9e2b6（bt_rss_modes/bt_rss_rules/bt_rss_rule_feeds 三表 + added_rule_id/refresh_interval_minutes 两列，锚点四处同步表计数 37→40）；`rss_rule_service.py`（模式读写含能力键 qbNativeAvailable 投影；规则校验（正则编译/重名 409/跨下载器源/目标类型）；匹配引擎有界扫描 yield_per+命中即停+5000 硬上限；回填拆分端点层 await，响应 camelCase backfill）；`rss_qb_proxy_service.py`+`rss_qb_proxy.py` 15 接口（_with_client 统一包装 store+INTERACTIVE+type==0 门控；空 feed/空 folder qB API 同形 {} 按 folder 投影已文档化；偏好白名单 1-9999/1-5000/布尔边界+回读确认）；`rss_refresh_task.py` 注册 bt_rss_refresh（cron 13,43 * * * * 错峰，三态过滤在线/qb_native/间隔，单源失败不中断+错误 ≤20 有界，刷新后作用域规则自动推送，android 跳过）；审计 +12 枚举（60→72 校准）。
+- **前端**：api/rss.ts 扩 20 接口；RssSubscriptionTab 重构双模式壳（qB 模式单选+确认弹窗，TR 恒引擎）；新 RssRulesPanel（规则表格/编辑弹窗 feed 多选/匹配预览抽屉）+ RssQbNativePanel（el-tree 源树未读徽标/规则/命中预览/偏好卡/文章抽屉单篇已读）；统一入口 views/rss/index.vue（下载器选择器+复用同组件 keepAlive）+ 移动 /m/rss 整页 + 下载器页入口 + toMobilePath 精确映射；zh/en 全量成对（rss.qb 子树+rssManager+errors RSS_* 32 新键）；demo 同形分支（七组 fixtures+store 方法+路由含 qb 门禁）。
+- **测试与门禁**：后端新 test_rss_rules_mode 21 + test_rss_qb_proxy 20 + test_rss_refresh_task 10（迁移/枚举校准 4 处）；前端 rss-phase2-panels 14 + rss-manager-entry 8 + demo-request 扩 6。**验证终局**：后端全量 pytest **5332 passed/18 skipped**（cov 67.70%）+ mypy 301 文件 0 错 + black/flake8 净；前端 typecheck、lint（contract:check+--max-warnings 0）、build、全量 Jest **130 套 1899 例**全绿（基线 128/1871）；根 ./init.sh exit=0。
+- **文档**：PLANS/rss-subscription-phase2.md 实施记录收口；PLANS/README 状态行；feature_list #89（6 任务 done+evidence）；roadmap 9 文件同步（endpoints 41→43 实测校准/services 56→58/alembic 34→35/scheduler 16→17/测试 262·130 套/130 spec）。
+- **坑（5 条，已记 PLANS）**：①LucideIcon 全局注册组件本地 components 再注册→引用未导入标识符 ReferenceError；②正则重排参数脚本误伤同文件辅助函数（request: Request 搬到默认值参数后语法错误）；③@/utils/errorMessage 不存在应为 formatters；④qB rss_items 空 feed/空 folder 同形 {} 按 folder 投影并文档化；⑤回填计数端点层补 camelCase 投影（契约一致性），测试键同步。
+- **环境备忘处置**：Phase 1 遗留 3 提交已推送远端（89fb376..fd86f3b，网络抖动 3 次重试成功），远端 CI run 36002208154 已触发；本批未提交待指示。
+- **待办**：真实 qB/TR 联调（与 Phase 1 遗留合并：双模式切换/qB 原生源/规则/偏好/自动规则推送/磁链直链两形态）；Git 提交待用户指示；远端 unraid 192.168.5.51 可作联调环境（DOCKER_BUILDKIT=0 兜底）。
+
 ## 2026-09-24：双语语义对齐修复（远程 dev 89fb376，补丁待写回）
 
 - **修复范围**：英文计数文案改为总数表达；孤儿文件清理明确为移入隔离区且永久删除前可恢复，补齐离线低置信度和快捷清理语义；路径映射说明按实际转换器行为改写并补准确示例；转移源端改为移除种子任务但保留数据文件，组件兜底文案全部接入 i18n；辅种统一为 cross-seed；MCP `.torrent` 术语修正。

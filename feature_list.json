@@ -7065,6 +7065,138 @@
       ],
       "last_session_note": "Phase 1 交付（2026-09-24）：双模式中 BtDeck 引擎先行；Phase 2（qB 原生代理/自动规则/按类型路由）待另批。真实下载器联调待用户执行。",
       "last_updated": "2026-09-24"
+    },
+    {
+      "id": "rss-subscription-phase2-2026-09-24",
+      "name": "下载器 RSS 订阅 Phase 2（qB 原生代理 + 模式切换 + 自动规则 + 定时调度 + 统一入口）",
+      "description": "双模式终态收口：①qB 原生 RSS 代理（订阅源/文件夹/下载规则/偏好四键透传 + 文章浏览/已读标记，qB 为事实源不落库）②按下载器模式切换（btdeck/qb_native 仅 qB，双模式冲突护栏：目标 qb_native 时自动推送 skip、手动 409）③BtDeck 引擎自动下载规则（include/exclude 关键词 + 正则开关 + 目标下载器/savePath/tags，多选源空=全部，保存即回填匹配推送）④定时刷新调度（全局 cron 错峰 + 每源间隔覆盖列）⑤按规则目标下载器路由。⑥RSS 管理统一入口：下载器管理菜单下子菜单跨下载器统一管理，与设置弹窗 rssSubscription 页签多入口共享组件，移动端 /m/rss。",
+      "status": "done",
+      "branch": "dev",
+      "plan": "PLANS/rss-subscription-phase2.md",
+      "planning_evidence": "2026-09-24 用户确认全部实现假设与 6 个开放问题拍板：规则↔源多选空=全部；保存即回填匹配+自动推送；每源刷新间隔覆盖要；rss_management 能力键加（extended JSON qB=true/TR=false，缺键回退按类型）；qB 文章浏览做（with_data 投影+单篇/源级已读）；DSL v1 够用；另新增统一 RSS 管理子菜单多入口并存。",
+      "tasks": [
+        {
+          "id": "rss2.1",
+          "name": "后端：数据层+迁移+模式端点+规则 CRUD/匹配引擎",
+          "description": "bt_rss_modes/bt_rss_rules/bt_rss_rule_feeds 三表 + bt_rss_articles.added_rule_id/bt_rss_feeds.refresh_interval_minutes 两列（head 8fabba8687b0 前移，锚点四处：迁移/约束文档 HEAD/EXPECTED_HEAD/表计数 37→40）；mode GET/PUT（qb_native 仅 type==0）；rules CRUD + 匹配语义（include OR + exclude AND NOT + ci 子串/正则）+ match-preview + 保存回填推送；extended_capabilities 增 rss_management 键（qB=true/TR=false 默认，缺键回退）；pytest。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/rss_subscription.py",
+            "backend/app/models/__init__.py",
+            "backend/alembic/versions/d4a7f1c9e2b6_rss_phase2_modes_rules_and_rule_feeds.py",
+            "backend/app/services/rss_feed_service.py",
+            "backend/app/services/rss_rule_service.py",
+            "backend/app/services/downloader_capabilities_manager.py",
+            "backend/app/api/endpoints/rss_subscriptions.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/api/test_rss_rules_mode.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_hash_lowercase_migration.py",
+            "backend/tests/enums/test_audit_enums.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "evidence": "迁移 d4a7f1c9e2b6（head 前移，has_table/列存在幂等守卫 + 对称 downgrade；锚点四处同步：约束文档 HEAD/EXPECTED_HEAD/表计数 37→40/hash 继任链断言重写为链回溯）；bt_rss_modes/bt_rss_rules/bt_rss_rule_feeds + added_rule_id/refresh_interval_minutes；rss_rule_service（模式读写含 rss_management 能力键（extended JSON，qB=true/TR=false 默认+缺键回退）/规则 CRUD 校验（关键词/正则编译/重名 409/跨下载器源/目标类型）/匹配引擎 include OR + exclude AND NOT + ci 子串或 re.search/有界扫描 yield_per+命中即停+5000 行硬上限/match-preview 只读）；回填推送拆分（create/update 同步落库 + 端点层 await apply_rule_to_pending，复用 add_article_to_downloader 增 rule_id 事实列）；手动推送护栏 is_qb_native→409 RSS_MODE_CONFLICT；update_feed 增 refresh_interval_minutes（provided 区分显式 null=恢复全局，5-1440 校验）；审计 +4 枚举（计数 60→64 校准）。test_rss_rules_mode 21 例（模式默认/往返/TR 拒/能力键关/CRUD 校验/显式 null 语义/回填推送 addedRuleId/大小写/exclude/正则/源作用域/qb_native 跳过+护栏 409/预览不推送/TR 目标覆盖参数）；迁移测试 31 passed。"
+        },
+        {
+          "id": "rss2.2",
+          "name": "后端：qB 原生代理服务+端点+偏好白名单+文章浏览",
+          "description": "rss_qb_proxy_service + /api/v1/rss/qb/{downloaderId} 13 接口（源/文件夹/改址/删除/刷新/移动/已读含单篇/文章 with_data 投影/规则 CRUD+重命名+命中预览/偏好四键白名单读写）；store 缓存客户端 + INTERACTIVE lane；type==0 门控；fake qB client 透传断言。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/rss_qb_proxy_service.py",
+            "backend/app/api/endpoints/rss_qb_proxy.py",
+            "backend/app/api/api.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/api/test_rss_qb_proxy.py",
+            "backend/tests/enums/test_audit_enums.py"
+          ],
+          "evidence": "rss_qb_proxy_service（_with_client 统一包装：store 快照解析+fail_time/类型 0 门控+INTERACTIVE lane 透传+异常归一 RSS_QB_PROXY_FAILED；源树投影 _walk_items（feed 判定/未读数/空节点按 folder 的 qB API 限制已文档化）；文章路径游走投影 torrentURL>link>magnetURI+published 倒序+onlyUnread；规则列表投影/set 轻校验（enabled/addPaused 布尔、affectedFeeds 数组）/rename/remove/matching 投影；偏好白名单四键 GET 投影+PUT 边界校验（1-9999/1-5000/布尔）+空更新 RSS_QB_PREF_KEY_REJECTED+回读确认）；端点 /api/v1/rss/qb/{id} 15 接口（android-server 拒写 GET 放行；DELETE/Query 传 path 防反斜杠路径段）；审计 +8 枚举（64→72 校准）。test_rss_qb_proxy 20 例（树投影/排序过滤/校验/透传 kwargs 断言/白名单/门控/android/认证/异常归一）。"
+        },
+        {
+          "id": "rss2.3",
+          "name": "后端：定时刷新任务+自动推送管线+护栏",
+          "description": "rss_refresh_task（execute 模式 + self.app 拿 store）注册 default_scheduled_tasks（bt_rss_refresh，cron 13,43 * * * * 错峰，timeout 900，max_retry 0）；per-feed 间隔过滤 + qb_native/离线跳过 + 单源失败不中断 + 刷新后规则匹配自动推送 + 护栏（目标 qb_native skip+计数）+ 有界汇总；android-server 跳过；pytest。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/rss_refresh_task.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/tests/tasks/test_rss_refresh_task.py"
+          ],
+          "evidence": "RssRefreshTask（execute 模式 + self.app 注入拿 store；快照在线过滤/is_qb_native 冻结跳过/每源 interval_due（null=全局兜底 10min 下限防 cron 调密打爆）/单源失败不中断 + 错误明细 ≤20 有界（OOM 治理口径）；刷新后按源执行作用域规则（bound 过滤 + 无 pending 短路）；汇总 refreshed/skipped_offline/skipped_mode/skipped_interval/new_articles/auto_added/auto_skipped_mode/auto_failed/errors；android-server 注册即跳过；轻量不入 task_profiles）；default_scheduled_tasks 登记 bt_rss_refresh（cron 13,43 * * * * 错峰，timeout 900，max_retry 0）。test_rss_refresh_task 10 例（种子布线/动态导入/轻量断言/刷新+规则管线/skip 三态/禁用忽略+错误有界+partial/作用域/无 pending 短路/android/store 缺失）。后端全量 5332 passed/18 skipped（cov 67.70%）+ mypy 301 文件 0 错 + black/flake8 净。"
+        },
+        {
+          "id": "rss2.4",
+          "name": "前端：设置弹窗页签重构（模式壳+双面板+规则 UI）",
+          "description": "RssSubscriptionTab 重构为模式壳（qB 模式单选+切换确认）；新 RssRulesPanel（规则表格+编辑弹窗+匹配预览）与 RssQbNativePanel（源/规则/偏好卡/文章抽屉含单篇已读）；api/rss.ts 扩 20 接口+类型；zh/en 全量成对（downloader.rss 扩 + errors.byCode 新键）；demo 同形分支；Jest。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/rss.ts",
+            "frontend/src/views/downloader/components/RssSubscriptionTab.vue",
+            "frontend/src/views/downloader/components/RssRulesPanel.vue",
+            "frontend/src/views/downloader/components/RssQbNativePanel.vue",
+            "frontend/src/i18n/locales/zh-CN/downloader.ts",
+            "frontend/src/i18n/locales/en/downloader.ts",
+            "frontend/src/i18n/locales/zh-CN/errors.ts",
+            "frontend/src/i18n/locales/en/errors.ts",
+            "frontend/src/demo/types.ts",
+            "frontend/src/demo/fixtures/index.ts",
+            "frontend/src/demo/fixtures/README.md",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/tests/unit/rss-phase2-panels.spec.ts",
+            "frontend/tests/unit/rss-subscription-tab.spec.ts"
+          ],
+          "evidence": "api/rss.ts 扩 20 接口+类型（mode/rules/match-preview/qb 代理 13；RssFeed.refreshIntervalMinutes、RssArticle.addedRuleId、RssRuleBackfill camelCase）；RssSubscriptionTab 重构双模式壳（qB 模式单选+确认弹窗+qbNativeAvailable 门控，qb_native 渲染 qB 面板/引擎模式渲染源表格+规则面板，TR 恒引擎不显示模式区；LucideIcon 全局注册修正）；新 RssRulesPanel（关键词标签化表格/编辑弹窗含 feed 多选空=全部与目标下载器/匹配预览抽屉/backfill 计数转译推送·跳过·失败提示）；新 RssQbNativePanel（el-tree 源树未读徽标+刷新/改址/整源已读/删除/移动+规则表格与编辑弹窗（mustContain/mustNotContain/affectedFeeds/savePath/category/addPaused）+命中预览按源分组+偏好卡四键+文章抽屉（仅未读/单篇已读/链接外跳））；zh/en 全量成对（mode/rules 键组 + downloader.rss.qb 子树 44 键 + errors.byCode RSS_* 32 新键）；demo 同形分支（fixtures 七组 + store 方法（backfill 关键词匹配语义与后端一致、qb 模式跳过）+ demo-request 路由（含 qb 类型门禁/偏好白名单/asNullableString 透传 helper）+ fixtures README 登记）；Jest rss-phase2-panels 14 例（模式壳 5/规则面板 6/qB 面板 3）+ 存量 spec mock 扩 key 与 refreshIntervalMinutes fixture 校准。"
+        },
+        {
+          "id": "rss2.5",
+          "name": "前端：RSS 管理统一入口（桌面子菜单+移动端）",
+          "description": "/downloader 路由改组（children: index + rss），新 views/rss/index.vue（下载器选择器+共享面板组件）；navigation i18n 路由键 zh/en；移动端 /m/rss 整页 + 下载器页入口；DEMO_ROUTE_MATRIX 同步；Jest（路由/集成）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/router.ts",
+            "frontend/src/views/rss/index.vue",
+            "frontend/src/views/mobile/rss.vue",
+            "frontend/src/views/mobile/downloader.vue",
+            "frontend/src/utils/ui-mode.ts",
+            "frontend/src/i18n/locales/zh-CN/navigation.ts",
+            "frontend/src/i18n/locales/en/navigation.ts",
+            "frontend/src/demo/types.ts",
+            "frontend/tests/unit/rss-manager-entry.spec.ts"
+          ],
+          "evidence": "/downloader 路由改组（parent meta downloaderGroup + redirect /downloader/index，children: index 下载器列表 + rss RSS 管理带 keepAlive）；views/rss/index.vue（下载器选择器 qB/TR 过滤 + 复用 RssSubscriptionTab 多入口共享实现 + settings-panel 占位符风格）；navigation i18n zh/en 增 downloaderGroup/rssManagement/downloaderList；移动 /m/rss 整页（下载器切换+整页复用，入口在移动下载器页工具区 goRssManager）；toMobilePath 精确映射 /downloader/rss→/m/rss（其余 /downloader 路径不误伤）；DEMO_ROUTE_MATRIX 登记 /downloader/rss 演示行；Jest rss-manager-entry 8 例（路由组双 children/子路由 meta/移动路由隐藏/toMobilePath/桌面与移动页复用同组件源码契约/移动入口/设置弹窗双入口并存/DEMO_ROUTE_MATRIX）。"
+        },
+        {
+          "id": "rss2.6",
+          "name": "验证与文档收口",
+          "description": "后端 mypy/black/flake8+pytest 全量；前端 typecheck/lint/build+Jest 全量；i18n 门禁；./init.sh；roadmap 同步；progress/session-handoff；PLANS 实施记录收口。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/data-models/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/backend/tasks/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/tests/README.md",
+            "PLANS/rss-subscription-phase2.md",
+            "PLANS/README.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "roadmap 9 文件同步实测（根 README 功能域行+元信息新批次前置；backend api endpoints 41→43 实测校准+rss_qb_proxy 行+路由映射 /rss/qb；services 56→58+rss_rule_service/rss_qb_proxy_service 行；data-models 五表行；infra alembic 34→35+head d4a7f1c9e2b6+迁移行；tasks scheduler 16→17+rss_refresh_task 行；frontend api rss.ts 行 P2 扩；frontend views RssSubscriptionTab 重构行+RssRulesPanel/RssQbNativePanel/views/rss/mobile rss 四新行+设置弹窗行更新；tests 计数 262/130 套/130 spec + api 层 80→82）；PLANS 实施记录与状态收口；验证终局：后端全量 pytest 5332 passed/18 skipped（cov 67.70%）+ mypy 301 文件 0 错 + black/flake8 净；前端 typecheck/lint（contract:check+--max-warnings 0）/build/全量 Jest 130 套 1899 例；根 ./init.sh 通过。"
+        }
+      ],
+      "last_session_note": "Phase 2 交付（2026-09-24）：qB 原生代理/模式切换/自动规则/定时调度/统一入口全部完成，代码+测试+文档全绿；真实 qB/TR 联调与 Git 提交待用户执行。",
+      "last_updated": "2026-09-24"
     }
   ],
   "tasks": [

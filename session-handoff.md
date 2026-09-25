@@ -1,3 +1,20 @@
+## 2026-09-24 交接：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
+
+### 已完成
+
+- **范围（实现假设经用户确认）**：双模式收口——按下载器模式切换（btdeck/qb_native 仅 qB，冲突护栏目标 qb_native 自动 skip/手动 409）+ 引擎自动规则（关键词 include/exclude+正则+目标下载器，多选源空=全部，保存即回填推送）+ qB 原生代理（15 接口透传，qB 为事实源不落库，偏好四键白名单）+ 定时刷新调度（bt_rss_refresh cron 13,43 错峰+每源间隔覆盖）+ 按规则目标路由 + RSS 管理统一入口（/downloader 组双 children，与设置弹窗页签多入口共享组件，移动 /m/rss）。用户拍板：rss_management 能力键加；qB 文章浏览做。
+- **后端**：迁移 d4a7f1c9e2b6（三表两列，锚点四处，表计数 37→40）；rss_rule_service（匹配引擎有界扫描/回填拆分端点层 await/camelCase backfill）；rss_qb_proxy_service+rss_qb_proxy 端点；rss_refresh_task（三态过滤+作用域规则推送+错误有界）；能力键 supports_rss_management（extended JSON+缺键回退）；审计 +12（60→72）。
+- **前端**：api/rss.ts 扩 20 接口；RssSubscriptionTab 双模式壳；新 RssRulesPanel/RssQbNativePanel；views/rss/index.vue + /m/rss + toMobilePath；zh/en 全量成对（RSS_* 32 新键）；demo 同形分支。
+- **验证**：后端全量 5332 passed/18 skipped（cov 67.70%）+ mypy 301 文件 0 错 + black/flake8 净；前端 typecheck/lint/build + 全量 Jest 130 套 1899 例；./init.sh exit 0。
+- **文档**：PLANS/rss-subscription-phase2.md（含 5 条坑位）；feature_list #89（6 任务 done）；roadmap 9 文件同步。
+
+### 待办
+
+- 真实 qB/TR 联调（与 Phase 1 遗留合并：双模式切换、qB 原生源/规则/偏好、自动规则推送、磁链/直链两形态）；远端 unraid 192.168.5.51 可作联调环境（构建 DNS 失败用 DOCKER_BUILDKIT=0）。
+- Git 提交待用户指示（Phase 1 已推送 fd86f3b；本批未提交）。
+
+---
+
 ## 2026-09-24 交接：下载器 RSS 订阅 Phase 1（feature rss-subscription-2026-09-24，全绿未提交）
 
 ### 已完成
