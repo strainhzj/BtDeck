@@ -38,7 +38,7 @@ describe('DownloaderSettingsDialog RSS 页签接线契约', () => {
   it('LucideIcon 图标表注册 rss 与 external-link', () => {
     const source = read('../../src/components/common/LucideIcon.vue')
     expect(source).toMatch(/\n  Rss,\n/)
-    expect(source).toMatch(/\n  ExternalLink\n/)
+    expect(source).toMatch(/\n  ExternalLink,?\n/)
     expect(source).toMatch(/'external-link': ExternalLink/)
     expect(source).toMatch(/\n  rss: Rss,/)
   })
