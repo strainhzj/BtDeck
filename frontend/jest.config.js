@@ -13,7 +13,9 @@ module.exports = {
   setupFiles: ['<rootDir>/tests/unit/i18n-test-setup.ts'],
   // lucide 发 ESM，默认 preset 的 transformIgnorePatterns: ['/node_modules/'] 会拒转译，
   // 导致 SyntaxError: Unexpected token 'export'。显式豁免 lucide 子目录。
-  transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide)'],
+  // 统计报表 W4：echarts/zrender 同为 ESM（EChart 封装生产代码经 webpack 动态 import；
+  // 测试内全量 mock，豁免仅为防御性保留真实入口可达）。
+  transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide|echarts|zrender)'],
   collectCoverageFrom: [
     '<rootDir>/src/**/*.ts',
     '<rootDir>/src/components/torrents/AdvancedMultiSelect.vue',

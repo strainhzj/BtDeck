@@ -61,6 +61,9 @@ from app.models.sync_checkpoint import (
 # 导出 RSS 订阅模型（feature rss-subscription-2026-09-24）
 from app.models.rss_subscription import RssFeed, RssArticle, RssMode, RssRule, RssRuleFeed
 
+# 导出速度采样模型（统计报表 W1）
+from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+
 __all__ = [
     "DownloaderTypeEnum",  # 整数枚举
     "SpeedUnitEnum",
@@ -102,4 +105,7 @@ __all__ = [
     "RssMode",
     "RssRule",
     "RssRuleFeed",
+    # 速度采样模型（统计报表 W1）
+    "DownloaderSpeedSample",
+    "DownloaderSpeedHourly",
 ]

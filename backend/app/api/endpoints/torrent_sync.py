@@ -621,6 +621,13 @@ def tr_add_torrents(db, downloaders, app=None):
 def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
     """
     Sync tracker info with batch upsert and batch updates.
+
+    遗留路径声明（统计报表 W2，决策 6）：本函数为同步版遗留实现，
+    仅被 _legacy_full_sync_impl 调用（主链路已迁移 torrents_async.py）。
+    scrape 计数三列（seeder_count/leecher_count/download_count）
+    **不在此路径激活**——行构造保持不含三列（落 NULL），活跃路径见
+    torrents_async.py 的 sync_add_tracker_async / extract_tracker_rows_from_torrent
+    （qB num_* / TR trackerStats + 归一 -1/None→NULL + backup 置 NULL）。
     """
     current_time = datetime.now()
     current_tracker_urls = set()

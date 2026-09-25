@@ -118,7 +118,9 @@ import {
   Smartphone,
   Clapperboard,
   Rss,
-  ExternalLink
+  ExternalLink,
+  Sprout,
+  Radar
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -242,7 +244,9 @@ const ICONS: Record<string, unknown> = {
   smartphone: Smartphone,
   clapperboard: Clapperboard,
   rss: Rss,
-  'external-link': ExternalLink
+  'external-link': ExternalLink,
+  sprout: Sprout,
+  radar: Radar
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

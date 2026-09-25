@@ -33,6 +33,30 @@
 - 注意：工作区另有历史遗留待写回补丁 /tmp/btdeck-semantic-alignment-20260924.patch（见上条交接），与本批改动无冲突但提交前需确认顺序。
 
 ---
+## 2026-09-24 交接：统计报表批次 W1+W2 完成（全绿未提交，worktree feature/reports）
+
+### 已完成（PLANS/statistics-reports.md v4 首个实施批次）
+
+- **工作区**：worktree `/srv/workspaces/BtDeck-reports`（feature/reports，基于 dev@521b073）；主工作区 RSS 改动未触碰。feature_list 已建目 `statistics-reports-2026-09`（W1-W7），W1/W2 → done + evidence。
+- **W1**：速度采样两表 + 迁移① b7d8e9f0a1c2 + SpeedSamplerJob（DB 基准清单/断网记零/is_online 判定/5min 聚合幂等/每日清理/db_write_scope 单 commit）+ lifecycle 三处注册 + android 守卫名单 + 全部锚点（表数 37×2、EXPECTED_HEAD、约束文档 HEAD×2、链尾注释、env.py、models/__init__）。
+- **W2**：真机实测记录在案（qB num_* 键集 + TR trackerStats 三键 + lib added_date=aware UTC 根因）；tracker 计数行构造×2 函数四分支 + set_×2 + 白名单 6→9 字段 + backup 保留行置 NULL；TR added_date 两路径 epoch 本地化 + 迁移② c9e0f1a2b3c4 三段式回填（JOIN 不带 dr=0）；状态常量提升 + PAUSED_STATES 扩 paused；tracker_mapper 文档纠错；遗留 torrent_sync 仅声明。
+- **计划外发现**：test_hash_lowercase_migration.py 硬编码 head（计划审计遗漏锚点）按其文件内约定动态化；stats 缓存现状 TR 停止种子本就命中 "stopped" 归暂停桶——dashboard 未漏计，"paused" 补齐的是 DB 映射值口径（W3 前提）。
+- **验证**：全量 pytest 5291 passed/18 skipped；mypy 296 文件 0 错；black 净；flake8 app/ 通过；alembic 单 HEAD c9e0f1a2b3c4；根 ./init.sh exit=0。
+
+### 坐位与工具（下会话注意）
+
+- 本 Linux 机无 conda；测试/质量门用主工作区 venv `/srv/workspaces/BtDeck/backend/venv/bin/python`（3.13.5，只读借用，勿改主工作区）。任务提示中 btpManager/anaconda 为 Windows 机记录。
+- 真机探针 `/tmp/w2_probe.py`（SM4 解密主工作区 DB 凭据，只读）：qB 192.168.5.51:28080 / TR :19594 等，W3 若需复用同模式。
+- 新增同步路径测试若走 call_downloader_api：必须 patch（全量序 lifespan 退出 shutdown 全局 runtime 单例，单跑绿/全序红陷阱，见 test_torrent_speed_regression.py 惯例）。
+- 聚合/回填类 SQLite SQL：datetime() 归一含/不含微秒 ISO 字符串再等值比较（字符串直比必失配）。
+
+### 待办
+
+- ~~W3 报表服务与端点~~ ✅ 2026-09-24 完成（report_service.py + reports.py 七端点 + 51 例测试，全量 5342 passed，见 progress.md 续篇；W3 成果待提交或随下批提交）。
+- ~~W4 前端基建~~ ✅ 2026-09-25 完成（echarts 5.5.1 精确钉版 + EChart.vue 封装 + types/api 契约 + i18n 双语包 + jest 豁免 + LucideIcon sprout/radar；前端 127 套 1863 例 + build/typecheck/lint 净；体积探针 gz 188.7KB）。
+- W5 四页签（含路由/permission/ui-mode/demo-matrix 首个提交合入——W4 已按计划留下这些未做）；W6 趣味报告；W7 demo+文档收口。
+- 未推送。
+---
 
 ## 2026-09-24 交接：双语语义对齐修复（补丁待写回）
 

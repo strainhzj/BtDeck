@@ -8285,6 +8285,29 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 历史保护清单（未动）：docs/release/v1.0.6.md、app/version.py changelog、make_v105_baseline.sh、PLANS/archive、sdk-probe-py3.11 证据 JSON、progress 旧记录、feature_list 旧 evidence。
 - 遗留移交：wine 构建容器 btdeck-windows-builder 的 winpython 实装版本由用户侧核验对齐 3.12（build-windows.sh 注释已改）；black tests/scripts 71 文件漂移与 flake8 tests 面 ~70 F401/F841 为下一批 lint 治理候选；v1.0.7 依赖升级治理批次（security-exceptions 134 条）不受本次影响。
 
+## 2026-09-24：统计报表批次 W1+W2（采样数据层 + 数据激活与口径修复）
+
+- 工作区：worktree `/srv/workspaces/BtDeck-reports`（feature/reports，基于 dev@521b073）；主工作区 RSS 未提交改动未触碰。feature_list 建目 `statistics-reports-2026-09`（W1-W7 七任务，本批 W1/W2 → done + evidence）。
+- **W1 采样数据层**：`models/speed_sample.py` 两表（downloader_speed_sample 60s 原始 14d / downloader_speed_hourly 整点聚合 730d）+ 迁移① b7d8e9f0a1c2（inspect 幂等守卫）；`tasks/scheduler/speed_sampler.py` SpeedSamplerJob——DB 有效清单（enabled=1 AND dr=0）为基准对齐 store 快照，缓存缺失（含 300s 剔除者）或 is_online=False 仍记 online=0 速度 0 行（断网采样承诺），在线判定只认 is_online 禁 fail_time；KB/s×1024 对齐 dashboard_service；每轮 add_all 单次 commit 包 db_write_scope；5min 聚合检查（完整结束小时 + LEFT JOIN 排除已聚合 + INSERT OR IGNORE 幂等，avg 分母=online_count，全离线小时 avg=0）；每日清理（raw 14d/hourly 730d）；聚合 SQL 以 datetime() 归一含/不含微秒的 ISO 字符串比较（SQLite 字符串等值陷阱）。lifecycle 三处注册（loop 函数/创建 app.state/取消清理）+ android 守卫名单补 run_speed_sampler_loop。锚点全维护：表数 37 两处 + docstring、EXPECTED_HEAD、链尾注释、约束文档 HEAD 两处、env.py、models/__init__。
+- **计划外锚点**：`tests/core/test_hash_lowercase_migration.py` 硬编码 head 断言（计划审计遗漏项）——按该文件自身约定（L26"head 一律 current_head() 动态读取"）改为链成员+前驱校验，符合"唯一写死 head 在 test_db_migration"策略。
+- **W2 首步实测（真机探针，证据已记录在案）**：qB v4.3.9/API 2.8.2 trackers 键集 = {msg, num_downloaded, num_leeches, num_peers, num_seeds, status, tier, url}（与计划一致，num_* 为 scrape 群体计数、已连接数是 num_peers）；TR 4.0.5 trackerStats 含 seederCount/leecherCount/downloadCount（TTG downloadCount=-1 实测）+ isBackup；lib 源码实锤 added_date=aware UTC（torrent.py:808 fromtimestamp(epoch, timezone.utc)）而 done_date=aware local（:822 astimezone）——added_date 8h 偏移根因确认，done_date 口径已本地无需修复。凭据自主工作区 dev DB 只读 SM4 解密，探针脚本 /tmp/w2_probe.py 未入库。
+- **W2 tracker 计数激活**：行构造×3——extract_tracker_rows_from_torrent 与 sync_add_tracker_async 两分支接 `_qb_tracker_counts`（num_seeds/num_leeches/num_downloaded）与 `_tr_tracker_counts`（fields 三键，isBackup=True 保留行与 URL、仅三列计数置 NULL——防 Step4 元组 IN 误删，审批 P1-3）；遗留 torrent_sync.py sync_add_tracker 仅 docstring 声明不激活。upsert set_×2（batch sync_trackers_batch_async + add 路径）补三列 excluded；existing_map select 扩三列。归一 `_normalize_tracker_count`：-1/None/非法→NULL。白名单 `_TRACKER_CHANGE_FIELDS` 6→9 字段（注释同步），存量 NULL→值即判变更一周期回填。
+- **W2 TR added_date 本地化**：全量（~L1515）与 info-only（~L4029）两路径改 `_parse_qb_epoch(fields.get("addedDate"))`（epoch→naive 本地，与 qB 同构）；迁移② c9e0f1a2b3c4 三段式回填（SELECT JOIN→Python replace(tzinfo=utc).astimezone()→复合 PK executemany UPDATE；JOIN 不带 dr=0 含软删下载器与回收站行；downgrade 反向；inspect 守卫；文件尾不可重复执行警示）。锚点二次前移（EXPECTED_HEAD/链尾注释/约束文档 HEAD 两处）。
+- **W2 状态常量**：torrent_stats_cache 三集合提升模块级（DOWNLOADING/SEEDING/PAUSED_STATES）+ PAUSED_STATES 扩 "paused"（TR stopped 映射后 DB 值）。**实测澄清**：stats 缓存喂的是 TR 原始 "stopped"（本就在 PAUSED_STATES），dashboard 暂停计数现状并未漏计；"paused" 补齐的是 DB 映射值口径（W3 报表五桶按 DB 值分桶的正确性前提），既有回归测试全数通过（回归适配=零改动验证）+ 新增映射值桶与常量互斥锁测试。tracker_mapper.py:184-197 qB tracker 文档注释纠错（num_* 群体计数语义 + 真机键集）。
+- **测试与门禁**：新增 tests/tasks/test_speed_sampler.py 13 例 + tests/api/test_tracker_count_activation.py 13 例 + 迁移②专项 2 例 + stats_paused 扩 2 例 + 白名单契约适配 2 例改写；桩适配——_tr_seed 两文件补 fields={"addedDate": epoch}；localization 测试 patch call_downloader_api（全量序 lifespan shutdown 全局 runtime 惯例，踩坑实录：单跑绿/全序红，bisect 至 executor shutdown RuntimeError 定位）。全量 pytest **5291 passed/18 skipped**；mypy 296 文件 0 错；black 297 文件净；flake8 app/ 通过；alembic 单 HEAD c9e0f1a2b3c4；根 ./init.sh exit=0。
+- 本机环境备注：本批全程借用主工作区 venv（/srv/workspaces/BtDeck/backend/venv，Python 3.13.5，只读使用未触碰其文件）；任务提示中 btpManager/anaconda 分工为 Windows 桌面机记录，本 Linux 机无 conda。
+- 待办（后续批次）：W3 报表服务（report_service + reports.py + api 注册）、W4-W6 前端、W7 demo 收口；roadmap 同步归 W7。
+
+
+## 2026-09-24（续）：统计报表 W3——报表服务与端点（全绿，已随批提交）
+
+- 提交基线：W1+W2 先行提交 4a17a50（28 文件）；W3 新增 report_service.py（扁平单文件，分区：常量/overview/trends/seeding/tracker_stats/fun/speed）+ reports.py 七端点（/api/v1/reports/{overview,trends,seeding,trackers,fun/summary,fun/yearly,speed/history}，全 CommonResponse + get_current_user，year 越界 400）+ api.py 注册。
+- 口径落地：五桶错误桶优先（status='error' OR has_tracker_error 先判）→ 常量四主桶 → 其他（复用 W2 提升的 torrent_stats_cache 模块级常量）；种子口径 dr=0 AND deleted_at IS NULL、回收站 deleted_at 非空、tracker 行 dr=0 JOIN 活跃种子；勋章半开区间 [0,1)/[1,10)/[10,50)/[50,200)/[200,∞) TB（200-500 空档消除）；蓝光 40GB/高清 8GB/剧集 30GB 换算；host 去端口归一（IPv6 [..] 保留）；save_path 根前缀=前两段非空路径段（保留前导 /，Windows 反斜杠归一）；D14 跨站重复计体积口径锁定（脚注归前端）；D15 errorRate 分母排除 unknown（真机 status 域实测 error/normal/unknown）；D16 均值排除 NULL、count=有效行数；B9 拼接：24h 纯 raw 分钟级，7d/30d hourly 主体+raw 尾段（raw >= max(stat_hour)+1h；无 hourly 全窗口），hourly 点携带 sampleCount/onlineCount（供前端区分全离线小时与停机无行），断点=停机无行不补零；trends 内嵌 speedHistory 默认 24h；liveSpeed 只读 store 快照（在线合计、离线零速行）；空库全零值/空数组契约。
+- 两个实现级发现：①裸 text() SQL 的 DATETIME 列返回存储字符串非 datetime——加 _as_dt 统一解析（含/不含微秒），row._mapping 不可变需转 dict；②BTD305 架构守卫拦 f-string SQL 拼接——速度历史三查询改单条参数化（:dl_id IS NULL OR downloader_id=:dl_id 谓词），非拼接。
+- 测试：新增 5 文件 51 例（overview 17 + trends 11 + seeding 5 + trackers 7 + fun 9 + 共享基建 reports_fixtures.py 1 模块；覆盖计划 §6 全部点名项）。全量 pytest 5342 passed/18 skipped（+51）；mypy 298 文件 0 错；black 299 文件净；flake8 0；./init.sh exit=0。
+- 坑位：overview 端点测试沿用 test_dashboard_api 模式（异步内存库 StaticPool + dependency_overrides + TestClient 跨 loop 可用）；TestClient 路径下服务异常返回 code=500 HTTP 200，排障需直调 service 层看 traceback。
+
+
 ## 2026-09-25：qB 5.0+ Tracker repr 污染根修批（feature `qb-tracker-pollution-fix-2026-09-25`）
 
 - **问题**：用户实证 qB 5.0.0+ 客户端 tracker 采集得到 `Tracker({..., 'url': "Tracker({...真实URL...})"})` 形态污染条目。
@@ -8294,3 +8317,14 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试**：新增 test_qb_tracker_pollution_fix 13 例（真 TorrentDictionary+MagicMock 锚定 property 写读语义、防御矩阵、清洗端点四态）。**坑入档**：TestClient(app) 带 with 会触发真实 lifespan 启停（alembic/jwt_secret/后台任务），污染同进程后续 RSS 测试（全量 19 failed 实证）；改用不带 with 的 TestClient（test_tracker_by_downloader_api 先例）后归零。另 pytest `-k` 与多文件组合会过滤所有文件的测试，二分定位时需警惕误判。
 - **验证**：后端全量 pytest **5345 passed / 0 failed / 18 skipped**（首轮 5324/21：19 RSS 污染 + 2 门禁[鉴权登记/BTD305 SQL f-string]，全修复）；mypy/black/flake8 净；./init.sh exit=0；android 副本语法 + 镜像核验（helper 8 处引用对齐、裸赋值清零）。
 - **运维提示**：存量清洗用 `POST /api/v1/tracker/cleanupPollutedTrackers?dry_run=true` 预览后执行；qB 5.0.0~5.0.3 需先升级 5.0.4+（removeTrackers 已知 bug）；TR 远端清理未做（change_torrent 全量替换语义风险高，如需另立项）。前端 UI 入口未做（curl/后续批）。
+
+## 2026-09-25：统计报表 W4——前端基建（echarts 钉版 + EChart 封装 + 契约类型 + i18n，全绿已提交）
+
+- W4 首步实测记录在案：echarts --save-exact 5.5.1（package.json 无 caret，lock 仅 +32 行零漂移）；仓库锁定 TS 实为 4.9.5（^4.2.4 解析值，计划文档写 4.2 系保守假设）；tsc 探针确认 echarts/core+charts+components 类型面解析通过、echarts/renderers 无 CanvasExtension 导出（亦不需要）；lucide@1.27 Sprout/Radar 均存在，注册 sprout（做种）+ radar（Tracker），orbit/gauge 备选未启用。
+- EChart.vue（class 风格 @Component，与 query-templates 同款）：echarts/core + Bar/Line/Pie/Scatter + Grid/Tooltip/Legend/DataZoom/Title + CanvasRenderer 全部动态 import 且统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty。
+- types/reports.ts 纯 JSON 契约（与 W3 report_service 输出一一对应，禁 echarts 类型 import）；api/reports.ts 七函数照 dashboard.ts 惯例（信封 res.code==='200' && res.data 消费）。
+- i18n：statistics 域包 zh/en 成对（common/overview/trends/seeding/trackers/fun/calibers 七节，calibers 含时区口径/采样启动/断点/在线率/跨站重复体积/回收站排除/完成空覆盖/TR 无分类/上传估算口径十条脚注键）；navigation 6 键 ×2；两聚合根对照挂载（parity 37 例全过）。
+- jest.config transformIgnorePatterns 扩 (?!lucide|echarts|zrender)（保留 <rootDir>/node_modules/ 锚定——照计划防灾难性破坏）。
+- EChart.spec 7 例坑位：jest.mock 工厂禁引用外层变量→句柄经 globalThis.__mocks 存活；组件模块级 promise 缓存→逐例 resetModules 后 require 重取组件；类字段 jest.fn 是实例属性不可 spyOn→RO stub 改原型方法；浅比较契约=顶层值同引用才跳过（新数组引用必重渲染）。
+- 验证：typecheck exit 0；lint 净（auto-fix 三文件后复跑 0 error 0 warning）；全量 Jest 127 套 1863 例（+7）；build exit 0；体积探针 esbuild 按需面 min+gz **188.7KB < 200KB**（echarts chunk 本批不物化——无页面消费方，webpack 终值 W5 复测，属计划内合批约束）。
+- 合批纪律执行：路由/permission/ui-mode/demo-matrix 按 §7 注记放 W5 首个提交（防侧栏指向不存在组件）；W4 只交依赖/EChart/i18n/类型/API 模块。

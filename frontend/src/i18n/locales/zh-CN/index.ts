@@ -36,6 +36,7 @@ import { orphanFiles } from './orphanFiles'
 import { queryTemplate } from './queryTemplate'
 import { recycleBin } from './recycleBin'
 import { search } from './search'
+import { statistics } from './statistics'
 import { tasks } from './tasks'
 import { settings } from './settings'
 import { time } from './time'
@@ -58,6 +59,7 @@ const messages: MessageTree = {
   queryTemplate,
   recycleBin,
   search,
+  statistics,
   tasks,
   settings,
   time,

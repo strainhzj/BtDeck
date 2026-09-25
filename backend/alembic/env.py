@@ -58,6 +58,9 @@ from app.models.moviepilot_transfer_history import MoviePilotTransferHistory
 # RSS 订阅（feature rss-subscription-2026-09-24）
 from app.models.rss_subscription import RssFeed, RssArticle
 
+# 速度采样（统计报表 W1）
+from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config

@@ -12,6 +12,7 @@ from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scop
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
+from app.tasks.scheduler.speed_sampler import SpeedSamplerJob
 
 
 async def run_wal_snapshot_loop(app: FastAPI) -> None:
@@ -116,6 +117,29 @@ async def run_dashboard_stats_loop(app: FastAPI) -> None:
             raise
         except Exception as exc:
             print(f"[WARN] dashboard stats task failed: {exc}")
+
+        await asyncio.sleep(interval)
+
+
+async def run_speed_sampler_loop(app: FastAPI) -> None:
+    """速度时间采样循环（统计报表 W1，PLANS/statistics-reports.md §3.2）。
+
+    60s 采样 + 5min hourly 聚合检查 + 每日清理（节流在 job 内部）；
+    异常仅记日志不中断循环。
+    """
+    job = SpeedSamplerJob(app=app)
+    app.state.speed_sampler_job = job
+    interval = getattr(job, "default_interval", 60)
+
+    while True:
+        try:
+            await job.execute(app=app)
+            await job.maybe_aggregate()
+            await job.maybe_cleanup()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] speed sampler task failed: {exc}")
 
         await asyncio.sleep(interval)
 
@@ -535,6 +559,10 @@ async def lifespan(app: FastAPI):
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
+    # 速度时间采样任务（统计报表 W1）：60s 采样 + 5min 聚合 + 每日清理
+    speed_sampler_task = asyncio.create_task(run_speed_sampler_loop(app))
+    app.state.speed_sampler_task = speed_sampler_task
+
     # 版本更新检查任务
     version_check_task = asyncio.create_task(check_version_update_task(app))
     app.state.version_check_task = version_check_task
@@ -665,6 +693,16 @@ async def lifespan(app: FastAPI):
                 print("✅ 仪表盘统计任务已取消")
             except Exception as e:
                 print(f"⚠️  取消仪表盘统计任务时出错: {e}")
+
+        if speed_sampler_task and not speed_sampler_task.done():
+            print("取消速度采样任务...")
+            speed_sampler_task.cancel()
+            try:
+                await speed_sampler_task
+            except asyncio.CancelledError:
+                print("✅ 速度采样任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消速度采样任务时出错: {e}")
 
         if version_check_task and not version_check_task.done():
             print("取消版本检查任务...")
