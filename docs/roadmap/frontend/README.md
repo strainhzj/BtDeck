@@ -8,12 +8,12 @@
 | 关键词 | 子分支 | 一句话职责 |
 |--------|--------|-----------|
 | 应用入口 entry | [entry/](./entry/README.md) | 应用入口（main.ts / router.ts / permission.ts / App.vue / registerServiceWorker.ts / shims-vue.d.ts，6 文件） |
-| API 封装 api axios | [api/](./api/README.md) | axios 封装的 14 个领域 API 模块 |
-| 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 2 处 Options API） |
+| API 封装 api axios | [api/](./api/README.md) | axios 封装的 18 个领域 API 模块（✨2026-09-25 +reports.ts 并校准历史漂移） |
+| 页面视图 view | [views/](./views/README.md) | 15 个视图目录（含 mobile/ 移动页子系统与 nested/tree 演示模块）+ 404.vue（⚠ 以 class-component 为主，仅 2 处 Options API） |
 | Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 4 个 module，统一 vuex-module-decorators 动态注册；2026-09-23 删除零消费死模块 downloaderSettings） |
-| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 22 个 .vue + layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
+| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 23 个 .vue（✨2026-09-25 +charts/EChart.vue）+ layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
 | 静态展示 Demo demo | [demo/](./demo/README.md) | typed fixture、内存状态仓库、集中式 request 分流、Demo 构建配置与安全边界 |
-| 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 13 + types 8 + constants 1 + directive 1 |
+| 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 16 + types 9（✨2026-09-25 +reports.ts）+ constants 1 + directive 1 |
 
 ---
 

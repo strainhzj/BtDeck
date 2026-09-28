@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（262 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（130 套，spec 文件 130 个：tests/ 118 + src 组件内嵌 12；✨2026-09-24 RSS Phase 2 批新增 test_rss_rules_mode 21 例 + test_rss_qb_proxy 20 例 + test_rss_refresh_task 10 例 + rss-phase2-panels 14 例 + rss-manager-entry 8 例 + demo-request 扩 6 例；Phase 1 批 test_rss_subscriptions 20 例 + rss-subscription-tab 7 例 + rss-tab-integration 3 例）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（270 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（131 套，spec 文件 134 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 13；✨2026-09-25 统计报表批新增 test_speed_sampler 13 例 + test_tracker_count_activation 13 例 + test_reports_{overview,trends,seeding,trackers,fun} 51 例（共享 reports_fixtures.py 基建）+ EChart.spec 7 例（实测校准 262→270/130→131）；✨2026-09-24 RSS Phase 2 批新增 test_rss_rules_mode 21 例 + test_rss_qb_proxy 20 例 + test_rss_refresh_task 10 例 + rss-phase2-panels 14 例 + rss-manager-entry 8 例 + demo-request 扩 6 例；Phase 1 批 test_rss_subscriptions 20 例 + rss-subscription-tab 7 例 + rss-tab-integration 3 例）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（82 个 test_*.py，对应 app/api/ 43 个端点模块（✨2026-09-24 P2 +test_rss_rules_mode：模式默认/往返/TR 拒/能力键关/规则 CRUD 校验/显式 null 语义/回填推送 addedRuleId/大小写·exclude·正则/源作用域/qb_native 跳过+护栏 409/预览不推送/TR 目标覆盖参数；+test_rss_qb_proxy：树投影/文章排序过滤/校验/透传 kwargs 断言/偏好白名单/门控/android/认证/异常归一）；Phase 1 批 test_rss_subscriptions 20 例；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks；✨2026-09-22 W5 test_mcp_apikey 21 例：三态视图/CAS 409/归属漂移/控制面门禁/审计禁记密钥/descriptionEn 成对） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（89 个 test_*.py，对应 app/api/ 44 个端点模块（✨2026-09-25 统计报表批 +test_reports_* 五件 51 例（共享 reports_fixtures.py：overview 17 + trends 11 + seeding 5 + trackers 7 + fun 9）+ test_tracker_count_activation 13 例（tracker 计数激活/白名单回填/迁移②专项）；同日 qB 污染批 +test_qb_tracker_pollution_fix 13 例；✨2026-09-24 P2 +test_rss_rules_mode：模式默认/往返/TR 拒/能力键关/规则 CRUD 校验/显式 null 语义/回填推送 addedRuleId/大小写·exclude·正则/源作用域/qb_native 跳过+护栏 409/预览不推送/TR 目标覆盖参数；+test_rss_qb_proxy：树投影/文章排序过滤/校验/透传 kwargs 断言/偏好白名单/门控/android/认证/异常归一）；Phase 1 批 test_rss_subscriptions 20 例；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归；双语 P2~P6b reasonCode 契约五批 test_reason_contract_p2/p4/p5/p6/p6b/p6_tasks；✨2026-09-22 W5 test_mcp_apikey 21 例：三态视图/CAS 409/归属漂移/控制面门禁/审计禁记密钥/descriptionEn 成对） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -20,13 +20,13 @@
 | 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
 | 服务层测试 services | `backend/tests/services/` | 服务层测试（含 `test_auxiliary_seed_count_service.py` 的全局分组/增量更新回归、`test_seed_transfer_service_fixes.py` 的跨 torrent_file 转移回归、孤儿后台扫描调度器与 tag_adapters） |
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
-| 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
+| 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/）；✨2026-09-25 统计报表 W1 +test_speed_sampler 13 例（DB 基准对齐/断网 online=0 采样/hourly 聚合幂等与全离线 avg=0/每日清理/KB/s 换算） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 113 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard） |
-| 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 4 个 spec（移动端端到端场景，与 unit 分目录组织） |
-| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 12 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤各 1 个 |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 118 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard；✨2026-09-25 计数实测校准） |
+| 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 3 个 spec（login/mobile-interactions/mobile-routes，移动端端到端场景，与 unit 分目录组织；✨2026-09-25 实测校准） |
+| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 13 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤、charts/EChart 各 1 个（✨2026-09-25 +EChart） |
 
-## backend/tests/（236 个 test_*.py + 支持文件）
+## backend/tests/（270 个 test_*.py + 支持文件；✨2026-09-25 实测校准）
 
 ### 顶层
 
@@ -62,7 +62,7 @@
 ```bash
 cd backend && pytest                          # 全量
 cd backend && pytest tests/services/ -v       # 按目录
-cd backend && pytest tests/api/               # API 层（79 个 test_*.py）
+cd backend && pytest tests/api/               # API 层（89 个 test_*.py）
 ```
 
 ## frontend/tests/
@@ -96,6 +96,8 @@ cd backend && pytest tests/api/               # API 层（79 个 test_*.py）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
   - `AppLogo.spec.ts`（品牌资源与变体契约）
   - `LucideIcon.spec.ts`（185 行）
+- `frontend/src/components/charts/__tests__/` ✨2026-09-25（统计报表 W4）
+  - `EChart.spec.ts`（213 行，7 例：动态 import 生命周期与竞态、watch 浅比较契约、ResizeObserver、空态插槽；jest.mock 工厂句柄经 globalThis.__mocks 存活、模块级单例 promise 逐例 resetModules、RO stub 改原型方法）
 - `frontend/src/components/BatchButton/__tests__/`
   - `BatchButton.spec.ts`（90 行）
 - `frontend/src/constants/__tests__/`
@@ -113,7 +115,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 236 个 test_*.py（2026-09-21 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 270 个 test_*.py（2026-09-25 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

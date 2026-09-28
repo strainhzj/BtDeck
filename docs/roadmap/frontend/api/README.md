@@ -1,9 +1,9 @@
 # frontend/api — axios API 封装
 
-> 17 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`（✨2026-09-09 计数校准：含本批 moviepilot 与 health/mcp-settings 历史漂移；✨2026-09-24 +rss.ts 实测校准）。
+> 18 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`（✨2026-09-25 统计报表 W4 +reports.ts 实测校准；历史：✨2026-09-24 +rss.ts）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 关键词速查（17 个 .ts，跳过 torrents_patch.txt）
+## 关键词速查（18 个 .ts，跳过 torrents_patch.txt）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -23,6 +23,7 @@
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.ts` | MoviePilot 联动：设置 GET/PUT（CAS）/实例列表/更新/删除、正向关联（downloaderId+hash）、路径反查（src/dest/both）；分页信封 {total,page,pageSize,list} |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
+| 统计报表 reports ✨2026-09-25（W4） | `reports.ts` | 统计报表七函数照 dashboard.ts 信封惯例（`res.code==='200' && res.data`）：getReportsOverview / getReportsTrends（period=month|week）/ getReportsSeeding / getReportsTrackers / getReportsFunSummary / getReportsFunYearly（year 可选）/ getReportsSpeedHistory（range=24h|7d|30d，downloaderId 可选）；类型全部来自 `@/types/reports` 纯 JSON 契约（feature statistics-reports-2026-09；消费方 views/statistics 四页签待 W5） |
 | 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
 | 诊断导出 health ✨2026-09-21 补录 | `health.ts` | `exportDiagnosisFile()` 导出故障转储/排查/状态分析快照（axios blob 携带认证头；后端 `GET /health/diagnosis` attachment 返回诊断 JSON，文件名前端生成——blob 响应经拦截器只回传原始数据读不到响应头），settings 状态诊断页签消费 |
 

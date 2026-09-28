@@ -13,7 +13,7 @@
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
-| 统计缓存 stats-cache | `torrent_stats_cache.py` | `TorrentCacheEntry` / `TorrentStatsCache`：种子统计缓存 |
+| 统计缓存 stats-cache | `torrent_stats_cache.py` | `TorrentCacheEntry` / `TorrentStatsCache`：种子统计缓存；✨2026-09-25 统计报表 W2：DOWNLOADING_STATES(L32)/SEEDING_STATES(L39)/PAUSED_STATES(L51) 三集合提升为模块级常量（供 report_service 五桶判定复用，get_stats() 行为不变）+ PAUSED_STATES 扩 "paused"（TR stopped 映射后 DB 值，报表按 DB 值分桶的正确性前提；dashboard 现状未漏计——stats 缓存喂的是 TR 原始 "stopped"） |
 | 下载器 ORM downloader-model | `models.py` | ORM：`BtDownloaders`（下载器表）+ `DownloaderStatus` 枚举 |
 | 异常体系 downloader-exception | `exceptions.py` | 下载器异常体系（`DownloaderSettingsError` + 7 子类） |
 | 下载器 VO downloader-vo | `responseVO.py` | 下载器响应 VO（`DownloaderSimpleVO`/`DownloaderResponse`/`DownloaderVO` 等） |

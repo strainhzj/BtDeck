@@ -1,6 +1,6 @@
 # frontend/views — 页面视图
 
-> 13 个业务模块 + 404.vue。⚠ **以 class-component 为主**（当前实测 74 个，含子组件/mixin，2026-09-21 重测）；views 分支仅 2 处 Options API（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 删除）。
+> 15 个视图目录（含 mobile/ 移动页子系统与 nested/tree 演示模块）+ 404.vue；✨2026-09-25 实测校准（原 13 为 2026-09-24 前口径，未含 mobile/rss）。⚠ **以 class-component 为主**（当前实测 74 个，含子组件/mixin，2026-09-21 重测）；views 分支仅 2 处 Options API（原第 3 处 CompactTable.vue 已于 2026-09-20 P6-5 删除）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/views/README.md`，命中行即含模块入口 + 职责，无需 Read 全文。
 
 ## 关键词速查

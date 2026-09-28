@@ -13,12 +13,19 @@
 |--------|------|-----------|
 | 品牌 Logo app-logo | `AppLogo.vue` | Vue 2 Logo 统一封装：`full` 为 D 形 mark + `BtDeck` 字标，另有 `mark`/`micro` 光学尺寸与 `brand`/`inverse` 色调；移动头部使用反白微型版，按 `BASE_URL` 解析 public 品牌资源 |
 | 品牌 Logo 单测 app-logo-test | `__tests__/AppLogo.spec.ts` | 覆盖完整、标准、微缩及反白资源选择契约 |
-| Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标；✨2026-09-23 补 clapperboard（设置页 MoviePilot 页签） |
+| Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标；✨2026-09-23 补 clapperboard（设置页 MoviePilot 页签）；✨2026-09-25 补 sprout（统计·做种）+ radar（统计·Tracker）（lucide@1.27 实测存在，orbit/gauge 备选未启用） |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
 | PWA 更新提示 refresh-prompt | `RefreshPrompt.vue` | 监听 Service Worker 更新事件，提供用户确认后刷新提示（桌面/移动布局共用）；✨2026-09-19 遗留清扫：三条文案走 common.pwa.*（发现新版本/立即刷新/暂不刷新 aria） |
 | Demo 模式提示 demo-banner | `DemoModeBanner.vue` | Demo 构建固定顶部提示“数据为本地模拟”，提供本地 store 重置并刷新当前页面；2026-09-20 P6-5 双语（common.demo.* 四键，demo fixtures 数据范围另立项未译） |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
+
+#### components/charts/（1 个 .vue + 1 测试）✨2026-09-25（统计报表 W4）
+
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|------------|
+| 图表封装 echarts | `EChart.vue` | echarts@5.5.1 精确钉版（--save-exact，降级阶梯 5.4.1/5.3.3）按需+懒加载封装（class 风格 @Component，与 query-templates 同款）：echarts/core + Bar/Line/Pie/Scatter + Grid/Tooltip/Legend/DataZoom/Title + CanvasRenderer 全部动态 import 且统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty；Props：option/height/loading |
+| 图表封装单测 echarts-test | `__tests__/EChart.spec.ts` | 7 例：动态 import 生命周期（竞态/ disposed）/watch 浅比较契约（新数组引用必重渲染）/ResizeObserver 自适应与销毁断开/空态插槽；坑位——jest.mock 工厂禁引用外层变量（句柄经 globalThis.__mocks 存活）、组件模块级 promise 缓存逐例 resetModules 后 require 重取、类字段 jest.fn 不可 spyOn（RO stub 改原型方法） |
 
 #### 顶层 + 单件目录
 

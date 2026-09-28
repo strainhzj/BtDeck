@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（58 个文件，不计 `__init__.py`；✨2026-09-09 计数校准：含 moviepilot 两服务与 mcp_settings/torrent_add_helpers 等历史漂移；✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service、✨2026-09-24 Phase 2 +rss_rule_service/+rss_qb_proxy_service 实测校准）
+### services/ 根（59 个文件，不计 `__init__.py`；✨2026-09-25 统计报表 W3 +report_service.py 实测校准；历史：✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service、✨2026-09-24 Phase 2 +rss_rule_service/+rss_qb_proxy_service）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -14,6 +14,7 @@
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
+| 统计报表 report ✨2026-09-25（W3） | `report_service.py` | 856 行扁平单文件（分区：常量/overview/trends/seeding/tracker_stats/fun/speed），七个报表域聚合：五桶判定错误桶优先（status='error' OR has_tracker_error 先判，再归常量四主桶/其他，复用 torrent_stats_cache 模块级常量）；种子口径 dr=0 AND deleted_at IS NULL、回收站 deleted_at 非空；勋章半开区间 [0,1)/[1,10)/[10,50)/[50,200)/[200,∞) TB；蓝光 40GB/高清 8GB/剧集 30GB；host 去端口归一（IPv6 [..] 保留）与 save_path 根前缀=前两段非空路径段；D15 errorRate 分母排除 unknown、D16 均值排除 NULL；速度历史 24h 纯 raw 分钟级 + 7d/30d hourly 主体+raw 尾段拼接（raw >= max(stat_hour)+1h，断点=停机无行不补零，hourly 携 sampleCount/onlineCount）；liveSpeed 只读 store 快照；trends 内嵌 speedHistory 默认 24h；空库全零值/空数组契约；_as_dt 统一解析 DATETIME 列存储字符串（feature statistics-reports-2026-09） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
 | 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志）；✨2026-09-08（MCP W3-③，随 dev1.0.7 合入）：`TorrentAddResult` 扩领域字段 （info_hash/info_id/name/downloader_nickname/created + db_torrent_created 追踪与末尾回填，HTTP 端点零影响），add 家族辅助迁至 `torrent_add_helpers.py`（本服务 import 同步改向） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
@@ -47,7 +48,7 @@
 | 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；成功后落库目标/源行）；`transfer_seed` L118 要求 `seed_transfer`，Android 主服务端不可用 |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
-| 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
+| 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化）；✨2026-09-25 统计报表 W2：upsert set_×2（batch sync_trackers_batch_async + add 路径）补 seeder_count/leecher_count/download_count excluded 列、existing_map select 扩三列，`_TRACKER_CHANGE_FIELDS` 白名单 6→9 字段（存量 NULL→值即判变更，一周期回填 tracker 群体计数） |
 | Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
 | 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、task/resource 生命周期事件、worker pid/instance 标识、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |

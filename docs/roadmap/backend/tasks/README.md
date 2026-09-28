@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### tasks/ 根（14 个文件）
+### tasks/ 根（16 个文件；✨2026-09-25 实测校准，含 2026-09-05 MCP W4 前置解耦新增 cron_trigger/cron_crud_async 未同步计数）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -26,12 +26,13 @@
 | 任务 profile task-profile | `task_profiles.py` | 重型任务资源 profile 注册表 `TaskProfile` |
 | 任务验证 validation | `validation_service.py` | 任务验证（脚本语法/Cron 表达式/Python 类三套校验） |
 
-### scheduler/ — APScheduler job 实现（17 个文件；✨2026-09-24 Phase 2 +rss_refresh_task）
+### scheduler/ — APScheduler job 实现（18 个文件；✨2026-09-25 统计报表 W1 +speed_sampler；✨2026-09-24 Phase 2 +rss_refresh_task）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
 | 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
+| 速度采样 speed-sampler ✨2026-09-25（统计报表 W1） | `speed_sampler.py` | `SpeedSamplerJob`（L84，lifecycle `run_speed_sampler_loop` L124 驱动 60s 一轮）：①原始采样——DB 有效清单（enabled=1 AND dr=0）为基准对齐 store 快照，缓存缺失（含 300s 剔除者）或 is_online=False 仍记 online=0 速度 0 行（断网采样承诺），在线判定只认 is_online 禁 fail_time，KB/s×1024 对齐 dashboard_service，每轮 add_all 单次 commit 包 db_write_scope；②5min hourly 聚合检查——完整结束小时 + LEFT JOIN 排除已聚合 + INSERT OR IGNORE 幂等，avg 分母=online_count（全离线小时 avg=0），datetime() 归一含/不含微秒 ISO 字符串比较；③每日清理 raw 14d / hourly 730d；android 守卫名单含 run_speed_sampler_loop |
 | 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L16，fail_time 死代码的替代自愈机制） |
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance；`execute` L77 先要求 `path_mapping`，Android 不触发目录/映射读写 |
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知；Android 能力门禁直接跳过 |
@@ -74,7 +75,7 @@ app/startup/lifecycle.py:lifespan
 ## 任务分类
 
 - **APScheduler 注册入口**（唯一）：`tasks/cron_executor.py`
-- **APScheduler job 实现**（被调度）：`scheduler/` 下 17 个 .py（含 1 个已废弃 `torrent_sync.py`；✨2026-09-24 P2 +rss_refresh_task）+ `scheduler/torrent_sync/` 子包 4 个
+- **APScheduler job 实现**（被调度）：`scheduler/` 下 18 个 .py（含 1 个已废弃 `torrent_sync.py`；✨2026-09-24 P2 +rss_refresh_task；✨2026-09-25 +speed_sampler）+ `scheduler/torrent_sync/` 子包 4 个
 - **后台执行器**（非 APScheduler）：`cleanup_executor.py`
 - **REQ-002/003 工具脚本**（一次性）：`batch_class_validator.py`、`class_path_fixer.py`、`class_path_validator.py`、`validation_service.py`
 - **资源治理**：`resource_guard.py`（准入控制器）、`task_profiles.py`（任务 profile）、`sync_db_write.py`（在 services 分支）

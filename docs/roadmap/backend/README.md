@@ -9,14 +9,14 @@
 |--------|------------|-----------|
 | 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 8 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
 | 桌面伴侣 desktop-companion | [desktop-companion.md](./desktop-companion.md) | `app/desktop_companion/`：服务器 profile/健康检查/内嵌 pywebview；用户名随 profile 保存，密码由 Windows DPAPI 保险库存储，首屏同源脚本恢复登录会话 |
-| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 43 文件（endpoints 37 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`） |
-| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 57 文件（services 47 + downloader_adapters 5 + tag_adapters 5，不计 `__init__.py`） |
+| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 50 文件（endpoints 44 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`；✨2026-09-25 +reports.py 并校准历史漂移） |
+| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 69 文件（services 59 + downloader_adapters 5 + tag_adapters 5，不计 `__init__.py`；✨2026-09-25 +report_service.py 并校准历史漂移） |
 | 基础设施 core | [core/README.md](./core/README.md) | 基础设施 23 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |
 | 前后端契约 contracts | [contracts/README.md](./contracts/README.md) | 前后端共享机器可读契约 3 文件（advanced_search JSON + 加载器）✨v1.0.6.27 |
-| 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 37 文件（ORM 18 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2） |
-| 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 33 文件（tasks 14 + scheduler 16 + scheduler/torrent_sync 3，不计 `__init__.py`） |
+| 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 41 文件（ORM 23（根 22 含 enums.py + response/ 1）+ repositories 3 + schemas 8 + data 6 + app/enums 1，不计 `__init__.py`；✨2026-09-25 +speed_sample.py 并校准历史漂移） |
+| 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 37 文件（tasks 16 + scheduler 18 + scheduler/torrent_sync 3，不计 `__init__.py`；✨2026-09-25 +speed_sampler.py 并校准历史漂移） |
 | 领域 domain | [domain/README.md](./domain/README.md) | 领域目录 27 文件（downloader 9 + torrents 9 + tracker 1 + auth 7 + user 1） |
-| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 31 个 revision；当前 head `d1e2f3a4b5c6`） |
+| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 37 个 revision；当前 head `c9e0f1a2b3c4`） |
 
 ---
 

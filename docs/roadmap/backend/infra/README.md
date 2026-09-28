@@ -22,7 +22,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L344)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L304) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控） |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L376)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L336) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控）；✨2026-09-25 统计报表 W1：新增 `run_speed_sampler_loop`（L124，60s 采样 + 5min hourly 聚合检查 + 每日清理，SpeedSamplerJob 挂 app.state；L563 create_task 启动，关闭阶段取消） |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程
@@ -35,8 +35,9 @@
 - L350-364：`recover_interrupted_orphan_scans()` 将残留 running 批次标记 failed
 - L377：`await update_cron_task_status()`；L388：`await cron_executor.start()`
 - L396-419：创建下载器、持久化孤儿清理和 queued 扫描恢复任务
+- L563-564：`speed_sampler_task = asyncio.create_task(run_speed_sampler_loop(app))`（✨2026-09-25 统计报表 W1 速度采样循环：60s 采样 + 5min hourly 聚合检查 + 每日清理；SpeedSamplerJob 挂 app.state；android 守卫名单登记于 tests/core/test_startup_migration_guard.py）
 
-**关闭阶段**（`yield` 之后 L464 起）：取消恢复任务，关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
+**关闭阶段**（`yield` 之后 L637 起）：取消恢复任务（含速度采样，L697），关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
 
 ### migrations/ — 应用层数据迁移（3 个文件）
 
@@ -62,7 +63,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **35 个** revision 文件；当前 head 为 `d4a7f1c9e2b6`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末位 d4a7f1c9e2b6 为 RSS Phase 2 三表两列迁移，feature rss-subscription-phase2-2026-09-24，has_table/列存在幂等守卫 + 对称 downgrade） |
+| Alembic revisions versions | `versions/` | **37 个** revision 文件；当前 head 为 `c9e0f1a2b3c4`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
@@ -105,6 +106,8 @@
 | RSS 订阅建表 rss-subscription | `8fabba8687b0_rss_subscription_feeds_and_articles.py` ✨2026-09-24 | 新增 bt_rss_feeds / bt_rss_articles 两表及索引（(feed_id,guid) UNIQUE 去重）；inspector has_table 幂等守卫（版本戳回退后重升级 no-op，对齐 moviepilot 惯例）；downgrade 对称 drop（feature rss-subscription-2026-09-24） |
 | RSS Phase 2 三表两列 rss-phase2 | `d4a7f1c9e2b6_rss_phase2_modes_rules_and_rule_feeds.py` ✨2026-09-24 | 新增 bt_rss_modes / bt_rss_rules / bt_rss_rule_feeds 三表 + bt_rss_articles.added_rule_id / bt_rss_feeds.refresh_interval_minutes 两列；has_table 与列存在双重幂等守卫；downgrade 对称 drop_column/drop_table（feature rss-subscription-phase2-2026-09-24） |
 | hash 小写归一 hash-lowercase | `a1f7c9e3d2b4_hash_lowercase_normalization.py` ✨2026-09-23 | 数据迁移：torrent_info.hash / torrent_file_backup.info_hash / sync_checkpoints.cursor_value 一次性 lower()（qB 路径原生小写幂等；TR 存量大写与 qB 小写同库混存导致唯一索引/复合键两套身份）；UPDATE OR IGNORE 防脏数据冲突、inspector 检查缺表容错（漂移库升级不中断）、downgrade no-op；rTorrent 接入前置 P0-D |
+| 速度采样两表 speed-samples | `b7d8e9f0a1c2_speed_samples.py` ✨2026-09-25 | 新增 downloader_speed_sample（60s 原始，保留 14d）+ downloader_speed_hourly（整点聚合，保留 730d）两表；inspect 幂等守卫；feature statistics-reports-2026-09 W1 |
+| TR added_date 本地化 normalize-tr-added-date | `c9e0f1a2b3c4_normalize_tr_added_date.py` ✨2026-09-25 | 数据迁移（三段式：SELECT JOIN bt_downloaders→Python 侧 replace(tzinfo=utc).astimezone() 本地转换→按复合 PK (info_id, downloader_id, downloader_name) executemany UPDATE）：torrent_info.added_date 从 aware UTC 批量转 naive 本地，与 qB `_parse_qb_epoch` 同构（修复 TR 落库 8h 偏移）；JOIN 不带 dr=0（含软删下载器与回收站行）；downgrade 反向；inspect 守卫 + 文件尾不可重复执行警示；当前 head；feature statistics-reports-2026-09 W2 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

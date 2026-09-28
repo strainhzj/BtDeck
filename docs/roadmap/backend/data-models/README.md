@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### models/ — ORM 模型（20 个根 .py + response/ 子目录 2 个 = 22 个；✨2026-09-09 +moviepilot 两模型）
+### models/ — ORM 模型（22 个根 .py + response/ 子目录 1 个（dashboard.py）= 23 个，不计 `__init__.py`；✨2026-09-25 统计报表 W1 +speed_sample.py；历史：✨2026-09-09 +moviepilot 两模型、✨2026-09-24 +rss_subscription）
 
 | 关键词 | 文件 | 表名 / 一句话职责 |
 |--------|------|-------------------|
@@ -26,6 +26,7 @@
 | 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |
 | 模板 VO template-vo | `setting_templates_vo.py` | 配置模板响应 VO |
 | 限速规则 model speed-schedule | `speed_schedule_rules.py` | `speed_schedule_rules`：分时段限速规则 |
+| 速度采样模型 model speed-sample ✨2026-09-25（统计报表 W1） | `speed_sample.py` | `downloader_speed_sample`（60s 原始采样，保留 14d）+ `downloader_speed_hourly`（整点聚合，保留 730d，avg 分母=online_count）；迁移 b7d8e9f0a1c2（inspect 幂等守卫） |
 | RSS 订阅 rss ✨2026-09-24（P2 同日扩五表） | `rss_subscription.py` | `bt_rss_feeds`（订阅源：绑定下载器/enabled/last_fetch 状态投影/refresh_interval_minutes 每源间隔覆盖（P2）/dr 软删）+ `bt_rss_articles`（(feed_id,guid) UNIQUE 去重、status、added_downloader_id、added_rule_id 自动规则命中事实（P2））+ `bt_rss_modes`（P2：按下载器 btdeck/qb_native，downloader_id PK 惰性建行）+ `bt_rss_rules`（P2：include/exclude 关键词+use_regex+target_downloader_id+save_path/tags+match_count）+ `bt_rss_rule_feeds`（P2：复合主键关联，空关联=全部源）；Phase 1 迁移 8fabba8687b0、Phase 2 迁移 d4a7f1c9e2b6（head） |
 | 同步检查点 model sync-checkpoint | `sync_checkpoint.py` | `sync_checkpoints`：按 `(downloader_id, sync_type)` 持久化同步进度检查点（`detail_json` 仅存清洗后聚合统计、version 乐观锁、outcome 六态），中断/重启后可从最后 durable checkpoint 续跑 |
 | 删除审计 model deletion-audit | `torrent_deletion_audit_log.py` | `torrent_deletion_audit_log`：种子删除审计日志 |
@@ -60,7 +61,7 @@
 | 备份 schema torrent-backup | `torrent_backup.py` | 种子文件备份 API schema |
 | 种子路径 schema torrent-location | `torrent_location.py` | 修改种子保存路径请求/响应 |
 
-### data/ — 默认数据种子（4 个文件）
+### data/ — 默认数据种子（6 个文件；✨2026-09-25 实测校准：2026-09-22 dev1.0.7 合入 +default_mcp_settings/+default_moviepilot_settings 未同步计数）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -68,6 +69,8 @@
 | 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化；2026-09-21 幂等身份改按 `preset_key`（active_torrents/error_status/paused/large_files，与名称解耦），旧库中文名恰一行时自愈回填，歧义不猜（B02） |
 | 默认配置模板 default-templates | `default_templates.py` | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
 | 默认关键词 default-keywords | `default_tracker_keywords.py` | Tracker 关键词池默认数据（成功/失败/忽略池） |
+| MCP 默认配置 default-mcp ✨2026-09-22 | `default_mcp_settings.py` | configs 表版本化 JSON 键 `mcp.runtime.v1` 默认载荷；记录缺失/损坏/未知 schemaVersion 时 fail-closed 回落默认值，不做启动期写库（首次 GET 返回默认态 revision=0） |
+| MoviePilot 默认配置 default-moviepilot ✨2026-09-22 | `default_moviepilot_settings.py` | configs 表版本化 JSON 键 `moviepilot.integration.v1` 默认载荷（与 mcp.runtime.v1 同模式）；默认关闭——集成面默认不开放，须管理员显式启用 |
 
 `default_scheduled_tasks.py` 提供的 13 个 task_code（行号实测）：
 `cached_downloader_sync`(L41)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)、`orphan_hardlink_copy_scan`(L228)、`refresh_token_cleanup`(L248)
