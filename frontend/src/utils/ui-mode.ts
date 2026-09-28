@@ -77,6 +77,8 @@ export function toMobilePath(path: string): string {
   }
   // M4：孤儿文件整页移动化（聚合/副本位置/前缀快捷/批量走桌面完整版）
   if (path.startsWith('/orphan-files')) return '/m/orphan-files'
+  // 统计报表（statistics-reports W5）：移动端统计页另立项，守卫兑底落仪表盘
+  if (path.startsWith('/statistics')) return '/m/dashboard'
   return '/m/dashboard'
 }
 

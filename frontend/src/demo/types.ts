@@ -493,6 +493,10 @@ export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/orphan-files/index', title: '孤儿文件', category: 'readonly', summary: '扫描、筛选、清理预览为本地状态机' },
   { path: '/settings/index', title: '系统设置', category: 'readonly', summary: '显示 Demo 状态，密码/二因素不执行' },
   { path: '/torrents/file-management', title: '种子文件管理', category: 'readonly', summary: '文件选择可预览，上传/导入不产生后端副作用' },
+  { path: '/statistics/overview', title: '统计总览', category: 'readonly', summary: '库存、状态分布与下载器对比的静态聚合' },
+  { path: '/statistics/trends', title: '统计趋势', category: 'readonly', summary: '新增/完成趋势、库龄与速度曲线静态展示' },
+  { path: '/statistics/seeding', title: '做种报表', category: 'readonly', summary: '分享率分布、摸鱼象限与辅种网络静态展示' },
+  { path: '/statistics/trackers', title: 'Tracker 报表', category: 'readonly', summary: '站点构成、健康榜与冷热静态展示' },
   { path: '/login', title: '桌面登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' },
   { path: '/m/login', title: '移动登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' }
 ]

@@ -380,6 +380,55 @@ const router = new Router({
       ]
     },
     {
+      // 统计数据顶级菜单（statistics-reports W5；fun-report 子页归 W6 合入）
+      path: '/statistics',
+      component: Layout,
+      redirect: '/statistics/overview',
+      meta: {
+        title: '统计数据',
+        titleKey: 'navigation.routes.statisticsGroup',
+        icon: 'bar-chart-3'
+      },
+      children: [
+        {
+          path: 'overview',
+          component: () => import(/* webpackChunkName: "statistics-overview" */ '@/views/statistics/overview/index.vue'),
+          meta: {
+            title: '总览',
+            titleKey: 'navigation.routes.statisticsOverview',
+            icon: 'bar-chart-3'
+          }
+        },
+        {
+          path: 'trends',
+          component: () => import(/* webpackChunkName: "statistics-trends" */ '@/views/statistics/trends/index.vue'),
+          meta: {
+            title: '趋势',
+            titleKey: 'navigation.routes.statisticsTrends',
+            icon: 'trending-up'
+          }
+        },
+        {
+          path: 'seeding',
+          component: () => import(/* webpackChunkName: "statistics-seeding" */ '@/views/statistics/seeding/index.vue'),
+          meta: {
+            title: '做种',
+            titleKey: 'navigation.routes.statisticsSeeding',
+            icon: 'sprout'
+          }
+        },
+        {
+          path: 'trackers',
+          component: () => import(/* webpackChunkName: "statistics-trackers" */ '@/views/statistics/trackers/index.vue'),
+          meta: {
+            title: 'Tracker',
+            titleKey: 'navigation.routes.statisticsTrackers',
+            icon: 'radar'
+          }
+        }
+      ]
+    },
+    {
       // 查询模板移入 /torrents 组后的旧深链兜底（原路由唯一子路径为 /query-templates/index）：
       // redirect 在路由解析期完成，守卫只见新路径（移动模式经 toMobilePath 精确分支落 /m/search）
       path: '/query-templates',

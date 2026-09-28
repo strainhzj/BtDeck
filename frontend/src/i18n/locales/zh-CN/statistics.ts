@@ -16,6 +16,10 @@ export const statistics = {
     count: '数量',
     sizeBytes: '体积',
     torrentCount: '种子数',
+    name: '名称',
+    offline: '离线',
+    byCount: '按数量',
+    bySize: '按体积',
     loadFailed: '统计数据加载失败',
     refresh: '刷新'
   },
@@ -32,6 +36,8 @@ export const statistics = {
     paths: '目录占用排行',
     downloaders: '下载器对比',
     liveSpeed: '实时速度',
+    downloadSpeed: '下行',
+    uploadSpeed: '上行',
     uncategorized: '未分类',
     removedDownloader: '已移除',
     buckets: {
@@ -61,6 +67,7 @@ export const statistics = {
   seeding: {
     title: '做种',
     ratioDist: '分享率分布',
+    ratio: '分享率',
     slackers: '摸鱼象限',
     auxiliary: '辅种网络',
     crossSeedRate: '辅种率',

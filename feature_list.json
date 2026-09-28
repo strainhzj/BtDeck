@@ -7071,7 +7071,7 @@
           "id": "statistics-reports-w5",
           "name": "W5 四个正式页签",
           "description": "views/statistics/{overview,trends,seeding,trackers}/index.vue + components/（StatCard/CaliberNotes 先行创建）+ Jest 测试（4 页签渲染 mock api + 空态 + period/range 切换）。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/statistics/overview/index.vue",
@@ -7079,9 +7079,14 @@
             "frontend/src/views/statistics/seeding/index.vue",
             "frontend/src/views/statistics/trackers/index.vue",
             "frontend/src/views/statistics/components/StatCard.vue",
-            "frontend/src/views/statistics/components/CaliberNotes.vue"
+            "frontend/src/views/statistics/components/CaliberNotes.vue",
+            "frontend/src/styles/statistics-page.scss",
+            "frontend/src/router.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/utils/ui-mode.ts",
+            "frontend/src/demo/types.ts"
           ],
-          "evidence": ""
+          "evidence": "四页签落地：overview（数字卡行+实时速度卡 30s 轮询/beforeDestroy 清理+五桶饼+TOP10 条+分类标签双维度切换+目录条+下载器堆叠柱）、trends（period 月/周切换+B6 柱线双轴+B7+B8 环形+B9 range 切换多系列折线connectNulls 不补零断点）、seeding（C10 柱+NULL 计数+C11 散点/表+C12 卡条）、trackers（D14 条+D15 表el-progress 三档配色+D16 散点/表）；StatCard/CaliberNotes 先行创建（脚注走 statistics.calibers.* 键，支持插值条目）；共享样式 src/styles/statistics-page.scss。W4 合批项随本批提交：router /statistics 组+4 子路由（fun-report 留 W6）、permission 守卫+toMobilePath /statistics*→/m/dashboard、DEMO_ROUTE_MATRIX +4 行。关键修复：echarts sideEffects 白名单含 lib/chart|component/*.js → 命名空间入口（echarts/charts 等）webpack 拒绝摇树（全量 339.4KB gz 超门禁）；改深路径副作用自注册（lib/chart/{bar,line,pie,scatter}+lib/component/{grid,tooltip,legend,dataZoom,title}+lib/renderer/installCanvasRenderer 显式 core.use）→ **199.3KB gz < 200KB 门禁**（-41%）。坑位：vue-template-es2015-compiler(buble) 不支持模板内 ??。测试：四页签 spec 17 例（mock api+stub EChart：渲染/option 派生/period 与 range 切换/空态/轮询挂卸/脚注）+ ui-mode.spec 守卫回归 +demo-config category 断言；EChart.spec 7 例适配深路径 mock。全量 Jest 131 套 1881 例；typecheck/lint/build 净；init.sh exit=0"
         },
         {
           "id": "statistics-reports-w6",

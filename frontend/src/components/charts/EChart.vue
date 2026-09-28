@@ -57,22 +57,23 @@ function loadECharts(): Promise<ChartInitFn> {
   if (!echartsReady) {
     echartsReady = Promise.all([
       import(/* webpackChunkName: "echarts" */ 'echarts/core'),
-      import(/* webpackChunkName: "echarts" */ 'echarts/charts'),
-      import(/* webpackChunkName: "echarts" */ 'echarts/components'),
-      import(/* webpackChunkName: "echarts" */ 'echarts/renderers')
-    ]).then(([core, charts, components, renderers]) => {
-      core.use([
-        charts.BarChart,
-        charts.LineChart,
-        charts.PieChart,
-        charts.ScatterChart,
-        components.GridComponent,
-        components.TooltipComponent,
-        components.LegendComponent,
-        components.DataZoomComponent,
-        components.TitleComponent,
-        renderers.CanvasRenderer
-      ])
+      // 深路径按需引入（副作用自注册）：echarts package.json 的 sideEffects
+      // 白名单含 lib/chart|component/*.js，经 'echarts/charts' 等命名空间入口
+      // 时 webpack 拒绝摇树（全量 339KB gz）；深路径只触达按需面（实测 ≈189KB gz）。
+      // 图表组件库内 use(install) 自注册；CanvasRenderer 为显式导出 install，
+      // 需经 core.use 挂载。
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/chart/bar'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/chart/line'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/chart/pie'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/chart/scatter'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/component/grid'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/component/tooltip'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/component/legend'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/component/dataZoom'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/component/title'),
+      import(/* webpackChunkName: "echarts" */ 'echarts/lib/renderer/installCanvasRenderer')
+    ]).then(([core, , , , , , , , , , canvas]) => {
+      core.use(canvas.install)
       return core.init as ChartInitFn
     })
   }

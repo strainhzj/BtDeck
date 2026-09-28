@@ -15,6 +15,10 @@ export const statistics = {
     count: 'Count',
     sizeBytes: 'Size',
     torrentCount: 'Torrents',
+    name: 'Name',
+    offline: 'Offline',
+    byCount: 'By count',
+    bySize: 'By size',
     loadFailed: 'Failed to load statistics',
     refresh: 'Refresh'
   },
@@ -31,6 +35,8 @@ export const statistics = {
     paths: 'Directory usage',
     downloaders: 'Downloader comparison',
     liveSpeed: 'Live speed',
+    downloadSpeed: 'Download',
+    uploadSpeed: 'Upload',
     uncategorized: 'Uncategorized',
     removedDownloader: 'Removed',
     buckets: {
@@ -60,6 +66,7 @@ export const statistics = {
   seeding: {
     title: 'Seeding',
     ratioDist: 'Ratio distribution',
+    ratio: 'Ratio',
     slackers: 'Slackers quadrant',
     auxiliary: 'Cross-seed network',
     crossSeedRate: 'Cross-seed rate',
