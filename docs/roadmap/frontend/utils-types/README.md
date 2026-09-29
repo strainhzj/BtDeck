@@ -48,7 +48,7 @@
 - L33-60 `extractFromDetail`：处理 array(422)/对象 envelope/字符串/兜底四态
 - L100-135 `buildBusinessError` / `buildNetworkError` / `buildHttpError` 全部返回 `ApiError`（来自 `@/types/api`）
 
-### types/（8 个 .ts 文件）
+### types/（9 个 .ts 文件；✨2026-09-24 新增 reports.ts）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -60,6 +60,7 @@
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |
 | 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等 |
+| 统计报表类型 reports ✨2026-09-24 | `reports.ts` | statistics-reports W4：纯 JSON 契约（禁 echarts 类型 import）——overview/trends/seeding/trackers/fun/信封 + TrendsPeriod/SpeedRange 联合类型（单一来源，api/demo 复用） |
 
 ### constants/
 

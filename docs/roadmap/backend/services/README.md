@@ -14,6 +14,7 @@
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
+| 统计报表 reports ✨2026-09-25 | `report_service.py` | 扁平单文件分区（常量/overview/trends/seeding/tracker_stats/fun/speed）：五桶错误桶优先（复用 torrent_stats_cache 模块级常量）、勋章半开区间、host 去端口、B9 速度历史拼接（24h 纯 raw；7d/30d hourly 主体+raw 尾段，online_count=0 小时 avg=0 携带 sampleCount/onlineCount）、裸 text() DATETIME 经 _as_dt 解析（statistics-reports W3） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
 | 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志）；✨2026-09-08（MCP W3-③，随 dev1.0.7 合入）：`TorrentAddResult` 扩领域字段 （info_hash/info_id/name/downloader_nickname/created + db_torrent_created 追踪与末尾回填，HTTP 端点零影响），add 家族辅助迁至 `torrent_add_helpers.py`（本服务 import 同步改向） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |

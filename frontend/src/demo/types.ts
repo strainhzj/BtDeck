@@ -509,3 +509,8 @@ export const DEMO_DISABLED_CAPABILITIES = [
   '真实文件系统扫描、上传、备份导入与物理删除',
   '真实 Cron/脚本执行和外部导出副作用'
 ] as const
+
+// 统计报表契约复用（statistics-reports W7，PLANS/statistics-reports.md §4.4：
+// demo 从 @/types/reports 复用纯 JSON 契约；@/ 别名 jest/tsconfig/webpack 三处齐备，
+// demo 引入后间接触达该模块属预期）
+export * from '@/types/reports'

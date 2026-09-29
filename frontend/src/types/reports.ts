@@ -8,6 +8,12 @@
 
 // ==================== 公共 ====================
 
+/** 趋势分桶周期（B6） */
+export type TrendsPeriod = 'month' | 'week'
+
+/** 速度历史窗口（B9） */
+export type SpeedRange = '24h' | '7d' | '30d'
+
 export interface SizeCountItem {
   count: number
   sizeBytes: number
@@ -102,7 +108,7 @@ export interface SpeedSeries {
 }
 
 export interface SpeedHistory {
-  range: '24h' | '7d' | '30d'
+  range: SpeedRange
   series: SpeedSeries[]
   samplingActive: boolean
   firstSampleAt: string | null

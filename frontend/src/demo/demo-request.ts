@@ -384,6 +384,29 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
     return success<DemoDashboardData>(demoStore.getDashboardData())
   }
 
+  // 统计报表（statistics-reports W7）：7 个 GET 分支，query 经 readInput
+  if (path === '/reports/overview' && method === 'GET') return success(demoStore.getReportsOverview())
+  if (path === '/reports/trends' && method === 'GET') {
+    const period = asString(input.period, 'month') === 'week' ? 'week' : 'month'
+    const limit = Math.max(1, Math.min(48, asNumber(input.limit, 12)))
+    return success(demoStore.getReportsTrends(period, limit))
+  }
+  if (path === '/reports/seeding' && method === 'GET') return success(demoStore.getReportsSeeding())
+  if (path === '/reports/trackers' && method === 'GET') return success(demoStore.getReportsTrackers())
+  if (path === '/reports/fun/summary' && method === 'GET') return success(demoStore.getReportsFunSummary())
+  if (path === '/reports/fun/yearly' && method === 'GET') {
+    const currentYear = new Date().getFullYear()
+    // Demo 收敛域与 YearPicker 一致（2024–当前年）；后端为 400 校验，Demo 采取就近收敛
+    const year = Math.max(2024, Math.min(currentYear, asNumber(input.year, currentYear)))
+    return success(demoStore.getReportsFunYearly(year))
+  }
+  if (path === '/reports/speed/history' && method === 'GET') {
+    const raw = asString(input.range, '24h')
+    const range = raw === '7d' || raw === '30d' ? raw : '24h'
+    const downloaderId = asString(input.downloaderId, '') || undefined
+    return success(demoStore.getReportsSpeedHistory(range, downloaderId))
+  }
+
   if (path === '/downloader/getList') {
     const enabled = input.enabled === undefined ? undefined : asBoolean(input.enabled)
     return success(demoStore.listDownloaders({ enabled }).map(toDownloaderPayload))

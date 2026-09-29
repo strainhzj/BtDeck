@@ -14,11 +14,12 @@ import {
   ReportsSeedingData,
   ReportsTrackersData,
   ReportsTrendsData,
-  SpeedHistory
+  SpeedHistory,
+  SpeedRange,
+  TrendsPeriod
 } from '@/types/reports'
 
-export type TrendsPeriod = 'month' | 'week'
-export type SpeedRange = '24h' | '7d' | '30d'
+export type { SpeedRange, TrendsPeriod } from '@/types/reports'
 
 export const getReportsOverview = (): Promise<ReportsResponse<ReportsOverviewData>> =>
   request<ReportsResponse<ReportsOverviewData>>({

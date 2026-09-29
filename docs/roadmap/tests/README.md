@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（256 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（126 套，spec 文件 129 个：unit 114 + 组件内嵌 12 + e2e/mobile 3 实测（helpers/auth.ts 非 spec，旧记 4 已校正）；✨2026-09-23 UI 重构批新增 settings-tabs-layout.spec.ts；2026-09-22 W5 实测校准：api 76→79）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（263 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（132 套，spec 文件 135 个：✨2026-09-24/25 统计报表批 +6：EChart + 四页签 + fun-report + demo-request 扩展；全量 1899 例）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查

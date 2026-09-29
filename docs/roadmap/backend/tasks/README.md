@@ -32,6 +32,7 @@
 |--------|------|-----------|
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
 | 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
+| 速度采样 speed-sampler ✨2026-09-24 | `speed_sampler.py` | SpeedSamplerJob（statistics-reports W1）：60s 采样以 DB 有效清单为基准（缓存缺失/300s 剔除者记 online=0 零速行=断网采样；is_online 判定禁 fail_time）+ 5min hourly 聚合幂等（avg 分母=online_count）+ 每日清理（raw 14d/hourly 730d）；db_write_scope 单轮单 commit |
 | 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L16，fail_time 死代码的替代自愈机制） |
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance；`execute` L77 先要求 `path_mapping`，Android 不触发目录/映射读写 |
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知；Android 能力门禁直接跳过 |
