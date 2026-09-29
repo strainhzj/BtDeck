@@ -45,7 +45,7 @@
 | 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；成功后落库目标/源行）；`transfer_seed` L118 要求 `seed_transfer`，Android 主服务端不可用 |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
-| 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
+| 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化）；✨2026-09-24 统计报表 W2：`_TRACKER_CHANGE_FIELDS` 6→9 字段（+seeder/leecher/download 三列，存量 NULL→值即判变更一周期回填） |
 | Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
 | 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、task/resource 生命周期事件、worker pid/instance 标识、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |

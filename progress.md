@@ -8317,3 +8317,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - roadmap 13 文件同步（按 roadmap-maintain 技能：最小改动 + 计数实测）：根 README（功能域速查"统计报表 statistics reports"行 + 模块树 42 endpoints/35 revisions + 生成日期/本次新增双行前插）、backend api（42 文件+reports 端点行+路由注册表）/services（report_service）/tasks（speed_sampler）/infra（35 revision+head c9e0f1a2b3c4+两迁移行）/data-models（speed_sample）、frontend views（statistics 六页面+四组件）/api（17 模块+reports.ts）/utils-types（types 9 文件+reports.ts 行）/components-layout（EChart 封装含摇树根修记录+LucideIcon sprout/radar）/entry（router /statistics 组+onError 翻译键、permission 守卫）/demo（fixtures/request/store 三行）、tests（后端 263 test_*.py/前端 132 套 135 spec 1899 例全实测计数）。踩坑：views README 表格行无行尾闭合管道符致 python replace 静默未命中——改为按行前缀定位插入。
 - feature `statistics-reports-2026-09` 终态 done（W1-W7 七任务全 done + evidence）；PLANS/statistics-reports.md 归档至 PLANS/archive/ 并更新 PLANS/README 链接；session-handoff 收口。
 - 终局验证：前端全量 Jest 133 套 1899 例、typecheck/lint/build 净、echarts 199.3KB gz 不变、./init.sh exit=0（后端本批零改动，W3 提交后已全绿 5342 passed）。
+
+## 2026-09-25（续四）：roadmap 补漏二轮同步（statistics-reports 收尾，全绿已提交）
+
+- 用户要求完整同步 roadmap；对照 roadmap-maintain 技能核查 W7 首轮 13 文件后的遗漏面，本轮补齐 9 文件：
+  - **perspectives/test-coverage.md**：后端计数 236→263（2026-09-25 实测）+ 目录表刷新（api 85/tasks 25/core 29/downloader 6）+ "统计报表批新增后端测试"小节（test_speed_sampler 13/test_tracker_count_activation 13/test_reports_* 51 + 既有扩展六处）+ 前端 spec 注记更新；
+  - **backend**：domain（torrent_stats_cache 常量提升+PAUSED 扩 paused）、core（tracker_mapper 文档纠错+真机键集锚定）、services（sync_db_write 白名单 6→9 字段）、api（torrents_async 行补 W2 计数激活与 added_date 本地化全记录）、infra（lifecycle 行补采样循环注册）；
+  - **frontend**：views 详情表补三行（四页签/fun-report+components/statistics-page.scss）、entry（router 路由表段 L30-457 543 行）。
+- **漂移行号全量重测**（行号实测原则）：lifespan L262→L376（详情段 7 个行号锚全重测：init_config L403/migrate L413/init_db L436/... /yield L636）与速查表 L344→L376、finalize L304→L336；torrents_async L732→782/L982→1043/错误原因 L1437→1510/L3824→4029；router.ts 476→543 行；permission.ts 302 行/resolvePageTitle L301；demo 三文件（request 1147 行 L352、store 1029 行 L202、fixtures 1291 行 L1004）；domain lifecycle:404→541。
+- 根 README 元信息"本次新增"追加补漏二轮说明。

@@ -2,19 +2,19 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 236 个 test_*.py，2026-09-21 重测）
+## 后端测试分布（共 263 个 test_*.py，2026-09-25 重测）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 76 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归；双语 P2~P6b reasonCode 契约六批 |
+| `tests/api/` | 85 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归；双语 P2~P6b reasonCode 契约六批；✨2026-09-24/25 统计报表批 +9（reports_* 五套件/tracker_count_activation 等） |
 | `tests/services/` | 52 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 24 | `app/tasks/` | 🟡 部分覆盖；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
-| `tests/core/` | 28 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/tasks/` | 25 | `app/tasks/` | 🟡 部分覆盖；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归 |
+| `tests/core/` | 29 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
 | `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
 | `tests/auth/` | 6 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
-| `tests/downloader/` | 5 | `app/downloader/` | ⚠ 薄弱（5 对 9） |
+| `tests/downloader/` | 6 | `app/downloader/` | ⚠ 薄弱（5 对 9） |
 | `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 39，仅 `test_active_only_filter.py`） |
 | `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
@@ -22,9 +22,18 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **236** 个 test_*.py（2026-09-21 重测；2026-09-05 后新增双语 P2/P4/P5/P6/P6b/P6_tasks reasonCode 契约六批等）。
+> 合计：当前实测 **263** 个 test_*.py（2026-09-25 重测；2026-09-24/25 统计报表批 +9：test_speed_sampler / test_tracker_count_activation / test_reports_{overview,trends,seeding,trackers,fun} 及既有扩展）。
 
 > 注：`tests/api/`（76 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+
+### 2026-09-24/25 统计报表批新增后端测试（statistics-reports W1-W3）
+
+| 测试文件 | 例数 | 覆盖 |
+|---------|------|------|
+| `tests/tasks/test_speed_sampler.py` | 13 | SpeedSamplerJob：DB 基准对齐（缓存缺失/300s 剔除后断网记零）、is_online 判定不受 fail_time 残留影响、_ScopeSpy 单轮单 commit、聚合幂等（LEFT JOIN 排除 + INSERT OR IGNORE）、online_count=0→avg=0、清理 raw 14d/hourly 730d、节流、store 缺失 skip |
+| `tests/api/test_tracker_count_activation.py` | 13 | W2 决策 6/8：qB num_* 两处行构造 + -1→NULL、TR 三列 + isBackup 保留行置 NULL、主备切换回归（URL 不被 Step4 标 dr=1）、batch/add 两路 set_、白名单 NULL→值回填收敛、TR added_date 两路径 epoch 本地化（call_downloader_api patch 全量序惯例） |
+| `tests/api/test_reports_{overview,trends,seeding,trackers,fun}.py` | 51 | W3 七端点：五桶错误桶优先/回收站条件/目录根前缀/孤儿下载器标注/liveSpeed 快照/月周桶边界/B9 拼接缝含整点后样本排除/全离线小时 avg=0/ratio 半开区间/slackers TOP20 封顶/host 去端口/errorRate 排除 unknown/均值排除 NULL/勋章 1/10/50/200 断点两侧/火种 min 非 NULL/年度 NULL 排除/401/空库 |
+| 既有扩展：`tests/core/test_db_migration.py`（+表数 37×2/EXPECTED_HEAD/迁移②回填专项 2 例）、`tests/core/test_startup_migration_guard.py`（android 名单）、`tests/core/test_hash_lowercase_migration.py`（head 断言动态化）、`tests/services/test_sync_db_write.py`（白名单 9 字段契约）、`tests/downloader/test_torrent_stats_paused.py`（+paused 桶/常量互斥锁）、`tests/api/test_{progress_rounding_sync,torrents_async_info_budget}.py`（TR 桩 fields 适配） | — | 迁移链锚点与 W2 回归适配 |
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -159,7 +168,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（114 个 spec，实测 2026-09-23）
+### `frontend/tests/unit/`（实测 2026-09-25：统计报表批 EChart/四页签/fun-report/demo-request 扩展；总量见 ../tests/README.md 132 套 135 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|

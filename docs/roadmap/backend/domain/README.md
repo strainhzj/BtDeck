@@ -13,7 +13,7 @@
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
-| 统计缓存 stats-cache | `torrent_stats_cache.py` | `TorrentCacheEntry` / `TorrentStatsCache`：种子统计缓存 |
+| 统计缓存 stats-cache | `torrent_stats_cache.py` | `TorrentCacheEntry` / `TorrentStatsCache`：种子统计缓存；✨2026-09-24 统计报表 W2：DOWNLOADING/SEEDING/PAUSED_STATES 三集合提升模块级常量（报表五桶复用）+ PAUSED_STATES 扩 "paused"（TR stopped 映射后 DB 值，报表按 DB 值分桶前提） |
 | 下载器 ORM downloader-model | `models.py` | ORM：`BtDownloaders`（下载器表）+ `DownloaderStatus` 枚举 |
 | 异常体系 downloader-exception | `exceptions.py` | 下载器异常体系（`DownloaderSettingsError` + 7 子类） |
 | 下载器 VO downloader-vo | `responseVO.py` | 下载器响应 VO（`DownloaderSimpleVO`/`DownloaderResponse`/`DownloaderVO` 等） |
@@ -28,7 +28,7 @@
 - **后台轮询**：`periodic_check`(L1396)、`downloader_status_polling_task`(L1419)
 - **状态更新**：`update_torrent_stats_smart`(L1706)、`_get_qbittorrent_status`(L1918)、`_get_transmission_status`(L1970)
 
-被 `app/startup/lifecycle.py:404` 通过 `asyncio.create_task(startup_event(app))` 启动。
+被 `app/startup/lifecycle.py:541`（2026-09-25 重测）通过 `asyncio.create_task(startup_event(app))` 启动。
 
 ### torrents/ — 种子领域（9 个文件，含 `__init__.py`）
 

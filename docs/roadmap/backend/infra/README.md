@@ -22,21 +22,22 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L344)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L304) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控） |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L376)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L336) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控）；✨2026-09-24 统计报表 W1：注册 `run_speed_sampler_loop`（三处：loop 函数/创建 app.state/取消清理，android 守卫测试名单同步） |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程
 
-**启动阶段**（`lifespan` L262 起，行号实测）：
-- L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载；`init_config_file` 本体在 database.py L354，对已存在配置"缺失才补" secret_key/login_status_secret/jwt_secret_key，不轮换已有密钥）
-- L302-311：`migrate_database()`（任意运行模式迁移失败或未到 head 均终止）
-- L314-322：`init_db()`（初始数据）；L340：`await init_database_connection()`
-- L330-345：`await reconcile_orphan_file_state()`（幂等对账历史隔离候选）
-- L350-364：`recover_interrupted_orphan_scans()` 将残留 running 批次标记 failed
-- L377：`await update_cron_task_status()`；L388：`await cron_executor.start()`
-- L396-419：创建下载器、持久化孤儿清理和 queued 扫描恢复任务
+**启动阶段**（`lifespan` L376 起，行号 2026-09-25 重测——统计报表 W1 插入 run_speed_sampler_loop L124 等后整体偏移）：
+- L403-405：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载；`init_config_file` 本体在 database.py L354，对已存在配置"缺失才补" secret_key/login_status_secret/jwt_secret_key，不轮换已有密钥）
+- L413-420：`migrate_database()`（任意运行模式迁移失败或未到 head 均终止）
+- L436：`init_db()`（初始数据）；L458：`await init_database_connection()`
+- L466：`await reconcile_orphan_file_state()`（幂等对账历史隔离候选）
+- L500：`recover_interrupted_orphan_scans()` 将残留 running 批次标记 failed
+- L514：`await update_cron_task_status()`；L525：`await cron_executor.start()`
+- L536-566：创建下载器、持久化孤儿清理和 queued 扫描恢复、仪表盘统计与速度采样（`run_speed_sampler_loop` L563，statistics-reports W1）、版本检查等后台任务
+- L613：`run_process_memory_loop`（SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）
 
-**关闭阶段**（`yield` 之后 L464 起）：取消恢复任务，关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
+**关闭阶段**（`yield` L636 之后起）：取消恢复任务与各后台循环（含速度采样），关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
 
 ### migrations/ — 应用层数据迁移（3 个文件）
 
