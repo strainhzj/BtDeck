@@ -497,6 +497,7 @@ export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/statistics/trends', title: '统计趋势', category: 'readonly', summary: '新增/完成趋势、库龄与速度曲线静态展示' },
   { path: '/statistics/seeding', title: '做种报表', category: 'readonly', summary: '分享率分布、摸鱼象限与辅种网络静态展示' },
   { path: '/statistics/trackers', title: 'Tracker 报表', category: 'readonly', summary: '站点构成、健康榜与冷热静态展示' },
+  { path: '/statistics/fun-report', title: '趣味报告', category: 'readonly', summary: '战报与年度报告翻页流静态演示' },
   { path: '/login', title: '桌面登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' },
   { path: '/m/login', title: '移动登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' }
 ]

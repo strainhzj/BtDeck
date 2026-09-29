@@ -4,6 +4,7 @@ import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
 import MobileLayout from '@/layout/mobile/index.vue'
 import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
+import { translate } from '@/i18n'
 
 Vue.use(Router)
 
@@ -425,6 +426,16 @@ const router = new Router({
             titleKey: 'navigation.routes.statisticsTrackers',
             icon: 'radar'
           }
+        },
+        {
+          // 趣味报告沉浸页（W6：根元素即覆盖层，状态走 route query 持久化）
+          path: 'fun-report',
+          component: () => import(/* webpackChunkName: "statistics-fun-report" */ '@/views/statistics/fun-report/index.vue'),
+          meta: {
+            title: '趣味报告',
+            titleKey: 'navigation.routes.statisticsFunReport',
+            icon: 'sparkles'
+          }
         }
       ]
     },
@@ -522,7 +533,7 @@ router.onError((error: Error) => {
   const outcome = recoverFromChunkLoadError(error)
   if (outcome === 'suppressed') {
     Message.error({
-      message: '页面资源加载失败，请手动刷新后重试',
+      message: translate('errors.chunkLoadFailed'),
       duration: 6000,
       showClose: true
     })

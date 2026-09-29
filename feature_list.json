@@ -7092,14 +7092,14 @@
           "id": "statistics-reports-w6",
           "name": "W6 趣味报告",
           "description": "el-drawer btt vs fixed 对比实测定稿 + fun-report 沉浸翻页流（决策 10：z-index 1200、根元素即覆盖层、route query 状态持久化）+ FunSlide/YearPicker + 测试（翻页/子模式/年份/query 恢复/z-index 断言）。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/statistics/fun-report/index.vue",
             "frontend/src/views/statistics/components/FunSlide.vue",
             "frontend/src/views/statistics/components/YearPicker.vue"
           ],
-          "evidence": ""
+          "evidence": "开工前对比实测定稿：el-drawer btt 100% 因 Element PopupManager 自动 z≥2000 压 Element 弹层（违决策 10 <2001 约束）弃用，采用 fixed 根元素方案。fun-report/index.vue：根元素即覆盖层（fixed+z-index 1200，禁外包 wrapper）、状态走 route query（?mode=&year=&slide= 持久化，重挂载恢复进度）、子模式战报（24 火种 TOP10/25 勋章档位+换算+下一档差距/27 白嫖慈善双榜）+ 年度报告（YearPicker 2024-当前 + FunSlide 8 卡翻页流：开场/年添加/最忙月日/站点/元老/火种/上传估算/结尾；键盘←→+按钮翻页边界禁用；过渡仅作用卡片层不动根 fixed）。fun-report 路由（sparkles）+ DEMO_ROUTE_MATRIX +1 行随批合入。**遗留审计暴露预存债**：i18n-leftover-guard 提取器行内 /* */ 块注释处理 bug——行含 /* 即置块注释态等下一行 */，router.ts 最后一个懒加载 import 后的文件尾被静默跳过（onError 中文 toast 漏拦）；本批新增 fun-report import 恰好治愈状态暴露之。修复：提取器先剔同行闭合形态仅未闭合才进入块注释态 + router.onError 文案走翻译键 errors.chunkLoadFailed（zh/en 成对，按守卫政策不加白名单）。i18n 补键（close/prev/next/slideOf/ending/nextTier + yearly.opening 双侧成对；opening 初版层级错位由leftover-guard 键可达性门禁拦截后归位）。测试：fun-report.spec 11 例（根元素即覆盖层/源码契约钉 z-index 1200 （vue-jest 不注入 SFC 样式故走源文本契约）/query 恢复含非法参数兜底/翻页边界+键盘/子模式与年份写回 query/关闭返回/空态）；全量 Jest 132 套 1892 例；typecheck/lint/build 净；echarts 维持 199.3KB gz；./init.sh exit=0"
         },
         {
           "id": "statistics-reports-w7",

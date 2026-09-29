@@ -88,6 +88,12 @@ export const statistics = {
     title: 'Fun report',
     battleReport: 'Battle report',
     yearlyReport: 'Yearly report',
+    close: 'Close',
+    prev: 'Previous',
+    next: 'Next',
+    slideOf: 'Slide {i} / {n}',
+    ending: 'Thanks for seeding — see you next year',
+    nextTier: '{gap} TB to next tier ({tier})',
     guardian: 'Fire keeper',
     fireCount: 'Fire-seed torrents',
     badges: 'Upload medals',
@@ -106,6 +112,7 @@ export const statistics = {
       tvSeasons: 'About {n} TV seasons'
     },
     yearly: {
+      opening: '{year} Library Yearly Report',
       yearAdded: '{count} torrents added this year, {size} in total',
       busiestMonth: 'Busiest month: {key} ({count} added)',
       busiestDay: 'Busiest day: {key} ({count} added)',

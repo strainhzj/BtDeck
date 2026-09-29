@@ -30,6 +30,8 @@ export const errors = {
     checkSettings: '网络连接失败，请检查网络设置',
     generic: '网络错误'
   },
+  /** 懒加载 chunk 失效（router.onError → deployment-recovery 兑底；statistics-reports W6 遗留审计暴露补译） */
+  chunkLoadFailed: '页面资源加载失败，请手动刷新后重试',
   /** HTTP 状态码兜底（formatters.extractErrorMessage，遗留补译） */
   http: {
     '400': '请求参数错误',

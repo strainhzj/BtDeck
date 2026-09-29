@@ -20,7 +20,8 @@
 - ~~W3 报表服务与端点~~ ✅ 2026-09-24 完成（report_service.py + reports.py 七端点 + 51 例测试，全量 5342 passed，见 progress.md 续篇；W3 成果待提交或随下批提交）。
 - ~~W4 前端基建~~ ✅ 2026-09-25 完成（echarts 5.5.1 精确钉版 + EChart.vue 封装 + types/api 契约 + i18n 双语包 + jest 豁免 + LucideIcon sprout/radar；前端 127 套 1863 例 + build/typecheck/lint 净；体积探针 gz 188.7KB）。
 - ~~W5 四页签~~ ✅ 2026-09-25 完成（四页 + StatCard/CaliberNotes + 路由/守卫/demo-matrix 合批提交；echarts 深路径修复后 chunk gz 199.3KB 达标；前端 131 套 1881 例）。
-- W6 趣味报告（el-drawer btt vs fixed 对比实测定稿 + fun-report 沉浸翻页流 + FunSlide/YearPicker + fun-report 路由与 demo 行 + query 恢复/z-index 断言）；W7 demo 四件套 + 收口。
+- ~~W6 趣味报告~~ ✅ 2026-09-25 完成（fixed 方案定稿 + 翻页流 + query 持久化 + 遗留审计提取器修复与 router.onError 补译；前端 132 套 1892 例）。
+- W7 demo 四件套（fixtures/demo-request /reports/* 分支/demo-store getter/DEMO_ROUTE_MATRIX 已含 5 行）+ 全量验证 + roadmap/文档同步 + feature 终态收口。
 - 未推送。
 
 ## 2026-09-24 交接：双语语义对齐修复（补丁待写回）
