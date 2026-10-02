@@ -14,10 +14,14 @@ from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
 from app.tasks.scheduler.speed_sampler import SpeedSamplerJob
 
+logger = logging.getLogger(__name__)
+
 
 async def run_wal_snapshot_loop(app: FastAPI) -> None:
     """周期性只读 WAL 快照（W4-1 第二部分）。
 
+    - v1.0.8 任务2.5：仅 SQLite 方言启动（WAL/-wal 文件为 SQLite 专属概念；
+      PG 无对应物，跳过循环避免无文件误报，契约 §2）；
     - 每 SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS 秒经 snapshot_wal_stats 读取
       -wal 文件字节数，发射 EVENT_WAL_SNAPSHOT（wal_bytes / wal_growth_bytes /
       busy_count / checkpoint_busy）。
@@ -31,6 +35,12 @@ async def run_wal_snapshot_loop(app: FastAPI) -> None:
     - 间隔配置 <=0 时由调用方决定不启动本循环。
     """
     from app.services.sync_observability import EVENT_WAL_SNAPSHOT, log_event, snapshot_wal_stats
+
+    from app.database import DIALECT
+
+    if DIALECT != "sqlite":
+        logger.info("非 SQLite 方言，跳过 WAL 快照观测循环（v1.0.8 任务2.5）")
+        return
 
     interval = float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS)
     last_wal_bytes = 0

@@ -2,7 +2,16 @@ from typing import Any, Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DATETIME, Float, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+)  # v1.0.8：DATETIME→DateTime（大写 DATETIME 在 PG 渲染为字面类型，SQLite 渲染两者同为 DATETIME 零变化）
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import logging
@@ -32,8 +41,8 @@ class TorrentInfo(Base):
         server_default="1",
         comment="辅种数量",
     )
-    added_date: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="添加时间")
-    completed_date: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="完成时间")
+    added_date: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="添加时间")
+    completed_date: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="完成时间")
     ratio: Mapped[Optional[float]] = mapped_column(Float, index=True, comment="比率（数值列，避免 String 字典序 bug）")
     ratio_limit: Mapped[Optional[float]] = mapped_column(
         Float,
@@ -45,12 +54,12 @@ class TorrentInfo(Base):
     category: Mapped[Optional[str]] = mapped_column(String, index=True, comment="分类")
     super_seeding: Mapped[Optional[str]] = mapped_column(String, index=True, comment="超级做种模式")
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, comment="是否停用")
-    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="创建时间")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="创建时间")
     create_by: Mapped[Optional[str]] = mapped_column(String, comment="创建人")
-    update_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="更新时间")
+    update_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="更新时间")
     update_by: Mapped[Optional[str]] = mapped_column(String, comment="更新人")
     dr: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DATETIME, nullable=True, comment="删除时间（等级3回收站）")
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="删除时间（等级3回收站）")
     original_filename: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, comment="原始文件名（等级3还原用）"
     )
@@ -65,20 +74,27 @@ class TorrentInfo(Base):
     )
 
     # 唯一约束：防止同一下载器中出现相同的 hash（仅限未删除记录）
+    # 双方言（v1.0.8 任务1.3，契约 §3）：sqlite_where/postgresql_where 并存，各自方言建 partial unique index；
+    # SQLite 生产 schema 由迁移链负责（此处声明供 autogenerate 对拍），PG 由 squash 基线 create_all 消费
     __table_args__ = (
-        Index("idx_torrent_hash_unique", "hash", "downloader_id", unique=True, sqlite_where=dr == 0),
+        Index(
+            "idx_torrent_hash_unique",
+            "hash",
+            "downloader_id",
+            unique=True,
+            sqlite_where=dr == 0,
+            postgresql_where=dr == 0,
+        ),
+        # 双方言中立形式（v1.0.8 任务1.3）：SQLite typeof() 守卫（防 TEXT 残留，
+        # 见迁移 8f4c2d1a9b7e）仅保留在迁移链中——SQLite 生产 schema 由链负责；
+        # ORM 携带数值边界形式供 PG 基线 create_all 消费（PG 列类型本身拒非数值）。
+        # 契约 §6 允许差异登记表第 5 条。
         CheckConstraint(
-            "ratio IS NULL OR ("
-            "typeof(ratio) IN ('integer', 'real') AND ratio >= 0 "
-            "AND ratio <= 1.7976931348623157e308"
-            ")",
+            "ratio IS NULL OR (ratio >= 0 AND ratio <= 1.7976931348623157e308)",
             name="ck_torrent_info_ratio_finite_nonnegative",
         ),
         CheckConstraint(
-            "ratio_limit IS NULL OR ("
-            "typeof(ratio_limit) IN ('integer', 'real') AND ratio_limit >= 0 "
-            "AND ratio_limit <= 1.7976931348623157e308"
-            ")",
+            "ratio_limit IS NULL OR (ratio_limit >= 0 AND ratio_limit <= 1.7976931348623157e308)",
             name="ck_torrent_info_ratio_limit_finite_nonnegative",
         ),
     )
@@ -275,16 +291,24 @@ class TrackerInfo(Base):
     seeder_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="做种者数量")
     leecher_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="下载者数量")
     download_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="下载完成次数")
-    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="创建时间")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="创建时间")
     create_by: Mapped[Optional[str]] = mapped_column(String, comment="创建人")
-    update_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="更新时间")
+    update_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="更新时间")
     update_by: Mapped[Optional[str]] = mapped_column(String, comment="更新人")
     dr: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
     version: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="乐观锁版本号")
 
     # 唯一约束：防止同一种子的相同tracker重复（仅限未删除记录）
+    # 双方言（v1.0.8 任务1.3）：双 where 声明，语义同 idx_torrent_hash_unique
     __table_args__ = (
-        Index("idx_tracker_unique_url", "torrent_info_id", "tracker_url", unique=True, sqlite_where=dr == 0),
+        Index(
+            "idx_tracker_unique_url",
+            "torrent_info_id",
+            "tracker_url",
+            unique=True,
+            sqlite_where=dr == 0,
+            postgresql_where=dr == 0,
+        ),
     )
 
     def to_dict(self):
@@ -334,8 +358,8 @@ class TrackerKeywordConfig(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否启用")
     category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="分类标识")
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="关键词说明")
-    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
-    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    create_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="更新时间")
     create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="创建人")
     update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="更新人")
     dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
@@ -412,8 +436,8 @@ class TrackerMessageLog(Base):
         String(500), nullable=False, index=True, comment="tracker主机地址（用于去重）"
     )
     msg: Mapped[str] = mapped_column(String(2048), nullable=False, comment="tracker返回的消息（用于去重）")
-    first_seen: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="首次出现时间")
-    last_seen: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="最后出现时间")
+    first_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="首次出现时间")
+    last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="最后出现时间")
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="出现次数")
     sample_torrents: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="示例种子列表(JSON)")
     sample_urls: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="示例tracker URL列表(JSON)")
@@ -423,8 +447,8 @@ class TrackerMessageLog(Base):
     keyword_type: Mapped[Optional[str]] = mapped_column(
         String(20), nullable=True, comment="添加到哪个池: success/failure"
     )
-    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
-    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    create_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="更新时间")
     create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="system", comment="创建人")
     update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="system", comment="更新人")
 
@@ -500,9 +524,9 @@ class TrackerReannounceConfig(Base):
     domain_display_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="域名显示名称")
     interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, comment="汇报间隔（分钟）")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否启用")
-    last_announce_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, nullable=True, comment="最后一次汇报时间")
-    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
-    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    last_announce_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="最后一次汇报时间")
+    create_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="更新时间")
     create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="创建人")
     update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="更新人")
     dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")

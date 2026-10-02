@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import ColumnElement, and_, or_, not_, desc, asc, func, exists, literal, case
 from sqlalchemy.exc import OperationalError
 
+from app.database import DIALECT
+from app.core.dialect_sql import ci_contains, ci_endswith, ci_startswith, regex_match_expr
 from app.core.json_parser import safe_json_parse
 
 from app.torrents.models import TorrentInfo, TrackerInfo
@@ -77,16 +79,20 @@ NEGATED_OPERATORS = {
 
 
 def _literal_contains(column, value: Any) -> ColumnElement[bool]:
-    """Build a literal substring match; ``%`` and ``_`` are user text, not wildcards."""
-    return column.contains(value, autoescape=True) if isinstance(value, str) else column == value
+    """Build a literal substring match; ``%`` and ``_`` are user text, not wildcards.
+
+    v1.0.8 任务2.4：经方言分发单点——SQLite 原生 contains（ASCII-only 折叠，
+    零变化）；PG 双侧 A–Z 折叠 + LIKE（构造性 locale 无关，契约 §4.1）。
+    """
+    return ci_contains(column, value) if isinstance(value, str) else column == value
 
 
 def _literal_starts_with(column, value: Any) -> ColumnElement[bool]:
-    return column.startswith(value, autoescape=True) if isinstance(value, str) else column == value
+    return ci_startswith(column, value) if isinstance(value, str) else column == value
 
 
 def _literal_ends_with(column, value: Any) -> ColumnElement[bool]:
-    return column.endswith(value, autoescape=True) if isinstance(value, str) else column == value
+    return ci_endswith(column, value) if isinstance(value, str) else column == value
 
 
 def _tag_token_filter(column, value: Any) -> ColumnElement[bool]:
@@ -98,7 +104,7 @@ def _tag_token_filter(column, value: Any) -> ColumnElement[bool]:
     # without touching spaces inside an actual tag name.
     for _ in range(2):
         normalized = func.replace(func.replace(normalized, ", ", ","), " ,", ",")
-    return (literal(",") + normalized + literal(",")).contains(f",{token},", autoescape=True)
+    return ci_contains(literal(",") + normalized + literal(","), f",{token},")
 
 
 class SearchQueryBuilder:
@@ -581,9 +587,10 @@ class SearchQueryBuilder:
 
         if not pattern:
             raise ValueError("regex pattern must not be empty")
+        # v1.0.8 任务2.1：谓词经方言分发（SQLite bt_regexp 零变化 / PG 原生 ~ 与 ~*）
         return and_(
             column.is_not(None),
-            func.bt_regexp(pattern, column, int(bool(case_sensitive))) == 1,
+            regex_match_expr(column, pattern, case_sensitive=bool(case_sensitive)),
         )
 
     def _build_date_window_filter(self, column, operator: str, value: Any) -> ColumnElement[bool]:
@@ -1063,11 +1070,29 @@ class AdvancedSearchService:
                 for condition in group.conditions
             )
             consume_regex_runtime_error()
-            query_scope = regex_query_budget(self.db) if has_regex else nullcontext()
+            # v1.0.8 任务2.1：查询预算双方言分发——
+            # SQLite：progress handler 墙钟预算（历史行为零变化）；
+            # PG：请求级 deadline，每条 SQL 前 SET LOCAL statement_timeout=剩余预算，
+            # 剩余 ≤0 直接终止不发 SQL（契约 §4.2，禁写 0 值）
+            pg_budget = None
+            if has_regex:
+                if DIALECT == "sqlite":
+                    query_scope = regex_query_budget(self.db)
+                else:
+                    from app.services.pg_search_runtime import PgRegexBudget
+
+                    query_scope = nullcontext()
+                    pg_budget = PgRegexBudget(self.db)
+            else:
+                query_scope = nullcontext()
             with query_scope:
+                if pg_budget is not None:
+                    pg_budget.arm()
                 # 获取总数（在排序和分页之前）
                 total = self.query_builder.count()
                 logger.info(f"[高级搜索] 查询总数: {total}")
+                if pg_budget is not None:
+                    pg_budget.arm()  # checkpoint：count 消耗后的剩余预算
 
                 # 应用排序和分页
                 self.query_builder.apply_sorting(request.sort_by, request.sort_order)
@@ -1101,6 +1126,17 @@ class AdvancedSearchService:
             }
 
         except OperationalError as e:
+            # v1.0.8 任务2.1：PG statement_timeout 取消（asyncpg QueryCanceled 57014）
+            # → 事务已 abort，显式 rollback 后映射为查询超时（契约 §4.2 错误映射）
+            from app.services.pg_search_runtime import is_query_cancelled_error
+
+            if is_query_cancelled_error(e):
+                logger.warning("高级搜索正则执行被 PG statement_timeout 取消: user=%s", user_id)
+                try:
+                    self.db.rollback()
+                except Exception:  # noqa: BLE001 - 回滚失败不掩盖原错误
+                    logger.warning("PG 查询超时后回滚失败", exc_info=True)
+                raise RegexSearchTimeout("regular expression search exceeded its execution budget") from e
             runtime_error = consume_regex_runtime_error()
             if runtime_error:
                 logger.warning(

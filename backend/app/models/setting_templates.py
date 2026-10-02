@@ -8,7 +8,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Index, Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import enum
@@ -177,7 +177,7 @@ class SettingTemplate(Base):
     # 系统预设稳定身份键（如 qb_standard）；用户自定义模板恒为 NULL。
     # 展示层按 key 取本地化名称/描述，不改用户可见的存储值（Q02）。
     preset_key: Mapped[Optional[str]] = mapped_column(
-        String(64), nullable=True, index=True, comment="系统预设稳定身份键（用户模板为 NULL）"
+        String(64), nullable=True, comment="系统预设稳定身份键（用户模板为 NULL）"
     )
 
     # 下载器类型（使用Integer存储枚举值）
@@ -219,7 +219,11 @@ class SettingTemplate(Base):
     # creator = relationship("User", back_populates="templates")
 
     # 唯一约束
-    __table_args__ = (UniqueConstraint("name", name="uq_setting_templates_name"),)
+    # v1.0.8 任务3.4 对拍归位：preset_key 显式索引名对齐链 d1e2f3a4b5c6（idx_* 前缀）
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_setting_templates_name"),
+        Index("idx_setting_templates_preset_key", "preset_key"),
+    )
 
     def __init__(
         self,

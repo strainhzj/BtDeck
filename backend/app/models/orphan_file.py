@@ -270,11 +270,23 @@ class OrphanCurrentCandidate(Base):
     """
 
     __tablename__ = "orphan_current_candidate"
+    # v1.0.8 任务3.4 对拍归位：ix_orphan_current_candidate_status（链 b075727f7182）
+    # 与 ix_orphan_candidate_current_detail_status（链 d4e5f6a7b8c9 覆盖索引）
+    # 此前未注册 metadata，PG 基线会漏建
     __table_args__ = (
         UniqueConstraint("downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"),
         Index(
+            "ix_orphan_current_candidate_status",
+            "status",
+        ),
+        Index(
             "ix_orphan_candidate_last_scan_status",
             "last_seen_scan_id",
+            "status",
+        ),
+        Index(
+            "ix_orphan_candidate_current_detail_status",
+            "current_detail_id",
             "status",
         ),
         Index(

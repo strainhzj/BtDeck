@@ -8,58 +8,11 @@ if getattr(sys, "_MEIPASS", None):
 
 from app.database import Base
 
-# 导入所有模型以确保 Alembic autogenerate 能检测到所有表
-# 认证与权限
-from app.auth.models import User, LoginLog, Config, RefreshToken
+# 模型集中注册（v1.0.8 任务1.6）：单一注册点，与 PG 基线共用（契约 §3 规则 2）；
+# 原散布在本文件的逐个 import 归位 app/core/model_registry.py
+from app.core.model_registry import register_all_models
 
-# 下载器管理
-from app.downloader.models import BtDownloaders
-from app.models.downloader_capabilities import DownloaderCapabilities
-from app.models.downloader_settings import DownloaderSetting
-from app.models.downloader_path_maintenance import DownloaderPathMaintenance
-from app.models.setting_templates import SettingTemplate
-from app.models.speed_schedule_rules import SpeedScheduleRule
-
-# 种子管理
-from app.torrents.models import (
-    TorrentInfo,
-    TrackerInfo,
-    TrackerKeywordConfig,
-    TrackerMessageLog,
-    TrackerReannounceConfig,
-)
-from app.models.torrent_tags import TorrentTag, TorrentTagRelation
-from app.models.torrent_deletion_audit_log import TorrentDeletionAuditLog
-from app.models.torrent_file_backup import TorrentFileBackup
-from app.models.seed_transfer_audit_log import SeedTransferAuditLog
-
-# 任务调度
-from app.tasks.models import TaskLogs
-from app.tasks.cron_models import CronTask
-from app.torrents.audit_models import TorrentAuditLog
-
-# 通知中心
-from app.models.notification import Notification
-
-# 搜索模板（第四轨归位，原由原生 SQL 自建）
-from app.models.search_template import SearchTemplate
-
-# 孤儿文件管理
-from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate, OrphanOperationLease
-from app.models.orphan_purge_job import OrphanPurgeJob
-
-# 同步检查点（W3-2 持久化续跑）
-from app.models.sync_checkpoint import SyncCheckpoint
-
-# MoviePilot 集成（整理历史镜像 + 实例注册）
-from app.models.moviepilot_instance import MoviePilotInstance
-from app.models.moviepilot_transfer_history import MoviePilotTransferHistory
-
-# RSS 订阅（feature rss-subscription-2026-09-24）
-from app.models.rss_subscription import RssFeed, RssArticle
-
-# 速度采样（统计报表 W1）
-from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+register_all_models()
 
 from logging.config import fileConfig
 
@@ -80,10 +33,18 @@ config = context.config
 try:
     from app.core.config import settings
 
-    db_path = settings.DATABASE_PATH
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    if settings.DATABASE_DIALECT == "postgresql":
+        # v1.0.8 双数据库（契约 §2.1）：PG 走 URL.create 结构化构造（psycopg2 同步驱动）；
+        # set_main_option 经 configparser，值中 % 需双写转义
+        from app.database import build_database_url
+
+        _url = build_database_url()
+        config.set_main_option("sqlalchemy.url", _url.replace("%", "%%"))
+    else:
+        db_path = settings.DATABASE_PATH
+        config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 except Exception:
-    # 应用配置加载失败时的兜底（如 alembic 独立命令行调用）
+    # 应用配置加载失败时的兑底（如 alembic 独立命令行调用；仅 SQLite 路径）
     default_db = Path(__file__).parent.parent / "config" / "app.db"
     config.set_main_option("sqlalchemy.url", f"sqlite:///{default_db}")
 
@@ -135,21 +96,35 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
+    优先复用 ``config.attributes["connection"]``（共享连接）——
+    PG 基线初始化用它在同一事务内完成 create_all + stamp（契约 §3 规则 3，
+    Alembic Cookbook 连接共享方式）；无共享连接时按原路径新建引擎，
+    并执行 PG 空库手工升级守卫。
 
     """
-    connectable = engine_from_config(
+    connectable = config.attributes.get("connection", None)
+    if connectable is not None:
+        _run_migrations_with_connection(connectable)
+        return
+
+    engine = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    with engine.connect() as connection:
+        # 守卫逻辑提取至 pg_baseline（任务3.1 可单测化）；基线豁免标记透传
+        from app.core.pg_baseline import guard_manual_upgrade_on_empty_db
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        guard_manual_upgrade_on_empty_db(connection, baseline_flag=bool(config.attributes.get("btdeck_baseline_stamp")))
+        _run_migrations_with_connection(connection)
 
-        with context.begin_transaction():
-            context.run_migrations()
+
+def _run_migrations_with_connection(connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 if context.is_offline_mode():

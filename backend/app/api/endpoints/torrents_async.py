@@ -26,11 +26,11 @@ from typing import Dict, Any, Optional, List, Callable, Awaitable
 from sqlalchemy.exc import OperationalError
 
 from sqlalchemy import select, update, exists
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.dialect_sql import dialect_insert
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
 from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
@@ -914,7 +914,6 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
         stats dict：{insert, update, skip, removed}。
     """
     from sqlalchemy import delete, tuple_, text as sa_text
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
     from sqlalchemy import exists as sa_exists
     from app.services.sync_db_write import has_tracker_changes
     from app.tasks.resource_guard import admission_controller
@@ -998,7 +997,7 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
 
         # === Step 3: 批量 upsert（仅变更检测后的行）===
         if rows_to_upsert:
-            stmt = sqlite_insert(trackerInfoModel).values(rows_to_upsert)
+            stmt = dialect_insert(trackerInfoModel).values(rows_to_upsert)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["torrent_info_id", "tracker_url"],
                 index_where=sa_text("dr = 0"),
@@ -1219,7 +1218,7 @@ async def sync_add_tracker_async(
             # 使用 index_where 参数指定部分索引的WHERE条件（SQLAlchemy 2.0语法）
             from sqlalchemy import text as sa_text
 
-            stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
+            stmt = dialect_insert(trackerInfoModel).values(tracker_rows)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["torrent_info_id", "tracker_url"],
                 index_where=sa_text("dr = 0"),  # 指定部分索引的WHERE条件

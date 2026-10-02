@@ -273,7 +273,7 @@ async def replace_tracker(
 
     # 作废所有旧数据
     await db.execute(
-        text("update tracker_info set update_time=datetime('now'),dr=1 where tracker_url = :tracker_url and dr = 0"),
+        text("update tracker_info set update_time=CURRENT_TIMESTAMP,dr=1 where tracker_url = :tracker_url and dr = 0"),
         {"tracker_url": replace_tracker_url},
     )
     torrent_info_id_list = []
@@ -873,7 +873,7 @@ async def qb_change_torrents_tracker(db, downloader_vo, todo_tracker_list, torre
     # 逻辑删除旧tracker数据
     await db.execute(
         text(
-            "update tracker_info set update_time=datetime('now'),dr=1 where torrent_info_id in (select info_id from torrent_info where torrent_id=:torrent_id and downloader_id=:downloader_id);"
+            "update tracker_info set update_time=CURRENT_TIMESTAMP,dr=1 where torrent_info_id in (select info_id from torrent_info where torrent_id=:torrent_id and downloader_id=:downloader_id);"
         ),
         {"torrent_id": torrent.hash, "downloader_id": downloader_id},
     )
@@ -970,7 +970,7 @@ async def tr_change_torrents_tracker(db, downloader_vo, todo_tracker_list, torre
     # 逻辑删除旧tracker数据
     await db.execute(
         text(
-            "update tracker_info set update_time=datetime('now'),dr=1 where torrent_info_id in (select info_id from torrent_info where torrent_id=:torrent_id and downloader_id=:downloader_id);"
+            "update tracker_info set update_time=CURRENT_TIMESTAMP,dr=1 where torrent_info_id in (select info_id from torrent_info where torrent_id=:torrent_id and downloader_id=:downloader_id);"
         ),
         {"torrent_id": torrent_info.id, "downloader_id": downloader_id},
     )
@@ -1394,7 +1394,8 @@ async def cleanup_polluted_trackers(
                     for i in range(0, len(cleaned_ids), 500):
                         await db.execute(
                             text(
-                                "update tracker_info set update_time=datetime('now'), dr=1 " "where tracker_id in :ids"
+                                "update tracker_info set update_time=CURRENT_TIMESTAMP, dr=1 "
+                                "where tracker_id in :ids"
                             ).bindparams(bindparam("ids", expanding=True)),
                             {"ids": cleaned_ids[i : i + 500]},
                         )

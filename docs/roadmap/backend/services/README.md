@@ -48,6 +48,7 @@
 | 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；成功后落库目标/源行）；`transfer_seed` L118 要求 `seed_transfer`，Android 主服务端不可用 |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
+| PG 搜索运行时 pg-search ✨v1.0.8 | `pg_search_runtime.py` | PG 侧正则查询预算：请求级 deadline + 每条 SQL 前 `SET LOCAL statement_timeout=剩余预算`（≤0 直接终止禁写 0 值）+ QueryCanceled 取消识别；与 sqlite_search_runtime 对称（P2 任务2.1） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化）；✨2026-09-25 统计报表 W2：upsert set_×2（batch sync_trackers_batch_async + add 路径）补 seeder_count/leecher_count/download_count excluded 列、existing_map select 扩三列，`_TRACKER_CHANGE_FIELDS` 白名单 6→9 字段（存量 NULL→值即判变更，一周期回填 tracker 群体计数） |
 | Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
 | 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、task/resource 生命周期事件、worker pid/instance 标识、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |

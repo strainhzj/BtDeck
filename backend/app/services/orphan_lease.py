@@ -107,7 +107,7 @@ async def acquire_lease(
 ) -> bool:
     """原子获取跨进程 lease。
 
-    策略（SQLite 友好，避免 ON CONFLICT 方言差异）：
+    策略（v1.0.8 任务2.3：ON CONFLICT DO NOTHING 双方言通用，替换 SQLite 专属 INSERT OR IGNORE）：
     1. 查询 lease 是否存在
     2. 不存在 → INSERT（成功=True）
     3. 存在但已过期 → UPDATE 覆盖（成功=True）
@@ -130,9 +130,10 @@ async def acquire_lease(
     async with _get_db(db) as session:
         inserted = await session.execute(
             sa_text(
-                "INSERT OR IGNORE INTO orphan_operation_lease "
+                "INSERT INTO orphan_operation_lease "
                 "(lease_key, owner, acquired_at, expires_at) "
-                "VALUES (:key, :owner, :now, :expires)"
+                "VALUES (:key, :owner, :now, :expires) "
+                "ON CONFLICT (lease_key) DO NOTHING"
             ),
             {"key": lease_key, "owner": owner, "now": now, "expires": expires_at},
         )

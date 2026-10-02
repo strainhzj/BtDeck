@@ -18,13 +18,16 @@
 | 文件名清理 filename | `filename_utils.py` | 文件名清理（非法字符/长度，给种子备份文件名） |
 | 灾备建库 init-schema | `init_schema_from_production.py` | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
 | JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
-| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast |
+| 模型集中注册 model-registry ✨v1.0.8 | `model_registry.py` | 🔵 ORM 模型单点注册（40 表）：alembic autogenerate 与 PG squash 基线共用，防 API import 顺序依赖漏表（P1 任务1.6） |
+| PG 基线 pg-baseline ✨v1.0.8 | `pg_baseline.py` | 🔵 PG squash 基线唯一实现：空库判定（无版本且无业务表，有表无版本 fail-fast）、共享连接单事务 create_all+stamp（`Config.attributes["connection"]`）、`_btdeck_import_state` 导入未完成标记（三状态规则）、空库手工升级守卫；供 migrate_database 与迁移工具两处合法入口复用 |
+| 方言分发单点 dialect-sql ✨v1.0.8 | `dialect_sql.py` | 🔵 SQLite/PG 语义差异集中分发：ci_like/ci_contains 等大小写匹配（SQLite 原生 ASCII 折叠零变化 / PG A–Z 折叠+LIKE 非 ILIKE）、dialect_insert upsert 基座、orphan_parent_dir_expr、json_array_values（SQLite json_valid 守卫 / PG cast 即守卫 fail-fast）、regex_match_expr+共同子集校验；业务代码禁散落方言判断（P2 验收口径） |
+| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast；v1.0.8 增 PG 分支 `_migrate_database_pg`（空库→共享基线/导入未完成拒启/未知版本告警/ghost 救援仅 sqlite/备份外部化） |
 | 运行时上下文 runtime-context ✨2026-09-05 | `runtime_context.py` | 协议无关运行时依赖快照 `RuntimeContext`（L14，store/torrent_stats/start_time；`from_app` L26 从 app.state 提取），服务层去 app 化注入用 |
 | 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离）；Android 主服务端由 `platform_capabilities.require_capability` 拒绝调用 |
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
-| 启动约束 startup-guard | `startup_guard.py` | 🔵 SQLite 单 Worker 启动约束（fail-fast）：`detect_backend`/`validate_worker_count`/`validate_scheduler_scope` 纯函数校验 WORKERS=1 与调度器进程范围，被 main.py、lifecycle.py、health.py、orphan_purge_job_service.py 引用 |
+| 启动约束 startup-guard | `startup_guard.py` | 🔵 单 Worker 启动约束（fail-fast）：`detect_backend`/`validate_worker_count`/`validate_scheduler_scope` 纯函数校验；v1.0.8 起 `resolve_database_url` 以 DB_TYPE 为唯一判据（DATABASE_URL 废弃兼容）且 **PG 多 worker 同样 fail-fast**（单实例单 worker 交付边界）；被 main.py、lifecycle.py、health.py、orphan_purge_job_service.py 引用 |
 | 种子文件备份 torrent-file-backup | `torrent_file_backup.py` | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
 | ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
 | 状态映射 status-mapper | `torrent_status_mapper.py` ✨2026-08-16 | 统一 qb/transmission 种子状态映射；qB 映射表补齐新种子初始态（metaDL/forcedMetaDL/allocating→downloading、forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL，moving 有意不映射），`resolve_transmission_status` L112 判定错误状态，`extract_transmission_error_reason` L147 安全提取 errorString（warning/恢复返回空） |

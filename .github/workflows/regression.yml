@@ -46,6 +46,60 @@ jobs:
       - name: Backend regression suite
         run: pytest --cov=app --cov-report=term --cov-report=xml --cov-fail-under=40
 
+  # ===== v1.0.8 双数据库（任务4.3 强制 PG CI）：真实 PG 集成测试 =====
+  # 覆盖：空库基线/重复启动/增量、同步+异步查询、partial index upsert、
+  # LIKE 折叠+超时恢复、孤儿 JSON/分组/租约、迁移工具端到端+sequence 校准。
+  pg-integration:
+    name: PostgreSQL / integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHONUTF8: "1"
+      # 进程级方言：app.database.DIALECT 导入时常量（tests/pg_integration 门控消费）
+      DB_TYPE: postgresql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: btdeck
+      DB_PASSWORD: btdeck_ci
+      DB_NAME: btdeck_ci
+      BTDECK_PG_TEST_ADMIN_DSN: postgresql://btdeck:btdeck_ci@127.0.0.1:5432/postgres
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: btdeck
+          POSTGRES_PASSWORD: btdeck_ci
+          POSTGRES_DB: btdeck_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U btdeck"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: PostgreSQL integration suite
+        run: pytest tests/pg_integration -v
+
   frontend:
     name: Frontend / type + Jest + build
     runs-on: ubuntu-latest

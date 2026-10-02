@@ -9,7 +9,7 @@
 | 历史轨道 | 状态 |
 |----------|------|
 | Alembic 迁移链 | ✅ **唯一正道，保留** |
-| `Base.metadata.create_all()`（init_db 兜底） | ❌ 已删除（无法 ALTER，掩盖迁移遗漏） |
+| `Base.metadata.create_all()`（init_db 兜底） | ❌ 已删除（无法 ALTER，掩盖迁移遗漏；**例外**：PG squash 冷启动白名单，见下） |
 | 生产 schema 快照 `ensure_database_initialized` | ❌ 已下线（写入幽灵版本 9aea25308aff，保留文件作 frozen 灾备） |
 | search_templates 原生 SQL 自建 | ❌ 已归位 Alembic（新建 ORM + 迁移） |
 
@@ -101,7 +101,33 @@ c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 → 053003337878 → a1f7c9e3d2b4
 - ❌ 仅修改 SQLAlchemy 模型代码而不生成迁移文件
 - ❌ 手动创建或删除数据库表、索引、约束
 - ❌ 在代码中用原生 SQL `CREATE TABLE`（search_templates 已归位，不再允许第四轨）
-- ❌ 调用 `Base.metadata.create_all()`（已从 init_db 移除，仅测试 fixture 允许）
+- ❌ 调用 `Base.metadata.create_all()`（已从 init_db 移除，仅测试 fixture 允许；
+  **v1.0.8 白名单例外**：PG squash 冷启动——仅允许 `app/core/pg_baseline.py`
+  经 `app/core/model_registry.py` 单点注册路径在 PG 空库初始化时调用，且与
+  stamp 同事务原子提交；任何 SQLite 环境禁止重新引入）
+
+## 双方言迁移编写规范（v1.0.8，单链双方言）
+
+背景：PG 数据源支持落地后（`DB_TYPE=postgresql`），存量 SQLite 迁移链不重写，
+PG 空库走 squash 基线（`pg_baseline.initialize_pg_baseline`：metadata 建表 +
+stamp 当前 head）；**今后新增迁移必须同时可迁移 SQLite 已有库与 PG 库**：
+
+1. **双方言兼容优先**：DDL 写法选两库通用子集；SQLite 的 ALTER 限制用
+   `op.batch_alter_table`（自动重建表）；避免 SQLite/PG 专属函数。
+2. **方言分支收口**：确需差异时用 `if bind.dialect.name == "sqlite"` /
+   `"postgresql"` 分支，并在迁移 docstring 标注双方言差异点。
+3. **partial index 双 where 声明**：部分唯一索引必须同时声明
+   `sqlite_where=` 与 `postgresql_where=`（SQLAlchemy 支持共存；缺一侧会在该
+   方言建成全列唯一索引，连带 upsert 仲裁失败——参见 torrents/models.py）。
+4. **数据操作迁移**（backfill/清洗）：新装 PG 库跳过全部历史迁移，此类数据
+   必须由 seed 或现行写入路径保证正确值（审计矩阵见 docs/postgresql-contract.md §5）。
+5. **PG 最低可降级 revision**：`c9e0f1a2b3c4`（PG 支持落地 head）；PG 库禁止
+   downgrade 到此之前（会进入 SQLite 专属历史迁移，必失败）。
+6. **初始化入口约束**：PG 空库合法初始化入口仅两个——应用启动
+   （`migrate_database`）与 SQLite→PG 迁移工具（共享基线函数）；手工
+   `alembic upgrade head` 对 PG 空库会被 env.py 守卫拒绝。
+7. **基线对拍门禁**：新增迁移后跑 `pytest tests/core/test_baseline_schema_parity.py`
+   （PG 基线 metadata ↔ 链 head schema 语义级对拍；允许差异登记于该测试内）。
 
 ## 必须执行
 

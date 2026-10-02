@@ -253,7 +253,8 @@ def init_default_templates(db_session) -> int:
                     db_session.execute(
                         sql_text(
                             "UPDATE setting_templates SET preset_key = :key "
-                            "WHERE is_system_default = 1 AND preset_key IS NULL AND name = :name"
+                            # = TRUE 双方言通用（SQLite TRUE→1；PG boolean；v1.0.8 任务2.3）
+                            "WHERE is_system_default = TRUE AND preset_key IS NULL AND name = :name"
                         ),
                         {"key": preset_key, "name": name},
                     )

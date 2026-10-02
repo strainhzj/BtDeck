@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text as sa_text
 from sqlalchemy import update, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.dialect_sql import dialect_insert
 from app.api.responseVO import CommonResponse
 from app.database import get_async_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
@@ -743,7 +743,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
         # （dr=0）一致：SQLite 要求 ON CONFLICT 目标带同样的 WHERE，缺失时
         # OperationalError 且连带回滚同事务的种子行（W4 C06 实证，遗留路径
         # 同步"成功"但 0 行；异步路径 torrents_async 同款已带）
-        stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
+        stmt = dialect_insert(trackerInfoModel).values(tracker_rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["torrent_info_id", "tracker_url"],
             index_where=sa_text("dr = 0"),

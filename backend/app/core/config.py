@@ -139,6 +139,26 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "app.db"
     TORRENTS_DIR: Optional[str] = None
 
+    # ========== 数据源配置（v1.0.8 双数据库架构，契约见 backend/docs/postgresql-contract.md §2）==========
+    # 数据源类型：sqlite（默认，行为与历史版本完全一致）/ postgresql（可选）。
+    # DATABASE_DIALECT 属性为唯一方言判定入口；非法取值 fail-fast（防静默回落造成数据错位）。
+    DB_TYPE: str = "sqlite"
+    # PostgreSQL 连接配置（仅 DB_TYPE=postgresql 时消费）
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_USER: str = "btdeck"
+    DB_PASSWORD: str = ""
+    DB_NAME: str = "btdeck"
+    # 连接池（sync QueuePool / async AsyncAdaptedQueuePool；SQLite 走 NullPool 不消费）
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    # 获取连接的等待起时（秒，双方言；SQLite NullPool 下无实际作用）
+    DB_POOL_TIMEOUT: int = 30
+    # TLS 模式：disable/prefer/require/verify-ca/verify-full（默认 prefer；契约 §2.3 逐模式映射）
+    DB_SSLMODE: str = "prefer"
+    # verify-ca/verify-full 的 CA 证书路径
+    DB_SSL_ROOT_CERT: Optional[str] = None
+
     # 安全配置
     SECRET_KEY: str = Field(default_factory=_default_secret_key)
     SM4_KEY: Optional[str] = None  # 将在应用启动时生成
@@ -428,6 +448,30 @@ class Settings(BaseSettings):
     @property
     def COOKIE_PATH(self):
         return self.CONFIG_PATH / "cookies"
+
+    @property
+    def DATABASE_DIALECT(self) -> str:
+        """归一化数据源方言：sqlite（默认）或 postgresql（唯一方言判定入口）。
+
+        v1.0.8 双数据库架构契约（docs/postgresql-contract.md §2.1）：database.py 引擎工厂、
+        alembic/env.py、migration.py 迁移编排均消费此属性，禁止各自重复解析 DB_TYPE。
+        非法取值直接抛错——错误配置静默回落 SQLite 会制造"以为在用 PG 实际写本地文件"
+        的数据错位事故，必须 fail-fast。
+        """
+        dialect = (self.DB_TYPE or "sqlite").strip().lower()
+        if dialect in ("postgres", "pg"):
+            dialect = "postgresql"
+        if dialect not in ("sqlite", "postgresql"):
+            raise ValueError(
+                f"DB_TYPE 配置非法: {self.DB_TYPE!r}（仅支持 sqlite / postgresql），"
+                f"拒绝静默回落，请修正环境变量后重启"
+            )
+        _sslmode = (self.DB_SSLMODE or "prefer").strip().lower()
+        if _sslmode not in ("disable", "prefer", "require", "verify-ca", "verify-full"):
+            raise ValueError(
+                f"DB_SSLMODE 配置非法: {self.DB_SSLMODE!r}（仅支持 disable/prefer/require/verify-ca/verify-full）"
+            )
+        return dialect
 
     @property
     def DATABASE_PATH(self):

@@ -306,7 +306,7 @@ class ClassPathFixer:
                     guide_lines.append(f"SELECT * FROM cron_task WHERE task_id = {task_id};")
                     guide_lines.append("-- 修复类路径（请将 NEW_CLASS_PATH 替换为正确值）")
                     guide_lines.append(
-                        f"UPDATE cron_task SET executor = 'NEW_CLASS_PATH', update_time = datetime('now') WHERE task_id = {task_id};"
+                        f"UPDATE cron_task SET executor = 'NEW_CLASS_PATH', update_time = CURRENT_TIMESTAMP WHERE task_id = {task_id};"
                     )
                     guide_lines.append("```")
 

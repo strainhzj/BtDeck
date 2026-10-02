@@ -32,12 +32,19 @@ class RefreshToken(Base):
 
     __tablename__ = "refresh_tokens"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
-    token_hash: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)  # SHA-256 hex
+    # v1.0.8 任务3.4 对拍归位：nullable=False 对齐迁移链 a8b9c0d1e2f3（链侧即
+    # NOT NULL；metadata 声明漂移会使 PG 基线建成可空列）；id 不建索引（链无，
+    # PK 已覆盖——index=True 会生成链不存在的 ix_refresh_tokens_id）
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=False, index=True)
+    token_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )  # SHA-256 hex
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 

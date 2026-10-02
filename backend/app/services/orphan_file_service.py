@@ -30,6 +30,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import SessionLocal
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
 from app.models.orphan_hardlink_copy import OrphanHardlinkCopyResult
+from app.core.dialect_sql import ci_like, orphan_parent_dir_expr
+from app.database import DIALECT
 from app.services.orphan_folder_grouping import orphan_parent_dir
 from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
@@ -230,13 +232,14 @@ class OrphanFileService:
                 conditions.append(OrphanFile.confidence.in_(confidences))
         if path_like:
             escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            conditions.append(OrphanFile.file_path.like(f"%{escaped}%", escape="\\"))
+            # v1.0.8 任务2.4：ci_like 分发（SQLite 原生 ASCII 折叠零变化；PG 显式折叠）
+            conditions.append(ci_like(OrphanFile.file_path, f"%{escaped}%", escape="\\"))
         # 左匹配（前缀）独立于 path_like（包含匹配）：file_path LIKE 'prefix%'。
         # 与 path_like 同样的转义规则，仅尾部追加 %。注：SQLite LIKE 对 ASCII 大小写
         # 不敏感，Windows 盘符 D:\ 与 d:\ 可互通，符合文件系统语义。
         if path_prefix:
             escaped_pfx = path_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            conditions.append(OrphanFile.file_path.like(f"{escaped_pfx}%", escape="\\"))
+            conditions.append(ci_like(OrphanFile.file_path, f"{escaped_pfx}%", escape="\\"))
         if hardlink_copies == "located":
             # 仅保留有硬链接副本的文件：明细快照列 hardlink_copy_count > 0。
             # 该列在扫描发现文件时同步落库（st_nlink-1），由每日预扫描与每次
@@ -1344,17 +1347,19 @@ class OrphanFileService:
         父目录计算由注册到 SQLite 连接的 ``bt_orphan_parent_dir`` 自定义函数完成，
         支持 ``/`` 与 ``\\`` 分隔符统一处理。
         """
-        # aiosqlite 下 connect 事件不生效，需在查询前显式注册自定义函数。
+        # aiosqlite 下 connect 事件不生效，需在查询前显式注册自定义函数（仅 SQLite 方言；
+        # PG 走 orphan_parent_dir_expr 纯 SQL 表达式，无需注册，v1.0.8 任务2.2）。
         # driver_connection 是 aiosqlite.Connection，其 create_function 为协程，
         # 会安全转发到 worker 线程注册到真实 sqlite3 连接。
-        try:
-            sa_conn = await self.db.connection()
-            raw_conn = await sa_conn.get_raw_connection()
-            aio_conn = raw_conn.driver_connection
-            if aio_conn is not None and hasattr(aio_conn, "create_function"):
-                await aio_conn.create_function("bt_orphan_parent_dir", 1, orphan_parent_dir)
-        except (AttributeError, TypeError):
-            pass
+        if DIALECT == "sqlite":
+            try:
+                sa_conn = await self.db.connection()
+                raw_conn = await sa_conn.get_raw_connection()
+                aio_conn = raw_conn.driver_connection
+                if aio_conn is not None and hasattr(aio_conn, "create_function"):
+                    await aio_conn.create_function("bt_orphan_parent_dir", 1, orphan_parent_dir)
+            except (AttributeError, TypeError):
+                pass
         latest_attempt = await self._get_latest_scan()
         display_scan: Optional[OrphanScanResult] = None
         if latest_attempt is not None:
@@ -1448,7 +1453,8 @@ class OrphanFileService:
         )
 
         # 父目录自定义函数表达式（GROUP BY / WHERE IN 共用同一实例）
-        parent_dir_func = func.bt_orphan_parent_dir(OrphanFile.file_path)
+        # v1.0.8 任务2.2：父目录表达式经方言分发单点（SQLite 自定义函数 / PG 纯 SQL）
+        parent_dir_func = orphan_parent_dir_expr(OrphanFile.file_path)
         ignored_paths = select(OrphanCurrentCandidate.canonical_path).where(
             OrphanCurrentCandidate.is_ignored == True  # noqa: E712
         )
@@ -1582,14 +1588,15 @@ class OrphanFileService:
         hardlink_copies: Optional[str] = None,
     ) -> Dict[str, Any]:
         """展开文件夹后按独立页加载子项；硬链接统计仅覆盖返回页。"""
-        try:
-            sa_conn = await self.db.connection()
-            raw_conn = await sa_conn.get_raw_connection()
-            aio_conn = raw_conn.driver_connection
-            if aio_conn is not None and hasattr(aio_conn, "create_function"):
-                await aio_conn.create_function("bt_orphan_parent_dir", 1, orphan_parent_dir)
-        except (AttributeError, TypeError):
-            pass
+        if DIALECT == "sqlite":  # 仅 SQLite 需注册自定义函数（v1.0.8 任务2.2，PG 走纯 SQL 表达式）
+            try:
+                sa_conn = await self.db.connection()
+                raw_conn = await sa_conn.get_raw_connection()
+                aio_conn = raw_conn.driver_connection
+                if aio_conn is not None and hasattr(aio_conn, "create_function"):
+                    await aio_conn.create_function("bt_orphan_parent_dir", 1, orphan_parent_dir)
+            except (AttributeError, TypeError):
+                pass
 
         latest_attempt = await self._get_latest_scan()
         display_scan: Optional[OrphanScanResult] = None
@@ -1612,7 +1619,8 @@ class OrphanFileService:
             confidence=confidence,
             hardlink_copies=hardlink_copies,
         )
-        parent_dir_func = func.bt_orphan_parent_dir(OrphanFile.file_path)
+        # v1.0.8 任务2.2：父目录表达式经方言分发单点（SQLite 自定义函数 / PG 纯 SQL）
+        parent_dir_func = orphan_parent_dir_expr(OrphanFile.file_path)
         conditions.append(parent_dir_func == folder_path)
         count_result = await self.db.execute(select(func.count(OrphanFile.id)).where(*conditions))
         total = int(count_result.scalar() or 0)
