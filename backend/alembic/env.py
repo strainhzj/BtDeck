@@ -112,7 +112,7 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with engine.connect() as connection:
+    with engine.begin() as connection:
         # 守卫逻辑提取至 pg_baseline（任务3.1 可单测化）；基线豁免标记透传
         from app.core.pg_baseline import guard_manual_upgrade_on_empty_db
 
@@ -122,6 +122,17 @@ def run_migrations_online() -> None:
 
 def _run_migrations_with_connection(connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
+    if connection.dialect.name == "postgresql":
+        from app.core.pg_baseline import PG_MINIMUM_REVISION, validate_pg_server
+
+        validate_pg_server(connection)
+        migration_context = context.get_context()
+        operation = migration_context.opts.get("fn")
+        if getattr(operation, "__name__", "") == "downgrade":
+            current = migration_context.get_current_revision()
+            removed = operation(current, migration_context)
+            if any(step.revision.revision == PG_MINIMUM_REVISION for step in removed):
+                raise RuntimeError(f"PostgreSQL 禁止降级到基线 {PG_MINIMUM_REVISION} 之前")
 
     with context.begin_transaction():
         context.run_migrations()

@@ -132,7 +132,7 @@ class TestManualUpgradeGuard:
 
     def test_empty_pg_db_rejected(self) -> None:
         with (
-            patch.object(pg_baseline, "_is_alembic_versioned", return_value=False),
+            patch.object(pg_baseline, "read_pg_alembic_version", return_value=None),
             patch.object(pg_baseline, "_business_table_names", return_value=[]),
         ):
             with pytest.raises(RuntimeError, match="禁止手工 alembic upgrade"):
@@ -140,22 +140,23 @@ class TestManualUpgradeGuard:
 
     def test_baseline_flag_exempts(self) -> None:
         with (
-            patch.object(pg_baseline, "_is_alembic_versioned", return_value=False),
+            patch.object(pg_baseline, "read_pg_alembic_version", return_value=None),
             patch.object(pg_baseline, "_business_table_names", return_value=[]),
         ):
             pg_baseline.guard_manual_upgrade_on_empty_db(self._fake_conn(), baseline_flag=True)  # 不抛
 
     def test_versioned_db_passes(self) -> None:
-        with patch.object(pg_baseline, "_is_alembic_versioned", return_value=True):
+        with patch.object(pg_baseline, "read_pg_alembic_version", return_value="c9e0f1a2b3c4"):
             pg_baseline.guard_manual_upgrade_on_empty_db(self._fake_conn())
 
-    def test_tables_without_version_passes_to_failfast(self) -> None:
-        """有表无版本不在此守卫拦截（由 initialize 的 fail-fast 人工介入路径处理）。"""
+    def test_tables_without_version_refused(self) -> None:
+        """CLI 也必须在重放历史迁移前拒绝来源不明的库。"""
         with (
-            patch.object(pg_baseline, "_is_alembic_versioned", return_value=False),
+            patch.object(pg_baseline, "read_pg_alembic_version", return_value=None),
             patch.object(pg_baseline, "_business_table_names", return_value=["some_table"]),
         ):
-            pg_baseline.guard_manual_upgrade_on_empty_db(self._fake_conn())
+            with pytest.raises(RuntimeError, match="禁止手工 alembic upgrade"):
+                pg_baseline.guard_manual_upgrade_on_empty_db(self._fake_conn())
 
     def test_sqlite_dialect_never_guarded(self) -> None:
         class _SqliteDialect:
@@ -199,3 +200,22 @@ class TestMigrateDatabasePgGuards:
             conn.execute(_text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
             conn.execute(_text("INSERT INTO alembic_version VALUES ('c9e0f1a2b3c4')"))
         assert migration._migrate_database_pg() is True
+
+
+@pytest.mark.parametrize("version, rejected", [((15, 9), True), ((16, 0), False), ((17, 1), False)])
+def test_minimum_pg_version(version, rejected):
+    from types import SimpleNamespace
+
+    conn = SimpleNamespace(dialect=SimpleNamespace(name="postgresql", server_version_info=version))
+    if rejected:
+        with pytest.raises(RuntimeError, match="16"):
+            pg_baseline.validate_pg_server(conn)
+    else:
+        pg_baseline.validate_pg_server(conn)
+
+
+def test_empty_version_table_refuses_baseline(fake_pg_engine):
+    with fake_pg_engine.begin() as conn:
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+    with pytest.raises(RuntimeError, match="alembic_version 为空"):
+        initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")

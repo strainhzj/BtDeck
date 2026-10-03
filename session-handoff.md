@@ -1,3 +1,14 @@
+## 2026-10-03 交接：PostgreSQL 分支独立验收通过
+
+- 工作区 `/srv/workspaces/BtDeck-pg`，分支 `feature/postgresql-migration`；基点 `91dade1`，验收修复尚未提交。
+- 报告与复跑入口：`PLANS/postgresql-acceptance.md`。SQLite 全量5495通过/46跳过；最后核心68通过；真实PG+TLS29通过；无TLS五模式5通过；质量/前端/compose/镜像启动/init.sh通过。
+- 主要修复：迁移完整性与原子恢复、源库只读快照、类型/外部资源预检、TLS CA、PG时间参数、schema默认值、CLI事务与版本守卫、正则语义与请求预算、外部PG配置。
+- 已同步feature、progress、部署/契约文档和roadmap。未改旧SQLite迁移链；未增加API端点。
+- 后续发布操作：用户授权后提交、从干净提交重新生成build-info并构建，验证正式发布身份门禁。当前dirty产物503为正确门禁；本次HTTP200仅代表一次性容器源码模式功能启动通过。
+- 本次临时容器/网络和前端依赖软链接清理；本地验收日志与镜像仍保留。无生产数据操作、无Git提交。
+
+---
+
 ## 2026-09-24 交接：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
 
 ### 已完成

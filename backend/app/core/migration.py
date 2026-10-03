@@ -167,6 +167,7 @@ def _migrate_database_pg() -> bool:
         initialize_pg_baseline,
         pg_sync_engine,
         read_pg_alembic_version,
+        validate_pg_server,
     )
 
     db_path = str(settings.DATABASE_PATH)  # 仅作日志上下文；PG 不消费
@@ -184,6 +185,7 @@ def _migrate_database_pg() -> bool:
     engine = pg_sync_engine()
     try:
         with engine.connect() as conn:
+            validate_pg_server(conn)
             import_state = get_import_state(conn)
             if import_state is not None:
                 raise RuntimeError(

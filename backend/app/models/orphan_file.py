@@ -53,17 +53,24 @@ class OrphanScanResult(Base):
     scan_id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="扫描批次ID（UUID）")
     scan_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, comment="扫描开始时间")
     scan_type: Mapped[str] = mapped_column(String(20), nullable=False, comment="扫描类型：manual=手动，scheduled=定时")
-    total_paths_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="扫描的路径数量")
-    total_files_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="扫描的文件总数")
-    total_orphans: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="发现的孤儿文件数量")
+    total_paths_scanned: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="扫描的路径数量", server_default="0"
+    )
+    total_files_scanned: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="扫描的文件总数", server_default="0"
+    )
+    total_orphans: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="发现的孤儿文件数量", server_default="0"
+    )
     total_orphan_size: Mapped[int] = mapped_column(
-        BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）"
+        BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）", server_default="0"
     )
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="running",
         comment="扫描状态：queued/running/completed/failed",
+        server_default="running",
     )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="失败时的错误信息")
     operator: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="触发者（用户名或system）")
@@ -72,21 +79,19 @@ class OrphanScanResult(Base):
         nullable=False,
         default="snapshot",
         comment="明细读取模式：snapshot=旧批次快照，current=稳定当前明细",
+        server_default="snapshot",
     )
     new_orphans: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False, comment="本次首次/重新发现并新增的明细数"
+        Integer, default=0, nullable=False, comment="本次首次/重新发现并新增的明细数", server_default="0"
     )
     known_orphans: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False, comment="本次复用稳定明细的已知孤儿数"
+        Integer, default=0, nullable=False, comment="本次复用稳定明细的已知孤儿数", server_default="0"
     )
     resolved_orphans: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False, comment="本次转为resolved的候选数"
+        Integer, default=0, nullable=False, comment="本次转为resolved的候选数", server_default="0"
     )
     cleanup_review_required: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False,
-        comment="是否因超量而显示人工提醒（兼容历史字段名）",
+        Boolean, default=False, nullable=False, comment="是否因超量而显示人工提醒（兼容历史字段名）", server_default="0"
     )
     cleanup_reviewed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True, comment="兼容旧客户端的超量复核时间"
@@ -177,7 +182,9 @@ class OrphanFile(Base):
         comment="所属扫描批次ID",
     )
     file_path: Mapped[str] = mapped_column(String(500), nullable=False, comment="文件绝对路径（外部路径）")
-    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    file_size: Mapped[int] = mapped_column(
+        BigInteger, default=0, nullable=False, comment="文件大小（字节）", server_default="0"
+    )
     mtime: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="文件修改时间")
     downloader_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True, comment="关联下载器ID")
     confidence: Mapped[str] = mapped_column(
@@ -185,6 +192,7 @@ class OrphanFile(Base):
         nullable=False,
         default="high",
         comment="置信度：high=在线精筛判定，low=离线降级目录粗筛判定",
+        server_default="high",
     )
     canonical_path: Mapped[Optional[str]] = mapped_column(
         String(600),
@@ -198,7 +206,9 @@ class OrphanFile(Base):
         comment="硬链接副本数快照（发现文件时 st_nlink-1，每日预扫描/每次成功扫描刷新；NULL=未知）",
     )
 
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否已清理")
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否已清理", server_default="0"
+    )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="清理时间")
     deleted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="清理操作者")
 
@@ -314,19 +324,25 @@ class OrphanCurrentCandidate(Base):
     last_seen_scan_id: Mapped[Optional[str]] = mapped_column(
         String(36), nullable=True, comment="最后一次确认的扫描批次ID"
     )
-    consecutive_scan_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="连续确认扫描次数")
+    consecutive_scan_count: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False, comment="连续确认扫描次数", server_default="1"
+    )
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="candidate",
         comment="candidate/resolved/quarantined/purged",
+        server_default="candidate",
     )
-    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    file_size: Mapped[int] = mapped_column(
+        BigInteger, default=0, nullable=False, comment="文件大小（字节）", server_default="0"
+    )
     confidence: Mapped[str] = mapped_column(
         String(8),
         nullable=False,
         default="high",
         comment="置信度：high=在线精筛判定，low=离线降级目录粗筛判定",
+        server_default="high",
     )
     mtime_ns: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="文件修改时间（纳秒）")
     device_id: Mapped[Optional[str]] = mapped_column(
@@ -346,12 +362,14 @@ class OrphanCurrentCandidate(Base):
         default=0,
         nullable=False,
         comment="硬链接副本跳过导致 purge_after 延后的次数（每次进入隔离态重置）",
+        server_default="0",
     )
     operation_state: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
         default="stable",
         comment="stable/quarantine_pending/purge_pending/error",
+        server_default="stable",
     )
     operation_target_path: Mapped[Optional[str]] = mapped_column(
         String(600), nullable=True, comment="文件操作预写目标路径"
@@ -365,6 +383,7 @@ class OrphanCurrentCandidate(Base):
         default=False,
         nullable=False,
         comment="是否被用户忽视（受保护，定时任务不自动删除）",
+        server_default="0",
     )
     ignored_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="忽视时间")
     ignored_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="忽视操作者")

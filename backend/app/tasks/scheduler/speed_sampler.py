@@ -27,7 +27,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import text
 
-from app.core.dialect_sql import dialect_insert
+from app.core.dialect_sql import dialect_insert, timestamp_parameter
 from app.database import AsyncSessionLocal, DIALECT
 from app.models.speed_sample import DownloaderSpeedHourly, DownloaderSpeedSample
 from app.tasks.resource_guard import admission_controller
@@ -222,8 +222,8 @@ class SpeedSamplerJob:
                 await db.execute(
                     _aggregate_sql(),
                     {
-                        "hour_floor": hour_floor.strftime("%Y-%m-%d %H:%M:%S"),
-                        "window_start": window_start.strftime("%Y-%m-%d %H:%M:%S"),
+                        "hour_floor": timestamp_parameter(hour_floor),
+                        "window_start": timestamp_parameter(window_start),
                     },
                 )
             ).fetchall()
@@ -285,8 +285,8 @@ class SpeedSamplerJob:
 
     async def _cleanup_expired(self, now: datetime) -> Dict[str, Any]:
         """raw < now-14d、hourly < now-730d 物理删除（append-only 时序数据）。"""
-        raw_cutoff = (now - timedelta(days=self.raw_retention_days)).strftime("%Y-%m-%d %H:%M:%S")
-        hourly_cutoff = (now - timedelta(days=self.hourly_retention_days)).strftime("%Y-%m-%d %H:%M:%S")
+        raw_cutoff = timestamp_parameter(now - timedelta(days=self.raw_retention_days))
+        hourly_cutoff = timestamp_parameter(now - timedelta(days=self.hourly_retention_days))
 
         async with AsyncSessionLocal() as db:
             raw_result = await db.execute(_CLEAN_RAW_SQL, {"cutoff": raw_cutoff})

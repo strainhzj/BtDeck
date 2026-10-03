@@ -1,3 +1,5 @@
+from sqlalchemy import text
+
 # -*- coding: utf-8 -*-
 """
 搜索模板 ORM 模型（第四轨归位）
@@ -66,13 +68,21 @@ class SearchTemplate(Base):
         comment="系统预设稳定身份键（用户自定义恒为 NULL，不做唯一约束——幂等由 init 逻辑保证）",
     )
     is_default: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义"
+        Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义", server_default="0"
     )
-    is_public: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="是否公开可见")
-    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="使用次数")
-    created_time: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, comment="创建时间")
+    is_public: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="是否公开可见", server_default="0"
+    )
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="使用次数", server_default="0")
+    created_time: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, default=datetime.utcnow, comment="创建时间", server_default=text("CURRENT_TIMESTAMP")
+    )
     updated_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间"
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="更新时间",
+        server_default=text("CURRENT_TIMESTAMP"),
     )
 
     def __init__(

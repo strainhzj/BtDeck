@@ -179,21 +179,61 @@ _PG_UNSUPPORTED_CONSTRUCTS: tuple[tuple[str, Any], ...] = (
 )
 
 
-def validate_regex_pattern_for_dialect(pattern: str) -> None:
-    """按当前方言校验正则模式（请求验证期调用，子集外立即拒绝）。
-
-    SQLite：不设限（Python regex VERSION1 全语法，行为零变化）；
-    PG：拒绝 ARE 不支持或语义分歧的构造（契约 §4.2 共同子集），
-    ValueError 由调用方转为 4xx——而非执行期静默语义漂移。
-    """
-    if DIALECT == "sqlite":
+def validate_regex_pattern_for_dialect(pattern: str, *, dialect: str | None = None) -> None:
+    """PG 请求与迁移模板共用子集校验；SQLite VERSION1 保持原样。"""
+    if (dialect or DIALECT) == "sqlite":
         return
-    for label, probe in _PG_UNSUPPORTED_CONSTRUCTS:
-        if probe.search(pattern):
-            raise ValueError(
-                f"regex pattern uses construct unsupported on PostgreSQL ({label}): {pattern!r}；"
-                f"该构造超出双方言共同子集（契约 §4.2），请改写或联系管理员"
-            )
+    i = 0
+    in_class = False
+    while i < len(pattern):
+        char = pattern[i]
+        if char == "\\":
+            i += 1
+            if i >= len(pattern) or pattern[i] not in r"dDsSwWAZfnrtv\\.^$*+?{}[]()|-":
+                raise ValueError("regex escape is unsupported on PostgreSQL common subset")
+        elif char == "[":
+            if in_class:
+                raise ValueError("nested character sets are unsupported on PostgreSQL")
+            in_class = True
+        elif char == "]":
+            in_class = False
+        elif not in_class and pattern.startswith("(?", i) and not pattern.startswith("(?:", i):
+            raise ValueError("regex group extension is unsupported on PostgreSQL common subset")
+        elif not in_class and char in "*+?}" and pattern[i : i + 2].endswith("+") and len(pattern[i : i + 2]) == 2:
+            raise ValueError("possessive quantifier is unsupported on PostgreSQL")
+        elif in_class and pattern[i : i + 2] in ("&&", "--", "~~", "||"):
+            raise ValueError("character set operation is unsupported on PostgreSQL")
+        i += 1
+    for bound in re.findall(r"\{(\d+)(?:,(\d*))?\}", pattern):
+        if any(int(value) > 255 for value in bound if value):
+            raise ValueError("PostgreSQL regex repetition bounds must not exceed 255")
+
+
+def _pg_regex_pattern(pattern: str) -> str:
+    """保持 Python 默认 dot/尾锚点语义；字符集与转义原样保留。"""
+    result = []
+    in_class = False
+    escaped = False
+    for char in pattern:
+        if escaped:
+            result.append(char)
+            escaped = False
+        elif char == "\\":
+            result.append(char)
+            escaped = True
+        elif char == "[":
+            in_class = True
+            result.append(char)
+        elif char == "]":
+            in_class = False
+            result.append(char)
+        elif not in_class and char == ".":
+            result.append(r"[^\n]")
+        elif not in_class and char == "$":
+            result.append(r"(?=\n?\Z)")
+        else:
+            result.append(char)
+    return "".join(result)
 
 
 def regex_match_expr(column: Any, pattern: str, *, case_sensitive: bool) -> ColumnElement[bool]:
@@ -207,4 +247,11 @@ def regex_match_expr(column: Any, pattern: str, *, case_sensitive: bool) -> Colu
     if DIALECT == "sqlite":
         return func.bt_regexp(pattern, column, int(bool(case_sensitive))) == 1
     op = "~" if case_sensitive else "~*"
-    return column.op(op)(pattern)
+    return func.coalesce(column.op(op)(_pg_regex_pattern(pattern)), False)
+
+
+def timestamp_parameter(value: Any) -> Any:
+    """裸 SQL 时间参数：SQLite 保持秒级文本，asyncpg 需要 datetime 对象。"""
+    if DIALECT == "sqlite":
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value.replace(microsecond=0)

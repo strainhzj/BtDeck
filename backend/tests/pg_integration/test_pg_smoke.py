@@ -140,7 +140,15 @@ class TestSyncAsyncQueries:
                 ).scalar_one_or_none()
                 return row
 
-        assert asyncio.run(_read()) == probe_name
+        async def _read_and_dispose():
+            from app.database import async_engine
+
+            try:
+                return await _read()
+            finally:
+                await async_engine.dispose()
+
+        assert asyncio.run(_read_and_dispose()) == probe_name
 
 
 class TestUpsertPartialIndex:
@@ -196,6 +204,28 @@ class TestUpsertPartialIndex:
             with engine.connect() as conn:
                 names = [r[0] for r in conn.execute(sa_text("SELECT tracker_name FROM tracker_info WHERE dr = 0"))]
                 assert names == ["t2"]  # upsert 更新而非插入
+            torrent = Base.metadata.tables["torrent_info"]
+            active = {
+                "info_id": "active",
+                "downloader_id": "dl",
+                "downloader_name": "test",
+                "hash": "a" * 40,
+                "name": "before",
+                "dr": 0,
+            }
+            with engine.begin() as conn:
+                conn.execute(torrent.insert(), active)
+                conn.execute(torrent.insert(), {**active, "info_id": "deleted", "name": "historical", "dr": 1})
+                stmt = dialect_insert(torrent).values({**active, "info_id": "new", "name": "after"})
+                conn.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=["hash", "downloader_id"],
+                        index_where=sa_text("dr = 0"),
+                        set_={"name": stmt.excluded.name},
+                    )
+                )
+                rows = conn.execute(sa_text("SELECT info_id, name, dr FROM torrent_info ORDER BY dr")).all()
+                assert rows == [("active", "after", 0), ("deleted", "historical", 1)]
         finally:
             engine.dispose()
 
@@ -368,7 +398,7 @@ class TestOrphanSemantics:
 class TestMigrationToolEndToEnd:
     """覆盖 6：迁移工具端到端（导入/核对/sequence 校准后新增/目标复用拒绝）。"""
 
-    def test_full_migration_and_sequence_continuation(self, fresh_pg_db: str, tmp_path: Path) -> None:
+    def test_full_migration_and_sequence_continuation(self, fresh_pg_db: str, tmp_path: Path, monkeypatch) -> None:
         import os as _os
 
         from alembic import command
@@ -395,10 +425,42 @@ class TestMigrationToolEndToEnd:
             "VALUES (?,?,?,?,?,datetime('now'),0)",
             [(f"u{i}", "x", "s", 0, 1) for i in range(7)],
         )
+        sconn.execute("INSERT INTO configs (key, value) VALUES ('acceptance', 'first')")
         sconn.commit()
         sconn.close()
 
-        assert migrate_main(["--source", str(source)]) == 0
+        # 首表失败后仍有拒启标记，且可续传；源库始终只读。
+        from scripts import migrate_sqlite_to_pg as tool
+        from app.core import pg_baseline
+        import hashlib
+
+        source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        original_import = tool.import_table
+
+        def fail_first(*args, **kwargs):
+            raise RuntimeError("injected import failure")
+
+        monkeypatch.setattr(tool, "import_table", fail_first)
+        assert migrate_main(["--source", str(source)]) == 3
+        with pytest.raises(RuntimeError, match="导入未完成"):
+            pg_baseline.initialize_pg_baseline(_make_cfg(), tool._tool_head())
+        monkeypatch.setattr(tool, "import_table", original_import)
+        # 工具版本漂移必须拒绝。
+        original_version = tool.TOOL_VERSION
+        monkeypatch.setattr(tool, "TOOL_VERSION", "incompatible")
+        assert migrate_main(["--source", str(source), "--resume"]) == 2
+        monkeypatch.setattr(tool, "TOOL_VERSION", original_version)
+
+        def fail_after_committed_tables(sqlite_conn, pg_engine, table, **kwargs):
+            if table.name == "users":
+                raise RuntimeError("injected middle-table failure")
+            return original_import(sqlite_conn, pg_engine, table, **kwargs)
+
+        monkeypatch.setattr(tool, "import_table", fail_after_committed_tables)
+        assert migrate_main(["--source", str(source), "--resume"]) == 3
+        monkeypatch.setattr(tool, "import_table", original_import)
+        assert migrate_main(["--source", str(source), "--resume"]) == 0
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == source_digest
 
         from app.core import pg_baseline
         from app.core.model_registry import register_all_models
@@ -430,3 +492,385 @@ def sa_text_(s: str) -> Any:
     from sqlalchemy import text
 
     return text(s)
+
+
+@pytest.mark.asyncio
+async def test_actual_speed_sampler_and_reports(fresh_pg_db, monkeypatch):
+    """执行真实业务入口，覆盖 asyncpg 时间参数、可空过滤和聚合写入。"""
+    from datetime import datetime, timedelta
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    from app.core import pg_baseline
+    from app.database import build_database_url, _pg_ssl_args
+    from app.models.speed_sample import DownloaderSpeedSample
+    from app.tasks.scheduler import speed_sampler
+    from app.services import report_service
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = create_async_engine(
+        build_database_url(async_driver=True), poolclass=NullPool, connect_args=_pg_ssl_args(async_driver=True)
+    )
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(speed_sampler, "AsyncSessionLocal", sessions)
+    now = datetime.now().replace(minute=30, second=0, microsecond=0)
+    try:
+        async with sessions() as db:
+            db.add(
+                DownloaderSpeedSample(
+                    downloader_id="sample",
+                    sampled_at=now - timedelta(hours=1),
+                    download_speed=100,
+                    upload_speed=20,
+                    online=True,
+                )
+            )
+            await db.commit()
+        job = speed_sampler.SpeedSamplerJob()
+        assert (await job._aggregate_hourly(now))["aggregated"] == 1
+        assert (await job._aggregate_hourly(now))["aggregated"] == 0
+        async with sessions() as db:
+            for period in ("24h", "7d", "30d"):
+                for downloader in (None, "sample"):
+                    history = await report_service.get_speed_history(db, period, downloader)
+                    assert history["series"]
+        assert (await job._cleanup_expired(now + timedelta(days=800)))["raw_deleted"] == 1
+    finally:
+        await engine.dispose()
+
+
+def test_real_baseline_failure_rolls_back(fresh_pg_db, monkeypatch):
+    from alembic import command
+    from sqlalchemy import inspect
+    from app.core import pg_baseline
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("stamp failure")
+
+    monkeypatch.setattr(command, "stamp", fail)
+    with pytest.raises(RuntimeError, match="stamp failure"):
+        pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        assert inspect(engine).get_table_names() == []
+    finally:
+        engine.dispose()
+
+
+def test_real_incremental_upgrade_commits_and_downgrade_floor(fresh_pg_db, tmp_path):
+    import shutil
+    from alembic import command
+    from sqlalchemy import inspect
+    from app.core import pg_baseline
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    scripts = tmp_path / "alembic"
+    shutil.copytree(BACKEND_ROOT / "alembic", scripts)
+    (scripts / "versions" / "acceptance_probe.py").write_text(
+        "from alembic import op\nimport sqlalchemy as sa\n"
+        "revision = 'acceptance_probe'\ndown_revision = 'c9e0f1a2b3c4'\n"
+        "def upgrade():\n    op.create_table('acceptance_probe', sa.Column('id', sa.Integer, primary_key=True))\n"
+        "def downgrade():\n    op.drop_table('acceptance_probe')\n"
+    )
+    cfg = _make_cfg()
+    cfg.set_main_option("script_location", str(scripts))
+    command.upgrade(cfg, "head")
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        with engine.connect() as conn:
+            assert pg_baseline.read_pg_alembic_version(conn) == "acceptance_probe"
+            assert inspect(conn).has_table("acceptance_probe")
+        command.downgrade(cfg, "-1")
+        with engine.connect() as conn:
+            assert pg_baseline.read_pg_alembic_version(conn) == "c9e0f1a2b3c4"
+        for target in ("-1", "base", "b7d8e9f0a1c2"):
+            with pytest.raises(RuntimeError, match="禁止降级"):
+                command.downgrade(cfg, target)
+        with engine.connect() as conn:
+            assert pg_baseline.read_pg_alembic_version(conn) == "c9e0f1a2b3c4"
+    finally:
+        engine.dispose()
+
+
+def test_actual_seed_chain_is_idempotent(fresh_pg_db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import text
+    from app.core import pg_baseline
+    from app import database
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = pg_baseline.pg_sync_engine()
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=engine))
+    try:
+        database.init_db()
+        with engine.connect() as conn:
+            first = {
+                table: conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+                for table in ("users", "configs", "search_templates", "setting_templates", "cron_task")
+            }
+        database.init_db()
+        with engine.connect() as conn:
+            second = {table: conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() for table in first}
+        assert first == second
+        assert all(first.values()), first
+    finally:
+        engine.dispose()
+
+
+def test_regex_common_subset_matches_sqlite(fresh_pg_db):
+    from sqlalchemy import literal, select
+    from app.core import pg_baseline
+    from app.core.dialect_sql import regex_match_expr
+    from app.services.sqlite_search_runtime import _sqlite_bt_regexp
+
+    cases = [
+        ("Movie.2026", r"^Movie\.\d{4}$"),
+        ("a\nb", "a.b"),
+        ("abc\n", "abc$"),
+        ("alpha-beta", "(alpha|gamma)-[a-z]+"),
+        ("abc", r"\Aabc\Z"),
+        ("", "^$"),
+        ("a\nb", "a[^x]b"),
+        (None, "a"),
+        ("a$", r"a\$"),
+        ("$", "[$]"),
+    ]
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        with engine.connect() as conn:
+            for value, pattern in cases:
+                for sensitive in (True, False):
+                    actual = conn.execute(
+                        select(regex_match_expr(literal(value), pattern, case_sensitive=sensitive))
+                    ).scalar()
+                    expected = bool(_sqlite_bt_regexp(pattern, value, sensitive))
+                    assert actual == expected, (value, pattern, sensitive, actual, expected)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_actual_lease_lifecycle(fresh_pg_db):
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    from app.core import pg_baseline
+    from app.database import build_database_url, _pg_ssl_args
+    from app.services import orphan_lease
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = create_async_engine(
+        build_database_url(async_driver=True), poolclass=NullPool, connect_args=_pg_ssl_args(async_driver=True)
+    )
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sessions() as db:
+            assert await orphan_lease.acquire_lease("acceptance", "owner-a", db=db)
+            assert not await orphan_lease.acquire_lease("acceptance", "owner-b", db=db)
+            assert await orphan_lease.get_lease_holder("acceptance", db=db) == "owner-a"
+            assert not await orphan_lease.renew_lease("acceptance", "owner-b", db=db)
+            assert await orphan_lease.renew_lease("acceptance", "owner-a", db=db)
+            assert not await orphan_lease.release_lease("acceptance", "owner-b", db=db)
+            assert await orphan_lease.release_lease("acceptance", "owner-a", db=db)
+    finally:
+        await engine.dispose()
+
+
+def test_real_pg_schema_matches_baseline_metadata(fresh_pg_db):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from app.core import pg_baseline
+    from app.database import Base
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn, opts={"compare_type": True, "compare_server_default": True})
+            assert compare_metadata(context, Base.metadata) == []
+    finally:
+        engine.dispose()
+
+
+def test_search_service_timeout_recovers_transaction(fresh_pg_db, monkeypatch):
+    from sqlalchemy.orm import Session
+    from sqlalchemy import text
+    from app.core import pg_baseline
+    from app.services.advanced_search import AdvancedSearchService
+    from app.services import pg_search_runtime
+    from app.services.sqlite_search_runtime import RegexSearchTimeout
+    from app.api.models.advanced_search import EnhancedAdvancedSearchRequest
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = pg_baseline.pg_sync_engine()
+    request = EnhancedAdvancedSearchRequest.model_validate(
+        {
+            "condition_groups": [
+                {
+                    "conditions": [
+                        {"field": "name", "operator": "regex", "value": {"pattern": "movie", "caseSensitive": True}}
+                    ]
+                }
+            ]
+        }
+    )
+    original_budget = pg_search_runtime.PgRegexBudget
+    monkeypatch.setattr(pg_search_runtime, "PgRegexBudget", lambda db: original_budget(db, seconds=0.05))
+    try:
+        with Session(engine) as session:
+            service = AdvancedSearchService(session)
+
+            def slow_count():
+                session.execute(text("SELECT pg_sleep(0.2)"))
+                return 0
+
+            monkeypatch.setattr(service.query_builder, "count", slow_count)
+            with pytest.raises(RegexSearchTimeout):
+                service.search_torrents(request, "acceptance")
+            assert session.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("collation", ["C", "en-US-x-icu"])
+def test_like_matrix_in_two_collations(fresh_pg_db, collation):
+    from sqlalchemy import literal, select, not_
+    from app.core import pg_baseline
+    from app.core.dialect_sql import ci_contains, ci_startswith, ci_endswith
+
+    engine = pg_baseline.pg_sync_engine()
+    cases = [
+        ("MOVIE", "movie", True),
+        ("ÉCOLE", "école", False),
+        ("a%_b", "%_", True),
+        ("axb", "%_", False),
+        ("a/b", "/", True),
+        (None, "a", None),
+    ]
+    try:
+        with engine.connect() as conn:
+            for value, query, expected in cases:
+                expr = ci_contains(literal(value).collate(collation), query)
+                assert conn.execute(select(expr)).scalar() is expected
+                assert conn.execute(select(not_(expr))).scalar() is (None if expected is None else not expected)
+            assert conn.execute(select(ci_startswith(literal("AB_cd").collate(collation), "ab_"))).scalar() is True
+            assert conn.execute(select(ci_endswith(literal("AB_cd").collate(collation), "_CD"))).scalar() is True
+    finally:
+        engine.dispose()
+
+
+def test_actual_orphan_and_deletion_exclusion_queries(fresh_pg_db, monkeypatch):
+    from sqlalchemy import select, literal
+    from app.core import pg_baseline
+    from app.database import Base
+    from app.services.orphan_purge_job_service import (
+        active_cleanup_orphan_ids_query,
+        active_purge_canonical_paths_query,
+    )
+    from app.services import deletion_task_manager
+
+    pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+    engine = pg_baseline.pg_sync_engine()
+    job = Base.metadata.tables["orphan_purge_job"]
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                job.insert(),
+                [
+                    {
+                        "task_id": "cleanup",
+                        "status": "pending",
+                        "operation_type": "cleanup",
+                        "orphan_ids_json": "[1,2]",
+                        "canonical_paths_json": "[]",
+                        "operator": "test",
+                        "total_count": 2,
+                    },
+                    {
+                        "task_id": "purge",
+                        "status": "running",
+                        "operation_type": "purge",
+                        "orphan_ids_json": None,
+                        "canonical_paths_json": '["/media/file"]',
+                        "operator": "test",
+                        "total_count": 1,
+                    },
+                ],
+            )
+        with engine.connect() as conn:
+            assert sorted(conn.execute(active_cleanup_orphan_ids_query()).scalars()) == [1, 2]
+            assert list(conn.execute(active_purge_canonical_paths_query()).scalars()) == ["/media/file"]
+            monkeypatch.setattr(
+                deletion_task_manager, "get_active_deletion_info_ids_snapshot", lambda: frozenset({"active"})
+            )
+            assert (
+                conn.execute(select(deletion_task_manager.build_active_deletion_exclusion(literal("active")))).scalar()
+                is False
+            )
+            assert (
+                conn.execute(select(deletion_task_manager.build_active_deletion_exclusion(literal("other")))).scalar()
+                is True
+            )
+    finally:
+        engine.dispose()
+
+
+def test_regex_budget_total_deadline_and_timeout_restoration(fresh_pg_db):
+    from sqlalchemy.orm import Session
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+    from app.core import pg_baseline
+    from app.services.pg_search_runtime import PgRegexBudget
+
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        with Session(engine) as session:
+            session.execute(text("SET LOCAL statement_timeout = 7000"))
+            with PgRegexBudget(session, seconds=0.2):
+                session.execute(text("SELECT 1"))
+            assert session.execute(text("SHOW statement_timeout")).scalar() == "7s"
+            with pytest.raises(OperationalError):
+                with PgRegexBudget(session, seconds=0.12):
+                    session.execute(text("SELECT pg_sleep(0.08)"))
+                    session.execute(text("SELECT pg_sleep(0.08)"))
+            session.rollback()
+            assert session.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+def test_migration_digest_with_unicode_keys_and_native_json(fresh_pg_db):
+    from sqlalchemy import Column, String, JSON, MetaData, Table
+    from app.core import pg_baseline
+    from scripts.migrate_sqlite_to_pg import import_table, verify_counts_and_digests
+
+    table = Table("unicode_json", MetaData(), Column("id", String, primary_key=True), Column("payload", JSON))
+    engine = pg_baseline.pg_sync_engine()
+    table.create(engine)
+    source = sqlite3.connect(":memory:")
+    source.row_factory = sqlite3.Row
+    source.execute("CREATE TABLE unicode_json(id TEXT PRIMARY KEY,payload JSON)")
+    source.executemany("INSERT INTO unicode_json VALUES (?,?)", [("ä", None), ("A", "null"), ("a", '{"x":1}')])
+    try:
+        import_table(source, engine, table, state={"completed": {}}, migration_id="test", source_digest="digest")
+        assert verify_counts_and_digests(source, engine, [table]) == []
+    finally:
+        source.close()
+        engine.dispose()
+
+
+def test_cli_refuses_empty_version_table(fresh_pg_db):
+    from alembic import command
+    from sqlalchemy import inspect, text
+    from app.core import pg_baseline
+
+    engine = pg_baseline.pg_sync_engine()
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        with pytest.raises(RuntimeError, match="禁止手工 alembic upgrade"):
+            command.upgrade(_make_cfg(), "head")
+        with pytest.raises(RuntimeError, match="alembic_version 为空"):
+            pg_baseline.initialize_pg_baseline(_make_cfg(), "c9e0f1a2b3c4")
+        with engine.connect() as conn:
+            assert inspect(conn).get_table_names() == ["alembic_version"]
+    finally:
+        engine.dispose()

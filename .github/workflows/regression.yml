@@ -100,6 +100,28 @@ jobs:
       - name: PostgreSQL integration suite
         run: pytest tests/pg_integration -v
 
+      - name: Enable PostgreSQL TLS acceptance fixture
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pg-tls"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+            -addext subjectAltName=DNS:localhost \
+            -keyout "$RUNNER_TEMP/pg-tls/server.key" -out "$RUNNER_TEMP/pg-tls/server.crt"
+          docker cp "$RUNNER_TEMP/pg-tls/server.key" "$PG_CONTAINER:/tmp/server.key"
+          docker cp "$RUNNER_TEMP/pg-tls/server.crt" "$PG_CONTAINER:/tmp/server.crt"
+          docker exec -u root "$PG_CONTAINER" sh -c 'chown postgres:postgres /tmp/server.key /tmp/server.crt && chmod 600 /tmp/server.key'
+          docker exec "$PG_CONTAINER" psql -U btdeck -d btdeck_ci -c "ALTER SYSTEM SET ssl_cert_file='/tmp/server.crt'"
+          docker exec "$PG_CONTAINER" psql -U btdeck -d btdeck_ci -c "ALTER SYSTEM SET ssl_key_file='/tmp/server.key'"
+          docker exec "$PG_CONTAINER" psql -U btdeck -d btdeck_ci -c "ALTER SYSTEM SET ssl='on'"
+          docker exec "$PG_CONTAINER" psql -U btdeck -d btdeck_ci -c 'SELECT pg_reload_conf()'
+
+      - name: PostgreSQL dual-driver TLS matrix
+        env:
+          BTDECK_PG_TLS_PORT: "5432"
+          BTDECK_PG_TLS_CA: ${{ runner.temp }}/pg-tls/server.crt
+        run: pytest tests/pg_integration/test_pg_tls.py -v
+
   frontend:
     name: Frontend / type + Jest + build
     runs-on: ubuntu-latest

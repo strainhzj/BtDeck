@@ -70,6 +70,8 @@ def build_database_url(*, async_driver: bool = False) -> str:
         query: Dict[str, Any] = {}
         if not async_driver:
             query["sslmode"] = (settings.DB_SSLMODE or "prefer").strip().lower()
+            if query["sslmode"] in ("verify-ca", "verify-full") and settings.DB_SSL_ROOT_CERT:
+                query["sslrootcert"] = settings.DB_SSL_ROOT_CERT
         driver = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
         url = URL.create(
             drivername=driver,

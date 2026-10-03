@@ -8386,3 +8386,19 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 连带修复：conftest 会话库初始化 PG 方言改走 `_migrate_database_pg` 合法入口（原手工 upgrade 撞空库守卫——守卫行为正确）；psycopg2 原生连接 fixture 走 cursor。
 - **验证**：全量 SQLite 回归 **5471 passed / 0 failed**（+12 工具单测，PG 集成 9 例默认 skip）；真 PG 集成 **9/9**；black/flake8/mypy 净；roadmap 三分支补行（core×3 新模块/infra 迁移工具+env 更新/services pg-search）；契约文档 §2.1/§7.1 补记两处实测修正。
 - **收官**：feature `postgresql-datasource-2026-09-23` **done（23/23 任务）**；v1.0.8 五阶段交付完毕（P0 契约/P1 可启动底座/P2 业务兼容/P3 迁移链双轨/P4 迁移部署）。
+
+
+## 2026-10-02：PostgreSQL 分支独立验收（进行中）
+
+- 用户要求验收直到通过；在 BtDeck-pg / feature/postgresql-migration，基点 91dade1 工作。
+- 验收发现并修复迁移内容对账、检查点原子性、首批拒启标记、只读快照、同步 CA 配置及 asyncpg 业务时间绑定缺陷；真实 PG 扩大测试 10 passed。
+- feature 恢复 in_progress，完整待验收清单与证据见 PLANS/postgresql-acceptance.md；尚未达到通过条件，未提交 Git。
+
+
+## 2026-10-03：PostgreSQL 分支独立功能验收通过（未提交、未发布）
+
+- 修复迁移内容对账/检查点事务/只读快照/JSON null、预检与外部资源核对、TLS CA、asyncpg 日期参数、schema 默认值、CLI 提交/降级/空版本守卫、正则共同子集及逐 SQL 时间预算、外部 PG compose 透传。
+- SQLite 全量 5495 passed / 46 skipped；最后 PG 专属守卫变更后核心复跑 68 passed；真实 PG+TLS 最终 29 passed，另无 TLS 五模式 5 passed。
+- mypy 309 文件、black/flake8/架构通过；前端 typecheck/lint/build 通过；compose 三组合、最终 Python3.12 实际镜像启动 HTTP200、init.sh通过。
+- 功能验收报告：PLANS/postgresql-acceptance.md。feature 恢复 done，23任务附验收证据。生产构建 dirty 门禁保持不变；仅一次性容器源码模式测启动，正式发布仍需提交后干净重建。
+- 未执行 Git 提交或发布；本次临时容器/网络和前端依赖软链接清理，日志留在 /tmp。

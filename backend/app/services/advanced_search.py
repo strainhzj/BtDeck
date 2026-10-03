@@ -9,7 +9,7 @@
 import logging
 import json
 import uuid
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -1074,6 +1074,7 @@ class AdvancedSearchService:
             # SQLite：progress handler 墙钟预算（历史行为零变化）；
             # PG：请求级 deadline，每条 SQL 前 SET LOCAL statement_timeout=剩余预算，
             # 剩余 ≤0 直接终止不发 SQL（契约 §4.2，禁写 0 值）
+            query_scope: AbstractContextManager[Any]
             pg_budget = None
             if has_regex:
                 if DIALECT == "sqlite":
@@ -1081,8 +1082,8 @@ class AdvancedSearchService:
                 else:
                     from app.services.pg_search_runtime import PgRegexBudget
 
-                    query_scope = nullcontext()
                     pg_budget = PgRegexBudget(self.db)
+                    query_scope = pg_budget
             else:
                 query_scope = nullcontext()
             with query_scope:
@@ -1102,12 +1103,12 @@ class AdvancedSearchService:
                 results = self.query_builder.get_query().all()
                 logger.info(f"[高级搜索] 实际返回结果数: {len(results)}")
 
-            # 转换为字典列表（包含tracker信息，与/torrent/getList接口保持一致）
-            # 使用 model_dump() 方法让 Pydantic 自动序列化（支持 camelCase 别名和 datetime ISO 格式）
-            data = [
-                torrent.model_dump(by_alias=True, exclude_none=True)
-                for torrent in convert_to_vos_with_trackers(self.db, results)
-            ]
+                # 转换为字典列表（包含tracker信息，与/torrent/getList接口保持一致）
+                # 使用 model_dump() 方法让 Pydantic 自动序列化（支持 camelCase 别名和 datetime ISO 格式）
+                data = [
+                    torrent.model_dump(by_alias=True, exclude_none=True)
+                    for torrent in convert_to_vos_with_trackers(self.db, results)
+                ]
 
             # 计算总页数
             total_pages = (total + request.limit - 1) // request.limit
@@ -1125,6 +1126,10 @@ class AdvancedSearchService:
                 "total_pages": total_pages,
             }
 
+        except RegexSearchTimeout:
+            if DIALECT == "postgresql":
+                self.db.rollback()
+            raise
         except OperationalError as e:
             # v1.0.8 任务2.1：PG statement_timeout 取消（asyncpg QueryCanceled 57014）
             # → 事务已 abort，显式 rollback 后映射为查询超时（契约 §4.2 错误映射）

@@ -31,9 +31,11 @@ class OrphanHardlinkCopyResult(Base):
         String(32), nullable=False, comment="目标文件 st_dev（字符串，Windows 无符号卷号）"
     )
     inode_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="目标文件 st_ino")
-    copy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="扫描时的 st_nlink - 1")
+    copy_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="扫描时的 st_nlink - 1", server_default="0"
+    )
     found_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="本轮实际定位到的路径数（含源路径本身）"
+        Integer, nullable=False, default=0, comment="本轮实际定位到的路径数（含源路径本身）", server_default="0"
     )
     copies_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]", comment="定位到的物理路径 JSON 数组（可截断）"
@@ -73,7 +75,7 @@ class OrphanHardlinkScanState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="恒为 1")
     last_detail_id: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="下一轮起始的孤儿明细 ID（开区间）"
+        Integer, nullable=False, default=0, comment="下一轮起始的孤儿明细 ID（开区间）", server_default="0"
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

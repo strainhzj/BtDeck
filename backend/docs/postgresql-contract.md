@@ -10,7 +10,7 @@
 
 | 项 | 契约 |
 |----|------|
-| PG 最低版本 | **16+**（JSON 守卫依赖 `IS JSON` 谓词；PG<16 不支持，拒绝连接并报错） |
+| PG 最低版本 | **16+**（启动/迁移入口实测版本；PG<16 拒绝启动） |
 | 应用实例 | **单应用实例、单 worker**；PG 模式多 worker **fail-fast 拒绝启动**（现有仅 scheduler 警告） |
 | 不承诺 | 多实例调度治理、写入并发收益（`db_write_scope` 串行写语义不变） |
 | 桌面/伴侣模式 | 发行版无环境变量注入机制，恒 SQLite；与 `DEV` 无关（`DEV=false` 是生产安全配置，Docker 同样使用） |
@@ -42,7 +42,7 @@ URL 构造：sqlalchemy.engine.URL.create（结构化，凭据转义；特殊字
 |------|------------------|------------------|
 | disable | URL `sslmode=disable` | `connect_args["ssl"]=False`（**不可不传 ssl**——缺省即 prefer） |
 | prefer | URL `sslmode=prefer` | asyncpg 模式串（允许回退明文） |
-| require | URL `sslmode=require` | SSLContext（CERT_NONE） |
+| require | URL `sslmode=require` | asyncpg `ssl="require"`（不校验 CA） |
 | verify-ca | `sslmode=verify-ca` + root cert | SSLContext（加载 `DB_SSL_ROOT_CERT`） |
 | verify-full | `sslmode=verify-full` | 同上 + 主机名校验 |
 
@@ -87,7 +87,7 @@ URL 构造：sqlalchemy.engine.URL.create（结构化，凭据转义；特殊字
 | 活动删除 `active_deletion_ids` | 字符串 info_id | **内联 literal 非持久化列**（应用自构造，无损坏面） |
 
 - 迁移预检：非数组/类型不符默认拒绝；**仅允许与字段元素类型匹配的裸标量**包裹（出报告）；对象/错误类型拒绝
-- PG 运行时：`IS JSON ARRAY` 守卫 + `jsonb_array_elements_text`，契约违规 fail-fast
+- PG 运行时：`cast(... AS jsonb)` + `jsonb_array_elements_text` 实现数组守卫；非法文本或非数组 fail-fast（SQL NULL 按适用性允许）
 - SQLite 行为零变化（非法文本→空集宽容，登记 §6）
 
 ### 4.4 布尔裸 SQL（P0.3 实测清单，P2 任务2.3 改造范围）
@@ -169,3 +169,24 @@ URL 构造：sqlalchemy.engine.URL.create（结构化，凭据转义；特殊字
 ---
 
 **维护**: 本文件随 P1-P4 实施更新；允许差异登记表新增条目须注明依据与审查轮次。
+
+
+## 9. 独立验收补充（2026-10-03）
+
+完整证据与复现命令见 `PLANS/postgresql-acceptance.md`（仓库根）。
+基线对拍现覆盖默认值、独立唯一约束和外键目标/删除行为，并在真实 PG
+上用 Alembic introspection 对比 metadata。缺失的服务端默认值归位模型，
+SQLite 生产 schema 仍由原迁移链管理。
+
+正则共同子集：普通字面量、转义元字符、非嵌套字符类、分组/非捕获分组、
+选择、锚点和界限不超过 255 的重复；拒绝扩展分组、反向引用、集合运算、
+不兼容转义及超界重复。请求校验与迁移模板扫描共用校验器。
+PG 谓词转换 dot 与 `$`，对齐默认换行/尾锚点；NULL 匹配为 false。
+请求预算覆盖 count、list 和结果转换中的所有 SQL；结束成功时恢复原 timeout，
+取消/耗尽时回滚，禁止将 0 作为剩余预算下发。
+
+迁移工具 1.1.0 的同源配置、备份可达性、一致性快照和恢复边界详见
+`docs/database-setup.md`（仓库根）。导入标记与基线原子创建；数据与每表检查点
+原子提交。工具拒绝旧版检查点，避免继续旧版非原子导入状态。
+
+验收补充（2026-10-03）：PG CLI 在无版本记录（含空 alembic_version 表）时拒绝重放历史链；应用也拒绝自动修复空版本表。最终证据见 `PLANS/postgresql-acceptance.md`。

@@ -180,3 +180,68 @@ class TestBaselineSchemaParity:
                         if key not in ALLOWED_DIFFERENCES:
                             problems.append(f"[ORM 独有] {table}.{aspect} {d}")
         assert not problems, "未登记的基线↔链差异（新增迁移或模型变更后须同步两侧并登记）：\n" + "\n".join(problems)
+
+
+def test_defaults_unique_constraints_and_foreign_key_actions(tmp_path, monkeypatch):
+    """补齐原对拍遗漏的默认值、独立唯一约束和外键目标/删除行为。"""
+    from sqlalchemy import UniqueConstraint
+
+    source = tmp_path / "parity.db"
+    monkeypatch.setenv("DATABASE_PATH", str(source))
+    _chain_schema(str(source))
+    engine = create_engine(f"sqlite:///{source}")
+    register_all_models()
+
+    def default(value):
+        if value is None:
+            return None
+        return (
+            str(value)
+            .strip("()'\"")
+            .lower()
+            .replace("false", "0")
+            .replace("true", "1")
+            .replace("now", "current_timestamp")
+        )
+
+    problems = []
+    try:
+        inspector = inspect(engine)
+        for table in Base.metadata.sorted_tables:
+            chain_columns = {column["name"]: column for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                chain_default = default(chain_columns[column.name]["default"])
+                orm_default = default(column.server_default.arg if column.server_default else None)
+                if chain_default != orm_default:
+                    problems.append(
+                        f"{table.name}.{column.name}: default chain={chain_default!r} metadata={orm_default!r}"
+                    )
+            chain_unique = {tuple(item["column_names"]) for item in inspector.get_unique_constraints(table.name)}
+            orm_unique = {
+                tuple(c.name for c in item.columns) for item in table.constraints if isinstance(item, UniqueConstraint)
+            }
+            if chain_unique != orm_unique:
+                problems.append(f"{table.name}: unique {chain_unique} != {orm_unique}")
+            chain_fk = {
+                (
+                    tuple(item["constrained_columns"]),
+                    item["referred_table"],
+                    tuple(item["referred_columns"]),
+                    item.get("options", {}).get("ondelete"),
+                )
+                for item in inspector.get_foreign_keys(table.name)
+            }
+            orm_fk = {
+                (
+                    tuple(c.name for c in item.columns),
+                    item.referred_table.name,
+                    tuple(element.column.name for element in item.elements),
+                    item.ondelete,
+                )
+                for item in table.foreign_key_constraints
+            }
+            if chain_fk != orm_fk:
+                problems.append(f"{table.name}: foreign keys {chain_fk} != {orm_fk}")
+        assert not problems, "\n".join(problems)
+    finally:
+        engine.dispose()

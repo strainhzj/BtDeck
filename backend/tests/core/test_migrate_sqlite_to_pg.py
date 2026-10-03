@@ -229,6 +229,12 @@ class TestImportAndVerify:
             problems = verify_counts_and_digests(sqlite_conn, target_engine, Base.metadata.sorted_tables)
             assert problems == []
 
+            # 相同主键和行数不能掩盖内容损坏。
+            with target_engine.begin() as conn:
+                conn.exec_driver_sql("UPDATE users SET password = 'corrupted' WHERE id = 1")
+            problems = verify_counts_and_digests(sqlite_conn, target_engine, Base.metadata.sorted_tables)
+            assert any("users" in problem and "内容" in problem for problem in problems)
+
             # 布尔/JSON 契约数据落库正确
             with target_engine.connect() as conn:
                 assert conn.exec_driver_sql("SELECT COUNT(*) FROM users WHERE is_active = 1").scalar() == 2
@@ -239,3 +245,127 @@ class TestImportAndVerify:
         finally:
             sqlite_conn.close()
             target_engine.dispose()
+
+
+def test_checkpoint_failure_rolls_back_import(tmp_path, monkeypatch):
+    """检查点失败时不得留下已提交数据，否则 resume 重插会撞主键。"""
+    from sqlalchemy import Column, Integer, MetaData, Table, create_engine, select, func
+    from app.core import pg_baseline
+
+    table = Table("sample", MetaData(), Column("id", Integer, primary_key=True))
+    source = sqlite3.connect(":memory:")
+    source.row_factory = sqlite3.Row
+    source.execute("CREATE TABLE sample (id INTEGER PRIMARY KEY)")
+    source.execute("INSERT INTO sample VALUES (1)")
+    target = create_engine(f"sqlite:///{tmp_path / 'atomic.db'}")
+    table.create(target)
+    state = {"completed": {}}
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("checkpoint failure")
+
+    monkeypatch.setattr(pg_baseline, "set_import_state", fail)
+    try:
+        with pytest.raises(RuntimeError, match="checkpoint failure"):
+            import_table(source, target, table, state=state, migration_id="test", source_digest="digest")
+        with target.connect() as conn:
+            assert conn.execute(select(func.count()).select_from(table)).scalar() == 0
+        assert state == {"completed": {}}
+    finally:
+        source.close()
+        target.dispose()
+
+
+@pytest.mark.parametrize(
+    "statement, expected",
+    [
+        ("UPDATE users SET created_at='2026-02-30 12:00:00'", "日期"),
+        ("UPDATE users SET is_active=7", "0/1"),
+        ("UPDATE orphan_purge_job SET task_id='" + "x" * 100 + "' WHERE task_id='t1'", "长度"),
+        ("UPDATE orphan_purge_job SET orphan_ids_json='[2147483648]' WHERE task_id='t1'", "非整数"),
+        ("UPDATE orphan_purge_job SET orphan_ids_json=NULL WHERE task_id='t1'", "缺少数组"),
+        ("UPDATE alembic_version SET version_num='future_version'", "唯一 head"),
+        ("CREATE TABLE extra_data (id INTEGER)", "源表集合"),
+        (
+            "INSERT INTO orphan_file (scan_id,file_path,canonical_path,created_at) VALUES (999,'/x','/x',datetime('now'))",
+            "悬挂外键",
+        ),
+    ],
+)
+def test_precheck_rejects_unimportable_source(source_db, tmp_path, statement, expected):
+    import shutil
+
+    source = tmp_path / "invalid.db"
+    shutil.copyfile(source_db, source)
+    with sqlite3.connect(source) as conn:
+        conn.execute(statement)
+    errors, _, _ = precheck(str(source))
+    assert any(expected in error for error in errors), errors
+
+
+def test_native_json_transform_does_not_double_encode():
+    from sqlalchemy import Column, JSON, MetaData, Table
+
+    table = Table("json_probe", MetaData(), Column("payload", JSON))
+    assert row_transform(table, {"payload": '{"a":[1,true]}'}) == {"payload": {"a": [1, True]}}
+
+
+def test_precheck_reports_nonportable_saved_regex(source_db, tmp_path):
+    import shutil
+
+    source = tmp_path / "templates.db"
+    shutil.copyfile(source_db, source)
+    payload = json.dumps({"conditionGroups": [{"conditions": [{"operator": "regex", "value": "(?V1)a"}]}]})
+    with sqlite3.connect(source) as conn:
+        conn.execute("INSERT INTO search_templates (id,user_id,name,conditions) VALUES ('bad','u','bad',?)", (payload,))
+    errors, _, _ = precheck(str(source))
+    assert any("search_templates id=bad" in error for error in errors)
+
+
+def test_json_sql_null_and_json_null_remain_distinct(tmp_path):
+    from sqlalchemy import Column, Integer, JSON, MetaData, Table, create_engine, text
+
+    table = Table("native_json", MetaData(), Column("id", Integer, primary_key=True), Column("payload", JSON))
+    source = sqlite3.connect(":memory:")
+    source.row_factory = sqlite3.Row
+    source.execute("CREATE TABLE native_json (id INTEGER PRIMARY KEY, payload JSON)")
+    source.executemany("INSERT INTO native_json VALUES (?,?)", [(1, None), (2, "null"), (3, '{"x":1}')])
+    target = create_engine(f"sqlite:///{tmp_path / 'native-json.db'}")
+    table.create(target)
+    try:
+        import_table(source, target, table, state={"completed": {}}, migration_id="json", source_digest="json")
+        with target.connect() as conn:
+            assert conn.execute(text("SELECT payload IS NULL FROM native_json ORDER BY id")).scalars().all() == [
+                1,
+                0,
+                0,
+            ]
+        assert verify_counts_and_digests(source, target, [table]) == []
+    finally:
+        source.close()
+        target.dispose()
+
+
+def test_external_assets_keys_and_backup_files(tmp_path):
+    from scripts.migrate_sqlite_to_pg import check_external_assets
+
+    source = sqlite3.connect(":memory:")
+    source.execute("CREATE TABLE bt_downloaders(password TEXT)")
+    source.execute("INSERT INTO bt_downloaders VALUES ('sm4:test')")
+    source.execute("CREATE TABLE torrent_file_backup(id INTEGER,file_path TEXT,is_deleted INTEGER)")
+    source.execute("INSERT INTO torrent_file_backup VALUES (1,'backup/sample.torrent',0)")
+    original = tmp_path / "original.yaml"
+    target = tmp_path / "target.yaml"
+    original.write_text("security:\n  secret_key: abcdefghijklmnop\n")
+    target.write_text("security:\n  secret_key: qrstuvwxyzabcdef\n")
+    paths = {"source_config": str(original), "target_config": str(target), "backup_root": str(tmp_path)}
+    try:
+        errors = check_external_assets(source, paths)
+        assert any("密钥不一致" in error for error in errors)
+        assert any("不可读取" in error for error in errors)
+        target.write_text(original.read_text())
+        (tmp_path / "backup").mkdir()
+        (tmp_path / "backup/sample.torrent").write_bytes(b"test fixture")
+        assert check_external_assets(source, paths) == []
+    finally:
+        source.close()

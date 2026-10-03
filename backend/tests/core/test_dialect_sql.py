@@ -102,9 +102,7 @@ class TestCaseInsensitiveMatching:
 
     def test_autoescape_parity_with_sqlalchemy(self) -> None:
         """转义结果与 SQLAlchemy autoescape 参数逐字一致（含转义符自身）。"""
-        native_param = (
-            self.t.c.name.contains("a%/b_c", autoescape=True).compile(dialect=sqlite.dialect()).params
-        )
+        native_param = self.t.c.name.contains("a%/b_c", autoescape=True).compile(dialect=sqlite.dialect()).params
         native_value = list(native_param.values())[0]
         assert _autoescape_like("a%/b_c") == native_value == "a/%//b/_c"
 
@@ -162,3 +160,12 @@ class TestFoldHelpers:
     def test_autoescape_double_escape(self) -> None:
         assert _autoescape_like("//") == "////"
         assert _autoescape_like("100%_") == "100/%/_"
+
+
+@pytest.mark.parametrize("pattern", [r"\bword", r"\Bword", "(?V1)a", "(?R)", "[a-z&&[^x]]", "a{256}", "(?i:a)", "a++"])
+def test_pg_regex_rejects_nonportable_patterns(pattern, monkeypatch):
+    monkeypatch.setattr(dialect_sql, "DIALECT", "postgresql")
+    with pytest.raises(ValueError):
+        dialect_sql.validate_regex_pattern_for_dialect(pattern)
+    monkeypatch.setattr(dialect_sql, "DIALECT", "sqlite")
+    dialect_sql.validate_regex_pattern_for_dialect(pattern)

@@ -32,11 +32,18 @@ logger = logging.getLogger(__name__)
 
 # 导入状态标记表（P4 迁移工具消费；表名下划线开头区分于业务表）
 IMPORT_STATE_TABLE = "_btdeck_import_state"
+PG_MINIMUM_REVISION = "c9e0f1a2b3c4"
 
 
 def pg_sync_engine() -> Engine:
     """构造 PG 同步引擎（psycopg2；基线/版本读取/迁移工具专用，NullPool 用后即弃）。"""
     return create_engine(build_database_url(), poolclass=NullPool)
+
+
+def validate_pg_server(conn: Connection) -> None:
+    """拒绝契约范围外的 PostgreSQL 版本。"""
+    if conn.dialect.name == "postgresql" and (conn.dialect.server_version_info or ()) < (16,):
+        raise RuntimeError("BtDeck PostgreSQL 数据源要求服务器版本 16 或更高")
 
 
 def _is_alembic_versioned(conn: Connection) -> bool:
@@ -54,15 +61,17 @@ def _business_table_names(conn: Connection) -> list[str]:
     schema = "public" if conn.dialect.name == "postgresql" else None
     names = insp.get_table_names(schema=schema) if schema else insp.get_table_names()
     ignored = {"alembic_version", IMPORT_STATE_TABLE}
-    return [t for t in names if not t.startswith("pg_") and t not in ignored]
+    return [t for t in names if t not in ignored]
 
 
 def read_pg_alembic_version(conn: Connection) -> Optional[str]:
     """读取 PG 库 alembic_version；无表返回 None（连接异常由调用方处理）。"""
     if not _is_alembic_versioned(conn):
         return None
-    row = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    return row
+    revisions = conn.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+    if len(revisions) > 1:
+        raise RuntimeError("PG alembic_version 含多个版本，拒绝自动迁移")
+    return revisions[0] if revisions else None
 
 
 def get_import_state(conn: Connection) -> Optional[dict[str, Any]]:
@@ -135,15 +144,15 @@ def guard_manual_upgrade_on_empty_db(conn: Connection, *, baseline_flag: bool = 
         return
     if conn.dialect.name != "postgresql":
         return
-    if not _is_alembic_versioned(conn) and not _business_table_names(conn):
+    if read_pg_alembic_version(conn) is None:
         raise RuntimeError(
-            "PG 空库禁止手工 alembic upgrade（会重放 SQLite 专属历史链）。"
+            "PG 空库或缺少有效版本记录，禁止手工 alembic upgrade（会重放 SQLite 专属历史链）。"
             "请通过应用启动（migrate_database）或 SQLite→PG 迁移工具初始化"
             "（契约 docs/postgresql-contract.md §3 规则 6）。"
         )
 
 
-def initialize_pg_baseline(cfg: Config, head: str) -> bool:
+def initialize_pg_baseline(cfg: Config, head: str, *, import_state: Optional[dict[str, Any]] = None) -> bool:
     """PG 空库基线初始化：单事务 create_all + stamp（契约 §3 规则 1/2/3）。
 
     Returns:
@@ -161,18 +170,21 @@ def initialize_pg_baseline(cfg: Config, head: str) -> bool:
     engine = pg_sync_engine()
     try:
         with engine.connect() as conn:
+            validate_pg_server(conn)
             versioned = _is_alembic_versioned(conn)
             business_tables = _business_table_names(conn)
-            import_state = get_import_state(conn)
+            existing_import = get_import_state(conn)
 
-            if import_state is not None:
+            if existing_import is not None:
                 raise RuntimeError(
                     "检测到 SQLite→PG 导入未完成标记"
-                    f"（migration_id={import_state['migration_id']}）。"
+                    f"（migration_id={existing_import['migration_id']}）。"
                     "应用拒绝启动以防后台任务修改半成品数据；"
                     "请重跑迁移工具恢复导入，或在其校验失败时人工处理（契约 §3 三状态规则）。"
                 )
             if versioned:
+                if read_pg_alembic_version(conn) is None:
+                    raise RuntimeError("PG alembic_version 为空，拒绝自动迁移；请人工核验数据库状态")
                 logger.info("PG 库已有 alembic_version，跳过基线初始化（走增量升级）")
                 return False
             if business_tables:
@@ -192,12 +204,17 @@ def initialize_pg_baseline(cfg: Config, head: str) -> bool:
                 Base.metadata.create_all(conn)
                 # command.stamp 复用同一连接（env.py 优先消费 attributes["connection"]）
                 cfg.attributes["connection"] = conn
-                command.stamp(cfg, head)
-                cfg.attributes.pop("connection", None)
+                try:
+                    command.stamp(cfg, head)
+                    if import_state is not None:
+                        set_import_state(conn, **import_state)
+                finally:
+                    cfg.attributes.pop("connection", None)
             cfg.attributes.pop("btdeck_baseline_stamp", None)
             logger.info("PG 基线初始化完成（单事务提交）")
             return True
     finally:
+        cfg.attributes.pop("btdeck_baseline_stamp", None)
         engine.dispose()
 
 

@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,32 @@ class PgRegexBudget:
     def __init__(self, session: Any, *, seconds: float = REGEX_QUERY_BUDGET_SECONDS) -> None:
         self._session = session
         self.deadline = time.monotonic() + seconds
+        self._connection: Any = None
+        self._previous_timeout: Any = None
+
+    def __enter__(self) -> "PgRegexBudget":
+        self._connection = self._session.connection()
+        self._previous_timeout = self._connection.execute(text("SHOW statement_timeout")).scalar_one()
+        event.listen(self._connection, "before_cursor_execute", self._before_execute)
+        return self
+
+    def _before_execute(
+        self, connection: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+    ) -> None:
+        if statement.startswith("SET LOCAL statement_timeout"):
+            return
+        from app.services.sqlite_search_runtime import RegexSearchTimeout
+
+        milliseconds = int(self.remaining_seconds * 1000)
+        if milliseconds <= 0:
+            raise RegexSearchTimeout("regular expression search exceeded its execution budget")
+        # 直接通过同一个 psycopg2 cursor 设置，避免再次触发 SQLAlchemy 事件。
+        cursor.execute("SET LOCAL statement_timeout = %s", (milliseconds,))
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        event.remove(self._connection, "before_cursor_execute", self._before_execute)
+        if exc_type is None:
+            self._connection.execute(text("SET LOCAL statement_timeout = :value"), {"value": self._previous_timeout})
 
     @property
     def remaining_seconds(self) -> float:
