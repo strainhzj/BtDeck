@@ -1,3 +1,17 @@
+## 2026-10-05 交接：等级1删除·下载器离线追加确认与本地跳过删除（feature l1-delete-offline-skip-2026-10-05，全绿未提交）
+
+### 已完成
+
+- **范围（实现假设经用户确认）**：种子列表页等级1删除（单条+批量，TorrentBatchMixin 单点改动双视图生效）——原等级1确认后 getStatusAll 检测离线，检测到则**再追加一次** error 确认（用户澄清共 2 次弹窗，非 3 次），确认后 skip_downloader=true 仅删 BtDeck 本地记录（数据文件/下载器侧任务保留），取消则中止；状态接口异常降级不阻断。移动端不在本批。
+- **后端**：delete-with-level Query / delete-batch-async body 新增 skip_downloader（非等级1返 400 TORRENT_DELETE_INVALID_PARAMS），endpoint→AsyncDeletionExecutor→_delete_level1 全透传，skip 时跳过适配器仅软删 dr=1，审计记 delete_files=false+skip_downloader=true。
+- **前端**：mixin confirmSkipDownloaderIfOffline；utils 纯函数 collectTorrentDownloaderRefs/findOfflineDownloaders + buildDeleteLevelRequest skipDownloader 开关（默认零变化）；i18n offlineConfirm zh/en；api 类型扩可选字段。
+- **验证**：后端 pytest 52 passed（新增 8 例）+ mypy/black/flake8 净；前端新 spec 9 例 + lint 全绿 + 全量 Jest 1908/1908（EChart 套件因工作区未装 echarts 既有环境性失败，与本批无关）；./init.sh exit 0。
+- **文档**：feature_list 第 92 组（2 任务 done）；roadmap 6 文件（architecture 行号实测 961→1064、1718→1767）；progress.md 置顶条目。
+
+### 待办
+
+- 真实离线下载器联调弹窗链路；Git 提交待用户指示。
+
 ## 2026-09-24 交接：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
 
 ### 已完成

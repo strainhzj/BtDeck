@@ -295,6 +295,11 @@ export const torrent = {
         batch: 'Are you sure you want to delete {count} selected torrents?'
       }
     },
+    /** Level-1 deletion: extra confirmation when the downloader is offline (local-record-only deletion, downloader API skipped) */
+    offlineConfirm: {
+      title: 'Warning: downloader offline',
+      message: 'Downloader(s) {names} offline. If you continue, the downloader API will not be called and only BtDeck records will be deleted; data files and downloader-side tasks will be kept. Continue?'
+    },
     msg: {
       selectFirst: 'Select torrents to delete first',
       submitFailed: 'Failed to submit the deletion task',

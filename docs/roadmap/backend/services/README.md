@@ -10,7 +10,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1544 行实测 2026-09-21，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；搜索模板 CRUD ✨2026-09-21 双语 P4 错误契约：失败路径 result.data 携带 reasonCode（SEARCH_TEMPLATE_NOT_FOUND/FORBIDDEN/INVALID_CONDITIONS/各操作 _FAILED），500 动态 str(e) msg 固定化；`_build_condition_filter()` L330 统一严格补集，`_build_status_filter()` L439 复用列表 `error` 语义，下载器 L469 支持稳定 ID/新旧 nickname，超级做种 L489 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
-| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数；✨2026-09-05 起注入 store+AuditContext，不再接收 FastAPI Request） |
+| 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数；✨2026-09-05 起注入 store+AuditContext，不再接收 FastAPI Request；✨2026-10-05 透传 skip_downloader 至 L1 仅删本地） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 审计上下文 audit-context ✨2026-09-05 | `audit_context.py` | 协议无关审计四元组 `AuditContext`（ip/ua/request_id/session_id，L19；`from_request` L28 容错提取、`as_dict` L48 展开），HTTP/MCP 服务层共用替代 Request 透传 |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
@@ -57,7 +57,7 @@
 | 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取；2026-09-06 锁治理：`_add_one_torrent` 顶部 rollback 结束上一轮 refresh 遗留读事务（WAL 陈旧快照跨网络调用会在 commit 升级时报 BUSY_SNAPSHOT、busy_timeout 无效），新增 `_insert_torrent_record_with_retry`（BUSY 5/517/518 有界重试 5 次、每次 rollback 后经 record_factory 重建实例防 expunge 静默丢 INSERT），失败串透传 sqlite_errorcode 供锁类型鉴别 |
 | 存量 added_date 回填 added-date-backfill | `torrent_added_date_backfill.py` | 对 torrent_info.added_date 为 NULL 的存量行按下载器分批拉取 added_on/addedDate 回填的后台任务（启动后 create_task、INFO_SYNC_STARTUP_BACKFILL_ENABLED 开关默认关闭；经 SYNC lane 分批执行不阻塞事件循环，下载器不可用跳过由 12h 全量快照兜底） |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
-| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request） |
+| 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request；✨2026-10-05 L1 支持 skip_downloader：离线用户确认后跳过适配器仅软删 dr=1，审计记 delete_files=false+skip_downloader=true） |
 | 辅种数量 auxiliary-seed-count | `auxiliary_seed_count_service.py` | 全局按 `name + size` 计算辅种数量；同步任务全量校正，删除/转移/还原按分组增量维护 |
 | 种子删除策略 torrent-delete | `torrent_deletion_service.py` | 种子删除服务（抽象基类 + 各下载器策略） |
 | 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理；`reconcile_missing_backups` L152 在 Android 返回 `disabled_by_capability`，所有公开入口要求 `torrent_backup`，同步旁路跳过远端文件备份 |

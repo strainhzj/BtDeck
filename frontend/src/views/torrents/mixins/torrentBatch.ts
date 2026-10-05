@@ -23,6 +23,7 @@ import {
   getBatchDeleteStatus,
   type ApiResponse
 } from '@/api/torrents'
+import { getStatusAll } from '@/api/downloader'
 import {
   groupTorrentsByDownloader,
   runBatchAction,
@@ -30,6 +31,8 @@ import {
   resetSelection,
   buildDeleteLevelRequest,
   buildDeleteConfirmMessage,
+  collectTorrentDownloaderRefs,
+  findOfflineDownloaders,
   parseDeleteTaskResult,
   parseSyncDeleteResponse,
   type BatchActionResult
@@ -152,7 +155,12 @@ export default class TorrentBatchMixin extends Vue {
         cancelButtonText: translate('torrent.deleteLevel.confirm.cancelButton'),
         type: levelNum === 1 ? 'error' : 'warning'
       })
-      await this.executeDeleteByLevel([torrent], levelNum)
+      // 等级1：检测下载器离线，离线则追加一次确认，确认后跳过下载器仅删本地记录
+      let skipDownloader = false
+      if (levelNum === 1) {
+        skipDownloader = await this.confirmSkipDownloaderIfOffline([torrent])
+      }
+      await this.executeDeleteByLevel([torrent], levelNum, skipDownloader)
     } catch (error: any) {
       if (error !== 'cancel') {
         this.$message.error(error?.message || translate('torrent.deleteLevel.msg.deleteFailed'))
@@ -174,7 +182,12 @@ export default class TorrentBatchMixin extends Vue {
         cancelButtonText: translate('torrent.deleteLevel.confirm.cancelButton'),
         type: levelNum === 1 ? 'error' : 'warning'
       })
-      await this.executeDeleteByLevel(this.multipleSelection, levelNum)
+      // 等级1：检测下载器离线（任一所选种子的下载器离线即触发），追加确认后跳过下载器仅删本地记录
+      let skipDownloader = false
+      if (levelNum === 1) {
+        skipDownloader = await this.confirmSkipDownloaderIfOffline(this.multipleSelection)
+      }
+      await this.executeDeleteByLevel(this.multipleSelection, levelNum, skipDownloader)
     } catch (error: any) {
       if (error !== 'cancel') {
         this.$message.error(error?.message || translate('torrent.deleteLevel.msg.batchDeleteFailed'))
@@ -183,13 +196,51 @@ export default class TorrentBatchMixin extends Vue {
   }
 
   /**
+   * 等级1删除前的下载器离线检测（离线时在原确认框之外再追加一次 error 级确认）
+   * - 所涉下载器全部在线 / 状态接口异常（降级不阻断）→ 返回 false，走正常删除（调用下载器）
+   * - 检测到离线：追加确认提醒下载器不在线；确认 → 返回 true（跳过下载器，仅删本地记录）；取消 → 抛 'cancel'
+   */
+  private async confirmSkipDownloaderIfOffline(torrents: any[]): Promise<boolean> {
+    const refs = collectTorrentDownloaderRefs(torrents)
+    if (refs.length === 0) return false
+
+    let onlineIds: Set<string>
+    try {
+      const response = await getStatusAll()
+      const data = response?.data
+      if (!Array.isArray(data)) return false
+      // getStatusAll 仅返回在线下载器；未出现在返回列表中的下载器即离线
+      onlineIds = new Set(data.map((status: any) => status?.id).filter(Boolean))
+    } catch (error) {
+      // 状态接口异常：不阻断删除流程，按在线处理（保持既有行为）
+      console.warn('[等级1删除] 下载器状态检测失败，按在线流程处理', error)
+      return false
+    }
+
+    const offlineDownloaders = findOfflineDownloaders(refs, onlineIds)
+    if (offlineDownloaders.length === 0) return false
+
+    const names = offlineDownloaders.map(ref => ref.name || ref.id).join('、')
+    await this.$confirm(
+      translate('torrent.deleteLevel.offlineConfirm.message', { names }),
+      translate('torrent.deleteLevel.offlineConfirm.title'),
+      {
+        confirmButtonText: translate('torrent.deleteLevel.confirm.confirmButton'),
+        cancelButtonText: translate('torrent.deleteLevel.confirm.cancelButton'),
+        type: 'error'
+      }
+    )
+    return true
+  }
+
+  /**
    * 执行 4 等级删除（统一入口）
    * - ≥2 个种子：走异步批量接口 deleteBatchAsync + 轮询
    * - 单个种子：走同步接口 deleteTorrentsWithLevel
    * 请求构造/结果解析委托纯函数，此处只处理 API 调用 + loading + 提示。
    */
-  protected async executeDeleteByLevel(torrents: any[], level: number): Promise<void> {
-    const req = buildDeleteLevelRequest(torrents, level)
+  protected async executeDeleteByLevel(torrents: any[], level: number, skipDownloader = false): Promise<void> {
+    const req = buildDeleteLevelRequest(torrents, level, 'admin', skipDownloader)
     try {
       if (torrents.length >= 2) {
         const response = await deleteBatchAsync(req)

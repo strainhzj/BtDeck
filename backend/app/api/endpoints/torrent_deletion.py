@@ -682,13 +682,17 @@ async def delete_torrent_with_level(
         ..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)", ge=1, le=4
     ),
     operator: str = Query(default="admin", description="操作人（已废弃：以认证用户为准）"),
+    skip_downloader: bool = Query(
+        default=False,
+        description="跳过下载器调用（下载器离线且用户已确认时仅删除本地记录；仅等级1生效）",
+    ),
     db: Session = Depends(get_db),
 ):
     """
     按等级删除种子（同步接口，主要用于单个种子删除）
 
     支持的删除等级:
-    - Level 1: 删除任务和数据（原有功能）
+    - Level 1: 删除任务和数据（原有功能）；skip_downloader=True 时跳过下载器调用，仅删除本地记录
     - Level 2: 删除任务保留数据（原有功能）
     - Level 3: 移到回收站（创建标记文件+删除下载器任务+数据库标记）
     - Level 4: 添加"待删除"标签
@@ -697,6 +701,7 @@ async def delete_torrent_with_level(
         torrent_info_ids: 要删除的种子信息ID列表（逗号分隔的字符串）
         delete_level: 删除等级 (1-4)
         operator: 操作人
+        skip_downloader: 仅等级1生效——跳过下载器调用（离线场景用户已确认），仅删除本地记录
         db: 数据库会话
 
     Returns:
@@ -704,6 +709,14 @@ async def delete_torrent_with_level(
     """
     if delete_level == 3:
         require_capability("level3_recycle", "torrent_deletion.level3")
+    if skip_downloader and delete_level != 1:
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化（与 try 内 ValueError 同码）
+        return CommonResponse(
+            status="error",
+            msg="参数错误",
+            code="400",
+            data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"},
+        )
     # 将逗号分隔的字符串转换为列表（认证已迁移至 require_authenticated_user 依赖）
     torrent_info_id_list = [id.strip() for id in torrent_info_ids.split(",") if id.strip()]
 
@@ -735,6 +748,7 @@ async def delete_torrent_with_level(
             delete_level=delete_level,
             operator=effective_operator,
             audit_service=audit_service,
+            skip_downloader=skip_downloader,
         )
 
         # 构建响应
@@ -844,6 +858,9 @@ class BatchDeleteRequest(BaseModel):
     torrent_info_ids: List[str] = Field(..., description="要删除的种子ID列表")
     delete_level: int = Field(..., ge=1, le=4, description="删除等级 (1-4)")
     operator: str = Field(default="admin", description="操作人")
+    skip_downloader: bool = Field(
+        default=False, description="跳过下载器调用（下载器离线且用户已确认时仅删除本地记录；仅等级1生效）"
+    )
 
 
 @router.post("/delete-batch-async", response_model=CommonResponse)
@@ -857,7 +874,7 @@ async def delete_batch_async(
     异步批量删除种子（提交任务）
 
     支持的删除等级:
-    - Level 1: 删除任务和数据
+    - Level 1: 删除任务和数据；skip_downloader=True 时跳过下载器调用，仅删除本地记录
     - Level 2: 删除任务保留数据
     - Level 3: 移到回收站
     - Level 4: 添加"待删除"标签
@@ -872,6 +889,14 @@ async def delete_batch_async(
     """
     if delete_request.delete_level == 3:
         require_capability("level3_recycle", "torrent_deletion.level3.async")
+    if delete_request.skip_downloader and delete_request.delete_level != 1:
+        # 双语 P5：动态 str(e) 不进 msg，前端按 reasonCode 本地化
+        return CommonResponse(
+            status="error",
+            msg="参数错误",
+            code="400",
+            data={"reasonCode": "TORRENT_DELETE_INVALID_PARAMS"},
+        )
     try:
         from app.database import SessionLocal
         from app.services.deletion_task_manager import get_deletion_task_manager
@@ -925,6 +950,7 @@ async def delete_batch_async(
                 torrent_info_ids=submission.accepted_info_ids,
                 delete_level=delete_request.delete_level,
                 operator=effective_operator,
+                skip_downloader=delete_request.skip_downloader,
             )
         )
 

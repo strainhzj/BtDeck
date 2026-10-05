@@ -302,6 +302,11 @@ export const torrent = {
         batch: '确定要将选中的 {count} 个种子删除吗？'
       }
     },
+    /** 等级1删除 · 下载器离线时追加的一次确认（仅删本地记录，不调用下载器接口） */
+    offlineConfirm: {
+      title: '警告：下载器不在线',
+      message: '下载器 {names} 不在线。确认后将不调用下载器接口，仅删除 BtDeck 中的种子记录；数据文件和下载器侧任务将保留。是否继续？'
+    },
     msg: {
       selectFirst: '请先选择要删除的种子',
       submitFailed: '提交删除任务失败',

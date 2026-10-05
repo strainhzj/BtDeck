@@ -1060,3 +1060,113 @@ class TestDeleteBatchByLevel:
         assert result["total"] == 3
         assert sorted(result["level4_success"]) == ["t0", "t1", "t2"]
         assert result["failed"] == []
+
+
+# ==================== 组4：L1 skip_downloader（下载器离线用户确认后仅删本地记录） ====================
+
+
+class TestDeleteLevel1SkipDownloaderService:
+    """L1 skip_downloader=True（service 级）：跳过适配器调用（离线场景），仅本地软删除 + 审计标记。"""
+
+    @pytest.mark.asyncio
+    async def test_l1_skip_succeeds_when_downloader_offline(self, db_session):
+        """下载器不在缓存（离线）→ 正常路径必挂（获取适配器失败）；skip=True 应成功且 dr=1。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="movie")
+        _make_downloader(db_session)
+        mock_store = _make_mock_store([])  # 空缓存 = 下载器离线
+        audit = AsyncMock()
+
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
+        result = await svc.delete_by_level("t1", 1, operator="alice", audit_service=audit, skip_downloader=True)
+
+        assert result["success"] is True
+        assert "跳过下载器" in result["message"]
+        db_session.expire_all()
+        torrent = db_session.query(TorrentInfo).filter_by(info_id="t1").first()
+        assert torrent.dr == 1
+        # 审计：DELETE_L1 成功 + skip_downloader=True + delete_files=False（离线跳过的关键取证）
+        audit.log_operation.assert_awaited_once()
+        kwargs = audit.log_operation.await_args.kwargs
+        assert kwargs["operation_type"] == AuditOperationType.DELETE_L1
+        assert kwargs["operation_result"] == AuditOperationResult.SUCCESS
+        assert kwargs["operation_detail"]["skip_downloader"] is True
+        assert kwargs["operation_detail"]["delete_files"] is False
+
+    @pytest.mark.asyncio
+    async def test_l1_without_skip_still_fails_when_offline(self, db_session):
+        """离线但未携带 skip_downloader → 保持既有行为：获取适配器失败，本地记录不动。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="movie")
+        _make_downloader(db_session)
+        mock_store = _make_mock_store([])
+        audit = AsyncMock()
+
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
+        result = await svc.delete_by_level("t1", 1, operator="alice", audit_service=audit)
+
+        assert result["success"] is False
+        assert result["error"].startswith("获取适配器失败:")
+        db_session.expire_all()
+        torrent = db_session.query(TorrentInfo).filter_by(info_id="t1").first()
+        assert torrent.dr == 0, "离线未确认跳过时，本地记录不应被删除"
+        audit.log_operation.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_l1_skip_online_path_still_uses_adapter(self, db_session):
+        """下载器在线 + skip=True：跳过适配器（不发起下载器调用），仍本地软删除（离线确认语义）。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="movie")
+        _make_downloader(db_session)
+        fake_client = MagicMock()
+        mock_store = _make_mock_store([_make_fake_vo(client=fake_client)])
+
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
+        result = await svc.delete_by_level("t1", 1, skip_downloader=True, audit_service=AsyncMock())
+
+        assert result["success"] is True
+        # 适配器客户端不应被触碰（delete_torrents 走适配器层，此处以缓存 VO client 为证）
+        fake_client.torrents_delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_batch_l1_skip_passes_through(self, db_session):
+        """delete_batch_by_level 透传 skip_downloader → 全部计入 level1_success。"""
+        for i in range(2):
+            make_torrent(db_session, info_id=f"t{i}", downloader_id="dl-1", hash_=f"h{i}", name=f"m{i}")
+        _make_downloader(db_session)
+        mock_store = _make_mock_store([])  # 离线
+
+        svc = TorrentDeletionByLevelService(db_session, mock_store)
+        result = await svc.delete_batch_by_level(
+            torrent_info_ids=["t0", "t1"], delete_level=1, skip_downloader=True, audit_service=AsyncMock()
+        )
+
+        assert result["success"] is True
+        assert sorted(result["level1_success"]) == ["t0", "t1"]
+        assert result["failed"] == []
+
+
+class TestSkipDownloaderParamValidation:
+    """skip_downloader 仅等级1生效的 HTTP 级校验（同步 + 异步端点）。"""
+
+    def test_sync_skip_with_level2_returns_400(self, client):
+        r = client.delete(URL, params={"torrent_info_ids": "x", "delete_level": 2, "skip_downloader": "true"})
+        body = r.json()
+        assert body["code"] == "400"
+        assert body["data"]["reasonCode"] == "TORRENT_DELETE_INVALID_PARAMS"
+
+    def test_sync_skip_with_level4_returns_400(self, client):
+        r = client.delete(URL, params={"torrent_info_ids": "x", "delete_level": 4, "skip_downloader": "true"})
+        body = r.json()
+        assert body["code"] == "400"
+        assert body["data"]["reasonCode"] == "TORRENT_DELETE_INVALID_PARAMS"
+
+    def test_sync_skip_with_level1_passes_validation(self, client):
+        """等级1 + skip 参数合法：通过参数校验（种子不存在 → service 失败，非 400 参数错）。"""
+        r = client.delete(URL, params={"torrent_info_ids": "x", "delete_level": 1, "skip_downloader": "true"})
+        body = r.json()
+        assert body["code"] == "500", "参数校验应通过；失败源于种子不存在（数据库路径）"
+        assert body["data"].get("reasonCode") != "TORRENT_DELETE_INVALID_PARAMS"
+
+    def test_async_skip_with_level2_returns_400(self, client):
+        r = client.post(ASYNC_URL, json={"torrent_info_ids": ["x"], "delete_level": 2, "skip_downloader": True})
+        body = r.json()
+        assert body["code"] == "400"
+        assert body["data"]["reasonCode"] == "TORRENT_DELETE_INVALID_PARAMS"

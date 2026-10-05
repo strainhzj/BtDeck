@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-09-25",
+  "last_updated": "2026-10-05",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -7380,6 +7380,42 @@
             "frontend/src/demo/types.ts"
           ],
           "evidence": ""
+        }
+      ]
+    },
+    {
+      "id": "l1-delete-offline-skip-2026-10-05",
+      "name": "等级1删除·下载器离线追加确认与本地跳过删除",
+      "description": "种子列表页（index.vue / TraditionalView.vue 共用 TorrentBatchMixin，单条+批量同链路）等级1删除：先弹既有等级1确认，再经 /downloader/getStatusAll 检测所选种子涉及下载器是否离线（未在返回列表即离线；接口异常降级不阻断）；检测到离线则再追加一次 error 级确认（i18n deleteLevel.offlineConfirm，提醒不调用下载器接口、仅删 BtDeck 记录、数据文件与下载器侧任务保留），用户确认后携带 skip_downloader=true 调用删除接口，任一步取消则中止。后端 delete-with-level（Query）与 delete-batch-async（body）新增 skip_downloader（仅等级1生效，其他等级携带返回 400 TORRENT_DELETE_INVALID_PARAMS），链路 endpoint→AsyncDeletionExecutor→TorrentDeletionByLevelService._delete_level1 全透传：skip 时跳过适配器调用仅软删 dr=1，审计 operation_detail 记 delete_files=false + skip_downloader=true。移动端种子页不在本批范围。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "l1-offline-skip-backend",
+          "name": "后端 skip_downloader 参数与 L1 跳过下载器删除",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/app/services/torrent_deletion_by_level.py",
+            "backend/app/services/async_deletion_executor.py"
+          ],
+          "evidence": "mypy 3 文件 0 错 + black/flake8 净；pytest tests/api/test_torrent_deletion_by_level_api.py 52 passed（新增 service 级 4 例：离线 skip 成功 dr=1+审计标记/未 skip 离线仍失败且本地不动/在线 skip 也不触适配器客户端/批量透传 level1_success；新增 HTTP 校验 4 例：同步 skip+等级2/4 返 400 reasonCode、skip+等级1 通过校验、异步 skip+等级2 返 400）"
+        },
+        {
+          "id": "l1-offline-skip-frontend",
+          "name": "前端离线检测、追加确认与请求携带",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/mixins/torrentBatch.ts",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/i18n/locales/zh-CN/torrent.ts",
+            "frontend/src/i18n/locales/en/torrent.ts",
+            "frontend/src/views/torrents/utils/__tests__/torrentBatchDeleteLevel.spec.ts"
+          ],
+          "evidence": "npm run lint 全绿（contract:check + eslint + vuex-action 门禁）；新 spec torrentBatchDeleteLevel 9 例通过（skip 默认零变化/携带开关/引用去重与字段兼容/离线判定语义）；全量 Jest 1908/1908 通过、131/132 套（EChart.spec 因工作区未安装 echarts 既有环境性失败，与本批无关，另见记忆 statistics-reports W5 待 npm install echarts）"
         }
       ]
     }

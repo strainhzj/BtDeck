@@ -162,7 +162,12 @@ class TorrentDeletionByLevelService:
         return separator.join(tag_list)
 
     async def delete_by_level(
-        self, torrent_info_id: str, delete_level: int, operator: str = "admin", audit_service=None
+        self,
+        torrent_info_id: str,
+        delete_level: int,
+        operator: str = "admin",
+        audit_service=None,
+        skip_downloader: bool = False,
     ) -> Dict[str, Any]:
         """
         按等级删除种子
@@ -172,6 +177,7 @@ class TorrentDeletionByLevelService:
             delete_level: 删除等级 (1-4)
             operator: 操作人
             audit_service: 审计日志服务
+            skip_downloader: 仅等级1生效——跳过下载器调用，仅删除本地记录
 
         Returns:
             删除结果字典
@@ -189,7 +195,7 @@ class TorrentDeletionByLevelService:
 
             # 根据删除等级执行不同的删除逻辑
             if delete_level == 1:
-                return await self._delete_level1(torrent, operator, audit_service)
+                return await self._delete_level1(torrent, operator, audit_service, skip_downloader=skip_downloader)
             elif delete_level == 2:
                 return await self._delete_level2(torrent, operator, audit_service)
             elif delete_level == 3:
@@ -204,7 +210,12 @@ class TorrentDeletionByLevelService:
             return {"success": False, "error": str(e), "operation": "delete_by_level"}
 
     async def delete_batch_by_level(
-        self, torrent_info_ids: List[str], delete_level: int, operator: str = "admin", audit_service=None
+        self,
+        torrent_info_ids: List[str],
+        delete_level: int,
+        operator: str = "admin",
+        audit_service=None,
+        skip_downloader: bool = False,
     ) -> Dict[str, Any]:
         """
         批量按等级删除种子
@@ -221,6 +232,7 @@ class TorrentDeletionByLevelService:
             delete_level: 删除等级 (1-4)
             operator: 操作人
             audit_service: 审计日志服务
+            skip_downloader: 仅等级1生效——跳过下载器调用，仅删除本地记录
 
         Returns:
             批量删除结果字典
@@ -237,7 +249,9 @@ class TorrentDeletionByLevelService:
         failed = []  # 完全失败的种子
 
         for torrent_id in torrent_info_ids:
-            result = await self.delete_by_level(torrent_id, delete_level, operator, audit_service)
+            result = await self.delete_by_level(
+                torrent_id, delete_level, operator, audit_service, skip_downloader=skip_downloader
+            )
 
             # 等级3特殊处理：检查是否需要降级
             if delete_level == 3 and result.get("downgrade_to_level4"):
@@ -296,18 +310,21 @@ class TorrentDeletionByLevelService:
             "failed": failed,
         }
 
-    async def _delete_level1(self, torrent: TorrentInfo, operator: str, audit_service=None) -> Dict[str, Any]:
+    async def _delete_level1(
+        self, torrent: TorrentInfo, operator: str, audit_service=None, skip_downloader: bool = False
+    ) -> Dict[str, Any]:
         """
         等级1删除: 删除任务和数据（使用适配器模式）
 
         步骤:
-        1. 使用适配器删除种子（删除数据文件）
+        1. 使用适配器删除种子（删除数据文件）；skip_downloader=True 时跳过下载器调用（下载器离线场景）
         2. 更新数据库标记dr=1
 
         Args:
             torrent: 种子信息
             operator: 操作人
             audit_service: 审计日志服务
+            skip_downloader: 跳过下载器调用，仅删除本地记录（前端检测到下载器离线并经用户确认后传入）
 
         Returns:
             删除结果
@@ -325,20 +342,25 @@ class TorrentDeletionByLevelService:
             # 刷新下载器对象，确保读取到最新配置
             self.db.refresh(downloader)
 
-            # 获取适配器
-            try:
-                adapter = self._get_adapter(downloader)
-            except ValueError as e:
-                return {"success": False, "error": f"获取适配器失败: {str(e)}", "operation": "get_adapter"}
+            delete_result: Dict[str, Any]
+            if skip_downloader:
+                # 下载器离线：跳过适配器调用（不删除下载器侧任务与数据文件），仅做本地软删除
+                delete_result = {"success_hashes": [torrent.hash], "failed_hashes": {}}
+            else:
+                # 获取适配器
+                try:
+                    adapter = self._get_adapter(downloader)
+                except ValueError as e:
+                    return {"success": False, "error": f"获取适配器失败: {str(e)}", "operation": "get_adapter"}
 
-            # 使用适配器删除种子（删除数据文件）
-            from app.services.torrent_deletion_service import DeleteOption, SafetyCheckLevel
+                # 使用适配器删除种子（删除数据文件）
+                from app.services.torrent_deletion_service import DeleteOption, SafetyCheckLevel
 
-            delete_result = await adapter.delete_torrents(
-                torrent_hashes=[torrent.hash],
-                delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
-                safety_check_level=SafetyCheckLevel.ENHANCED,
-            )
+                delete_result = await adapter.delete_torrents(
+                    torrent_hashes=[torrent.hash],
+                    delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
+                    safety_check_level=SafetyCheckLevel.ENHANCED,
+                )
 
             # 检查适配器返回的删除结果
             # 适配器返回格式: {"success_hashes": [...], "failed_hashes": {...}, "warnings": [...], "deleted_files": [...]}
@@ -365,7 +387,8 @@ class TorrentDeletionByLevelService:
                         "downloader_name": downloader.nickname,
                         "torrent_name": torrent.name,
                         "torrent_hash": torrent.hash,
-                        "delete_files": True,
+                        "delete_files": not skip_downloader,
+                        "skip_downloader": skip_downloader,
                     },
                     old_value={"status": "active", "dr": 0},
                     new_value={"status": "deleted", "dr": 1},
@@ -375,7 +398,15 @@ class TorrentDeletionByLevelService:
                     user_agent=self._audit_request_info().get("user_agent"),
                 )
 
-            return {"success": True, "operation": "delete_level1", "message": "已删除种子和数据文件"}
+            return {
+                "success": True,
+                "operation": "delete_level1",
+                "message": (
+                    "已删除种子记录（下载器离线，已跳过下载器删除，数据文件保留）"
+                    if skip_downloader
+                    else "已删除种子和数据文件"
+                ),
+            }
 
         except Exception as e:
             logger.error(f"等级1删除失败: {str(e)}", exc_info=True)

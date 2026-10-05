@@ -376,12 +376,13 @@ export function deleteTorrents(data: TorrentDeleteRequest): Promise<ApiResponse<
 
 /**
  * 按等级删除种子
- * @description 支持等级3(移至回收站)和等级4(标记为待删除)
+ * @description 支持等级3(移至回收站)和等级4(标记为待删除)；等级1可携带 skip_downloader（下载器离线用户确认后仅删本地记录）
  */
 export interface DeleteWithLevelRequest {
   torrent_info_ids: string[]
   delete_level: number
   operator?: string
+  skip_downloader?: boolean
 }
 
 export function deleteTorrentsWithLevel(data: DeleteWithLevelRequest): Promise<ApiResponse<any>> {
@@ -392,6 +393,9 @@ export function deleteTorrentsWithLevel(data: DeleteWithLevelRequest): Promise<A
   }
   if (data.operator) {
     params.operator = data.operator
+  }
+  if (data.skip_downloader) {
+    params.skip_downloader = true
   }
 
   return request({
@@ -409,6 +413,8 @@ export interface BatchDeleteAsyncRequest {
   torrent_info_ids: string[]
   delete_level: number
   operator?: string
+  /** 仅等级1生效：跳过下载器调用，仅删除本地记录（下载器离线用户已确认） */
+  skip_downloader?: boolean
 }
 
 export interface BatchDeleteAsyncResponse {

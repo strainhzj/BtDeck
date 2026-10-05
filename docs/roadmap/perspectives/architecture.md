@@ -98,8 +98,8 @@ POST /mcp/（Authorization: Bearer <token> 或 X-Access-Token）
 
 ```
 HTTP DELETE /api/v1/torrents/...
-  └─ app/api/endpoints/torrent_deletion.py  (961 行)
-       └─ app/services/torrent_deletion_by_level.py  TorrentDeletionByLevel (1718 行)
+  └─ app/api/endpoints/torrent_deletion.py  (1064 行)
+       └─ app/services/torrent_deletion_by_level.py  TorrentDeletionByLevel (1767 行)
             ├─ L1  删任务+数据
             ├─ L2  删任务保数据
             ├─ L3  移回收站  → app/services/recycle_bin_service.py (860 行)

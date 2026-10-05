@@ -1,3 +1,12 @@
+## 2026-10-05：等级1删除·下载器离线追加确认与本地跳过删除（feature l1-delete-offline-skip-2026-10-05，全绿未提交）
+
+- **范围（实现假设经用户确认后实施）**：种子列表页等级1删除（单条+批量，index.vue / TraditionalView.vue 共用 TorrentBatchMixin 一处改动双视图生效）——原有等级1确认后调 `/downloader/getStatusAll` 检测所涉下载器；检测到离线则**再追加一次** error 级确认（用户澄清：非追加 3 次，共 2 次弹窗），提醒不调下载器接口、仅删 BtDeck 记录、数据文件与下载器侧任务保留；确认后携带 `skip_downloader=true` 删除，取消则中止；状态接口异常降级不阻断（按在线走原流程）。移动端种子页不在本批。
+- **后端**：`delete-with-level` 新增 Query 参数 / `delete-batch-async` 新增 body 字段 `skip_downloader`（仅等级1生效，其他等级携带返 400 TORRENT_DELETE_INVALID_PARAMS）；链路 endpoint→AsyncDeletionExecutor.execute_deletion_task→_delete_single_torrent→TorrentDeletionByLevelService.delete_by_level/delete_batch_by_level→_delete_level1 全透传；skip 时跳过适配器调用仅软删 dr=1，审计 operation_detail 记 delete_files=false+skip_downloader=true，成功 message 提示数据文件保留。
+- **前端**：mixin 新增 `confirmSkipDownloaderIfOffline`（离线判定：未在 getStatusAll 返回即离线；取消抛 'cancel' 走既有静默 catch）；utils 新增纯函数 `collectTorrentDownloaderRefs`（驼峰/蛇形兼容+去重+name 回退 id）/`findOfflineDownloaders`，`buildDeleteLevelRequest` 增 skipDownloader 开关（默认不携带字段，请求格式零变化）；api/torrents.ts 两请求类型扩可选 `skip_downloader`；i18n `deleteLevel.offlineConfirm` zh/en 成对。
+- **测试与门禁**：后端 pytest tests/api/test_torrent_deletion_by_level_api.py **52 passed**（新增 service 级 4 例 + HTTP 校验 4 例）+ mypy 3 文件 0 错 + black/flake8 净；前端新 spec torrentBatchDeleteLevel **9 例** + `npm run lint` 全绿 + 全量 Jest **1908/1908 例**（131/132 套；EChart.spec 因工作区未装 echarts 既有环境性失败，与本批无关——statistics-reports W5 待 npm install echarts）。
+- **文档**：feature_list #91（2 任务 done+evidence）；roadmap 6 文件同步（根 README 生成日期双栏/architecture.md 行号实测 961→1064、1718→1767/backend api·services 各条/frontend views 两行）。
+- **待办**：真实离线下载器联调验证弹窗链路；Git 提交待用户指示。
+
 ## 2026-09-24：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
 
 - **范围（实现假设经用户确认后实施）**：双模式收口——①按下载器 RSS 模式切换（btdeck/qb_native 仅 qB；冲突护栏：目标 qb_native 时自动推送 skip+计数、手动 409 RSS_MODE_CONFLICT，源绑定下载器 qb_native 冻结跳过调度不删数据）②引擎自动下载规则（include OR + exclude AND NOT + 正则开关 + 目标下载器/savePath/tags；多选源空=全部；保存即回填匹配推送）③qB 原生 RSS 代理（源树/文件夹/改址/删除/移动/刷新/已读含单篇/文章浏览/规则 CRUD+命中预览/偏好四键白名单透传，qB 为事实源不落库）④定时刷新调度（全局 cron 错峰 + 每源 refresh_interval_minutes 覆盖）⑤按规则目标下载器路由。⑥RSS 管理统一入口：/downloader 菜单组双 children（index+rss）跨下载器统一管理，与设置弹窗 rssSubscription 页签多入口共享组件，移动端 /m/rss。用户拍板：rss_management 能力键加（extended JSON）；qB 文章浏览做。

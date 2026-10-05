@@ -53,6 +53,7 @@ class AsyncDeletionExecutor:
         delete_level: int,
         operator: str,
         notify_on_complete: bool = False,
+        skip_downloader: bool = False,
     ):
         """
         执行批量删除任务
@@ -63,6 +64,7 @@ class AsyncDeletionExecutor:
             delete_level: 删除等级（1-4）
             operator: 操作者
             notify_on_complete: 完成后是否发送系统通知（默认 False，不影响既有流程）
+            skip_downloader: 仅等级1生效——跳过下载器调用，仅删除本地记录（下载器离线场景）
         """
         task_manager = get_deletion_task_manager()
 
@@ -95,6 +97,7 @@ class AsyncDeletionExecutor:
                                 delete_level=delete_level,
                                 operator=operator,
                                 audit_service=audit_service,
+                                skip_downloader=skip_downloader,
                             ),
                             timeout=self.SINGLE_TORRENT_TIMEOUT,
                         )
@@ -200,6 +203,7 @@ class AsyncDeletionExecutor:
         delete_level: int,
         operator: str,
         audit_service: Optional[Any] = None,
+        skip_downloader: bool = False,
     ) -> Dict[str, Any]:
         """
         删除单个种子
@@ -209,6 +213,7 @@ class AsyncDeletionExecutor:
             delete_level: 删除等级
             operator: 操作者
             audit_service: 审计日志服务（传入后按种子记录审计日志）
+            skip_downloader: 仅等级1生效——跳过下载器调用，仅删除本地记录
 
         Returns:
             删除结果字典
@@ -224,6 +229,7 @@ class AsyncDeletionExecutor:
                 delete_level=delete_level,
                 operator=operator,
                 audit_service=audit_service,
+                skip_downloader=skip_downloader,
             )
 
             if result.get("success"):

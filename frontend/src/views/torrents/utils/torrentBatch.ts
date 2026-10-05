@@ -1113,17 +1113,55 @@ const VALID_DELETE_LEVELS = new Set([1, 2, 3, 4])
  * @param torrents 要删除的种子列表
  * @param level 删除等级 (1-4)
  * @param operator 操作人
+ * @param skipDownloader 仅等级1生效——跳过下载器调用仅删本地记录（true 时才携带 skip_downloader，保持默认请求零变化）
  */
 export function buildDeleteLevelRequest(
   torrents: any[],
   level: number,
-  operator = 'admin'
-): { torrent_info_ids: string[], delete_level: number, operator: string } {
-  return {
+  operator = 'admin',
+  skipDownloader = false
+): { torrent_info_ids: string[], delete_level: number, operator: string, skip_downloader?: boolean } {
+  const request: { torrent_info_ids: string[], delete_level: number, operator: string, skip_downloader?: boolean } = {
     torrent_info_ids: torrents.map(t => getTorrentId(t)),
     delete_level: level,
     operator
   }
+  if (skipDownloader) {
+    request.skip_downloader = true
+  }
+  return request
+}
+
+/** 种子涉及的下载器引用（等级1离线检测用）：id 必备，name 回退 id */
+export interface DownloaderRef {
+  id: string
+  name: string
+}
+
+/**
+ * 收集种子涉及的去重下载器引用（兼容 downloaderId/downloader_id、downloaderName/downloader_name）
+ * @param torrents 种子列表
+ */
+export function collectTorrentDownloaderRefs(torrents: any[]): DownloaderRef[] {
+  const seen = new Set<string>()
+  const refs: DownloaderRef[] = []
+  torrents.forEach(t => {
+    if (!t) return
+    const id = t.downloaderId || t.downloader_id || ''
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    refs.push({ id, name: t.downloaderName || t.downloader_name || id })
+  })
+  return refs
+}
+
+/**
+ * 从下载器引用中筛出离线者（getStatusAll 仅返回在线下载器，不在返回列表即离线）
+ * @param refs 种子涉及的下载器引用
+ * @param onlineDownloaderIds getStatusAll 返回的在线下载器 ID 集合
+ */
+export function findOfflineDownloaders(refs: DownloaderRef[], onlineDownloaderIds: Set<string>): DownloaderRef[] {
+  return refs.filter(ref => !onlineDownloaderIds.has(ref.id))
 }
 
 /**
