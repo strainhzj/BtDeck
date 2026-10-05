@@ -6,6 +6,7 @@
 - **测试与门禁**：后端 pytest tests/api/test_torrent_deletion_by_level_api.py **52 passed**（新增 service 级 4 例 + HTTP 校验 4 例）+ mypy 3 文件 0 错 + black/flake8 净；前端新 spec torrentBatchDeleteLevel **9 例** + `npm run lint` 全绿 + 全量 Jest **1908/1908 例**（131/132 套；EChart.spec 因工作区未装 echarts 既有环境性失败，与本批无关——statistics-reports W5 待 npm install echarts）。
 - **文档**：feature_list #91（2 任务 done+evidence）；roadmap 6 文件同步（根 README 生成日期双栏/architecture.md 行号实测 961→1064、1718→1767/backend api·services 各条/frontend views 两行）。
 - **待办**：真实离线下载器联调验证弹窗链路；Git 提交待用户指示。
+- **提交与部署（同日）**：经用户授权提交 `b9ebd11`（18 文件，feat: 等级1删除·下载器离线追加确认与本地跳过删除）后执行 `./build-and-export-images.sh` 一次成功：镜像源 profile 2、两镜像 try 1 过（DNS 坑用 /tmp/btdeck-dockerwrap wrapper 注入 `--network=host` 解决，沙箱无 root 改不了 /etc/resolv.conf）；tar 导出 backend 118M / frontend 51M；unraid root@192.168.5.51 部署 40s，容器均 healthy，/health/ready ready / version 1.0.6 / gitSha b9ebd11942f2 与 HEAD 一致；http://192.168.5.51:8080 探活 200。
 
 ## 2026-09-24：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
 

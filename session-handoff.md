@@ -10,7 +10,8 @@
 
 ### 待办
 
-- 真实离线下载器联调弹窗链路；Git 提交待用户指示。
+- 真实离线下载器联调弹窗链路。
+- 已提交 b9ebd11 并部署 unraid（v1.0.6，healthy，ready 检查全过）。部署 DNS 坑：沙箱无 root 改不了 /etc/resolv.conf，用 /tmp/btdeck-dockerwrap wrapper（docker build 注入 --network=host）解决，后续部署沿用。
 
 ## 2026-09-24 交接：下载器 RSS 订阅 Phase 2（feature rss-subscription-phase2-2026-09-24，全绿未提交）
 
