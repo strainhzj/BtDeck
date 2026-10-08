@@ -1,3 +1,34 @@
+## 2026-10-08 二期交接：添加链路接入种子定位（feature torrent-lookup-service-2026-10-08 二期，全绿未提交）
+
+### 已完成
+
+- **范围（用户确认）**：三条添加路径全做（/add qB、/add TR、/add-batch）+ 刷新 tracker 信息；快速刷新种子 DB 字段。
+- **实现**：helpers `wait_and_upsert_torrent_row`（轮询定位 30×1s → 无行创建 `_build_row_from_vo` / 有行刷新实时字段白名单——修复"重复添加已存在行不刷新要等 10 分钟同步"缺口；锁重试内联 helpers）+ `refresh_trackers_after_add`（qB `torrents_trackers` / TR `trackerStats` 投影 → 复用同步链路提取+四步批量 upsert；注册表倒置 `register_tracker_sync_hooks` 由 torrents_async 模块尾注册——MCP purity 守卫强制）；TR error 态判定回归（VO `error_reason` + resolve 联合）；qB size 字段名修正（原 create 误用 total_size 恒 None）；批量裸 to_thread 轮询消除（P0-04 顺修）；死代码四函数删除。
+- **坑入档**：test_service_parity 纯度守卫会在全量时抓 service→endpoint / 闭包扩张违规（单跑受影响文件看不见）；MagicMock stub 未显式设置的属性自动产生 MagicMock（VO 数值容错救场，但 stub 应显式全字段）；side_effect 序列要覆盖新链路追加的远程调用次数；行 hash 以 calculate_info_hash 真实值为准非 stub 值。
+- **验证**：全量 **5467 passed / 0 failed / 18 skipped**（+11 例 test_torrent_add_refresh）+ mypy/black/flake8 净 + ./init.sh exit 0；文档四件套同步（roadmap 3 文件含新增 helpers 行、feature_list 二期任务、progress、本交接）。
+
+### 待办
+
+- DB 多条件查询消费层（名称/分类/标签/状态 → 本地 DB 定位 hash → lookup 取实时态）。
+- 内部散落 torrents_info/get_torrents 直调迁移（seed_transfer 查重、recycle_bin 轮询、orphan_manifest、added_date_backfill）。
+- Git 提交待用户指示（本批与一期均未提交）。
+
+## 2026-10-08 交接：通用种子定位底层 service（feature torrent-lookup-service-2026-10-08，全绿未提交）
+
+### 已完成
+
+- **范围（实现假设经用户三轮确认）**：快速定位种子并获取信息的通用底层方法，按 qB/TR 双 SDK 设计。①只做底层 service 供后续设计消费（无 HTTP 端点/MCP 暴露）；②优先毫秒级 hash 匹配，名称/多条件查询后续基于 DB 另行设计（双端 SDK 均无服务端名称过滤，定案为"本地 DB 定位 hash → 远程精确取实时态"）；③仅 service 层。
+- **实现**：`backend/app/services/torrent_lookup_service.py`（295 行）——`get_by_hash` / `get_by_hashes` 双入口 + `from_context(RuntimeContext)` 注入；qB `torrents_info(torrent_hashes=)` / TR `get_torrents(ids=, arguments=最小投影)` 双端单请求 O(1)；分块 qB≤100（GET URL 上限）/TR≤200；统一 14 字段 VO（删除适配器 13 字段 + raw_state，修复双端口径不一致：progress 统一 0~100、日期统一 epoch 秒、qB sentinel 归 0、TR datetime 转epoch）；INTERACTIVE lane；store 三态校验 + rTorrent 门控；err/不存在二元错误语义（批量保留部分成功块）。
+- **SDK 事实（wheel 源码实证）**：qbittorrent-api `torrent_hashes` 接受 Iterable 自动 `|` 连接；transmission-rpc 投影自动补 id/hashString、缺字段抛 KeyError、progress 0~100（与 qB 相反）、Status(str,Enum) 须 .lower() 取值。
+- **验证**：新测试 22 例全绿；隔离 venv（requirements 锁定 + freezegun，本机无既有 pytest 环境）全量 **5456 passed / 0 failed / 18 skipped**；mypy/black/flake8 净；./init.sh exit 0。
+- **文档**：feature_list 第 93 组（1 任务 done）；roadmap 3 文件（services 根 59→60 + tests/README + 根元信息）；progress.md 置顶条目。
+
+### 待办
+
+- DB 多条件查询消费层（名称/分类/标签/状态 → 本地 DB 定位 hash → 本 service 取实时态）——下一批。
+- 内部 5+ 处散落 torrents_info/get_torrents 直调可逐步迁移（seed_transfer 查重、recycle_bin 轮询、orphan_manifest、added_date_backfill 等）。
+- Git 提交待用户指示（本批未提交）。
+
 ## 2026-10-05 交接：等级1删除·下载器离线追加确认与本地跳过删除（feature l1-delete-offline-skip-2026-10-05，全绿未提交）
 
 ### 已完成

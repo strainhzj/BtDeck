@@ -4875,3 +4875,10 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     return _build_tracker_only_result(
         "Transmission", nickname, tracker_count, tracker_total_rows, error_count, tracker_count + skipped_new
     )
+
+
+# 添加后 tracker 刷新钩子注册（依赖倒置）：把本模块的提取/批量写入实现注册给
+# 共享 service 层（torrent_add_helpers 禁止 import endpoint 层，MCP purity 守卫）
+from app.services.torrent_add_helpers import register_tracker_sync_hooks as _register_add_refresh_hooks
+
+_register_add_refresh_hooks(extract_tracker_rows_from_torrent, sync_trackers_batch_async)

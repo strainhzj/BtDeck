@@ -15,13 +15,15 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.api.endpoints import torrent_crud
+from app.services import torrent_add_helpers as add_helpers
+from app.services import torrent_add_helpers as batch_add_helpers
 from app.services import torrent_batch_add_service as batch_service
+from app.services.torrent_add_helpers import _is_sqlite_locked_error
 from app.services.torrent_batch_add_service import (
     StagedTorrentFile,
     TorrentBatchAddOptions,
     _add_one_torrent,
     _create_completion_notification,
-    _is_sqlite_locked_error,
 )
 from app.torrents.models import TorrentInfo
 
@@ -155,8 +157,39 @@ def _build_batch_options() -> TorrentBatchAddOptions:
     )
 
 
-def _build_tr_environment(tmp_path: Any, monkeypatch: pytest.MonkeyPatch, commit_side_effect: Any) -> Any:
-    """搭建 _add_one_torrent 的 TR 下载器最小环境，返回可直接断言的 MagicMock db。"""
+async def _fake_lookup_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+    """fake 直调（与 runtime 行为一致：异常透传），供 lookup/tracker 模块 patch 用。"""
+    return func(*args, **(kwargs or {}))
+
+
+def _make_tr_vo_stub() -> SimpleNamespace:
+    """TR 种子 stub：覆盖 VO 转换所需全字段（transmission-rpc 属性名）。"""
+    return SimpleNamespace(
+        id=9330,
+        hashString="a" * 40,
+        name="seed-name",
+        download_dir="/downloads",
+        total_size=1024.0,
+        status="checking",
+        progress=0.0,
+        ratio=0.0,
+        downloaded_ever=0,
+        uploaded_ever=0,
+        torrent_file="/config/torrents/x.torrent",
+        added_date=datetime(2026, 9, 6, 14, 46, 23),
+        done_date=None,
+        labels=[],
+    )
+
+
+def _build_tr_environment(tmp_path: Any, monkeypatch: pytest.MonkeyPatch, commit_side_effect: Any):
+    """搭建 _add_one_torrent 的 TR 下载器最小环境，返回可直接断言的 MagicMock db。
+
+    二期改造（torrent-lookup-service-2026-10-08）：
+    - 轮询/落库统一走 helpers.wait_and_upsert_torrent_row（VO 来自 lookup 真实转换），
+      桩层从 create_transmission_torrent_record（已删）迁移到 _build_row_from_vo；
+    - lookup/tracker 模块的 call_downloader_api fake 直调；轮询间隔置零。
+    """
 
     torrent_file = tmp_path / "seed.torrent"
     torrent_file.write_bytes(b"torrent-bytes")
@@ -165,34 +198,46 @@ def _build_tr_environment(tmp_path: Any, monkeypatch: pytest.MonkeyPatch, commit
         return "a" * 40
 
     record_stub = SimpleNamespace(info_id="info-1", name="seed-name", hash="a" * 40, size=1024)
-    monkeypatch.setattr(batch_service, "calculate_info_hash", fake_calculate_info_hash)
-    monkeypatch.setattr(batch_service, "create_transmission_torrent_record", MagicMock(return_value=record_stub))
-    monkeypatch.setattr(batch_service, "_write_audit_log_async", AsyncMock(return_value=None))
-    monkeypatch.setattr(batch_service, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    import app.services.torrent_add_helpers as add_helpers
 
-    downloader = SimpleNamespace(downloader_type=1, nickname="tr", fail_time=0)
+    monkeypatch.setattr(batch_service, "calculate_info_hash", fake_calculate_info_hash)
+    monkeypatch.setattr("app.services.torrent_add_helpers._build_row_from_vo", MagicMock(return_value=record_stub))
+    monkeypatch.setattr(batch_service, "_write_audit_log_async", AsyncMock(return_value=None))
+    monkeypatch.setattr(batch_service, "refresh_trackers_after_add", AsyncMock(return_value=True))
+    monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr("app.services.torrent_add_helpers.ADD_POLL_INTERVAL", 0.0)
+
     client = MagicMock()
-    client.get_torrents = MagicMock(return_value=[SimpleNamespace(id=9330)])
+    client.get_torrents = MagicMock(return_value=[_make_tr_vo_stub()])
     client.add_torrent = MagicMock(return_value=None)
+    # store 快照中的 downloader 必须带 client（lookup _resolve_client 三态校验）
+    downloader = SimpleNamespace(downloader_id="dl-1", downloader_type=1, nickname="tr", fail_time=0, client=client)
+
+    async def fake_snapshot():
+        return [downloader]
+
+    store = SimpleNamespace(get_snapshot=fake_snapshot)
 
     db = MagicMock()
     db.query.return_value.filter.return_value.filter.return_value.filter.return_value.first.return_value = None
     if commit_side_effect is not None:
         db.commit.side_effect = commit_side_effect
-    return db, downloader, client, StagedTorrentFile(file_name="seed.torrent", file_path=str(torrent_file))
+    return db, store, downloader, client, StagedTorrentFile(file_name="seed.torrent", file_path=str(torrent_file))
 
 
 @pytest.mark.asyncio
 async def test_add_one_torrent_closes_residual_read_transaction_before_network(tmp_path, monkeypatch):
     """根修断言：网络调用前必须先结束上一轮遗留的读事务（BUSY_SNAPSHOT 窗口消除）。"""
 
-    db, downloader, client, staged_file = _build_tr_environment(tmp_path, monkeypatch, None)
+    db, store, downloader, client, staged_file = _build_tr_environment(tmp_path, monkeypatch, None)
 
     order: List[str] = []
     db.rollback.side_effect = lambda: order.append("rollback")
     client.add_torrent.side_effect = lambda *args, **kwargs: order.append("add_torrent")
 
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is True
@@ -204,11 +249,11 @@ async def test_add_one_torrent_closes_residual_read_transaction_before_network(t
 async def test_add_one_torrent_retries_on_sqlite_locked_and_succeeds(tmp_path, monkeypatch):
     """兜底断言：首次 commit 遇 BUSY_SNAPSHOT 后回滚重建实例重试，第二次成功。"""
 
-    db, downloader, client, staged_file = _build_tr_environment(
+    db, store, downloader, client, staged_file = _build_tr_environment(
         tmp_path, monkeypatch, [_sqlite_operational_error(518, "database is locked"), None]
     )
 
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is True
@@ -217,7 +262,9 @@ async def test_add_one_torrent_retries_on_sqlite_locked_and_succeeds(tmp_path, m
     # 1 次迭代顶部根修 + 1 次重试前的锁冲突回滚
     assert db.rollback.call_count == 2
     # 每次重试都必须重建 ORM 实例（rollback 会 expunge pending 对象，复用会静默丢失 INSERT）
-    assert batch_service.create_transmission_torrent_record.call_count == 2
+    from app.services import torrent_add_helpers as add_helpers
+
+    assert add_helpers._build_row_from_vo.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -225,16 +272,14 @@ async def test_add_one_torrent_lock_retry_exhausted_reports_error_code(tmp_path,
     """兜底断言：重试耗尽后失败，且错误串透传 sqlite_errorcode 供通知中心鉴别。"""
 
     # side_effect 用异常实例列表逐次抛出（传函数会把返回的异常当普通返回值吞掉）
-    always_locked = [
-        _sqlite_operational_error(518, "database is locked") for _ in range(batch_service._LOCKED_RETRY_MAX)
-    ]
-    db, downloader, client, staged_file = _build_tr_environment(tmp_path, monkeypatch, always_locked)
+    always_locked = [_sqlite_operational_error(518, "database is locked") for _ in range(add_helpers._LOCKED_RETRY_MAX)]
+    db, store, downloader, client, staged_file = _build_tr_environment(tmp_path, monkeypatch, always_locked)
 
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is False
-    assert db.commit.call_count == batch_service._LOCKED_RETRY_MAX
+    assert db.commit.call_count == add_helpers._LOCKED_RETRY_MAX
     assert "sqlite_errorcode=518" in result["error"]
     assert "database is locked" in result["error"]
 
@@ -243,11 +288,11 @@ async def test_add_one_torrent_lock_retry_exhausted_reports_error_code(tmp_path,
 async def test_add_one_torrent_does_not_retry_non_locked_errors(tmp_path, monkeypatch):
     """非锁冲突的 OperationalError 不重试，直接进入失败路径。"""
 
-    db, downloader, client, staged_file = _build_tr_environment(
+    db, store, downloader, client, staged_file = _build_tr_environment(
         tmp_path, monkeypatch, _sqlite_operational_error(None, "no such table: torrent_info")
     )
 
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is False
@@ -326,26 +371,37 @@ async def test_locked_retry_persists_row_with_real_sqlite_session(tmp_path, monk
     client = MagicMock()
     client.get_torrents = MagicMock(return_value=[tr_stub])
     client.add_torrent = MagicMock(return_value=None)
-    downloader = SimpleNamespace(downloader_type=1, nickname="tr", fail_time=0)
+    downloader = SimpleNamespace(downloader_id="dl-1", downloader_type=1, nickname="tr", fail_time=0, client=client)
 
     async def fake_calculate_info_hash(_path: str) -> str:
         return "a" * 40
 
     # 保留真实工厂（构造真实 TorrentInfo ORM 实例），仅外包一层调用计数
-    real_factory = batch_service.create_transmission_torrent_record
+    import app.services.torrent_add_helpers as add_helpers
+
+    real_factory = add_helpers._build_row_from_vo
     factory_calls: List[Any] = []
 
-    def counting_factory(tr_downloader: Any, downloader_id: str, tr_torrent: Any) -> Any:
-        factory_calls.append(tr_torrent)
-        return real_factory(tr_downloader, downloader_id, tr_torrent)
+    def counting_factory(downloader_vo: Any, info_hash: str, vo: Any, operator: str = "admin") -> Any:
+        factory_calls.append(vo)
+        return real_factory(downloader_vo, info_hash, vo, operator)
+
+    async def fake_snapshot() -> List[Any]:
+        return [downloader]
+
+    store = SimpleNamespace(get_snapshot=fake_snapshot)
 
     monkeypatch.setattr(batch_service, "calculate_info_hash", fake_calculate_info_hash)
-    monkeypatch.setattr(batch_service, "create_transmission_torrent_record", counting_factory)
+    monkeypatch.setattr(add_helpers, "_build_row_from_vo", counting_factory)
     monkeypatch.setattr(batch_service, "_write_audit_log_async", AsyncMock(return_value=None))
-    monkeypatch.setattr(batch_service, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(batch_service, "refresh_trackers_after_add", AsyncMock(return_value=True))
+    monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr(add_helpers, "ADD_POLL_INTERVAL", 0.0)
 
     staged_file = StagedTorrentFile(file_name="seed-real.torrent", file_path=str(torrent_file))
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is True
@@ -371,23 +427,53 @@ async def test_qb_branch_shares_locked_retry_path(tmp_path, monkeypatch):
     async def fake_calculate_info_hash(_path: str) -> str:
         return "b" * 40
 
+    import app.services.torrent_add_helpers as add_helpers
+
     record_stub = SimpleNamespace(info_id="info-qb", name="seed-qb", hash="b" * 40, size=2048)
     qb_factory = MagicMock(return_value=record_stub)
     monkeypatch.setattr(batch_service, "calculate_info_hash", fake_calculate_info_hash)
-    monkeypatch.setattr(batch_service, "create_qbittorrent_torrent_record", qb_factory)
+    monkeypatch.setattr(add_helpers, "_build_row_from_vo", qb_factory)
     monkeypatch.setattr(batch_service, "_write_audit_log_async", AsyncMock(return_value=None))
-    monkeypatch.setattr(batch_service, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(batch_service, "refresh_trackers_after_add", AsyncMock(return_value=True))
+    monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+    monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    monkeypatch.setattr(add_helpers, "ADD_POLL_INTERVAL", 0.0)
 
-    downloader = SimpleNamespace(downloader_type=0, nickname="qb", fail_time=0)
     client = MagicMock()
-    client.torrents_info = MagicMock(return_value=[SimpleNamespace(hash="b" * 40)])
+    # qB VO 全字段 stub（torrents/info 字段名）
+    client.torrents_info = MagicMock(
+        return_value=[
+            SimpleNamespace(
+                hash="b" * 40,
+                name="seed-qb",
+                size=2048,
+                state="downloading",
+                progress=0.25,
+                ratio=0.0,
+                downloaded=0,
+                uploaded=0,
+                save_path="/downloads",
+                completion_on=0,
+                added_on=1700000000,
+                category="",
+                tags="",
+            )
+        ]
+    )
+    downloader = SimpleNamespace(downloader_id="dl-1", downloader_type=0, nickname="qb", fail_time=0, client=client)
+
+    async def fake_snapshot() -> List[Any]:
+        return [downloader]
+
+    store = SimpleNamespace(get_snapshot=fake_snapshot)
 
     db = MagicMock()
     db.query.return_value.filter.return_value.filter.return_value.filter.return_value.first.return_value = None
     db.commit.side_effect = [_sqlite_operational_error(5, "database is locked"), None]
 
     staged_file = StagedTorrentFile(file_name="seed-qb.torrent", file_path=str(torrent_file))
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
     await asyncio.sleep(0)
 
     assert result["success"] is True
@@ -401,7 +487,7 @@ async def test_qb_branch_shares_locked_retry_path(tmp_path, monkeypatch):
 async def test_locked_retry_backoff_is_linear(tmp_path, monkeypatch):
     """退避契约：线性递增（base×1、base×2、…），总等待远小于 busy_timeout 兜底。"""
 
-    db, downloader, client, staged_file = _build_tr_environment(
+    db, store, downloader, client, staged_file = _build_tr_environment(
         tmp_path,
         monkeypatch,
         [
@@ -412,28 +498,40 @@ async def test_locked_retry_backoff_is_linear(tmp_path, monkeypatch):
     )
     # _build_tr_environment 把退避基数置 0 了——恢复真实值以断言乘数序列
     base = 0.2
-    monkeypatch.setattr(batch_service, "_LOCKED_RETRY_BASE_DELAY_SECONDS", base)
+    monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", base)
     sleep_mock = AsyncMock(return_value=None)
     monkeypatch.setattr(batch_service.asyncio, "sleep", sleep_mock)
 
-    result = await _add_one_torrent(db, downloader, client, staged_file, _build_batch_options())
+    result = await _add_one_torrent(db, store, downloader, client, staged_file, _build_batch_options())
 
     assert result["success"] is True
     assert sleep_mock.await_args_list == [call(base * 1), call(base * 2)]
 
 
 def test_batch_add_lock_governance_source_contract():
-    """源码契约：钉住锁治理的四个结构点，防未来重构"改一处忘一处"。"""
+    """源码契约：钉住锁治理的结构点，防未来重构"改一处忘一切"。
+
+    二期更新（torrent-lookup-service-2026-10-08）：TR/qB 双分支的落库已收敛到
+    helpers.wait_and_upsert_torrent_row 单调用点（原双分支各一处），重试函数本体
+    仍在 batch_service，契约跨两个文件锚定。
+    """
 
     source = Path(batch_service.__file__).read_text(encoding="utf-8")
+    helpers_source = Path(batch_add_helpers.__file__).read_text(encoding="utf-8")
 
     # ① 根修 rollback 必须先于首个网络调用（calculate_info_hash）
     assert "db.rollback()\n        info_hash = await calculate_info_hash" in source
-    # ② TR/qB 双分支共享同一重试落库路径（def + 两处调用点）
-    assert source.count("_insert_torrent_record_with_retry(") >= 3
+    # ② 重试落库路径：锁四件套已内联 helpers（helpers 属 MCP 共享闭包，不得
+    # 反向依赖含 fastapi 的批量模块），双分支收敛为 wait_and_upsert 单调用点
+    assert helpers_source.count("async def _insert_torrent_record_with_retry(") == 1
+    assert helpers_source.count("wait_and_upsert_torrent_row(") >= 1
+    assert "_insert_torrent_record_with_retry(" in helpers_source
     # ③ 重试循环每轮重建实例（rollback 会 expunge pending 对象）+ 失败即回滚
-    assert "db_torrent = record_factory()\n        db.add(db_torrent)" in source
-    assert "db.rollback()\n            if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:" in source
+    assert "db_torrent = record_factory()\n        db.add(db_torrent)" in helpers_source
+    assert (
+        "db.rollback()\n            if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:"
+        in helpers_source
+    )
     # ④ 锁码集合与错误码透传（复发鉴别的观测口）
-    assert "_SQLITE_BUSY_ERROR_CODES = (5, 517, 518)" in source
-    assert "（sqlite_errorcode={error_code}）" in source
+    assert "_SQLITE_BUSY_ERROR_CODES = (5, 517, 518)" in helpers_source
+    assert "sqlite_errorcode=%s" in helpers_source

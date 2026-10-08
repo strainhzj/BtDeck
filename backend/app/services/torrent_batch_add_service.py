@@ -11,21 +11,20 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import UploadFile
-from sqlalchemy.exc import OperationalError
 
 from app.services.torrent_add_helpers import (
+    _sqlite_error_code,
     _write_audit_log_async,
     calculate_info_hash,
-    create_qbittorrent_torrent_record,
-    create_transmission_torrent_record,
+    refresh_trackers_after_add,
+    wait_and_upsert_torrent_row,
 )
 from app.database import AsyncSessionLocal, SessionLocal
 from app.services.notification_service import NotificationService
 from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
-from app.torrents.models import TorrentInfo
 
 logger = logging.getLogger(__name__)
 
@@ -126,84 +125,9 @@ def _failed_results(staged_files: Sequence[StagedTorrentFile], error: str) -> Li
 # SQLite 写锁冲突错误码：SQLITE_BUSY=5 / SQLITE_BUSY_RECOVERY=517 / SQLITE_BUSY_SNAPSHOT=518。
 # BUSY_SNAPSHOT 表示陈旧读快照升级写事务失败，busy_timeout 对其无效（重试也无意义，
 # 唯一出路是 rollback 后重开快照），这正是批量添加偶发 "database is locked" 的根因。
-_SQLITE_BUSY_ERROR_CODES = (5, 517, 518)
-# 写锁冲突有界重试：5 次 × 0.2s 起步线性退避，总等待约 3s，远小于 busy_timeout=15s 兜底。
-_LOCKED_RETRY_MAX = 5
-_LOCKED_RETRY_BASE_DELAY_SECONDS = 0.2
-
-
-def _sqlite_error_code(exc: BaseException) -> Optional[int]:
-    """提取 sqlite3 原生错误码（Python>=3.11 经 exc.orig.sqlite_errorcode 暴露）。
-
-    用于事后鉴别锁冲突类型（BUSY=5 与 BUSY_SNAPSHOT=518），旧运行时无该属性时返回 None。
-    """
-    orig = getattr(exc, "orig", None)
-    code = getattr(orig, "sqlite_errorcode", None)
-    if code is None:
-        return None
-    try:
-        return int(code)
-    except (TypeError, ValueError):
-        return None
-
-
-def _is_sqlite_locked_error(exc: BaseException) -> bool:
-    """判定是否为 SQLite 写锁冲突（决定是否走有界重试）。"""
-    if not isinstance(exc, OperationalError):
-        return False
-    code = _sqlite_error_code(exc)
-    if code is not None:
-        return code in _SQLITE_BUSY_ERROR_CODES
-    return "database is locked" in str(exc).lower()
-
-
-async def _insert_torrent_record_with_retry(db: Any, record_factory: Callable[[], Any]) -> Any:
-    """以短事务插入单条新种子记录，对 SQLite 写锁冲突做有界重试。
-
-    WAL 模式下，若会话携带有已陈旧的读事务（期间其他连接提交过写入），commit 升级
-    写事务会立即返回 BUSY_SNAPSHOT（"database is locked"，busy_timeout 不生效）；
-    正确处置是 rollback 丢弃陈旧快照后重开事务重试。每次重试用 record_factory 重建
-    ORM 实例：rollback 会 expunge 尚未提交的 pending 对象，复用旧实例会因带主键被
-    视作 persistent 而静默不产生 INSERT。非锁冲突错误不重试，直接上抛。
-    """
-    db_torrent: Any = None
-    for attempt in range(1, _LOCKED_RETRY_MAX + 1):
-        db_torrent = record_factory()
-        db.add(db_torrent)
-        try:
-            db.commit()
-            break
-        except OperationalError as exc:
-            db.rollback()
-            if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:
-                raise
-            logger.warning(
-                "新种子记录落库遇到 SQLite 写锁冲突，回滚后重试（第 %s/%s 次，sqlite_errorcode=%s）",
-                attempt,
-                _LOCKED_RETRY_MAX,
-                _sqlite_error_code(exc),
-            )
-            await asyncio.sleep(_LOCKED_RETRY_BASE_DELAY_SECONDS * attempt)
-    db.refresh(db_torrent)
-    return db_torrent
-
-
-async def _wait_for_transmission_torrent(client: Any, info_hash: str, retries: int = 30) -> Any:
-    """在线程中执行 Transmission RPC，避免同步 SDK 调用阻塞事件循环。"""
-
-    for _ in range(retries):
-        try:
-            torrents = await asyncio.to_thread(client.get_torrents, info_hash)
-            if torrents:
-                return torrents[0]
-        except Exception:
-            logger.debug("等待 Transmission 种子信息失败，将重试", exc_info=True)
-        await asyncio.sleep(1)
-    return None
-
-
 async def _add_one_torrent(
     db: Any,
+    store: Any,
     downloader: Any,
     client: Any,
     staged_file: StagedTorrentFile,
@@ -233,21 +157,14 @@ async def _add_one_torrent(
                 paused=options.paused,
                 download_dir=options.save_path if options.save_path else None,
             )
-            torrent = await _wait_for_transmission_torrent(client, info_hash)
-            if not torrent:
-                raise RuntimeError("获取 Transmission 种子信息超时")
-
-            db_torrent = (
-                db.query(TorrentInfo)
-                .filter(TorrentInfo.hash == info_hash)
-                .filter(TorrentInfo.dr == 0)
-                .filter(TorrentInfo.downloader_id == options.downloader_id)
-                .first()
+            # 添加后统一「轮询定位 + 落库/刷新」+ tracker 刷新
+            # （feature torrent-lookup-service-2026-10-08 二期，替代 _wait_for_transmission_torrent）
+            db_torrent, _created, lookup_err = await wait_and_upsert_torrent_row(
+                db, store, downloader, info_hash, operator=options.operator or "admin"
             )
             if db_torrent is None:
-                db_torrent = await _insert_torrent_record_with_retry(
-                    db, lambda: create_transmission_torrent_record(downloader, options.downloader_id, torrent)
-                )
+                raise RuntimeError(f"获取 Transmission 种子信息超时: {lookup_err}")
+            await refresh_trackers_after_add(store, downloader, info_hash, db_torrent.info_id)
 
         elif downloader_type == 0:
             file_data = await asyncio.to_thread(_read_file_data, staged_file.file_path)
@@ -265,30 +182,14 @@ async def _add_one_torrent(
                 download_limit=options.download_limit,
             )
 
-            qb_torrent = None
-            for _ in range(30):
-                torrents = await asyncio.to_thread(client.torrents_info, torrent_hashes=info_hash)
-                if torrents:
-                    qb_torrent = torrents[0]
-                    break
-                await asyncio.sleep(1)
-            if qb_torrent is None:
-                raise RuntimeError("种子添加到 qBittorrent 后无法获取信息")
-
-            db_torrent = (
-                db.query(TorrentInfo)
-                .filter(TorrentInfo.hash == info_hash)
-                .filter(TorrentInfo.dr == 0)
-                .filter(TorrentInfo.downloader_id == options.downloader_id)
-                .first()
+            # 添加后统一「轮询定位 + 落库/刷新」+ tracker 刷新
+            # （替代原 30×1s torrents_info 手写轮询；P0-04 违规的裸 to_thread 调用一并消除）
+            db_torrent, _created, lookup_err = await wait_and_upsert_torrent_row(
+                db, store, downloader, info_hash, operator=options.operator or "admin"
             )
             if db_torrent is None:
-                db_torrent = await _insert_torrent_record_with_retry(
-                    db,
-                    lambda: create_qbittorrent_torrent_record(
-                        downloader, options.downloader_id, qb_torrent, staged_file.file_path
-                    ),
-                )
+                raise RuntimeError(f"种子添加到 qBittorrent 后无法获取信息: {lookup_err}")
+            await refresh_trackers_after_add(store, downloader, info_hash, db_torrent.info_id)
         else:
             raise ValueError(f"不支持的下载器类型: {downloader.downloader_type}")
 
@@ -429,7 +330,9 @@ async def process_torrent_batch_job(
             db = SessionLocal()
             try:
                 for staged_file in staged_files:
-                    results.append(await _add_one_torrent(db, downloader, downloader.client, staged_file, options))
+                    results.append(
+                        await _add_one_torrent(db, app.state.store, downloader, downloader.client, staged_file, options)
+                    )
             finally:
                 db.close()
     except Exception as exc:

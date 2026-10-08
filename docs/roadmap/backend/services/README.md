@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（59 个文件，不计 `__init__.py`；✨2026-09-25 统计报表 W3 +report_service.py 实测校准；历史：✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service、✨2026-09-24 Phase 2 +rss_rule_service/+rss_qb_proxy_service）
+### services/ 根（60 个文件，不计 `__init__.py`；✨2026-10-08 +torrent_lookup_service.py；历史：✨2026-09-25 统计报表 W3 +report_service.py 实测校准；✨2026-09-22 W5 +mcp_apikey_service、✨2026-09-24 +rss_feed_service、✨2026-09-24 Phase 2 +rss_rule_service/+rss_qb_proxy_service）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -16,7 +16,7 @@
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService(db, RuntimeContext)`（L19，✨2026-09-05 去 app 化）：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 统计报表 report ✨2026-09-25（W3） | `report_service.py` | 856 行扁平单文件（分区：常量/overview/trends/seeding/tracker_stats/fun/speed），七个报表域聚合：五桶判定错误桶优先（status='error' OR has_tracker_error 先判，再归常量四主桶/其他，复用 torrent_stats_cache 模块级常量）；种子口径 dr=0 AND deleted_at IS NULL、回收站 deleted_at 非空；勋章半开区间 [0,1)/[1,10)/[10,50)/[50,200)/[200,∞) TB；蓝光 40GB/高清 8GB/剧集 30GB；host 去端口归一（IPv6 [..] 保留）与 save_path 根前缀=前两段非空路径段；D15 errorRate 分母排除 unknown、D16 均值排除 NULL；速度历史 24h 纯 raw 分钟级 + 7d/30d hourly 主体+raw 尾段拼接（raw >= max(stat_hour)+1h，断点=停机无行不补零，hourly 携 sampleCount/onlineCount）；liveSpeed 只读 store 快照；trends 内嵌 speedHistory 默认 24h；空库全零值/空数组契约；_as_dt 统一解析 DATETIME 列存储字符串（feature statistics-reports-2026-09） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
-| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志）；✨2026-09-08（MCP W3-③，随 dev1.0.7 合入）：`TorrentAddResult` 扩领域字段 （info_hash/info_id/name/downloader_nickname/created + db_torrent_created 追踪与末尾回填，HTTP 端点零影响），add 家族辅助迁至 `torrent_add_helpers.py`（本服务 import 同步改向） |
+| 种子添加 torrent-add ✨2026-09-05 | `torrent_add_service.py` | 协议无关单种子添加 `TorrentAddService(store)`（L73，`add_torrent` L85）：从 /torrent/add 端点原样抽取（临时文件/info_hash/双类型分支/轮询/落库/异步审计），status/code/msg 契约与原端点逐字一致；HTTP 与未来 MCP 共用；✨2026-09-21 双语 P4：`TorrentAddResult` 增 reason_code 字段（端点映射 data.reasonCode，MCP 同享），qb/tr 兜底异常动态 type(e)/str(e) msg 收敛固定文案（诊断只进日志）；✨2026-09-08（MCP W3-③，随 dev1.0.7 合入）：`TorrentAddResult` 扩领域字段 （info_hash/info_id/name/downloader_nickname/created + db_torrent_created 追踪与末尾回填，HTTP 端点零影响），add 家族辅助迁至 `torrent_add_helpers.py`（本服务 import 同步改向）；✨2026-10-08 二期（torrent-lookup-service）：双类型分支的「轮询+existing 判定+create_*/复用不刷新」段收敛为 `wait_and_upsert_torrent_row`（helpers）+ `refresh_trackers_after_add`（tracker 立即刷新，注册表注入）——已存在行也刷新实时字段，qB 分支保留前置可见性轮询 |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
@@ -46,6 +46,7 @@
 | Tracker 重宣告 reannounce | `reannounce_service.py` | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | 回收站 recycle-bin | `recycle_bin_service.py` | 回收站服务（列表/还原/清理/批量/记录） |
 | 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；成功后落库目标/源行）；`transfer_seed` L118 要求 `seed_transfer`，Android 主服务端不可用 |
+| 种子定位 torrent-lookup ✨2026-10-08 | `torrent_lookup_service.py` | 通用种子定位底层方法（qB/TR 统一 hash 精确匹配，毫秒级服务端索引）：`get_by_hash` L83 / `get_by_hashes` L106（批量去重保序 + qB≤100/TR≤200 分块，qB `torrents_info(torrent_hashes=...)` / TR `get_torrents(ids=, arguments=最小投影)`，双端均单请求 O(1)）；统一 14 字段 VO（对齐删除适配器 13 字段 + raw_state，修复双端口径不一致：progress 统一 0~100、日期统一 epoch 秒、qB completion_on sentinel 归 0、TR datetime 转 epoch）；INTERACTIVE lane 经 call_downloader_api；store 快照三态校验 + rTorrent 门控；错误语义：err 非 NULL=调用层错误（批量保留部分成功块）、err=None 且缺键=种子不存在；供后续 DB 多条件查询/MCP 工具消费；✨2026-10-08 二期：VO 扩 error_reason（TR 投影 +error/errorString，resolve_transmission_status 联合判定保持 error>=2 归 error 态）+ torrent_file（TR torrentFile；qB None 由消费方推导 BT_backup）；数值字段级容错 _safe_int/_safe_float（qB 异常态字段归默认值，对齐原 str 包裹防御）；首个消费方=添加链路 wait_and_upsert_torrent_row（feature torrent-lookup-service-2026-10-08） |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化）；✨2026-09-25 统计报表 W2：upsert set_×2（batch sync_trackers_batch_async + add 路径）补 seeder_count/leecher_count/download_count excluded 列、existing_map select 扩三列，`_TRACKER_CHANGE_FIELDS` 白名单 6→9 字段（存量 NULL→值即判变更，一周期回填 tracker 群体计数） |
@@ -54,7 +55,7 @@
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |
 | 配置模板 template | `template_service.py` | 配置模板服务（CRUD/验证/应用/冲突检测） |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete_service.py` | 跨下载器重复种子分类；预览排除活动删除 ID，提交阶段交由任务管理器原子占用 |
-| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取；2026-09-06 锁治理：`_add_one_torrent` 顶部 rollback 结束上一轮 refresh 遗留读事务（WAL 陈旧快照跨网络调用会在 commit 升级时报 BUSY_SNAPSHOT、busy_timeout 无效），新增 `_insert_torrent_record_with_retry`（BUSY 5/517/518 有界重试 5 次、每次 rollback 后经 record_factory 重建实例防 expunge 静默丢 INSERT），失败串透传 sqlite_errorcode 供锁类型鉴别 |
+| 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取；2026-09-06 锁治理：`_add_one_torrent` 顶部 rollback 结束上一轮 refresh 遗留读事务（WAL 陈旧快照跨网络调用会在 commit 升级时报 BUSY_SNAPSHOT、busy_timeout 无效），新增 `_insert_torrent_record_with_retry`（BUSY 5/517/518 有界重试 5 次、每次 rollback 后经 record_factory 重建实例防 expunge 静默丢 INSERT），失败串透传 sqlite_errorcode 供锁类型鉴别；✨2026-10-08 二期（torrent-lookup-service）：双分支手写轮询（含 P0-04 违规的裸 to_thread torrents_info/get_torrents）替换为 helpers.wait_and_upsert_torrent_row + tracker 刷新；锁四件套（_insert_torrent_record_with_retry/_is_sqlite_locked_error/_sqlite_error_code/常量）迁至 helpers（本模块 fastapi/UploadFile 用法使其不得进入 MCP 共享闭包），_wait_for_transmission_torrent 删除 |
 | 存量 added_date 回填 added-date-backfill | `torrent_added_date_backfill.py` | 对 torrent_info.added_date 为 NULL 的存量行按下载器分批拉取 added_on/addedDate 回填的后台任务（启动后 create_task、INFO_SYNC_STARTUP_BACKFILL_ENABLED 开关默认关闭；经 SYNC lane 分批执行不阻塞事件循环，下载器不可用跳过由 12h 全量快照兜底） |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
 | 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签；✨2026-09-05 构造改 `(db, store, audit_context)`，6 处 `app.state.store` 访问与审计提取全部经注入，不再接收 Request；✨2026-10-05 L1 支持 skip_downloader：离线用户确认后跳过适配器仅软删 dr=1，审计记 delete_files=false+skip_downloader=true） |

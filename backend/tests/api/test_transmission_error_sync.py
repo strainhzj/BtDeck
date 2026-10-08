@@ -5,7 +5,8 @@ Transmission 种子错误状态同步集成测试
 能正确落库为 status="error"，与前端已支持的错误标签对齐。
 
 覆盖范围：
-1. create_transmission_torrent_record（种子添加路径，torrent_helpers.py:774）
+1. 添加路径 error 态落库（TorrentLookupService._tr_to_vo 联合 error 判定 + _build_row_from_vo，
+   原 create_transmission_torrent_record 同职责继任——torrent-lookup-service-2026-10-08 二期）
 2. errorString 会同步为 error_reason，恢复后清空
 3. has_torrent_info_changes 能捕获 status / error_reason 变更
 4. error 恢复（2→0）链路：status 应从 error 回到正常查表值
@@ -17,7 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.torrent_add_helpers import create_transmission_torrent_record
+from app.services.torrent_add_helpers import _build_row_from_vo
+from app.services.torrent_lookup_service import TorrentLookupService
 from app.api.endpoints.torrent_sync import sync_add_tracker
 from app.api.endpoints.torrents_async import extract_tracker_rows_from_torrent, sync_add_tracker_async
 from app.core.tracker_mapper import resolve_transmission_tracker_status_code
@@ -26,8 +28,10 @@ from app.services.sync_db_write import has_torrent_info_changes
 
 
 def _make_downloader() -> MagicMock:
-    """构造仅需 nickname 属性的 downloader mock。"""
+    """构造 _build_row_from_vo 所需最小 downloader mock。"""
     d = MagicMock()
+    d.downloader_id = "dl-1"
+    d.downloader_type = 1
     d.nickname = "tr-downloader"
     return d
 
@@ -76,7 +80,7 @@ class TestCreateTransmissionTorrentRecordErrorState:
             status="downloading",
             error_string="No space left on device",
         )
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.status == "error"
         assert record.error_reason == "No space left on device"
 
@@ -84,7 +88,7 @@ class TestCreateTransmissionTorrentRecordErrorState:
         """error=2(tracker错误) 的种子 status 应为 error"""
         downloader = _make_downloader()
         tr_torrent = _make_tr_torrent(error=2, status="seeding", error_string="Tracker gave HTTP 503")
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.status == "error"
         assert record.error_reason == "Tracker gave HTTP 503"
 
@@ -92,7 +96,7 @@ class TestCreateTransmissionTorrentRecordErrorState:
         """error=0 的正常种子 status 应为查表值（seeding）"""
         downloader = _make_downloader()
         tr_torrent = _make_tr_torrent(error=0, status="seeding")
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.status == "seeding"
         assert record.error_reason is None
 
@@ -100,14 +104,14 @@ class TestCreateTransmissionTorrentRecordErrorState:
         """error=1(tracker警告) 的种子 status 应为查表值，不归入 error"""
         downloader = _make_downloader()
         tr_torrent = _make_tr_torrent(error=1, status="downloading", error_string="temporary warning")
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.status == "downloading"
         assert record.error_reason is None
 
     def test_严重错误空文案不写入空字符串(self):
         downloader = _make_downloader()
         tr_torrent = _make_tr_torrent(error=3, error_string="   ")
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.error_reason is None
 
 
@@ -174,10 +178,10 @@ class TestResolveConsistencyWithRecordCreation:
         """resolve_transmission_status 的输出应与 create_transmission_torrent_record 写入的 status 一致"""
         resolve_result = TorrentStatusMapper.resolve_transmission_status(tr_status, tr_error)
         assert resolve_result == expected
-        # 记录创建路径同样产出该 status
+        # 记录创建路径（_tr_to_vo 联合判定 → _build_row_from_vo）同样产出该 status
         downloader = _make_downloader()
         tr_torrent = _make_tr_torrent(error=tr_error, status=tr_status)
-        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        record = _build_row_from_vo(downloader, "b" * 40, TorrentLookupService._tr_to_vo(tr_torrent), "admin")
         assert record.status == expected
 
 

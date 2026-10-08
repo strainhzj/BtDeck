@@ -2,8 +2,8 @@
 
 从 ``app/api/endpoints/torrent_helpers.py`` 原样迁移（PLANS/mcp-service-capabilities
 §11.1 分层债收尾）：单种子添加（TorrentAddService）、批量添加
-（TorrentBatchAddService）与状态端点共用的 info hash 计算、TR 轮询、
-qB/TR 种子记录构造与审计写入辅助。服务层依赖 HTTP endpoint 层会阻断
+（TorrentBatchAddService）与状态端点共用的 info hash 计算、添加后统一
+「轮询定位 + 落库/刷新 + tracker 刷新」（TorrentLookupService 消费方）与审计写入辅助。服务层依赖 HTTP endpoint 层会阻断
 MCP 共用边界（G0 禁 app/mcp import app.api 的口径下同款约束），
 故归属到服务层；HTTP 端点（torrent_status.py）改为正向依赖本模块。
 
@@ -19,15 +19,17 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
+
+from sqlalchemy.exc import OperationalError
 
 import bencodepy
 
-from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.database import AsyncSessionLocal
+from app.models.setting_templates import DownloaderTypeEnum
 from app.services.audit_service import get_audit_service
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
-from app.services.torrent_ratio_values import normalize_ratio, normalize_ratio_limit
+from app.services.torrent_ratio_values import normalize_ratio
 from app.torrents.models import TorrentInfo as torrentInfoModel
 
 logger = logging.getLogger(__name__)
@@ -53,131 +55,295 @@ async def calculate_info_hash(torrent_file_path: str) -> str:
         raise Exception(f"计算info_hash失败: {str(e)}")
 
 
-async def get_transmission_torrent_info(
-    downloader_id: str,
-    tr_client: Any,
-    info_hash: str,
-    timeout: int = 10,
-    per_call_timeout: float = 5.0,
-) -> Optional[Dict[str, Any]]:
-    """从Transmission获取种子信息（经 INTERACTIVE lane 调用，禁止裸同步调用）
+# ==================== 添加后统一落库与刷新（feature torrent-lookup-service-2026-10-08 二期） ====================
 
-    P0-04 修复（sync-database-blocking-remediation W2-3）：tr_client.get_torrents
-    由 call_downloader_api 在 INTERACTIVE lane 线程池中执行，不再阻塞事件循环；
-    downloader_id 由调用方传入（用于 per-downloader 限流与日志）。轮询重试逻辑
-    （timeout 秒窗口、异常后 sleep 1s 重试）保持原语义不变。
+# 添加后轮询下载器出现新种子的次数与间隔（对齐被替换的 30×1s 手写轮询语义）；
+# 模块级常量供测试置零加速（patch 后函数内读取即时生效）
+ADD_POLL_RETRIES = 30
+ADD_POLL_INTERVAL = 1.0
+
+# 刷新实时字段白名单：仅覆盖随下载器状态变化的字段；create_*/auxiliary_seed_count/
+# torrent_file/dr/deleted_at 等身份与管理字段不碰（由同步链路或删除链路维护）
+_REFRESH_FIELDS_NOTE = "name/size/status/progress/ratio/save_path/tags/category/completed_date/update_time/update_by"
+
+
+_SQLITE_BUSY_ERROR_CODES = (5, 517, 518)
+# 写锁冲突有界重试：5 次 × 0.2s 起步线性退避，总等待约 3s，远小于 busy_timeout=15s 兜底。
+_LOCKED_RETRY_MAX = 5
+_LOCKED_RETRY_BASE_DELAY_SECONDS = 0.2
+
+
+def _sqlite_error_code(exc: BaseException) -> Optional[int]:
+    """提取 sqlite3 原生错误码（Python>=3.11 经 exc.orig.sqlite_errorcode 暴露）。
+
+    用于事后鉴别锁冲突类型（BUSY=5 与 BUSY_SNAPSHOT=518），旧运行时无该属性时返回 None。
     """
-    import time
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "sqlite_errorcode", None)
+    if code is None:
+        return None
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
 
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+
+def _is_sqlite_locked_error(exc: BaseException) -> bool:
+    """判定是否为 SQLite 写锁冲突（决定是否走有界重试）。"""
+    if not isinstance(exc, OperationalError):
+        return False
+    code = _sqlite_error_code(exc)
+    if code is not None:
+        return code in _SQLITE_BUSY_ERROR_CODES
+    return "database is locked" in str(exc).lower()
+
+
+async def _insert_torrent_record_with_retry(db: Any, record_factory: Callable[[], Any]) -> Any:
+    """以短事务插入单条新种子记录，对 SQLite 写锁冲突做有界重试。
+
+    WAL 模式下，若会话携带有已陈旧的读事务（期间其他连接提交过写入），commit 升级
+    写事务会立即返回 BUSY_SNAPSHOT（"database is locked"，busy_timeout 不生效）；
+    正确处置是 rollback 丢弃陈旧快照后重开事务重试。每次重试用 record_factory 重建
+    ORM 实例：rollback 会 expunge 尚未提交的 pending 对象，复用旧实例会因带主键被
+    视作 persistent 而静默不产生 INSERT。非锁冲突错误不重试，直接上抛。
+    """
+    db_torrent: Any = None
+    for attempt in range(1, _LOCKED_RETRY_MAX + 1):
+        db_torrent = record_factory()
+        db.add(db_torrent)
         try:
-            # 获取所有种子（经 runtime 线程池执行）
+            db.commit()
+            break
+        except OperationalError as exc:
+            db.rollback()
+            if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:
+                raise
+            logger.warning(
+                "新种子记录落库遇到 SQLite 写锁冲突，回滚后重试（第 %s/%s 次，sqlite_errorcode=%s）",
+                attempt,
+                _LOCKED_RETRY_MAX,
+                _sqlite_error_code(exc),
+            )
+            await asyncio.sleep(_LOCKED_RETRY_BASE_DELAY_SECONDS * attempt)
+    db.refresh(db_torrent)
+    return db_torrent
+
+
+def _epoch_to_datetime(epoch: Any, *, default: Any = None) -> Any:
+    """epoch 秒 → datetime；非法/非正值返回 default（0=未知，qB sentinel 已在上游归零）。"""
+    try:
+        value = int(epoch or 0)
+    except (TypeError, ValueError):
+        return default
+    if value <= 0:
+        return default
+    return datetime.fromtimestamp(value)
+
+
+def _build_row_from_vo(downloader: Any, info_hash: str, vo: Dict[str, Any], operator: str) -> torrentInfoModel:
+    """按统一 VO 创建种子行（字段形态对齐被替换的 create_*_torrent_record）。
+
+    - torrent_id：qB/TR 统一用 info_hash（TR 数字 id 不持久化，TorrentFetcher 同款决策）；
+    - added_date 非法/为 0 时以本地时间兑底（种子刚添加，入库时间即添加时间）；
+    - qB torrent_file 按 BT_backup 约定路径推导（原 create_qbittorrent_torrent_record 同款）。
+    """
+    downloader_type = DownloaderTypeEnum.normalize(getattr(downloader, "downloader_type", None))
+    now = datetime.now()
+    is_qb = downloader_type == DownloaderTypeEnum.QBITTORRENT.value
+    torrent_file = (
+        "/config/qbittorrent/BT_backup/" + info_hash + ".torrent" if is_qb else (vo.get("torrent_file") or "")
+    )
+    return torrentInfoModel(
+        id_=str(uuid.uuid4()),
+        downloader_id=str(downloader.downloader_id),
+        downloader_name=downloader.nickname,
+        torrent_id=info_hash,
+        hash=info_hash,
+        name=vo.get("name") or info_hash,
+        save_path=vo.get("download_path") or "",
+        size=float(vo.get("size") or 0),
+        status=vo.get("state") or "downloading",
+        error_reason=vo.get("error_reason"),
+        progress=float(vo.get("progress") or 0),
+        torrent_file=torrent_file,
+        added_date=_epoch_to_datetime(vo.get("addition_date"), default=now),
+        completed_date=_epoch_to_datetime(vo.get("completion_date")),
+        ratio=normalize_ratio(vo.get("ratio")).value_for_insert(),
+        # VO 不含单种比率限制（qB 投影/TR seedRatioLimit 均未取）；NULL=无显式限制，
+        # 真实值由同步链路补齐（与既有 create_* 的 ratio_limit 语义一致）
+        ratio_limit=None,
+        tags=str(vo.get("tags") or ""),
+        category=str(vo.get("category") or ""),
+        super_seeding="",
+        enabled=1,
+        create_time=now,
+        create_by=operator,
+        update_time=now,
+        update_by=operator,
+        dr=0,
+    )
+
+
+def _apply_vo_refresh(row: torrentInfoModel, vo: Dict[str, Any], operator: str) -> None:
+    """按 VO 刷新既有行的实时字段白名单（重复添加/重建场景：不等下一轮定时同步）。"""
+    row.name = vo.get("name") or row.name
+    # 防御：size/progress/ratio 转换异常时保留旧值（单字段脏数据不炸整行刷新）
+    try:
+        row.size = float(vo.get("size") or 0)
+    except (TypeError, ValueError):
+        pass
+    try:
+        row.progress = float(vo.get("progress") or 0)
+    except (TypeError, ValueError):
+        pass
+    row.status = vo.get("state") or row.status
+    # TR 种子级错误独立于 status：error_reason 随 VO 同步（恢复时 VO 为 None → 清空历史原因）
+    row.error_reason = vo.get("error_reason")
+    try:
+        row.ratio = normalize_ratio(vo.get("ratio")).value_for_insert()
+    except (TypeError, ValueError):
+        pass
+    row.save_path = vo.get("download_path") or row.save_path
+    row.tags = str(vo.get("tags") or "")
+    row.category = str(vo.get("category") or "")
+    completed = _epoch_to_datetime(vo.get("completion_date"))
+    if completed is not None:
+        row.completed_date = completed
+    row.update_time = datetime.now()
+    row.update_by = operator
+
+
+async def wait_and_upsert_torrent_row(
+    db: Any,
+    store: Any,
+    downloader: Any,
+    info_hash: str,
+    *,
+    operator: str = "admin",
+    poll_retries: Optional[int] = None,
+    poll_interval: Optional[float] = None,
+) -> Tuple[Optional[torrentInfoModel], bool, Optional[str]]:
+    """添加成功后统一「轮询定位 + 落库/刷新」种子行（单/批量添加共用）。
+
+    流程：
+    1. TorrentLookupService.get_by_hash 轮询（命中即停；远程异常也重试，
+       瞬时故障不直接判死）；
+    2. upsert：无行→按 VO 创建（SQLite 写锁重试，锁四件套内联本模块）；
+       有行→刷新实时字段白名单（{_REFRESH_FIELDS_NOTE}）。
+
+    Returns:
+        (种子行, 是否新建, err)：err 非空表示轮询超时/落库失败（行为 None）。
+    """
+    from app.services.torrent_lookup_service import TorrentLookupService  # noqa: PLC0415
+
+    # 锁重试已内联本模块（原批量模块四件套迁移）：helpers 属 MCP 共享闭包，
+    # 不得反向依赖含 fastapi import 的批量模块（service purity 守卫）
+
+    retries = ADD_POLL_RETRIES if poll_retries is None else poll_retries
+    interval = ADD_POLL_INTERVAL if poll_interval is None else poll_interval
+
+    lookup = TorrentLookupService(store)
+    downloader_id = str(downloader.downloader_id)
+    vo: Optional[Dict[str, Any]] = None
+    last_err: Optional[str] = None
+    for _ in range(max(1, retries)):
+        vo, err = await lookup.get_by_hash(downloader_id, info_hash)
+        if err is not None:
+            last_err = err
+        if vo is not None:
+            break
+        await asyncio.sleep(max(0.0, interval))
+
+    if vo is None:
+        return None, False, last_err or "下载器中未出现该种子（轮询超时）"
+
+    # 落库异常不捕获：向上抛给调用方既有 except 链——批量路径依赖它提取
+    # sqlite_errorcode 做锁复发鉴别（_add_one_torrent 错误格式化），单添加路径
+    # 依赖 except Exception 兑底防冒泡（prod-hotfix-2026-07-19 语义）
+    existing = (
+        db.query(torrentInfoModel)
+        .filter(torrentInfoModel.hash == info_hash)
+        .filter(torrentInfoModel.dr == 0)
+        .filter(torrentInfoModel.downloader_id == downloader_id)
+        .first()
+    )
+    if existing is not None:
+        _apply_vo_refresh(existing, vo, operator=operator)
+        db.commit()
+        db.refresh(existing)
+        return existing, False, None
+    row = await _insert_torrent_record_with_retry(db, lambda: _build_row_from_vo(downloader, info_hash, vo, operator))
+    return row, True, None
+
+
+# tracker 同步钩子注册表（依赖倒置）：提取/批量写入函数位于 endpoint 层
+# （torrents_async.py），共享 service 层禁止 import endpoint 层（MCP service
+# purity 守卫）——由 torrents_async 模块加载时经 register_tracker_sync_hooks
+# 注册实现，运行时主应用必然已加载该模块；未注册时（单测/极简启动）跳过刷新。
+_TrackerRowExtractor = Callable[[Any, str, str, Any], "tuple[list, set]"]
+_TrackerBatchWriter = Callable[[Any, list, Any], Any]
+_tracker_row_extractor: Optional[_TrackerRowExtractor] = None
+_tracker_batch_writer: Optional[_TrackerBatchWriter] = None
+
+
+def register_tracker_sync_hooks(row_extractor: _TrackerRowExtractor, batch_writer: _TrackerBatchWriter) -> None:
+    """注册 endpoint 层的 tracker 提取/批量写入实现（torrents_async 加载时调用）。"""
+    global _tracker_row_extractor, _tracker_batch_writer
+    _tracker_row_extractor = row_extractor
+    _tracker_batch_writer = batch_writer
+
+
+async def refresh_trackers_after_add(store: Any, downloader: Any, info_hash: str, torrent_info_id: str) -> bool:
+    """添加成功后立即刷新种子的 tracker 行（best-effort，失败仅 warning 不影响添加结果）。
+
+    复用同步链路的纯提取函数（过滤 DHT/PeX/LSD + 污染 URL 拦截）与批量 upsert
+    （软删恢复/物理删/变更检测 upsert/mark_removed 四步），经注册表注入：
+
+    - qB: torrents_trackers(hash)（经 INTERACTIVE lane）；
+    - TR: get_torrents(ids, arguments=["trackerStats"])（原生 TrackerStats 对象
+      与提取函数的 TR 分支字段访问完全匹配）。
+    """
+    if _tracker_row_extractor is None or _tracker_batch_writer is None:
+        logger.debug("tracker 同步钩子未注册，跳过添加后 tracker 刷新")
+        return False
+
+    downloader_id = str(downloader.downloader_id)
+    downloader_type = DownloaderTypeEnum.normalize(getattr(downloader, "downloader_type", None))
+    now = datetime.now()
+    try:
+        if downloader_type == DownloaderTypeEnum.QBITTORRENT.value:
+            trackers = await call_downloader_api(
+                downloader_id,
+                DownloadLane.INTERACTIVE,
+                downloader.client.torrents_trackers,
+                args=(info_hash,),
+                operation="add_refresh_qb_trackers",
+            )
+            torrent_info: Any = {"hash": info_hash, "trackers": trackers or []}
+            dl_name = "qbittorrent"
+        else:
             torrents = await call_downloader_api(
                 downloader_id,
                 DownloadLane.INTERACTIVE,
-                tr_client.get_torrents,
-                args=(info_hash,),
-                timeout=per_call_timeout,
-                operation="get_transmission_torrent_info",
+                downloader.client.get_torrents,
+                kwargs={"ids": [info_hash], "arguments": ["trackerStats"]},
+                operation="add_refresh_tr_trackers",
             )
-            return torrents[0]
-            # 查找匹配的种子
-            # for torrent in torrents:
-            #     if torrent.hashString.lower() == info_hash.lower():
-            #         return torrent
-            #
-            # time.sleep(1)
-        except Exception:
-            # 如果出错，等待一会儿再试
-            await asyncio.sleep(1)
+            if not torrents:
+                return False
+            torrent_info = torrents[0]
+            dl_name = "transmission"
 
-    return None
-
-
-def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path):
-    """创建qBittorrent种子信息记录"""
-    db_torrent = torrentInfoModel(
-        id_=str(uuid.uuid4()),
-        downloader_id=downloader_id,
-        downloader_name=downloader.nickname,
-        torrent_id=qb_torrent.hash,
-        hash=qb_torrent.hash,
-        name=qb_torrent.name,
-        save_path=qb_torrent.save_path,
-        size=qb_torrent.total_size,
-        status=TorrentStatusMapper.convert_qbittorrent_status(qb_torrent.state),
-        torrent_file="/config/qbittorrent/BT_backup/" + qb_torrent.hash + ".torrent",
-        # 防御性：添加时间戳范围检查，防止负数和溢出；
-        # 下载器侧 added_on 缺失/为 0 时以本地时间兜底（种子刚添加，入库时间即添加时间），
-        # 避免"添加时间为空"（同步链路 12 小时全量快照前无自愈）
-        added_date=(
-            datetime.fromtimestamp(qb_torrent.added_on)
-            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else datetime.now()
-        ),
-        completed_date=(
-            datetime.fromtimestamp(qb_torrent.completion_on)
-            if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647
-            else None
-        ),
-        ratio=normalize_ratio(getattr(qb_torrent, "ratio", None)).value_for_insert(),
-        # NULL 表示“无显式单种数值限制”，不能用于向下载器回写设置。
-        ratio_limit=normalize_ratio_limit(getattr(qb_torrent, "ratio_limit", None)).value_for_insert(),
-        tags=",".join(qb_torrent.tags) if qb_torrent.tags else "",
-        category=qb_torrent.category,
-        super_seeding="1" if qb_torrent.super_seeding else "0",
-        enabled=1,
-        create_time=(
-            datetime.fromtimestamp(qb_torrent.added_on)
-            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else datetime.now()
-        ),
-        create_by="admin",
-        update_time=(
-            datetime.fromtimestamp(qb_torrent.added_on)
-            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else datetime.now()
-        ),
-        update_by="admin",
-        dr=0,  # 🔧 修复：添加缺失的 dr 参数
-        progress=0,  # 🔧 修复：添加缺失的 progress 参数
-    )
-    return db_torrent
-
-
-def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
-    db_torrent = torrentInfoModel(
-        id_=str(uuid.uuid4()),
-        downloader_id=downloader_id,
-        downloader_name=downloader.nickname,
-        torrent_id=tr_torrent.id,
-        hash=str(tr_torrent.hashString or "").strip().lower(),
-        name=tr_torrent.name,
-        save_path=tr_torrent.download_dir,
-        size=tr_torrent.total_size,
-        status=TorrentStatusMapper.resolve_transmission_status(tr_torrent.status, tr_torrent.error),
-        error_reason=TorrentStatusMapper.extract_transmission_error_reason(tr_torrent),
-        torrent_file=tr_torrent.torrent_file,
-        added_date=tr_torrent.added_date,
-        completed_date=tr_torrent.done_date if tr_torrent.done_date else None,
-        # 修复历史错位：原代码把 seed_ratio_limit（比率限制）赋给了 ratio（实际比率）字段。
-        # ratio = 实际上传比率（uploadRatio 的 snake_case），ratio_limit = 种子比率限制；
-        # seed_ratio_limit 为 None 表示 TR "无限制"，正好映射 Float 列的 NULL。
-        ratio=normalize_ratio(getattr(tr_torrent, "ratio", None)).value_for_insert(),
-        ratio_limit=normalize_ratio_limit(getattr(tr_torrent, "seed_ratio_limit", None)).value_for_insert(),
-        tags=",".join(tr_torrent.labels) if hasattr(tr_torrent, "labels") and tr_torrent.labels else "",
-        category="",
-        super_seeding="",
-        enabled=1,
-        create_time=tr_torrent.added_date,
-        create_by="admin",
-        update_time=tr_torrent.added_date,
-        update_by="admin",
-        dr=0,  # 🔧 修复：添加缺失的 dr 参数
-        progress=0,  # 🔧 修复：添加缺失的 progress 参数
-    )
-    return db_torrent
+        rows, _current_urls = _tracker_row_extractor(torrent_info, torrent_info_id, dl_name, now)
+        if not rows:
+            return False
+        async with AsyncSessionLocal() as async_db:
+            await _tracker_batch_writer(async_db, rows, now)
+            await async_db.commit()
+        return True
+    except Exception as exc:  # noqa: BLE001 - best-effort：tracker 刷新失败不影响添加结果
+        logger.warning("添加后刷新 tracker 失败 downloader_id=%s hash=%s: %s", downloader_id, info_hash, exc)
+        return False
 
 
 # ==================== 审计日志辅助函数 ====================

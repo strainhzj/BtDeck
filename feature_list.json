@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-10-05",
+  "last_updated": "2026-10-08",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -7416,6 +7416,41 @@
             "frontend/src/views/torrents/utils/__tests__/torrentBatchDeleteLevel.spec.ts"
           ],
           "evidence": "npm run lint 全绿（contract:check + eslint + vuex-action 门禁）；新 spec torrentBatchDeleteLevel 9 例通过（skip 默认零变化/携带开关/引用去重与字段兼容/离线判定语义）；全量 Jest 1908/1908 通过、131/132 套（EChart.spec 因工作区未安装 echarts 既有环境性失败，与本批无关，另见记忆 statistics-reports W5 待 npm install echarts）"
+        }
+      ]
+    },
+    {
+      "id": "torrent-lookup-service-2026-10-08",
+      "name": "通用种子定位底层方法（qB/TR 统一 hash 精确匹配）",
+      "description": "为后续消费方（DB 多条件查询、MCP 工具、批量校验等）提供毫秒级『按 info_hash 定位种子并获取实时信息』的底层通用 service。qB 走 torrents_info(torrent_hashes=) / TR 走 get_torrents(ids=, arguments=最小投影)，双端单请求服务端 O(1) 索引；批量去重保序 + qB≤100（GET URL 上限）/TR≤200（对齐 TorrentFetcher）分块；统一 14 字段 VO（对齐删除适配器 13 字段 + raw_state，修复双端口径不一致：progress 统一 0~100、日期统一 epoch 秒、qB completion_on sentinel 归 0、TR datetime 转 epoch、hash 小写 P0-D）；INTERACTIVE lane 经 call_downloader_api；store 快照三态校验（不在缓存/fail_time>0/client None）+ rTorrent 类型门控；错误语义：err 非 None=调用层错误（批量保留部分成功块）、err=None 且缺键=种子不存在。多条件查询（名称/分类/标签/状态）不在本批——双端均无服务端名称过滤，后续经本地 DB 先行定位 hash 再走本 service（已定案）。仅 service 层，无 HTTP 端点/MCP 工具暴露。二期（同日）：三条添加路径（/add qB、/add TR、/add-batch）统一接入——收敛为 helpers.wait_and_upsert_torrent_row（轮询定位→无行创建/有行刷新实时字段白名单）+ refresh_trackers_after_add（tracker 立即刷新，注册表倒置注入 endpoints 层实现守住 MCP purity 守卫）；TR error 态判定回归（VO + resolve_transmission_status 联合）；qB size 字段名修正（原 create 误用 total_size）；死代码四函数删除。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "torrent-lookup-service",
+          "name": "TorrentLookupService 实现与单测",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/torrent_lookup_service.py",
+            "backend/tests/services/test_torrent_lookup_service.py"
+          ],
+          "evidence": "get_by_hash/get_by_hashes 双入口 + from_context(RuntimeContext) 注入；mypy 0 错 + black/flake8 净；新测试 22 例全绿（qB/TR VO 契约含 progress/epoch/sentinel/labels 归一、TR Status(str,Enum) 必须经 .lower() 取值、批量合并单请求与 100/200 分块、部分缺失与部分失败保留成功块、脏数据单条跳过、非法 hash 快速失败不发请求、v2 64 位 hex 兼容、store 三态与 rTorrent 门控、normalize(None) 兼容归 qB）；隔离 venv（requirements 锁定组合 + freezegun）全量 pytest 5456 passed / 0 failed / 18 skipped"
+        },
+        {
+          "id": "add-chain-integration",
+          "name": "添加链路接入定位刷新（种子行 upsert + tracker 刷新）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/torrent_add_helpers.py",
+            "backend/app/services/torrent_add_service.py",
+            "backend/app/services/torrent_batch_add_service.py",
+            "backend/app/services/torrent_lookup_service.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/services/test_torrent_add_refresh.py"
+          ],
+          "evidence": "wait_and_upsert_torrent_row（轮询 30×1s 命中即停→upsert：无行创建 _build_row_from_vo/有行刷新白名单 name/size/status/progress/ratio/save_path/tags/category/completed_date/error_reason/update_*，不碰 create_*/auxiliary_seed_count/torrent_file/dr）+ refresh_trackers_after_add（qB torrents_trackers / TR trackerStats 投影 → 复用 extract_tracker_rows_from_torrent + sync_trackers_batch_async，注册表倒置 register_tracker_sync_hooks 由 torrents_async 模块尾注册）；锁四件套迁 helpers（batch 的 fastapi 用法不得入 MCP 共享闭包——test_service_parity 守卫强制）；TR error>=2 归 error 态 + error_reason（原 create 的 resolve/extract 语义回归，test_transmission_error_sync 迁移锚定）；qB 前置可见性轮询保留、批量裸 to_thread 轮询消除（P0-04 违规修复）；新增 test_torrent_add_refresh 11 例 + 迁移适配 fallback/batch/status_migration/error_sync 四套件；全量 pytest 5467 passed / 0 failed / 18 skipped + mypy/black/flake8 净"
         }
       ]
     }

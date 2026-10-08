@@ -8338,3 +8338,22 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - EChart.spec 7 例坑位：jest.mock 工厂禁引用外层变量→句柄经 globalThis.__mocks 存活；组件模块级 promise 缓存→逐例 resetModules 后 require 重取组件；类字段 jest.fn 是实例属性不可 spyOn→RO stub 改原型方法；浅比较契约=顶层值同引用才跳过（新数组引用必重渲染）。
 - 验证：typecheck exit 0；lint 净（auto-fix 三文件后复跑 0 error 0 warning）；全量 Jest 127 套 1863 例（+7）；build exit 0；体积探针 esbuild 按需面 min+gz **188.7KB < 200KB**（echarts chunk 本批不物化——无页面消费方，webpack 终值 W5 复测，属计划内合批约束）。
 - 合批纪律执行：路由/permission/ui-mode/demo-matrix 按 §7 注记放 W5 首个提交（防侧栏指向不存在组件）；W4 只交依赖/EChart/i18n/类型/API 模块。
+
+## 2026-10-08：通用种子定位底层 service（feature `torrent-lookup-service-2026-10-08`）
+
+- **需求与定案**：用户要求"快速定位种子并获取种子信息的通用方法"，按 qB/TR 双 SDK 设计。三轮确认收敛：①只做底层 service（供后续设计消费，不做端点/MCP 暴露）；②优先毫秒级 hash 匹配，名称/多条件查询后续基于 DB 设计（双端 SDK 均无服务端名称过滤，远程名称搜索大库不可取——本地 DB 先行定位 hash 再远程精确取实时态是既定方向）；③仅 service 层。
+- **SDK 事实（pip 下载 wheel 源码实证，非记忆）**：qbittorrent-api 2025.2.0 `torrents_info(torrent_hashes: str|Iterable[str])` 接受列表自动 `|` 连接（GET query）；transmission-rpc 7.0.11 `get_torrents(ids, arguments)` 投影时 SDK 自动补 `id`/`hashString`，`Torrent.fields[...]` 缺字段抛 KeyError（投影必须完整覆盖），`progress` 返回 0~100（与 qB 0~1 口径相反——删除适配器 VO 透传双值不一致，本批修复），`status` 是 `Status(str, Enum)`——`str()` 得 "Status.seeding"，必须经 `.lower()` 取值。
+- **实现**：`services/torrent_lookup_service.py`（295 行）——`get_by_hash`/`get_by_hashes` 双入口（后者单查复用）；qB≤100/TR≤200 分块；统一 14 字段 VO（删除适配器 13 字段 + raw_state）；INTERACTIVE lane；store 三态校验；err/不存在二元错误语义（批量部分失败保留成功块）。消费方式：`TorrentLookupService(app.state.store)` 或 `from_context(RuntimeContext.from_app(app))`。
+- **测试坑（22 例）**：①patch `call_downloader_api` 后 client 仍需带属性——`client.torrents_info` 是实参表达式，求值先于 mock 生效，`object()` 直接 AttributeError；②`test_real_lane_dispatch` 依赖全局 runtime 单例（全量下被 test_downloader_api_runtime shutdown 后不重建）→ 必然脆弱，删除（lane 契约已由 patch 断言覆盖）。
+- **验证**：本机无 pytest 环境故建隔离 venv（requirements 锁定 + freezegun）；新测试 22 例全绿 + 全量 **5456 passed / 0 failed / 18 skipped** + mypy/black/flake8 净。
+- **后续待做**：DB 多条件查询消费层（名称/分类/标签/状态 → 本地 DB 定位 hash → 本 service 取实时态）；内部 5+ 处散落 torrents_info/get_torrents 直调可逐步迁移（seed_transfer 查重/recycle_bin 轮询等）。
+
+## 2026-10-08 二期：添加链路接入种子定位——种子行 upsert + tracker 立即刷新（feature `torrent-lookup-service-2026-10-08`）
+
+- **范围（用户确认）**：三条添加路径全做（/add qB、/add TR、/add-batch）+ 刷新 tracker 信息。
+- **实现**：helpers 新增 `wait_and_upsert_torrent_row`（轮询 TorrentLookupService 30×1s 命中即停 → upsert：无行创建 `_build_row_from_vo`/有行刷新实时字段白名单，修复"重复添加已存在行不刷新、要等 10 分钟同步"缺口）+ `refresh_trackers_after_add`（qB `torrents_trackers` / TR `trackerStats` 最小投影 → 复用同步链路 `extract_tracker_rows_from_torrent`（DHT/PeX/LSD 过滤+污染拦截）+ `sync_trackers_batch_async` 四步 upsert；best-effort）。批量路径裸 `to_thread` 轮询消除（P0-04 违规顺修）。
+- **架构守卫强制返工两处**（test_service_parity 全量抓出）：①helpers→endpoints 延迟 import 违"共享 service 禁 endpoint 依赖"→ tracker 提取/写入改**注册表倒置**（`register_tracker_sync_hooks`，torrents_async 模块尾注册，未注册跳过）；②helpers→batch 延迟 import 把含 fastapi 的 batch 拉进 MCP 闭包 → **锁四件套**（`_insert_torrent_record_with_retry` 等）**迁入 helpers**，batch 退出闭包。
+- **功能回归修复**：二期初版丢了 TR error 态判定（原 create 的 resolve_transmission_status 联合 error）→ VO 扩 `error_reason` + TR 投影补 `error/errorString`；顺修 qB 字段名 bug（原 create 用 `total_size`，真实 API 键是 `size`，导致历史添加行 size 恒 None）。
+- **测试迁移与坑**：新增 test_torrent_add_refresh 11 例（白名单/分块/注册表契约）；四套件迁移——fallback（MagicMock stub 未显式设置字段自动产生 MagicMock 属性，数值容错救场；坏 added_on/total_size 行为从 500 演进为容错兜底成功，断言更新）、batch（锁四件套 patch 点随迁 helpers）、status_migration（side_effect 序列要覆盖 lookup 第 4 次调用，否则 StopIteration；行 hash 为 calculate_info_hash 真实值非 stub 值）、error_sync（create_* 断言迁移 `_tr_to_vo`+`_build_row_from_vo` 组合）。lifecycle_gates 的 RUNTIME_NOT_READY 为全量顺序性假失败（单独跑过，终验全量也消失）。
+- **死代码删除**：get_transmission_torrent_info / create_qbittorrent_torrent_record / create_transmission_torrent_record / _wait_for_transmission_torrent（消费方全量收敛）。
+- **验证**：全量 **5467 passed / 0 failed / 18 skipped**（+11 例）+ mypy/black/flake8 净；./init.sh exit 0。

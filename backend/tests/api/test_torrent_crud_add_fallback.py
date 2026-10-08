@@ -31,7 +31,6 @@ mock 下载器缓存 + mock 下载器客户端，验证：
 
 import asyncio
 import bencodepy
-import uuid
 from io import BytesIO
 from typing import Any, List
 from types import SimpleNamespace
@@ -59,7 +58,16 @@ def _patch_runtime_call():
         # 保持异常透传语义：func 抛什么异常就原样抛什么（与 runtime 行为一致）
         return func(*args, **(kwargs or {}))
 
-    with patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call):
+    # 二期改造（torrent-lookup-service-2026-10-08）：轮询/tracker 刷新分别在
+    # torrent_lookup_service / torrent_add_helpers 模块内经 call_downloader_api 调用，
+    # 同步纳入 fake 直调；轮询间隔置零加速；tracker 刷新隔离 AsyncSessionLocal
+    with (
+        patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_lookup_service.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_helpers.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_service.refresh_trackers_after_add", new=AsyncMock(return_value=True)),
+        patch("app.services.torrent_add_helpers.ADD_POLL_INTERVAL", 0.0),
+    ):
         yield
 
 
@@ -348,8 +356,14 @@ def _make_qb_torrent_with_bad_field(*, bad_field: str):
     bad.hash = "a" * 40
     bad.name = "test-torrent"
     bad.save_path = "/downloads"
-    bad.total_size = 1024
+    # 注意：VO 读的是 torrents/info 的 size 字段（原 create_*_torrent_record 误用
+    # total_size，真实 qB API 无此键恒 None，二期已修正）；stub 显式补齐 VO 全字段，
+    # 避免 MagicMock 自动属性混入数值转换
+    bad.size = 1024
     bad.state = "pausedUP"
+    bad.progress = 0.5
+    bad.downloaded = 0
+    bad.uploaded = 0
     bad.added_on = 1700000000
     bad.completion_on = 0
     bad.ratio = 0
@@ -421,21 +435,30 @@ async def test_qb_bad_added_on_field_does_not_bubble(real_db_session):
         request=_FakeRequest(app),
         downloader_id="dl-test",
         save_path="/downloads",
-        tags="", category="", paused=True,
-        skip_hash_check=False, is_sequential_download=False,
+        tags="",
+        category="",
+        paused=True,
+        skip_hash_check=False,
+        is_sequential_download=False,
         is_first_last_piece_priority=False,
-        upload_limit=0, download_limit=0,
+        upload_limit=0,
+        download_limit=0,
         torrent_file=_make_upload(_make_valid_torrent_bytes()),
         db=real_db_session,
     )
 
-    assert result.code == "500"
-    assert result.status == "failed"
-    # 关键：不再冒泡（如果冒泡会直接 raise 而非 return result）
-    assert "添加种子失败" in result.msg
-    # 双语 P4 错误契约：动态异常类型不再进 msg（固定文案），由 reasonCode 承载失败语义
-    assert result.msg == "添加种子失败，请稍后重试"
-    assert result.data == {"reasonCode": "TORRENT_ADD_FAILED"}
+    # 二期演变（torrent-lookup-service-2026-10-08）：坏 added_on 经 VO 数值容错（_safe_int）
+    # 归 0，走 added_date 兑底 now 语义（与 W3-2 批 added_on=0 兑底统一）——
+    # 从原 500 演进为成功添加，且不再冒泡（核心修复点守住）
+    assert result.code == "200"
+    assert result.status == "success"
+    from app.torrents.models import TorrentInfo as _TIAdded
+
+    row = real_db_session.query(_TIAdded).filter(_TIAdded.downloader_id == "dl-test").first()
+    assert row is not None
+    from datetime import datetime as _dt
+
+    assert row.added_date is not None and abs((_dt.now() - row.added_date).total_seconds()) < 60
 
 
 @pytest.mark.asyncio
@@ -444,7 +467,8 @@ async def test_qb_bad_total_size_field_does_not_bubble(real_db_session):
 
     修复前：size 字段是 ValueError，SQLAlchemy Column(float) 类型转换抛
     StatementError(TypeError(float() argument...))，冒泡到全局 handler。
-    修复后：被 except Exception 捕获。
+    二期演变：VO 读 torrents/info 的 size 字段（与 total_size 无关，真实 API
+    字段名修正），total_size 坏值不影响 VO 转换——改为断言添加成功且 size 落库正常。
     """
     bad_torrent = _make_qb_torrent_with_bad_field(bad_field="total_size")
     client = _make_qb_client_returning(bad_torrent)
@@ -455,17 +479,27 @@ async def test_qb_bad_total_size_field_does_not_bubble(real_db_session):
         request=_FakeRequest(app),
         downloader_id="dl-test",
         save_path="/downloads",
-        tags="", category="", paused=True,
-        skip_hash_check=False, is_sequential_download=False,
+        tags="",
+        category="",
+        paused=True,
+        skip_hash_check=False,
+        is_sequential_download=False,
         is_first_last_piece_priority=False,
-        upload_limit=0, download_limit=0,
+        upload_limit=0,
+        download_limit=0,
         torrent_file=_make_upload(_make_valid_torrent_bytes()),
         db=real_db_session,
     )
 
-    assert result.code == "500"
-    assert result.status == "failed"
-    assert "添加种子失败" in result.msg
+    # 二期演变：total_size 坏值不再影响 VO（读 size 字段），种子应成功添加，
+    # 且 size 落库为 VO 正常值 1024（锚定字段名修正后的正确行为）。
+    # 注：行的 hash 是 calculate_info_hash 真实值，按 downloader_id 查询断言
+    assert result.code == "200"
+    assert result.status == "success"
+    from app.torrents.models import TorrentInfo as _TI
+
+    row = real_db_session.query(_TI).filter(_TI.downloader_id == "dl-test").first()
+    assert row is not None and float(row.size or 0) == 1024.0
 
 
 @pytest.mark.asyncio
@@ -485,48 +519,55 @@ async def test_qb_str_wrapped_field_is_safe(real_db_session):
         request=_FakeRequest(app),
         downloader_id="dl-test",
         save_path="/downloads",
-        tags="", category="", paused=True,
-        skip_hash_check=False, is_sequential_download=False,
+        tags="",
+        category="",
+        paused=True,
+        skip_hash_check=False,
+        is_sequential_download=False,
         is_first_last_piece_priority=False,
-        upload_limit=0, download_limit=0,
+        upload_limit=0,
+        download_limit=0,
         torrent_file=_make_upload(_make_valid_torrent_bytes()),
         db=real_db_session,
     )
 
-    # str(ValueError(...)) 安全，种子应成功添加
+    # VO 数值容错（_safe_float，对齐原 str() 包裹的防御语义）：坏 ratio 归 0.0，
+    # 种子应成功添加不冒泡
     assert result.code == "200"
     assert result.status == "success"
-
 
 
 # ==================== W3-2：UI 添加路径 added_date 兜底 ====================
 
 
-class TestCreateQbittorrentRecordAddedDateFallback:
-    """create_qbittorrent_torrent_record：added_on 缺失/为 0 时本地时间兜底。"""
+class TestBuildRowFromVoAddedDateFallback:
+    """_build_row_from_vo（原 create_qbittorrent_torrent_record 同职责继任）：
+    VO addition_date 缺失/为 0 时本地时间兜底，>0 保留下载器时间戳。"""
+
+    @staticmethod
+    def _downloader():
+        return SimpleNamespace(downloader_id="dl-1", downloader_type=0, nickname="qb")
 
     def test_added_on_zero_falls_back_to_now(self):
         from datetime import datetime
 
-        from app.services.torrent_add_helpers import create_qbittorrent_torrent_record
+        from app.services.torrent_add_helpers import _build_row_from_vo
 
-        downloader = SimpleNamespace(nickname="qb")
-        qb_torrent = SimpleNamespace(
-            hash="abc",
-            name="测试种子",
-            save_path="/downloads",
-            total_size=1024,
-            state="downloading",
-            added_on=0,
-            completion_on=0,
-            ratio=0.0,
-            ratio_limit=None,
-            tags=[],
-            category="",
-            super_seeding=False,
-        )
+        vo = {
+            "name": "测试种子",
+            "download_path": "/downloads",
+            "size": 1024,
+            "state": "downloading",
+            "progress": 0.0,
+            "ratio": 0.0,
+            "addition_date": 0,
+            "completion_date": 0,
+            "tags": "",
+            "category": "",
+            "torrent_file": None,
+        }
 
-        record = create_qbittorrent_torrent_record(downloader, "dl-1", qb_torrent, "/tmp/x.torrent")
+        record = _build_row_from_vo(self._downloader(), "a" * 40, vo, operator="tester")
 
         assert record.added_date is not None
         assert abs((datetime.now() - record.added_date).total_seconds()) < 60
@@ -536,24 +577,24 @@ class TestCreateQbittorrentRecordAddedDateFallback:
     def test_added_on_valid_keeps_downloader_timestamp(self):
         from datetime import datetime
 
-        from app.services.torrent_add_helpers import create_qbittorrent_torrent_record
+        from app.services.torrent_add_helpers import _build_row_from_vo
 
-        downloader = SimpleNamespace(nickname="qb")
-        qb_torrent = SimpleNamespace(
-            hash="abc",
-            name="测试种子",
-            save_path="/downloads",
-            total_size=1024,
-            state="seeding",
-            added_on=1_700_000_000,
-            completion_on=0,
-            ratio=1.0,
-            ratio_limit=None,
-            tags=[],
-            category="",
-            super_seeding=False,
-        )
+        vo = {
+            "name": "测试种子",
+            "download_path": "/downloads",
+            "size": 1024,
+            "state": "seeding",
+            "progress": 100.0,
+            "ratio": 1.0,
+            "addition_date": 1_700_000_000,
+            "completion_date": 0,
+            "tags": "",
+            "category": "",
+            "torrent_file": None,
+        }
 
-        record = create_qbittorrent_torrent_record(downloader, "dl-1", qb_torrent, "/tmp/x.torrent")
+        record = _build_row_from_vo(self._downloader(), "a" * 40, vo, operator="tester")
 
         assert record.added_date == datetime.fromtimestamp(1_700_000_000)
+        # qB 分支 torrent_file 按约定路径推导
+        assert record.torrent_file == "/config/qbittorrent/BT_backup/" + "a" * 40 + ".torrent"
