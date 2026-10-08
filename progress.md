@@ -8364,3 +8364,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **P2**：①刷新路径补对称锁重试（BUSY 5/517/518 回滚后**重放** `_apply_vo_refresh` 再提交——rollback 丢弃未提交字段变更，直接复用旧变更集会静默丢失 UPDATE；非锁冲突不重试）；②qB 前置可见性轮询删除（与 TR 对齐统一走 lookup 轮询，消除正常路径 1 次冗余远程调用与病态 60s 叠加）；③feature_list files 补全 4+1 迁移/守卫测试文件。
 - **roadmap 补账**：`torrent-add-helpers` 独立行此前插入因存在性判断失误静默失败，本批补入（行号实测 L104/L219/L316）；batch-add/torrent-add 行同步三期变更。
 - **验证**：受影响面 1434 passed（含守卫 33 例）+ 新增刷新锁重试 2 例（add_refresh 13 例）+ mypy/black/flake8 净。
+
+## 2026-10-08 部署：torrent-lookup 三期批上线 unraid
+
+- 推送 c7bf20b..4eb1376 至 origin/dev（5 提交：feat 2f15f02 + fix 1fad770 + fix 4eb1376 + docs 8772d24/b9ebd11 补推）。
+- `build-and-export-images.sh` 两次执行成功：第 1 次 backend 构建全 profile 失败（已知 BuildKit fe80 DNS 坑，构建容器只剩链路本地 DNS）；借 docker 组权限以 alpine 容器向 /etc/resolv.conf 追加 223.5.5.5 后第 2 次全流程一次通过（backend/frontend 均 profile 2 一次过）。
+- 远端验证：双容器 healthy；/health/live gitSha `4eb1376b526a` 全量等于本地 HEAD，frontendManifestSha256 `0a9b7624` 与构建输出一致，alembicHead c9e0f1a2b3c4。
+- 坑：.btdeck-deploy-credentials.sh 的 SSH_PASSWORD 是无引号格式，验证命令用 `^SSH_PASSWORD=\K.*$` 提取（带引号正则会取空）。
