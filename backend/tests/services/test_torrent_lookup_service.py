@@ -194,6 +194,107 @@ async def test_get_by_hash_tr_status_enum_semantics():
     assert vo["state"] == "paused"
 
 
+# ---------- 回归锚定：qB 状态映射保持原样（防"顺手统一"破坏前端语义） ----------
+
+
+async def test_qb_status_passthrough_anchors():
+    """qB 原生状态映射锚定：归一化集合与保持原样集合的边界。
+
+    归一化：metaDL/forcedMetaDL/allocating→downloading、stalledUP/queuedUP/uploading/
+    forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL。
+    保持原样（有意不归一）：pausedUP/pausedDL（统计归入做种/暂停由下游处理）、
+    checkingDL/checkingUP/queuedDL/downloading/error/unknown、
+    moving（语义取决于迁移前状态，TorrentStatusMapper 注释明示不映射）。
+    """
+    cases = [
+        ("metaDL", "downloading"),
+        ("forcedMetaDL", "downloading"),
+        ("allocating", "downloading"),
+        ("stalledUP", "seeding"),
+        ("queuedUP", "seeding"),
+        ("uploading", "seeding"),
+        ("forcedUP", "seeding"),
+        ("missingFiles", "error"),
+        ("checkingResumeData", "checkingDL"),
+        # 有意保持原样的状态（防止未来"顺手统一"破坏前端列筛选/统计口径）
+        ("pausedUP", "pausedUP"),
+        ("pausedDL", "pausedDL"),
+        ("checkingDL", "checkingDL"),
+        ("checkingUP", "checkingUP"),
+        ("queuedDL", "queuedDL"),
+        ("downloading", "downloading"),
+        ("error", "error"),
+        ("unknown", "unknown"),
+        ("moving", "moving"),
+    ]
+    for raw, expected in cases:
+        vo = TorrentLookupService._qb_to_vo(_qb_torrent(state=raw))
+        assert vo is not None and vo["state"] == expected, f"qB 状态 {raw} 应映射为 {expected}"
+        assert vo["raw_state"] == raw
+
+
+async def test_tr_error_states_in_vo():
+    """TR error 态联合判定锚定（添加后落库链路消费）：error>=2 归 error + error_reason。
+
+    - error=3（本地错误）+ errorString → state="error"（覆盖正常查表值）+ error_reason
+    - error=2（tracker 错误）+ errorString → 同上
+    - error=1（tracker 警告）→ 查表值，error_reason=None（警告不归错误）
+    - error=0 → 查表值 + None
+    - error>=2 但 errorString 空白 → error_reason=None（不写空串）
+    - error 字段非 int（缺失/MagicMock）→ 按 0 处理（resolve 内部守卫）
+    - qB VO error_reason 恒 None（qB 错误态在 state 内，error_reason 由同步链路另采）
+    """
+    cases = [
+        (3, "No space left on device", "downloading", "error", "No space left on device"),
+        (2, "Tracker gave HTTP 503", "seeding", "error", "Tracker gave HTTP 503"),
+        (1, "temporary warning", "downloading", "downloading", None),
+        (0, "", "seeding", "seeding", None),
+        (3, "   ", "downloading", "error", None),  # 空白文案不写
+    ]
+    for err_code, err_str, raw_status, expected_state, expected_reason in cases:
+        vo = TorrentLookupService._tr_to_vo(_tr_torrent(error=err_code, error_string=err_str, status=raw_status))
+        assert vo is not None, f"error={err_code} 转换不应失败"
+        assert vo["state"] == expected_state, f"error={err_code} status 应为 {expected_state}"
+        assert vo["error_reason"] == expected_reason, f"error={err_code} reason 应为 {expected_reason}"
+
+    # 非 int error（字段缺失形态）按 0 处理
+    vo = TorrentLookupService._tr_to_vo(_tr_torrent(error=None, status="seeding"))
+    assert vo is not None and vo["state"] == "seeding" and vo["error_reason"] is None
+
+    # qB VO error_reason 恒 None
+    qb_vo = TorrentLookupService._qb_to_vo(_qb_torrent(state="error"))
+    assert qb_vo is not None and qb_vo["error_reason"] is None
+
+
+async def test_vo_torrent_file_field_contract():
+    """torrent_file 字段契约：TR 透传 torrentFile 投影值；qB 恒 None（消费方推导 BT_backup）。"""
+    tr_vo = TorrentLookupService._tr_to_vo(_tr_torrent(torrent_file="/config/torrents/x.torrent"))
+    assert tr_vo is not None and tr_vo["torrent_file"] == "/config/torrents/x.torrent"
+    qb_vo = TorrentLookupService._qb_to_vo(_qb_torrent())
+    assert qb_vo is not None and qb_vo["torrent_file"] is None
+
+
+async def test_safe_int_float_with_exception_objects():
+    """数值容错锚定（prod-hotfix-2026-07-19 防御语义）：qB 异常态字段是异常对象时归默认值。
+
+    - ValueError/TypeError 实例（qbittorrent-api 惰性解析失败的遗留）→ 默认值
+    - None → 默认值；合法数字与数字字符串正常转换
+    - 身份字段（hash）异常仍整条跳过（dirty 锚定已有，此处锚定数值字段不炸）
+    """
+    bad = ValueError("parse error")
+    assert TorrentLookupService._safe_int(bad, 7) == 7
+    assert TorrentLookupService._safe_float(TypeError("boom"), 1.5) == 1.5
+    assert TorrentLookupService._safe_int(None) == 0
+    assert TorrentLookupService._safe_float(None) == 0.0
+    assert TorrentLookupService._safe_int("1024") == 1024  # 宽松转换（str 数字）
+    assert TorrentLookupService._safe_float(0.5) == 0.5
+    # VO 层：坏 added_on/size/progress/ratio 全部归默认，整条不跳过（对照 hash 坏→跳过）
+    vo = TorrentLookupService._qb_to_vo(_qb_torrent(added_on=bad, size=bad, progress=bad, ratio=bad, completion_on=bad))
+    assert vo is not None
+    assert vo["addition_date"] == 0 and vo["size"] == 0 and vo["progress"] == 0.0 and vo["ratio"] == 0.0
+    assert vo["completion_date"] == 0
+
+
 # ---------- 批量 ----------
 
 

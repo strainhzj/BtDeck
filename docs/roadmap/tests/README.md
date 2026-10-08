@@ -18,7 +18,7 @@
 | 枚举测试 enums | `backend/tests/enums/` | 枚举测试（对应 app/enums/） |
 | 模型测试 models | `backend/tests/models/` | ORM 模型测试（对应 app/models/） |
 | 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
-| 服务层测试 services | `backend/tests/services/` | 服务层测试（含 `test_auxiliary_seed_count_service.py` 的全局分组/增量更新回归、`test_seed_transfer_service_fixes.py` 的跨 torrent_file 转移回归、`test_torrent_lookup_service.py` 的 hash 定位统一 VO 契约（✨2026-10-08，22 例）、`test_torrent_add_refresh.py` 添加后落库/刷新白名单、刷新路径锁重试与 tracker 注册表契约（✨2026-10-08 二期，13 例）、孤儿后台扫描调度器与 tag_adapters） |
+| 服务层测试 services | `backend/tests/services/` | 服务层测试（含 `test_auxiliary_seed_count_service.py` 的全局分组/增量更新回归、`test_seed_transfer_service_fixes.py` 的跨 torrent_file 转移回归、`test_torrent_lookup_service.py` 的 hash 定位统一 VO 契约（✨2026-10-08，26 例：含 qB 状态映射保持原样锚定/TR error 三态/_safe_* 容错）、`test_torrent_add_refresh.py` 添加后落库/刷新白名单、刷新路径锁重试、tracker 注册表契约与 TorrentAddService 端到端回归（✨2026-10-08 三期实测验收后补强至 17 例：重复添加既有行实时刷新核心场景 + qB/TR 新建行字段口径 + 真实 SQLite durable UPDATE 验证 + 注册表全局态隔离 fixture）、孤儿后台扫描调度器与 tag_adapters） |
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/）；✨2026-09-25 统计报表 W1 +test_speed_sampler 13 例（DB 基准对齐/断网 online=0 采样/hourly 聚合幂等与全离线 avg=0/每日清理/KB/s 换算） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |

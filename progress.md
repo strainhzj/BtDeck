@@ -8371,3 +8371,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - `build-and-export-images.sh` 两次执行成功：第 1 次 backend 构建全 profile 失败（已知 BuildKit fe80 DNS 坑，构建容器只剩链路本地 DNS）；借 docker 组权限以 alpine 容器向 /etc/resolv.conf 追加 223.5.5.5 后第 2 次全流程一次通过（backend/frontend 均 profile 2 一次过）。
 - 远端验证：双容器 healthy；/health/live gitSha `4eb1376b526a` 全量等于本地 HEAD，frontendManifestSha256 `0a9b7624` 与构建输出一致，alembicHead c9e0f1a2b3c4。
 - 坑：.btdeck-deploy-credentials.sh 的 SSH_PASSWORD 是无引号格式，验证命令用 `^SSH_PASSWORD=\K.*$` 提取（带引号正则会取空）。
+
+## 2026-10-08 四期：实测验收后回归补强（+8 例）
+
+- **背景**：用户真实环境（unraid 部署后）验收通过，要求补齐回归测试保护三批修改。
+- **lookup 侧 +4**：qB 状态映射保持原样锚定（19 组映射对：归一化 9 + 有意保持 10——pausedUP/pausedDL/moving 等防未来"顺手统一"破坏前端列筛选/统计口径）；TR error 三态（error≥2 归 error+error_reason、error=1 警告不归、errorString 空白不写空串、非 int 按 0）；_safe_int/_safe_float 异常对象容错直接锚定（ValueError 实例→默认值，VO 层坏数值字段不炸整条）；torrent_file 双端契约（TR 透传/qB None）。
+- **add 侧 +4**：TorrentAddService 端到端（真实 SQLite + 真实 wait_and_upsert，仅 fake 远程层/审计/tracker）——qB/TR 新建行字段口径（progress 0~100/BT_backup 推导/torrent_id=hash 稳定键/added_date epoch 转换）、**重复添加既有行实时刷新**（downloading 25%→seeding 100% 二次添加后 DB 行立即反映，created=False，无重复行——本批核心用户价值的直接回归保护）、真实 SQLite durable UPDATE（全新会话验证持久化，对标 insert 版）。
+- **测试基建**：tracker 注册表全局态 autouse 隔离 fixture（保存/恢复，防注册 fake 泄漏到其他测试）。
+- **验证**：全量 **5478 passed / 0 failed / 18 skipped**（+8）+ flake8/black 净。

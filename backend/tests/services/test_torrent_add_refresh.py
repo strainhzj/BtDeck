@@ -106,6 +106,14 @@ def _patch_lookup_call_with(vo_results: List[Optional[dict]]):
     return AsyncMock(side_effect=fake_call)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_tracker_registry():
+    """tracker 注册表全局态隔离：保存/恢复，防本文件注册的 fake 泄漏到其他测试。"""
+    saved = (helpers._tracker_row_extractor, helpers._tracker_batch_writer)
+    yield
+    helpers._tracker_row_extractor, helpers._tracker_batch_writer = saved
+
+
 @pytest.fixture
 def fast_poll(monkeypatch):
     monkeypatch.setattr(helpers, "ADD_POLL_INTERVAL", 0.0)
@@ -456,3 +464,287 @@ async def test_refresh_trackers_registry_not_registered(monkeypatch):
     with patch("app.services.torrent_add_helpers.call_downloader_api", side_effect=boom):
         ok = await refresh_trackers_after_add(_make_store(downloader), downloader, HASH_A, "info-1")
     assert ok is False
+
+
+# ---------- 端到端回归：TorrentAddService 添加后落库/刷新全链路 ----------
+# 保护本批核心用户价值：添加成功 → DB 行立即可见且字段正确；重复添加 → 既有行
+# 实时字段刷新（不再等 10 分钟定时同步）。走真实 SQLite + 真实 wait_and_upsert，
+# 仅 fake 远程层（call_downloader_api 直调 mock client）与审计/tracker 刷新。
+
+
+def _make_valid_torrent_bytes() -> bytes:
+    import bencodepy
+
+    info = {b"name": b"e2e-torrent", b"length": 16, b"piece length": 16384, b"pieces": b"\x00" * 20}
+    return bencodepy.encode({b"announce": b"http://tracker.example.com/announce", b"info": info})
+
+
+def _real_db_session_fixture():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.database import Base
+    from app.torrents.models import TorrentInfo, TrackerInfo
+
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine, tables=[TorrentInfo.__table__, TrackerInfo.__table__])
+    return sessionmaker(bind=engine)()
+
+
+async def _run_add_torrent(db, downloader_type: int, client: Any, vo_overrides: dict = None):
+    """公共端到端驱动：fake 直调远程层 + AsyncMock 审计/tracker，跑真实 add_torrent。"""
+    import app.services.torrent_add_service as add_service
+    from app.services.torrent_add_service import TorrentAddParams, TorrentAddService
+
+    downloader = _make_downloader(downloader_type=downloader_type, client=client)
+    store = _make_store(downloader)
+
+    async def fake_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+        return func(*args, **(kwargs or {}))
+
+    with (
+        patch.object(add_service, "call_downloader_api", side_effect=fake_call),
+        patch.object(add_service, "refresh_trackers_after_add", new=AsyncMock(return_value=True)),
+        patch("app.services.torrent_lookup_service.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_helpers.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_helpers.ADD_POLL_INTERVAL", 0.0),
+        patch("app.services.torrent_add_service.AsyncSessionLocal"),
+    ):
+        service = TorrentAddService(db, store=store)
+        return await service.add_torrent(
+            TorrentAddParams(
+                downloader_id="dl-1",
+                save_path="/downloads",
+                tags="",
+                category="",
+                paused=False,
+                skip_hash_check=False,
+                is_sequential_download=False,
+                is_first_last_piece_priority=False,
+                upload_limit=0,
+                download_limit=0,
+            ),
+            torrent_content=_make_valid_torrent_bytes() if downloader_type == 0 else _make_valid_torrent_bytes(),
+        )
+
+
+def _expected_info_hash() -> str:
+    import hashlib
+
+    import bencodepy
+
+    data = bencodepy.decode(_make_valid_torrent_bytes())
+    return hashlib.sha1(bencodepy.encode(data[b"info"])).hexdigest()
+
+
+async def test_add_torrent_qb_new_row_end_to_end():
+    """qB 首次添加：DB 行立即创建，字段口径正确（progress 0~100/BT_backup 路径/state 归一）。"""
+    from datetime import datetime
+
+    from app.torrents.models import TorrentInfo
+
+    db = _real_db_session_fixture()
+    info_hash = _expected_info_hash()
+    client = MagicMock()
+    client.torrents_info = MagicMock(
+        return_value=[
+            SimpleNamespace(
+                hash=info_hash,
+                name="e2e-qb",
+                size=4096,
+                state="metaDL",
+                progress=0.25,
+                ratio=0.0,
+                downloaded=0,
+                uploaded=0,
+                save_path="/downloads",
+                completion_on=0,
+                added_on=1700000000,
+                category="",
+                tags="",
+            )
+        ]
+    )
+
+    result = await _run_add_torrent(db, 0, client)
+
+    assert result.ok is True
+    assert result.created is True
+    assert result.info_hash == info_hash
+    assert result.name == "e2e-qb"
+    row = db.query(TorrentInfo).filter(TorrentInfo.hash == info_hash).one()
+    assert row.name == "e2e-qb"
+    assert float(row.size) == 4096.0
+    assert row.status == "downloading"  # metaDL 归一
+    assert float(row.progress) == 25.0  # 0~100 口径（qB 0.25×100）
+    assert row.torrent_file == f"/config/qbittorrent/BT_backup/{info_hash}.torrent"
+    assert row.added_date == datetime.fromtimestamp(1700000000)
+    assert row.dr == 0
+
+
+async def test_add_torrent_repeated_refreshes_existing_row():
+    """核心回归：重复添加同 hash → 既有行实时字段刷新 + created=False（原行为：复用旧值不刷新）。
+
+    场景：首次添加后下载器侧状态演进（downloading 25% → seeding 100%），
+    用户再次添加（转移回/重建场景）→ DB 行应立即反映最新状态。
+    """
+    from app.torrents.models import TorrentInfo
+
+    db = _real_db_session_fixture()
+    info_hash = _expected_info_hash()
+
+    def qb_stub(state: str, progress: float) -> MagicMock:
+        return SimpleNamespace(
+            hash=info_hash,
+            name="e2e-qb-v2",
+            size=8192,
+            state=state,
+            progress=progress,
+            ratio=1.2,
+            downloaded=8192,
+            uploaded=9830,
+            save_path="/downloads/moved",
+            completion_on=1700000600,
+            added_on=1700000000,
+            category="cat2",
+            tags="t2",
+        )
+
+    client = MagicMock()
+    client.torrents_info = MagicMock(return_value=[qb_stub("downloading", 0.25)])
+    result_first = await _run_add_torrent(db, 0, client)
+    assert result_first.created is True
+
+    # 第二次添加：下载器侧已 seeding 100%
+    client.torrents_info = MagicMock(return_value=[qb_stub("stalledUP", 1.0)])
+    result_second = await _run_add_torrent(db, 0, client)
+
+    assert result_second.ok is True
+    assert result_second.created is False  # 既有行刷新而非新建
+    rows = db.query(TorrentInfo).filter(TorrentInfo.hash == info_hash).all()
+    assert len(rows) == 1  # 无重复行
+    row = rows[0]
+    # 实时字段已刷新为第二次 VO 值
+    assert row.status == "seeding"  # stalledUP 归一
+    assert float(row.progress) == 100.0
+    assert float(row.size) == 8192.0
+    assert row.save_path == "/downloads/moved"
+    assert row.tags == "t2" and row.category == "cat2"
+    assert row.ratio == 1.2
+    from datetime import datetime
+
+    assert row.completed_date == datetime.fromtimestamp(1700000600)
+
+
+async def test_add_torrent_tr_new_row_end_to_end():
+    """TR 首次添加：DB 行创建（torrent_file 取 torrentFile 投影/torrent_id=info_hash）。"""
+    from app.torrents.models import TorrentInfo
+
+    from datetime import datetime as _dt
+
+    db = _real_db_session_fixture()
+    info_hash = _expected_info_hash()
+    tr_added = _dt(2026, 1, 1, 12, 0, 0)
+    client = MagicMock()
+    client.add_torrent = MagicMock(return_value=None)
+    client.get_torrents = MagicMock(
+        return_value=[
+            SimpleNamespace(
+                id=9330,
+                hashString=info_hash,
+                name="e2e-tr",
+                download_dir="/downloads/tr",
+                total_size=2048,
+                status="checking",
+                progress=0.0,
+                ratio=0.0,
+                downloaded_ever=0,
+                uploaded_ever=0,
+                torrent_file="/config/tr/torrents/x.torrent",
+                added_date=tr_added,
+                done_date=None,
+                labels=[],
+                error=0,
+                error_string="",
+            )
+        ]
+    )
+
+    result = await _run_add_torrent(db, 1, client)
+
+    assert result.ok is True and result.created is True
+    row = db.query(TorrentInfo).filter(TorrentInfo.hash == info_hash).one()
+    assert row.name == "e2e-tr"
+    assert row.torrent_file == "/config/tr/torrents/x.torrent"
+    assert row.torrent_id == info_hash  # 数字 id 不持久化，统一 hash 为稳定键
+    assert row.status == "checking" and row.tags == ""
+
+
+async def test_refresh_existing_persists_with_real_sqlite_session(tmp_path):
+    """真实 ORM 会话级验证：既有行刷新的 UPDATE 确实持久化（对标 insert 版 real_session）。
+
+    MagicMock 层只能断言赋值发生，无法证明 rollback/refresh 状态机下变更
+    落库——用全新会话二次读取验证 durable UPDATE。
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.torrents.models import TorrentInfo, TrackerInfo
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'refresh.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine, tables=[TorrentInfo.__table__, TrackerInfo.__table__])
+    factory = sessionmaker(bind=engine)
+
+    with factory() as seed:
+        from datetime import datetime as _dt
+
+        seed.add(
+            TorrentInfo(
+                id_="seed-1",
+                downloader_id="dl-1",
+                downloader_name="qb",
+                torrent_id=HASH_A,
+                hash=HASH_A,
+                name="stale",
+                save_path="/old",
+                size=1,
+                status="downloading",
+                progress=10.0,
+                torrent_file="",
+                added_date=_dt(2026, 1, 1),
+                completed_date=None,
+                ratio=0.0,
+                ratio_limit=None,
+                tags="",
+                category="",
+                super_seeding="",
+                enabled=True,
+                create_time=_dt(2026, 1, 1),
+                create_by="seeder",
+                update_time=_dt(2026, 1, 1),
+                update_by="seeder",
+                dr=0,
+            )
+        )
+        seed.commit()
+
+    db = factory()
+    call_mock = _patch_lookup_call_with([_qb_vo()])
+    try:
+        with patch("app.services.torrent_lookup_service.call_downloader_api", call_mock):
+            row, created, err = await wait_and_upsert_torrent_row(
+                db, _make_store(_make_downloader()), _make_downloader(), HASH_A, operator="tester"
+            )
+        assert err is None and created is False
+        db.close()
+
+        with factory() as verify:
+            persisted = verify.query(TorrentInfo).filter(TorrentInfo.hash == HASH_A).one()
+            assert persisted.name == "qb-name"  # stale → 刷新值
+            assert persisted.status == "downloading"
+            assert float(persisted.progress) == 42.5
+            assert persisted.save_path == "/dl/qb"
+    finally:
+        engine.dispose()

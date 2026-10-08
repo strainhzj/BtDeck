@@ -7435,7 +7435,7 @@
             "backend/app/services/torrent_lookup_service.py",
             "backend/tests/services/test_torrent_lookup_service.py"
           ],
-          "evidence": "get_by_hash/get_by_hashes 双入口 + from_context(RuntimeContext) 注入；mypy 0 错 + black/flake8 净；新测试 22 例全绿（qB/TR VO 契约含 progress/epoch/sentinel/labels 归一、TR Status(str,Enum) 必须经 .lower() 取值、批量合并单请求与 100/200 分块、部分缺失与部分失败保留成功块、脏数据单条跳过、非法 hash 快速失败不发请求、v2 64 位 hex 兼容、store 三态与 rTorrent 门控、normalize(None) 兼容归 qB）；隔离 venv（requirements 锁定组合 + freezegun）全量 pytest 5456 passed / 0 failed / 18 skipped"
+          "evidence": "get_by_hash/get_by_hashes 双入口 + from_context(RuntimeContext) 注入；mypy 0 错 + black/flake8 净；新测试 22 例全绿（qB/TR VO 契约含 progress/epoch/sentinel/labels 归一、TR Status(str,Enum) 必须经 .lower() 取值、批量合并单请求与 100/200 分块、部分缺失与部分失败保留成功块、脏数据单条跳过、非法 hash 快速失败不发请求、v2 64 位 hex 兼容、store 三态与 rTorrent 门控、normalize(None) 兼容归 qB）；隔离 venv（requirements 锁定组合 + freezegun）全量 pytest 5456 passed / 0 failed / 18 skipped；四期实测验收后补强：+qB 状态映射保持锚定/TR error 三态/_safe_* 容错/torrent_file 契约 4 例（22→26）"
         },
         {
           "id": "add-chain-integration",
@@ -7455,7 +7455,7 @@
             "backend/tests/api/test_transmission_error_sync.py",
             "backend/tests/architecture/test_async_downloader_calls.py"
           ],
-          "evidence": "wait_and_upsert_torrent_row（轮询 30×1s 命中即停→upsert：无行创建 _build_row_from_vo/有行刷新白名单 name/size/status/progress/ratio/save_path/tags/category/completed_date/error_reason/update_*，不碰 create_*/auxiliary_seed_count/torrent_file/dr）+ refresh_trackers_after_add（qB torrents_trackers / TR trackerStats 投影 → 复用 extract_tracker_rows_from_torrent + sync_trackers_batch_async，注册表倒置 register_tracker_sync_hooks 由 torrents_async 模块尾注册）；锁四件套迁 helpers（batch 的 fastapi 用法不得入 MCP 共享闭包——test_service_parity 守卫强制）；TR error>=2 归 error 态 + error_reason（原 create 的 resolve/extract 语义回归，test_transmission_error_sync 迁移锚定）；qB 前置可见性轮询保留、批量裸 to_thread 轮询消除（P0-04 违规修复）；新增 test_torrent_add_refresh 11 例 + 迁移适配 fallback/batch/status_migration/error_sync 四套件；全量 pytest 5467 passed / 0 failed / 18 skipped + mypy/black/flake8 净；验收修复批（reviewer 对抗性验收 P1-2/P2 全清）：批量添加动作 add_torrent/torrents_add 自裸 asyncio.to_thread 迁至 call_downloader_api(INTERACTIVE) 并纳入架构守卫（P0-04 盲区收口）；刷新路径补对称锁重试（BUSY 回滚后重放 _apply_vo_refresh）；qB 前置可见性轮询删除（与 TR 对齐统一走 lookup 轮询，消除冗余远程调用与 60s 病态叠加）；守卫空置登记清理"
+          "evidence": "wait_and_upsert_torrent_row（轮询 30×1s 命中即停→upsert：无行创建 _build_row_from_vo/有行刷新白名单 name/size/status/progress/ratio/save_path/tags/category/completed_date/error_reason/update_*，不碰 create_*/auxiliary_seed_count/torrent_file/dr）+ refresh_trackers_after_add（qB torrents_trackers / TR trackerStats 投影 → 复用 extract_tracker_rows_from_torrent + sync_trackers_batch_async，注册表倒置 register_tracker_sync_hooks 由 torrents_async 模块尾注册）；锁四件套迁 helpers（batch 的 fastapi 用法不得入 MCP 共享闭包——test_service_parity 守卫强制）；TR error>=2 归 error 态 + error_reason（原 create 的 resolve/extract 语义回归，test_transmission_error_sync 迁移锚定）；qB 前置可见性轮询保留、批量裸 to_thread 轮询消除（P0-04 违规修复）；新增 test_torrent_add_refresh 11 例 + 迁移适配 fallback/batch/status_migration/error_sync 四套件；全量 pytest 5467 passed / 0 failed / 18 skipped + mypy/black/flake8 净；验收修复批（reviewer 对抗性验收 P1-2/P2 全清）：批量添加动作 add_torrent/torrents_add 自裸 asyncio.to_thread 迁至 call_downloader_api(INTERACTIVE) 并纳入架构守卫（P0-04 盲区收口）；刷新路径补对称锁重试（BUSY 回滚后重放 _apply_vo_refresh）；qB 前置可见性轮询删除（与 TR 对齐统一走 lookup 轮询，消除冗余远程调用与 60s 病态叠加）；守卫空置登记清理；四期实测验收后补强：TorrentAddService 端到端 4 例（重复添加既有行实时刷新核心场景/qB·TR 新建行字段口径/真实 SQLite durable UPDATE）+ 注册表隔离 fixture（13→17）；全量 5478 passed"
         }
       ]
     }
