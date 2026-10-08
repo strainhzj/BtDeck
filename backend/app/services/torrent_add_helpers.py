@@ -7,11 +7,12 @@
 MCP 共用边界（G0 禁 app/mcp import app.api 的口径下同款约束），
 故归属到服务层；HTTP 端点（torrent_status.py）改为正向依赖本模块。
 
-迁移纪律：函数体与 torrent_helpers 原实现逐字一致；唯一差异是
-``get_transmission_torrent_info`` 的 ``tr_client`` 类型注解由
-``transmission_rpc.Client`` 改为 ``Any``——本模块作为架构守卫登记对象
-（tests/architecture/test_async_downloader_calls.py），模块级客户端库
-import 不允许出现（先例：recycle_bin_service 同款处理）。
+守卫登记：本模块是架构守卫对象（tests/architecture/test_async_downloader_calls.py），
+模块级客户端库 import 不允许出现（先例：recycle_bin_service 同款处理）。
+2026-10-08 二期起另承载：SQLite 锁重试四件套、添加后统一「轮询定位 + 落库/刷新」
+（wait_and_upsert_torrent_row）与 tracker 立即刷新（refresh_trackers_after_add，
+注册表倒置注入 endpoints 层实现）；原 get_transmission_torrent_info /
+create_*_torrent_record 已随消费方收敛删除。
 """
 
 import asyncio
@@ -64,7 +65,9 @@ ADD_POLL_INTERVAL = 1.0
 
 # 刷新实时字段白名单：仅覆盖随下载器状态变化的字段；create_*/auxiliary_seed_count/
 # torrent_file/dr/deleted_at 等身份与管理字段不碰（由同步链路或删除链路维护）
-_REFRESH_FIELDS_NOTE = "name/size/status/progress/ratio/save_path/tags/category/completed_date/update_time/update_by"
+_REFRESH_FIELDS_NOTE = (
+    "name/size/status/error_reason/progress/ratio/save_path/tags/category/completed_date/update_time/update_by"
+)
 
 
 _SQLITE_BUSY_ERROR_CODES = (5, 517, 518)

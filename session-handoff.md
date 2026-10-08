@@ -9,9 +9,15 @@
 
 ### 待办
 
+- **P1（验收遗留，存量非本批引入）**：批量添加动作 `torrent_batch_add_service.py` L154/L171 的 `client.add_torrent`/`client.torrents_add` 仍为裸 `asyncio.to_thread`（绕过 lane/限流/超时/日志，且该文件不在架构守卫 `_ENDPOINT_RULES` 内）——建议随 P0-04 收口专项处理。
+- P2 记录：刷新路径（existing 行 commit）无 SQLite 锁重试（与 insert 路径不对称，BUSY 窗口小）；qB 前置可见性轮询 + lookup 二次确认存在 1 次冗余远程调用（病态场景最坏叠加 60s）。
 - DB 多条件查询消费层（名称/分类/标签/状态 → 本地 DB 定位 hash → lookup 取实时态）。
 - 内部散落 torrents_info/get_torrents 直调迁移（seed_transfer 查重、recycle_bin 轮询、orphan_manifest、added_date_backfill）。
-- Git 提交待用户指示（本批与一期均未提交）。
+
+### 验收记录
+
+- 提交 2f15f02 经 reviewer 对抗性验收：**有条件通过**（P0 无）。全部验证声明复现（全量 5467/0/18、mypy/black/flake8 净、purity 守卫 10 例过、死代码零残留、白名单逐字段核对、TR error 语义与 mapper 口径一致）。
+- 放行项已修：roadmap 行号漂移（L83/L106→L92/L115）、`_REFRESH_FIELDS_NOTE` 补 error_reason、模块头 docstring 更新、守卫空置登记项清理（修复提交见 git log）。
 
 ## 2026-10-08 交接：通用种子定位底层 service（feature torrent-lookup-service-2026-10-08，全绿未提交）
 

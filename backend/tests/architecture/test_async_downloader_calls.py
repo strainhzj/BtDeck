@@ -70,16 +70,16 @@ _ENDPOINT_RULES = {
     "app/api/endpoints/torrent_crud.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),
-        # 已知 async helper：calculate_info_hash（torrent_helpers）与
-        # get_transmission_torrent_info（torrent_helpers，轮询 30 次内的封装调用）。
-        "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
+        # 已知 async helper：calculate_info_hash（torrent_add_helpers）。
+        # get_transmission_torrent_info 已随 2026-10-08 二期收敛删除。
+        "async_helpers_require_await": ("calculate_info_hash",),
     },
     # /add 主体 2026-09-05 抽取至服务层：规则随之迁移，确保 add/轮询继续经
     # call_downloader_api(INTERACTIVE) 执行、helper 调用点带 await。
     "app/services/torrent_add_service.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),
-        "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
+        "async_helpers_require_await": ("calculate_info_hash",),
     },
     # W3-③ 分层债收尾：add 家族辅助（info hash/TR 轮询/记录构造/审计写入）自
     # torrent_helpers 迁入服务层，MCP torrent_add_file 与 HTTP/批量添加共用。
@@ -87,7 +87,7 @@ _ENDPOINT_RULES = {
     "app/services/torrent_add_helpers.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client"),
-        "async_helpers_require_await": ("calculate_info_hash", "get_transmission_torrent_info"),
+        "async_helpers_require_await": ("calculate_info_hash",),
     },
     "app/api/endpoints/torrent_status.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
