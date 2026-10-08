@@ -313,33 +313,10 @@ class TorrentAddService:
                     operation="add_torrent",
                 )
 
-                # 从qBittorrent获取种子信息（最多30秒）
-                torrents = None
-                max_retries = 30
-                retry_count = 0
-                while (torrents is None or len(torrents) == 0) and retry_count < max_retries:
-                    await asyncio.sleep(1)
-                    # P0-04 修复：轮询内的 torrents_info 同样经 INTERACTIVE lane 执行
-                    torrents = await call_downloader_api(
-                        downloader_id,
-                        DownloadLane.INTERACTIVE,
-                        qb_client.torrents_info,
-                        kwargs={"torrent_hashes": info_hash},
-                        timeout=_QB_CALL_TIMEOUT,
-                        operation="get_qb_torrent_info",
-                    )
-                    retry_count += 1
-
-                # 双重检查：确保torrents列表不为空
-                if not torrents or len(torrents) == 0:
-                    result.code = "500"
-                    result.msg = "种子添加到qBittorrent后无法获取信息"
-                    result.reason_code = "TORRENT_INFO_UNAVAILABLE"
-                    return result
-
                 # 添加后统一「轮询定位 + 落库/刷新」（feature torrent-lookup-service-2026-10-08 二期）：
-                # 上面的 torrents_info 轮询已经确认种子可见，这里经 TorrentLookupService
-                # 拿统一 VO 并 upsert（无行创建/有行刷新实时字段），并立即刷新 tracker 行
+                # 验收修复——删除前置可见性轮询（原 30×1s torrents_info 手写循环），
+                # 与 TR 分支对齐直接走 TorrentLookupService 轮询定位（命中即停）；
+                # 消除正常路径 1 次冗余远程调用与病态场景 60s 叠加超时
                 assert info_hash is not None  # mypy 收窄： torrents_add 前已同步计算
                 db_torrent, db_torrent_created, lookup_err = await wait_and_upsert_torrent_row(
                     self.db, self.store, downloader, info_hash, operator=operator

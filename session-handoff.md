@@ -9,8 +9,7 @@
 
 ### 待办
 
-- **P1（验收遗留，存量非本批引入）**：批量添加动作 `torrent_batch_add_service.py` L154/L171 的 `client.add_torrent`/`client.torrents_add` 仍为裸 `asyncio.to_thread`（绕过 lane/限流/超时/日志，且该文件不在架构守卫 `_ENDPOINT_RULES` 内）——建议随 P0-04 收口专项处理。
-- P2 记录：刷新路径（existing 行 commit）无 SQLite 锁重试（与 insert 路径不对称，BUSY 窗口小）；qB 前置可见性轮询 + lookup 二次确认存在 1 次冗余远程调用（病态场景最坏叠加 60s）。
+- ~~P1 批量裸 to_thread~~ / ~~P2 锁重试不对称 / qB 冗余轮询~~ —— 均已于 2026-10-08 三期验收修复批清零（见 progress 三期条目与提交记录）。
 - DB 多条件查询消费层（名称/分类/标签/状态 → 本地 DB 定位 hash → lookup 取实时态）。
 - 内部散落 torrents_info/get_torrents 直调迁移（seed_transfer 查重、recycle_bin 轮询、orphan_manifest、added_date_backfill）。
 

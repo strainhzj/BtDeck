@@ -8357,3 +8357,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试迁移与坑**：新增 test_torrent_add_refresh 11 例（白名单/分块/注册表契约）；四套件迁移——fallback（MagicMock stub 未显式设置字段自动产生 MagicMock 属性，数值容错救场；坏 added_on/total_size 行为从 500 演进为容错兜底成功，断言更新）、batch（锁四件套 patch 点随迁 helpers）、status_migration（side_effect 序列要覆盖 lookup 第 4 次调用，否则 StopIteration；行 hash 为 calculate_info_hash 真实值非 stub 值）、error_sync（create_* 断言迁移 `_tr_to_vo`+`_build_row_from_vo` 组合）。lifecycle_gates 的 RUNTIME_NOT_READY 为全量顺序性假失败（单独跑过，终验全量也消失）。
 - **死代码删除**：get_transmission_torrent_info / create_qbittorrent_torrent_record / create_transmission_torrent_record / _wait_for_transmission_torrent（消费方全量收敛）。
 - **验证**：全量 **5467 passed / 0 failed / 18 skipped**（+11 例）+ mypy/black/flake8 净；./init.sh exit 0。
+
+## 2026-10-08 三期：验收修复批（P1-2/P2 全清）
+
+- **P1-2**：批量添加动作 `add_torrent`/`torrents_add` 自裸 `asyncio.to_thread` 迁至 `call_downloader_api(INTERACTIVE)`（operation `batch_add_tr/qb_torrent`），`torrent_batch_add_service.py` 纳入架构守卫 `_ENDPOINT_RULES`（守卫盲区收口，防回退）。
+- **P2**：①刷新路径补对称锁重试（BUSY 5/517/518 回滚后**重放** `_apply_vo_refresh` 再提交——rollback 丢弃未提交字段变更，直接复用旧变更集会静默丢失 UPDATE；非锁冲突不重试）；②qB 前置可见性轮询删除（与 TR 对齐统一走 lookup 轮询，消除正常路径 1 次冗余远程调用与病态 60s 叠加）；③feature_list files 补全 4+1 迁移/守卫测试文件。
+- **roadmap 补账**：`torrent-add-helpers` 独立行此前插入因存在性判断失误静默失败，本批补入（行号实测 L104/L219/L316）；batch-add/torrent-add 行同步三期变更。
+- **验证**：受影响面 1434 passed（含守卫 33 例）+ 新增刷新锁重试 2 例（add_refresh 13 例）+ mypy/black/flake8 净。

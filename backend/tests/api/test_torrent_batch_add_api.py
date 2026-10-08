@@ -207,6 +207,9 @@ def _build_tr_environment(tmp_path: Any, monkeypatch: pytest.MonkeyPatch, commit
     monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
     monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    # P1-2 修复后添加动作（add_torrent/torrents_add）经 batch 模块引用，
+    # 全量下全局 runtime 可能已被 shutdown，一并 fake 直调
+    monkeypatch.setattr("app.services.torrent_batch_add_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr("app.services.torrent_add_helpers.ADD_POLL_INTERVAL", 0.0)
 
     client = MagicMock()
@@ -398,6 +401,9 @@ async def test_locked_retry_persists_row_with_real_sqlite_session(tmp_path, monk
     monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
     monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    # P1-2 修复后添加动作（add_torrent/torrents_add）经 batch 模块引用，
+    # 全量下全局 runtime 可能已被 shutdown，一并 fake 直调
+    monkeypatch.setattr("app.services.torrent_batch_add_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr(add_helpers, "ADD_POLL_INTERVAL", 0.0)
 
     staged_file = StagedTorrentFile(file_name="seed-real.torrent", file_path=str(torrent_file))
@@ -438,6 +444,9 @@ async def test_qb_branch_shares_locked_retry_path(tmp_path, monkeypatch):
     monkeypatch.setattr(add_helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
     monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr("app.services.torrent_add_helpers.call_downloader_api", _fake_lookup_call)
+    # P1-2 修复后添加动作（add_torrent/torrents_add）经 batch 模块引用，
+    # 全量下全局 runtime 可能已被 shutdown，一并 fake 直调
+    monkeypatch.setattr("app.services.torrent_batch_add_service.call_downloader_api", _fake_lookup_call)
     monkeypatch.setattr(add_helpers, "ADD_POLL_INTERVAL", 0.0)
 
     client = MagicMock()

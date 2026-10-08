@@ -210,6 +210,66 @@ async def test_wait_and_upsert_refresh_completion_only_when_positive(fast_poll, 
     assert existing.completed_date == datetime.fromtimestamp(1700000600)
 
 
+async def test_wait_and_upsert_refresh_locked_retry_and_reapply(fast_poll, monkeypatch):
+    """刷新路径锁重试（验收 P2 修复）：首次 commit BUSY → 回滚 → 重放刷新 → 二次成功。
+
+    rollback 会丢弃未提交的字段变更，重试轮必须重新 _apply_vo_refresh
+    （若直接复用旧变更集会静默丢失 UPDATE——与 insert 路径重建实例同构）。
+    """
+    from sqlalchemy.exc import OperationalError
+
+    call_mock = _patch_lookup_call_with([_qb_vo()])
+    monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", call_mock)
+
+    existing = SimpleNamespace(name="old", update_by="x", update_time=None)
+
+    applied_names = []
+
+    def fake_apply(row, vo, operator="admin"):
+        applied_names.append(vo["name"])
+        row.name = vo["name"]
+        row.update_by = operator
+        row.update_time = __import__("datetime").datetime.now()
+
+    monkeypatch.setattr(helpers, "_apply_vo_refresh", fake_apply)
+
+    lock_orig = Exception("database is locked")
+    setattr(lock_orig, "sqlite_errorcode", 518)
+    lock_err = OperationalError("UPDATE torrent_info ...", (), lock_orig)
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.filter.return_value.filter.return_value.first.return_value = existing
+    db.commit.side_effect = [lock_err, None]
+    monkeypatch.setattr(helpers, "_LOCKED_RETRY_BASE_DELAY_SECONDS", 0)
+
+    row, created, err = await wait_and_upsert_torrent_row(
+        db, _make_store(_make_downloader()), _make_downloader(), HASH_A, operator="tester"
+    )
+    assert err is None and created is False and row is existing
+    assert db.commit.call_count == 2
+    assert db.rollback.call_count == 1
+    # 每轮都重放刷新（rollback 丢弃未提交变更）
+    assert applied_names == ["qb-name", "qb-name"]
+    assert row.name == "qb-name"
+
+
+async def test_wait_and_upsert_refresh_non_locked_no_retry(fast_poll, monkeypatch):
+    """刷新路径非锁冲突（如 no such table）不重试，直接上抛。"""
+    from sqlalchemy.exc import OperationalError
+
+    call_mock = _patch_lookup_call_with([_qb_vo()])
+    monkeypatch.setattr("app.services.torrent_lookup_service.call_downloader_api", call_mock)
+
+    existing = SimpleNamespace(name="old", update_by="x", update_time=None)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.filter.return_value.filter.return_value.first.return_value = existing
+    db.commit.side_effect = OperationalError("UPDATE ...", (), Exception("no such table: torrent_info"))
+
+    with pytest.raises(OperationalError):
+        await wait_and_upsert_torrent_row(db, _make_store(_make_downloader()), _make_downloader(), HASH_A)
+    assert db.commit.call_count == 1
+
+
 async def test_wait_and_upsert_db_exception_propagates(fast_poll, monkeypatch):
     """落库异常向上抛（调用方 except 链负责 sqlite_errorcode 透传/兜底），不被吞。"""
     call_mock = _patch_lookup_call_with([_qb_vo()])

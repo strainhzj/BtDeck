@@ -271,8 +271,25 @@ async def wait_and_upsert_torrent_row(
         .first()
     )
     if existing is not None:
-        _apply_vo_refresh(existing, vo, operator=operator)
-        db.commit()
+        # 刷新路径与 insert 路径对称的锁重试（验收 P2 修复）：BUSY 5/517/518 回滚后
+        # 重新应用刷新再提交（rollback 会丢弃未提交的字段变更，须重放 _apply_vo_refresh）；
+        # 非锁冲突不重试直接上抛
+        for attempt in range(1, _LOCKED_RETRY_MAX + 1):
+            _apply_vo_refresh(existing, vo, operator=operator)
+            try:
+                db.commit()
+                break
+            except OperationalError as exc:
+                db.rollback()
+                if not _is_sqlite_locked_error(exc) or attempt == _LOCKED_RETRY_MAX:
+                    raise
+                logger.warning(
+                    "刷新既有种子行遇到 SQLite 写锁冲突，回滚后重试（第 %s/%s 次，sqlite_errorcode=%s）",
+                    attempt,
+                    _LOCKED_RETRY_MAX,
+                    _sqlite_error_code(exc),
+                )
+                await asyncio.sleep(_LOCKED_RETRY_BASE_DELAY_SECONDS * attempt)
         db.refresh(existing)
         return existing, False, None
     row = await _insert_torrent_record_with_retry(db, lambda: _build_row_from_vo(downloader, info_hash, vo, operator))

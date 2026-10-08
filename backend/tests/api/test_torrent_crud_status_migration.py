@@ -316,13 +316,12 @@ async def test_create_torrent_qb_success_runtime_and_polling(torrent_db):
     # 轮询循环回归：3 次 torrents_info 全部经 runtime（带 info_hash 与 operation）
     info_calls = [c for c in calls if c["func"] is client.torrents_info]
     # 二期：3 次前置可见性轮询 + 1 次添加后统一落库的 TorrentLookupService 定位
-    assert len(info_calls) == 4, f"torrents_info 应真实经 runtime 调用 4 次，实际 {len(info_calls)}"
-    for c in info_calls[:3]:
+    # 验收修复后：前置可见性轮询已删，轮询定位统一在 TorrentLookupService 内
+    # （3 次全经 runtime，均为列表参数形态，SDK 自动 | 连接）
+    assert len(info_calls) == 3, f"torrents_info 应真实经 runtime 调用 3 次，实际 {len(info_calls)}"
+    for c in info_calls:
         assert c["kwargs"] == {"torrent_hashes": info_calls[0]["kwargs"]["torrent_hashes"]}
-        assert c["opts"]["operation"] == "get_qb_torrent_info"
-    # 第 4 次：TorrentLookupService 定位（列表参数形态，SDK 自动 | 连接）
-    assert info_calls[3]["kwargs"]["torrent_hashes"] == [info_calls[0]["kwargs"]["torrent_hashes"]]
-    assert info_calls[3]["opts"]["operation"] == "torrent_lookup_qb"
+        assert c["opts"]["operation"] == "torrent_lookup_qb"
     # 种子已写入数据库（二期：行 hash 为 calculate_info_hash 真实值，非 stub 值）
     saved = torrent_db.query(TorrentInfo).filter(TorrentInfo.downloader_id == DL_ID).first()
     assert saved is not None

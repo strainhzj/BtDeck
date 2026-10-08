@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import UploadFile
 
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.torrent_add_helpers import (
     _sqlite_error_code,
     _write_audit_log_async,
@@ -151,11 +152,15 @@ async def _add_one_torrent(
 
         if downloader_type == 1:
             file_data = await asyncio.to_thread(_read_file_data, staged_file.file_path)
-            await asyncio.to_thread(
+            # P0-04 收口（验收 P1-2）：添加动作改经 call_downloader_api（INTERACTIVE lane，
+            # 此前裸 asyncio.to_thread 绕过 lane/限流/超时/结构化日志且不在守卫范围）
+            await call_downloader_api(
+                str(downloader.downloader_id),
+                DownloadLane.INTERACTIVE,
                 client.add_torrent,
-                BytesIO(file_data),
-                paused=options.paused,
-                download_dir=options.save_path if options.save_path else None,
+                args=(BytesIO(file_data),),
+                kwargs={"paused": options.paused, "download_dir": options.save_path if options.save_path else None},
+                operation="batch_add_tr_torrent",
             )
             # 添加后统一「轮询定位 + 落库/刷新」+ tracker 刷新
             # （feature torrent-lookup-service-2026-10-08 二期，替代 _wait_for_transmission_torrent）
@@ -168,18 +173,24 @@ async def _add_one_torrent(
 
         elif downloader_type == 0:
             file_data = await asyncio.to_thread(_read_file_data, staged_file.file_path)
-            await asyncio.to_thread(
+            # P0-04 收口（验收 P1-2）：同上，经 call_downloader_api 执行添加动作
+            await call_downloader_api(
+                str(downloader.downloader_id),
+                DownloadLane.INTERACTIVE,
                 client.torrents_add,
-                torrent_files=BytesIO(file_data),
-                save_path=options.save_path,
-                is_stopped=options.paused,
-                tags=options.tags,
-                category=options.category,
-                is_skip_checking=options.skip_hash_check,
-                is_sequential_download=options.is_sequential_download,
-                is_first_last_piece_priority=options.is_first_last_piece_priority,
-                upload_limit=options.upload_limit,
-                download_limit=options.download_limit,
+                kwargs={
+                    "torrent_files": BytesIO(file_data),
+                    "save_path": options.save_path,
+                    "is_stopped": options.paused,
+                    "tags": options.tags,
+                    "category": options.category,
+                    "is_skip_checking": options.skip_hash_check,
+                    "is_sequential_download": options.is_sequential_download,
+                    "is_first_last_piece_priority": options.is_first_last_piece_priority,
+                    "upload_limit": options.upload_limit,
+                    "download_limit": options.download_limit,
+                },
+                operation="batch_add_qb_torrent",
             )
 
             # 添加后统一「轮询定位 + 落库/刷新」+ tracker 刷新

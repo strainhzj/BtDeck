@@ -89,6 +89,13 @@ _ENDPOINT_RULES = {
         "client_object_names": ("client", "qb_client", "tr_client"),
         "async_helpers_require_await": ("calculate_info_hash",),
     },
+    # 2026-10-08 验收 P1-2 盲区修复：批量添加动作（add_torrent/torrents_add）
+    # 自裸 asyncio.to_thread 迁至 call_downloader_api(INTERACTIVE)，纳入守卫防回退。
+    "app/services/torrent_batch_add_service.py": {
+        "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
+        "client_object_names": ("client", "qb_client", "tr_client"),
+        "async_helpers_require_await": ("calculate_info_hash",),
+    },
     "app/api/endpoints/torrent_status.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client", "qb_client", "tr_client", "torrent", "tr_torrent_info", "torrents"),
