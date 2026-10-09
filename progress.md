@@ -1,3 +1,13 @@
+## 2026-10-09：添加种子弹窗美化 + 全自定义组件化（feature add-torrent-dialog-custom-components-2026-10-09，全绿未提交）
+
+- **范围（实现假设经用户确认后实施，四点确认：拖拽上传做/警示卡升级/徽章状态点机会渲染/其他弹窗不迁移）**：添加种子弹窗（桌面 index/TraditionalView + 移动 torrents.vue 三端共用）从 Element 混搭（el-form 冗余壳/el-select×2/el-autocomplete/el-checkbox/原生 select）重写为全自定义组件，视觉令牌化（修硬编码色，三主题自动正确），emoji 全换 Lucide（新注册 plus-circle/file/loader-2）。
+- **新组件（components/common，均 class-component + 零 Element）**：①`BaseDialog.vue` 弹窗壳（overlay/渐变头/ESC 关闭/body 滚动锁模块级计数支持叠弹/进出场动画/≤768 顶铆全宽契约）；②`FormSelect.vue`（single/multiple+chips/filterable/clearable/invalid，键盘流+ARIA combobox/listbox/activedescendant，option 插槽富选项行）；③`FormAutocomplete.vue`（替代 el-autocomplete，suggestion 作用域插槽富建议行，初始无高亮对齐 el-autocomplete，focus/click 双路重开）；④`FormCheckbox.vue`（原生 input 视觉隐藏承载语义）；⑤`floatingDropdown.ts` mixin（自 PageSizeCombobox 抽取：teleport+fixed 上下自适应+横向防溢出+最小宽对齐+外部点击收起+rAF 兕底）；⑥`formControls.ts` 类型模块。
+- **弹窗重写（1024 行）**：拖拽上传与点击同校验路径；文件列表计数+清空；下载器选项行 qB/TR/rt 徽章+在线状态点机会渲染（DownloaderSimpleVO 现缺字段自动退化，契约零改动）；路径建议等宽字体+令牌化徽章+种子数；跳过校验升级警示卡（warning 色卡+checkbox）；底部已选摘要+确认钮 spinner。行为契约原样：props/events、202/200/207 三分支、轮询、skip_hash_check 安全默认（恰好 2 处 false 源码契约）、44px/36px 触控契约。
+- **测试与门禁**：新 4 spec 33 例 + 主 spec 扩 5 行为例 + 新增零 Element 源码契约（≤768 壳契约迁 BaseDialog.spec）；typecheck 0 错、lint 净（contract:check+--max-warnings 0）、`npm run build` 成功（~27s）、全量 Jest 136 套 **1941 例**（唯一失败 EChart 既有环境性，与本批无关）、`./init.sh` exit=0。
+- **文档**：feature_list #94（2 任务 done+evidence）；roadmap 3 文件同步（根 README 双栏元信息、components-layout common 4→8 .vue+6 新行、views TorrentAddDialog 行）。
+- **坑（4 条）**：①*.vue shim 只声明默认导出，具名导入类型报 TS2614→类型独立 formControls.ts（既有 spec 本地重声明的根因）；②mixin 类必须 @Component 否则类字段不进响应式 data（本仓 mixins 惯例佐证）；③jsdom focus 事件仅焦点转移时触发，选中后重开靠 @click（与真实浏览器一致）；④vue-test-utils 无 v-model 宿主时 prop 不回写，回显断言需宿主组件。
+- **待办**：其他弹窗（DuplicateTorrentsDialog 等）渐进迁移 BaseDialog/新表单控件（另立项）；真实浏览器拖拽联调；Git 提交待用户指示。
+
 ## 2026-10-05：等级1删除·下载器离线追加确认与本地跳过删除（feature l1-delete-offline-skip-2026-10-05，全绿未提交）
 
 - **范围（实现假设经用户确认后实施）**：种子列表页等级1删除（单条+批量，index.vue / TraditionalView.vue 共用 TorrentBatchMixin 一处改动双视图生效）——原有等级1确认后调 `/downloader/getStatusAll` 检测所涉下载器；检测到离线则**再追加一次** error 级确认（用户澄清：非追加 3 次，共 2 次弹窗），提醒不调下载器接口、仅删 BtDeck 记录、数据文件与下载器侧任务保留；确认后携带 `skip_downloader=true` 删除，取消则中止；状态接口异常降级不阻断（按在线走原流程）。移动端种子页不在本批。

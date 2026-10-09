@@ -1,3 +1,21 @@
+## 2026-10-09 交接：添加种子弹窗美化 + 全自定义组件化（feature add-torrent-dialog-custom-components-2026-10-09，全绿未提交）
+
+### 已完成
+
+- **范围（用户确认四点：拖拽上传做/跳过校验升级警示卡/下载器选项行徽章状态点机会渲染/其他弹窗本次不迁移）**：添加种子弹窗（桌面 index/TraditionalView + 移动 torrents.vue 三端共用）零 Element 重写 + 视觉令牌化（修硬编码色，三主题自动正确），emoji 全换 Lucide（新注册 plus-circle/file/loader-2）。
+- **新组件（components/common，class-component，均含 spec）**：BaseDialog（弹窗壳：ESC/滚动锁计数/≤768 顶铆全宽）、FormSelect（single/multiple+chips/filterable/clearable，键盘流+ARIA，option 插槽富选项行）、FormAutocomplete（替代 el-autocomplete，初始无高亮对齐，focus/click 双路重开）、FormCheckbox、floatingDropdown mixin（自 PageSizeCombobox 抽取：teleport+fixed 上下自适应+外部点击收起）、formControls 类型模块。
+- **弹窗重写（1024 行）**：拖拽上传与点击同校验路径；文件列表计数+清空；下载器选项行 qB/TR/rt 徽章+状态点机会渲染（DownloaderSimpleVO 现缺字段自动退化，契约零改动）；路径建议等宽+令牌化徽章；警示卡 checkbox；底部已选摘要+spinner。行为契约原样：props/events、202/200/207 三分支、轮询、skip_hash_check 安全默认（恰好 2 处 false 源码契约）、44px/36px 触控契约；新增零 Element 源码契约（禁 <el-/<select 回流）。
+- **验证**：typecheck 0 错、lint 净（--max-warnings 0）、build 成功（~27s）、全量 Jest 136 套 **1941 例**（唯一失败 EChart 既有环境性）、./init.sh exit=0。
+- **文档**：feature_list #94；roadmap 3 文件（根双栏元信息、components-layout common 4→8 .vue+6 新行、views 行）；progress 置顶。
+
+### 待办
+
+- 其他弹窗（DuplicateTorrentsDialog/TrackerOperationDialog 等）渐进迁移 BaseDialog/新表单控件（另立项）；真实浏览器拖拽/键盘/三主题目视验收；Git 提交待用户指示。
+
+### 坑位（下会话注意）
+
+- *.vue shim 只声明默认导出：跨文件具名导入类型报 TS2614 → 类型独立 formControls.ts；mixin 类必须 @Component 否则类字段不进响应式 data；jsdom/浏览器 focus 事件仅焦点转移时触发（重开靠 @click）；vue-test-utils 无 v-model 宿主时 prop 不回写，回显断言需宿主组件；teleport 后下拉节点在 document.body，断言需 document 查询而非 wrapper。
+
 ## 2026-10-08 二期交接：添加链路接入种子定位（feature torrent-lookup-service-2026-10-08 二期，全绿未提交）
 
 ### 已完成

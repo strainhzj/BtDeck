@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.6",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-10-08",
+  "last_updated": "2026-10-09",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -7456,6 +7456,50 @@
             "backend/tests/architecture/test_async_downloader_calls.py"
           ],
           "evidence": "wait_and_upsert_torrent_row（轮询 30×1s 命中即停→upsert：无行创建 _build_row_from_vo/有行刷新白名单 name/size/status/progress/ratio/save_path/tags/category/completed_date/error_reason/update_*，不碰 create_*/auxiliary_seed_count/torrent_file/dr）+ refresh_trackers_after_add（qB torrents_trackers / TR trackerStats 投影 → 复用 extract_tracker_rows_from_torrent + sync_trackers_batch_async，注册表倒置 register_tracker_sync_hooks 由 torrents_async 模块尾注册）；锁四件套迁 helpers（batch 的 fastapi 用法不得入 MCP 共享闭包——test_service_parity 守卫强制）；TR error>=2 归 error 态 + error_reason（原 create 的 resolve/extract 语义回归，test_transmission_error_sync 迁移锚定）；qB 前置可见性轮询保留、批量裸 to_thread 轮询消除（P0-04 违规修复）；新增 test_torrent_add_refresh 11 例 + 迁移适配 fallback/batch/status_migration/error_sync 四套件；全量 pytest 5467 passed / 0 failed / 18 skipped + mypy/black/flake8 净；验收修复批（reviewer 对抗性验收 P1-2/P2 全清）：批量添加动作 add_torrent/torrents_add 自裸 asyncio.to_thread 迁至 call_downloader_api(INTERACTIVE) 并纳入架构守卫（P0-04 盲区收口）；刷新路径补对称锁重试（BUSY 回滚后重放 _apply_vo_refresh）；qB 前置可见性轮询删除（与 TR 对齐统一走 lookup 轮询，消除冗余远程调用与 60s 病态叠加）；守卫空置登记清理；四期实测验收后补强：TorrentAddService 端到端 4 例（重复添加既有行实时刷新核心场景/qB·TR 新建行字段口径/真实 SQLite durable UPDATE）+ 注册表隔离 fixture（13→17）；全量 5478 passed"
+        }
+      ]
+    },
+    {
+      "id": "add-torrent-dialog-custom-components-2026-10-09",
+      "name": "添加种子弹窗美化 + 全自定义组件化（零 Element UI）",
+      "description": "2026-10-09 前端批次：添加种子弹窗（桌面 index/TraditionalView 与移动 torrents.vue 三端共用）从 Element 混搭（el-form/el-select/el-autocomplete/el-checkbox/原生 select）重写为全自定义组件。新增 components/common 四件套——BaseDialog（弹窗壳：overlay/渐变头/ESC/滚动锁计数/≤768 顶铆全宽）、FormSelect（single/multiple+filterable/clearable，键盘流+ARIA combobox/listbox，option 插槽富选项行）、FormAutocomplete（替代 el-autocomplete，suggestion 作用域插槽富建议行）、FormCheckbox（原生 input 承载语义+令牌化外观）+ floatingDropdown mixin（自 PageSizeCombobox 抽取：teleport/fixed 定位/上下自适应/外部点击收起）+ formControls 类型模块（*.vue shim 不支持具名导出类型，TS2614 规避）。美化点：拖拽上传（与点击同校验路径）、文件列表计数+清空、下载器选项行类型徽章/状态点机会渲染（DownloaderSimpleVO 现缺字段自动退化，契约零改动）、路径建议等宽字体+令牌化徽章（修硬编码色）、跳过校验升级警示卡、底部已选摘要+确认钮 spinner、emoji 全换 Lucide。行为契约原样保留：props/events、202/200/207 三分支提示、后台完成轮询、skip_hash_check 安全默认（源码契约禁回流）、≤768 触控目标。i18n 新键 zh/en 成对（common.formSelect 五键 + torrent.addDialog 三键）。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "common-form-components",
+          "name": "common 表单级自定义组件四件套 + 浮层 mixin + 类型模块 + 4 spec",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/common/BaseDialog.vue",
+            "frontend/src/components/common/FormSelect.vue",
+            "frontend/src/components/common/FormAutocomplete.vue",
+            "frontend/src/components/common/FormCheckbox.vue",
+            "frontend/src/components/common/floatingDropdown.ts",
+            "frontend/src/components/common/formControls.ts",
+            "frontend/src/components/common/__tests__/BaseDialog.spec.ts",
+            "frontend/src/components/common/__tests__/FormSelect.spec.ts",
+            "frontend/src/components/common/__tests__/FormAutocomplete.spec.ts",
+            "frontend/src/components/common/__tests__/FormCheckbox.spec.ts"
+          ],
+          "evidence": "4 spec 33 例全绿：壳三关闭路径（钮/蒙层 click.self/ESC）+ 开关透传 + body 滚动锁（叠弹计数）+ footer 插槽出现性 + ≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删（v-model 回写经宿主组件验证）、filterable 过滤+Enter、键盘导航循环、外部点击收起（文档级 mousedown 捕获）、invalid 透传、富选项行徽章/状态点；autocomplete 输入透传/聚焦点击展开/Enter 选中/Esc 收起/初始无高亮（对齐 el-autocomplete）。jsdom 坑位：focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则类字段不进响应式 data、rAF 环境兜底。lint --max-warnings 0 净。"
+        },
+        {
+          "id": "torrent-add-dialog-rewrite",
+          "name": "TorrentAddDialog 全自定义重写 + 主 spec 扩充 + LucideIcon/i18n 接线",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/components/TorrentAddDialog.vue",
+            "frontend/tests/unit/torrent-add-dialog.spec.ts",
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/i18n/locales/zh-CN/common.ts",
+            "frontend/src/i18n/locales/en/common.ts",
+            "frontend/src/i18n/locales/zh-CN/torrent.ts",
+            "frontend/src/i18n/locales/en/torrent.ts"
+          ],
+          "evidence": "1024 行重写，源码契约新增『零 Element（禁 <el- 与原生 <select）+ 四自定义组件在场』断言；skip_hash_check 契约原样（恰好 2 处 false、无硬编码回流）；≤768 触控契约保留（44px/36px）。新增行为测试 5 例（拖拽合法/非法/清空、downloaderOptions 徽章状态点机会渲染三态、pathSuggestions 启用过滤+空输入全量）。门禁：typecheck 0 错、lint 净（含 contract:check）、npm run build 成功（~27s）、全量 Jest 136 套 1941 例（唯一失败为 EChart 既有环境性套件加载失败，与本批无关）、./init.sh 退出码 0。"
         }
       ]
     }
