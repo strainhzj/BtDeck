@@ -120,7 +120,10 @@ import {
   Rss,
   ExternalLink,
   Sprout,
-  Radar
+  Radar,
+  PlusCircle,
+  File,
+  Loader2
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -246,7 +249,10 @@ const ICONS: Record<string, unknown> = {
   rss: Rss,
   'external-link': ExternalLink,
   sprout: Sprout,
-  radar: Radar
+  radar: Radar,
+  'plus-circle': PlusCircle,
+  file: File,
+  'loader-2': Loader2
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

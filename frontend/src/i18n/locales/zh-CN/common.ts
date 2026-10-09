@@ -126,6 +126,14 @@ export const common = {
     collapse: '收起分页大小选项',
     options: '分页大小预设'
   },
+  /** FormSelect/FormAutocomplete 表单级自定义选择器（2026-10 添加种子弹窗全自定义组件化） */
+  formSelect: {
+    noOptions: '暂无选项',
+    noMatch: '无匹配项',
+    clear: '清空已选',
+    removeTag: '移除 {label}',
+    searchPlaceholder: '搜索...'
+  },
   /** 主题切换器（P6-5 遗漏扫描补译：theme.ts 配置改 nameKey/descriptionKey） */
   theme: {
     names: {

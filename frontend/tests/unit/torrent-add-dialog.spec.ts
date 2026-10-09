@@ -1,11 +1,16 @@
-import { shallowMount, Wrapper } from '@vue/test-utils'
+import { shallowMount, createLocalVue, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
 import i18n from '@/i18n'
 
 import TorrentAddDialog from '@/views/torrents/components/TorrentAddDialog.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import { addTorrentsBatch, getDownloaderPaths } from '@/api/torrents'
 import { getNotificationList } from '@/api/notification'
 import { getTagList } from '@/api/tag-management'
+
+// shallowMount 会 stub 已注册子组件；LucideIcon 经 localVue 注册后不再报 unknown element
+const localVue = createLocalVue()
+localVue.component('LucideIcon', LucideIcon)
 
 jest.mock('@/api/torrents', () => ({
   addTorrentsBatch: jest.fn(),
@@ -73,6 +78,7 @@ describe('TorrentAddDialog 后台完成刷新信号', () => {
     })
 
     wrapper = shallowMount(TorrentAddDialog, {
+      localVue,
       i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
@@ -108,6 +114,7 @@ describe('TorrentAddDialog 后台完成刷新信号', () => {
     })
 
     wrapper = shallowMount(TorrentAddDialog, {
+      localVue,
       i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
@@ -132,6 +139,7 @@ describe('TorrentAddDialog 跳过校验（CheckingDL 规避）', () => {
 
   const mountDialog = (): Wrapper<Vue> =>
     shallowMount(TorrentAddDialog, {
+      localVue,
       i18n,
       propsData: { visible: true, downloaders: [] },
       mocks: {
@@ -190,19 +198,15 @@ describe('TorrentAddDialog 跳过校验（CheckingDL 规避）', () => {
 
 describe('TorrentAddDialog 移动端适配与跳过校验（源码契约）', () => {
   // jsdom 不应用媒体查询：布局保护走源码契约（本仓既有模式），视觉由真机/模拟器兜底
+  // 弹窗壳（overlay 顶铆/全宽/接管滚动）的 ≤768 契约随样式迁移至 BaseDialog.spec.ts
   const readSource = (): string => {
     const fs = require('fs') as typeof import('fs')
     return fs.readFileSync('src/views/torrents/components/TorrentAddDialog.vue', 'utf-8')
   }
 
-  it('≤768 媒体块：顶铆全宽弹窗（!important 压制内联 600px）+ 底部双钮 44px 等宽', () => {
+  it('≤768 媒体块：底部双钮 44px 等宽 + 文件移除钮 36px 触控目标', () => {
     const source = readSource()
     expect(source).toContain('@media (max-width: 768px)')
-    // 根元素带内联 max-width:600px，非 !important 压不下去
-    expect(source).toContain('max-width: calc(100vw - 24px) !important')
-    expect(source).toContain('align-items: flex-start')
-    // overlay 接管滚动（弹窗自身 85vh 上限让位）
-    expect(source).toMatch(/\.modal-overlay\.active\s*{[^}]*overflow-y: auto/s)
     // 触控目标：底部按钮 ≥44px 等宽、文件移除钮放大
     expect(source).toContain('min-height: 44px')
     expect(source).toContain('min-width: 36px')
@@ -215,5 +219,109 @@ describe('TorrentAddDialog 移动端适配与跳过校验（源码契约）', ()
     // 旧硬编码提交（CheckingDL 根因）不得回流：快照默认值与关闭重置值除外
     expect(source.match(/skip_hash_check: false/g)?.length).toBe(2)
     expect(source).not.toContain('skip_hash_check: false,')
+  })
+
+  it('全自定义组件契约：模板零 Element 组件（el-*）与原生 select', () => {
+    const source = readSource()
+    // 2026-10 全自定义组件化：Element 表单控件（el-form/el-select/el-autocomplete/el-checkbox）与原生 select 全部退场
+    expect(source).not.toMatch(/<el-/)
+    expect(source).not.toMatch(/<\/el-/)
+    expect(source).not.toContain('<select')
+    // 壳与表单控件均使用自定义组件
+    expect(source).toContain('<BaseDialog')
+    expect(source).toContain('<FormSelect')
+    expect(source).toContain('<FormAutocomplete')
+    expect(source).toContain('<FormCheckbox')
+  })
+})
+
+describe('TorrentAddDialog 拖拽上传与选项构建（行为）', () => {
+  let wrapper: Wrapper<Vue>
+
+  const mountDialog = (downloaders: Array<Record<string, unknown>> = []): Wrapper<Vue> =>
+    shallowMount(TorrentAddDialog, {
+      localVue,
+      i18n,
+      propsData: { visible: true, downloaders },
+      mocks: {
+        $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+      }
+    })
+
+  afterEach(() => {
+    wrapper?.destroy()
+  })
+
+  it('拖拽释放合法 .torrent 文件：追加进文件列表并清错', () => {
+    wrapper = mountDialog()
+    const vm = wrapper.vm as any
+    const event = {
+      dataTransfer: { files: [new File(['a'], 'dragged.torrent', { type: 'application/x-bittorrent' })] }
+    } as unknown as DragEvent
+    vm.handleDrop(event)
+    expect(vm.torrentFiles).toHaveLength(1)
+    expect(vm.torrentFiles[0].name).toBe('dragged.torrent')
+    expect(vm.formErrors.torrent_file).toBeUndefined()
+  })
+
+  it('拖入非 .torrent 文件：整批拒绝并提示 onlyTorrent', () => {
+    wrapper = mountDialog()
+    const vm = wrapper.vm as any
+    const event = {
+      dataTransfer: { files: [new File(['a'], 'bad.txt')] }
+    } as unknown as DragEvent
+    vm.handleDrop(event)
+    expect(vm.torrentFiles).toHaveLength(0)
+    expect(vm.formErrors.torrent_file).toBe('只能选择 .torrent 文件')
+  })
+
+  it('clearAllFiles 清空列表并回到“请选择种子文件”错误态', () => {
+    wrapper = mountDialog()
+    const vm = wrapper.vm as any
+    vm.addFiles([new File(['a'], 'a.torrent')])
+    vm.clearAllFiles()
+    expect(vm.torrentFiles).toHaveLength(0)
+    expect(vm.formErrors.torrent_file).toBe('请选择种子文件')
+  })
+
+  it('downloaderOptions：类型徽章与状态点机会渲染（简单 VO 缺字段则退化）', () => {
+    wrapper = mountDialog([
+      { downloader_id: 'dl-plain', nickname: 'Plain' },
+      {
+        downloader_id: 'dl-rich',
+        nickname: 'Rich',
+        downloader_type: 0,
+        connectStatus: 'connected'
+      },
+      {
+        downloader_id: 'dl-off',
+        nickname: 'Off',
+        type: 1,
+        status: '0'
+      }
+    ])
+    const vm = wrapper.vm as any
+    expect(vm.downloaderOptions).toEqual([
+      { value: 'dl-plain', label: 'Plain', badge: undefined, status: undefined },
+      { value: 'dl-rich', label: 'Rich', badge: 'qB', status: 'online' },
+      { value: 'dl-off', label: 'Off', badge: 'TR', status: 'offline' }
+    ])
+  })
+
+  it('pathSuggestions：仅启用路径，且按当前输入大小写不敏感过滤', () => {
+    wrapper = mountDialog()
+    const vm = wrapper.vm as any
+    vm.downloaderPaths = [
+      { id: 1, downloader_id: 1, path_type: 'default', path_value: '/data/movies', is_enabled: true, torrent_count: 5, last_updated_time: '' },
+      { id: 2, downloader_id: 1, path_type: 'active', path_value: '/data/TV', is_enabled: true, torrent_count: 2, last_updated_time: '' },
+      { id: 3, downloader_id: 1, path_type: 'active', path_value: '/disabled', is_enabled: false, torrent_count: 0, last_updated_time: '' }
+    ]
+    vm.form.save_path = '/data/mo'
+    expect(vm.pathSuggestions).toEqual([
+      { value: '/data/movies', path_type: 'default', torrent_count: 5 }
+    ])
+    // 空输入 = 全部启用路径（便于浏览既有路径）
+    vm.form.save_path = ''
+    expect(vm.pathSuggestions).toHaveLength(2)
   })
 })

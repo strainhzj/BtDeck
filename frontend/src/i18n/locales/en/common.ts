@@ -126,6 +126,14 @@ export const common = {
     collapse: 'Collapse page size options',
     options: 'Page size presets'
   },
+  /** FormSelect/FormAutocomplete form-level custom selectors (2026-10 add-torrent dialog de-Elementizing) */
+  formSelect: {
+    noOptions: 'No options',
+    noMatch: 'No matches',
+    clear: 'Clear selection',
+    removeTag: 'Remove {label}',
+    searchPlaceholder: 'Search...'
+  },
   /** Theme switcher (P6-5 leftover fix: theme.ts config now uses nameKey/descriptionKey) */
   theme: {
     names: {
