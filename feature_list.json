@@ -7255,7 +7255,7 @@
       "id": "statistics-reports-2026-09",
       "name": "统计数据与报表（W1-W7：采样数据层 → 数据激活与口径修复 → 报表服务 → 前端 → 收口）",
       "description": "PLANS/statistics-reports.md（v4，两轮三路审查+用户审批）实施：速度时间采样两表与采样任务（W1）、tracker 计数激活与 TR added_date 口径修复（W2）、报表服务与端点（W3）、echarts 前端基建（W4）、四个正式页签（W5）、趣味报告沉浸页（W6）、demo 与文档收口（W7）。范围=正式报表 A1-A5/B6-B8/C10-C12/D14-D16 + 趣味 24/25/26/27。",
-      "status": "in_progress",
+      "status": "done",
       "branch": "feature/reports",
       "plan_file": "PLANS/statistics-reports.md",
       "tasks": [
@@ -7376,7 +7376,7 @@
           "id": "statistics-reports-w7",
           "name": "W7 Demo 与收口",
           "description": "demo 四件套（fixtures DEMO_REPORT_*、demo-request /reports/* 分支、demo-store getter、DEMO_ROUTE_MATRIX）+ 全量验证 + roadmap/feature_list evidence/progress/session-handoff/PLANS README 同步。W7 仅补 evidence 与 status。",
-          "status": "pending",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "frontend/src/demo/fixtures/reports.ts",
@@ -7384,7 +7384,7 @@
             "frontend/src/demo/demo-store.ts",
             "frontend/src/demo/types.ts"
           ],
-          "evidence": ""
+          "evidence": "feature/reports 81d9b5e（W7 demo 四件套 + roadmap 收口，终态）；2026-10-09 随 W5-W7 合入 dev（merge 11381b2）：后端 pytest 5478 passed/18 skipped + mypy/black/flake8 净，前端 Jest 141 套 1984 例 + typecheck/lint/build 绿（echarts chunk 199.89KB gz < 200KB），init.sh exit=0"
         }
       ]
     },

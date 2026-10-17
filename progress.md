@@ -8422,3 +8422,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **add 侧 +4**：TorrentAddService 端到端（真实 SQLite + 真实 wait_and_upsert，仅 fake 远程层/审计/tracker）——qB/TR 新建行字段口径（progress 0~100/BT_backup 推导/torrent_id=hash 稳定键/added_date epoch 转换）、**重复添加既有行实时刷新**（downloading 25%→seeding 100% 二次添加后 DB 行立即反映，created=False，无重复行——本批核心用户价值的直接回归保护）、真实 SQLite durable UPDATE（全新会话验证持久化，对标 insert 版）。
 - **测试基建**：tracker 注册表全局态 autouse 隔离 fixture（保存/恢复，防注册 fake 泄漏到其他测试）。
 - **验证**：全量 **5478 passed / 0 failed / 18 skipped**（+8）+ flake8/black 净。
+
+## 2026-10-09：feature/reports 统计报表 W5-W7 合入 dev（merge `11381b2`）
+
+- **范围**：worktree `BtDeck-reports`（feature/reports @5697f1b）5 提交并入 dev——W5 四页签+路由合批（echarts sideEffects 摇树根修 339→199.3KB gz）、W6 趣味报告沉浸页 + i18n-leftover-guard 提取器行内 /* */ bug 修复 + router.onError 补译、W7 demo 四件套 + roadmap 收口、计划归档状态头、roadmap 补漏二轮。
+- **冲突解决 15 文件**：ui-mode.ts 双映射行并集（/downloader/rss 与 /statistics 相邻插入）；progress.md 双侧会话记录按时间序并集（reports 09-25 四条在前、dev 10-08 三条在后）；roadmap 13 文件按 roadmap-maintain 技能合并——计数全部合并后实测（后端 272 test_*.py / 前端 141 套 1984 例 / spec 144 / endpoints 44 / alembic 37 revision 单 head c9e0f1a2b3c4 / 表数 42）；根 README statistics 速查行取 reports 终态、巨型"本次新增"单元格左格取全量批终态右格保 dev 批；api torrents_async 行号重测校准（extract L782/sync_add L1052/_qb_read_trackers L2766/_log_invalid L2786）；infra 启动阶段取 reports 重测锚点（lifespan L376 起，lifecycle.py 两侧逐字节一致）；components-layout EChart 行更新为深路径终态描述（合并源码实测 lib/chart/* 深路径）并防速查表重复行；entry router/permission 行取 reports（statistics 路由组+守卫+L301 重测）、i18n 行取 HEAD（含 statistics 模块七节）；test-coverage 计数 272（services 54 递归 55/models 对 22）。
+- **feature_list 修正**：自动合并产生混合态（W5/W6 done 但 W7 pending）→ 按终态修正 statistics-reports-2026-09 status=done + W7 done/evidence 回填合并验证。
+- **验证**：后端 mypy/black/flake8 净（306 文件）+ 全量 pytest **5478 passed / 18 skipped**；前端 typecheck/lint 净（裸 npm run lint；NODE_ENV=production 会使 no-console 翻转误报 272——worker 子代理环境踩坑，已复核为环境性）+ build 绿（echarts chunk **199.89KB gz < 200KB 门禁**，echarts@5.5.1 需 npm install 装齐后 EChart.spec 计入）+ 全量 Jest **141 套 1984 例全绿**；./init.sh exit=0。合并后 dev 领先 origin/dev 6 提交，**未推送**。
