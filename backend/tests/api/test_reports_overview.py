@@ -195,18 +195,18 @@ class TestFileFirstCaliber:
     数量/体积类聚合（totals/largest/分类/目录/下载器）按文件；五桶按实际种子。
     """
 
-    async def test_cross_seed_totals_and_largest_count_once(self, env):
-        """3 副本同 name+size → 总量计 1 次；TOP10 单条；五桶按实际种子计 3。"""
+    async def test_cross_seed_totals_dual_caliber(self, env):
+        """总种子数/平均体积按实际种子；总体积/largest 按文件口径；五桶按实际。"""
         await add_torrent(env.session, info_id="f-1", name="dup", size=100, hash_="h1", added_date=datetime(2026, 1, 1))
         await add_torrent(env.session, info_id="f-2", name="dup", size=100, hash_="h2", added_date=datetime(2026, 2, 1))
         await add_torrent(env.session, info_id="f-3", name="dup", size=100, hash_="h3", added_date=datetime(2026, 3, 1))
         await add_torrent(env.session, info_id="f-solo", name="solo", size=50)
         data = _get(env)
-        assert data["totals"]["count"] == 2
-        assert data["totals"]["sizeBytes"] == 150.0
-        assert data["totals"]["avgSizeBytes"] == 75.0
+        assert data["totals"]["count"] == 4  # 真实种子数（3 副本 + solo）
+        assert data["totals"]["sizeBytes"] == 150.0  # 文件口径体积（dup 只计一次）
+        assert data["totals"]["avgSizeBytes"] == 87.5  # 真实平均 = 350/4
         assert len(data["largest"]) == 2
-        # 五桶按实际种子：3 个 dup 副本各自计桶
+        # 五桶按实际种子：4 个种子各自计桶
         assert sum(d["count"] for d in data["statusDist"]) == 4
 
     async def test_representative_is_earliest_added(self, env):

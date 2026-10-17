@@ -134,7 +134,7 @@ export const statistics = {
     ratioNullNote: 'Torrents added in seeding state on Transmission have no ratio',
     trUncategorized: 'Transmission torrents fall into the uncategorized bucket',
     uploadEstimate: 'Upload volume is an estimate (size × ratio); Transmission seeding-added torrents are systematically missing; cross-seed copies\' uploads are real traffic and not deduplicated',
-    fileFirst: 'File-first caliber: cross-seed copies sharing name and size count only the primary torrent (earliest added) in count and size metrics',
+    fileFirst: 'Total size is file-first: cross-seed copies sharing name and size count only the primary torrent (earliest added); total torrent count and average size count actual torrents',
     statusByTorrent: 'Status distribution counts actual torrents: each cross-seed copy counts separately',
     ratioDual: 'Ratio distribution dual caliber: by torrent (each copy separately) and by file (group ratio sum)'
   }

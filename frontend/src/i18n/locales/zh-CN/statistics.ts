@@ -135,7 +135,7 @@ export const statistics = {
     ratioNullNote: 'Transmission 做种态添加的种子无分享率',
     trUncategorized: 'Transmission 无分类，归入未分类桶',
     uploadEstimate: '上传量为估算值（体积 × 分享率），Transmission 做种态添加种子系统性缺位；辅种副本上传为真实流量，不去重',
-    fileFirst: '文件口径：名称与大小相同的辅种种子只计主种（最早添加者），适用于数量与体积统计',
+    fileFirst: '总体积按文件口径：名称与大小相同的辅种只计主种（最早添加者）；总种子数与平均体积按实际种子统计',
     statusByTorrent: '状态分布按实际种子统计：辅种副本状态各自计桶',
     ratioDual: '分享率分布双口径：按种子（各副本各自计）与按文件（辅种组合计分享率）'
   }

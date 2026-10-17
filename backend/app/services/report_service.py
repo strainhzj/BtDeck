@@ -8,7 +8,9 @@ fun / speed。口径总则：
   NULL AND dr=0``；彻底删除（dr=1）不在任何口径（A1 脚注）。
 - 文件优先口径（文件>种子，2026-10 决策）：名称与大小相同的辅种副本只计
   主种（added_date 最早者，NULL 最后，tie-break info_id 升序；无效键行
-  独立成组）——数量/体积类聚合（总览/趋势/站点构成/年度）按文件口径。
+  独立成组）——体积类聚合（总览总体积/TOP10/趋势/站点构成/年度）按文件
+  口径；总览总种子数与平均体积按实际种子（真实计数与真实平均，
+  2026-10-17 复核决策）。
 - 五桶状态分布按实际种子统计（每个副本真实状态各自计桶）；分享率双口径：
   实际种子（ratioBuckets）+ 文件合计（ratioBucketsByFile，组内 Σratio）。
 - 火种守护者按文件组聚合全部副本 tracker 计数；上传量估算与 C12 辅种网络
@@ -266,13 +268,16 @@ def _iso(value: Any) -> Optional[str]:
 async def get_overview(db: AsyncSession, ctx: RuntimeContext) -> Dict[str, Any]:
     """A1 库存总览 / A2 五桶 / A3 分类标签 / A4 目录 / A5 下载器对比 + 实时速度。
 
-    A1/A3/A4/A5 数量体积按文件口径（辅种只计主种）；A2 五桶按实际种子。
+    A1 总种子数/平均体积按实际种子（真实计数与真实平均）；总体积按文件
+    口径（辅种只计主种）；A3/A4/A5 数量体积按文件口径；A2 五桶按实际种子。
     """
     rows = await _load_active_torrent_rows(db)
-    file_rows = _dedupe_by_file(rows)
+    file_rows = _dedupe_by_file(rows)  # 总体积/TOP10/分类/目录只计主种
     downloader_map = await _load_downloader_map(db)
 
-    total_count = len(file_rows)
+    # 总种子数与平均体积按实际种子；总体积按文件口径
+    real_count = len(rows)
+    real_size = sum(float(r["size"] or 0) for r in rows)
     total_size = sum(float(r["size"] or 0) for r in file_rows)
     recycle_bin_size = await _recycle_bin_size(db)
 
@@ -339,9 +344,9 @@ async def get_overview(db: AsyncSession, ctx: RuntimeContext) -> Dict[str, Any]:
 
     return {
         "totals": {
-            "count": total_count,
+            "count": real_count,
             "sizeBytes": total_size,
-            "avgSizeBytes": (total_size / total_count) if total_count else 0.0,
+            "avgSizeBytes": (real_size / real_count) if real_count else 0.0,
             "recycleBinSizeBytes": recycle_bin_size,
         },
         "largest": largest,

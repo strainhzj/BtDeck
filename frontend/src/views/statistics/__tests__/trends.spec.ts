@@ -132,6 +132,22 @@ describe('统计·趋势页', () => {
     wrapper.destroy()
   })
 
+  it('B6/B7 tooltip：体积换算最接近单位、数量保持原值', async() => {
+    const wrapper = mountPage()
+    await flush()
+    const options = chartOptions(wrapper)
+    const tooltip = (options[0]?.tooltip as {
+      formatter: (params: Array<{ name: string, marker: string, seriesName: string, value: number }>) => string
+    }).formatter
+    const html = tooltip([
+      { name: '2026-08', marker: '', seriesName: '种子数', value: 12 },
+      { name: '2026-08', marker: '', seriesName: '体积', value: 2 * 1024 ** 3 }
+    ])
+    expect(html).toContain('种子数: 12') // 数量原样
+    expect(html).toContain('体积: 2.00 GB') // 体积最近单位
+    wrapper.destroy()
+  })
+
   it('空数据空态：速度无样本时图表 option 为 null', async() => {
     (getReportsSpeedHistory as jest.Mock).mockResolvedValue({ code: '200', status: 'success', msg: '', data: emptySpeedHistory('24h') })
     const wrapper = mountPage()

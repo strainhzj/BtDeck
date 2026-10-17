@@ -155,18 +155,32 @@ export default class StatisticsTrends extends Vue {
   }
 
   private buildTimeBar(rows: Array<{ key: string, count: number, sizeBytes: number }>): Record<string, unknown> {
+    const countName = this.$t('statistics.common.torrentCount').toString()
+    const sizeName = this.$t('statistics.common.sizeBytes').toString()
     return {
-      tooltip: { trigger: 'axis' },
+      tooltip: {
+        trigger: 'axis',
+        // 数量原样、体积换算最接近单位（formatFileSize 自动 B→PB 选档）
+        formatter: (params: Array<{ name: string, marker: string, seriesName: string, value: number }>) => {
+          if (!params || !params.length) return ''
+          const lines = [params[0].name]
+          params.forEach((p) => {
+            const value = p.seriesName === sizeName ? formatFileSize(p.value) : p.value
+            lines.push(`${p.marker}${p.seriesName}: ${value}`)
+          })
+          return lines.join('<br/>')
+        }
+      },
       grid: { left: 8, right: 8, containLabel: true },
       xAxis: { type: 'category', data: rows.map((r) => r.key) },
       yAxis: [
-        { type: 'value', name: this.$t('statistics.common.torrentCount').toString() },
-        { type: 'value', name: this.$t('statistics.common.sizeBytes').toString(), axisLabel: { formatter: (v: number) => formatFileSize(v) } }
+        { type: 'value', name: countName },
+        { type: 'value', name: sizeName, axisLabel: { formatter: (v: number) => formatFileSize(v) } }
       ],
       series: [
-        { name: this.$t('statistics.common.torrentCount').toString(), type: 'bar', data: rows.map((r) => r.count) },
+        { name: countName, type: 'bar', data: rows.map((r) => r.count) },
         {
-          name: this.$t('statistics.common.sizeBytes').toString(),
+          name: sizeName,
           type: 'line',
           yAxisIndex: 1,
           data: rows.map((r) => r.sizeBytes)
