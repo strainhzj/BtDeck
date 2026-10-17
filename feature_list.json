@@ -7408,6 +7408,22 @@
             "frontend/src/demo/fixtures/index.ts"
           ],
           "evidence": "后端：报表 5 测试文件 70 passed（新增文件口径用例 14：overview 7 + seeding 4 + trackers 2 + fun 4 + trends 2 实为 19 例含夹具修正）；trends 4 夹具去同键化（week/limit/completed/age）；mypy report_service 0 错、black 净、flake8 净。前端：npm run lint 净；统计域+parity Jest 6 套 33 例；全量 Jest 141 套 1985 例（首轮 1 例已知时序 flake，复跑两轮 141/141 全绿）；demo fixtures DEMO_REPORT_SEEDING 补双口径字段。附带修复 docs/roadmap/README.md 五处 11381b2 遗留 merge 冲突标记（时间序并集解决）。"
+        },
+        {
+          "id": "statistics-reports-w8-1",
+          "name": "W8-1 总览真实计数与趋势体积单位展示（W8 复核修正）",
+          "description": "用户复核（2026-10-17 部署后）：①总览总种子数按真实种子数（实际 torrent 行数，非文件去重），平均体积真实计算（实际种子体积合计 ÷ 实际种子数）；总体积维持文件口径（辅种只计主种）不变——形成双口径：总体积=库存去重，种子数/平均=真实种子统计。②趋势页 B6/B7 tooltip 体积换算最接近单位（formatFileSize 自动 B→PB），数量保持原值（此前 tooltip 为裸字节数）。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/report_service.py",
+            "backend/tests/api/test_reports_overview.py",
+            "frontend/src/views/statistics/trends/index.vue",
+            "frontend/src/i18n/locales/zh-CN/statistics.ts",
+            "frontend/src/i18n/locales/en/statistics.ts",
+            "frontend/src/views/statistics/__tests__/trends.spec.ts"
+          ],
+          "evidence": "后端 test_reports_overview 24 passed（cross_seed_totals 改双口径断言：count=4 真实/sizeBytes=150 文件/avgSizeBytes=87.5=350/4）+ mypy/black/flake8 净；前端 lint 净 + 统计域与 parity 6 套 34 例（新增 B6/B7 tooltip 单位换算用例：数量原样 12、体积 2.00 GB）。"
         }
       ]
     },

@@ -7,6 +7,7 @@
 - **文档**：feature_list statistics-reports 追加 W8（done+evidence）；roadmap 3 文件（根 README/services 行/views 行）；**附带修复 docs/roadmap/README.md 五处 11381b2 遗留 merge 冲突标记**（时间序并集解决，git show HEAD 证实标记已提交）。
 - **坑（2 条）**：①ratio 列有 CHECK 非负约束，负值哨兵场景只能靠 NULL 表达（旧测试注释的『负值并入 NULL』实际不可达）；②add_torrent 夹具默认 name='t'/size=100 同键，新口径下多行会合并——趋势类测试必须显式差异化 name/size。
 - **待办**：真实环境（unraid）部署后观察总量下降幅度是否符合预期。
+- **W8-1 复核修正（同日二批）**：用户部署后复核——①总览总种子数改真实种子数（实际 torrent 行数），平均体积真实计算（实际体积合计 ÷ 实际种子数）；总体积维持文件口径不变（双口径：总量=库存去重，计数/平均=真实种子统计；i18n fileFirst 文案同步）。②趋势页 B6/B7 tooltip 体积换算最接近单位（formatFileSize B→PB 自动选档，此前裸字节数），数量原样；新增 trends.spec tooltip 用例。后端 24 passed + 质量门净；前端 lint 净 + 6 套 34 例。未提交待指示。
 - **提交与部署（同日）**：经用户授权提交 `0dceb4a`（feat，13 文件）+ `07eb8ea`（docs，6 文件）并推送 origin/dev（e7e2b1b..07eb8ea 一次成功）；`./build-and-export-images.sh` 全程约 7 分钟一次成功：镜像源 profile 2、两镜像 try 1 过、tar 导出 backend 120M / frontend 54M；unraid 192.168.5.51 部署 41s，backend healthy ~10s、frontend Started；/health/live alive 且 gitSha=07eb8ea55019f2104ff4446dd0022ce3a2452269 与 HEAD 一致，/health/ready ready（checks 全 ok，eventLoopLag p99 2.1ms）；DNS/阻断坑均未触发。
 
 ## 2026-10-09：添加种子弹窗美化 + 全自定义组件化（feature add-torrent-dialog-custom-components-2026-10-09，全绿未提交）

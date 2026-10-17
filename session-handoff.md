@@ -10,7 +10,11 @@
 
 ### 待办
 
-- Git 提交待用户指示（建议：feat 全栈口径批 + docs 分离或合并均可）；unraid 部署后观察总量下降幅度。
+- ~~Git 提交待用户指示~~ W8 批已提交部署（0dceb4a+07eb8ea+a9026c4，unraid gitSha 验证一致）；**W8-1 复核修正批未提交**（总览真实计数/平均 + 趋势 tooltip 单位），待用户指示提交与部署。
+
+### 坑位（下会话注意）【W8-1 增补】
+
+- 总览 totals 是双口径：count/avgSizeBytes 按实际种子、sizeBytes 按文件去重——改任一侧先看 get_overview 注释；trends tooltip 自定义 formatter 按系列名区分数量/体积（seriesName 与 i18n common 键比对）。
 
 ### 坑位（下会话注意）
 
