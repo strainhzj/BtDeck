@@ -316,7 +316,12 @@ export default class StatisticsOverview extends Vue {
   }
 
   private get caliberNotes(): Array<string> {
-    return ['statistics.calibers.recycleExcluded', 'statistics.calibers.trUncategorized']
+    return [
+      'statistics.calibers.fileFirst',
+      'statistics.calibers.statusByTorrent',
+      'statistics.calibers.recycleExcluded',
+      'statistics.calibers.trUncategorized'
+    ]
   }
 
   private formatFileSize = formatFileSize

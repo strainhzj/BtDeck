@@ -1341,6 +1341,15 @@ export const DEMO_REPORT_SEEDING: ReportsSeedingData = {
     { bucket: '10+', count: 5, sizeBytes: 2.9 * TB }
   ],
   ratioNullCount: 20,
+  ratioBucketsByFile: [
+    { bucket: '<0.5', count: 12, sizeBytes: 6.1 * TB },
+    { bucket: '0.5-1', count: 20, sizeBytes: 7.5 * TB },
+    { bucket: '1-2', count: 26, sizeBytes: 9.4 * TB },
+    { bucket: '2-5', count: 14, sizeBytes: 5.8 * TB },
+    { bucket: '5-10', count: 5, sizeBytes: 2.7 * TB },
+    { bucket: '10+', count: 3, sizeBytes: 1.6 * TB }
+  ],
+  ratioNullCountByFile: 12,
   slackers: [
     { hash: 'demo0004', name: 'Demo 白嫖大片 A', sizeBytes: 210 * GB, ratio: 0.08 },
     { hash: 'demo0005', name: 'Demo 白嫖剧集 B', sizeBytes: 168 * GB, ratio: 0.21 },

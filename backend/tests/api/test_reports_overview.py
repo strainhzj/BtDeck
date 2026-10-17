@@ -3,7 +3,7 @@
 
 覆盖：401 / 空库 / 五桶归并（错误桶优先级断言：seeding+has_tracker_error 落
 错误桶）/ largest TOP10 / 回收站条件 / categories+tags+save_path 根前缀 /
-孤儿下载器标注 / liveSpeed 快照。
+孤儿下载器标注 / liveSpeed 快照 / 文件优先口径（辅种只计主种）。
 """
 
 from datetime import datetime
@@ -187,6 +187,95 @@ class TestDownloaders:
         by_id = {d["downloaderId"]: d for d in _get(env)["downloaders"]}
         assert by_id["dl-soft"]["removed"] is True
         assert by_id["dl-soft"]["nickname"] == "软删"
+
+
+class TestFileFirstCaliber:
+    """文件优先口径（文件>种子）：同 (name,size) 辅种组只计主种。
+
+    数量/体积类聚合（totals/largest/分类/目录/下载器）按文件；五桶按实际种子。
+    """
+
+    async def test_cross_seed_totals_and_largest_count_once(self, env):
+        """3 副本同 name+size → 总量计 1 次；TOP10 单条；五桶按实际种子计 3。"""
+        await add_torrent(env.session, info_id="f-1", name="dup", size=100, hash_="h1", added_date=datetime(2026, 1, 1))
+        await add_torrent(env.session, info_id="f-2", name="dup", size=100, hash_="h2", added_date=datetime(2026, 2, 1))
+        await add_torrent(env.session, info_id="f-3", name="dup", size=100, hash_="h3", added_date=datetime(2026, 3, 1))
+        await add_torrent(env.session, info_id="f-solo", name="solo", size=50)
+        data = _get(env)
+        assert data["totals"]["count"] == 2
+        assert data["totals"]["sizeBytes"] == 150.0
+        assert data["totals"]["avgSizeBytes"] == 75.0
+        assert len(data["largest"]) == 2
+        # 五桶按实际种子：3 个 dup 副本各自计桶
+        assert sum(d["count"] for d in data["statusDist"]) == 4
+
+    async def test_representative_is_earliest_added(self, env):
+        """主种 = added_date 最早者（其 hash 入 largest）。"""
+        await add_torrent(
+            env.session, info_id="r-1", name="dup", size=10, hash_="late", added_date=datetime(2026, 5, 1)
+        )
+        await add_torrent(
+            env.session, info_id="r-2", name="dup", size=10, hash_="early", added_date=datetime(2025, 5, 1)
+        )
+        largest = _get(env)["largest"]
+        assert [x["hash"] for x in largest] == ["early"]
+
+    async def test_null_added_dates_tie_break_by_info_id(self, env):
+        """全组 added_date NULL → tie-break info_id 升序，确定性。"""
+        await add_torrent(env.session, info_id="n-9", name="dup", size=10, hash_="h9", added_date=None)
+        await add_torrent(env.session, info_id="n-1", name="dup", size=10, hash_="h1", added_date=None)
+        largest = _get(env)["largest"]
+        assert [x["hash"] for x in largest] == ["h1"]
+
+    async def test_invalid_key_rows_count_independently(self, env):
+        """name 空白/size NULL 的行不与任何行合并（与辅种服务 else_=1 口径一致）。"""
+        await add_torrent(env.session, info_id="v-1", name="", size=10)
+        await add_torrent(env.session, info_id="v-2", name="", size=10)
+        await add_torrent(env.session, info_id="v-3", name="x", size=None)
+        data = _get(env)
+        assert data["totals"]["count"] == 3
+
+    async def test_categories_and_paths_by_file(self, env):
+        await add_torrent(env.session, info_id="p-1", name="dup", size=10, category="movies")
+        await add_torrent(env.session, info_id="p-2", name="dup", size=10, category="movies")
+        cats = {c["name"]: c for c in _get(env)["categories"]}
+        assert cats["movies"]["count"] == 1
+        assert cats["movies"]["sizeBytes"] == 10.0
+
+    async def test_recycle_bin_internal_dedup(self, env):
+        """回收站站内去重：同 name+size 两行只计一次；与库存互不去重。"""
+        await add_torrent(env.session, info_id="b-live", name="dup", size=100)
+        await add_torrent(env.session, info_id="b-1", name="dup", size=30, deleted_at=datetime.now())
+        await add_torrent(env.session, info_id="b-2", name="dup", size=30, deleted_at=datetime.now())
+        data = _get(env)
+        assert data["totals"]["count"] == 1
+        assert data["totals"]["recycleBinSizeBytes"] == 30.0
+
+    async def test_downloader_hosts_only_representatives(self, env):
+        """仅持有辅种副本的下载器不入文件口径对比（其副本仍计入自身五桶不适用——无主种即不展示）。"""
+        await add_downloader(env.session, "dl-main", nickname="主")
+        await add_downloader(env.session, "dl-aux", nickname="辅")
+        await add_torrent(
+            env.session,
+            info_id="d-1",
+            name="dup",
+            size=10,
+            downloader_id="dl-main",
+            downloader_name="主",
+            added_date=datetime(2026, 1, 1),
+        )
+        await add_torrent(
+            env.session,
+            info_id="d-2",
+            name="dup",
+            size=10,
+            downloader_id="dl-aux",
+            downloader_name="辅",
+            added_date=datetime(2026, 6, 1),
+        )
+        by_id = {d["downloaderId"]: d for d in _get(env)["downloaders"]}
+        assert set(by_id) == {"dl-main"}
+        assert by_id["dl-main"]["count"] == 1
 
 
 class TestLiveSpeed:

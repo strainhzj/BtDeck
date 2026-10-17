@@ -68,6 +68,8 @@ export const statistics = {
     title: '做种',
     ratioDist: '分享率分布',
     ratio: '分享率',
+    byTorrent: '按种子',
+    byFile: '按文件',
     slackers: '摸鱼象限',
     auxiliary: '辅种网络',
     crossSeedRate: '辅种率',
@@ -127,11 +129,14 @@ export const statistics = {
     trackerCountStart: 'Tracker 计数自激活日起积累',
     speedBreak: '断点仅出现在后端停机时段；下载器离线为 0 速数据点',
     onlineRatio: '在线率为采样期间口径（后端停机时段不计入）',
-    crossSiteSize: '辅种种子体积会在多个站点重复计入',
+    crossSiteSize: '辅种按文件去重：仅主种所在站点计入体积；单主种挂多站仍在各站重复计入',
     recycleExcluded: '已彻底删除数据不在库存口径',
     completedNullNote: '做种态添加的种子无完成时间，完成趋势覆盖面偏小',
     ratioNullNote: 'Transmission 做种态添加的种子无分享率',
     trUncategorized: 'Transmission 无分类，归入未分类桶',
-    uploadEstimate: '上传量为估算值（体积 × 分享率），Transmission 做种态添加种子系统性缺位'
+    uploadEstimate: '上传量为估算值（体积 × 分享率），Transmission 做种态添加种子系统性缺位；辅种副本上传为真实流量，不去重',
+    fileFirst: '文件口径：名称与大小相同的辅种种子只计主种（最早添加者），适用于数量与体积统计',
+    statusByTorrent: '状态分布按实际种子统计：辅种副本状态各自计桶',
+    ratioDual: '分享率分布双口径：按种子（各副本各自计）与按文件（辅种组合计分享率）'
   }
 }

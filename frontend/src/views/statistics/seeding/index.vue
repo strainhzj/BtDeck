@@ -12,12 +12,20 @@
     </header>
 
     <template v-if="data">
-      <!-- C10 分享率分布直方图 -->
+      <!-- C10 分享率分布直方图（双口径：按种子 / 按文件合计） -->
       <section class="statistics-panel">
         <h2 class="statistics-panel__title">
           {{ $t('statistics.seeding.ratioDist') }}
+          <el-radio-group
+            v-model="ratioCaliber"
+            size="mini"
+            class="statistics-panel__meta"
+          >
+            <el-radio-button label="torrent">{{ $t('statistics.seeding.byTorrent') }}</el-radio-button>
+            <el-radio-button label="file">{{ $t('statistics.seeding.byFile') }}</el-radio-button>
+          </el-radio-group>
           <span class="statistics-panel__meta">
-            {{ $t('statistics.seeding.ratioNullCount') }}: {{ data.ratioNullCount }}
+            {{ $t('statistics.seeding.ratioNullCount') }}: {{ currentRatioNullCount }}
           </span>
         </h2>
         <EChart
@@ -100,7 +108,7 @@ import { Component, Vue } from 'vue-property-decorator'
 import EChart from '@/components/charts/EChart.vue'
 import { formatFileSize } from '@/utils/formatters'
 import { getReportsSeeding } from '@/api/reports'
-import { ReportsSeedingData } from '@/types/reports'
+import { RatioBucketItem, ReportsSeedingData } from '@/types/reports'
 import CaliberNotes from '../components/CaliberNotes.vue'
 import StatCard from '../components/StatCard.vue'
 
@@ -108,6 +116,8 @@ import StatCard from '../components/StatCard.vue'
 export default class StatisticsSeeding extends Vue {
   private data: ReportsSeedingData | null = null
   private loading = false
+  /** C10 双口径切换：torrent=实际种子各副本各自计；file=同 name+size 组内 Σratio */
+  private ratioCaliber: 'torrent' | 'file' = 'torrent'
 
   mounted() {
     this.fetchSeeding()
@@ -132,8 +142,18 @@ export default class StatisticsSeeding extends Vue {
     return `${(rate * 100).toFixed(1)}%`
   }
 
+  private get currentRatioRows(): RatioBucketItem[] {
+    if (!this.data) return []
+    return this.ratioCaliber === 'file' ? this.data.ratioBucketsByFile : this.data.ratioBuckets
+  }
+
+  private get currentRatioNullCount(): number {
+    if (!this.data) return 0
+    return this.ratioCaliber === 'file' ? this.data.ratioNullCountByFile : this.data.ratioNullCount
+  }
+
   private get ratioOption(): Record<string, unknown> | null {
-    const rows = this.data?.ratioBuckets ?? []
+    const rows = this.currentRatioRows
     if (!rows.some((r) => r.count > 0)) return null
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -194,7 +214,11 @@ export default class StatisticsSeeding extends Vue {
   }
 
   private get caliberNotes(): Array<string> {
-    return ['statistics.calibers.ratioNullNote']
+    return [
+      'statistics.calibers.fileFirst',
+      'statistics.calibers.ratioDual',
+      'statistics.calibers.ratioNullNote'
+    ]
   }
 
   private formatFileSize = formatFileSize

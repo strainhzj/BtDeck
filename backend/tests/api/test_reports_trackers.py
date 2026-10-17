@@ -2,8 +2,8 @@
 """报表·Tracker 端点回归（D14/D15/D16，统计报表 W3 §6）。
 
 覆盖：host 去端口归一 / tracker dr=0 过滤 + 活跃种子 JOIN / errorRate 分母
-排除 unknown / supplyDemand 均值排除 NULL（count=有效行数）/ 辅种跨站重复
-计体积口径（文档化行为）。
+排除 unknown / supplyDemand 均值排除 NULL（count=有效行数）/ 单主种多站
+各计一次（站点维度固有行为）/ 文件口径（辅种副本站点不入统计）。
 """
 
 from datetime import datetime
@@ -44,7 +44,7 @@ class TestSites:
         assert sites[0]["count"] == 2
 
     async def test_cross_site_size_duplication_caliber(self, env):
-        """口径锁定：一个种子挂两个站 → 体积在两站各计一次（辅种跨站重复计体积，前端脚注）。"""
+        """口径锁定：单个主种挂两个站 → 体积在两站各计一次（主种多站属站点维度固有行为）。"""
         await add_torrent(env.session, info_id="i-2", size=50)
         await add_tracker(env.session, torrent_info_id="i-2", host="a.example.com")
         await add_tracker(env.session, torrent_info_id="i-2", host="b.example.com")
@@ -147,3 +147,27 @@ class TestSupplyDemand:
         assert data["sites"] == []
         assert data["health"] == []
         assert data["supplyDemand"] == []
+
+
+class TestFileFirstCaliber:
+    """文件口径：仅主种（同 name+size 最早添加者）的 tracker 行入站点统计。"""
+
+    async def test_auxiliary_copy_site_excluded(self, env):
+        """主种在 A 站、辅种副本在 B 站 → B 站不再重复计体积。"""
+        await add_torrent(env.session, info_id="m-1", name="dup", size=50, added_date=datetime(2026, 1, 1))
+        await add_torrent(env.session, info_id="m-2", name="dup", size=50, added_date=datetime(2026, 2, 1))
+        await add_tracker(env.session, torrent_info_id="m-1", host="a.example.com")
+        await add_tracker(env.session, torrent_info_id="m-2", host="b.example.com")
+        sites = {s["host"]: s for s in _trackers(env)["sites"]}
+        assert set(sites) == {"a.example.com"}
+        assert sites["a.example.com"]["sizeBytes"] == 50.0
+
+    async def test_auxiliary_copy_health_and_supply_excluded(self, env):
+        """健康榜/冷热榜同样只统计主种 tracker 行。"""
+        await add_torrent(env.session, info_id="h-1", name="dup", size=10, added_date=datetime(2026, 1, 1))
+        await add_torrent(env.session, info_id="h-2", name="dup", size=10, added_date=datetime(2026, 2, 1))
+        await add_tracker(env.session, torrent_info_id="h-1", host="a.example.com", status="normal", seeder=5)
+        await add_tracker(env.session, torrent_info_id="h-2", host="b.example.com", status="error", seeder=1)
+        data = _trackers(env)
+        assert {h["host"] for h in data["health"]} == {"a.example.com"}
+        assert {s["host"] for s in data["supplyDemand"]} == {"a.example.com"}

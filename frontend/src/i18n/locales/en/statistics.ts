@@ -67,6 +67,8 @@ export const statistics = {
     title: 'Seeding',
     ratioDist: 'Ratio distribution',
     ratio: 'Ratio',
+    byTorrent: 'By torrent',
+    byFile: 'By file',
     slackers: 'Slackers quadrant',
     auxiliary: 'Cross-seed network',
     crossSeedRate: 'Cross-seed rate',
@@ -126,11 +128,14 @@ export const statistics = {
     trackerCountStart: 'Tracker counts accumulate since activation',
     speedBreak: 'Gaps only appear during backend downtime; downloader offline counts as zero-speed points',
     onlineRatio: 'Online ratio covers sampled periods only (backend downtime excluded)',
-    crossSiteSize: 'Cross-seed torrent size is counted once per site',
+    crossSiteSize: 'Cross-seeds deduplicated by file: only the primary torrent\'s sites count; a single primary torrent on multiple sites still counts once per site',
     recycleExcluded: 'Permanently deleted data is out of the library caliber',
     completedNullNote: 'Torrents added in seeding state have no completion time; the completed trend covers fewer torrents',
     ratioNullNote: 'Torrents added in seeding state on Transmission have no ratio',
     trUncategorized: 'Transmission torrents fall into the uncategorized bucket',
-    uploadEstimate: 'Upload volume is an estimate (size × ratio); Transmission seeding-added torrents are systematically missing'
+    uploadEstimate: 'Upload volume is an estimate (size × ratio); Transmission seeding-added torrents are systematically missing; cross-seed copies\' uploads are real traffic and not deduplicated',
+    fileFirst: 'File-first caliber: cross-seed copies sharing name and size count only the primary torrent (earliest added) in count and size metrics',
+    statusByTorrent: 'Status distribution counts actual torrents: each cross-seed copy counts separately',
+    ratioDual: 'Ratio distribution dual caliber: by torrent (each copy separately) and by file (group ratio sum)'
   }
 }

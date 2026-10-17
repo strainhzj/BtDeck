@@ -3,7 +3,8 @@
 
 覆盖：勋章半开区间边界（1/10/50/200 断点两侧）/ 蓝光换算 / 火种 min 非
 NULL + 全 NULL 排除 + -1 不误判（W2 已归一 NULL）/ 上传估算 NULL 剔除与
-做种桶限定 / 年度 NULL 排除 / 白嫖慈善榜排序 / year 参数校验。
+做种桶限定（实际种子口径，辅种副本真实流量不去重）/ 年度 NULL 排除 /
+白嫖慈善榜排序 / year 参数校验 / 文件口径（火种按组聚合、年度按主种）。
 """
 
 from datetime import datetime
@@ -102,6 +103,73 @@ class TestGuardian:
         guardian = _summary(env)["guardian"]
         # min(非NULL) = 1 → 火种（NULL 不压低判定）
         assert guardian["fireCount"] == 1
+
+
+class TestFileFirstCaliber:
+    """文件口径：火种按文件组聚合全部副本 tracker；上传量/榜单按实际种子；年度按主种。"""
+
+    async def test_guardian_aggregates_all_copies_trackers(self, env):
+        """主种无计数行、辅种副本 seeder=1 → 文件组计火种；展示主种信息。"""
+        await add_torrent(
+            env.session, info_id="gf-1", name="dup", size=10, hash_="main", added_date=datetime(2026, 1, 1)
+        )
+        await add_torrent(
+            env.session, info_id="gf-2", name="dup", size=10, hash_="aux", added_date=datetime(2026, 2, 1)
+        )
+        await add_tracker(env.session, torrent_info_id="gf-2", host="a.example.com", seeder=1)
+        guardian = _summary(env)["guardian"]
+        assert guardian["totalConsidered"] == 1  # 文件数（非种子数）
+        assert guardian["excludedCount"] == 0
+        assert guardian["fireCount"] == 1
+        assert guardian["top10"][0]["hash"] == "main"  # 展示主种
+
+    async def test_guardian_group_min_matches_multi_tracker_semantics(self, env):
+        """组内取全部副本全部站点的最小值（与单种子多 tracker 口径一致：任一站点濒危即预警）。"""
+        await add_torrent(env.session, info_id="gh-1", name="dup2", size=10, added_date=datetime(2026, 1, 1))
+        await add_torrent(env.session, info_id="gh-2", name="dup2", size=10, added_date=datetime(2026, 2, 1))
+        await add_tracker(env.session, torrent_info_id="gh-1", host="a.example.com", seeder=1)
+        await add_tracker(env.session, torrent_info_id="gh-2", host="b.example.com", seeder=5)  # 组内也有健康站
+        guardian = _summary(env)["guardian"]
+        assert guardian["fireCount"] == 1  # min(1,5)=1 → 保守预警
+        assert guardian["totalConsidered"] == 1
+
+    async def test_upload_estimate_keeps_real_cross_seed_traffic(self, env):
+        """上传量估算按实际种子合计：辅种副本各自上传为真实流量，不去重。"""
+        await add_torrent(env.session, info_id="ue-1", name="dup", size=100, ratio=1.0, status="seeding")
+        await add_torrent(env.session, info_id="ue-2", name="dup", size=100, ratio=1.0, status="seeding")
+        badges = _summary(env)["badges"]
+        assert badges["uploadedBytes"] == pytest.approx(200.0)
+
+    async def test_yearly_counts_files_and_elder_any_copy_seeding(self, env):
+        """年度新增按文件口径计 1；元老：组内任一副本做种即算，日期取主种。"""
+        year = datetime.now().year
+        # 主种：去年添加但暂停；辅种副本：今年做种中（不算今年新增——文件口径取首添日期）
+        await add_torrent(
+            env.session,
+            info_id="yl-1",
+            name="dup",
+            size=10,
+            hash_="main",
+            added_date=datetime(year - 1, 6, 1),
+            status="paused",
+        )
+        await add_torrent(
+            env.session,
+            info_id="yl-2",
+            name="dup",
+            size=10,
+            added_date=datetime(year, 3, 5),
+            status="seeding",
+        )
+        # 独立文件：今年 3 月 5 日添加
+        await add_torrent(env.session, info_id="yl-3", name="solo", size=20, added_date=datetime(year, 3, 5))
+        data = _yearly(env, year)["data"]
+        assert data["yearAdded"]["count"] == 1  # dup 组首添在去年，今年副本不算新增
+        assert data["yearAdded"]["sizeBytes"] == 20.0
+        assert data["busiestDay"] == {"key": f"{year}-03-05", "count": 1}
+        # 元老：dup 组主种去年添加，副本仍在做种 → 文件算做种，日期取主种
+        assert data["elder"]["hash"] == "main"
+        assert data["elder"]["addedDate"].startswith(f"{year - 1}-06-01")
 
 
 class TestShamePride:

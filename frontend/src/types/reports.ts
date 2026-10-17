@@ -151,6 +151,10 @@ export interface AuxiliarySummary {
 export interface ReportsSeedingData {
   ratioBuckets: RatioBucketItem[]
   ratioNullCount: number
+  /** 文件合计口径分享率分布（同 name+size 辅种组内 Σratio；双口径决策） */
+  ratioBucketsByFile: RatioBucketItem[]
+  /** 文件口径无可用分享率的文件数（全组 NULL/异常） */
+  ratioNullCountByFile: number
   slackers: SlackerItem[]
   auxiliary: AuxiliarySummary
 }

@@ -41,6 +41,15 @@ const seedingFixture: ReportsSeedingData = {
     { bucket: '10+', count: 1, sizeBytes: 1 }
   ],
   ratioNullCount: 7,
+  ratioBucketsByFile: [
+    { bucket: '<0.5', count: 0, sizeBytes: 0 },
+    { bucket: '0.5-1', count: 2, sizeBytes: 1 },
+    { bucket: '1-2', count: 0, sizeBytes: 0 },
+    { bucket: '2-5', count: 0, sizeBytes: 0 },
+    { bucket: '5-10', count: 0, sizeBytes: 0 },
+    { bucket: '10+', count: 0, sizeBytes: 0 }
+  ],
+  ratioNullCountByFile: 3,
   slackers: [
     { hash: 'h1', name: '摸鱼一号', sizeBytes: 2048 ** 3, ratio: 0.2 },
     { hash: 'h2', name: '摸鱼二号', sizeBytes: 1024 ** 3, ratio: 0.4 }
@@ -84,6 +93,19 @@ describe('统计·做种页', () => {
     wrapper.destroy()
   })
 
+  it('分享率双口径切换：按文件合计分布与文件口径 NULL 计数', async() => {
+    const wrapper = mountPage()
+    await flush()
+    expect(wrapper.text()).toContain('按文件')
+    ;(wrapper.vm as unknown as { ratioCaliber: 'torrent' | 'file' }).ratioCaliber = 'file'
+    await wrapper.vm.$nextTick()
+    const options = wrapper.findAllComponents({ name: 'EChart' }).wrappers.map((w) => w.props('option'))
+    const ratioData = (options[0]?.series as Array<{ data: number[] }>)[0].data
+    expect(ratioData).toEqual([0, 2, 0, 0, 0, 0]) // ratioBucketsByFile
+    expect(wrapper.text()).toContain('3') // ratioNullCountByFile
+    wrapper.destroy()
+  })
+
   it('空数据空态：全图表 null', async() => {
     (getReportsSeeding as jest.Mock).mockResolvedValue({
       code: '200',
@@ -92,6 +114,8 @@ describe('统计·做种页', () => {
       data: {
         ratioBuckets: seedingFixture.ratioBuckets.map((b) => ({ ...b, count: 0 })),
         ratioNullCount: 0,
+        ratioBucketsByFile: seedingFixture.ratioBucketsByFile.map((b) => ({ ...b, count: 0 })),
+        ratioNullCountByFile: 0,
         slackers: [],
         auxiliary: { totalTorrents: 0, crossSeedCount: 0, crossSeedRate: 0, top10: [] }
       }

@@ -64,8 +64,8 @@ class TestAddedTrendBuckets:
         """周桶 %Y-%W（Python 侧分桶；SQLite strftime 无 ISO 周）。"""
         d1 = datetime(2026, 1, 1)  # 周四 → 2026-00
         d2 = datetime(2026, 1, 5)  # 周一 → 2026-01
-        await add_torrent(env.session, info_id="i-w1", added_date=d1)
-        await add_torrent(env.session, info_id="i-w2", added_date=d2)
+        await add_torrent(env.session, info_id="i-w1", name="w1", added_date=d1)
+        await add_torrent(env.session, info_id="i-w2", name="w2", added_date=d2)
         added = _trends(env, {"period": "week"})["added"]
         by_key = {b["key"]: b for b in added}
         assert by_key[d1.strftime("%Y-%W")]["count"] == 1
@@ -79,9 +79,12 @@ class TestAddedTrendBuckets:
         assert {b["name"] for b in data["ageBuckets"] if b["count"] > 0} == {"unknown"}
 
     async def test_limit_caps_buckets(self, env):
-        for m in range(1, 15):  # 2025-01 ~ 2026-02 共 14 桶
+        for m in range(1, 15):  # 2025-01 ~ 2026-02 共 14 桶（name 唯一：文件口径下同键会合并）
             await add_torrent(
-                env.session, info_id=f"i-m{m}", added_date=datetime(2025 + (m - 1) // 12, ((m - 1) % 12) + 1, 1)
+                env.session,
+                info_id=f"i-m{m}",
+                name=f"m{m}",
+                added_date=datetime(2025 + (m - 1) // 12, ((m - 1) % 12) + 1, 1),
             )
         added = _trends(env, {"limit": 5})["added"]
         assert len(added) == 5
@@ -90,8 +93,8 @@ class TestAddedTrendBuckets:
 
 class TestCompletedTrend:
     async def test_completed_buckets(self, env):
-        await add_torrent(env.session, info_id="i-c", completed_date=datetime(2026, 3, 15))
-        await add_torrent(env.session, info_id="i-nc", completed_date=None)  # 做种态添加恒空——过滤
+        await add_torrent(env.session, info_id="i-c", name="c1", completed_date=datetime(2026, 3, 15))
+        await add_torrent(env.session, info_id="i-nc", name="c2", completed_date=None)  # 做种态添加恒空——过滤
         completed = _trends(env)["completed"]
         assert {b["key"]: b["count"] for b in completed} == {"2026-03": 1}
 
@@ -99,11 +102,12 @@ class TestCompletedTrend:
 class TestAgeBuckets:
     async def test_age_boundaries(self, env):
         now = datetime.now()
-        await add_torrent(env.session, info_id="i-a", added_date=now - timedelta(days=1))  # under7d
-        await add_torrent(env.session, info_id="i-b", added_date=now - timedelta(days=10))  # to30d
-        await add_torrent(env.session, info_id="i-c", added_date=now - timedelta(days=100))  # to180d
-        await add_torrent(env.session, info_id="i-d", added_date=now - timedelta(days=400))  # over1y
-        await add_torrent(env.session, info_id="i-e", added_date=None, size=1)  # unknown
+        # name/size 全部唯一：文件口径下同 (name,size) 的多行只计主种一行
+        await add_torrent(env.session, info_id="i-a", name="a", size=1, added_date=now - timedelta(days=1))  # under7d
+        await add_torrent(env.session, info_id="i-b", name="b", size=2, added_date=now - timedelta(days=10))  # to30d
+        await add_torrent(env.session, info_id="i-c", name="c", size=3, added_date=now - timedelta(days=100))  # to180d
+        await add_torrent(env.session, info_id="i-d", name="d", size=4, added_date=now - timedelta(days=400))  # over1y
+        await add_torrent(env.session, info_id="i-e", name="e", added_date=None, size=1)  # unknown
         buckets = {b["name"]: b for b in _trends(env)["ageBuckets"]}
         assert buckets["under7d"]["count"] == 1
         assert buckets["to30d"]["count"] == 1
@@ -112,6 +116,26 @@ class TestAgeBuckets:
         assert buckets["over1y"]["count"] == 1
         assert buckets["unknown"]["count"] == 1
         assert buckets["unknown"]["sizeBytes"] == 1.0
+
+
+class TestFileFirstCaliber:
+    """文件优先口径：同 (name,size) 辅种组只计主种（added_date 最早者）。"""
+
+    async def test_cross_seed_group_counts_once_by_representative_date(self, env):
+        """同 name+size 两行 → 新增趋势只计最早添加者所在月桶。"""
+        await add_torrent(env.session, info_id="x-1", name="dup", size=100, added_date=datetime(2026, 1, 10))
+        await add_torrent(env.session, info_id="x-2", name="dup", size=100, added_date=datetime(2026, 3, 10))
+        added = _trends(env)["added"]
+        assert {b["key"]: b["count"] for b in added} == {"2026-01": 1}
+
+    async def test_cross_seed_group_age_counts_once(self, env):
+        now = datetime.now()
+        await add_torrent(env.session, info_id="y-1", name="dup", size=7, added_date=now - timedelta(days=20))
+        await add_torrent(env.session, info_id="y-2", name="dup", size=7, added_date=now - timedelta(days=1))
+        buckets = {b["name"]: b for b in _trends(env)["ageBuckets"]}
+        # 主种 = 20 天前添加 → to30d 计 1，under7d 不计辅种副本
+        assert buckets["to30d"]["count"] == 1
+        assert buckets["under7d"]["count"] == 0
 
 
 class TestSpeedHistory:
