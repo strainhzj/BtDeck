@@ -7342,7 +7342,7 @@
           "id": "statistics-reports-w5",
           "name": "W5 四个正式页签",
           "description": "views/statistics/{overview,trends,seeding,trackers}/index.vue + components/（StatCard/CaliberNotes 先行创建）+ Jest 测试（4 页签渲染 mock api + 空态 + period/range 切换）。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/statistics/overview/index.vue",
@@ -7350,22 +7350,27 @@
             "frontend/src/views/statistics/seeding/index.vue",
             "frontend/src/views/statistics/trackers/index.vue",
             "frontend/src/views/statistics/components/StatCard.vue",
-            "frontend/src/views/statistics/components/CaliberNotes.vue"
+            "frontend/src/views/statistics/components/CaliberNotes.vue",
+            "frontend/src/styles/statistics-page.scss",
+            "frontend/src/router.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/utils/ui-mode.ts",
+            "frontend/src/demo/types.ts"
           ],
-          "evidence": ""
+          "evidence": "四页签落地：overview（数字卡行+实时速度卡 30s 轮询/beforeDestroy 清理+五桶饼+TOP10 条+分类标签双维度切换+目录条+下载器堆叠柱）、trends（period 月/周切换+B6 柱线双轴+B7+B8 环形+B9 range 切换多系列折线connectNulls 不补零断点）、seeding（C10 柱+NULL 计数+C11 散点/表+C12 卡条）、trackers（D14 条+D15 表el-progress 三档配色+D16 散点/表）；StatCard/CaliberNotes 先行创建（脚注走 statistics.calibers.* 键，支持插值条目）；共享样式 src/styles/statistics-page.scss。W4 合批项随本批提交：router /statistics 组+4 子路由（fun-report 留 W6）、permission 守卫+toMobilePath /statistics*→/m/dashboard、DEMO_ROUTE_MATRIX +4 行。关键修复：echarts sideEffects 白名单含 lib/chart|component/*.js → 命名空间入口（echarts/charts 等）webpack 拒绝摇树（全量 339.4KB gz 超门禁）；改深路径副作用自注册（lib/chart/{bar,line,pie,scatter}+lib/component/{grid,tooltip,legend,dataZoom,title}+lib/renderer/installCanvasRenderer 显式 core.use）→ **199.3KB gz < 200KB 门禁**（-41%）。坑位：vue-template-es2015-compiler(buble) 不支持模板内 ??。测试：四页签 spec 17 例（mock api+stub EChart：渲染/option 派生/period 与 range 切换/空态/轮询挂卸/脚注）+ ui-mode.spec 守卫回归 +demo-config category 断言；EChart.spec 7 例适配深路径 mock。全量 Jest 131 套 1881 例；typecheck/lint/build 净；init.sh exit=0"
         },
         {
           "id": "statistics-reports-w6",
           "name": "W6 趣味报告",
           "description": "el-drawer btt vs fixed 对比实测定稿 + fun-report 沉浸翻页流（决策 10：z-index 1200、根元素即覆盖层、route query 状态持久化）+ FunSlide/YearPicker + 测试（翻页/子模式/年份/query 恢复/z-index 断言）。",
-          "status": "pending",
+          "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/views/statistics/fun-report/index.vue",
             "frontend/src/views/statistics/components/FunSlide.vue",
             "frontend/src/views/statistics/components/YearPicker.vue"
           ],
-          "evidence": ""
+          "evidence": "开工前对比实测定稿：el-drawer btt 100% 因 Element PopupManager 自动 z≥2000 压 Element 弹层（违决策 10 <2001 约束）弃用，采用 fixed 根元素方案。fun-report/index.vue：根元素即覆盖层（fixed+z-index 1200，禁外包 wrapper）、状态走 route query（?mode=&year=&slide= 持久化，重挂载恢复进度）、子模式战报（24 火种 TOP10/25 勋章档位+换算+下一档差距/27 白嫖慈善双榜）+ 年度报告（YearPicker 2024-当前 + FunSlide 8 卡翻页流：开场/年添加/最忙月日/站点/元老/火种/上传估算/结尾；键盘←→+按钮翻页边界禁用；过渡仅作用卡片层不动根 fixed）。fun-report 路由（sparkles）+ DEMO_ROUTE_MATRIX +1 行随批合入。**遗留审计暴露预存债**：i18n-leftover-guard 提取器行内 /* */ 块注释处理 bug——行含 /* 即置块注释态等下一行 */，router.ts 最后一个懒加载 import 后的文件尾被静默跳过（onError 中文 toast 漏拦）；本批新增 fun-report import 恰好治愈状态暴露之。修复：提取器先剔同行闭合形态仅未闭合才进入块注释态 + router.onError 文案走翻译键 errors.chunkLoadFailed（zh/en 成对，按守卫政策不加白名单）。i18n 补键（close/prev/next/slideOf/ending/nextTier + yearly.opening 双侧成对；opening 初版层级错位由leftover-guard 键可达性门禁拦截后归位）。测试：fun-report.spec 11 例（根元素即覆盖层/源码契约钉 z-index 1200 （vue-jest 不注入 SFC 样式故走源文本契约）/query 恢复含非法参数兜底/翻页边界+键盘/子模式与年份写回 query/关闭返回/空态）；全量 Jest 132 套 1892 例；typecheck/lint/build 净；echarts 维持 199.3KB gz；./init.sh exit=0"
         },
         {
           "id": "statistics-reports-w7",

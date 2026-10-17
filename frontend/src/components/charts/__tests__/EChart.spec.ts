@@ -36,22 +36,17 @@ jest.mock('echarts/core', () => {
   }
   return { __esModule: true, init: g.__echartsMocks.init, use: g.__echartsMocks.use, __mocks: g.__echartsMocks }
 })
-jest.mock('echarts/charts', () => ({
-  __esModule: true,
-  BarChart: { name: 'BarChart' },
-  LineChart: { name: 'LineChart' },
-  PieChart: { name: 'PieChart' },
-  ScatterChart: { name: 'ScatterChart' }
-}))
-jest.mock('echarts/components', () => ({
-  __esModule: true,
-  GridComponent: { name: 'GridComponent' },
-  TooltipComponent: { name: 'TooltipComponent' },
-  LegendComponent: { name: 'LegendComponent' },
-  DataZoomComponent: { name: 'DataZoomComponent' },
-  TitleComponent: { name: 'TitleComponent' }
-}))
-jest.mock('echarts/renderers', () => ({ __esModule: true, CanvasRenderer: { name: 'CanvasRenderer' } }))
+// 深路径副作用模块（自注册）：mock 为空模块；canvas 为显式 install 导出
+jest.mock('echarts/lib/chart/bar', () => ({}))
+jest.mock('echarts/lib/chart/line', () => ({}))
+jest.mock('echarts/lib/chart/pie', () => ({}))
+jest.mock('echarts/lib/chart/scatter', () => ({}))
+jest.mock('echarts/lib/component/grid', () => ({}))
+jest.mock('echarts/lib/component/tooltip', () => ({}))
+jest.mock('echarts/lib/component/legend', () => ({}))
+jest.mock('echarts/lib/component/dataZoom', () => ({}))
+jest.mock('echarts/lib/component/title', () => ({}))
+jest.mock('echarts/lib/renderer/installCanvasRenderer', () => ({ install: { name: 'CanvasRenderer' } }))
 
 import { mount, createLocalVue, Wrapper } from '@vue/test-utils'
 import Vue from 'vue'
@@ -117,23 +112,8 @@ describe('EChart 组件（echarts 按需懒加载封装）', () => {
     const wrapper = mountChart({ option: makeOption(), height: 240 })
     await flushPromises()
     expect(m.init).toHaveBeenCalledTimes(1)
-    expect(m.use).toHaveBeenCalledTimes(1)
-    // 注册面：4 图表 + 5 组件 + 1 渲染器
-    const registered = m.use.mock.calls[0][0] as Array<{ name: string }>
-    expect(registered.map((x) => x.name).sort()).toEqual(
-      [
-        'BarChart',
-        'CanvasRenderer',
-        'DataZoomComponent',
-        'GridComponent',
-        'LegendComponent',
-        'LineChart',
-        'PieChart',
-        'ScatterChart',
-        'TitleComponent',
-        'TooltipComponent'
-      ].sort()
-    )
+    // 深路径方案：图表/组件副作用自注册，仅 CanvasRenderer 经 core.use 显式挂载
+    expect(m.use).toHaveBeenCalledWith({ name: 'CanvasRenderer' })
     expect(m.setOption).toHaveBeenCalledWith(makeOption(), { notMerge: true })
     expect(wrapper.find('[data-testid="echart-empty"]').exists()).toBe(false)
     expect(wrapper.attributes('style')).toContain('height: 240px')

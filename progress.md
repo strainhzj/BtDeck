@@ -8349,6 +8349,39 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 验证：typecheck exit 0；lint 净（auto-fix 三文件后复跑 0 error 0 warning）；全量 Jest 127 套 1863 例（+7）；build exit 0；体积探针 esbuild 按需面 min+gz **188.7KB < 200KB**（echarts chunk 本批不物化——无页面消费方，webpack 终值 W5 复测，属计划内合批约束）。
 - 合批纪律执行：路由/permission/ui-mode/demo-matrix 按 §7 注记放 W5 首个提交（防侧栏指向不存在组件）；W4 只交依赖/EChart/i18n/类型/API 模块。
 
+## 2026-09-25（续）：统计报表 W5——四个正式页签 + 路由合批（全绿已提交）
+
+- 四页签 + 共享组件：overview（A1-A5：数字卡行/实时速度卡 30s 轮询+beforeDestroy 清理照 dashboard 惯例/五桶饼错误桶配色/TOP10 横条/分类标签 count↔size 双维度 radio 切换/目录根前缀条/下载器五桶堆叠柱）、trends（period 月/周 + B6 柱+体积折线双轴 + B7 + B8 环形 + B9 range 24h/7d/30d 独立切换、每下载器 ↓↑ 双折线、connectNulls:false 断点不补零、firstSampleAt 存在时插值脚注）、seeding（C10 半开区间柱+NULL 计数、C11 散点+el-table、C12 辅种率卡+TOP10 条）、trackers（D14 体积条、D15 el-progress 三档色（≥50%红/≥20%橙/绿）+受影响种子列、D16 散点+表 count=有效行数）。StatCard/CaliberNotes 先行创建（后者支持 {key,params} 插值条目）；共享样式抽 src/styles/statistics-page.scss（scoped @import 照 traditional-view-theme 惯例）。
+- W4 合批项随本批提交：router /statistics 组（redirect overview + 4 子路由，fun-report 留 W6 防死链）、permission 守卫 + toMobilePath /statistics*→/m/dashboard（移动统计页另立项守卫兜底）、DEMO_ROUTE_MATRIX +4 行 readonly（fun-report 行 W6）。i18n 补键（name/offline/byCount/bySize/downloadSpeed/uploadSpeed/ratio 双侧成对）。
+- **关键修复——echarts 体积门禁**：首次 build 实测 chunk gz 339.4KB 超门禁（esbuild 探针 188.7KB 的反差暴露问题）；根因=echarts package.json sideEffects 白名单含 lib/chart/*.js 与 lib/component/*.js，命名空间入口（echarts/charts 等 export *）下 webpack 视全部图表/组件模块为副作用模块拒绝摇树（chunk 内实测含 candlestick/sunburst/effectScatter）。修复=改深路径按需：lib/chart/{bar,line,pie,scatter} + lib/component/{grid,tooltip,legend,dataZoom,title}（库内 use(install) 副作用自注册，exports map 显式开放这些子路径）+ lib/renderer/installCanvasRenderer（显式导出 install，经 core.use 挂载）→ 复测 **199.3KB gz < 200KB**（-41%，压线达标）。EChart.spec mock 同步改深路径（空模块+canvas install 标记）。
+- 坑位两条：vue-template-es2015-compiler（buble）不支持模板表达式 ??（trackers 页:height 绑定炸解析，模板内改安全访问）；jest.mock 工厂返回的 render 需显式 this 参数类型注解与返回类型（tsc noEmit 全量覆盖 spec 文件）。
+- 测试：views/statistics/__tests__/ 四 spec 17 例（mock @/api/reports + stub EChart：标题/数字卡/option 派生/维度与 period/range 切换重拉/空态 null/轮询 interval 挂卸/口径脚注渲染）+ ui-mode.spec 统计守卫回归 + demo-config.spec statistics category 断言；EChart.spec 深路径适配后 7 例。全量 Jest 131 套 1881 例；typecheck/lint/build 净（58 条 build warning 均为存量 sass 弃用告警与本批无关）；./init.sh exit=0。
+
+## 2026-09-25（续二）：统计报表 W6——趣味报告沉浸页 + 遗留审计提取器修复（全绿已提交）
+
+- 开工前对比（决策 10 预审项）实测定稿：el-drawer btt 100% 免费获得 z-index/滚动锁管理，但 Element PopupManager 自动分配 z≥2000 会压 Element Message/MessageBox（违背 <2001 硬约束）且关闭行为/焦点陷阱与 route query 状态同步需额外接管 → 采用已拍板的 fixed 方案（z-index 1200、根元素即覆盖层、禁外包 wrapper——防 fade-transform 祖先 transform 使 fixed 塌陷）。
+- fun-report/index.vue：route query 持久化（?mode=&year=&slide=，重挂载恢复进度；非法参数兜底 mode=battle/slide=1/year=今年）；战报三卡（火种 TOP10+计数积累脚注/勋章档位+上传量+高清电影蓝光换算+下一档差距/白嫖慈善双榜）；年度报告 YearPicker（2024-当前）+ FunSlide 8 卡翻页流（开场/年添加/最忙月日/站点/元老/火种/上传估算/结尾；键盘←→+按钮、边界禁用；slide-badge 表情区分）；翻页过渡仅作用卡片层（不触碰根 fixed）；关闭→/statistics/overview。fun-report 路由（sparkles 已注册图标）+ demo matrix +1 行随批合入。
+- **遗留审计暴露预存债（本批最有价值发现）**：i18n-leftover-guard 提取器对行内 `/* webpackChunkName */` 形态处理有 bug——行含 `/*` 即置块注释态并等"下一行"`*/` 才解除；router.ts 最后一个懒加载 import 之后的文件尾（onError 的用户可见中文 toast）一直被静默跳过漏拦。本批新增 fun-report import（自身含 `*/`）恰好治愈状态暴露之（W5 全绿/W6 突红反差 + 节点级提取器复现实锤）。修复两步：①提取器先剔同行闭合 `/* */` 再判未闭合进块注释态；②router.onError 文案按守卫政策走翻译键 errors.chunkLoadFailed（zh/en 成对），不加白名单。修复后全仓扫描零违规（唯一暴露即此笔）。
+- i18n 键：fun.close/prev/next/slideOf/ending/nextTier + yearly.opening（初版把 opening 放错层级到 fun.*，被 leftover-guard 的 $t 键可达性门禁当场拦下——门禁按文件扫 `$t('...')` 字面键并验证 zh/en 双侧可达，直接定位 mismatch）。
+- 测试：fun-report.spec 11 例——根元素即覆盖层断言；z-index 走**源码文本契约**（vue-jest 不注入 SFC 样式，getComputedStyle 拿不到 scoped CSS，改为读 .vue 源文本正则钉 .fun-report 根规则 position:fixed + z-index:1200 及区间断言）；query 状态恢复（?mode=yearly&year=2025&slide=4 → 第 4/8 页+年份高亮）/非法参数兜底/翻页边界+键盘步进/子模式年份写回 query/关闭返回/空态。全量 Jest **132 套 1892 例**（+1 套 +11 例）；typecheck/lint/build 净；fun-report chunk 物化；echarts 维持 199.3KB gz；./init.sh exit=0。
+
+## 2026-09-25（续三）：统计报表 W7——demo 四件套 + roadmap/文档收口（feature 终态，全绿已提交）
+
+- demo 四件套：fixtures 尾部新增 DEMO_REPORT_*（overview/trends/seeding/trackers/fun-summary + 空态形态）+ demoReportsYearly（年份参数化，2024 前零值形态）+ demoReportsSpeedHistory（双峰假曲线：24h 15min 粒度 96 点 / 7d 168 / 30d 720 hourly 点）+ demoReportsTrends（week 形态演示性重排）；聚合口径属后端域不做 TS 二次实现（fixtures 注释注明，"推导不了的静态 fixture 注明"）。demo/types `export * from '@/types/reports'` 契约复用；TrendsPeriod/SpeedRange 联合类型上移 types/reports.ts 单一来源（api/demo 双消费，修 tsc 2305）。demo-store 七 getter 直通 fixtures；demo-request /reports/* 七 GET 分支（query 经 readInput；period 白名单/limit 1-48/range 白名单/year 域 [2024,当前年] 就近收敛——与后端 400 语义差异已注明）。
+- demo-request.spec +7 例：五桶全桶/removed 下载器标注/period limit 裁剪与键形/ratio 六桶次序/host 无端口/勋章 gold+火种/年份 1999→2024 收敛/速度 range 非法值→24h + downloader 过滤 + 点位数（96/168）+ samplingActive。
+- roadmap 13 文件同步（按 roadmap-maintain 技能：最小改动 + 计数实测）：根 README（功能域速查"统计报表 statistics reports"行 + 模块树 42 endpoints/35 revisions + 生成日期/本次新增双行前插）、backend api（42 文件+reports 端点行+路由注册表）/services（report_service）/tasks（speed_sampler）/infra（35 revision+head c9e0f1a2b3c4+两迁移行）/data-models（speed_sample）、frontend views（statistics 六页面+四组件）/api（17 模块+reports.ts）/utils-types（types 9 文件+reports.ts 行）/components-layout（EChart 封装含摇树根修记录+LucideIcon sprout/radar）/entry（router /statistics 组+onError 翻译键、permission 守卫）/demo（fixtures/request/store 三行）、tests（后端 263 test_*.py/前端 132 套 135 spec 1899 例全实测计数）。踩坑：views README 表格行无行尾闭合管道符致 python replace 静默未命中——改为按行前缀定位插入。
+- feature `statistics-reports-2026-09` 终态 done（W1-W7 七任务全 done + evidence）；PLANS/statistics-reports.md 归档至 PLANS/archive/ 并更新 PLANS/README 链接；session-handoff 收口。
+- 终局验证：前端全量 Jest 133 套 1899 例、typecheck/lint/build 净、echarts 199.3KB gz 不变、./init.sh exit=0（后端本批零改动，W3 提交后已全绿 5342 passed）。
+
+## 2026-09-25（续四）：roadmap 补漏二轮同步（statistics-reports 收尾，全绿已提交）
+
+- 用户要求完整同步 roadmap；对照 roadmap-maintain 技能核查 W7 首轮 13 文件后的遗漏面，本轮补齐 9 文件：
+  - **perspectives/test-coverage.md**：后端计数 236→263（2026-09-25 实测）+ 目录表刷新（api 85/tasks 25/core 29/downloader 6）+ "统计报表批新增后端测试"小节（test_speed_sampler 13/test_tracker_count_activation 13/test_reports_* 51 + 既有扩展六处）+ 前端 spec 注记更新；
+  - **backend**：domain（torrent_stats_cache 常量提升+PAUSED 扩 paused）、core（tracker_mapper 文档纠错+真机键集锚定）、services（sync_db_write 白名单 6→9 字段）、api（torrents_async 行补 W2 计数激活与 added_date 本地化全记录）、infra（lifecycle 行补采样循环注册）；
+  - **frontend**：views 详情表补三行（四页签/fun-report+components/statistics-page.scss）、entry（router 路由表段 L30-457 543 行）。
+- **漂移行号全量重测**（行号实测原则）：lifespan L262→L376（详情段 7 个行号锚全重测：init_config L403/migrate L413/init_db L436/... /yield L636）与速查表 L344→L376、finalize L304→L336；torrents_async L732→782/L982→1043/错误原因 L1437→1510/L3824→4029；router.ts 476→543 行；permission.ts 302 行/resolvePageTitle L301；demo 三文件（request 1147 行 L352、store 1029 行 L202、fixtures 1291 行 L1004）；domain lifecycle:404→541。
+- 根 README 元信息"本次新增"追加补漏二轮说明。
+
 ## 2026-10-08：通用种子定位底层 service（feature `torrent-lookup-service-2026-10-08`）
 
 - **需求与定案**：用户要求"快速定位种子并获取种子信息的通用方法"，按 qB/TR 双 SDK 设计。三轮确认收敛：①只做底层 service（供后续设计消费，不做端点/MCP 暴露）；②优先毫秒级 hash 匹配，名称/多条件查询后续基于 DB 设计（双端 SDK 均无服务端名称过滤，远程名称搜索大库不可取——本地 DB 先行定位 hash 再远程精确取实时态是既定方向）；③仅 service 层。

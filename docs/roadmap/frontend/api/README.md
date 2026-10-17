@@ -4,7 +4,6 @@
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查（18 个 .ts，跳过 torrents_patch.txt）
-
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 与 downloadComplete 兼容字段；`TorrentListParams.tracker_domain` L201 支持 Tracker 主机域名多选，`single_error_only` L205 支持错误单种全局唯一排查，`getTrackerDomains()` L260 读取定时同步已采集的域名；`getActiveTorrents()` L1379 获取 200/206 实时快照，`reconcileRuntimeTorrentStates()` L1390 低频核验复合键终态；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
@@ -23,8 +22,7 @@
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.ts` | MoviePilot 联动：设置 GET/PUT（CAS）/实例列表/更新/删除、正向关联（downloaderId+hash）、路径反查（src/dest/both）；分页信封 {total,page,pageSize,list} |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
-| 统计报表 reports ✨2026-09-25（W4） | `reports.ts` | 统计报表七函数照 dashboard.ts 信封惯例（`res.code==='200' && res.data`）：getReportsOverview / getReportsTrends（period=month|week）/ getReportsSeeding / getReportsTrackers / getReportsFunSummary / getReportsFunYearly（year 可选）/ getReportsSpeedHistory（range=24h|7d|30d，downloaderId 可选）；类型全部来自 `@/types/reports` 纯 JSON 契约（feature statistics-reports-2026-09；消费方 views/statistics 四页签待 W5） |
-| 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
+| 统计报表 reports ✨2026-09-25（W4） | `reports.ts` | 统计报表七函数照 dashboard.ts 信封惯例（`res.code==='200' && res.data`）：getReportsOverview / getReportsTrends（period=month|week）/ getReportsSeeding / getReportsTrackers / getReportsFunSummary / getReportsFunYearly（year 可选）/ getReportsSpeedHistory（range=24h|7d|30d，downloaderId 可选）；类型全部来自 `@/types/reports` 纯 JSON 契约（feature statistics-reports-2026-09；消费方 views/statistics 四页签待 W5） || 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
 | 诊断导出 health ✨2026-09-21 补录 | `health.ts` | `exportDiagnosisFile()` 导出故障转储/排查/状态分析快照（axios blob 携带认证头；后端 `GET /health/diagnosis` attachment 返回诊断 JSON，文件名前端生成——blob 响应经拦截器只回传原始数据读不到响应头），settings 状态诊断页签消费 |
 
 > 所有文件均 `import request from '@/utils/request'`（行号见上表）。`torrents.ts` 是最大且最核心的 API 模块。

@@ -68,6 +68,12 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/torrents/file-management')).toBe('/m/torrents')
     })
 
+    it('统计报表（statistics-reports W5）：移动端统计页另立项，守卫兑底落仪表盘', () => {
+      expect(uiMode.toMobilePath('/statistics')).toBe('/m/dashboard')
+      expect(uiMode.toMobilePath('/statistics/overview')).toBe('/m/dashboard')
+      expect(uiMode.toMobilePath('/statistics/trends')).toBe('/m/dashboard')
+    })
+
     it('M2 已移动化管理页映射到对应移动页；查询模板裁撤后落高级搜索', () => {
       expect(uiMode.toMobilePath('/recycle-bin')).toBe('/m/recycle-bin')
       expect(uiMode.toMobilePath('/recycle-bin/index')).toBe('/m/recycle-bin')

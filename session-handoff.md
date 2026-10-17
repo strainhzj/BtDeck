@@ -123,7 +123,10 @@
 
 - ~~W3 报表服务与端点~~ ✅ 2026-09-24 完成（report_service.py + reports.py 七端点 + 51 例测试，全量 5342 passed，见 progress.md 续篇；W3 成果待提交或随下批提交）。
 - ~~W4 前端基建~~ ✅ 2026-09-25 完成（echarts 5.5.1 精确钉版 + EChart.vue 封装 + types/api 契约 + i18n 双语包 + jest 豁免 + LucideIcon sprout/radar；前端 127 套 1863 例 + build/typecheck/lint 净；体积探针 gz 188.7KB）。
-- W5 四页签（含路由/permission/ui-mode/demo-matrix 首个提交合入——W4 已按计划留下这些未做）；W6 趣味报告；W7 demo+文档收口。
+- ~~W5 四页签~~ ✅ 2026-09-25 完成（四页 + StatCard/CaliberNotes + 路由/守卫/demo-matrix 合批提交；echarts 深路径修复后 chunk gz 199.3KB 达标；前端 131 套 1881 例）。
+- ~~W6 趣味报告~~ ✅ 2026-09-25 完成（fixed 方案定稿 + 翻页流 + query 持久化 + 遗留审计提取器修复与 router.onError 补译；前端 132 套 1892 例）。
+- ~~W7 demo 收口~~ ✅ 2026-09-25 完成（demo 四件套 + roadmap 13 文件同步 + PLANS 归档 + feature 终态 done；前端 133 套 1899 例全绿）。**statistics-reports-2026-09 全部七个波次（W1-W7）交付完毕**，feature/reports 分支共 7 提交未推送。
+- 后续：合并 feature/reports → dev（按拓扑重挂迁移链时注意主工作区 RSS 计划的迁移链冲突风险——PLANS/statistics-reports.md §9 已预案：无表交集，合并时重挂）；移动端统计页、CSV 导出、同步健康报表等见计划 §10 后续展望。
 - 未推送。
 ---
 

@@ -1204,3 +1204,265 @@ export const DEMO_FIXTURE_BUNDLE: DemoFixtureBundle = {
 }
 
 export default DEMO_FIXTURE_BUNDLE
+
+// =============================================================================
+// 统计报表 fixtures（statistics-reports W7）
+//
+// 口径说明：报表聚合（五桶/根前缀/去端口/均值排除 NULL 等）属后端域逻辑，
+// Demo 侧不做二次实现——除速度历史（程序化假曲线）与年度报告（年份参数化）
+// 外均为静态 fixture（PLANS/statistics-reports.md §4.6"推导不了的静态 fixture
+// 注明"）。空态形态单独成组（DEMO_REPORT_*_EMPTY）供空态演示。
+// =============================================================================
+
+import {
+  BadgesSummary,
+  GuardianSummary,
+  RatioRankItem,
+  ReportsFunSummaryData,
+  ReportsFunYearlyData,
+  ReportsOverviewData,
+  ReportsSeedingData,
+  ReportsTrendsData,
+  ReportsTrackersData,
+  SpeedHistory,
+  SpeedRange,
+  TrendsPeriod
+} from '@/types/reports'
+
+const GB = 1024 ** 3
+const TB = 1024 ** 4
+
+export const DEMO_REPORT_OVERVIEW: ReportsOverviewData = {
+  totals: { count: 128, sizeBytes: 42.6 * TB, avgSizeBytes: (42.6 * TB) / 128, recycleBinSizeBytes: 640 * GB },
+  largest: [
+    { hash: 'demo0001', name: 'Demo 蓝光合集 4K REMUX', sizeBytes: 320 * GB },
+    { hash: 'demo0002', name: 'Demo 剧集全集 1080p', sizeBytes: 186 * GB },
+    { hash: 'demo0003', name: 'Demo 音乐无损合集', sizeBytes: 96 * GB }
+  ],
+  statusDist: [
+    { bucket: 'seeding', count: 86, sizeBytes: 30.2 * TB },
+    { bucket: 'downloading', count: 12, sizeBytes: 4.1 * TB },
+    { bucket: 'paused', count: 18, sizeBytes: 5.3 * TB },
+    { bucket: 'error', count: 9, sizeBytes: 2.4 * TB },
+    { bucket: 'other', count: 3, sizeBytes: 0.6 * TB }
+  ],
+  categories: [
+    { name: 'movies', count: 52, sizeBytes: 22.8 * TB },
+    { name: 'tv', count: 34, sizeBytes: 12.9 * TB },
+    { name: '', count: 42, sizeBytes: 6.9 * TB }
+  ],
+  tags: [
+    { name: 'HD', count: 48, sizeBytes: 18.2 * TB },
+    { name: '做种中', count: 30, sizeBytes: 9.6 * TB }
+  ],
+  paths: [
+    { path: '/downloads/movies', count: 58, sizeBytes: 24.7 * TB },
+    { path: '/downloads/tv', count: 40, sizeBytes: 11.8 * TB },
+    { path: '/downloads', count: 30, sizeBytes: 6.1 * TB }
+  ],
+  downloaders: [
+    {
+      downloaderId: 'demo-dl-001',
+      nickname: 'Demo qB 主力',
+      type: 0,
+      removed: false,
+      count: 80,
+      sizeBytes: 26.5 * TB,
+      statusDist: [
+        { bucket: 'seeding', count: 60, sizeBytes: 20.1 * TB },
+        { bucket: 'downloading', count: 8, sizeBytes: 3.2 * TB },
+        { bucket: 'paused', count: 12, sizeBytes: 3.2 * TB }
+      ]
+    },
+    {
+      downloaderId: 'demo-dl-removed',
+      nickname: '已退役节点',
+      type: 1,
+      removed: true,
+      count: 48,
+      sizeBytes: 16.1 * TB,
+      statusDist: [{ bucket: 'seeding', count: 48, sizeBytes: 16.1 * TB }]
+    }
+  ],
+  liveSpeed: {
+    totalDownloadSpeed: 18 * 1024 * 1024,
+    totalUploadSpeed: 42 * 1024 * 1024,
+    items: [
+      { downloaderId: 'demo-dl-001', nickname: 'Demo qB 主力', online: true, downloadSpeed: 18 * 1024 * 1024, uploadSpeed: 42 * 1024 * 1024 },
+      { downloaderId: 'demo-dl-002', nickname: 'Demo TR 辅种', online: false, downloadSpeed: 0, uploadSpeed: 0 }
+    ]
+  }
+}
+
+export const DEMO_REPORT_OVERVIEW_EMPTY: ReportsOverviewData = {
+  totals: { count: 0, sizeBytes: 0, avgSizeBytes: 0, recycleBinSizeBytes: 0 },
+  largest: [],
+  statusDist: [],
+  categories: [],
+  tags: [],
+  paths: [],
+  downloaders: [],
+  liveSpeed: { totalDownloadSpeed: 0, totalUploadSpeed: 0, items: [] }
+}
+
+export const DEMO_REPORT_ADDED: ReportsTrendsData['added'] = [
+  { key: '2026-04', count: 18, sizeBytes: 6.2 * TB },
+  { key: '2026-05', count: 26, sizeBytes: 9.8 * TB },
+  { key: '2026-06', count: 31, sizeBytes: 11.4 * TB },
+  { key: '2026-07', count: 22, sizeBytes: 7.9 * TB },
+  { key: '2026-08', count: 35, sizeBytes: 14.2 * TB },
+  { key: '2026-09', count: 12, sizeBytes: 4.6 * TB }
+]
+
+export const DEMO_REPORT_COMPLETED: ReportsTrendsData['completed'] = [
+  { key: '2026-05', count: 14, sizeBytes: 5.4 * TB },
+  { key: '2026-06', count: 19, sizeBytes: 7.2 * TB },
+  { key: '2026-07', count: 16, sizeBytes: 6.1 * TB },
+  { key: '2026-08', count: 24, sizeBytes: 9.3 * TB }
+]
+
+export const DEMO_REPORT_AGE_BUCKETS: ReportsTrendsData['ageBuckets'] = [
+  { name: 'under7d', count: 12, sizeBytes: 4.2 * TB },
+  { name: 'to30d', count: 35, sizeBytes: 12.6 * TB },
+  { name: 'to90d', count: 44, sizeBytes: 14.1 * TB },
+  { name: 'to180d', count: 22, sizeBytes: 7.8 * TB },
+  { name: 'to1y', count: 10, sizeBytes: 3.1 * TB },
+  { name: 'over1y', count: 3, sizeBytes: 0.5 * TB },
+  { name: 'unknown', count: 2, sizeBytes: 0.3 * TB }
+]
+
+export const DEMO_REPORT_SEEDING: ReportsSeedingData = {
+  ratioBuckets: [
+    { bucket: '<0.5', count: 18, sizeBytes: 9.8 * TB },
+    { bucket: '0.5-1', count: 24, sizeBytes: 8.2 * TB },
+    { bucket: '1-2', count: 30, sizeBytes: 10.1 * TB },
+    { bucket: '2-5', count: 22, sizeBytes: 7.4 * TB },
+    { bucket: '5-10', count: 9, sizeBytes: 4.2 * TB },
+    { bucket: '10+', count: 5, sizeBytes: 2.9 * TB }
+  ],
+  ratioNullCount: 20,
+  slackers: [
+    { hash: 'demo0004', name: 'Demo 白嫖大片 A', sizeBytes: 210 * GB, ratio: 0.08 },
+    { hash: 'demo0005', name: 'Demo 白嫖剧集 B', sizeBytes: 168 * GB, ratio: 0.21 },
+    { hash: 'demo0006', name: 'Demo 摸鱼包 C', sizeBytes: 96 * GB, ratio: 0.42 }
+  ],
+  auxiliary: {
+    totalTorrents: 128,
+    crossSeedCount: 46,
+    crossSeedRate: 46 / 128,
+    top10: [
+      { hash: 'demo0007', name: 'Demo 辅种王（8 站辅种）', auxiliarySeedCount: 8, sizeBytes: 58 * GB },
+      { hash: 'demo0008', name: 'Demo 辅种亚军（5 站辅种）', auxiliarySeedCount: 5, sizeBytes: 41 * GB }
+    ]
+  }
+}
+
+export const DEMO_REPORT_TRACKERS: ReportsTrackersData = {
+  sites: [
+    { host: 'hd-alpha.example.invalid', count: 58, sizeBytes: 18.2 * TB },
+    { host: 'hd-beta.example.invalid', count: 40, sizeBytes: 12.6 * TB },
+    { host: 'pt-gamma.example.invalid', count: 22, sizeBytes: 6.8 * TB }
+  ],
+  health: [
+    { host: 'hd-alpha.example.invalid', errorRate: 0.03, affectedCount: 2 },
+    { host: 'hd-beta.example.invalid', errorRate: 0.18, affectedCount: 7 },
+    { host: 'pt-gamma.example.invalid', errorRate: 0.62, affectedCount: 14 }
+  ],
+  supplyDemand: [
+    { host: 'hd-alpha.example.invalid', avgSeeders: 86.4, avgLeechers: 12.2, avgDownloads: 4210.5, count: 58 },
+    { host: 'hd-beta.example.invalid', avgSeeders: 44.8, avgLeechers: 6.9, avgDownloads: 1832.0, count: 40 },
+    { host: 'pt-gamma.example.invalid', avgSeeders: 9.6, avgLeechers: 2.1, avgDownloads: 355.0, count: 22 }
+  ]
+}
+
+const DEMO_BADGES: BadgesSummary = {
+  uploadedBytes: 14.6 * TB,
+  currentTier: 'gold',
+  nextTier: 'platinum',
+  nextTierAtTB: 50,
+  equivalents: { movies: 1792, blurays: 358, tvSeasons: 478 }
+}
+
+const DEMO_GUARDIAN: GuardianSummary = {
+  fireCount: 7,
+  totalConsidered: 96,
+  excludedCount: 32,
+  top10: [
+    { hash: 'demo0009', name: 'Demo 独苗火种（1 seeder）', sizeBytes: 22 * GB, minSeeders: 1 },
+    { hash: 'demo0010', name: 'Demo 双苗火种（2 seeder）', sizeBytes: 18 * GB, minSeeders: 2 }
+  ]
+}
+
+const DEMO_SHAME: RatioRankItem[] = [
+  { hash: 'demo0004', name: 'Demo 白嫖大片 A', ratio: 0.08, sizeBytes: 210 * GB },
+  { hash: 'demo0005', name: 'Demo 白嫖剧集 B', ratio: 0.21, sizeBytes: 168 * GB }
+]
+
+const DEMO_PRIDE: RatioRankItem[] = [
+  { hash: 'demo0011', name: 'Demo 慈善标兵 A', ratio: 168.4, sizeBytes: 42 * GB },
+  { hash: 'demo0012', name: 'Demo 慈善标兵 B', ratio: 96.2, sizeBytes: 88 * GB }
+]
+
+export const DEMO_REPORT_FUN_SUMMARY: ReportsFunSummaryData = {
+  guardian: DEMO_GUARDIAN,
+  badges: DEMO_BADGES,
+  shame: DEMO_SHAME,
+  pride: DEMO_PRIDE
+}
+
+/** 年度报告：年份参数化静态模板（2024–当前年均可呈现，无数据年份给零值形态） */
+export function demoReportsYearly(year: number): ReportsFunYearlyData {
+  const has = year >= 2024 && year <= 2026
+  return {
+    year,
+    yearAdded: has ? { count: 36 + (2026 - year) * 12, sizeBytes: (14.2 - (2026 - year) * 3.6) * TB } : { count: 0, sizeBytes: 0 },
+    busiestMonth: has ? { key: `${year}-08`, count: 14 } : null,
+    busiestDay: has ? { key: `${year}-08-16`, count: 5 } : null,
+    topSite: has ? { host: 'hd-alpha.example.invalid', sizeBytes: 5.8 * TB } : null,
+    elder: has
+      ? { hash: 'demo0013', name: 'Demo 元老种（开服第一播）', addedDate: `${year}-01-12 09:20:00`, seedingDays: 300 + (2026 - year) * 365 }
+      : null,
+    fireCount: has ? 7 : 0,
+    uploadEstimate: DEMO_BADGES
+  }
+}
+
+/** 速度历史假曲线：24h 纯分钟级采样太密，取 15 分钟粒度（96 点）；7d/30d hourly */
+export function demoReportsSpeedHistory(range: SpeedRange, downloaderId?: string): SpeedHistory {
+  const now = Date.now()
+  const stepMs = range === '24h' ? 15 * 60 * 1000 : 60 * 60 * 1000
+  const count = range === '24h' ? 96 : range === '7d' ? 168 : 720
+  const series = [
+    { id: 'demo-dl-001', name: 'Demo qB 主力', baseDown: 14, baseUp: 38 },
+    { id: 'demo-dl-002', name: 'Demo TR 辅种', baseDown: 4, baseUp: 12 }
+  ]
+    .filter(item => !downloaderId || item.id === downloaderId)
+    .map(item => ({
+      downloaderId: item.id,
+      nickname: item.name,
+      removed: false,
+      points: Array.from({ length: count }, (_, i) => {
+        const t = i / count
+        // 白天高峰 / 夜间低谷的双峰曲线（demo 观感）
+        const wave = 0.55 + 0.45 * Math.sin(t * Math.PI * 4)
+        return {
+          ts: new Date(now - (count - i) * stepMs).toISOString().slice(0, 19).replace('T', ' '),
+          downloadSpeed: Math.round(item.baseDown * wave * 1024 * 1024),
+          uploadSpeed: Math.round(item.baseUp * wave * 1024 * 1024),
+          online: true
+        }
+      })
+    }))
+  return { range, series, samplingActive: true, firstSampleAt: new Date(now - 30 * 86400 * 1000).toISOString().slice(0, 19).replace('T', ' ') }
+}
+
+/** Demo trends 视图数据（period 仅影响键形：week 形态由 month 键演示性重排） */
+export function demoReportsTrends(period: TrendsPeriod, limit: number): ReportsTrendsData {
+  const added = period === 'week' ? DEMO_REPORT_ADDED.map(row => ({ ...row, key: row.key.replace(/^(\d{4})-(\d{2})$/, (_, y: string, m: string) => `${y}-${String(Math.floor(Number(m) / 4)).padStart(2, '0')}`) })) : DEMO_REPORT_ADDED
+  return {
+    added: added.slice(-limit),
+    completed: DEMO_REPORT_COMPLETED.slice(-limit),
+    ageBuckets: DEMO_REPORT_AGE_BUCKETS,
+    speedHistory: demoReportsSpeedHistory('24h')
+  }
+}

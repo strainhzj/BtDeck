@@ -31,7 +31,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|------------|
-| 图表封装 echarts | `EChart.vue` | echarts@5.5.1 精确钉版（--save-exact，降级阶梯 5.4.1/5.3.3）按需+懒加载封装（class 风格 @Component，与 query-templates 同款）：echarts/core + Bar/Line/Pie/Scatter + Grid/Tooltip/Legend/DataZoom/Title + CanvasRenderer 全部动态 import 且统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty；Props：option/height/loading |
+| 图表封装 echarts | `EChart.vue` | echarts@5.5.1 精确钉版按需+懒加载封装（class 风格 @Component）：echarts/core + **深路径按需**（echarts/lib/chart/{bar,line,pie,scatter} + lib/component/{grid,tooltip,legend,dataZoom,title} + installCanvasRenderer 显式 use——sideEffects 白名单致命名空间入口 339KB gz，深路径修复后 199.3KB gz 达标）统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty；Props：option/height/loading |
 | 图表封装单测 echarts-test | `__tests__/EChart.spec.ts` | 7 例：动态 import 生命周期（竞态/ disposed）/watch 浅比较契约（新数组引用必重渲染）/ResizeObserver 自适应与销毁断开/空态插槽；坑位——jest.mock 工厂禁引用外层变量（句柄经 globalThis.__mocks 存活）、组件模块级 promise 缓存逐例 resetModules 后 require 重取、类字段 jest.fn 不可 spyOn（RO stub 改原型方法） |
 
 #### 顶层 + 单件目录

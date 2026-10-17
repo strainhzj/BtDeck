@@ -28,7 +28,7 @@
 - **后台轮询**：`periodic_check`(L1396)、`downloader_status_polling_task`(L1419)
 - **状态更新**：`update_torrent_stats_smart`(L1706)、`_get_qbittorrent_status`(L1918)、`_get_transmission_status`(L1970)
 
-被 `app/startup/lifecycle.py:404` 通过 `asyncio.create_task(startup_event(app))` 启动。
+被 `app/startup/lifecycle.py:541`（2026-09-25 重测）通过 `asyncio.create_task(startup_event(app))` 启动。
 
 ### torrents/ — 种子领域（9 个文件，含 `__init__.py`）
 

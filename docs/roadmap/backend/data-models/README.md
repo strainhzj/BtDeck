@@ -16,6 +16,7 @@
 | 下载器设置 model downloader-setting | `downloader_settings.py` | `downloader_settings` + `SpeedUnitEnum` |
 | 枚举 model enums | `enums.py` | `SpeedUnitEnum`、`ScheduleDayOfWeekEnum`（⚠ 与 downloader_settings.py 重复定义） |
 | 通知模型 model notification | `notification.py` | `notification`：系统单向通知信箱 |
+| 速度采样模型 model speed-sample ✨2026-09-24 | `speed_sample.py` | `downloader_speed_sample`（原始采样，idx_speed_sample_dl_time）+ `downloader_speed_hourly`（uq_speed_hourly_dl_hour）：速度 bytes/s、online 只认 is_online（statistics-reports W1） |
 | 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result`（后台状态、增量统计、超量提醒与兼容复核字段）/ `orphan_file`（稳定明细）/ `orphan_current_candidate`（`current_detail_id` 指针）/ `orphan_operation_lease` |
 | 孤儿清理任务 model orphan-purge | `orphan_purge_job.py` | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
 | 副本预扫描结果 model orphan-hardlink-copy ✨2026-08-15 | `orphan_hardlink_copy.py` | `orphan_hardlink_copy_result`（按 `(device_id, inode_id)` 唯一，device_id 字符串适配 Windows 无符号卷号）/ `orphan_hardlink_scan_state`（单行 keyset 游标） |

@@ -1,6 +1,6 @@
 # 统计数据与报表（Statistics & Reports）
 
-> **状态**：v4——已过两轮三路子代理独立审查 + 用户审批修订（2026-09-24）；v4 合入审批四项：在线标记改 is_online、采样基准改 DB 有效清单、backup tracker 保留行置 NULL、在线率口径改「采样期间」，待实施
+> **状态**：✅ 已交付（2026-09-24~25，W1-W7 全量落地，feature `statistics-reports-2026-09` 终态 done，分支 feature/reports 提交 4a17a50→81d9b5e 共 6 笔；v4 审批四项均已实施；实测偏差记录：锁定 TS 实为 4.9.5、echarts 摇树根修深路径 199.3KB gz、i18n-leftover-guard 提取器行内块注释 bug 根修——详 progress.md 2026-09-24/25 各条）
 > **工作分支**：`feature/reports`（worktree `/srv/workspaces/BtDeck-reports`，基于 dev@521b073）
 > **实现清单**：`feature_list.json` 的 `statistics-reports-2026-09`（**W1 开工前先建目**；W7 仅补 evidence 与 status）
 > **本文档为唯一实施依据，实现会话开始前须按根 AGENTS.md 启动工作流读完约束文档**

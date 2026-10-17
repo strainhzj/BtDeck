@@ -1,4 +1,12 @@
-import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE, DEMO_TIME } from '@/demo/fixtures'
+import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE, DEMO_TIME ,
+  DEMO_REPORT_FUN_SUMMARY,
+  DEMO_REPORT_OVERVIEW,
+  DEMO_REPORT_SEEDING,
+  DEMO_REPORT_TRACKERS,
+  demoReportsSpeedHistory,
+  demoReportsTrends,
+  demoReportsYearly
+} from '@/demo/fixtures'
 import {
   DemoActivity,
   DemoAuditLog,
@@ -30,6 +38,7 @@ import {
   DemoTrackerMessage,
   DemoTrackerReannounceConfig
 } from '@/demo/types'
+import { ReportsFunSummaryData, ReportsFunYearlyData, ReportsOverviewData, ReportsSeedingData, ReportsTrendsData, ReportsTrackersData, SpeedHistory, SpeedRange, TrendsPeriod } from '@/types/reports'
 
 export interface DemoPageParams {
   page?: number
@@ -227,6 +236,38 @@ export class DemoStore {
 
   public snapshot(): DemoStoreState {
     return clone(this.state)
+  }
+
+  // ==================== 统计报表（statistics-reports W7） ====================
+  // 报表聚合口径属后端域逻辑，Demo 侧不做二次实现：直接返回静态 fixture
+  // （速度历史/年度报告为参数化生成；见 fixtures/index.ts 尾部口径注释）。
+
+  public getReportsOverview(): ReportsOverviewData {
+    return DEMO_REPORT_OVERVIEW
+  }
+
+  public getReportsTrends(period: TrendsPeriod, limit: number): ReportsTrendsData {
+    return demoReportsTrends(period, limit)
+  }
+
+  public getReportsSeeding(): ReportsSeedingData {
+    return DEMO_REPORT_SEEDING
+  }
+
+  public getReportsTrackers(): ReportsTrackersData {
+    return DEMO_REPORT_TRACKERS
+  }
+
+  public getReportsFunSummary(): ReportsFunSummaryData {
+    return DEMO_REPORT_FUN_SUMMARY
+  }
+
+  public getReportsFunYearly(year: number): ReportsFunYearlyData {
+    return demoReportsYearly(year)
+  }
+
+  public getReportsSpeedHistory(range: SpeedRange, downloaderId?: string): SpeedHistory {
+    return demoReportsSpeedHistory(range, downloaderId)
   }
 
   public getDashboardData(): DemoDashboardData {

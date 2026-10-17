@@ -40,7 +40,8 @@ const uiModeRedirectPath = (to: Route): string | null => {
       to.path === '/tasks' || to.path.startsWith('/tasks/') ||
       to.path === '/orphan-files' || to.path.startsWith('/orphan-files/') ||
       to.path === '/settings' || to.path.startsWith('/settings/') ||
-      to.path === '/tracker' || to.path === '/tracker/keywords-board' || to.path === '/tracker/keywords-search'
+      to.path === '/tracker' || to.path === '/tracker/keywords-board' || to.path === '/tracker/keywords-search' ||
+      to.path === '/statistics' || to.path.startsWith('/statistics/')
     ) {
       return toMobilePath(to.path)
     }

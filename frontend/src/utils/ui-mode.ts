@@ -79,6 +79,8 @@ export function toMobilePath(path: string): string {
   if (path.startsWith('/orphan-files')) return '/m/orphan-files'
   // RSS 统一管理（Phase 2）：/downloader/rss 整页移动化；其余 /downloader 路径保留桌面
   if (path.startsWith('/downloader/rss')) return '/m/rss'
+  // 统计报表（statistics-reports W5）：移动端统计页另立项，守卫兑底落仪表盘
+  if (path.startsWith('/statistics')) return '/m/dashboard'
   return '/m/dashboard'
 }
 

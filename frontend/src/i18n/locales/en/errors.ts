@@ -30,6 +30,8 @@ export const errors = {
     checkSettings: 'Network connection failed. Please check your network settings.',
     generic: 'Network error'
   },
+  /** Lazy chunk load failure (router.onError → deployment-recovery fallback; exposed by statistics-reports W6 audit) */
+  chunkLoadFailed: 'Failed to load page resources. Please refresh and retry.',
   /** HTTP status fallbacks (formatters.extractErrorMessage, leftover fix) */
   http: {
     '400': 'Bad request',

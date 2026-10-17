@@ -444,7 +444,11 @@ function findChineseViolations(file: string): string[] {
     let code = line.replace(/\/\/.*$/, '')
     // 行内 HTML 注释（含跨 `<a <!-- --> b` 的单行形态）整段剔除
     code = code.replace(/<!--[\s\S]*?-->/g, '')
-    // 行内自闭块注释剔除；行尾开启的块注释则截断并进入块注释态
+    // 行内块注释：先剔同行闭合形态（`import(/* webpackChunkName */ ...)`）——
+    // 旧实现只要行含 `/*` 就置 inBlockComment=true 且等待「下一行」的 `*/`，
+    // 导致懒加载 import 之后的文件尾被静默跳过（router.ts onError 预存漏译
+    // 因此漏拦，statistics-reports W6 实测暴露）；仅行尾开启的未闭合注释进入块注释态
+    code = code.replace(/\/\*[\s\S]*?\*\//g, '')
     const blockOpen = code.indexOf('/*')
     if (blockOpen >= 0) {
       code = code.slice(0, blockOpen)

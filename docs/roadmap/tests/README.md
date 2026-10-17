@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（270 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（131 套，spec 文件 134 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 13；✨2026-09-25 统计报表批新增 test_speed_sampler 13 例 + test_tracker_count_activation 13 例 + test_reports_{overview,trends,seeding,trackers,fun} 51 例（共享 reports_fixtures.py 基建）+ EChart.spec 7 例（实测校准 262→270/130→131）；✨2026-09-24 RSS Phase 2 批新增 test_rss_rules_mode 21 例 + test_rss_qb_proxy 20 例 + test_rss_refresh_task 10 例 + rss-phase2-panels 14 例 + rss-manager-entry 8 例 + demo-request 扩 6 例；Phase 1 批 test_rss_subscriptions 20 例 + rss-subscription-tab 7 例 + rss-tab-integration 3 例）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1984 例（2026-10-09 合并后实测，echarts 依赖装齐后 EChart.spec 计入））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查

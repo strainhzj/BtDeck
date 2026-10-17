@@ -16,6 +16,10 @@ export const statistics = {
     count: '数量',
     sizeBytes: '体积',
     torrentCount: '种子数',
+    name: '名称',
+    offline: '离线',
+    byCount: '按数量',
+    bySize: '按体积',
     loadFailed: '统计数据加载失败',
     refresh: '刷新'
   },
@@ -32,6 +36,8 @@ export const statistics = {
     paths: '目录占用排行',
     downloaders: '下载器对比',
     liveSpeed: '实时速度',
+    downloadSpeed: '下行',
+    uploadSpeed: '上行',
     uncategorized: '未分类',
     removedDownloader: '已移除',
     buckets: {
@@ -61,6 +67,7 @@ export const statistics = {
   seeding: {
     title: '做种',
     ratioDist: '分享率分布',
+    ratio: '分享率',
     slackers: '摸鱼象限',
     auxiliary: '辅种网络',
     crossSeedRate: '辅种率',
@@ -82,6 +89,12 @@ export const statistics = {
     title: '趣味报告',
     battleReport: '战报',
     yearlyReport: '年度报告',
+    close: '关闭',
+    prev: '上一页',
+    next: '下一页',
+    slideOf: '第 {i} / {n} 页',
+    ending: '感谢做种，明年再见',
+    nextTier: '距下一档（{tier}）还需 {gap} TB',
     guardian: '火种守护者',
     fireCount: '火种种子',
     badges: '上传量勋章',
@@ -100,6 +113,7 @@ export const statistics = {
       tvSeasons: '约 {n} 季剧集'
     },
     yearly: {
+      opening: '{year} 年种库年度报告',
       yearAdded: '今年添加了 {count} 个种子，共 {size}',
       busiestMonth: '最忙的月份是 {key}（新增 {count} 个）',
       busiestDay: '最忙的一天是 {key}（新增 {count} 个）',
