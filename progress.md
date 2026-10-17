@@ -1,3 +1,13 @@
+## 2026-10-17：报表文件优先口径（文件>种子，statistics-reports 追加 W8，全绿未提交）
+
+- **范围（实现假设经用户三轮确认后实施）**：用户决策——报表数据主导优先顺序文件>种子，辅种种子（名称、大小相同仅 tracker 不同）不计入报表。三点拍板：a) 五桶状态按实际种子，分享率双口径（实际种子 + 按文件合计 Σratio）；b) 回收站体积站内去重（与库存互不去重）；c) 主种=added_date 最早者（tie-break info_id 升序）。分组键与 auxiliary_seed_count_service 同口径 (name, size)，无效键（name 空白/size NULL）独立成组。
+- **后端（report_service.py 856→979 行）**：新助手 _file_group_key/_group_rows_by_file/_representative_of/_dedupe_by_file（L161-209）；总览 totals/largest/分类/标签/目录按文件、A5 数量体积按主种所在下载器（仅持辅种副本的下载器不展示）而 statusDist 按实际种子；趋势三组按主种日期；Tracker 站点构成/健康/冷热仅统计主种 tracker 行（D14 旧『辅种跨站重复计体积』脚注作废，单主种挂多站仍各计一次）；年度新增/最忙/站点/元老按文件（元老=组内任一副本做种、日期取主种）；火种按文件组聚合全部副本 tracker 取 min（与单种子多 tracker 口径一致：任一副本任一站点≤2 即预警）；get_seeding 新增 ratioBucketsByFile/ratioNullCountByFile（同 size 组 Σratio=合计上传/体积）；上传量估算与 C12 辅种网络保持实际种子（辅种副本上传为真实流量不去重）；_recycle_bin_size 改 Python 去重求和。响应仅 seeding 加两字段，其余结构不变。
+- **前端**：types/reports.ts ReportsSeedingData 扩双口径两字段；做种页 C10 双口径切换（el-radio-button 按种子/按文件 + currentRatioRows/currentRatioNullCount 派生）；overview/seeding 口径脚注扩 fileFirst/statusByTorrent/ratioDual；i18n statistics 双语 seeding.byTorrent/byFile + calibers 三新键 + crossSiteSize/uploadEstimate 文案更新；demo fixtures DEMO_REPORT_SEEDING 补字段（三套 i18n 域 spec 连坐绿）。
+- **测试与门禁**：后端报表 5 文件 **70 passed**（新增文件口径用例 19：overview 7/trends 2/seeding 4/trackers 2/fun 4；trends 4 夹具去同键化 week/limit/completed/age）；mypy 0 错、black/flake8 净。前端 lint 净；统计域+parity 6 套 33 例；**全量 Jest 141 套 1985 例**（首轮 1 例已知时序 flake，复跑两轮 141/141 全绿）。
+- **文档**：feature_list statistics-reports 追加 W8（done+evidence）；roadmap 3 文件（根 README/services 行/views 行）；**附带修复 docs/roadmap/README.md 五处 11381b2 遗留 merge 冲突标记**（时间序并集解决，git show HEAD 证实标记已提交）。
+- **坑（2 条）**：①ratio 列有 CHECK 非负约束，负值哨兵场景只能靠 NULL 表达（旧测试注释的『负值并入 NULL』实际不可达）；②add_torrent 夹具默认 name='t'/size=100 同键，新口径下多行会合并——趋势类测试必须显式差异化 name/size。
+- **待办**：Git 提交待用户指示；真实环境（unraid）部署后观察总量下降幅度是否符合预期。
+
 ## 2026-10-09：添加种子弹窗美化 + 全自定义组件化（feature add-torrent-dialog-custom-components-2026-10-09，全绿未提交）
 
 - **范围（实现假设经用户确认后实施，四点确认：拖拽上传做/警示卡升级/徽章状态点机会渲染/其他弹窗不迁移）**：添加种子弹窗（桌面 index/TraditionalView + 移动 torrents.vue 三端共用）从 Element 混搭（el-form 冗余壳/el-select×2/el-autocomplete/el-checkbox/原生 select）重写为全自定义组件，视觉令牌化（修硬编码色，三主题自动正确），emoji 全换 Lucide（新注册 plus-circle/file/loader-2）。

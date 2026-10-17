@@ -1,3 +1,21 @@
+## 2026-10-17 交接：报表文件优先口径（statistics-reports 追加 W8，全绿未提交）
+
+### 已完成（用户三轮确认：文件>种子总则 + 三点拍板 a/b/c）
+
+- **口径模型**：同 (name,size) 辅种组只计主种（added_date 最早、NULL 最后、tie-break info_id 升序；无效键行独立成组——与 auxiliary_seed_count_service 同键）；数量/体积类聚合按文件，五桶按实际种子，分享率双口径（ratioBuckets 实际 + ratioBucketsByFile 组内 Σratio），上传量估算与 C12 辅种网络按实际种子（真实流量不去重），火种按组聚合全部副本 tracker 取 min，回收站体积站内去重。
+- **后端**：report_service.py（856→979 行）四助手 + 六聚合改造；响应仅 seeding 加 ratioBucketsByFile/ratioNullCountByFile 两字段。报表 5 测试文件 70 passed（新增 19 例 + trends 4 夹具去同键化）；mypy/black/flake8 净。
+- **前端**：types 扩双口径字段；做种页 C10 按种子/按文件切换；overview/seeding 脚注 + i18n 双语（seeding.byTorrent/byFile + calibers.fileFirst/statusByTorrent/ratioDual + crossSiteSize/uploadEstimate 文案更新）；demo fixtures 补字段。lint 净；统计域+parity 33 例；全量 Jest 141 套 1985 例（首轮 1 例已知 flake，复跑两轮全绿）。
+- **附带修复**：docs/roadmap/README.md 五处 11381b2 遗留 merge 冲突标记（git 证实已提交在 HEAD）——时间序并集解决 + 实测计数刷新（272 test 文件/141 套/spec 144）。
+- **文档**：feature_list W8 任务（done+evidence）；roadmap 3 文件；progress 置顶；本交接。
+
+### 待办
+
+- Git 提交待用户指示（建议：feat 全栈口径批 + docs 分离或合并均可）；unraid 部署后观察总量下降幅度。
+
+### 坑位（下会话注意）
+
+- ratio 列有 CHECK 非负约束，『负值 ratio 并入 NULL 口径』实际不可达（只能 NULL）；add_torrent 夹具默认 name='t'/size=100 同键——新口径下多行会被文件去重合并，夹具必须显式差异化 name/size；做种页测试切口径直接设 `(wrapper.vm as any).ratioCaliber = 'file'`（class-component 私有字段 any 中转，Jest 惯例）。
+
 ## 2026-10-09 交接：添加种子弹窗美化 + 全自定义组件化（feature add-torrent-dialog-custom-components-2026-10-09，全绿未提交）
 
 ### 已完成

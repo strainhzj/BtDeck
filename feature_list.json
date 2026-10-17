@@ -7385,6 +7385,29 @@
             "frontend/src/demo/types.ts"
           ],
           "evidence": "feature/reports 81d9b5e（W7 demo 四件套 + roadmap 收口，终态）；2026-10-09 随 W5-W7 合入 dev（merge 11381b2）：后端 pytest 5478 passed/18 skipped + mypy/black/flake8 净，前端 Jest 141 套 1984 例 + typecheck/lint/build 绿（echarts chunk 199.89KB gz < 200KB），init.sh exit=0"
+        },
+        {
+          "id": "statistics-reports-w8",
+          "name": "W8 报表文件优先口径（文件>种子）",
+          "description": "用户决策（2026-10-17）：报表数量/体积类聚合改文件口径——同 (name,size) 辅种组只计主种（added_date 最早、NULL 最后、tie-break info_id 升序；无效键行独立成组，与 auxiliary_seed_count_service 同键）。范围：总览 totals/largest/分类/标签/目录/下载器（数量体积按文件，五桶与 A5 statusDist 按实际种子）；趋势三组按主种日期；Tracker 站点构成/健康/冷热仅统计主种 tracker 行（D14 旧'辅种跨站重复计体积'口径作废）；年度新增/最忙/站点/元老按文件（元老=组内任一副本做种、日期取主种）；火种按文件组聚合全部副本 tracker 取 min（与单种子多 tracker 口径一致）；分享率双口径（ratioBuckets 实际种子 + ratioBucketsByFile 组内 Σratio + ratioNullCountByFile）；上传量估算与 C12 辅种网络保持实际种子（真实流量/行为不去重）；回收站体积站内按 name+size 去重、与库存互不去重。响应仅 seeding 加两字段，其余结构不变。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/report_service.py",
+            "backend/tests/api/test_reports_overview.py",
+            "backend/tests/api/test_reports_trends.py",
+            "backend/tests/api/test_reports_seeding.py",
+            "backend/tests/api/test_reports_trackers.py",
+            "backend/tests/api/test_reports_fun.py",
+            "frontend/src/types/reports.ts",
+            "frontend/src/views/statistics/seeding/index.vue",
+            "frontend/src/views/statistics/overview/index.vue",
+            "frontend/src/i18n/locales/zh-CN/statistics.ts",
+            "frontend/src/i18n/locales/en/statistics.ts",
+            "frontend/src/views/statistics/__tests__/seeding.spec.ts",
+            "frontend/src/demo/fixtures/index.ts"
+          ],
+          "evidence": "后端：报表 5 测试文件 70 passed（新增文件口径用例 14：overview 7 + seeding 4 + trackers 2 + fun 4 + trends 2 实为 19 例含夹具修正）；trends 4 夹具去同键化（week/limit/completed/age）；mypy report_service 0 错、black 净、flake8 净。前端：npm run lint 净；统计域+parity Jest 6 套 33 例；全量 Jest 141 套 1985 例（首轮 1 例已知时序 flake，复跑两轮 141/141 全绿）；demo fixtures DEMO_REPORT_SEEDING 补双口径字段。附带修复 docs/roadmap/README.md 五处 11381b2 遗留 merge 冲突标记（时间序并集解决）。"
         }
       ]
     },
