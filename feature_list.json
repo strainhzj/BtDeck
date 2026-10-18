@@ -7527,7 +7527,7 @@
             "frontend/src/components/common/__tests__/FormAutocomplete.spec.ts",
             "frontend/src/components/common/__tests__/FormCheckbox.spec.ts"
           ],
-          "evidence": "4 spec 33 例全绿：壳三关闭路径（钮/蒙层 click.self/ESC）+ 开关透传 + body 滚动锁（叠弹计数）+ footer 插槽出现性 + ≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删（v-model 回写经宿主组件验证）、filterable 过滤+Enter、键盘导航循环、外部点击收起（文档级 mousedown 捕获）、invalid 透传、富选项行徽章/状态点；autocomplete 输入透传/聚焦点击展开/Enter 选中/Esc 收起/初始无高亮（对齐 el-autocomplete）。jsdom 坑位：focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则类字段不进响应式 data、rAF 环境兜底。lint --max-warnings 0 净。；2026-10-18 微调：FormSelect/FormAutocomplete 列表滚动条换 _mixins.scss themed-scrollbar 主题化（style-resources-loader 全局注入；构建产物验证 data-v scoped 选择器产出）。"
+          "evidence": "4 spec 33 例全绿：壳三关闭路径（钮/蒙层 click.self/ESC）+ 开关透传 + body 滚动锁（叠弹计数）+ footer 插槽出现性 + ≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删（v-model 回写经宿主组件验证）、filterable 过滤+Enter、键盘导航循环、外部点击收起（文档级 mousedown 捕获）、invalid 透传、富选项行徽章/状态点；autocomplete 输入透传/聚焦点击展开/Enter 选中/Esc 收起/初始无高亮（对齐 el-autocomplete）。jsdom 坑位：focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则类字段不进响应式 data、rAF 环境兜底。lint --max-warnings 0 净。；2026-10-18 微调：FormSelect/FormAutocomplete 列表滚动条换 _mixins.scss themed-scrollbar 主题化（style-resources-loader 全局注入；构建产物验证 data-v scoped 选择器产出）。；同日修正：themed-scrollbar 滑块由 --color-border-primary（#E5E7EB，与全局 rgba(0,0,0,.2) 视觉无法区分致用户不可感知）改 rgba(var(--color-primary-rgb),.45)/hover .75 主题色着色，BaseDialog 弹窗主体滚动条同批接入 mixin(8px)——远端下发 CSS 实测 primary-rgb 规则生效（5e797ad）。"
         },
         {
           "id": "torrent-add-dialog-rewrite",

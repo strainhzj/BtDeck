@@ -8479,3 +8479,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **构建部署**：`build-and-export-images.sh --unraid root@192.168.5.51 /mnt/cache/appdata/docker/btdeck`（worker 子代理前台执行，~4m50s）——双镜像 profile 2 一次过无网络重试，导出 backend 120M / frontend 54M；单 SSH 会话上传 + compose 重建，双容器 healthy。
 - **远端验证**：/health/live（5001）status=alive，gitSha `1dc653a6d033…e2d3` = 本地 HEAD ✓，frontendManifestSha256 `a367728e…` = 构建输出 ✓；另实测下发 CSS chunk（8410.884dfb58.css）含 `form-select__list[data-v-30fa860c]::-webkit-scrollbar-thumb{background:var(--color-border-primary)…}` 与 form-autocomplete 同款规则——滚动条主题化已在生产生效。
 - **无害告警**：远端 compose version 字段 obsolete 警告、内核 swap limit 不支持，均不影响运行。
+
+## 2026-10-18（续二）：滚动条主题化修正——中性灰不可感知改主题色着色 + 二次部署
+
+- **根因**：上批 themed-scrollbar 滑块用 `--color-border-primary`（#E5E7EB），与被替换的全局通用样式 `rgba(0,0,0,0.2)` 同为褪色灰，视觉无法区分——用户在添加种子界面看不出任何变化；且弹窗主体（最显眼滚动面）未接入，仍走 BaseDialog 原"track bg-secondary + thumb border-primary"块状样式，更像默认滚动条。
+- **修正**：mixin 滑块改 `rgba(var(--color-primary-rgb), 0.45)`（hover 0.75），emerald #059669 / 橙 #EA580C / 石墨 #374151 三主题自适应（暗色为预留未启用，primary-rgb 主题作用域内有效）；BaseDialog `.modal-dialog` 弹窗主体滚动条接入 `@include themed-scrollbar(8px)`（弃原 4 条手写规则），与 FormSelect/FormAutocomplete 下拉列表（6px）同设计语言。
+- **验证**：lint/tsc 净、全量 Jest 141 套 1986 例绿、构建产物实测 `modal-dialog[data-v-dcd2bf28]` 与 `form-select__list`/`form-autocomplete__list` 滑块均 primary-rgb 规则；残留旧式滚动条规则属 torrents/index.vue 等手写 modal（非 BaseDialog，超本批范围）。
+- **部署**：5e797ad 推 origin dev；build-and-export + unraid 部署一次过（~4.5min，双容器 healthy，gitSha/frontendManifestSha256 `291c3a60…` 一致）；远端下发 CSS（torrents-traditional.94036032.css）实测弹窗主体 8px 透明轨道 + primary 圆角滑块、下拉 6px 同款——REMOTE_VERIFY_OK。
