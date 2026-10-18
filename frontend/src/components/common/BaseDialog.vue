@@ -163,6 +163,9 @@ export default class BaseDialog extends Vue {
   overflow-y: auto;
   box-shadow: var(--shadow-xl);
   animation: modalSlideIn 0.3s ease;
+
+  // 主题色滚动条：弹窗主体最显眼的滚动面，与下拉列表（themed-scrollbar 6px）同一设计语言
+  @include themed-scrollbar(8px);
 }
 
 @keyframes modalSlideIn {
@@ -243,27 +246,6 @@ export default class BaseDialog extends Vue {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-// ========================================
-// 滚动条样式
-// ========================================
-.modal-dialog::-webkit-scrollbar {
-  width: 8px;
-}
-
-.modal-dialog::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-sm);
-}
-
-.modal-dialog::-webkit-scrollbar-thumb {
-  background: var(--color-border-primary);
-  border-radius: var(--radius-sm);
-}
-
-.modal-dialog::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-quaternary);
 }
 
 // ========================================
