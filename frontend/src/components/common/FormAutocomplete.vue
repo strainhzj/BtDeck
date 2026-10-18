@@ -254,6 +254,9 @@ export default class FormAutocomplete extends mixins(FloatingDropdown) {
   padding: 4px;
   max-height: 264px;
   overflow-y: auto;
+
+  // 主题化滚动条：替换全局通用样式，与 FormSelect 下拉保持一致
+  @include themed-scrollbar;
 }
 
 .form-autocomplete__suggestion {

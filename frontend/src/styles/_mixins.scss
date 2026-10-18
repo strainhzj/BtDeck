@@ -6,3 +6,29 @@
     clear: both;
   }
 }
+
+/* 主题化滚动条：浮层/内嵌滚动区替换全局通用滚动条（styles/scrollbar.scss）用。
+   颜色全部走主题变量，三主题 + 暗色自适应；Chromium 走 ::-webkit-scrollbar 伪元素，
+   Firefox 走 scrollbar-width/color 标准属性（无法表达 hover，悬停色仅 Chromium 生效）。 */
+@mixin themed-scrollbar($width: 6px) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-primary) transparent;
+
+  &::-webkit-scrollbar {
+    width: $width;
+    height: $width;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-border-primary);
+    border-radius: var(--radius-full);
+
+    &:hover {
+      background: var(--color-text-quaternary);
+    }
+  }
+}

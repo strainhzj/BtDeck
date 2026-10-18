@@ -125,19 +125,11 @@
       <div class="form-error-tip" v-if="formErrors.save_path">{{ formErrors.save_path }}</div>
     </div>
 
-    <!-- 跳过校验：保存路径已有完整数据（辅种/续种）时跳过 qBittorrent 本地校验，
-         避免进入 CheckingDL 直接做种；数据不完整时勾选会被当作 100% 完成 -->
+    <!-- 跳过校验：默认关；仅保存路径已有完整数据（辅种/续种）时手动勾选 -->
     <div class="form-group">
-      <label class="form-label">{{ $t('torrent.addDialog.checkPolicy') }}</label>
-      <div class="policy-card" :class="{'is-active': form.skip_hash_check}">
-        <div class="policy-card__head">
-          <LucideIcon name="alert-triangle" :size="16" class="policy-card__icon" />
-          <FormCheckbox v-model="form.skip_hash_check" class="policy-card__checkbox">
-            {{ $t('torrent.addDialog.skipCheck') }}
-          </FormCheckbox>
-        </div>
-        <p class="policy-card__hint">{{ $t('torrent.addDialog.skipCheckHint') }}</p>
-      </div>
+      <FormCheckbox v-model="form.skip_hash_check">
+        {{ $t('torrent.addDialog.skipCheck') }}
+      </FormCheckbox>
     </div>
 
     <!-- 分类 -->
@@ -263,7 +255,7 @@ export default class TorrentAddDialog extends Vue {
     save_path: '',
     category: '',
     tags: [] as string[],
-    /** 跳过校验（默认关：仅保存路径已有完整数据时手动勾选，见表单提示） */
+    /** 跳过校验（默认关：仅保存路径已有完整数据（辅种/续种）时手动勾选） */
     skip_hash_check: false
   }
 
@@ -881,40 +873,6 @@ export default class TorrentAddDialog extends Vue {
     color: var(--color-text-tertiary);
     font-size: 11px;
   }
-}
-
-// ========================================
-// 校验策略警示卡
-// ========================================
-.policy-card {
-  border: 1px solid var(--color-warning);
-  background: var(--color-warning-lightest);
-  border-radius: var(--radius-md);
-  padding: 12px 14px;
-  transition: all var(--transition-fast);
-
-  &.is-active {
-    border-color: var(--color-warning-dark);
-    background: var(--color-warning-light);
-  }
-}
-
-.policy-card__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.policy-card__icon {
-  flex-shrink: 0;
-  color: var(--color-warning-dark);
-}
-
-.policy-card__hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
 }
 
 // ========================================
