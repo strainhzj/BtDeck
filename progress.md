@@ -8472,3 +8472,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：tsc 0 错、eslint 净、目标 6 spec（60 例）+ 全量 Jest 141 套 1986 例全绿；`npm run build` 成功（worker 子代理执行），产物 CSS 实测 `form-select__list[data-v-*]::-webkit-scrollbar*` 与 `form-autocomplete__list[data-v-*]` 四组规则均产出；./init.sh exit=0。
 - **追踪**：roadmap 三处同步（views/README TorrentAddDialog 行、components-layout/README FormSelect/FormAutocomplete 行）+ feature_list 两 task evidence 回填。
 - **未提交**：按约定 Git 提交仅在用户要求时执行。
+
+## 2026-10-18（续）：验收微调批提交 + unraid 部署
+
+- **提交与推送**：95929b2（feat(frontend) 验收微调）+ 1dc653a（docs 批追踪），推 origin dev（41c7137..1dc653a，一次过）。
+- **构建部署**：`build-and-export-images.sh --unraid root@192.168.5.51 /mnt/cache/appdata/docker/btdeck`（worker 子代理前台执行，~4m50s）——双镜像 profile 2 一次过无网络重试，导出 backend 120M / frontend 54M；单 SSH 会话上传 + compose 重建，双容器 healthy。
+- **远端验证**：/health/live（5001）status=alive，gitSha `1dc653a6d033…e2d3` = 本地 HEAD ✓，frontendManifestSha256 `a367728e…` = 构建输出 ✓；另实测下发 CSS chunk（8410.884dfb58.css）含 `form-select__list[data-v-30fa860c]::-webkit-scrollbar-thumb{background:var(--color-border-primary)…}` 与 form-autocomplete 同款规则——滚动条主题化已在生产生效。
+- **无害告警**：远端 compose version 字段 obsolete 警告、内核 swap limit 不支持，均不影响运行。
