@@ -160,12 +160,13 @@ export default class BaseDialog extends Vue {
   border-radius: var(--radius-lg);
   width: 90%;
   max-height: 85vh;
-  overflow-y: auto;
+  // 头/体/底三段纵列：头部与底部固定，仅主体滚动——滚动条收进表单区
+  // （不再从渐变头贯穿到 footer 贴边，避免“页面一块、滚动条另一块”的割裂感）
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-xl);
   animation: modalSlideIn 0.3s ease;
-
-  // 主题色滚动条：弹窗主体最显眼的滚动面，与下拉列表（themed-scrollbar 6px）同一设计语言
-  @include themed-scrollbar(8px);
 }
 
 @keyframes modalSlideIn {
@@ -188,6 +189,8 @@ export default class BaseDialog extends Vue {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  // 固定头部：不随主体内容滚动
+  flex-shrink: 0;
 }
 
 .modal-header__title {
@@ -231,6 +234,13 @@ export default class BaseDialog extends Vue {
 
 .modal-body {
   padding: 16px;
+  // 唯一滚动区：弹窗高度受限时仅表单主体滚动，滚动条落在内容区右侧内缩位置
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+
+  // 主题色滚动条随滚动区收敛，与下拉列表（themed-scrollbar 6px）同一设计语言
+  @include themed-scrollbar(6px);
 }
 
 .modal-footer {
@@ -239,6 +249,8 @@ export default class BaseDialog extends Vue {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  // 固定底部：操作钮始终可见，不随主体滚动
+  flex-shrink: 0;
 }
 
 .modal-footer-left,
