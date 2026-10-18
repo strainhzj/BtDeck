@@ -8503,3 +8503,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **变异验证**：sed 改坏 flex-direction: column → 结构契约即红（1 failed），还原后全绿——护栏拦截力实证。
 - **验证**：eslint/tsc 净；全量 Jest 141 套 **1991 例**全绿（1986+5）；npm run build 复核通过，产物 CSS 规则与已部署版本一致（注释剥离不影响 dist）→ 无需重新部署。
 - **roadmap 计数同步**：tests/README（全量 1991 + 四 spec 行数 171/142/71/234）、perspectives/test-coverage（三 spec 行数+描述）、components-layout（4 组件 31 例实测校准，原 33 为漂移）。
+
+## 2026-10-19：移动端种子详情页速度单位修复
+
+- **反馈**：用户报告手机端显示种子速度时无论多少速度都显示 MB。
+- **验证**：全链路单位核查——后端 active-torrents（qB dlspeed/upspeed、TR rate_download/rate_upload）与 DB speed_samples 注释均为 bytes/s，前端 TS 类型同标注；移动端列表页（mobile/torrents.vue）与桌面全部视图复用 utils/formatters.ts formatSpeed（B/s 逐级换算）正确。唯独 mobile/torrent-detail.vue 私有 formatDetailSpeed 按"输入 KB/s"假设编写：`speed >= 1024` 即除以 1024 标 MB——任何 ≥1KB/s 速度（实际恒成立）一律显示 MB，KB 数值错标 MB（50KB/s→"50.00 MB/s"、2MB/s→"2048.00 MB/s"）。引入于 dc83f906（移动 M1）。
+- **修复**：formatDetailSpeed 复用全局 formatSpeed（仅保留详情页 0/空显示 '0 KB/s' 语义），import 补 formatSpeed；同步修正其 spec 两处固化错误行为的断言（102400 B/s→'100.00 KB/s'、1 B/s→'1.00 B/s'）。
+- **验证**：mobile-torrent-detail.spec 9/9 绿；npm run lint 通过。未提交（待用户要求）。
