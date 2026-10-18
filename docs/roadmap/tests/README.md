@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1986 例（2026-10-17 Jest 复测：141/141 套、1986/1986 例全部通过，exit=0；2026-10-09 合并后为 1984 例，W8-1 trends.spec 增例））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1991 例（2026-10-17 Jest 复测：141/141 套、1986/1986 例全部通过，exit=0；2026-10-09 合并后为 1984 例，W8-1 trends.spec 增例；✨2026-10-18 添加种子弹窗验收固化批 +5 例——BaseDialog 滚动结构整体化与主题色滚动条源码契约×2、FormSelect/FormAutocomplete 列表滚动条契约、跳过校验精简+i18n 双语契约，复测 1991/1991 绿））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -96,7 +96,7 @@ cd backend && pytest tests/api/               # API 层（89 个 test_*.py）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28（✨2026-10-09 扩至 6 个）
   - `AppLogo.spec.ts`（品牌资源与变体契约）
   - `LucideIcon.spec.ts`（185 行）
-  - `BaseDialog.spec.ts` / `FormAutocomplete.spec.ts` / `FormCheckbox.spec.ts` / `FormSelect.spec.ts`（126/134/71/226 行，弹窗/表单组件）
+  - `BaseDialog.spec.ts` / `FormAutocomplete.spec.ts` / `FormCheckbox.spec.ts` / `FormSelect.spec.ts`（171/142/71/234 行，弹窗/表单组件；✨2026-10-18 +4 源码契约例——滚动结构整体化（整窗滚动禁回流/头底固定/唯一主体滚动区）+ themed-scrollbar 主题色着色（中性灰禁令）+ 两下拉列表滚动条接入契约）
 - `frontend/src/components/charts/__tests__/` ✨2026-09-25（统计报表 W4）
   - `EChart.spec.ts`（194 行，7 例：动态 import 生命周期与竞态、watch 浅比较契约、ResizeObserver、空态插槽；jest.mock 工厂句柄经 globalThis.__mocks 存活、模块级单例 promise 逐例 resetModules、RO stub 改原型方法）
 - `frontend/src/components/BatchButton/__tests__/`

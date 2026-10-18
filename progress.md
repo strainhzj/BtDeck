@@ -8494,3 +8494,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：lint/tsc 净、目标 8 spec（191 例，含 BaseDialog ≤768 契约）+ 全量 Jest 141 套 1986 例绿；构建产物实测 modal-dialog flex column/overflow hidden、modal-body 滚动 + primary 滑块 4 条规则产出。
 - **部署**：1fbe098 推 origin dev；构建部署一次过（~5m10s，双容器 healthy restarts=0，gitSha/frontendManifestSha256 `26705514…` 一致）；远端下发 CSS（9384.32ac082f.css）实测 REMOTE_STRUCTURE_OK。
 - **运维注记**：sshpass 环境变量为 SSHPASS，凭据文件为 SSH_PASSWORD，需映射后 `-e` 引用。
+
+## 2026-10-18（续四）：验收固化批——添加种子弹窗三项修改 +5 回归测试
+
+- **背景**：用户真机验证通过（滚动结构整体化），要求补齐回归测试固化修改。沿用本仓"源码契约"模式（jsdom 不做真实布局，视觉由真机兜底）。
+- **+5 例分布**：BaseDialog.spec×2——①三段纵列契约（.modal-dialog flex column/overflow hidden 且禁 overflow-y 整窗回流=割裂感根因、头/底 flex-shrink:0、.modal-body flex:1/min-height:0/overflow-y:auto+@include）；②themed-scrollbar 主题色契约（primary-rgb 0.45/0.75、Firefox scrollbar-width/color 双覆盖、全文件禁 --color-border-primary 中性灰=首版"看不见主题化"回归根因）。FormSelect/FormAutocomplete 各×1——列表规则含 @include themed-scrollbar。torrent-add-dialog×1——跳过校验精简（源码禁 policy-card/checkPolicy/skipCheckHint + zh/en 双语键契约），并入既有复选框契约测试扩展。
+- **坑**：_mixins.scss 警示注释里写了字面量 --color-border-primary，被自己的中性灰禁令断言拦截（红）——改写措辞为"中性灰边框色"并注明回归护栏位置；顺带证明护栏真实有效。
+- **变异验证**：sed 改坏 flex-direction: column → 结构契约即红（1 failed），还原后全绿——护栏拦截力实证。
+- **验证**：eslint/tsc 净；全量 Jest 141 套 **1991 例**全绿（1986+5）；npm run build 复核通过，产物 CSS 规则与已部署版本一致（注释剥离不影响 dist）→ 无需重新部署。
+- **roadmap 计数同步**：tests/README（全量 1991 + 四 spec 行数 171/142/71/234）、perspectives/test-coverage（三 spec 行数+描述）、components-layout（4 组件 31 例实测校准，原 33 为漂移）。

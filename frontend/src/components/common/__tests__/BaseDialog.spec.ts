@@ -124,3 +124,48 @@ describe('BaseDialog 全自定义弹窗壳', () => {
     expect(source).toContain('aria-modal="true"')
   })
 })
+
+describe('BaseDialog 滚动结构整体化（源码契约）', () => {
+  // jsdom 不做真实布局：三段纵列（头/底固定、仅 body 滚动）与主题色滚动条走源码契约，
+  // 视觉由真机/模拟器兜底（本仓既有模式）
+  const readSource = (): string => {
+    const fs = require('fs') as typeof import('fs')
+    return fs.readFileSync('src/components/common/BaseDialog.vue', 'utf-8')
+  }
+
+  it('三段纵列：dialog 整窗滚动禁回流（割裂感根因），头/底固定仅 body 滚动', () => {
+    const source = readSource()
+    // 整窗滚动（overflow-y:auto 贯穿渐变头到 footer）不得回流：滚动条贴边像“另一块”
+    const dialogRule = source.match(/\.modal-dialog\s*{([^}]*)}/s)?.[1] ?? ''
+    expect(dialogRule).toContain('display: flex')
+    expect(dialogRule).toContain('flex-direction: column')
+    expect(dialogRule).toContain('overflow: hidden')
+    expect(dialogRule).not.toContain('overflow-y')
+
+    // 头/底固定不随内容滚走：渐变头常驻、操作钮始终可见
+    expect(source.match(/\.modal-header\s*{([^}]*)}/s)?.[1]).toContain('flex-shrink: 0')
+    expect(source.match(/\.modal-footer\s*{([^}]*)}/s)?.[1]).toContain('flex-shrink: 0')
+
+    // 唯一滚动区收敛在表单主体：flex 占位 + overflow-y + 主题色滚动条接入
+    const bodyRule = source.match(/\.modal-body\s*{([^}]*)}/s)?.[1] ?? ''
+    expect(bodyRule).toContain('flex: 1 1 auto')
+    expect(bodyRule).toContain('min-height: 0')
+    expect(bodyRule).toContain('overflow-y: auto')
+    expect(bodyRule).toContain('@include themed-scrollbar')
+  })
+
+  it('themed-scrollbar 滑块用主题色着色：禁中性灰回流（与全局通用样式视觉无法区分的回归）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const mixin = fs.readFileSync('src/styles/_mixins.scss', 'utf-8')
+    expect(mixin).toContain('@mixin themed-scrollbar')
+    // 主题色着色：rgba(--color-primary-rgb) 静止 0.45 / 悬停 0.75（emerald/orange/graphite 自适应）
+    expect(mixin).toContain('rgba(var(--color-primary-rgb), 0.45)')
+    expect(mixin).toContain('rgba(var(--color-primary-rgb), 0.75)')
+    // Firefox 标准属性双覆盖
+    expect(mixin).toContain('scrollbar-width: thin')
+    expect(mixin).toContain('scrollbar-color: rgba(var(--color-primary-rgb), 0.45) transparent')
+    // 中性灰禁令：--color-border-primary（#E5E7EB）与全局 rgba(0,0,0,0.2) 视觉无法区分，
+    // 用了即“看不见主题化”（2026-10-18 首版实现的回归根因）
+    expect(mixin).not.toContain('--color-border-primary')
+  })
+})

@@ -223,4 +223,12 @@ describe('FormSelect 全自定义下拉', () => {
     // 无徽章选项不渲染徽章节点
     expect(qAll('.form-select__option')[0].querySelector('.form-select__badge')).toBeNull()
   })
+
+  it('源码契约：下拉列表滚动条接入 themed-scrollbar 主题色（禁回落全局通用样式）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/components/common/FormSelect.vue', 'utf-8')
+    const listRule = source.match(/\.form-select__list\s*{([^}]*)}/s)?.[1] ?? ''
+    expect(listRule).toContain('overflow-y: auto')
+    expect(listRule).toContain('@include themed-scrollbar')
+  })
 })

@@ -23,7 +23,7 @@
 | 复选框 form-checkbox | `FormCheckbox.vue` | 全自定义复选框（零 Element）：原生 input 承载键盘/读屏语义（视觉隐藏），令牌化绘制勾选盒，v-model 绑定 boolean |
 | 浮层定位 mixin floating-dropdown | `floatingDropdown.ts` | 下拉浮层定位 mixin（自 PageSizeCombobox 已验证方案抽取）：展开时 teleport 到 body + fixed 定位（上下自适应/横向防溢出/最小宽度对齐触发器），scroll 捕获/resize rAF 节流重定位，文档级 mousedown 点击外部收起，关闭时节点还原父级；契约 ref=root + ref=options |
 | 表单控件类型 form-controls | `formControls.ts` | FormSelect/FormAutocomplete 共享类型（FormSelectOption/FormAutocompleteSuggestion/FormSelectBadgeTone）；独立 .ts 而非 .vue 具名导出：*.vue shim 只声明默认导出，具名导入报 TS2614 |
-| 表单控件单测 form-controls-test | `__tests__/BaseDialog.spec.ts` + `FormSelect.spec.ts` + `FormAutocomplete.spec.ts` + `FormCheckbox.spec.ts` | 4 组件 33 例：壳关闭三路径（钮/蒙层/ESC）与滚动锁、≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删、filterable 过滤+Enter、键盘导航、外部点击收起、invalid 透传（v-model 回写走宿主组件验证）；复选框翻转/disabled；jsdom 坑位——focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则字段不进响应式 data |
+| 表单控件单测 form-controls-test | `__tests__/BaseDialog.spec.ts` + `FormSelect.spec.ts` + `FormAutocomplete.spec.ts` + `FormCheckbox.spec.ts` | 4 组件 31 例（2026-10-18 实测校准）：壳关闭三路径（钮/蒙层/ESC）与滚动锁、≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删、filterable 过滤+Enter、键盘导航、外部点击收起、invalid 透传（v-model 回写走宿主组件验证）；复选框翻转/disabled；✨2026-10-18 +4 源码契约——BaseDialog 滚动结构整体化（整窗滚动禁回流/头底 flex-shrink:0/仅 body 滚动）+ themed-scrollbar 主题色着色（中性灰禁令），FormSelect/FormAutocomplete 列表滚动条接入契约；jsdom 坑位——focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则字段不进响应式 data |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
 

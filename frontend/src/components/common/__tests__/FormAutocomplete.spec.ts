@@ -131,4 +131,12 @@ describe('FormAutocomplete 全自定义自动补全输入', () => {
       document.querySelectorAll('.form-autocomplete__suggestion-text')[0].textContent
     ).toBe('/data/movies')
   })
+
+  it('源码契约：建议列表滚动条接入 themed-scrollbar 主题色（与 FormSelect 一致）', () => {
+    const fs = require('fs') as typeof import('fs')
+    const source = fs.readFileSync('src/components/common/FormAutocomplete.vue', 'utf-8')
+    const listRule = source.match(/\.form-autocomplete__list\s*{([^}]*)}/s)?.[1] ?? ''
+    expect(listRule).toContain('overflow-y: auto')
+    expect(listRule).toContain('@include themed-scrollbar')
+  })
 })

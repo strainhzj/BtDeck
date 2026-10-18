@@ -219,6 +219,20 @@ describe('TorrentAddDialog 移动端适配与跳过校验（源码契约）', ()
     // 旧硬编码提交（CheckingDL 根因）不得回流：快照默认值与关闭重置值除外
     expect(source.match(/skip_hash_check: false/g)?.length).toBe(2)
     expect(source).not.toContain('skip_hash_check: false,')
+    // 2026-10-18 验收精简：警示卡与详细介绍撤下，降为单行复选框直呈
+    expect(source).not.toContain('policy-card')
+    expect(source).not.toContain('checkPolicy')
+    expect(source).not.toContain('skipCheckHint')
+  })
+
+  it('跳过校验 i18n 双语契约：skipCheck 保留，详细介绍键（checkPolicy/skipCheckHint）zh/en 不得回流', () => {
+    const fs = require('fs') as typeof import('fs')
+    for (const locale of ['zh-CN', 'en']) {
+      const source = fs.readFileSync(`src/i18n/locales/${locale}/torrent.ts`, 'utf-8')
+      expect(source).toContain('skipCheck:')
+      expect(source).not.toContain('skipCheckHint')
+      expect(source).not.toContain('checkPolicy')
+    }
   })
 
   it('全自定义组件契约：模板零 Element 组件（el-*）与原生 select', () => {

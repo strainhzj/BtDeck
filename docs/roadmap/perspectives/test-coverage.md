@@ -230,7 +230,7 @@
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
-| `torrent-add-dialog.spec.ts` ✨2026-08-30 | `views/torrents/components/TorrentAddDialog.vue`：202 响应 task_id 跟踪、完成通知精确匹配并发出 `batch-complete`、销毁清理轮询计时器 |
+| `torrent-add-dialog.spec.ts` ✨2026-08-30 | `views/torrents/components/TorrentAddDialog.vue`：202 响应 task_id 跟踪、完成通知精确匹配并发出 `batch-complete`、销毁清理轮询计时器；✨2026-10-18 +1 源码契约（跳过校验精简：policy-card/checkPolicy/skipCheckHint 禁回流 + zh/en i18n 键契约） |
 | `torrent-batch.spec.ts` ✨2026-09-19（增 P5 双语契约：确认文案 zh 逐字节/en 三要素/未知等级回退/名称拼接随语言切换/收敛源码契约；删死封装 3 用例） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫；200/206 速度快照、终态状态矩阵、显式 false/100% 优先级、异常数值钳制、同 hash 复合键隔离、核验排除集与 100 项上限；运行态列表成员首次完整快照基线、206 增量、刷新重建基线及并发单飞） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-27 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip、滚动收起接线、查询全屏锁滚动蒙版与 Tracker 卡片错误原因 |
 | `torrent-error-tooltip-dismiss.spec.ts` ✨2026-08-27 | `mixins/errorTooltipDismiss.ts`：监听参数、数组/单例/空 ref、window/非冒泡滚动、销毁重挂载及真实 Element UI Tooltip 滚轮关闭闭环（7 例） |
@@ -304,10 +304,10 @@
 |---------|------|---------|
 | `components/common/__tests__/AppLogo.spec.ts` | 18 | `AppLogo.vue` 的 full/mark/micro 与 brand/inverse 资源选择 |
 | `components/common/__tests__/LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
-| `components/common/__tests__/BaseDialog.spec.ts` | 126 | `BaseDialog.vue`（✨2026-10-09 弹窗组件化批） |
-| `components/common/__tests__/FormAutocomplete.spec.ts` | 134 | `FormAutocomplete.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/common/__tests__/BaseDialog.spec.ts` | 171 | `BaseDialog.vue`（✨2026-10-09 弹窗组件化批；✨2026-10-18 +2 源码契约：滚动结构整体化 + themed-scrollbar 主题色/中性灰禁令） |
+| `components/common/__tests__/FormAutocomplete.spec.ts` | 142 | `FormAutocomplete.vue`（✨2026-10-09 弹窗组件化批；✨2026-10-18 +1 列表滚动条契约） |
 | `components/common/__tests__/FormCheckbox.spec.ts` | 71 | `FormCheckbox.vue`（✨2026-10-09 弹窗组件化批） |
-| `components/common/__tests__/FormSelect.spec.ts` | 226 | `FormSelect.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/common/__tests__/FormSelect.spec.ts` | 234 | `FormSelect.vue`（✨2026-10-09 弹窗组件化批；✨2026-10-18 +1 列表滚动条契约） |
 | `components/charts/__tests__/EChart.spec.ts` | 194 | `EChart.vue`（✨2026-09-25 统计报表 W4） |
 | `components/BatchButton/__tests__/BatchButton.spec.ts` | 90 | `BatchButton.vue` |
 | `constants/__tests__/status-config.spec.ts` | 102 | `constants/status-config.ts` |
