@@ -8463,3 +8463,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修正**：tests/README 总量 "1984 例"→**1986 例**（2026-10-09 合并后为 1984，W8-1 trends.spec 增例），附复测说明；根 README 生成日期批条目补记 Jest 闭环。
 - **per-spec 抽验 8 项全吻合**：torrent-error-tooltip-dismiss 7 / window-infinite-scroll 8 / speed-polling 9 / EChart 7 / statistics 五 spec（5 套 30 例全绿，行数 137/159/131/101/208 与文档一致）。
 - **范围**：仅 docs/roadmap/tests/README.md、docs/roadmap/README.md、progress.md 三文件；未提交。
+
+## 2026-10-18：添加种子弹窗验收微调（跳过校验精简 + 滚动条主题化）
+
+- **背景**：用户对 e72b81b（添加种子弹窗全自定义组件化）验收反馈两点：跳过校验选项不需要详细介绍；滑动条仍用通用样式需主题化。
+- **跳过校验精简**：TorrentAddDialog 警示卡（alert-triangle 图标 + policy-card + hint 段落 + 「校验策略」组标签）整体撤下，降为单行 FormCheckbox；i18n 删 `torrent.addDialog.checkPolicy`/`skipCheckHint` zh/en 双键（skipCheck 保留）。skip_hash_check 行为契约零改动（源码契约 spec：恰好 2 处 false、无硬编码回流——复跑全绿）。1024→982 行。
+- **滚动条主题化**：弹窗本体 BaseDialog 已有主题化滚动条，缺口在 FormSelect/FormAutocomplete 下拉列表（回落全局 scrollbar.scss 6px 半透明通用样式）。`styles/_mixins.scss` 新增 `themed-scrollbar` mixin（6px 圆角滑块，色走 `--color-border-primary`/`--color-text-quaternary` 主题变量，Chromium ::-webkit-scrollbar + Firefox scrollbar-color 双覆盖），两组件列表 `@include` 接入（mixin 经 style-resources-loader 全局注入，无需 import）。
+- **验证**：tsc 0 错、eslint 净、目标 6 spec（60 例）+ 全量 Jest 141 套 1986 例全绿；`npm run build` 成功（worker 子代理执行），产物 CSS 实测 `form-select__list[data-v-*]::-webkit-scrollbar*` 与 `form-autocomplete__list[data-v-*]` 四组规则均产出；./init.sh exit=0。
+- **追踪**：roadmap 三处同步（views/README TorrentAddDialog 行、components-layout/README FormSelect/FormAutocomplete 行）+ feature_list 两 task evidence 回填。
+- **未提交**：按约定 Git 提交仅在用户要求时执行。

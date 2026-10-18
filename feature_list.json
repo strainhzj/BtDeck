@@ -7527,7 +7527,7 @@
             "frontend/src/components/common/__tests__/FormAutocomplete.spec.ts",
             "frontend/src/components/common/__tests__/FormCheckbox.spec.ts"
           ],
-          "evidence": "4 spec 33 例全绿：壳三关闭路径（钮/蒙层 click.self/ESC）+ 开关透传 + body 滚动锁（叠弹计数）+ footer 插槽出现性 + ≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删（v-model 回写经宿主组件验证）、filterable 过滤+Enter、键盘导航循环、外部点击收起（文档级 mousedown 捕获）、invalid 透传、富选项行徽章/状态点；autocomplete 输入透传/聚焦点击展开/Enter 选中/Esc 收起/初始无高亮（对齐 el-autocomplete）。jsdom 坑位：focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则类字段不进响应式 data、rAF 环境兜底。lint --max-warnings 0 净。"
+          "evidence": "4 spec 33 例全绿：壳三关闭路径（钮/蒙层 click.self/ESC）+ 开关透传 + body 滚动锁（叠弹计数）+ footer 插槽出现性 + ≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删（v-model 回写经宿主组件验证）、filterable 过滤+Enter、键盘导航循环、外部点击收起（文档级 mousedown 捕获）、invalid 透传、富选项行徽章/状态点；autocomplete 输入透传/聚焦点击展开/Enter 选中/Esc 收起/初始无高亮（对齐 el-autocomplete）。jsdom 坑位：focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则类字段不进响应式 data、rAF 环境兜底。lint --max-warnings 0 净。；2026-10-18 微调：FormSelect/FormAutocomplete 列表滚动条换 _mixins.scss themed-scrollbar 主题化（style-resources-loader 全局注入；构建产物验证 data-v scoped 选择器产出）。"
         },
         {
           "id": "torrent-add-dialog-rewrite",
@@ -7543,7 +7543,7 @@
             "frontend/src/i18n/locales/zh-CN/torrent.ts",
             "frontend/src/i18n/locales/en/torrent.ts"
           ],
-          "evidence": "1024 行重写，源码契约新增『零 Element（禁 <el- 与原生 <select）+ 四自定义组件在场』断言；skip_hash_check 契约原样（恰好 2 处 false、无硬编码回流）；≤768 触控契约保留（44px/36px）。新增行为测试 5 例（拖拽合法/非法/清空、downloaderOptions 徽章状态点机会渲染三态、pathSuggestions 启用过滤+空输入全量）。门禁：typecheck 0 错、lint 净（含 contract:check）、npm run build 成功（~27s）、全量 Jest 136 套 1941 例（唯一失败为 EChart 既有环境性套件加载失败，与本批无关）、./init.sh 退出码 0。"
+          "evidence": "1024 行重写，源码契约新增『零 Element（禁 <el- 与原生 <select）+ 四自定义组件在场』断言；skip_hash_check 契约原样（恰好 2 处 false、无硬编码回流）；≤768 触控契约保留（44px/36px）。新增行为测试 5 例（拖拽合法/非法/清空、downloaderOptions 徽章状态点机会渲染三态、pathSuggestions 启用过滤+空输入全量）。门禁：typecheck 0 错、lint 净（含 contract:check）、npm run build 成功（~27s）、全量 Jest 136 套 1941 例（唯一失败为 EChart 既有环境性套件加载失败，与本批无关）、./init.sh 退出码 0。；2026-10-18 验收微调：跳过校验去详细介绍（警示卡+hint 撤下降为单行 FormCheckbox，i18n 删 checkPolicy/skipCheckHint zh/en 双键），1024→982 行，契约/行为 spec 复跑全绿。"
         }
       ]
     }
