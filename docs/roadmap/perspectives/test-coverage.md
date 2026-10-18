@@ -11,17 +11,18 @@
 | `tests/tasks/` | 26 | `app/tasks/` | 🟡 部分覆盖；2026-09-05 新增 cron_executor 输出上限/结果摘要与 reannounce 预过滤回归；✨2026-09-25 +test_speed_sampler 13 例（统计报表 W1） |
 | `tests/core/` | 29 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 22） |
-| `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
-| `tests/auth/` | 6 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
-| `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
+| `tests/utils/` | 6 | `app/utils/` | ✅ 覆盖良好（6 对 6） |
+| `tests/auth/` | 6 | `app/auth/` | ✅ 覆盖良好（6 对 8；2026-10-18 实测） |
+| `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 1；test_audit_enums 实际目标为 `app/torrents/audit_enums`） |
 | `tests/downloader/` | 6 | `app/downloader/` | ⚠ 薄弱（6 对 9；含 test_torrent_stats_paused 扩统计报表 W2 常量互斥锁 2 例） |
-| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 44，仅 `test_active_only_filter.py`） || `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
+| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 44，仅 `test_active_only_filter.py`） |
+| `tests/architecture/` | 2 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/mcp/` | 16 | `app/mcp/` | ✅ MCP 专测：契约/认证接线/脱敏/能力门禁/生命周期/六工具/等价与升级门禁（2026-09-22 dev1.0.7 合入，本表此前漏录） |
 | `tests/release/` | 16 | 发布工具链 | scripts/release 签名/清单/汇聚/注入演练门禁测试（2026-09-03 批次，本表此前漏录） |
 | `tests/desktop_companion/` | 6 | `app/desktop_companion/` | 桌面伴侣 profile/健康检查/凭据测试（本表此前漏录） |
-| `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
-| `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
+| `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 3） |
+| `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 5，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
 > 合计：当前实测 **272** 个 test_*.py（2026-10-09 feature/reports W5-W7 合入 dev 后重测；含统计报表批 +7 个 test 文件 77 例（另有 reports_fixtures.py 共享基建）、qB 污染批 +1 文件 13 例、RSS Phase 1/2 批 +4 文件、torrent-lookup 批既有文件 +8 例保护，及历史双语契约六批等；W5-W7 前端批零后端新增）。
@@ -169,7 +170,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（实测 2026-09-25：统计报表批 EChart/四页签/fun-report/demo-request 扩展；总量见 ../tests/README.md 132 套 135 spec）
+### `frontend/tests/unit/`（实测 2026-10-18：118 个 unit spec；总量见 ../tests/README.md 141 套 / 144 spec 文件（含 src 内嵌 23 与 e2e 3，e2e 不入 Jest 套数））
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -285,27 +286,34 @@
 | `tracker-operation-dialog.spec.ts` ✨2026-09-12，2026-09-21 补录 | TrackerOperationDialog：常规模式（selectedTorrents）桌面行为不变 + 按下载器触发模式 |
 | `transfer-set-location-dialogs.spec.ts` ✨2026-09-12，2026-09-21 补录 | TransferDialog/SetLocationDialog 移动端适配与移动种子页透传清理源码契约 |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2775 行，2026-09-21 重测）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2777 行，2026-10-18 重测）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
-| `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
-| `AdvancedMultiSelect.spec.ts` | 578 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
-| `AdvancedSearchBuilder.spec.ts` | 686 | `AdvancedSearchBuilder.vue`（按钮/组间层级、字段操作符过滤、下载器稳定 ID、超级做种三态与空值选项） |
-| `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
-| `ConditionValueInput.spec.ts` | 245 | `ConditionValueInput.vue`（状态/下载器不可创建多选、空值无需输入、超级做种三态） |
+| `AdvancedMultiSelect.performance.spec.ts` | 481 | `AdvancedMultiSelect.vue`（性能测试） |
+| `AdvancedMultiSelect.spec.ts` | 583 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
+| `AdvancedSearchBuilder.spec.ts` | 761 | `AdvancedSearchBuilder.vue`（按钮/组间层级、字段操作符过滤、下载器稳定 ID、超级做种三态与空值选项） |
+| `AdvancedSearchWorkspace.spec.ts` | 392 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
+| `ConditionValueInput.spec.ts` | 283 | `ConditionValueInput.vue`（状态/下载器不可创建多选、空值无需输入、超级做种三态） |
 | `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |
-| `QuickDeleteDuplicatesDialog.spec.ts` | 176 | `QuickDeleteDuplicatesDialog.vue` |
+| `QuickDeleteDuplicatesDialog.spec.ts` | 180 | `QuickDeleteDuplicatesDialog.vue` |
 
 ### 其他组件内嵌测试
 
 | 测试文件 | 行数 | 覆盖组件/模块 |
 |---------|------|---------|
-| `components/common/__tests__/AppLogo.spec.ts` | 16 | `AppLogo.vue` 的 full/mark/micro 与 brand/inverse 资源选择 |
+| `components/common/__tests__/AppLogo.spec.ts` | 18 | `AppLogo.vue` 的 full/mark/micro 与 brand/inverse 资源选择 |
 | `components/common/__tests__/LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
+| `components/common/__tests__/BaseDialog.spec.ts` | 126 | `BaseDialog.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/common/__tests__/FormAutocomplete.spec.ts` | 134 | `FormAutocomplete.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/common/__tests__/FormCheckbox.spec.ts` | 71 | `FormCheckbox.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/common/__tests__/FormSelect.spec.ts` | 226 | `FormSelect.vue`（✨2026-10-09 弹窗组件化批） |
+| `components/charts/__tests__/EChart.spec.ts` | 194 | `EChart.vue`（✨2026-09-25 统计报表 W4） |
 | `components/BatchButton/__tests__/BatchButton.spec.ts` | 90 | `BatchButton.vue` |
 | `constants/__tests__/status-config.spec.ts` | 102 | `constants/status-config.ts` |
-| `views/torrents/utils/__tests__/traditionalStatusFilter.spec.ts` | 86 | `views/torrents/utils/traditionalStatusFilter.ts` |
+| `views/statistics/__tests__/{overview,trends,seeding,trackers,fun-report}.spec.ts` | 137/159/131/101/208 | 统计报表五页签组件（✨2026-09-24/25） |
+| `views/torrents/utils/__tests__/traditionalStatusFilter.spec.ts` | 89 | `views/torrents/utils/traditionalStatusFilter.ts` |
+| `views/torrents/utils/__tests__/torrentBatchDeleteLevel.spec.ts` | 92 | 批量删除等级工具 |
 
 ---
 
@@ -313,11 +321,11 @@
 
 | 优先级 | 目标 | 原因 |
 |--------|------|------|
-| P1 | `app/api/endpoints/` 37 个端点（仅 1 个测试） | 端点是业务入口，集成测试严重不足 |
+| P1 | `app/api/endpoints/` 44 个端点（仅 1 个专项测试） | 端点是业务入口，集成测试严重不足（API 层行为多由 `tests/api/` 覆盖） |
 | P1 | `app/core/file_operations.py`（1474 行，回收站核心） | 0 直接测试 |
 | P1 | `app/core/path_mapping.py`（932 行，10 处引用） | 0 直接测试 |
-| P2 | `app/downloader/`（9 文件，仅 1 测试） | 含 2071 行 initialization.py |
-| P2 | `app/services/tag_adapters/`（6 文件，仅 1 测试） | — |
+| P2 | `app/downloader/`（9 文件，6 个测试文件） | 含 2095 行 initialization.py |
+| P2 | `app/services/tag_adapters/`（5 文件，仅 1 测试） | — |
 | P2 | `app/repositories/`（3 文件，仅 1 测试） | — |
 
 ## 相关文档
@@ -329,5 +337,5 @@
 
 - `test_platform_capabilities_api.py`：schemaVersion=2、20 项、5 degraded/9 unsupported；六个真实路由的 403 信封。
 - `test_startup_migration_guard.py`：Android lifespan 无扫描/dispatcher；真实 SQLite 历史任务仅收敛未完成状态、幂等且目标文件保留。
-- `platform-capabilities-api.spec.ts` / `platform-capability-panel.spec.ts`：未知能力闭锁、远端 desktop 矩阵不受 Android UA 覆盖、刷新失败撤销旧授权及闭锁提示。
+- `platform-capabilities-api.spec.ts`：未知能力闭锁、远端 desktop 矩阵不受 Android UA 覆盖、刷新失败撤销旧授权及闭锁提示（配套 UI 页签 spec platform-capability-panel.spec.ts 已随 282f494 设置页能力页签下线而删除）。
 - `LocalServerAndroidTest.kt`：AVD HTTP 登录、矩阵、五类 403、dispatcher 状态、健康/静态首页与停止重启。

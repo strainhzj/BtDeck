@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1984 例（2026-10-09 合并后实测，echarts 依赖装齐后 EChart.spec 计入））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1986 例（2026-10-17 Jest 复测：141/141 套、1986/1986 例全部通过，exit=0；2026-10-09 合并后为 1984 例，W8-1 trends.spec 增例））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -24,9 +24,9 @@
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
 | 前端 jest 测试 jest | `frontend/tests/unit/` | 118 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard；✨2026-09-25 计数实测校准） |
 | 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 3 个 spec（login/mobile-interactions/mobile-routes，移动端端到端场景，与 unit 分目录组织；✨2026-09-25 实测校准） |
-| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 13 个 spec：种子搜索组件 7 个 + LucideIcon/AppLogo 2 个 + BatchButton、状态常量、传统视图状态过滤、charts/EChart 各 1 个（✨2026-09-25 +EChart） |
+| 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 23 个 spec：种子搜索组件 7 个 + common 6 个（LucideIcon/AppLogo + BaseDialog/FormAutocomplete/FormCheckbox/FormSelect ✨2026-10-09 弹窗组件化批）+ charts/EChart 1 个（✨2026-09-25）+ BatchButton、状态常量各 1 个 + 统计报表五页 5 个（✨2026-09-24/25）+ torrents/utils 2 个（traditionalStatusFilter/torrentBatchDeleteLevel）（✨2026-10-18 实测校准） |
 
-## backend/tests/（270 个 test_*.py + 支持文件；✨2026-09-25 实测校准）
+## backend/tests/（272 个 test_*.py + 支持文件；✨2026-09-25 实测校准，2026-10-18 复测）
 
 ### 顶层
 
@@ -42,7 +42,7 @@
 | 子目录 | 对应源码分支 | 说明 |
 |--------|-------------|------|
 | `api/` | `app/api/` | API 层测试 |
-| `architecture/` | 全局架构 | 1 个：异步端点下载器调用架构约束（AST 静态扫描） |
+| `architecture/` | 全局架构 | 2 个：异步端点下载器调用架构约束 + 打包契约（AST 静态扫描；✨2026-10-18 实测校准） |
 | `auth/` | `app/auth/` | 认证测试 |
 | `core/` | `app/core/` | 基础设施测试 |
 | `downloader/` | `app/downloader/` | 下载器测试 |
@@ -85,25 +85,29 @@ cd backend && pytest tests/api/               # API 层（89 个 test_*.py）
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：
-- `frontend/src/components/torrents/__tests__/`（7 个 spec，2637 行）
-  - `AdvancedMultiSelect.performance.spec.ts`（466 行，性能测试）
-  - `AdvancedMultiSelect.spec.ts`（578 行）
-  - `AdvancedSearchBuilder.spec.ts`（686 行）
-  - `AdvancedSearchWorkspace.spec.ts`（389 行）
-  - `ConditionValueInput.spec.ts`（245 行）
+- `frontend/src/components/torrents/__tests__/`（7 个 spec，2777 行，2026-10-18 实测）
+  - `AdvancedMultiSelect.performance.spec.ts`（481 行，性能测试）
+  - `AdvancedMultiSelect.spec.ts`（583 行）
+  - `AdvancedSearchBuilder.spec.ts`（761 行）
+  - `AdvancedSearchWorkspace.spec.ts`（392 行）
+  - `ConditionValueInput.spec.ts`（283 行）
   - `FilterGroup.spec.ts`（97 行）
-  - `QuickDeleteDuplicatesDialog.spec.ts`（176 行）
-- `frontend/src/components/common/__tests__/` ✨v1.0.6.28
+  - `QuickDeleteDuplicatesDialog.spec.ts`（180 行）
+- `frontend/src/components/common/__tests__/` ✨v1.0.6.28（✨2026-10-09 扩至 6 个）
   - `AppLogo.spec.ts`（品牌资源与变体契约）
   - `LucideIcon.spec.ts`（185 行）
+  - `BaseDialog.spec.ts` / `FormAutocomplete.spec.ts` / `FormCheckbox.spec.ts` / `FormSelect.spec.ts`（126/134/71/226 行，弹窗/表单组件）
 - `frontend/src/components/charts/__tests__/` ✨2026-09-25（统计报表 W4）
-  - `EChart.spec.ts`（213 行，7 例：动态 import 生命周期与竞态、watch 浅比较契约、ResizeObserver、空态插槽；jest.mock 工厂句柄经 globalThis.__mocks 存活、模块级单例 promise 逐例 resetModules、RO stub 改原型方法）
+  - `EChart.spec.ts`（194 行，7 例：动态 import 生命周期与竞态、watch 浅比较契约、ResizeObserver、空态插槽；jest.mock 工厂句柄经 globalThis.__mocks 存活、模块级单例 promise 逐例 resetModules、RO stub 改原型方法）
 - `frontend/src/components/BatchButton/__tests__/`
   - `BatchButton.spec.ts`（90 行）
 - `frontend/src/constants/__tests__/`
   - `status-config.spec.ts`（102 行）
+- `frontend/src/views/statistics/__tests__/` ✨2026-09-24/25（统计报表批）
+  - `overview.spec.ts` / `trends.spec.ts` / `seeding.spec.ts` / `trackers.spec.ts` / `fun-report.spec.ts`（137/159/131/101/208 行，五页签组件）
 - `frontend/src/views/torrents/utils/__tests__/`
   - `traditionalStatusFilter.spec.ts`（86 行）
+  - `torrentBatchDeleteLevel.spec.ts`（92 行，批量删除等级工具）
 
 ### 运行命令
 
@@ -115,7 +119,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 270 个 test_*.py（2026-09-25 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 272 个 test_*.py（2026-10-18 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

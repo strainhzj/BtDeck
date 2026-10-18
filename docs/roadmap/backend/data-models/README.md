@@ -74,7 +74,7 @@
 | MoviePilot 默认配置 default-moviepilot ✨2026-09-22 | `default_moviepilot_settings.py` | configs 表版本化 JSON 键 `moviepilot.integration.v1` 默认载荷（与 mcp.runtime.v1 同模式）；默认关闭——集成面默认不开放，须管理员显式启用 |
 
 `default_scheduled_tasks.py` 提供的 13 个 task_code（行号实测）：
-`cached_downloader_sync`(L41)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)、`orphan_hardlink_copy_scan`(L228)、`refresh_token_cleanup`(L248)
+`cached_downloader_sync`(L26)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)、`orphan_hardlink_copy_scan`(L228)、`refresh_token_cleanup`(L266)
 
 ### enums/
 

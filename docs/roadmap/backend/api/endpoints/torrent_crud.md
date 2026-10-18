@@ -9,7 +9,7 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/api/endpoints/torrent_crud.py` |
-| 行数 | 485（实测 2026-09-21；2026-08-22 样例产出时为 727 行，此后单个添加主体抽取至 `torrent_add_service`、批量添加主体抽取至 `torrent_batch_add_service`） |
+| 行数 | 483（实测 2026-10-17；2026-08-22 样例产出时为 727 行，此后单个添加主体抽取至 `torrent_add_service`、批量添加主体抽取至 `torrent_batch_add_service`） |
 | 模块职责 | 种子 CRUD 端点：列表同步、单个/批量添加、按主键查询、通用条件查询、Tracker 主域名候选 |
 | 路由前缀 | 由 `torrents.py` 聚合后挂到 `/torrents`（最终 `/api/v1/torrents/*`） |
 | 顶层符号 | 1 class（`TorrentOperationRequest`）+ 6 路由函数（实测 2026-09-21） |
@@ -51,7 +51,7 @@ downloader = next((item for item in cached_downloaders if item.downloader_id == 
 
 ### INV-4：失败路径 data 携带稳定 reasonCode（双语 P4 错误契约，2026-09-21）
 
-动态 `str(e)` 不进 msg（只进日志），信封四字段不变。本文件 10 处：`DB_OPERATION_FAILED`（L126）、`TORRENT_SYNC_FAILED`（L131）、单添加 `result.reason_code` 透传（L175）、`TORRENT_FILES_REQUIRED`（L200）、`INTERNAL_ERROR`（L203）、`DOWNLOADER_CACHE_UNAVAILABLE`（L211）、`DOWNLOADER_NOT_FOUND`（L221）、`DOWNLOADER_OFFLINE`（L225）、`DOWNLOADER_CONNECTION_MISSING`（L232）、`TORRENT_STAGE_FAILED`（L244）、`TORRENT_BATCH_SUBMIT_FAILED`（L288）。
+动态 `str(e)` 不进 msg（只进日志），信封四字段不变。本文件 11 处：`DB_OPERATION_FAILED`（L126）、`TORRENT_SYNC_FAILED`（L131）、单添加 `result.reason_code` 透传（L175）、`TORRENT_FILES_REQUIRED`（L200）、`INTERNAL_ERROR`（L203）、`DOWNLOADER_CACHE_UNAVAILABLE`（L211）、`DOWNLOADER_NOT_FOUND`（L221）、`DOWNLOADER_OFFLINE`（L225）、`DOWNLOADER_CONNECTION_MISSING`（L232）、`TORRENT_STAGE_FAILED`（L244）、`TORRENT_BATCH_SUBMIT_FAILED`（L288）。
 
 ### INV-5：ORM 实体不能直接作为响应返回
 
@@ -238,7 +238,7 @@ def get_torrents(
 - **定位**：`torrent_crud.py:325`
 - **职责**：支持普通筛选、Tracker 主域名、活动快照、同内容/错误单种条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers，L392-418）。
 - **活动种子特殊处理**（L373-389）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial，L387），响应携带 `activeSnapshotReady/activeSnapshotStatus`。
-- **Tracker 主域名筛选**（参数 L339，委托 L412）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/torrents/tracker-domains` 提供。✨2026-08-27（torrent_helpers.py）：EXISTS/ANY 语义保留（种子任一 tracker 命中即返回），入口统一归一 `requested_tracker_domains` 后由 SQL 8 条件（like 已 `escape="\\"` 字面量化，`_`/`%` 不再通配）与 Python 谓词 `tracker_row_matches_domains`（torrent_helpers.py L53）同口径过滤，并在 VO 的 `tracker_info[].matched_domain` 上标记命中的域名；同批修复 `tracker_like` 子查询空结果由"静默返回全部"改为"返回空列表"。观察日志：`[tracker-domain-filter]`/`[tracker-filter]`/`[torrent-list]` 三组 debug 锚点，`LOG_LEVEL=DEBUG` 开启。
+- **Tracker 主域名筛选**（参数 L339，委托 L412）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/torrents/tracker-domains` 提供。✨2026-08-27（torrent_helpers.py）：EXISTS/ANY 语义保留（种子任一 tracker 命中即返回），入口统一归一 `requested_tracker_domains` 后由 SQL 8 条件（like 已 `escape="\\"` 字面量化，`_`/`%` 不再通配）与 Python 谓词 `tracker_row_matches_domains`（`services/torrent_vo_conversion.py` L30）同口径过滤，并在 VO 的 `tracker_info[].matched_domain` 上标记命中的域名；同批修复 `tracker_like` 子查询空结果由"静默返回全部"改为"返回空列表"。观察日志：`[tracker-domain-filter]`/`[tracker-filter]`/`[torrent-list]` 三组 debug 锚点，`LOG_LEVEL=DEBUG` 开启。
 - **同内容筛选**（参数 L347，委托 L414）：`same_content_only=True` 委托共享查询按"名称 + 大小 + 至少两个不同规范化 Hash"过滤，并继续按种子行 `skip/limit` 分页。
 - **错误单种筛选**（参数 L352，委托 L415）：`single_error_only=True` 只保留错误任务，并用不受当前 Tracker/状态筛选影响的全局名称+大小分组确认任务唯一；同一任务的多个 Tracker 服务不增加任务计数。
 - **tracker 明细瘦身**（参数 L360，委托 L416 `include_trackers=with_trackers`）：false 时 VO 免装 tracker_info（移动端列表瘦身，2026-09-10）。

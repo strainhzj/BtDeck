@@ -9,9 +9,9 @@
 |--------|-----------|-----------|
 | Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
-| 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
+| 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.sh` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；sh 含 3 profile 镜像源重试链（原 bat 已迁移为本地 sh 脚本） |
 | PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO，Linux ELF 无内嵌图标约定（品牌图标经包管理器交付）；SPA fallback = `factory.py:_mount_frontend_static` |
-| 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-android.bat` / `deploy/build-linux.sh` / `build-packages.bat` | Windows EXE、Android 双变体 APK、Linux 包构建；根入口可统一调用 Windows + Android 链 |
+| 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-android.bat` / `deploy/build-linux.sh` / `build-packages.bat` | Windows EXE、Android 双变体 APK、Linux 包构建；根入口可统一调用 Windows + Android 链；✨均有 Linux 移植版 `build-windows.sh` / `build-android.sh`（wine/iscc/fpm 容器出制品，`deploy/docker/` + `deploy/iscc` 包装） |
 | Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包；安装器、卸载项及快捷方式复用主程序品牌图标 |
 | fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包；✨2026-09-11 随包装品牌图标（`deploy/icons/` hicolor 48-256 + scalable + `btdeck.desktop`，deb/rpm 对称） |
 | 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
@@ -20,7 +20,7 @@
 | 打包辅助 analyze-package | `deploy/analyze-package-size.py` / `verify-package.py` | 打包体积分析 / 产物校验 |
 | 发布门禁工具链 release-gate | `scripts/release/`（sign_artifacts / build_release_manifest / aggregate_gate_report / verify_release_bundle / fault_injection_drills 等）+ `release/schemas/` + `deploy/docker-compose.release.yml` + `docs/release/runbook.md` | v1.0.6 发布等价门禁（G0~G10）：签名（Authenticode+cosign fail-closed）、发布清单（CERTIFIED 只人工审批）、门禁汇聚（rc-gate DAG）、digest-only 发布组合模板、六类故障注入演练与发布 runbook（2026-09-03 批次 D/E/F） |
 | TLS 参考配置 nginx-tls | `deploy/nginx-tls.conf.example` | HTTPS 反代参考配置（安全修复 W14）：HTTP 301 → HTTPS、HSTS、证书挂载说明，保留 `/api/` 内网代理；✨2026-09-10 补 `/health/` 代理（`location = /health` 静态 + 深路径转后端，修伴侣健康探测被吞） |
-| 构建产物 artifact | 仓库根 `dist/`（`btdeck.exe`、`btdeck-linux`、`BtDeck-v1.0.9-*.deb/.rpm`、`config`） / `build/btdeck-windows/` | Windows/Linux 可执行与安装包 / PyInstaller 中间产物（均已 .gitignore，不入库） |
+| 构建产物 artifact | 仓库根 `dist/`（`btdeck.exe`、`btdeck`（Linux ELF，spec name=btdeck）、`BtDeck-v1.0.6-*.deb/.rpm`（版本随 build-linux.sh VERSION）、`config`） / `build/btdeck-windows/` | Windows/Linux 可执行与安装包 / PyInstaller 中间产物（均已 .gitignore，不入库） |
 
 ## 部署模式总览
 
@@ -52,27 +52,27 @@
 
 ### backend 启动
 
-- `backend/Dockerfile` L114 `CMD ["/app/btdeck_startup.sh"]`
+- `backend/Dockerfile` L159 `CMD ["/app/btdeck_startup.sh"]`
 - `backend/btdeck_startup.sh` 真正执行（L102）：
   ```
   exec uvicorn app.main:app --host 0.0.0.0 --port 5001 --workers $WORKERS --loop asyncio --log-level info
   ```
 - `APP_MODULE="app.main:app"`（L15）；`PORT=5001`（L16）；`WORKERS` 默认 1（L18）
-- 启动前 fail-fast（L71-82）：SQLite 后端 + `WORKERS != 1` 直接拒绝启动（多 worker 共享 SQLite 文件库会损坏数据），日志提示改回单 worker
+- 启动前 fail-fast（L71-87）：SQLite 后端 + `WORKERS != 1` 直接拒绝启动（多 worker 共享 SQLite 文件库会损坏数据），日志提示改回单 worker
 - 脚本只做环境准备（日志目录、PYTHONPATH、SQLite worker 校验）；配置初始化、数据库迁移、seed 全部交由 FastAPI lifespan 负责
 
 ### frontend 构建 + nginx
 
-- 构建：`frontend/Dockerfile.prod` L50 `RUN npm run build` → 产物 `dist`
-- 拷贝：L70 `COPY --from=builder /app/dist /usr/share/nginx/html`
-- 启动：L95 `CMD ["nginx", "-g", "daemon off;"]`
+- 构建：`frontend/Dockerfile.prod` L52 `RUN npm run build` → 产物 `dist`
+- 拷贝：L92 `COPY --from=builder /app/dist /usr/share/nginx/html`
+- 启动：L120 `CMD ["nginx", "-g", "daemon off;"]`
 - `frontend/nginx.conf` 关键：
   - L53 `listen 80;`；L60 `root /usr/share/nginx/html;`
   - L71 `service-worker.js` 精确 no-store；L81 只有 `/assets/` 内容哈希资源缓存 1y immutable
   - L93 `location = /api/v1/auth/login`（登录接口 body 上限 1M，安全修复 W13）
   - L105 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
   - L129 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
-  - L138 `location /health`（容器健康检查端点）
+  - L143 `location = /health`（容器健康检查端点；L149 `/health/` 深路径转后端）
 
 > 部署会整体替换包含哈希文件的不可变前端镜像。已打开的旧 SPA 可能在客户端路由跳转时请求旧 chunk；`router.onError` 会携带一次性 query 重新加载当前 no-store 入口，60 秒门禁防止服务器真实缺文件时循环刷新。
 
@@ -80,7 +80,7 @@
 
 - `deploy/start.sh`：宿主机一键 `docker compose up -d --build`（L47），**不是应用启动入口**
 - `build-images.sh`（根目录）：构建并导出镜像 tar
-- `build-and-export-images.bat`（根目录，Windows）：构建 + 导出 + 可选 SSH 部署到远端（含镜像源 profile 重试链，见下节）
+- `build-and-export-images.sh`（根目录，bash；原 Windows bat 已迁移为本地 shell 脚本）：构建 + 导出 + 可选 SSH 部署到远端（含镜像源 profile 重试链与可达性探测，见下节）
 
 ### Dockerfile 镜像源参数化（v1.0.6.28，commit `48bbcf7`）
 
@@ -94,7 +94,7 @@
 
 **关键设计**：
 - `APT_MIRROR` 为空时跳过 `sed`（`if [ -n "$APT_MIRROR" ]`），与改造前"硬编码阿里云"不同 —— 默认现在是官方源，需镜像源才显式注入
-- `build-and-export-images.bat` 内置 3 个 profile（官方 / 阿里云 / 华为云）的重试链：profile 2（阿里云）失败自动切 profile 3（华为云），最后回退 profile 1（官方）
+- `build-and-export-images.sh` 内置 3 个 profile（官方 / 阿里云 / 华为云）的重试链：profile 2（阿里云）失败自动切 profile 3（华为云），最后回退 profile 1（官方）
 - 注：tencent apt 镜像被排除（强制 HTTPS，builder 阶段无 ca-certificates 会证书校验失败）；阿里云/华为云走 HTTP 可在裸 builder 阶段工作
 
 ---
@@ -106,7 +106,7 @@
 | 文件 | 平台 | 用途 |
 |------|------|------|
 | `deploy/btdeck.spec` | Linux | PyInstaller 打包配置 |
-| `deploy/btdeck-windows.spec` | Windows | PyInstaller 打包配置（含 Windows 特殊处理）；L15/L224 校验并嵌入 `frontend/public/favicon.ico`，供 EXE 与 pywebview 运行窗口提取品牌图标 |
+| `deploy/btdeck-windows.spec` | Windows | PyInstaller 打包配置（含 Windows 特殊处理）；L15/L320 校验并嵌入 `frontend/public/favicon.ico`，供 EXE 与 pywebview 运行窗口提取品牌图标 |
 
 ### 构建脚本
 
@@ -122,8 +122,8 @@
 | 文件/目录 | 用途 |
 |-----------|------|
 | `dist/btdeck.exe` | Windows 可执行 |
-| `dist/btdeck-linux` | Linux 可执行 |
-| `dist/BtDeck-v1.0.9-linux-amd64.deb` / `.rpm` | fpm 打包的 Linux deb/rpm 安装包 |
+| `dist/btdeck` | Linux 可执行（spec `name='btdeck'`） |
+| `dist/BtDeck-v1.0.6-linux-amd64.deb` / `.rpm` | fpm 打包的 Linux deb/rpm 安装包（版本随 `build-linux.sh` VERSION，当前 1.0.6） |
 | `android/dist/btdeck-companion-*-strict-debug.apk` | Android 默认严格明文策略 debug APK |
 | `android/dist/btdeck-companion-*-lan-cleartext-debug.apk` | Android 显式 LAN 明文测试 debug APK |
 | `dist/config` | 打包配套配置 |
@@ -149,7 +149,7 @@
 | 文件 | 用途 |
 |------|------|
 | `deploy/ChineseSimplified.isl` | Inno Setup 中文语言包 |
-| `deploy/btdeck.iss` | Inno Setup 安装脚本；L30 安装器品牌图标，L53-55 快捷方式显式复用主程序图标 |
+| `deploy/btdeck.iss` | Inno Setup 安装脚本；L30 安装器品牌图标，L57-59 快捷方式显式复用主程序图标 |
 | `deploy/analyze-package-size.py` | 打包体积分析 |
 | `deploy/verify-package.py` | 打包产物校验 |
 

@@ -9,9 +9,9 @@
 |--------|--------|-----------|
 | 应用入口 entry | [entry/](./entry/README.md) | 应用入口（main.ts / router.ts / permission.ts / App.vue / registerServiceWorker.ts / shims-vue.d.ts，6 文件） |
 | API 封装 api axios | [api/](./api/README.md) | axios 封装的 18 个领域 API 模块（✨2026-09-25 +reports.ts 并校准历史漂移） |
-| 页面视图 view | [views/](./views/README.md) | 15 个视图目录（含 mobile/ 移动页子系统与 nested/tree 演示模块）+ 404.vue（⚠ 以 class-component 为主，仅 2 处 Options API） |
+| 页面视图 view | [views/](./views/README.md) | 16 个视图目录（含 mobile/ 移动页子系统、rss 统一管理页与 statistics 统计报表组、nested/tree 演示模块）+ 404.vue（⚠ 以 class-component 为主，仅 2 处 Options API） |
 | Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 4 个 module，统一 vuex-module-decorators 动态注册；2026-09-23 删除零消费死模块 downloaderSettings） |
-| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 23 个 .vue（✨2026-09-25 +charts/EChart.vue）+ layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
+| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 27 个 .vue（✨2026-09-25 +charts/EChart.vue；✨2026-10-09 +common 表单四件套 BaseDialog/FormAutocomplete/FormCheckbox/FormSelect）+ layout 骨架 9 个 .vue（含 layout/mobile/index.vue）+ mixin；同内容排查复用种子列表视图，不设独立弹窗 |
 | 静态展示 Demo demo | [demo/](./demo/README.md) | typed fixture、内存状态仓库、集中式 request 分流、Demo 构建配置与安全边界 |
 | 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 16 + types 9（✨2026-09-25 +reports.ts）+ constants 1 + directive 1 |
 
@@ -23,11 +23,11 @@
 
 - **class-component**（`export default class` + `@Component`）：src 下 `.vue` 仍以该范式为主；同内容排查直接复用两种现有种子视图
 - **Options API**（`export default {`，无装饰器）：全仓库仅 **2 处** .vue（技术债候选）
-  - `views/recycle-bin/index.vue`（L369）
+  - `views/recycle-bin/index.vue`（L374）
   - `views/tracker/reannounce-config.vue`（L299）
   （原第 3 处 `components/torrents/CompactTable.vue` 已于 2026-09-20 P6-5 作为零消费方死代码删除）
 
-> `.vue` 总数实测 108（class 105 + Options 2 + `Vue.extend` 1：DemoModeBanner，2026-09-21 重测），class-component 占比 105/108 ≈ 97.2%。
+> `.vue` 总数实测 127（class 124 + Options 2 + `Vue.extend` 1：DemoModeBanner），class-component 占比 124/127 ≈ 97.6%。
 
 > ⚠ 注意：根目录 `frontend/CLAUDE.md` 与 `AGENTS.md` 约束写的是"必须使用 Options API，禁止 Composition API 和 `<script setup>`"，但**实际代码库以 class-component 为主**。这是文档/代码漂移点，路线图如实记录，详见 [../perspectives/risks.md](../perspectives/risks.md)。
 
@@ -40,12 +40,12 @@
 所有 API 模块统一 `import request from '@/utils/request'`。`request.ts` 定义：
 - `ApiEnvelope<T>`（status/msg/code/data）—— 与后端 `CommonResponse` 对齐
 - 请求拦截器注入 `Authorization: Bearer`
-- 响应拦截器处理 blob / 成功码(200/206/207) / 业务错误 / 网络错误 / HTTP 错误
+- 响应拦截器处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误 / HTTP 错误
 - 401 防抖重定向登录
 
 ### 4. 路由守卫分离
 
-- 路由表在 `src/router.ts`（483 行，含部署后旧 chunk 一次恢复；`/settings` 父路由 redirect → `/settings/index`，与守卫改动原子交付；✨2026-09-23 查询模板归入 `/torrents` 组，旧顶层双路径 redirect 兑底）
+- 路由表在 `src/router.ts`（568 行，含部署后旧 chunk 一次恢复；`/settings` 父路由 redirect → `/settings/index`，与守卫改动原子交付；✨2026-09-23 查询模板归入 `/torrents` 组，旧顶层双路径 redirect 兑底）
 - 守卫逻辑在独立 `src/permission.ts`（`router.beforeEach`），由 `main.ts` L37 `import '@/permission'` 触发副作用注册
 
 ---

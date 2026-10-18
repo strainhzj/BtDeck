@@ -24,7 +24,7 @@
 ## 各 module 主要 @Action
 
 ### user.ts（L33 `@Module`）
-`Login`（L110，缺 refresh_token 时清残留 cookie）、`ResetToken`（L145）、`SetToken`（L69，续期后内存+cookie 同步）、`SetTwoFactorFlag`、`SetMustChangePassword`、`GetUserInfo`、`LogOut`（L281，容忍空 token）
+`Login`（L117，缺 refresh_token 时清残留 cookie）、`ResetToken`（L164）、`SetToken`（L69，续期后内存+cookie 同步）、`SetTwoFactorFlag`、`SetMustChangePassword`、`GetUserInfo`、`LogOut`（L325，容忍空 token）
 
 ### notification.ts（L23 `@Module`）
 `ToggleDrawer`、`FetchUnreadCount`、`FetchNotifications`、`RefreshNotifications`、`MarkAsRead`、`MarkAllAsRead`、`MarkAsUnread`、`DeleteNotification`

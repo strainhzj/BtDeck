@@ -11,7 +11,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`、**相对时间七档走 i18n（`translate/translateChoice`，双语 P1）**（L610 默认导出聚合） |
+| 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`、**相对时间七档走 i18n（`translate/translateChoice`，双语 P1）**（L599 默认导出聚合） |
 | Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`poolLabel`/`poolOptions`（池名共享，tracker.pools.* 键化）、`getLanguageLabel`（tracker.lang.* 键化，未登记码原文回退 Q02）、`debounce`/`extractErrorMessage`（默认兜底与 422 拼接走 tracker.errors.* 键，msg 原文透传）/`parseJSON`；✨2026-09-20 双语 P6-3 死代码删除（LANGUAGE_LABELS/KEYWORD_TYPE_OPTIONS/PRIORITY_RANGE/getKeywordTypeLabel/getPriorityTagType/getOccurrenceCountTagType/formatDateTime/downloadJSON/validateKeywordData 均零生产消费方） |
 | 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`（P6-5 改 nameKey/descriptionKey，展示经 common.theme.* 键）、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
 | 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调板；P6-5 删除无消费方 displayName 字段）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L75） |
@@ -29,24 +29,24 @@
 | 通知渲染 notification-markdown ✨2026-09-21 补录 | `notification-markdown.ts` | 通知 Markdown-lite 渲染：`renderNotificationContent()`（按行分块：标题 #/##/###、分隔线、无序列表、段落，输入先 HTML 转义再内联替换粗体/行内代码防注入）、`plainNotificationContent()` 摘要纯文本化（记号剥离）、`notificationFailureTarget()` 失败明细目标回退链（P6-5 兑底走 common.notifications.*）；桌面/移动通知详情同源 |
 | UI 模式 ui-mode ✨2026-09-21 补录 | `ui-mode.ts` | 移动/桌面视图选择（dual-mode-client Phase 4 M1）：`resolveUiMode()`——偏好持久化（localStorage）优先、auto 按视口 `MOBILE_VIEWPORT_BREAKPOINT=768` 判定、伴侣 App WebView（UA 含 App 注入标记）恒 mobile（2026-09-12 用户决策，顺带覆盖旧 APK 写入的 desktop 偏好） |
 
-#### request.ts 关键（axios/Demo 分流封装，L1-300）
+#### request.ts 关键（axios/Demo 分流封装，L1-355）
 
 - L20 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
-- L179~ 幂等 GET 瞬态失败自动重试（✨2026-09-10）：`isTransientRetryEligible` 仅 GET + 网络错误/502/503/504 触发、超时（ECONNABORTED）与写操作不重试，重试落响应拦截器内静默一次（800ms 延迟），用尽才走 toast——高负载伴侣模式的红色 toast 缓解
-- L49 `NETWORK_TOAST_THROTTLE_MS` + L54 `notifyNetworkError`：网络错误 toast 3 秒同文案节流（断网+1 秒轮询不洪泛，窗口到期复位）
-- L108 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，`isDefiniteFailure` = ApiError code '401' 才判死）
-- L90 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；改用 `UserModule.ExpireSession()`（保留共享 cookie——refresh 防跨标签轮换竞态、access 防他标签 syncTokenFromCookie 级联误杀）
-- L137 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口，返回三态 RefreshOutcome
-- L145 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
-- L166 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
-- L201 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误（节流 toast）/ HTTP 错误
-- L271-280 `requestClient`：Demo 开关打开时转本地 `demoRequest`，真实模式走 Axios；L280 保留 `service.defaults` 兼容 adapter 注入，L300 导出统一请求客户端
+- L197~ 幂等 GET 瞬态失败自动重试（✨2026-09-10）：`isTransientRetryEligible` 仅 GET + 网络错误/502/503/504 触发、超时（ECONNABORTED）与写操作不重试，重试落响应拦截器内静默一次（800ms 延迟），用尽才走 toast——高负载伴侣模式的红色 toast 缓解
+- L58 `NETWORK_TOAST_THROTTLE_MS` + L63 `notifyNetworkError`：网络错误 toast 3 秒同文案节流（断网+1 秒轮询不洪泛，窗口到期复位）
+- L117 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，`isDefiniteFailure` = ApiError code '401' 才判死）
+- L99 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；改用 `UserModule.ExpireSession()`（保留共享 cookie——refresh 防跨标签轮换竞态、access 防他标签 syncTokenFromCookie 级联误杀）
+- L146 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口，返回三态 RefreshOutcome
+- L154 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
+- L223 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
+- L258 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误（节流 toast）/ HTTP 错误
+- L326-355 `requestClient`：Demo 开关打开时转本地 `demoRequest`，真实模式走 Axios；L335 保留 `service.defaults` 兼容 adapter 注入，L355 导出统一请求客户端
 
 #### error-normalize.ts 关键
 
 - L19 `export const SUCCESS_CODES = new Set(['200', '202', '206', '207'])`
 - L33-60 `extractFromDetail`：处理 array(422)/对象 envelope/字符串/兜底四态
-- L100-135 `buildBusinessError` / `buildNetworkError` / `buildHttpError` 全部返回 `ApiError`（来自 `@/types/api`）
+- L106-141 `buildBusinessError` / `buildNetworkError` / `buildHttpError` 全部返回 `ApiError`（来自 `@/types/api`）
 
 ### types/（9 个 .ts 文件；✨2026-09-25 统计报表 W4 +reports.ts）
 
@@ -60,7 +60,7 @@
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |
 | 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等 |
-| 统计报表类型 reports ✨2026-09-25（W4） | `reports.ts` | 255 行纯 JSON 契约（255 行实测），与后端 report_service 七域输出一一对应（Overview/Trends/Seeding/Trackers/FunSummary/FunYearly/SpeedHistory + SizeCount/StatusDist/TimeBucket/AgeBucket/RatioBucket/LiveSpeed/SpeedSeries 等中间结构）；刻意禁 echarts 类型 import（契约类型全放 .ts，SFC 类型不进 CI；feature statistics-reports-2026-09） |
+| 统计报表类型 reports ✨2026-09-25（W4） | `reports.ts` | 265 行纯 JSON 契约（265 行实测），与后端 report_service 七域输出一一对应（Overview/Trends/Seeding/Trackers/FunSummary/FunYearly/SpeedHistory + SizeCount/StatusDist/TimeBucket/AgeBucket/RatioBucket/LiveSpeed/SpeedSeries 等中间结构）；刻意禁 echarts 类型 import（契约类型全放 .ts，SFC 类型不进 CI；feature statistics-reports-2026-09） |
 
 ### constants/
 
@@ -79,11 +79,11 @@
 
 ## 关键观察
 
-- **axios 封装集中**：`utils/request.ts`（263 行）+ `utils/error-normalize.ts`（139 行）是所有 API 调用的底座
+- **axios 封装集中**：`utils/request.ts`（355 行）+ `utils/error-normalize.ts`（141 行）是所有 API 调用的底座
 - **主题双文件**：`theme.ts`（核心类型与切换）+ `theme-manager.ts`（扩展调色板）分工
-- **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 54 个 interface）
+- **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 61 个 interface）
 - **`types/index.ts` 不全 re-export**：`torrent` 和 `dashboard` 需直接路径 import
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`request.ts` axios 封装、`formatters.ts` 606 行工具集）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`request.ts` axios 封装、`formatters.ts` 610 行工具集）

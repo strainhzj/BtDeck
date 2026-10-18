@@ -8442,3 +8442,24 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **冲突解决 15 文件**：ui-mode.ts 双映射行并集（/downloader/rss 与 /statistics 相邻插入）；progress.md 双侧会话记录按时间序并集（reports 09-25 四条在前、dev 10-08 三条在后）；roadmap 13 文件按 roadmap-maintain 技能合并——计数全部合并后实测（后端 272 test_*.py / 前端 141 套 1984 例 / spec 144 / endpoints 44 / alembic 37 revision 单 head c9e0f1a2b3c4 / 表数 42）；根 README statistics 速查行取 reports 终态、巨型"本次新增"单元格左格取全量批终态右格保 dev 批；api torrents_async 行号重测校准（extract L782/sync_add L1052/_qb_read_trackers L2766/_log_invalid L2786）；infra 启动阶段取 reports 重测锚点（lifespan L376 起，lifecycle.py 两侧逐字节一致）；components-layout EChart 行更新为深路径终态描述（合并源码实测 lib/chart/* 深路径）并防速查表重复行；entry router/permission 行取 reports（statistics 路由组+守卫+L301 重测）、i18n 行取 HEAD（含 statistics 模块七节）；test-coverage 计数 272（services 54 递归 55/models 对 22）。
 - **feature_list 修正**：自动合并产生混合态（W5/W6 done 但 W7 pending）→ 按终态修正 statistics-reports-2026-09 status=done + W7 done/evidence 回填合并验证。
 - **验证**：后端 mypy/black/flake8 净（306 文件）+ 全量 pytest **5478 passed / 18 skipped**；前端 typecheck/lint 净（裸 npm run lint；NODE_ENV=production 会使 no-console 翻转误报 272——worker 子代理环境踩坑，已复核为环境性）+ build 绿（echarts chunk **199.89KB gz < 200KB 门禁**，echarts@5.5.1 需 npm install 装齐后 EChart.spec 计入）+ 全量 Jest **141 套 1984 例全绿**；./init.sh exit=0。合并后 dev 领先 origin/dev 6 提交，**未推送**。
+
+## 2026-10-17（第二批）：roadmap 全量验证批（25/31 文件修复）
+
+- **任务**：用户要求"全量验证更新项目roadmap"——docs/roadmap 全 31 文件对照当前源码逐条实测（计数/文件存在性/行号断言双向对账）。
+- **执行方式**：4 个 worker 子代理并行分支核对（api/后端根级/前端核心/deploy-tests-android-perspectives）+ 2 个因子代理 5h 配额上限转主会话完成（services+tasks+data-models、views+components+demo）；根 README 由主会话收口。
+- **共修复 170+ 处漂移，25 文件改动（+247/−231），全部限定 docs/roadmap/****：
+  - 根 README：模块路由树计数（endpoints 42→44、前端 api 16→18、alembic 35→37 单 head c9e0f1a2b3c4、views 13/15→16）+ 元信息三行（生成日期/本次新增/最近同步）。
+  - backend：api 14 处（torrent_helpers VO 族迁至 torrent_vo_conversion L30、require_authenticated_user 29→35 文件）；根级分支 30 处（domain initialization 全函数 +15~+34 整体漂移、encryption 消费方事实纠错、孤儿文件实为 5 个）；services/tasks/data-models 15 处（+torrent_vo_conversion.py 补行、report_service 984 行 + L586/L598/L719 校准、downloader 详情 16→19 文件 + 补 template-presets.ts）。
+  - frontend：核心 58 处（router.ts 568 行 + 补 /statistics 路由行、request.ts 355 行、torrents.ts 61 interface/1509 行）；views 24 处（index.vue class L955/getList L1225/loadActiveSpeed L2060 等两视图长行全套重测、视图目录 15→16、class-component 74→88+5ts）。
+  - deploy/tests/android/perspectives 47 处（build-and-export-images.bat→.sh、backend tests 270→272、risks R5 alembic head 事实修正、R8 admin 硬编码已消除改写）。
+  - 格式修复：5 处历史遗留 `||` 合并表格行拆分（api×2/infra×2/test-coverage×1）。
+- **验证**：改动范围 git status 仅 docs/roadmap/**；乱码 0；残留 `||` 0；抽查 AuditOperationType=72/router.ts=568/api=18/endpoints=44/alembic 37 单 head 全部吻合；orphan_file_service.md 第三层 60 索引行脚本全验零漂移。
+- **已知存疑（未改）**：±3 行容差内断言按技能规则保留；tests/README 用例级计数已于同日 Jest 复测闭环（141 套 1986 例全绿，1984→1986 已修）。
+- **未提交**：按约定 Git 提交仅在用户要求时执行。
+
+## 2026-10-17（第三批）：Jest 重跑复测批（roadmap 用例级计数闭环）
+
+- **全量 Jest**：141/141 套、1986/1986 例全部通过（exit=0，11.7s）；`--listTests` 141 个 spec 入 Jest（另 e2e 3 个不入，盘上 144 ✓）。
+- **修正**：tests/README 总量 "1984 例"→**1986 例**（2026-10-09 合并后为 1984，W8-1 trends.spec 增例），附复测说明；根 README 生成日期批条目补记 Jest 闭环。
+- **per-spec 抽验 8 项全吻合**：torrent-error-tooltip-dismiss 7 / window-infinite-scroll 8 / speed-polling 9 / EChart 7 / statistics 五 spec（5 套 30 例全绿，行数 137/159/131/101/208 与文档一致）。
+- **范围**：仅 docs/roadmap/tests/README.md、docs/roadmap/README.md、progress.md 三文件；未提交。
