@@ -8486,3 +8486,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修正**：mixin 滑块改 `rgba(var(--color-primary-rgb), 0.45)`（hover 0.75），emerald #059669 / 橙 #EA580C / 石墨 #374151 三主题自适应（暗色为预留未启用，primary-rgb 主题作用域内有效）；BaseDialog `.modal-dialog` 弹窗主体滚动条接入 `@include themed-scrollbar(8px)`（弃原 4 条手写规则），与 FormSelect/FormAutocomplete 下拉列表（6px）同设计语言。
 - **验证**：lint/tsc 净、全量 Jest 141 套 1986 例绿、构建产物实测 `modal-dialog[data-v-dcd2bf28]` 与 `form-select__list`/`form-autocomplete__list` 滑块均 primary-rgb 规则；残留旧式滚动条规则属 torrents/index.vue 等手写 modal（非 BaseDialog，超本批范围）。
 - **部署**：5e797ad 推 origin dev；build-and-export + unraid 部署一次过（~4.5min，双容器 healthy，gitSha/frontendManifestSha256 `291c3a60…` 一致）；远端下发 CSS（torrents-traditional.94036032.css）实测弹窗主体 8px 透明轨道 + primary 圆角滑块、下拉 6px 同款——REMOTE_VERIFY_OK。
+
+## 2026-10-18（续三）：弹窗滚动结构整体化——头/底固定仅主体滚动 + 三次部署
+
+- **反馈**：主题色滚动条上线后用户仍不满意——"页面是一块，滑动条是另一块"的割裂感。根因：BaseDialog 整窗（`.modal-dialog` overflow-y:auto）作为滚动容器，8px 滚动条从渐变头贯穿到 footer 贴边，视觉上像贴在弹窗旁的独立轨道。
+- **修正**：BaseDialog 改三段纵列——`.modal-dialog` display:flex/flex-direction:column/overflow:hidden；`.modal-header`/`.modal-footer` flex-shrink:0 固定（渐变头常驻、操作钮始终可见）；`.modal-body` 唯一滚动区（flex:1 1 auto/min-height:0/overflow-y:auto + themed-scrollbar 6px）。滚动条收进表单内容区右侧（16px padding 内缩），与下拉列表同一设计语言。≤768 overlay 接管滚动行为不变。
+- **验证**：lint/tsc 净、目标 8 spec（191 例，含 BaseDialog ≤768 契约）+ 全量 Jest 141 套 1986 例绿；构建产物实测 modal-dialog flex column/overflow hidden、modal-body 滚动 + primary 滑块 4 条规则产出。
+- **部署**：1fbe098 推 origin dev；构建部署一次过（~5m10s，双容器 healthy restarts=0，gitSha/frontendManifestSha256 `26705514…` 一致）；远端下发 CSS（9384.32ac082f.css）实测 REMOTE_STRUCTURE_OK。
+- **运维注记**：sshpass 环境变量为 SSHPASS，凭据文件为 SSH_PASSWORD，需映射后 `-e` 引用。
