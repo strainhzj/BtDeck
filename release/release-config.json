@@ -1,25 +1,23 @@
 {
   "schema_version": 1,
   "feature_id": "release-artifact-equivalence-gate-2026-08-28",
-  "generated_at": "2026-08-28",
+  "generated_at": "2026-10-20",
   "candidate": {
-    "product_version": "1.0.6",
-    "git_tag": "v1.0.6",
-    "planning_baseline_sha": "433f729fd9945afbff259d66b6a7ccb9efbc696d",
-    "planning_baseline_note": "dev@433f729 仅为规划基线；正式 RC 必须来自受保护标签 v1.0.6 的干净检出（G0）",
-    "working_tree_dirty": true,
-    "dirty_files": [
-      "frontend/src/contracts/advancedSearch.generated.ts"
-    ]
+    "product_version": "1.0.7",
+    "git_tag": "v1.0.7",
+    "planning_baseline_sha": "76c62ebedf685d6116a20af9dacf3aa9b276f85e",
+    "planning_baseline_note": "dev@76c62eb 仅为规划基线；正式 RC 必须来自受保护标签 v1.0.7 的干净检出（G0）",
+    "working_tree_dirty": false,
+    "dirty_files": []
   },
   "upgrade_baseline": {
-    "git_tag": "v1.0.5",
-    "git_sha": "29c6f6f68ab35e25f8cf7237ee187de359c77714",
+    "git_tag": "v1.0.6",
+    "git_sha": "3e8cdb09517ea22f90b176dc22172feb27467120",
     "git_tag_verified": true,
     "official_artifacts_available": false,
-    "official_artifacts_evidence": "GitHub Release API /repos/strainhzj/BtDeck/releases/tags/v1.0.5 返回 404（2026-08-28 实测）；仅存在 git 标签，无发布制品",
+    "official_artifacts_evidence": "v1.0.6（2026-09-21）发布形态为 git 标签 + Docker Hub 官方镜像 strainthomas/btdeck-*；GitHub Release 制品待 v1.0.7 首次启用完整 G0～G10 门禁后补齐，届时再复核本字段",
     "fixture_strategy": "local-release-build",
-    "fixture_note": "本地 .release-build-v1.0.5/assets/ 有完整制品集（DEB/RPM/Windows portable EXE+ZIP，SHA256 见 w0-environment-report.md §2）；来源对账 = v1.0.5 标签树 971 文件中仅 4 处差异（1 处 feature_list 记录在案的 py3.11 f-string 热修 + 3 个发布记录文件）。作为升级夹具标注 reconstructed=true, source=local-release-build；无 v1.0.5 Inno 安装器，Windows 升级生命周期只能用 portable/重建夹具（G6 报告须注明局限）"
+    "fixture_note": "v1.0.5 夹具沿用先前结论：本地 .release-build-v1.0.5/assets/ 有完整制品集（DEB/RPM/Windows portable EXE+ZIP，SHA256 见 w0-environment-report.md §2）；来源对账 = v1.0.5 标签树 971 文件中仅 4 处差异（1 处 feature_list 记录在案的 py3.11 f-string 热修 + 3 个发布记录文件）。v1.0.6 升级基线可直接从 tag 干净检出重建（六处版本号 1.0.6 齐全）；无 v1.0.5/v1.0.6 Inno 安装器历史制品，Windows 升级生命周期只能用 portable/重建夹具（G6 报告须注明局限）"
   },
   "toolchain": {
     "python_target": "3.12",

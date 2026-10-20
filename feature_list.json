@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "release_version": "1.0.6",
-  "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.6，开发中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.5（2026-08-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-10-09",
+  "release_version": "1.0.7",
+  "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.7，发布流程进行中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.6（2026-09-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
+  "last_updated": "2026-10-20",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4141,7 +4141,7 @@
       "id": "v1.0.6-dual-mode-client",
       "name": "双模式客户端与安卓改造",
       "description": "v1.0.6 当前开发范围下的双模式客户端与安卓改造；与已完成的 v1.0.6 孤儿文件管理功能独立登记，不改变对外发布号。安卓服务端仅定位为轻量/临时服务端，伴侣模式优先交付。详细方案见 PLANS/dual-mode-client.md。",
-      "status": "in-progress",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/dual-mode-client.md",
       "tasks": [
@@ -4268,7 +4268,7 @@
           "id": "v1.0.6-dual-mode-client.7",
           "name": "Play、侧载与跨模式发布验收",
           "description": "按提审时官方 target API 要求完成 Play App Signing、隐私政策、Data Safety、FGS 用途申报和明文流量说明；GitHub Release 提供通用/ABI APK 说明；用 bundletool 记录真实包体和 native 清单；覆盖 API 24、Android 14/15/16、四 ABI、冷启动、迁移升级、进程杀死、Doze、通知/存储权限、HTTP/HTTPS/坏证书、LAN 开关、版本不匹配和两种模式的首启/退出/恢复。完成既有 DoD、Gradle lint/test、wheel import matrix 与 release artifact 校验后才标记 done。",
-          "status": "in-progress",
+          "status": "done",
           "scope": "fullstack",
           "files": [
             "android/",
@@ -4278,7 +4278,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "2026-08-30 Phase 5 发布验收首批（A/B/C 批次全过；Play 上传/arm64 真机/跨版本升级演练三边界登记）。① 批次 A（release 构建+包体精算）：发布 keystore 生成（gitignored，凭据 local.properties 注入，缺失退化无签名不阻断 CI）；signingConfigs 内联接线；assembleRelease 87.7MB + bundleRelease AAB 67.7MB；apksigner 验签（CN=BtDeck，SHA-256 92abd2a7…d0e3）；bundletool 1.17 精算——universal 85.6MB、arm64/x86_64 native 拆分各 12.2MB、单设备下发 ≈73MB、每 ABI 8 个 native so 清单（全 Chaquopy 运行时）；minify 保持关闭（Chaquopy 反射链路，决策登记 play-release.md §9）。② 批次 B（设备矩阵）：API 24（google_apis x86_64 新建 AVD btdeck-a24，WHPX 5s 冷启动）——release APK 安装 6s、服务启动链 10s 打开 WebView（Python 3.12 在 minSdk 24 完整跑通：迁移+uvicorn+SPA）、FGS true+health 200 v1.0.6、WebView 登录页渲染、旋转后服务存活+health 200、LAN 绑定变化实测（restartWith 绑 0.0.0.0，ss 显示 *:54916 端口复用）、kill -9 崩溃恢复（pid 4462→5100、FGS 重建、端口复原）；**修复两个 API 24 真 bug**：ServerService.createChannel 无版本判断（NotificationChannel API 26+，API 24 实测 ClassNotFoundException 崩溃→补 Build.VERSION_CODES.O 守卫）与 HealthClient java.util.Base64（API 26+，lint NewApi 唯一违例→自包含 Base64 实现，设备与 JVM 测试行为一致）。API 34（新建 btdeck-a34）——release 链路 10s WebView+FGS+health 200+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（dumpsys deviceidle not enabled，环境限制登记真机补）。③ 批次 C：docs/android/play-release.md（FGS specialUse 申报口径/Data Safety 表（无第三方 SDK 不收集）/隐私政策要点/明文流量双层防线/按 ABI Release 说明/minify 决策/包体实测矩阵）；:app:lintDebug 全绿（两违例修复后）；testDebugUnitTest 32 绿含修复回归。④ 遗留边界（不可本机完成，均登记 play-release.md §10）：Play Console 实际上传与人工审查（需开发者账号）；arm64 真机矩阵（wheel 自建已全绿，导入/16KB 待真机）；跨版本升级迁移演练（需两个带服务端的发布版本对，建议 v1.0.7）；Doze 真机实测。 追加（2026-09-04）：本轮设备级自动化批次（task .3/.4/.8 收口）新增三项与发布相关的产品修复并复验——targetSdk 35 强制 e2e 布局缺陷（values-v35 主题退出，API 36 起出口移除需迁移 insets 自处理，已注释登记）、TrustScope SPKI 指纹语义、OkHttp 手动钉扎；appcompat 1.7.0→1.7.1；assembleRelease+bundleRelease 修复后复验成功。§11 SOP 已落（arm64 真机 adb 验证步骤/Play Console 逐步操作/v1.0.7 升级演练前置/Doze 真机命令）。arm64 机会记录：会话中一台 SDY-AN00 实体机短暂接入 adb（已授权调试）后掉线未复现——设备稳定接入后按 §11-SOP1 十分钟内可完成验证。task 保持 in-progress：四项外部边界为硬阻塞，取得条件前不得置 done。"
+          "evidence": "2026-08-30 Phase 5 发布验收首批（A/B/C 批次全过；Play 上传/arm64 真机/跨版本升级演练三边界登记）。① 批次 A（release 构建+包体精算）：发布 keystore 生成（gitignored，凭据 local.properties 注入，缺失退化无签名不阻断 CI）；signingConfigs 内联接线；assembleRelease 87.7MB + bundleRelease AAB 67.7MB；apksigner 验签（CN=BtDeck，SHA-256 92abd2a7…d0e3）；bundletool 1.17 精算——universal 85.6MB、arm64/x86_64 native 拆分各 12.2MB、单设备下发 ≈73MB、每 ABI 8 个 native so 清单（全 Chaquopy 运行时）；minify 保持关闭（Chaquopy 反射链路，决策登记 play-release.md §9）。② 批次 B（设备矩阵）：API 24（google_apis x86_64 新建 AVD btdeck-a24，WHPX 5s 冷启动）——release APK 安装 6s、服务启动链 10s 打开 WebView（Python 3.12 在 minSdk 24 完整跑通：迁移+uvicorn+SPA）、FGS true+health 200 v1.0.6、WebView 登录页渲染、旋转后服务存活+health 200、LAN 绑定变化实测（restartWith 绑 0.0.0.0，ss 显示 *:54916 端口复用）、kill -9 崩溃恢复（pid 4462→5100、FGS 重建、端口复原）；**修复两个 API 24 真 bug**：ServerService.createChannel 无版本判断（NotificationChannel API 26+，API 24 实测 ClassNotFoundException 崩溃→补 Build.VERSION_CODES.O 守卫）与 HealthClient java.util.Base64（API 26+，lint NewApi 唯一违例→自包含 Base64 实现，设备与 JVM 测试行为一致）。API 34（新建 btdeck-a34）——release 链路 10s WebView+FGS+health 200+capabilities android-server 5/3。Doze deep idle 模拟器不可强制（dumpsys deviceidle not enabled，环境限制登记真机补）。③ 批次 C：docs/android/play-release.md（FGS specialUse 申报口径/Data Safety 表（无第三方 SDK 不收集）/隐私政策要点/明文流量双层防线/按 ABI Release 说明/minify 决策/包体实测矩阵）；:app:lintDebug 全绿（两违例修复后）；testDebugUnitTest 32 绿含修复回归。④ 遗留边界（不可本机完成，均登记 play-release.md §10）：Play Console 实际上传与人工审查（需开发者账号）；arm64 真机矩阵（wheel 自建已全绿，导入/16KB 待真机）；跨版本升级迁移演练（需两个带服务端的发布版本对，建议 v1.0.7）；Doze 真机实测。 追加（2026-09-04）：本轮设备级自动化批次（task .3/.4/.8 收口）新增三项与发布相关的产品修复并复验——targetSdk 35 强制 e2e 布局缺陷（values-v35 主题退出，API 36 起出口移除需迁移 insets 自处理，已注释登记）、TrustScope SPKI 指纹语义、OkHttp 手动钉扎；appcompat 1.7.0→1.7.1；assembleRelease+bundleRelease 修复后复验成功。§11 SOP 已落（arm64 真机 adb 验证步骤/Play Console 逐步操作/v1.0.7 升级演练前置/Doze 真机命令）。arm64 机会记录：会话中一台 SDY-AN00 实体机短暂接入 adb（已授权调试）后掉线未复现——设备稳定接入后按 §11-SOP1 十分钟内可完成验证。task 保持 in-progress：四项外部边界为硬阻塞，取得条件前不得置 done。 收口（2026-10-20）：v1.0.7 发布前置盘点会话中用户确认 Play、侧载与跨模式发布验收已通过（四项外部边界不再阻塞），task 置 done，feature 随 9/9 任务全 done 收口。"
         },
         {
           "id": "v1.0.6-dual-mode-client.9",

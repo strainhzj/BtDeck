@@ -30,7 +30,7 @@ PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.12}"
 
 # 产品版本唯一输入：release/release-config.json（candidate.product_version），
 # 本变量必须与之一致（版本一致性检查强制）
-VERSION="1.0.6"
+VERSION="1.0.7"
 ARCH="amd64"
 
 FRONTEND_DIST="${FRONTEND_DIR}/dist"

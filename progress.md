@@ -1,3 +1,13 @@
+## 2026-10-20：v1.0.7 发布前置批（版本升位 + changelog + 全量门禁复验，未提交）
+
+- **范围（实现假设经用户四点确认后实施）**：①v1.0.7 范围=当前 dev HEAD `76c62eb` 全部内容（v1.0.6..dev 共 100 提交；不含 PostgreSQL v1.0.8 worktree）；②changelog 由代理起草用户审阅；③`v1.0.6-dual-mode-client.7`（Play/侧载/跨模式发布验收）用户确认已通过，task+feature 双收口 done（9/9）；④发布形态=启动完整 G0～G10 制品门禁流程（release-gate.yml，1554 行完整 DAG + rc-gate 聚合 job，workflow_dispatch 触发）。
+- **版本号六处升位 1.0.6→1.0.7**：release/release-config.json（candidate.product_version/git_tag/planning_baseline_sha=76c62eb…/working_tree_dirty 重置 false；upgrade_baseline 基线推进 v1.0.5→v1.0.6（tag SHA 3e8cdb0，注明 v1.0.6 发布形态为 tag+Docker Hub 镜像，GitHub Release 制品待本次补齐））；backend/app/version.py（CURRENT_VERSION + VERSION_HISTORY 新增 1.0.7 条目：release_date 2026-10-20，changelog 经用户审阅定稿——核心新功能 MCP 服务/统计报表/RSS 订阅/双语收口四项 + 界面交互/删除安全 + 稳定性三项（qB5 Tracker 污染根修/批量添加收口/通用种子定位）+ 工程工具链 + 6 项数据库变更声明；MoviePilot 联动与 rTorrent 前置按用户口径不入正文）；frontend/package.json、deploy/btdeck.iss、deploy/build-linux.sh、feature_list.json（release_version/release_note 历史发布改记 v1.0.6 2026-09-21）。`generate_build_info.py --check-versions` PASS `{'1.0.7'}`。
+- **全量门禁复验（双 subagent 并行，只跑不改）**：后端——pytest 全量 **5497 passed / 18 skipped / 0 failed**（cov 68.17%，540s）；mypy app/ 306 文件 0 错；black --check app/ 307 文件合规 exit 0；flake8 app/ exit 0；lint_btdeck 15 白名单 0 阻塞。前端——typecheck 0 错；lint 三段全绿（contract:check 无漂移）；build 成功（dist 61M）；**全量 Jest 141 套 1991 例全绿**（EChart.spec 本次亦过，echarts 环境就绪）。
+- **门禁口径澄清（重要）**：black/flake8 官方口径=**app/ 目录**（backend/scripts/init.sh L152-158 明确）；全目录扫描报出的 81 文件 black + 436 行 flake8 违规全部在 tests/alembic/scripts/setup.py（app/ 源码 0 违规），不阻塞发布。
+- **已知存量（登记不阻塞，可另立任务）**：①`ruff check app/` 报 10 错（E402/F401），但 pyproject.toml 无 [tool.ruff] 配置、regression.yml/release-gate.yml 均不跑 ruff，仅 init.sh check 模式单点调用且配置未对齐 .flake8 豁免清单——ruff 配置落地另立任务；②.flake8 extend-exclude 写 `.venv` 而实际目录名 `venv`，门禁只跑 app/ 不受影响；③前端 lint 受 shell `NODE_ENV=production` 环境变量干扰（no-console 规则条件启用，273 错均为环境性，CI 无此问题）。
+- **文档联动**：AGENTS.md 顶部『当前发布版本』v1.0.5（滞后两版）→ v1.0.7 发布流程进行中；feature_list last_updated 2026-10-20。
+- **待用户**：审阅 version.py 中 1.0.7 changelog 定稿 → 提交本批 → 打 v1.0.7 tag → 推送 → workflow_dispatch 触发 release-gate 全量（G0 干净检出起，run_w2/w3/w4/w5 全开）。
+
 ## 2026-10-17：报表文件优先口径（文件>种子，statistics-reports 追加 W8，全绿未提交）
 
 - **范围（实现假设经用户三轮确认后实施）**：用户决策——报表数据主导优先顺序文件>种子，辅种种子（名称、大小相同仅 tracker 不同）不计入报表。三点拍板：a) 五桶状态按实际种子，分享率双口径（实际种子 + 按文件合计 Σratio）；b) 回收站体积站内去重（与库存互不去重）；c) 主种=added_date 最早者（tie-break info_id 升序）。分组键与 auxiliary_seed_count_service 同口径 (name, size)，无效键（name 空白/size NULL）独立成组。
