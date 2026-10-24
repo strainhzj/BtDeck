@@ -316,14 +316,14 @@ def drill_digest_tamper(root: Path) -> Tuple[str, str]:
         shutil.copyfile(root / "dist/btdeck.exe", dist / "btdeck.exe")
         shutil.copyfile(root / "dist/btdeck", dist / "btdeck")
         shutil.copyfile(
-            root / "dist/BtDeck-v1.0.6-linux-amd64.deb",
-            dist / "BtDeck-v1.0.6-linux-amd64.deb",
+            root / "dist/BtDeck-v1.0.7-linux-amd64.deb",
+            dist / "BtDeck-v1.0.7-linux-amd64.deb",
         )
         shutil.copyfile(
-            root / "dist/BtDeck-v1.0.6-linux-amd64.rpm",
-            dist / "BtDeck-v1.0.6-linux-amd64.rpm",
+            root / "dist/BtDeck-v1.0.7-linux-amd64.rpm",
+            dist / "BtDeck-v1.0.7-linux-amd64.rpm",
         )
-        (dist / "BtDeck-v1.0.6-windows-x64-setup.exe").write_bytes(
+        (dist / "BtDeck-v1.0.7-windows-x64-setup.exe").write_bytes(
             b"drill-setup-fixture"
         )
 
@@ -394,7 +394,7 @@ def drill_digest_tamper(root: Path) -> Tuple[str, str]:
         _expect(rc0 == 0, f"篡改前 verify 应绿（rc={rc0}）\n{out0}")
 
         # 注入：清单生成后篡改制品字节
-        victim = dist / "BtDeck-v1.0.6-linux-amd64.deb"
+        victim = dist / "BtDeck-v1.0.7-linux-amd64.deb"
         victim.write_bytes(victim.read_bytes() + b"\x00tampered")
 
         rc1, out1 = _run(

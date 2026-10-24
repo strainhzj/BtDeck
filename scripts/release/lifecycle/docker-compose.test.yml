@@ -4,7 +4,7 @@
 # 说明：
 # - 服务名固定 btdeck-backend（前端 nginx upstream 按该 DNS 名代理）。
 # - 卷独立于开发 compose，避免污染本地数据。
-# - 测试期间通过 BTDECK_BACKEND_IMAGE 切换 v1.0.5/v1.0.6 实现升级场景。
+# - 测试期间通过 BTDECK_BACKEND_IMAGE 切换 v1.0.6/v1.0.7 实现升级场景。
 
 services:
   btdeck-backend:

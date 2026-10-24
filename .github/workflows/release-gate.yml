@@ -580,7 +580,7 @@ jobs:
           if (-not (Test-Path $exe)) { throw "dist/btdeck.exe missing" }
           $vi = (Get-Item $exe).VersionInfo
           $sha = (Get-Content release\build\windows-exe\build-info.json | ConvertFrom-Json).git_sha
-          if ($vi.ProductVersion -ne "1.0.6") { throw "ProductVersion mismatch: $($vi.ProductVersion)" }
+          if ($vi.ProductVersion -ne "1.0.7") { throw "ProductVersion mismatch: $($vi.ProductVersion)" }
           if ($vi.Comments -notmatch $sha) { throw "Comments missing full git sha: $($vi.Comments)" }
           Write-Output "VERSION_RESOURCE_OK ProductVersion=$($vi.ProductVersion) sha=$($sha.Substring(0,12))"
 
@@ -661,7 +661,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -711,11 +711,11 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Prepare v1.0.5 upgrade baseline (reconstructed from tag)
+      - name: Prepare v1.0.6 upgrade baseline (reconstructed from tag)
         run: |
-          mkdir -p .release-build-v1.0.5/assets
-          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash scripts/release/lifecycle/make_v105_baseline.sh
-          ls -la .release-build-v1.0.5/assets/
+          mkdir -p .release-build-v1.0.6/assets
+          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash scripts/release/lifecycle/make_v106_baseline.sh
+          ls -la .release-build-v1.0.6/assets/
 
       - name: Run DEB/RPM lifecycle scenarios (fail-closed)
         run: BTDECK_SKIP_MIRROR=1 bash scripts/release/lifecycle/run_deb_rpm.sh
@@ -738,7 +738,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -758,7 +758,7 @@ jobs:
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
 
-      - name: Build v1.0.6 images (strict, labels verified)
+      - name: Build v1.0.7 images (strict, labels verified)
         run: bash build-images.sh --release
 
       - name: Run docker lifecycle scenarios (fail-closed)
@@ -781,7 +781,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -814,60 +814,38 @@ jobs:
           }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
 
-      - name: Build v1.0.6 strict Windows artifacts
+      - name: Build v1.0.7 strict Windows artifacts
         shell: cmd
         run: deploy\build-windows.bat --release
 
-      - name: Prepare v1.0.5 portable fixture (reconstructed from tag)
+      - name: Prepare v1.0.6 portable fixture (reconstructed from tag)
         shell: pwsh
         run: |
-          $fixtureDir = Join-Path $env:RUNNER_TEMP "v105-fixture"
-          git worktree add $fixtureDir v1.0.5
-          # 启动编码垫片（等价 v1.0.6 的 desktop_main 入口 reconfigure 修复）：
-          # PyInstaller bootloader 对 frozen app 隔离 PYTHONIOENCODING/PYTHONUTF8
-          # （W3 CI 十二~十五轮 env 注入全路线实证无效），v1.0.5 lifespan 的
-          # 中文 print 在 cp1252 stderr 句柄上崩启动链。与 Linux 夹具带 R9
-          # 热修同型（reconstructed 夹具允许编码热修，不改业务行为）。
-          $dm = Join-Path $fixtureDir "backend\app\desktop_main.py"
-          $src = Get-Content $dm -Raw -Encoding UTF8
-          $anchor = 'os.environ.setdefault("ALLOWED_HOSTS"'
-          $idx = $src.IndexOf($anchor)
-          if ($idx -lt 0) { throw "desktop_main anchor not found" }
-          $lineEnd = $src.IndexOf("`n", $idx)
-          $shim = @'
-
-          # W3 CI 夹具垫片（reconstructed）：启动编码热修，等价 v1.0.6 修复
-          import sys as _sys
-          if _sys.stdout is None and _sys.stderr is not None:
-              _sys.stdout = _sys.stderr
-          for _s in (_sys.stdout, _sys.stderr):
-              if hasattr(_s, "reconfigure"):
-                  _s.reconfigure(encoding="utf-8", errors="replace")
-          '@
-          $patched = $src.Insert($lineEnd + 1, $shim + "`n")
-          Set-Content $dm -Value $patched -Encoding UTF8 -NoNewline
-          Write-Output "v1.0.5 fixture encoding shim applied"
+          $fixtureDir = Join-Path $env:RUNNER_TEMP "v106-fixture"
+          git worktree add $fixtureDir v1.0.6
+          # v1.0.6 起入口已 reconfigure UTF-8：v1.0.5 夹具时代的编码垫片
+          # （desktop_main.py 注入 reconfigure shim）随之退役，tag 源直接构建
           Push-Location "$fixtureDir/frontend"
           $npm = (Get-Command npm.cmd).Source
           & $npm ci --legacy-peer-deps
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm ci failed" }
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 npm ci failed" }
           & $npm run build
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm build failed" }
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 npm build failed" }
           Pop-Location
           Push-Location $fixtureDir
-          & python -m venv .venv-v105
-          & .venv-v105\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 packaging deps failed" }
-          & .venv-v105\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 pyinstaller failed" }
+          & python -m venv .venv-v106
+          & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 packaging deps failed" }
+          & .venv-v106\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 pyinstaller failed" }
           Pop-Location
-          "V105_FIXTURE=$(Join-Path $fixtureDir 'dist/btdeck.exe')" | Add-Content -Path $env:GITHUB_ENV
+          "V106_FIXTURE=$(Join-Path $fixtureDir 'dist/btdeck.exe')" | Add-Content -Path $env:GITHUB_ENV
 
       - name: Run Windows lifecycle scenarios (fail-closed)
         shell: pwsh
         run: |
-          $fixture = if ($env:V105_FIXTURE -and (Test-Path $env:V105_FIXTURE)) { $env:V105_FIXTURE } else { "" }
-          pwsh -File scripts\release\lifecycle\windows.ps1 -V105PortableExe $fixture
+          $fixture = if ($env:V106_FIXTURE -and (Test-Path $env:V106_FIXTURE)) { $env:V106_FIXTURE } else { "" }
+          pwsh -File scripts\release\lifecycle\windows.ps1 -V106PortableExe $fixture
           if ($LASTEXITCODE -ne 0) { throw "windows lifecycle failed" }
 
       - name: Upload lifecycle report
@@ -938,7 +916,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Snapshot DEB / RPM / Docker instances (C01~C12 + restart C10)
@@ -998,22 +976,22 @@ jobs:
             docker rm -f "w4-$name" >/dev/null
           }
 
-          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.deb" w4net-deb
+          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.7-linux-amd64.deb" w4net-deb
           # rpm 与 deb 用不同 systemd 容器（发行版覆盖）
-          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.rpm" w4net-rpm
+          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.7-linux-amd64.rpm" w4net-rpm
 
           # Docker 组合快照（backend 容器内执行 runner；stub 由 w4-stub override
           # 提供同网服务）。w4-override 对齐生产形态（DEV=false+测试 SECRET_KEY）
           # ——compose 默认 DEV=true 会开 openapi，与 deb/rpm 生产形态不一致造成
           # C02 伪差异（第九轮实测 route_count 0 vs 191 共 216 条）。
           # 组合保持运行：后续 Mutation drill 步骤复用该组合。
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
           for i in $(seq 1 60); do
             body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
-            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done
           if [ "$i" = "60" ]; then
@@ -1025,13 +1003,13 @@ jobs:
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
             --base-url http://127.0.0.1:5001 --scenario-set FULL --downloader-stub-host w4-stub \
             --spa-base-url http://w3-life-frontend --output /tmp/snapshot-docker.json
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life restart btdeck-backend
           for i in $(seq 1 60); do
             body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
-            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
@@ -1078,7 +1056,7 @@ jobs:
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
             python:3.12-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
             --upstream http://w3-life-backend:5001 --mutate-route /health/live \
-            --mutate-field data.version --mutate-value 1.0.6-mutated >/dev/null
+            --mutate-field data.version --mutate-value 1.0.7-mutated >/dev/null
           sleep 2
           docker run --rm --network w4life_w3life_net \
             -v "$PWD/release/evidence/w4:/out" \
@@ -1097,7 +1075,7 @@ jobs:
           echo 'M2 PASS: 响应字段差异已按预期拦截'
 
           docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life down -v >/dev/null
@@ -1169,7 +1147,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Generate SBOMs (five targets, digest-pinned syft)
@@ -1339,7 +1317,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Install pinned cosign (sha256 from tool-versions.json)
