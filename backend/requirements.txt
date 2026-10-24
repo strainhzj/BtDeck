@@ -43,6 +43,9 @@ aiosqlite~=0.21.0
 pillow~=13.0.0
 transmission-rpc~=7.0.11
 urllib3~=2.8.0
+# 2026-10-24 安全治理批：显式 pin（GHSA-6q48-6c7w-9gw2 Critical；传递依赖
+# 不显式约束时 pip-compile 曾解析停在旧版）
+certifi>=2026.10.19
 starlette>=0.49.1
 alembic~=1.13.3
 bencodepy~=0.9.5

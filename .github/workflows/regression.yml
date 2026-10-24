@@ -51,6 +51,9 @@ jobs:
         run: |
           cd frontend
           npm install --package-lock-only
+          # npm 对已锁传递依赖保守不动，显式浮动安全修复包
+          #（browserslist/fast-uri/nanoid/postcss/source-map-js）
+          npm update browserslist fast-uri nanoid postcss source-map-js --package-lock-only
           python3 - <<'EOF'
           import json
           lock = json.load(open('package-lock.json'))
