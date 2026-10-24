@@ -258,13 +258,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         record(target, out)
 
+    # 镜像 tag 跟随 release-config 的 product_version（build-images.sh 同源），
+    # 避免随版本升位漂移（v1.0.7 发布前首跑 G9 因硬编码 v1.0.6 实证失败）
+    release_cfg = json.loads(
+        (root / "release" / "release-config.json").read_text(encoding="utf-8")
+    )
+    image_tag = f"v{release_cfg['candidate']['product_version']}"
     for target, image in (
         ("docker-backend", "btdeck-backend"),
         ("docker-frontend", "btdeck-frontend"),
     ):
         if target not in wanted:
             continue
-        tag = f"{image}:v1.0.6"
+        tag = f"{image}:{image_tag}"
         tar_path = work_dir / f"{image}.tar"
         proc = subprocess.run(
             ["docker", "save", tag, "-o", str(tar_path)],

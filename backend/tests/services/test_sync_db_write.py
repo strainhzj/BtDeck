@@ -143,13 +143,17 @@ class TestHasTrackerChanges:
         assert has_tracker_changes(existing, new) is False
 
     def test_dead_fields_not_compared(self):
-        """status/msg/seeder_count 等死字段不参与检测（sync 不写它们）。"""
-        dead_fields = ("status", "msg", "seeder_count", "leecher_count", "download_count")
+        """status/msg 仍为死字段不参与检测（由 tracker 状态判断任务维护）。
+
+        统计报表 W2（决策 6）：seeder/leecher/download 三列计数已激活同步写入，
+        从死字段名单移除并纳入变更检测（存量 NULL→值即判变更回填）。
+        """
+        dead_fields = ("status", "msg")
         for field in dead_fields:
             assert field not in _TRACKER_CHANGE_FIELDS, f"{field} 不应参与变更检测"
 
-    def test_six_business_fields_covered(self):
-        """确认 6 个业务字段全覆盖。"""
+    def test_nine_business_fields_covered(self):
+        """确认 9 个业务字段全覆盖（6 基础 + 三列 scrape 计数，统计报表 W2）。"""
         assert set(_TRACKER_CHANGE_FIELDS) == {
             "last_announce_succeeded",
             "last_announce_msg",
@@ -157,6 +161,9 @@ class TestHasTrackerChanges:
             "last_scrape_msg",
             "tracker_name",
             "tracker_host",
+            "seeder_count",
+            "leecher_count",
+            "download_count",
         }
 
 

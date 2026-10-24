@@ -109,4 +109,8 @@ def tracker_display_failed(
         return True
     if downloader_type == "qbittorrent":
         return status_code != 1
-    return status_code not in (0, 1)
+    if downloader_type == "transmission":
+        return status_code not in (0, 1)
+    # rTorrent 等未适配类型：无中性状态码语义可引用；消息已命中失败关键词
+    # （tracker_message_failed 为 True 才到达此处），按消息证据直接覆写
+    return True

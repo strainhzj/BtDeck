@@ -187,6 +187,8 @@ def _tr_seed(i, hash_, name, *, error=0, error_string=""):
         percent_done=0.5,
         torrent_file=None,
         added_date=ADDED_DT,
+        # 统计报表 W2：TR added_date 改读 fields["addedDate"] 原始 epoch
+        fields={"addedDate": ADDED_TS},
         done_date=None,
         ratio=1.5,
         seed_ratio_limit=2.0,

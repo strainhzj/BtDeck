@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.endpoints import torrent_helpers
+from app.services import torrent_vo_conversion
 from app.api.models.advanced_search import EnhancedAdvancedSearchRequest
 from app.database import Base
 from app.downloader.models import BtDownloaders
@@ -63,7 +63,7 @@ def test_real_advanced_search_prefetches_trackers_and_downloaders_in_batches(
             )
         session.commit()
 
-        monkeypatch.setattr(torrent_helpers, "_RELATED_PREFETCH_BATCH_SIZE", 3)
+        monkeypatch.setattr(torrent_vo_conversion, "_RELATED_PREFETCH_BATCH_SIZE", 3)
         select_statements = []
 
         def record_select(_conn, _cursor, statement, _parameters, _context, _many):

@@ -9,7 +9,7 @@
 |--------|------|-----------|
 | 配置兼容 config-compat | `config.py` | 兼容层：旧代码 `from app.config import settings` 转发到 `app.core.config` |
 | DB 引擎 database | `database.py` | 数据库引擎与会话工厂（`get_db` / `get_async_db` / `init_db` / `init_config_file` / `merge_configs` / `_apply_sqlite_pragmas`） |
-| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L36) 初始化配置并在迁移失败时拒绝启动后台 API |
+| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L56) 初始化配置并在迁移失败时拒绝启动后台 API |
 | 异常处理 exception | `exception_handlers.py` | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
 | 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
 | 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |

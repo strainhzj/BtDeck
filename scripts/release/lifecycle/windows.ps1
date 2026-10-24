@@ -3,19 +3,19 @@
 #
 # 前置（同 job 内先完成）：
 #   - python scripts\release\build_frontend.py
-#   - deploy\build-windows.bat --release     → dist\btdeck.exe + dist\BtDeck-v1.0.6-*-setup.exe
-#   - v1.0.5 portable EXE 夹具（.release-build-v1.0.5\assets\BtDeck-v1.0.5-windows-x64-portable.exe
-#     或从 tag 重建），用于“升级数据保留”场景（reconstructed 语义：无 v1.0.5 安装器）
+#   - deploy\build-windows.bat --release     → dist\btdeck.exe + dist\BtDeck-v1.0.7-*-setup.exe
+#   - v1.0.6 portable EXE 夹具（tag v1.0.6 worktree 重建），用于“升级数据保留”场景
+#     （reconstructed 语义：无 v1.0.6 Inno 安装器历史制品，用 portable 产生旧期数据）
 #
 # 场景（fail-closed）：
 #   A. 免安装 EXE：隔离目录启动→健康/身份→停止→端口释放→二次启动 secret 不重置
-#   B. Setup 静默首装→NSSM 服务单实例→同版本静默覆盖→v1.0.5 夹具植入→升级覆盖→
+#   B. Setup 静默首装→NSSM 服务单实例→同版本静默覆盖→v1.0.6 夹具植入→升级覆盖→
 #      secret/数据保留→静默卸载→服务与程序移除、数据默认保留
 # 输出：w3-lifecycle-windows.json（job 根目录）
 
 param(
     [string]$ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..\..").Path,
-    [string]$V105PortableExe = "",
+    [string]$V106PortableExe = "",
     [string]$ReportPath = "w3-lifecycle-windows.json"
 )
 
@@ -47,9 +47,9 @@ function Wait-Health([string]$Url, [string]$Pattern, [int]$MaxSeconds = 240) {
 }
 
 function Stop-BtDeckProcesses {
-    # 通配匹配：v1.0.5 夹具经 wrapper.bat 启动时进程名为
-    # btdeck-v105-fixture.exe——精确名 "btdeck" 杀不掉它，残留进程占住
-    # 5001 使后续 B4 的 v1.0.6 服务 bind 失败（Errno 10048）并进入 NSSM
+    # 通配匹配：v1.0.6 夹具进程名为 btdeck-v106-fixture.exe——精确名 "btdeck"
+    # 杀不掉它，残留进程占住 5001 使后续 B4 的 v1.0.7 服务 bind 失败
+    # （Errno 10048）并进入 NSSM
     # 重启循环（W3 CI 第二十轮归档日志实证）
     Get-Process -Name "btdeck*" -ErrorAction SilentlyContinue | Stop-Process -Force
     & "$ProjectRoot\deploy\nssm.exe" stop BtDeck 2>$null | Out-Null
@@ -67,9 +67,8 @@ $InstallDir = "$env:ProgramFiles\BtDeck"
 # EXE 弹 GUI 启动器等待交互 → 无头环境卡死、端口永不监听（W3 CI 实测拦截）。
 # Start-Process 继承当前进程环境变量。
 $env:BTDECK_DESKTOP_WINDOW = "0"
-# v1.0.5 冻结夹具兜底：其 yamlConfig 仍用中文 print（不可改），cp1252 控制台
-# 会 UnicodeEncodeError 崩启动链；PYTHONIOENCODING 让标准流转 UTF-8。
-# v1.0.6 已由 desktop_main 入口 reconfigure 根治，此处对旧制品双保险。
+# v1.0.6 起入口已 reconfigure UTF-8（v1.0.5 夹具时代的编码垫片随之退役），
+# 保留 PYTHONIOENCODING 对 stderr 落盘无害
 $env:PYTHONIOENCODING = "utf-8"
 $IsoDir = Join-Path $env:RUNNER_TEMP "w3-iso"
 New-Item -ItemType Directory -Force -Path $IsoDir | Out-Null
@@ -80,10 +79,9 @@ $ExeErrLog = Join-Path $IsoDir "exe-stderr.log"
 $p = Start-Process -FilePath (Join-Path $IsoDir "btdeck.exe") -WorkingDirectory $IsoDir -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput $ExeOutLog -RedirectStandardError $ExeErrLog
 # 健康响应为紧凑 JSON（无空格分隔符），-match 匹配串一律不带空格（CI 实测拦截）。
-# v1.0.5 冻结制品的健康契约无 version/build 字段（v1.0.6 W1 引入），其就绪只能断言
-# data.status=alive；v1.0.6 仍按 version 精确断言。
+# v1.0.6 起制品的健康契约含 version/build 字段，按 version 精确断言。
 $body = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"'
-$okA = $null -ne $body -and $body -match '"version":"1.0.6"' -and $body -match '"build":\{"status":"ok"'
+$okA = $null -ne $body -and $body -match '"version":"1.0.7"' -and $body -match '"build":\{"status":"ok"'
 Add-Phase "portable_exe_start_identity" $okA ("last=" + ($body -replace '\s+', '')[0..120] -join '')
 if (-not $okA) {
     foreach ($log in @($ExeErrLog, $ExeOutLog)) {
@@ -111,7 +109,7 @@ while ((Get-Date) -lt $portFreeDeadline) {
 }
 $portFreed = -not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)
 Add-Phase "portable_exe_stop_port_freed" $portFreed
-# 二次启动同样重定向输出（v1.0.6 有入口 reconfigure，utf-8 落盘安全）——
+# 二次启动同样重定向输出（入口 reconfigure UTF-8，utf-8 落盘安全）——
 # 第十四轮二次启动失败无任何输出可诊断
 $Exe2OutLog = Join-Path $IsoDir "exe2-stdout.log"
 $Exe2ErrLog = Join-Path $IsoDir "exe2-stderr.log"
@@ -137,7 +135,7 @@ if ($null -eq $SetupExe) {
     # B1 静默首装
     Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
     $svc = Get-Service -Name BtDeck -ErrorAction SilentlyContinue
-    $bodyB = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"'
+    $bodyB = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.7"'
     $single = ($svc | Measure-Object).Count -eq 1 -and $svc.Status -eq "Running"
     $listeners = @(Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue).Count
     $b1ok = $single -and $null -ne $bodyB -and $listeners -eq 1
@@ -161,10 +159,10 @@ if ($null -eq $SetupExe) {
     Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
     Start-Sleep -Seconds 5
     # 重装后服务可能短暂重启中：先等健康（服务端就绪），再判服务态（时序鲁棒）
-    $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 60
+    $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.7"' 60
     if ($null -eq $bodyB2) {
         & $IsccNssm start BtDeck 2>$null | Out-Null
-        $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 60
+        $bodyB2 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.7"' 60
     }
     $svc2 = Get-Service -Name BtDeck -ErrorAction SilentlyContinue
     $secretB2 = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
@@ -173,41 +171,35 @@ if ($null -eq $SetupExe) {
     Add-Phase "setup_same_version_reinstall" $b2ok `
         "services=$svcCount status=$($svc2.Status) secretStable=$($secretB1 -eq $secretB2) health=$($null -ne $bodyB2)"
 
-    # B3 v1.0.5 夹具植入（portable 落位安装目录运行一次，产生 v1.0.5 期配置/数据库）
+    # B3 v1.0.6 夹具植入（portable 落位安装目录运行一次，产生 v1.0.6 期配置/数据库）
     $markerPath = Join-Path $InstallDir "config\w3-marker.txt"
-    if ($V105PortableExe -and (Test-Path $V105PortableExe)) {
+    if ($V106PortableExe -and (Test-Path $V106PortableExe)) {
         Stop-BtDeckProcesses
-        # 端口释放等待：v1.0.5 夹具与 v1.0.6 服务共用 5001，残留监听会让夹具起不来
+        # 端口释放等待：v1.0.6 夹具与 v1.0.7 服务共用 5001，残留监听会让夹具起不来
         $b3Deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $b3Deadline) {
             if (-not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)) { break }
             Start-Sleep -Seconds 2
         }
-        Copy-Item $V105PortableExe (Join-Path $InstallDir "btdeck-v105-fixture.exe") -Force
-        # v1.0.5 夹具（冻结，lifespan 中文 print 在 cp1252 崩且不可修）：
-        # wrapper.bat 在同一 cmd 实例内 set（无任何跨进程环境传递环节，区别于
-        # Start-Process 参数式 /c "set ...&&"——后者在 CI 上实测未生效）+
-        # cmd 层 2> 重定向保留 stderr 证据；PYTHONUTF8=1 强制全 IO UTF-8。
-        $fixturePath = Join-Path $InstallDir "btdeck-v105-fixture.exe"
-        $v105Out = Join-Path $env:RUNNER_TEMP "v105-exe-stderr.log"
-        $wrapperBat = Join-Path $InstallDir "run-v105-fixture.bat"
-        Set-Content -Path $wrapperBat -Value (
-            "@echo off`r`n" +
-            "set PYTHONUTF8=1`r`n" +
-            "set PYTHONIOENCODING=utf-8`r`n" +
-            "`"$fixturePath`" 2>`"$v105Out`""
-        ) -Encoding Ascii
-        $pf = Start-Process -FilePath $wrapperBat -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden
-        $bodyV105 = Wait-Health "http://127.0.0.1:5001/health/live" '"status":"alive"' 180
-        Add-Phase "v105_fixture_seeded" ($null -ne $bodyV105)
-        if ($null -eq $bodyV105) {
+        Copy-Item $V106PortableExe (Join-Path $InstallDir "btdeck-v106-fixture.exe") -Force
+        # v1.0.6 起入口已 reconfigure UTF-8，v1.0.5 夹具时代的 wrapper.bat 编码
+        # 垫片（PYTHONUTF8 cmd 内 set + cmd 层 2> 重定向）随之退役——直接
+        # Start-Process 启动，stderr 重定向保留诊断证据，健康按 version 精确断言
+        $fixturePath = Join-Path $InstallDir "btdeck-v106-fixture.exe"
+        $v106Out = Join-Path $env:RUNNER_TEMP "v106-exe-stderr.log"
+        $v106OutLog = Join-Path $env:RUNNER_TEMP "v106-exe-stdout.log"
+        $pf = Start-Process -FilePath $fixturePath -WorkingDirectory $InstallDir -PassThru -WindowStyle Hidden `
+            -RedirectStandardError $v106Out -RedirectStandardOutput $v106OutLog
+        $bodyV106 = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 180
+        Add-Phase "v106_fixture_seeded" ($null -ne $bodyV106)
+        if ($null -eq $bodyV106) {
             $cfg = Join-Path $InstallDir "config\config.yaml"
-            Write-Output "[DIAG] v105 fixture config exists: $(Test-Path $cfg); processes: $((Get-Process btdeck* -ErrorAction SilentlyContinue | Measure-Object).Count)"
-            Write-Output "[DIAG] v105 stderr: $((Get-Content $v105Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
+            Write-Output "[DIAG] v106 fixture config exists: $(Test-Path $cfg); processes: $((Get-Process btdeck* -ErrorAction SilentlyContinue | Measure-Object).Count)"
+            Write-Output "[DIAG] v106 stderr: $((Get-Content $v106Out -Tail 12 -ErrorAction SilentlyContinue) -join ' | ')"
         }
         Stop-Process -Id $pf.Id -Force -ErrorAction SilentlyContinue
         Stop-BtDeckProcesses
-        # 夹具释放 5001 后再走升级（v1.0.6 服务与夹具同端口）
+        # 夹具释放 5001 后再走升级（v1.0.7 服务与夹具同端口）
         $b3StopDeadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $b3StopDeadline) {
             if (-not (Get-NetTCPConnection -LocalPort 5001 -State Listen -ErrorAction SilentlyContinue)) { break }
@@ -216,17 +208,17 @@ if ($null -eq $SetupExe) {
         Set-Content -Path $markerPath -Value "w3-windows-upgrade"
         $secretBefore = (Get-FileHash $envFile -Algorithm SHA256).Hash
 
-        # B4 升级覆盖（同 v1.0.6 setup 再装一遍 = 覆盖升级路径）
+        # B4 升级覆盖（同 v1.0.7 setup 再装一遍 = 覆盖升级路径）
         Start-Process -FilePath $SetupExe.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
         Start-Sleep -Seconds 5
         & $IsccNssm start BtDeck 2>$null | Out-Null
-        $bodyUp = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.6"' 240
+        $bodyUp = Wait-Health "http://127.0.0.1:5001/health/live" '"version":"1.0.7"' 240
         $secretAfter = if (Test-Path $envFile) { (Get-FileHash $envFile -Algorithm SHA256).Hash } else { $null }
         $b4ok = $null -ne $bodyUp -and (Test-Path $markerPath) -and $secretBefore -eq $secretAfter
         Add-Phase "upgrade_keeps_secret_and_data" $b4ok `
             "health=$($null -ne $bodyUp) marker=$(Test-Path $markerPath) secretStable=$($secretBefore -eq $secretAfter)"
         if (-not $b4ok) {
-            # v1.0.6 服务读 v1.0.5 期 config.yaml/app.db 的升级路径诊断：
+            # v1.0.7 服务读 v1.0.6 期 config.yaml/app.db 的升级路径诊断：
             # NSSM 服务日志（Setup 已配 AppStdout/AppStderr 落盘）。
             # AppRotateFiles=1 下崩溃重启循环会反复轮转主日志文件——必须
             # 列出目录并读取归档（第十八轮实测主文件空、真凶在轮转件里）
@@ -241,7 +233,7 @@ if ($null -eq $SetupExe) {
             & $IsccNssm status BtDeck 2>$null | ForEach-Object { Write-Output "[DIAG] B4 nssm status: $_" }
         }
     } else {
-        Add-Phase "v105_fixture_seeded" $false "未提供 v1.0.5 portable 夹具（--V105PortableExe）"
+        Add-Phase "v106_fixture_seeded" $false "未提供 v1.0.6 portable 夹具（--V106PortableExe）"
         Add-Phase "upgrade_keeps_secret_and_data" $false "前置夹具缺失"
     }
 

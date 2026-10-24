@@ -4,6 +4,7 @@ import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
 import MobileLayout from '@/layout/mobile/index.vue'
 import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
+import { translate } from '@/i18n'
 
 Vue.use(Router)
 
@@ -86,6 +87,12 @@ const router = new Router({
           meta: { hidden: true }
         },
         {
+          // RSS 统一管理（Phase 2）：整页复用桌面 RSS 管理视图（跨下载器）
+          path: 'rss',
+          component: () => import(/* webpackChunkName: "m-rss" */ '@/views/mobile/rss.vue'),
+          meta: { hidden: true, title: 'RSS 管理' }
+        },
+        {
           // 回收站（Phase 4 M2）：单条恢复/彻底删除
           path: 'recycle-bin',
           component: () => import(/* webpackChunkName: "m-recycle-bin" */ '@/views/mobile/recycle-bin.vue'),
@@ -157,16 +164,35 @@ const router = new Router({
       ]
     },
     {
+      // 下载器管理组（Phase 2 起 RSS 管理并入本组为子菜单，
+      // feature rss-subscription-phase2-2026-09-24）
       path: '/downloader',
       component: Layout,
+      redirect: '/downloader/index',
+      meta: {
+        title: '下载器管理',
+        titleKey: 'navigation.routes.downloaderGroup',
+        icon: 'server'
+      },
       children: [
         {
           path: 'index',
           component: () => import(/* webpackChunkName: "form" */ '@/views/downloader/index.vue'),
           meta: {
-            title: '下载器管理',
-            titleKey: 'navigation.routes.downloader',
+            title: '下载器列表',
+            titleKey: 'navigation.routes.downloaderList',
             icon: 'server'
+          }
+        },
+        {
+          // RSS 统一管理（跨下载器；与下载器设置弹窗 rssSubscription 页签多入口共享组件）
+          path: 'rss',
+          component: () => import(/* webpackChunkName: "rss-manager" */ '@/views/rss/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: 'RSS 管理',
+            titleKey: 'navigation.routes.rssManagement',
+            icon: 'rss'
           }
         }
       ]
@@ -199,6 +225,17 @@ const router = new Router({
             titleKey: 'navigation.routes.torrentsTraditional',
             icon: 'list',
             hidden: true
+          }
+        },
+        {
+          // 查询模板（v1.0.5）移入种子管理组：位于种子列表与种子文件管理之间（2026-09-23 调整）
+          path: 'query-templates',
+          component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: '查询模板',
+            titleKey: 'navigation.routes.queryTemplates',
+            icon: 'layout-template'
           }
         },
         {
@@ -369,20 +406,75 @@ const router = new Router({
       ]
     },
     {
-      path: '/query-templates',
+      // 统计数据顶级菜单（statistics-reports W5；fun-report 子页归 W6 合入）
+      path: '/statistics',
       component: Layout,
+      redirect: '/statistics/overview',
+      meta: {
+        title: '统计数据',
+        titleKey: 'navigation.routes.statisticsGroup',
+        icon: 'bar-chart-3'
+      },
       children: [
         {
-          path: 'index',
-          component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
+          path: 'overview',
+          component: () => import(/* webpackChunkName: "statistics-overview" */ '@/views/statistics/overview/index.vue'),
           meta: {
-            keepAlive: true,
-            title: '查询模板',
-            titleKey: 'navigation.routes.queryTemplates',
-            icon: 'layout-template'
+            title: '总览',
+            titleKey: 'navigation.routes.statisticsOverview',
+            icon: 'bar-chart-3'
+          }
+        },
+        {
+          path: 'trends',
+          component: () => import(/* webpackChunkName: "statistics-trends" */ '@/views/statistics/trends/index.vue'),
+          meta: {
+            title: '趋势',
+            titleKey: 'navigation.routes.statisticsTrends',
+            icon: 'trending-up'
+          }
+        },
+        {
+          path: 'seeding',
+          component: () => import(/* webpackChunkName: "statistics-seeding" */ '@/views/statistics/seeding/index.vue'),
+          meta: {
+            title: '做种',
+            titleKey: 'navigation.routes.statisticsSeeding',
+            icon: 'sprout'
+          }
+        },
+        {
+          path: 'trackers',
+          component: () => import(/* webpackChunkName: "statistics-trackers" */ '@/views/statistics/trackers/index.vue'),
+          meta: {
+            title: 'Tracker',
+            titleKey: 'navigation.routes.statisticsTrackers',
+            icon: 'radar'
+          }
+        },
+        {
+          // 趣味报告沉浸页（W6：根元素即覆盖层，状态走 route query 持久化）
+          path: 'fun-report',
+          component: () => import(/* webpackChunkName: "statistics-fun-report" */ '@/views/statistics/fun-report/index.vue'),
+          meta: {
+            title: '趣味报告',
+            titleKey: 'navigation.routes.statisticsFunReport',
+            icon: 'sparkles'
           }
         }
       ]
+    },
+    {
+      // 查询模板移入 /torrents 组后的旧深链兜底（原路由唯一子路径为 /query-templates/index）：
+      // redirect 在路由解析期完成，守卫只见新路径（移动模式经 toMobilePath 精确分支落 /m/search）
+      path: '/query-templates',
+      redirect: '/torrents/query-templates',
+      meta: { hidden: true }
+    },
+    {
+      path: '/query-templates/index',
+      redirect: '/torrents/query-templates',
+      meta: { hidden: true }
     },
     {
       path: '*',
@@ -466,7 +558,7 @@ router.onError((error: Error) => {
   const outcome = recoverFromChunkLoadError(error)
   if (outcome === 'suppressed') {
     Message.error({
-      message: '页面资源加载失败，请手动刷新后重试',
+      message: translate('errors.chunkLoadFailed'),
       duration: 6000,
       showClose: true
     })

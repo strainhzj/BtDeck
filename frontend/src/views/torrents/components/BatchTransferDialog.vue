@@ -394,7 +394,7 @@ export default class BatchTransferDialog extends Vue {
         return
       }
       console.error('批量转移异常:', error)
-      const errorMsg = error.response?.data?.msg || error.message || '批量转移失败，请稍后重试'
+      const errorMsg = error.response?.data?.msg || error.message || this.$t('transfer.msg.failedRetry').toString()
       this.$message.error({
         message: this.$t('transfer.msg.batchFailedWith', { message: errorMsg }).toString(),
         duration: 5000
@@ -468,7 +468,7 @@ export default class BatchTransferDialog extends Vue {
       this.$emit('success')
     } catch (error: any) {
       console.error('批量删除原种子异常:', error)
-      this.$message.error('删除原种子时发生错误，请手动检查')
+      this.$message.error(this.$t('transfer.msg.batchDeleteSourceFailed').toString())
       // 删除失败不 emit success：避免父页面误提示"批量转移完成"
     } finally {
       loading.close()

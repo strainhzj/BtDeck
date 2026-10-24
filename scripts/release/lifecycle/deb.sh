@@ -3,8 +3,8 @@
 # 在 Debian 12 systemd 容器内执行（由 run_deb_rpm.sh 或 CI 编排启动）。
 #
 # 场景：
-#   fresh   —— 首装 v1.0.6 → 重装同版本 → 重启×2 → remove（数据保留）→ purge（数据清除）
-#   upgrade —— 首装 v1.0.5（正式本地制品）→ 植入 secret/marker → 升级 v1.0.6 →
+#   fresh   —— 首装 v1.0.7 → 重装同版本 → 重启×2 → remove（数据保留）→ purge（数据清除）
+#   upgrade —— 首装 v1.0.6（reconstructed 基线制品）→ 植入 secret/marker → 升级 v1.0.7 →
 #              R11 断言（enabled+active）→ secret/marker/alembic 断言 → remove
 # 任一断言失败 → 报告 FAIL 且非零退出（fail-closed）。
 
@@ -35,10 +35,10 @@ done
 [ -f "$NEW_DEB" ] || die "新包不存在: $NEW_DEB"
 
 wait_healthy() {  # wait_healthy <version-substr>
-    # v1.0.5 冻结制品的健康契约无 version 字段（version/build 是 v1.0.6 W1 引入），
-    # 基线就绪只能断言 data.status=alive；v1.0.6 仍按 version 精确断言
+    # v1.0.6 起基线制品的健康契约含 version/build 字段（v1.0.6 W1 引入），
+    # 基线与升级目标均按 version 精确断言（v1.0.5 status-only 契约特判已随
+    # 基线切到 v1.0.6 退役）
     local want="\"version\":\"$1\""
-    [ "$1" = "1.0.5" ] && want="\"status\":\"alive\""
     wait_http "http://127.0.0.1:5001/health/live" "$want" 180
 }
 
@@ -50,13 +50,13 @@ purge_deb() { dpkg -P btdeck >/tmp/dpkg-purge.log 2>&1; }
 if [ "$SCENARIO" = "fresh" ]; then
     # ---- 首装 ----
     if install_deb "$NEW_DEB" \
-        && wait_healthy "1.0.6" \
+        && wait_healthy "1.0.7" \
         && assert_eq "$(service_active && echo yes || echo no)" yes "首装后服务 active" \
         && assert_eq "$(service_enabled && echo yes || echo no)" yes "首装后服务 enabled" \
         && assert_eq "$(service_unit_count)" 1 "服务单元唯一" \
         && single_port_listener \
         && assert_eq "$(build_info_field /opt/btdeck/build-info.json "['artifact_kind']")" linux-deb "包内 build-info kind" \
-        && assert_eq "$(build_info_field /opt/btdeck/build-info.json "['product_version']")" 1.0.6 "包内 build-info 版本"; then
+        && assert_eq "$(build_info_field /opt/btdeck/build-info.json "['product_version']")" 1.0.7 "包内 build-info 版本"; then
         phase "fresh_install" PASS
     else
         phase "fresh_install" FAIL "首装断言未全部通过（见 stderr）"
@@ -69,7 +69,7 @@ if [ "$SCENARIO" = "fresh" ]; then
 
     # ---- 同版本重装 ----
     if install_deb "$NEW_DEB" \
-        && wait_healthy "1.0.6" \
+        && wait_healthy "1.0.7" \
         && assert_eq "$(secret_fingerprint)" "$SECRET_BEFORE" "重装后 SECRET_KEY 未重置" \
         && assert_eq "$(service_unit_count)" 1 "重装后服务单元唯一" \
         && assert_eq "$(alembic_head)" "$HEAD_BEFORE" "重装未产生新迁移" \
@@ -83,7 +83,7 @@ if [ "$SCENARIO" = "fresh" ]; then
     ok=yes
     systemctl restart btdeck || ok=no
     systemctl restart btdeck || ok=no
-    if [ "$ok" = yes ] && wait_healthy 1.0.6 120 && service_active && single_port_listener \
+    if [ "$ok" = yes ] && wait_healthy 1.0.7 120 && service_active && single_port_listener \
         && assert_eq "$(systemctl show -p MainPID --value btdeck | grep -c .)" 1 "单主进程"; then
         phase "restart_twice" PASS
     else
@@ -110,40 +110,15 @@ if [ "$SCENARIO" = "fresh" ]; then
     fi
 
 elif [ "$SCENARIO" = "upgrade" ]; then
-    [ -n "$OLD_DEB" ] && [ -f "$OLD_DEB" ] || die "upgrade 场景要求 --old-deb（v1.0.5 正式本地制品）"
+    [ -n "$OLD_DEB" ] && [ -f "$OLD_DEB" ] || die "upgrade 场景要求 --old-deb（v1.0.6 基线制品）"
 
-    # ---- v1.0.5 基线 ----
-    # v1.0.5 冻结制品三处夹具适配（仅基线阶段；v1.0.6 全部用真实 scriptlet/unit）：
-    #   1) 旧 postinst 守卫不接受容器 degraded 态且在 python3 兜底处中断 →
-    #      补建 btdeck.env（旧包 exit 127 时 env 根本没写，v1.0.5 生产模式缺 SECRET_KEY 拒启）
-    #   2) 旧 btdeck.service 无 PrivateTmp → 用仓库现行 unit 覆写
-    #   3) 显式 enable/restart
-    if install_deb "$OLD_DEB"; then
-        # 存在性检查不够：v1.0.5 旧 postinst 在 openssl/python3 双缺时会写出
-        # 空 SECRET_KEY= 的 env（命令替换得空串仍继续），必须校验非空
-        if ! grep -q '^SECRET_KEY=.' /opt/btdeck/config/btdeck.env 2>/dev/null; then
-            mkdir -p /opt/btdeck/config
-            if command -v openssl >/dev/null 2>&1; then
-                SK="$(openssl rand -hex 32)"
-            else
-                SK="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-            fi
-            printf 'SECRET_KEY=%s\nALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]\n' "$SK" \
-                > /opt/btdeck/config/btdeck.env
-            chmod 600 /opt/btdeck/config/btdeck.env
-            chown btdeck:btdeck /opt/btdeck/config/btdeck.env 2>/dev/null || true
-        fi
-        if [ -f /src/deploy/btdeck.service ]; then
-            cp /src/deploy/btdeck.service /etc/systemd/system/btdeck.service
-        fi
-        systemctl daemon-reload 2>/dev/null || true
-        systemctl enable btdeck 2>/dev/null || true
-        systemctl restart btdeck 2>/dev/null || true
-    fi
-    if wait_healthy "1.0.5"; then
-        phase "v105_baseline_install" PASS
+    # ---- v1.0.6 基线（reconstructed：make_v106_baseline.sh 从 tag v1.0.6 重建） ----
+    # v1.0.6 制品自带真实 scriptlet/unit/build-info：v1.0.5 基线时代的三处夹具适配
+    # （env 补建 / unit 覆写 / 显式 enable+restart）已随基线切到 v1.0.6 全部退役
+    if install_deb "$OLD_DEB" && wait_healthy "1.0.6"; then
+        phase "v106_baseline_install" PASS
     else
-        phase "v105_baseline_install" FAIL "v1.0.5 基线安装/健康失败"
+        phase "v106_baseline_install" FAIL "v1.0.6 基线安装/健康失败"
     fi
 
     SECRET_BEFORE="$(secret_fingerprint)"
@@ -151,9 +126,9 @@ elif [ "$SCENARIO" = "upgrade" ]; then
     MARKER=/opt/btdeck/data/w3-upg-marker.txt
     echo "w3-upgrade $(date -u +%s)" > "$MARKER" 2>/dev/null || true
 
-    # ---- 升级到 v1.0.6（R11 核心：enabled+active）----
+    # ---- 升级到 v1.0.7（R11 核心：enabled+active）----
     if install_deb "$NEW_DEB" \
-        && wait_healthy "1.0.6" \
+        && wait_healthy "1.0.7" \
         && assert_eq "$(service_active && echo yes || echo no)" yes "升级后服务 active（R11）" \
         && assert_eq "$(service_enabled && echo yes || echo no)" yes "升级后服务 enabled（R11）" \
         && assert_eq "$(service_unit_count)" 1 "升级后服务单元唯一" \
@@ -161,14 +136,14 @@ elif [ "$SCENARIO" = "upgrade" ]; then
         && assert_eq "$(secret_fingerprint)" "$SECRET_BEFORE" "升级后 SECRET_KEY 保留" \
         && [ -f "$MARKER" ] \
         && assert_eq "$(alembic_head | cut -f1)" 1 "升级后 Alembic 单 head"; then
-        phase "v105_to_v106_upgrade" PASS
+        phase "v106_to_v107_upgrade" PASS
     else
-        phase "v105_to_v106_upgrade" FAIL "升级断言未全部通过（重点核查 prerm 升级分支）"
+        phase "v106_to_v107_upgrade" FAIL "升级断言未全部通过（重点核查 prerm 升级分支）"
     fi
 
     HEAD_AFTER="$(alembic_head | cut -f2)"
     if [ "$HEAD_AFTER" != "$HEAD_BEFORE" ] 2>/dev/null; then
-        phase "alembic_head_advanced" PASS "v1.0.5 head: $(echo "$HEAD_BEFORE" | cut -f2) → v1.0.6 head: $HEAD_AFTER"
+        phase "alembic_head_advanced" PASS "v1.0.6 head: $(echo "$HEAD_BEFORE" | cut -f2) → v1.0.7 head: $HEAD_AFTER"
     else
         phase "alembic_head_advanced" FAIL "升级前后 head 未推进或不可读（before='$HEAD_BEFORE' after='$HEAD_AFTER'）"
     fi

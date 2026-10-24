@@ -14,23 +14,37 @@ from app.database import Base
 import enum
 import logging
 import json
-import traceback
 
 logger = logging.getLogger(__name__)
 
 
 class DownloaderTypeEnum(enum.IntEnum):
-    """下载器类型枚举（整数类型）"""
+    """下载器类型枚举（整数类型）
+
+    命名即映射约定：``to_name``/``normalize`` 由成员名小写派生
+    （QBITTORRENT→"qbittorrent"、RTORRENT→"rtorrent"）。新增类型只需新增成员，
+    成员名即唯一事实源，不存在 else 回退式误映射。
+
+    背景（rtorrent 接入前置修复）：旧实现 ``to_name`` 用三元 else 回退 transmission、
+    ``normalize`` 对未知值静默归 0（qBittorrent），任何新类型都会被静默误判。
+    现在两个入口改为显式校验：未知值抛 ValueError，调用方必须捕获或先修复数据。
+    """
 
     QBITTORRENT = 0  # qBittorrent
     TRANSMISSION = 1  # Transmission
+    RTORRENT = 2  # rTorrent
+
+    @classmethod
+    def _valid_values(cls) -> list:
+        """已登记的类型整数值列表（按定义序）"""
+        return [member.value for member in cls]
 
     @classmethod
     def from_value(cls, value: int) -> "DownloaderTypeEnum":
         """从整数值获取枚举
 
         Args:
-            value: 下载器类型整数值 (0, 1)
+            value: 下载器类型整数值 (0, 1, 2)
 
         Returns:
             DownloaderTypeEnum: 对应的枚举值
@@ -39,11 +53,11 @@ class DownloaderTypeEnum(enum.IntEnum):
             ValueError: 如果值无效
         """
         try:
-            return cls(value)
-        except ValueError:
+            return cls(int(value))
+        except (ValueError, TypeError):
             valid_values = [e.value for e in cls]
             raise ValueError(
-                f"无效的下载器类型: '{value}'. " f"有效值为: {valid_values} (0=qBittorrent, 1=Transmission)"
+                f"无效的下载器类型: '{value}'. " f"有效值为: {valid_values} (0=qBittorrent, 1=Transmission, 2=rTorrent)"
             )
 
     def is_qbittorrent(self) -> bool:
@@ -62,13 +76,21 @@ class DownloaderTypeEnum(enum.IntEnum):
         """
         return self == DownloaderTypeEnum.TRANSMISSION
 
-    def to_name(self) -> str:
-        """转换为类型名称字符串
+    def is_rtorrent(self) -> bool:
+        """是否为rTorrent类型
 
         Returns:
-            str: "qbittorrent" 或 "transmission"
+            bool: 是rTorrent返回True
         """
-        return "qbittorrent" if self == DownloaderTypeEnum.QBITTORRENT else "transmission"
+        return self == DownloaderTypeEnum.RTORRENT
+
+    def to_name(self) -> str:
+        """转换为类型名称字符串（成员名小写派生，见类 docstring 命名约定）
+
+        Returns:
+            str: "qbittorrent" / "transmission" / "rtorrent"
+        """
+        return self.name.lower()
 
     @classmethod
     def normalize(cls, value) -> int:
@@ -76,15 +98,20 @@ class DownloaderTypeEnum(enum.IntEnum):
         将多种格式统一转换为整数类型
 
         支持输入：
-        - 整数：0, 1
-        - 字符串数字："0", "1"
-        - 名称："qbittorrent", "transmission"（不区分大小写）
+        - 整数：0, 1, 2
+        - 字符串数字："0", "1", "2"
+        - 名称："qbittorrent", "transmission", "rtorrent"（不区分大小写）
 
         Args:
             value: 下载器类型值（多种格式）
 
         Returns:
-            int: 标准化的整数类型（0=qBittorrent, 1=Transmission）
+            int: 标准化的整数类型（0=qBittorrent, 1=Transmission, 2=rTorrent）
+
+        Raises:
+            ValueError: 值无法识别时抛出（不再静默归 0）。
+                历史实现把未知值静默归一为 qBittorrent，导致新类型（如 2=rTorrent）
+                在枚举扩展前会被静默误判；改为显式异常后由调用方决定兜底策略。
 
         Examples:
             >>> DownloaderTypeEnum.normalize(0)
@@ -95,34 +122,36 @@ class DownloaderTypeEnum(enum.IntEnum):
             0
             >>> DownloaderTypeEnum.normalize("TRANSMISSION")
             1
+            >>> DownloaderTypeEnum.normalize("rtorrent")
+            2
         """
-        # 整数类型直接返回
-        if isinstance(value, int):
-            if value in [0, 1]:
-                return value
-            # 无效整数，默认返回 qBittorrent
-            logger.warning(f"无效的下载器类型整数值: {value}，默认使用 qBittorrent (0)")
+        # None 兼容历史调用点（部分调用方传 None 期望默认 qBittorrent）：
+        # 保持 warning + 0 的旧行为，避免本修复扩大爆破面
+        if value is None:
+            logger.warning("下载器类型为 None，默认使用 qBittorrent (0)")
             return 0
 
-        # 字符串类型处理
-        elif isinstance(value, str):
-            value_lower = value.lower().strip()
-            if value_lower in ["0", "qbittorrent"]:
-                return 0
-            elif value_lower in ["1", "transmission"]:
-                return 1
-            else:
-                # 无效字符串，默认返回 qBittorrent
-                logger.warning(f"无效的下载器类型字符串: {value}，默认使用 qBittorrent (0)")
-                return 0
+        # 整数类型直接返回
+        if isinstance(value, int):
+            if value in cls._valid_values():
+                return value
+            raise ValueError(
+                f"无效的下载器类型整数值: {value}，"
+                f"有效值: {cls._valid_values()} (0=qBittorrent, 1=Transmission, 2=rTorrent)"
+            )
 
-        # 其他类型，默认返回 qBittorrent
-        # 添加完整调用栈以便定位问题来源
-        stack_trace = "".join(traceback.format_stack())
-        logger.warning(
-            f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)\n" f"完整调用栈:\n{stack_trace}"
-        )
-        return 0
+        # 字符串类型：匹配数字字符串或成员名（不区分大小写）
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            for member in cls:
+                if value_lower in (str(member.value), member.name.lower()):
+                    return member.value
+            raise ValueError(
+                f"无效的下载器类型字符串: '{value}'，" f"有效名称: {[member.name.lower() for member in cls]}"
+            )
+
+        # 其他类型：显式抛错（历史实现静默归 0 并打印调用栈）
+        raise ValueError(f"不支持的下载器类型值类型: {type(value).__name__}={value!r}")
 
 
 class SettingTemplate(Base):

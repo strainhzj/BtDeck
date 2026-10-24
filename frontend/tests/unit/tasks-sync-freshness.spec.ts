@@ -1,7 +1,7 @@
 /**
  * 任务同步结果语义（outcome 六态 / skip / 数据新鲜度）回归测试。
  *
- * 背景（PLANS/sync-database-blocking-remediation.md W3-4 / P1-05）：
+ * 背景（PLANS/archive/sync-database-blocking-remediation.md W3-4 / P1-05）：
  * 任务页需要区分 success / partial / skipped / failed / no_action / cancelled 六态，
  * 并对旧数据（无 outcome 字段）回退到传统 success 布尔两态展示。
  *

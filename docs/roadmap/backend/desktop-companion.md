@@ -9,8 +9,8 @@
 |------|----------------------|------|
 | `profiles.py` | `ServerProfile:44`、`ServerProfileStore:90` | profile 元数据/`username`、健康状态与原子 JSON 持久化；旧数据缺 username 时按空值读取 |
 | `credentials.py` | `MemoryCredentialVault:44`、`WindowsCredentialVault:70`、`build_auto_login_script:206` | 测试内存保险库；Windows DPAPI 密文文件；同源登录脚本（含一次性 TOTP prompt） |
-| `launcher.py` | `_ManagerApi:115`、`add_server:131`、`update_server:164`、`DesktopLauncher:252`、`open_remote_window:316` | 伴侣管理页桥接、凭据录入/清除、profile 切换、pywebview 远程窗口与首屏会话恢复 |
-| `health.py` | `HealthClient` | `/health/live` → `/health/ready` 探测与 TLS/不可达分类；✨2026-09-10 `_probe_endpoint_with_fallback` L112 主路径 HTTP 错误/非 JSON 信封时回退 `/api/v1` 别名（反代静态健康块吞掉根路径的兜底，与安卓端同语义） |
+| `launcher.py` | `_ManagerApi:115`、`add_server:131`、`update_server:164`、`DesktopLauncher:256`、`open_remote_window:320` | 伴侣管理页桥接、凭据录入/清除、profile 切换、pywebview 远程窗口与首屏会话恢复 |
+| `health.py` | `HealthClient` | `/health/live` → `/health/ready` 探测与 TLS/不可达分类；✨2026-09-10 `_probe_endpoint_with_fallback` L143 主路径 HTTP 错误/非 JSON 信封时回退 `/api/v1` 别名（反代静态健康块吞掉根路径的兜底，与安卓端同语义） |
 | `lan_policy.py` / `hosts.py` | `check` / `parse_url` / `is_loopback_host:hosts` | http/https、私有 LAN 与显式明文同意校验；回环（127/8/::1/localhost）豁免确认——与 Android Hosts.isLoopbackHost 对齐（2026-09-04） |
 
 ## 安全与切换约束
@@ -24,6 +24,7 @@
 
 - `backend/tests/desktop_companion/test_desktop_companion.py`：profile JSON/旧数据兼容、回环豁免。
 - `backend/tests/desktop_companion/test_launcher.py`：管理 API、密码不回显、保留/清除语义。
+- `backend/tests/desktop_companion/test_health.py`：health 契约测试（live→ready 链式探测、READY/NOT_READY/UNREACHABLE/TLS_ERROR 状态分类；✨2026-10-17 补录）
 - `backend/tests/desktop_companion/test_credentials.py`：内存保险库、DPAPI 密文不落明文、自动登录脚本安全锚点。
 - `backend/tests/desktop_companion/test_credentials_migration_upgrade.py`：v1.0.5 形态 profile/vault 升级迁移演练（真实 DPAPI 文件；2026-09-04）。
 - `backend/tests/desktop_companion/test_launcher_gui_e2e.py` + `gui_e2e_driver.py`：真实 pywebview/WebView2 窗口 GUI E2E（opt-in `BTDECK_GUI_E2E=1`，CI 自动 skip；2026-09-04）。

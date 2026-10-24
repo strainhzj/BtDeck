@@ -26,6 +26,9 @@ export const navigation = {
     notFound: '页面不存在',
     dashboard: '首页',
     downloader: '下载器管理',
+    downloaderGroup: '下载器管理',
+    rssManagement: 'RSS 管理',
+    downloaderList: '下载器列表',
     torrents: '种子列表',
     torrentsGroup: '种子管理',
     torrentsTraditional: '种子列表（传统模式）',
@@ -42,7 +45,13 @@ export const navigation = {
     recycleBin: '回收站',
     orphanFiles: '孤儿文件',
     settings: '系统设置',
-    queryTemplates: '查询模板'
+    queryTemplates: '查询模板',
+    statisticsGroup: '统计数据',
+    statisticsOverview: '总览',
+    statisticsTrends: '趋势',
+    statisticsSeeding: '做种',
+    statisticsTrackers: 'Tracker',
+    statisticsFunReport: '趣味报告'
   },
   sidebar: {
     /** 侧栏底部双按钮（P1 壳层遗留补译：移动版入口 + 折叠开关） */

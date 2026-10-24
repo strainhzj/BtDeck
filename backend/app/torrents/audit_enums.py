@@ -74,10 +74,38 @@ class AuditOperationType(str, Enum):
     KEYWORD_RULE_ENABLE = "keyword_rule_enable"  # 启用关键词规则
     KEYWORD_RULE_DISABLE = "keyword_rule_disable"  # 禁用关键词规则
 
+    # ========== RSS 订阅操作（feature rss-subscription-2026-09-24） ==========
+    RSS_FEED_ADD = "rss_feed_add"  # 添加 RSS 订阅源
+    RSS_FEED_UPDATE = "rss_feed_update"  # 修改 RSS 订阅源
+    RSS_FEED_DELETE = "rss_feed_delete"  # 删除 RSS 订阅源
+    RSS_FEED_REFRESH = "rss_feed_refresh"  # 手动刷新 RSS 订阅源
+    RSS_ARTICLE_ADD = "rss_article_add"  # 推送 RSS 文章到下载器
+
+    # ========== RSS Phase 2 操作（feature rss-subscription-phase2-2026-09-24） ==========
+    RSS_RULE_ADD = "rss_rule_add"  # 添加 RSS 自动下载规则
+    RSS_RULE_UPDATE = "rss_rule_update"  # 修改 RSS 自动下载规则
+    RSS_RULE_DELETE = "rss_rule_delete"  # 删除 RSS 自动下载规则
+    RSS_MODE_SWITCH = "rss_mode_switch"  # 切换下载器 RSS 模式
+    RSS_QB_FEED_ADD = "rss_qb_feed_add"  # qB 原生：添加订阅源
+    RSS_QB_FEED_UPDATE = "rss_qb_feed_update"  # qB 原生：修改订阅源地址
+    RSS_QB_FEED_DELETE = "rss_qb_feed_delete"  # qB 原生：删除订阅源/文件夹
+    RSS_QB_FEED_REFRESH = "rss_qb_feed_refresh"  # qB 原生：刷新订阅源
+    RSS_QB_RULE_ADD = "rss_qb_rule_add"  # qB 原生：添加下载规则
+    RSS_QB_RULE_UPDATE = "rss_qb_rule_update"  # qB 原生：修改/重命名下载规则
+    RSS_QB_RULE_DELETE = "rss_qb_rule_delete"  # qB 原生：删除下载规则
+    RSS_QB_PREF_UPDATE = "rss_qb_pref_update"  # qB 原生：修改 RSS 偏好
+
     # ========== 系统操作 ==========
     SYNC_STATUS = "sync_status"  # 同步状态
     CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子
     BATCH_OPERATION = "batch_operation"  # 批量操作
+    MCP_SETTINGS_UPDATE = "mcp_settings_update"  # MCP 服务配置变更（mcp-service-capabilities W1/G11）
+    MCP_TOOL_CALL = "mcp_tool_call"  # MCP 工具写操作（mcp-service-capabilities W3/G7）
+    MCP_APIKEY_ROTATE = "mcp_apikey_rotate"  # MCP 服务密钥生成/刷新（mcp-service-capabilities W5/G11）
+    MCP_APIKEY_VIEW = "mcp_apikey_view"  # MCP 服务密钥明文查看（mcp-service-capabilities W5）
+    MOVIEPILOT_SETTINGS_UPDATE = "moviepilot_settings_update"  # MoviePilot 集成开关变更（moviepilot-integration）
+    MOVIEPILOT_INSTANCE_UPDATE = "moviepilot_instance_update"  # MoviePilot 实例更新/删除（含下载器映射）
+    MOVIEPILOT_SYNC = "moviepilot_sync"  # MoviePilot 整理历史同步批次（插件推送）
 
     # ========== 归档操作 ==========
     ARCHIVE_LOGS = "archive_logs"  # 归档审计日志

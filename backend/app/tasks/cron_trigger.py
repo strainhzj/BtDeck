@@ -45,8 +45,13 @@ def _reject(task_code: str, reason: str, message: str) -> Dict[str, Any]:
     }
 
 
-async def trigger_task_by_code(task_code: str) -> Dict[str, Any]:
+async def trigger_task_by_code(task_code: str, session_factory=None) -> Dict[str, Any]:
     """按稳定 task_code 触发内置定时任务。
+
+    Args:
+        task_code: 内置任务稳定 code
+        session_factory: 可选会话工厂（缺省 ``SessionLocal``；MCP runtime
+            注入自身工厂以便测试与连接治理统一）
 
     Returns:
         ``{"accepted": bool, "task_id": int|None, "task_code": str,
@@ -63,16 +68,23 @@ async def trigger_task_by_code(task_code: str) -> Dict[str, Any]:
 
     task_name = builtin.get("task_name")
 
-    db = SessionLocal()
+    factory = session_factory or SessionLocal
+    db = factory()
     try:
-        # 前检2：数据库中存在且未删除
+        # 前检2：数据库中存在且未删除。注意 CRUD 的返回形态：未命中时是
+        # success_result({"total": 0, "list": []})——data 是 truthy 字典，
+        # 必须按 list 判空（此前直接 not task_result.data 判空永不命中，
+        # 未找到会走 AttributeError → TRIGGER_ERROR，2026-09-08 W3-② 实测修正）。
         task_result = CronTaskCRUD.get_cron_task_by_code(db, task_code)
-        if not task_result.success or not task_result.data:
+        if not task_result.success:
+            return _reject(task_code, REASON_TASK_NOT_FOUND, f"任务查询失败: {task_code}")
+        rows = (task_result.data or {}).get("list") if isinstance(task_result.data, dict) else None
+        task = rows[0] if rows else None
+        if task is None:
             return _reject(task_code, REASON_TASK_NOT_FOUND, f"任务不存在或已删除: {task_code}")
 
-        task = task_result.data
-        task_id = task.id
-        task_type = task.task_type
+        task_id = task["task_id"]
+        task_type = task["task_type"]
 
         # 前检3：类型策略（0-3 脚本类永不开放；类型不是放行依据，仅是额外护栏）
         if task_type not in _ALLOWED_TASK_TYPES:

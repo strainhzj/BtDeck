@@ -196,7 +196,10 @@ export const torrent = {
     title: '添加种子',
     fileLabel: '种子文件',
     filePlaceholder: '点击选择 .torrent 文件（数量不限）',
+    fileDropHint: '或将 .torrent 文件拖拽到此处',
     filesSelected: '已选择 {count} 个文件',
+    clearFiles: '清空',
+    removeFile: '移除文件',
     fileHint: '只支持 .torrent 文件，提交后将在后台异步处理',
     downloaderLabel: '下载器',
     downloaderPlaceholder: '选择下载器',
@@ -205,9 +208,7 @@ export const torrent = {
     pathTypeDefault: '默认路径',
     pathTypeInUse: '在用路径',
     pathCount: '{count}个种子',
-    checkPolicy: '校验策略',
     skipCheck: '跳过校验（数据已完整时直接做种）',
-    skipCheckHint: '保存路径已有完整数据（辅种/续种）时勾选可跳过 qBittorrent 本地校验，避免 CheckingDL；全新下载请勿勾选（会被当作已完成，无法正常下载）。仅对 qBittorrent 生效。',
     category: '分类',
     categoryPlaceholder: '选择分类（可选）',
     tags: '标签',
@@ -301,6 +302,11 @@ export const torrent = {
         single: '确定要将种子删除吗？',
         batch: '确定要将选中的 {count} 个种子删除吗？'
       }
+    },
+    /** 等级1删除 · 下载器离线时追加的一次确认（仅删本地记录，不调用下载器接口） */
+    offlineConfirm: {
+      title: '警告：下载器不在线',
+      message: '下载器 {names} 不在线。确认后将不调用下载器接口，仅删除 BtDeck 中的种子记录；数据文件和下载器侧任务将保留。是否继续？'
     },
     msg: {
       selectFirst: '请先选择要删除的种子',

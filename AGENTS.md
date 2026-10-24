@@ -2,8 +2,8 @@
 
 > **项目**: BtDeck - BitTorrent 客户端统一管理平台
 > **仓库**: 全栈 monorepo（`backend/` + `frontend/` + `deploy/`）
-> **当前发布版本**: v1.0.5（查询模板 + 孤儿文件管理 + 安全加固；内部里程碑编号见 feature_list.json）
-> **更新**: 2026-08-21
+> **当前发布版本**: v1.0.7 发布流程进行中（MCP 服务 + 统计报表 + RSS 订阅 + MoviePilot 联动 + 双语收口；上一正式发布 v1.0.6 2026-09-21）
+> **更新**: 2026-10-20
 
 本文件是全栈代理路由层。端特定技术约束见各端 `AGENTS.md`（**端 AGENTS.md 不再回指本文件**，避免循环跳转）。
 
@@ -20,7 +20,7 @@
 4. 阅读相关端 AGENTS.md + CLAUDE.md + docs/constraints/
    - 后端工作: backend/AGENTS.md → backend/CLAUDE.md → backend/docs/constraints/
    - 前端工作: frontend/AGENTS.md → frontend/CLAUDE.md → frontend/docs/constraints/
-5. 阅读 PLANS/<当前版本>.md（如 PLANS/v1.0.5.md）
+5. 阅读 PLANS/ 活跃计划（索引见 PLANS/README.md；已完成/过时计划在 PLANS/archive/）
 6. 查阅代码细节时进入 docs/roadmap/（代码路线图，与 README.md / CLAUDE.md 双向链接；三层渐进式：模块路由 → 分支文件清单 → 源文件方法签名）
 7. 运行 ./init.sh（全栈环境验证，默认 --ci 轻量模式）
 ```

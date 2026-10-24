@@ -77,6 +77,22 @@ ALLOWLIST: dict[str, set[str]] = {
         # 字符串，MCP 错误码映射用），非密钥；名称含 token/password 触发启发式
         "app/auth/principal.py",
         "app/auth/utils.py",
+        # mcp/errors.py: McpErrorCode 枚举成员值为跨版本承诺的稳定错误码
+        # （AUTH_TOKEN_INVALID/PASSWORD_CHANGE_REQUIRED 等，禁止重命名），
+        # 同为启发式误伤，非密钥
+        "app/mcp/errors.py",
+        # W5 服务密钥面（2026-09-22）：以下为稳定标识符常量，名称含
+        # apikey/api_key 触发启发式，均非密钥材料——
+        # contracts.py: MCP_APIKEY_CONFIG_KEY 为 configs 表键名
+        # （"mcp.apikey.v1"，同 W1 MCP_CONFIG_KEY 的稳定键常量）；
+        # audit_enums.py: MCP_APIKEY_ROTATE/VIEW 为审计操作类型枚举值
+        # （同 McpErrorCode 稳定码类）；
+        # mcp_apikey_service.py: MCP_APIKEY_DESCRIPTION 为 configs 行
+        # 描述文案。真实密钥材料（生成值/哈希/SM4 密文）只存在于运行时与
+        # 数据库行，从不以字面量落代码；后续新增字面量仍受本规则拦截。
+        "app/mcp/contracts.py",
+        "app/torrents/audit_enums.py",
+        "app/services/mcp_apikey_service.py",
     },
 }
 

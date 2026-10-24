@@ -121,3 +121,7 @@ frontend/BtDeck-demo-dist-*.zip
 # 2026-09-21：本地构建工具链（用户要求忽略）：容器镜像定义与 ISCC 包装脚本
 deploy/docker/
 deploy/iscc
+
+# 根级运行时数据目录（本地 docker/运行产物：app.db/WAL/迁移备份）。根锚定，
+# 不影响 android/app/src/main/java/com/btdeck/companion/data/（见 2026-08-24 删规则记录）。
+/data/

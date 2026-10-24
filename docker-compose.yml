@@ -4,7 +4,7 @@
 
 services:
   # ==================== 后端服务 ====================
-  # FastAPI + Python 3.11
+  # FastAPI + Python 3.12
   # 端口：5001 (API服务)
   backend:
     build:

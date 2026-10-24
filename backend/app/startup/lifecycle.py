@@ -12,6 +12,7 @@ from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scop
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
+from app.tasks.scheduler.speed_sampler import SpeedSamplerJob
 
 
 async def run_wal_snapshot_loop(app: FastAPI) -> None:
@@ -116,6 +117,29 @@ async def run_dashboard_stats_loop(app: FastAPI) -> None:
             raise
         except Exception as exc:
             print(f"[WARN] dashboard stats task failed: {exc}")
+
+        await asyncio.sleep(interval)
+
+
+async def run_speed_sampler_loop(app: FastAPI) -> None:
+    """速度时间采样循环（统计报表 W1，PLANS/statistics-reports.md §3.2）。
+
+    60s 采样 + 5min hourly 聚合检查 + 每日清理（节流在 job 内部）；
+    异常仅记日志不中断循环。
+    """
+    job = SpeedSamplerJob(app=app)
+    app.state.speed_sampler_job = job
+    interval = getattr(job, "default_interval", 60)
+
+    while True:
+        try:
+            await job.execute(app=app)
+            await job.maybe_aggregate()
+            await job.maybe_cleanup()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] speed sampler task failed: {exc}")
 
         await asyncio.sleep(interval)
 
@@ -535,6 +559,10 @@ async def lifespan(app: FastAPI):
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
+    # 速度时间采样任务（统计报表 W1）：60s 采样 + 5min 聚合 + 每日清理
+    speed_sampler_task = asyncio.create_task(run_speed_sampler_loop(app))
+    app.state.speed_sampler_task = speed_sampler_task
+
     # 版本更新检查任务
     version_check_task = asyncio.create_task(check_version_update_task(app))
     app.state.version_check_task = version_check_task
@@ -586,10 +614,29 @@ async def lifespan(app: FastAPI):
         app.state.process_memory_task = process_memory_task
         print("[OK] 进程 RSS 周期采样任务已启动")
 
+    # MCP 子应用 lifespan（W2）：FastAPI 挂载不自动运行子应用 lifespan，
+    # 父 lifespan 手动进入（内部即 StreamableHTTPSessionManager.run()，§10.4）。
+    # teardown 放在清理段最末：先 mark_closed 拒绝新调用，业务任务收尾后
+    # 最后拆卸会话管理器（在途请求可完成，§4.2 关闭语义）。
+    mcp_bundle = getattr(app.state, "mcp_bundle", None)
+    mcp_lifespan_cm = None
+    if mcp_bundle is not None:
+        mcp_lifespan_cm = mcp_bundle.sub_asgi.router.lifespan_context(mcp_bundle.sub_asgi)
+        try:
+            await mcp_lifespan_cm.__aenter__()
+        except Exception:
+            mcp_lifespan_cm = None
+            print("[WARN] MCP 子应用 lifespan 启动失败，MCP 服务不可用（不阻塞主应用）")
+        else:
+            mcp_bundle.runtime.mark_ready()
+            print("[OK] MCP 服务会话管理器已启动（/mcp，stateless）")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
     finally:
+        if mcp_bundle is not None:
+            mcp_bundle.runtime.mark_closed()
         # ✅ 清理：取消未完成的后台任务
         print("=== 清理后台任务 ===")
         torrent_batch_tasks = list(getattr(app.state, "torrent_batch_tasks", set()))
@@ -646,6 +693,16 @@ async def lifespan(app: FastAPI):
                 print("✅ 仪表盘统计任务已取消")
             except Exception as e:
                 print(f"⚠️  取消仪表盘统计任务时出错: {e}")
+
+        if speed_sampler_task and not speed_sampler_task.done():
+            print("取消速度采样任务...")
+            speed_sampler_task.cancel()
+            try:
+                await speed_sampler_task
+            except asyncio.CancelledError:
+                print("✅ 速度采样任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消速度采样任务时出错: {e}")
 
         if version_check_task and not version_check_task.done():
             print("取消版本检查任务...")
@@ -728,6 +785,15 @@ async def lifespan(app: FastAPI):
             print("✅ 事件循环 lag 采样器已关闭")
         except Exception as e:
             print(f"⚠️  关闭事件循环 lag 采样器时出错: {e}")
+
+        # 拆卸 MCP 会话管理器（W2）：放在清理段最末（mark_closed 已在最前生效，
+        # 在途请求在 session_manager.run() 退出时收尾）；异常不阻断关闭。
+        if mcp_lifespan_cm is not None:
+            try:
+                await mcp_lifespan_cm.__aexit__(None, None, None)
+                print("✅ MCP 服务会话管理器已关闭")
+            except Exception as e:
+                print(f"⚠️  关闭 MCP 会话管理器时出错: {e}")
 
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())

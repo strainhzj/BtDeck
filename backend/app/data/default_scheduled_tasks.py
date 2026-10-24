@@ -244,6 +244,24 @@ DEFAULT_SCHEDULED_TASKS = [
         "update_by": "admin",
     },
     {
+        "task_name": "RSS 订阅定时刷新任务",
+        "task_code": "bt_rss_refresh",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.rss_refresh_task.RssRefreshTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "13,43 * * * *",  # 每 30 分钟（错峰分钟）
+        "description": "定时刷新 BtDeck 引擎的全部启用 RSS 订阅源并执行自动下载规则"
+        "（qb_native 模式下载器与离线下载器自动跳过；支持每源刷新间隔覆盖）。",
+        "timeout_seconds": 900,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
         "task_name": "refresh token 过期记录清理任务",
         "task_code": "refresh_token_cleanup",
         "task_status": TASK_STATUS_READY,

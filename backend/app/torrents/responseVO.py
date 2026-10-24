@@ -59,7 +59,7 @@ class TorrentInfoVO(BaseModel):
     last_announce_succeeded: str | None = Field(default="", description="最后一次announce是否成功", examples=[""])
     last_announce_msg: str | None = Field(default="", description="最后一次announce消息", examples=[""])
     last_scrape_succeeded: str | None = Field(default="", description="最后一次scrape是否成功", examples=[""])
-    tracker_info: List[TrackerInfoVO] | None = Field(default_factory=list, description="tracker信息列表")
+    tracker_info: List[TrackerInfoVO] = Field(default_factory=list, description="tracker信息列表")
 
     # 计算属性 - 兼容前端显示需求
     progress: float | None = Field(default=None, description="下载进度(百分比)", examples=[75.5])

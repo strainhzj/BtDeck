@@ -54,7 +54,7 @@ def _valid_payload() -> dict:
         "artifact_kind": "docker-backend",
         "target_os": "linux",
         "target_arch": "amd64",
-        "python_version": "3.11.9",
+        "python_version": "3.12.4",
         "node_version": None,
         "alembic_head": "c1d2e3f4a5b6",
         "frontend_manifest_sha256": "a" * 64,

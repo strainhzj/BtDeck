@@ -1,6 +1,7 @@
 import type { AxiosRequestConfig } from 'axios'
 import { ApiError } from '@/types/api'
 import { demoSession, emitDemoReset } from '@/demo/config'
+import { DEMO_MCP_CATALOG } from '@/demo/fixtures'
 import {
   demoStore,
   DemoDownloaderInput,
@@ -104,7 +105,7 @@ type DemoDownloaderPayload = DemoDownloader & {
   type: string
   is_ssl: '0' | '1'
   is_search: '0' | '1'
-  downloader_type: 0 | 1
+  downloader_type: 0 | 1 | 2
   username: string
   isSsl: '0' | '1'
   isSearch: '0' | '1'
@@ -126,16 +127,25 @@ const toDownloaderPayload = (item: DemoDownloader): DemoDownloaderPayload => ({
   pathMappingRules: ''
 })
 
-const toDownloaderInput = (input: DemoRecord): DemoDownloaderInput => ({
-  id: asString(input.id) || undefined,
-  nickname: asString(input.nickname) || undefined,
-  host: asString(input.host) || undefined,
-  port: input.port === undefined ? undefined : asString(input.port),
-  downloaderType: asNumber(input.downloaderType, asNumber(input.downloader_type, 0)) === 1 ? 1 : 0,
-  isSearch: asString(input.isSearch || input.is_search) === '0' ? '0' : '1',
-  isSsl: asString(input.isSsl || input.is_ssl) === '1' ? '1' : '0',
-  enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled) ? '1' : '0'
-})
+/** 可空字符串透传：undefined=未提供 / null=显式置空 / string=值 */
+const asNullableString = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  return typeof value === 'string' ? value : undefined
+}
+const toDownloaderInput = (input: DemoRecord): DemoDownloaderInput => {
+  const rawDownloaderType = asNumber(input.downloaderType, asNumber(input.downloader_type, 0))
+  return {
+    id: asString(input.id) || undefined,
+    nickname: asString(input.nickname) || undefined,
+    host: asString(input.host) || undefined,
+    port: input.port === undefined ? undefined : asString(input.port),
+    downloaderType: (rawDownloaderType === 1 || rawDownloaderType === 2) ? rawDownloaderType : 0,
+    isSearch: asString(input.isSearch || input.is_search) === '0' ? '0' : '1',
+    isSsl: asString(input.isSsl || input.is_ssl) === '1' ? '1' : '0',
+    enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled) ? '1' : '0'
+  }
+}
 
 const toTorrentPayload = (item: DemoTorrent): DemoTorrent & {
   info_id: string
@@ -380,6 +390,29 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
     return success<DemoDashboardData>(demoStore.getDashboardData())
   }
 
+  // 统计报表（statistics-reports W7）：7 个 GET 分支，query 经 readInput
+  if (path === '/reports/overview' && method === 'GET') return success(demoStore.getReportsOverview())
+  if (path === '/reports/trends' && method === 'GET') {
+    const period = asString(input.period, 'month') === 'week' ? 'week' : 'month'
+    const limit = Math.max(1, Math.min(48, asNumber(input.limit, 12)))
+    return success(demoStore.getReportsTrends(period, limit))
+  }
+  if (path === '/reports/seeding' && method === 'GET') return success(demoStore.getReportsSeeding())
+  if (path === '/reports/trackers' && method === 'GET') return success(demoStore.getReportsTrackers())
+  if (path === '/reports/fun/summary' && method === 'GET') return success(demoStore.getReportsFunSummary())
+  if (path === '/reports/fun/yearly' && method === 'GET') {
+    const currentYear = new Date().getFullYear()
+    // Demo 收敛域与 YearPicker 一致（2024–当前年）；后端为 400 校验，Demo 采取就近收敛
+    const year = Math.max(2024, Math.min(currentYear, asNumber(input.year, currentYear)))
+    return success(demoStore.getReportsFunYearly(year))
+  }
+  if (path === '/reports/speed/history' && method === 'GET') {
+    const raw = asString(input.range, '24h')
+    const range = raw === '7d' || raw === '30d' ? raw : '24h'
+    const downloaderId = asString(input.downloaderId, '') || undefined
+    return success(demoStore.getReportsSpeedHistory(range, downloaderId))
+  }
+
   if (path === '/downloader/getList') {
     const enabled = input.enabled === undefined ? undefined : asBoolean(input.enabled)
     return success(demoStore.listDownloaders({ enabled }).map(toDownloaderPayload))
@@ -477,6 +510,222 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
   if (path === '/setting-templates' || path.startsWith('/setting-templates/')) {
     if (method === 'GET') return success({ total: 0, page: 1, pageSize: 10, list: [] })
     return success({ success: true, demo: true }, 'Demo 模式：设置模板操作仅在本地展示')
+  }
+
+  // ==================== RSS 订阅（feature rss-subscription-2026-09-24） ====================
+  if (path === '/rss/feeds' && method === 'GET') {
+    const downloaderId = asString(input.downloaderId, 'demo-downloader-001')
+    const page = asNumber(input.page, 1)
+    const pageSize = asNumber(input.pageSize, 20)
+    const feeds = demoStore.listRssFeeds(downloaderId)
+    const start = (page - 1) * pageSize
+    return success({
+      total: feeds.length,
+      pageSize,
+      list: feeds.slice(start, start + pageSize)
+    })
+  }
+  if (path === '/rss/feeds' && method === 'POST') {
+    const feed = demoStore.createRssFeed({
+      downloaderId: asString(input.downloaderId, 'demo-downloader-001'),
+      name: asString(input.name, ''),
+      url: asString(input.url, '')
+    })
+    return success({ feed }, 'Demo 订阅源已创建')
+  }
+  if (path.startsWith('/rss/feeds/') && path.endsWith('/refresh') && method === 'POST') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const result = demoStore.refreshRssFeed(feedId)
+    if (!result) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({ ...result, lastFetchAt: '2026-09-24 12:00:00' }, 'Demo 订阅源已刷新')
+  }
+  if (path.startsWith('/rss/feeds/') && path.endsWith('/articles') && method === 'GET') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const statusInput = asString(input.status, '')
+    const status = statusInput === 'pending' || statusInput === 'added' ? statusInput : undefined
+    const page = demoStore.listRssArticles(feedId, {
+      page: asNumber(input.page, 1),
+      pageSize: asNumber(input.pageSize, 20),
+      status
+    })
+    return success({ total: page.total, pageSize: page.pageSize, list: page.list })
+  }
+  if (path.startsWith('/rss/feeds/') && method === 'PUT') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const feed = demoStore.updateRssFeed(feedId, {
+      name: input.name !== undefined ? asString(input.name, '') : undefined,
+      url: input.url !== undefined ? asString(input.url, '') : undefined,
+      enabled: input.enabled !== undefined ? asBoolean(input.enabled, true) : undefined
+    })
+    if (!feed) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({ feed }, 'Demo 订阅源已更新')
+  }
+  if (path.startsWith('/rss/feeds/') && method === 'DELETE') {
+    const feedId = extractPathId(path, '/rss/feeds/')
+    const deleted = demoStore.deleteRssFeed(feedId)
+    if (!deleted) return success({ reasonCode: 'RSS_FEED_NOT_FOUND' }, 'Demo 订阅源不存在')
+    return success({}, 'Demo 订阅源已删除')
+  }
+  if (path.startsWith('/rss/articles/') && path.endsWith('/add') && method === 'POST') {
+    const articleId = extractPathId(path, '/rss/articles/')
+    const article = demoStore.addRssArticle(articleId)
+    if (!article) return success({ reasonCode: 'RSS_ARTICLE_NOT_FOUND' }, 'Demo 文章不存在或已推送')
+    return success({ article, downloaderId: asString(input.downloaderId, 'demo-downloader-001') }, 'Demo 文章已推送')
+  }
+
+  // ==================== RSS Phase 2：模式 + 规则 + qB 代理（feature rss-subscription-phase2-2026-09-24） ====================
+  if (path === '/rss/mode' && method === 'GET') {
+    const downloaderId = asString(input.downloaderId, 'demo-downloader-001')
+    return success(demoStore.getRssMode(downloaderId))
+  }
+  if (path === '/rss/mode' && method === 'PUT') {
+    const downloaderId = asString(input.downloaderId, 'demo-downloader-001')
+    const modeInput = asString(input.mode, 'btdeck')
+    const mode = modeInput === 'qb_native' ? 'qb_native' : 'btdeck'
+    demoStore.updateRssMode(downloaderId, mode)
+    return success({ mode, frozenHint: mode === 'qb_native' }, 'Demo RSS 模式已切换')
+  }
+  if (path === '/rss/rules' && method === 'GET') {
+    const downloaderId = asString(input.downloaderId, 'demo-downloader-001')
+    const rules = demoStore.listRssRules(downloaderId, {
+      page: asNumber(input.page, 1),
+      pageSize: asNumber(input.pageSize, 20)
+    })
+    return success(rules)
+  }
+  if (path === '/rss/rules' && method === 'POST') {
+    const created = demoStore.createRssRule({
+      downloaderId: asString(input.downloaderId, 'demo-downloader-001'),
+      name: asString(input.name, ''),
+      includeKeywords: asString(input.includeKeywords, ''),
+      excludeKeywords: asNullableString(input.excludeKeywords) ?? null,
+      useRegex: asBoolean(input.useRegex, false),
+      targetDownloaderId: asNullableString(input.targetDownloaderId) ?? null,
+      savePath: asNullableString(input.savePath) ?? null,
+      tags: asNullableString(input.tags) ?? null,
+      feedIds: Array.isArray(input.feedIds) ? input.feedIds.map(String) : [],
+      enabled: input.enabled !== undefined ? asBoolean(input.enabled, true) : true
+    })
+    const { backfill, ...rule } = created
+    return success({ rule, backfill }, 'Demo 规则已创建')
+  }
+  if (path.startsWith('/rss/rules/') && method === 'PUT') {
+    const ruleId = extractPathId(path, '/rss/rules/')
+    const updated = demoStore.updateRssRule(ruleId, {
+      name: input.name !== undefined ? asString(input.name, '') : undefined,
+      enabled: input.enabled !== undefined ? asBoolean(input.enabled, true) : undefined,
+      includeKeywords: input.includeKeywords !== undefined ? asString(input.includeKeywords, '') : undefined,
+      excludeKeywords: asNullableString(input.excludeKeywords),
+      useRegex: input.useRegex !== undefined ? asBoolean(input.useRegex, false) : undefined,
+      targetDownloaderId: asNullableString(input.targetDownloaderId),
+      savePath: asNullableString(input.savePath),
+      tags: asNullableString(input.tags),
+      feedIds: Array.isArray(input.feedIds) ? input.feedIds.map(String) : undefined
+    })
+    if (!updated) return success({ reasonCode: 'RSS_RULE_NOT_FOUND' }, 'Demo 规则不存在')
+    const { backfill, ...rule } = updated
+    return success({ rule, backfill }, 'Demo 规则已更新')
+  }
+  if (path.startsWith('/rss/rules/') && method === 'DELETE') {
+    const ruleId = extractPathId(path, '/rss/rules/')
+    const deleted = demoStore.deleteRssRule(ruleId)
+    if (!deleted) return success({ reasonCode: 'RSS_RULE_NOT_FOUND' }, 'Demo 规则不存在')
+    return success({}, 'Demo 规则已删除')
+  }
+  if (path.startsWith('/rss/rules/') && path.endsWith('/match-preview') && method === 'POST') {
+    const ruleId = extractPathId(path, '/rss/rules/')
+    const list = demoStore.previewRssRule(ruleId)
+    if (list === null) return success({ reasonCode: 'RSS_RULE_NOT_FOUND' }, 'Demo 规则不存在')
+    return success({ list, total: list.length, pageSize: 50, truncated: list.length === 50 })
+  }
+  // ---- qB 原生代理（/rss/qb/{downloaderId}/...） ----
+  const qbMatch = path.match(/^\/rss\/qb\/([^/]+)(\/.*)?$/)
+  if (qbMatch) {
+    const qbDownloaderId = decodeURIComponent(qbMatch[1])
+    const qbSub = qbMatch[2] || ''
+    const qbDownloader = demoStore.listDownloaders().find(item => item.downloaderId === qbDownloaderId)
+    if (!qbDownloader) return success({ reasonCode: 'RSS_DOWNLOADER_NOT_FOUND' }, 'Demo 下载器不存在')
+    if (qbDownloader.downloaderType !== 0) return success({ reasonCode: 'RSS_QB_TYPE_UNSUPPORTED' }, 'Demo 仅 qB 支持原生 RSS')
+    if (qbSub === '/feeds' && method === 'GET') {
+      return success({ list: demoStore.getQbRssTree() })
+    }
+    if (qbSub === '/feeds' && method === 'POST') {
+      return success({}, 'Demo qB 订阅源已添加（静态演示树不落盘）')
+    }
+    if (qbSub === '/folders' && method === 'POST') {
+      return success({}, 'Demo qB 文件夹已添加（静态演示树不落盘）')
+    }
+    if (qbSub === '/feeds/url' && method === 'PUT') {
+      return success({}, 'Demo qB 订阅源地址已更新')
+    }
+    if (qbSub === '/items' && method === 'DELETE') {
+      return success({}, 'Demo qB 项目已删除（静态演示树不落盘）')
+    }
+    if (qbSub === '/items/move' && method === 'POST') {
+      return success({}, 'Demo qB 项目已移动（静态演示树不落盘）')
+    }
+    if (qbSub === '/items/refresh' && method === 'POST') {
+      return success({}, 'Demo 刷新已触发')
+    }
+    if (qbSub === '/items/mark-read' && method === 'POST') {
+      demoStore.markQbRssRead(asString(input.path, ''), input.articleId ? asString(input.articleId, '') : null)
+      return success({}, 'Demo 已标记为已读')
+    }
+    if (qbSub === '/articles' && method === 'GET') {
+      return success(demoStore.getQbRssArticles(asString(input.path, ''), asBoolean(input.onlyUnread, false)))
+    }
+    if (qbSub === '/rules' && method === 'GET') {
+      const list = demoStore.listQbRssRules()
+      return success({ list, total: list.length })
+    }
+    if (qbSub === '/rules' && method === 'POST') {
+      const ruleDefInput = (input.ruleDef && typeof input.ruleDef === 'object' ? input.ruleDef : {}) as Record<string, unknown>
+      demoStore.setQbRssRule(asString(input.name, ''), {
+        enabled: ruleDefInput.enabled !== undefined ? asBoolean(ruleDefInput.enabled, true) : undefined,
+        mustContain: ruleDefInput.mustContain !== undefined ? asString(ruleDefInput.mustContain, '') : undefined,
+        mustNotContain: ruleDefInput.mustNotContain !== undefined ? asString(ruleDefInput.mustNotContain, '') : undefined,
+        affectedFeeds: Array.isArray(ruleDefInput.affectedFeeds) ? ruleDefInput.affectedFeeds.map(String) : undefined,
+        savePath: ruleDefInput.savePath !== undefined ? asString(ruleDefInput.savePath, '') : undefined,
+        assignedCategory: ruleDefInput.assignedCategory !== undefined ? asString(ruleDefInput.assignedCategory, '') : undefined,
+        addPaused: ruleDefInput.addPaused !== undefined ? asBoolean(ruleDefInput.addPaused, false) : undefined
+      })
+      return success({}, 'Demo qB 规则已保存')
+    }
+    if (qbSub === '/rules/rename' && method === 'PUT') {
+      return success({}, 'Demo qB 规则已重命名（静态演示不落盘）')
+    }
+    if (qbSub === '/rules' && method === 'DELETE') {
+      const deleted = demoStore.deleteQbRssRule(asString(input.name, ''))
+      if (!deleted) return success({ reasonCode: 'RSS_QB_RULE_NAME_INVALID' }, 'Demo 规则不存在')
+      return success({}, 'Demo qB 规则已删除')
+    }
+    if (qbSub === '/rules/matching' && method === 'GET') {
+      const name = asString(input.name, '')
+      const rule = demoStore.listQbRssRules().find(item => item.name === name)
+      if (!rule) return success({ reasonCode: 'RSS_QB_RULE_NAME_INVALID' }, 'Demo 规则不存在')
+      const affected = rule.affectedFeeds && rule.affectedFeeds.length ? rule.affectedFeeds : []
+      const feedPaths = collectFeedPaths(demoStore.getQbRssTree())
+      const targetPaths = affected.length ? feedPaths.filter(p => affected.includes(p)) : feedPaths
+      const result = targetPaths.map(feedPath => ({
+        feedPath,
+        articles: demoStore.getQbRssArticles(feedPath, false).list.filter(article =>
+          article.title.includes((rule.mustContain || '').split(',')[0] || '§§§')
+        )
+      })).filter(group => group.articles.length > 0)
+      return success({ feeds: result })
+    }
+    if (qbSub === '/preferences' && method === 'GET') {
+      return success({ preferences: demoStore.getQbRssPreferences() })
+    }
+    if (qbSub === '/preferences' && method === 'PUT') {
+      const prefs = demoStore.updateQbRssPreferences({
+        rssProcessingEnabled: input.rssProcessingEnabled !== undefined ? asBoolean(input.rssProcessingEnabled, true) : undefined,
+        rssAutoDownloadingEnabled: input.rssAutoDownloadingEnabled !== undefined ? asBoolean(input.rssAutoDownloadingEnabled, true) : undefined,
+        rssRefreshInterval: input.rssRefreshInterval !== undefined ? asNumber(input.rssRefreshInterval, 30) : undefined,
+        rssMaxArticlesPerFeed: input.rssMaxArticlesPerFeed !== undefined ? asNumber(input.rssMaxArticlesPerFeed, 50) : undefined
+      })
+      return success({ preferences: prefs }, 'Demo 偏好已保存')
+    }
   }
 
   if (path === '/torrents/getList' || path === '/advanced-search/advanced-search') {
@@ -983,6 +1232,107 @@ const handleDemoRequest = (config: DemoRequestConfig): unknown => {
   if (path === '/tags/categories') return success(demoStore.getCategories().map((name, index) => ({ id: index + 1, name })))
   if (path === '/tags/tags' || path === '/tags/all') return success(demoStore.getTags())
   if (path.startsWith('/tags/')) return success({ success: true, demo: true }, 'Demo 标签操作已模拟完成')
+
+  // MCP 服务密钥（查看/刷新；demo 固定演示密钥，revision CAS 与真实端点一致）
+  if (path === '/mcp/apikey' && method === 'GET') {
+    return success(demoStore.getMcpApiKey())
+  }
+  if (path === '/mcp/apikey/rotate' && method === 'POST') {
+    const current = demoStore.getMcpApiKey()
+    if (asNumber(input.expectedRevision, -1) !== current.revision) {
+      throw new ApiError('Demo 模式：服务密钥已被其他会话变更，请刷新后重试', { code: '409', httpStatus: 409 })
+    }
+    const rotated = demoStore.rotateMcpApiKey(asNumber(input.expectedRevision, -1))
+    if (!rotated) {
+      throw new ApiError('Demo 模式：服务密钥已被其他会话变更，请刷新后重试', { code: '409', httpStatus: 409 })
+    }
+    return success(rotated, 'Demo MCP 服务密钥已刷新')
+  }
+
+  // MCP 服务配置（目录元数据镜像后端 contracts.py，revision CAS 与真实端点一致）
+  if (path === '/mcp/settings') {
+    if (method === 'PUT') {
+      const current = demoStore.getMcpSettings()
+      if (asNumber(input.expectedRevision, -1) !== current.revision) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      const updated = demoStore.updateMcpSettings({
+        enabled: asBoolean(input.enabled),
+        capabilities: isRecord(input.capabilities) ? input.capabilities as Record<string, boolean> : {},
+        expectedRevision: asNumber(input.expectedRevision),
+        updatedBy: '演示管理员'
+      })
+      if (!updated) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      return success({ settings: { ...updated, effectiveEnabled: updated.enabled && !updated.forceDisabled }, catalog: DEMO_MCP_CATALOG }, 'Demo MCP 配置已保存')
+    }
+    const settings = demoStore.getMcpSettings()
+    return success({
+      settings: { ...settings, effectiveEnabled: settings.enabled && !settings.forceDisabled },
+      catalog: DEMO_MCP_CATALOG
+    })
+  }
+
+  // MoviePilot 集成（全局开关 CAS + 实例映射 + 正向/反查关联）
+  if (path === '/moviepilot/settings') {
+    if (method === 'PUT') {
+      const current = demoStore.getMoviePilotSettings()
+      if (asNumber(input.expectedRevision, -1) !== current.revision) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      const updated = demoStore.updateMoviePilotSettings({
+        enabled: asBoolean(input.enabled),
+        expectedRevision: asNumber(input.expectedRevision),
+        updatedBy: '演示管理员'
+      })
+      if (!updated) {
+        throw new ApiError('Demo 模式：配置已被其他会话修改，请刷新后重试', { code: '409', httpStatus: 409 })
+      }
+      return success({ settings: updated, protocolVersion: 1 }, 'Demo MoviePilot 配置已保存')
+    }
+    return success({ settings: demoStore.getMoviePilotSettings(), protocolVersion: 1 })
+  }
+  if (path === '/moviepilot/instances' && method === 'GET') {
+    return success(demoStore.listMoviePilotInstances(toPageParams(input)))
+  }
+  if (path.startsWith('/moviepilot/instances/')) {
+    const instanceId = extractPathId(path, '/moviepilot/instances/')
+    if (method === 'PUT') {
+      const updated = demoStore.updateMoviePilotInstance(instanceId, {
+        name: input.name === undefined ? undefined : asString(input.name),
+        enabled: input.enabled === undefined ? undefined : asBoolean(input.enabled),
+        downloaderMapping: isRecord(input.downloaderMapping)
+          ? input.downloaderMapping as Record<string, string>
+          : undefined
+      })
+      return updated
+        ? success(updated, 'Demo 实例已更新，历史关联状态已重新解析')
+        : unsupported(method, path)
+    }
+    if (method === 'DELETE') {
+      const deleted = demoStore.deleteMoviePilotInstance(instanceId)
+      return deleted
+        ? success(deleted, 'Demo 实例及其同步历史已删除')
+        : success({ instanceId, deletedHistories: 0 }, 'Demo 实例不存在')
+    }
+  }
+  if (path === '/moviepilot/associations' && method === 'GET') {
+    return success(demoStore.listMoviePilotAssociations({
+      ...toPageParams(input),
+      downloaderId: asString(input.downloaderId) || undefined,
+      hash: asString(input.hash) || undefined
+    }))
+  }
+  if (path === '/moviepilot/associations/reverse' && method === 'GET') {
+    const mode = asString(input.mode)
+    return success(demoStore.reverseMoviePilotAssociations({
+      ...toPageParams(input),
+      path: asString(input.path) || undefined,
+      mode: mode === 'src' || mode === 'dest' ? mode : 'both'
+    }))
+  }
+
   // 完整桌面矩阵：demo 模式应展示全部能力门控 UI（设置弹窗路径管理页签/回收站/孤儿文件等），
   // 此前返回空 capabilities 会让 FILESYSTEM 能力 fail-closed、相关页签在 demo 里不渲染
   if (path === '/platform/capabilities') {
@@ -1017,3 +1367,15 @@ export const demoRequest: DemoRequestClient = <T = DemoApiEnvelope<unknown>>(
 }
 
 export default demoRequest
+
+function collectFeedPaths(nodes: Array<{ type: string, path: string, children?: unknown[] }>): string[] {
+  const paths: string[] = []
+  for (const node of nodes) {
+    if (node.type === 'feed') {
+      paths.push(node.path)
+    } else if (Array.isArray(node.children)) {
+      paths.push(...collectFeedPaths(node.children as Array<{ type: string, path: string, children?: unknown[] }>))
+    }
+  }
+  return paths
+}

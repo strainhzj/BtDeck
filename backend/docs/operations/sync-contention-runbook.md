@@ -1,6 +1,6 @@
 # SQLite 争用基准与回归门 Runbook（W4-3）
 
-> 对应计划：`PLANS/sync-database-blocking-remediation.md` W4-3（P1-07）
+> 对应计划：`PLANS/archive/sync-database-blocking-remediation.md` W4-3（P1-07）
 >
 > 基准脚本：`backend/scripts/sync_contention_benchmark.py`
 > 回归测试：`backend/tests/integration/test_sqlite_sync_contention.py`
@@ -151,7 +151,7 @@ lag/RSS/WAL 作为观测指标随 JSON 输出，不进入硬门禁（阈值见 W
 - 故障注入可作每周诊断：`--fault busy / slow-downloader / cancel`（小档即可）。
 - 注意：Windows 下 `python` 不在 PATH 时用完整解释器路径，例如
   `C:\software\python\python.exe scripts\sync_contention_benchmark.py ...`；
-  CI 建议固定 Python 3.11+ 与 SQLite ≥ 3.35（WAL 并发语义）。
+  CI 建议固定 Python 3.12+ 与 SQLite ≥ 3.35（WAL 并发语义）。
 
 ## 8. 环境校准系数
 

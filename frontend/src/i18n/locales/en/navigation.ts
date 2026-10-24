@@ -26,6 +26,9 @@ export const navigation = {
     notFound: 'Page not found',
     dashboard: 'Home',
     downloader: 'Downloaders',
+    downloaderGroup: 'Downloaders',
+    rssManagement: 'RSS Manager',
+    downloaderList: 'Downloader List',
     torrents: 'Torrents',
     torrentsGroup: 'Torrents',
     torrentsTraditional: 'Torrents (classic view)',
@@ -42,7 +45,13 @@ export const navigation = {
     recycleBin: 'Recycle bin',
     orphanFiles: 'Orphan files',
     settings: 'Settings',
-    queryTemplates: 'Query templates'
+    queryTemplates: 'Query templates',
+    statisticsGroup: 'Statistics',
+    statisticsOverview: 'Overview',
+    statisticsTrends: 'Trends',
+    statisticsSeeding: 'Seeding',
+    statisticsTrackers: 'Trackers',
+    statisticsFunReport: 'Fun report'
   },
   sidebar: {
     /** Sidebar footer buttons (P1 shell leftover fix: mobile entry + collapse toggle) */

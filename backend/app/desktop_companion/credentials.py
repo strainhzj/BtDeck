@@ -78,8 +78,8 @@ class WindowsCredentialVault:
         if os.name != "nt":
             raise OSError("WindowsCredentialVault 仅支持 Windows")
         self._directory = directory
-        self._crypt32 = ctypes.windll.crypt32
-        self._kernel32 = ctypes.windll.kernel32
+        self._crypt32 = ctypes.windll.crypt32  # type: ignore[attr-defined]  # Windows-only（mypy 在 Linux 宿主检查）
+        self._kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
         self._crypt32.CryptProtectData.argtypes = [
             ctypes.POINTER(_DataBlob),
             ctypes.c_wchar_p,
@@ -124,7 +124,7 @@ class WindowsCredentialVault:
             0,
             ctypes.byref(target_blob),
         ):
-            raise OSError(ctypes.get_last_error(), "CryptProtectData 失败")
+            raise OSError(ctypes.get_last_error(), "CryptProtectData 失败")  # type: ignore[attr-defined]
         try:
             return ctypes.string_at(target_blob.pbData, target_blob.cbData)
         finally:
@@ -144,7 +144,7 @@ class WindowsCredentialVault:
             0,
             ctypes.byref(target_blob),
         ):
-            raise OSError(ctypes.get_last_error(), "CryptUnprotectData 失败")
+            raise OSError(ctypes.get_last_error(), "CryptUnprotectData 失败")  # type: ignore[attr-defined]
         try:
             return ctypes.string_at(target_blob.pbData, target_blob.cbData)
         finally:

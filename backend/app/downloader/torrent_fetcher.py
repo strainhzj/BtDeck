@@ -93,9 +93,11 @@ class TorrentFetcher:
                 logger.debug("开始全量获取 Transmission 种子...")
 
                 # 第一次调用：获取所有种子的 hash（轻量级）
+                # hash 小写口径：TR 返回大写，下游与 DB 统一小写比较（P0-D）；
+                # TR RPC 对 ids 的 hash 大小写不敏感，小写透传安全
                 all_torrents_lite = client.get_torrents(arguments=["id", "hashString"])
 
-                torrent_hashes = [t.hashString for t in all_torrents_lite]
+                torrent_hashes = [str(t.hashString or "").strip().lower() for t in all_torrents_lite]
                 logger.debug(f"发现 {len(torrent_hashes)} 个种子，开始分片获取...")
 
             # 分批获取
@@ -110,10 +112,10 @@ class TorrentFetcher:
                     ids=cast(Any, batch), arguments=fields
                 )  # 支持字符串 hash 列表（存根 list 不变型）
 
-                # 转换为统一格式
+                # 转换为统一格式（hash 小写口径，P0-D）
                 batch_data = [
                     {
-                        "hash": _safe_attr(t, "hashString", ""),
+                        "hash": str(_safe_attr(t, "hashString", "") or "").strip().lower(),
                         "status": _safe_attr(t, "status", "unknown"),
                         "name": _safe_attr(t, "name", "") if include_name else "",
                     }
@@ -168,7 +170,7 @@ class TorrentFetcher:
             # 转换为统一格式
             active_data = [
                 {
-                    "hash": _safe_attr(t, "hashString", ""),
+                    "hash": str(_safe_attr(t, "hashString", "") or "").strip().lower(),
                     "status": _safe_attr(t, "status", "unknown"),
                     "name": _safe_attr(t, "name", "") if include_name else "",
                 }

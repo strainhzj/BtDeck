@@ -30,7 +30,7 @@ from app.api.models.advanced_search import (
 )
 
 # 导入种子信息转换函数（包含tracker信息）
-from app.api.endpoints.torrent_helpers import convert_to_vos_with_trackers
+from app.services.torrent_vo_conversion import convert_to_vos_with_trackers
 from app.services.sqlite_search_runtime import (
     RegexSearchTimeout,
     consume_regex_runtime_error,

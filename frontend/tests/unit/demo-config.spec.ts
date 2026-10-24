@@ -36,5 +36,8 @@ describe('demo config', () => {
     })
     expect(DEMO_ROUTE_MATRIX.some(route => route.path === '/dashboard' && route.category === 'core')).toBe(true)
     expect(DEMO_ROUTE_MATRIX.some(route => route.path === '/login' && route.category === 'disabled')).toBe(true)
+    // 统计报表四页签（statistics-reports W5）：readonly 类别（demo 静态展示归 W7）
+    expect(DEMO_ROUTE_MATRIX.some(route => route.path === '/statistics/overview' && route.category === 'readonly')).toBe(true)
+    expect(DEMO_ROUTE_MATRIX.some(route => route.path.startsWith('/statistics/') && route.category === 'readonly')).toBe(true)
   })
 })

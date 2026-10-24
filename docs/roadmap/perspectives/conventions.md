@@ -6,12 +6,12 @@
 
 | 约定 | 权威文档 | 路线图内典型证据 |
 |------|---------|----------------|
-| API 响应格式（`CommonResponse[T]`，分页固定 `list/total/pageSize`） | [../../backend/docs/constraints/api-response-format.md](../../backend/docs/constraints/api-response-format.md) | `app/api/responseVO.py:CommonResponse`；`torrent_crud.py:687`（列表响应 `{"total", "list", "pageSize"}`） |
+| API 响应格式（`CommonResponse[T]`，分页固定 `list/total/pageSize`） | [../../backend/docs/constraints/api-response-format.md](../../backend/docs/constraints/api-response-format.md) | `app/api/responseVO.py:CommonResponse`；`torrent_crud.py:418`（列表响应 `{"total", "list", "pageSize"}`） |
 | 数据库迁移（Schema 变更走 Alembic，启动自动执行） | [../../backend/docs/constraints/database-migration.md](../../backend/docs/constraints/database-migration.md) | `backend/alembic/env.py` + `app/migrations/database_migrator.py` 双轨 |
-| 下载器连接（复用 `app.state.store` 缓存，禁止重复创建） | [../../backend/docs/constraints/downloader-connection.md](../../backend/docs/constraints/downloader-connection.md) | `torrent_crud.py:171` `get_snapshot()` |
+| 下载器连接（复用 `app.state.store` 缓存，禁止重复创建） | [../../backend/docs/constraints/downloader-connection.md](../../backend/docs/constraints/downloader-connection.md) | `torrent_crud.py:212` `get_snapshot()` |
 | 跨环境数据库一致性 | [../../backend/docs/constraints/database-consistency.md](../../backend/docs/constraints/database-consistency.md) | — |
 | 同步任务 DB 写入治理（变更检测 + 批量 upsert + 串行化） | [../../backend/docs/constraints/sync-db-write-governance.md](../../backend/docs/constraints/sync-db-write-governance.md) | `app/services/sync_db_write.py` + `app/tasks/resource_guard.py` |
-| 代码复用（相似度 >50% 必须扩展） | [../../backend/docs/constraints/code-reuse.md](../../backend/docs/constraints/code-reuse.md) | ⚠ `torrent_crud.py` 批量添加已抽取 service；单添加仍存嵌套临时文件函数（见 [risks.md](./risks.md) R6） |
+| 代码复用（相似度 >50% 必须扩展） | [../../backend/docs/constraints/code-reuse.md](../../backend/docs/constraints/code-reuse.md) | ⚠ `torrent_crud.py` 批量添加已抽取 service；单添加已下沉 `torrent_add_service.py` 但仍存嵌套临时文件函数（见 [risks.md](./risks.md) R6） |
 
 ## 前端约定
 
@@ -39,6 +39,6 @@
 
 | 声明 | 实际 | 差距 |
 |------|------|------|
-| 前端"必须使用 Options API，禁止 Composition API 和 `<script setup>`"（`AGENTS.md` 第 5 条、`frontend/CLAUDE.md`） | 实际 src 下 **89 个**文件用 **class-component**（`@Component` + `export default class`，85 个 `.vue` + 4 个 `.ts`），仅 3 个 `.vue` 用 Options API | 详见 [risks.md](./risks.md) "文档/代码漂移" |
+| 前端"必须使用 Options API，禁止 Composition API 和 `<script setup>`"（`AGENTS.md` 第 5 条、`frontend/CLAUDE.md`） | 实际 src 下 **131 个**文件用 **class-component**（`@Component` + `export default class`，124 个 `.vue` + 7 个 `.ts`），仅 2 个 `.vue` 用 Options API（另 `utils/formatters.ts` 为 `export default {`；2026-10-18 实测） | 详见 [risks.md](./risks.md) "文档/代码漂移" |
 
 > class-component 属于 `vue-class-component` + `vue-property-decorator`，既不是 Composition API 也不是传统 Options API，是第三种范式。约束文档的措辞与实际代码范式不一致。

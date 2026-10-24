@@ -102,6 +102,12 @@ class TestGetTrackerStatusText:
         """不传 downloader_type 默认使用 qBittorrent"""
         assert get_tracker_status_text(0) == "已禁用"
 
-    def test_未知类型回退到qbittorrent(self):
-        """未知下载器类型回退到 qBittorrent 映射"""
-        assert get_tracker_status_text(2, "unknown_type") == "工作中"
+    def test_未知类型返回原始值(self):
+        """未知下载器类型不再回退 qB 映射，返回原始数值字符串（P0 修复）
+
+        注意：normalize 对未知字符串抛 ValueError，本用例走 ValueError 分支；
+        rtorrent 显式返回原始值，不误用 qB/TR 中文语义。
+        """
+        with pytest.raises(ValueError):
+            get_tracker_status_text(2, "unknown_type")
+        assert get_tracker_status_text(2, "rtorrent") == "2"

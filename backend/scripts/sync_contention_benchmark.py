@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-W4-3 真实文件型 SQLite 争用基准（PLANS/sync-database-blocking-remediation.md）
+W4-3 真实文件型 SQLite 争用基准（PLANS/archive/sync-database-blocking-remediation.md）
 
 【定位】与 scripts/sync_resource_benchmark.py（内存 SQLite + mock 的治理层压测）
 互补：本脚本用【真实临时文件型 SQLite + 生产近似数据量 + 后台真实 DML +

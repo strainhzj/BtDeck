@@ -12,14 +12,14 @@
     exec uvicorn app.main:app ...
       │
       └─ app/main.py:26  from app.factory import app
-            └─ app/factory.py:129  app = create_app(configure_routes=False)
-                  │  app/factory.py:88  create_app()
-                  │    ├─ L99-105  FastAPI(lifespan=lifespan)（DEV 分支多行 / 生产单行）
-                  │    ├─ L108-114  CORSMiddleware
-                  │    ├─ L117-119  register_exception_handlers(app)
-                  │    └─ L121-122  configure_routes_and_static(app)
+            └─ app/factory.py:154  app = create_app(configure_routes=False)
+                  │  app/factory.py:113  create_app()
+                  │    ├─ L124-130  FastAPI(lifespan=lifespan)（DEV 分支多行 / 生产单行）
+                  │    ├─ L133-139  CORSMiddleware
+                  │    ├─ L142-144  register_exception_handlers(app)
+                  │    └─ L146-147  configure_routes_and_static(app)
                   │         └─ app/startup/routers_initializer.py:6  init_routers(app)
-                  │              └─ app/api/api.py:46  api_router (prefix=/api/v1)
+                  │              └─ app/api/api.py:62  api_router (prefix=/api/v1)
                   │
 直接运行（非 Docker import 路径）
   app/main.py:140-163
@@ -27,49 +27,70 @@
       └─ 失败时拒绝进入 Server.run()
 
 FastAPI lifespan（请求进入前）
-  app/startup/lifecycle.py:262  lifespan(app)
-    ├─ L302 migrate_database()（失败时 fail-fast，后续均不执行）
-    ├─ L318 init_db()
-    ├─ L340 await init_database_connection()
-    ├─ L345 await reconcile_orphan_file_state() # 分批对账历史隔离候选
-    ├─ L363 recover_interrupted_orphan_scans()  # running → failed
-    ├─ L377 await update_cron_task_status()
-    ├─ L388 await cron_executor.start()         # 启动 APScheduler
-    │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L122/L259/L1162)
-    ├─ L404 asyncio.create_task(startup_event(app))
-    │             └─ app/downloader/initialization.py:682  startup_event(app)
-    │                  ├─ L708  _async_initialization_tasks
-    │                  ├─ L733  _load_initial_downloaders
-    │                  └─ L799  _perform_initial_full_sync
-    ├─ L407 持久化孤儿清理任务恢复
-    ├─ L414 queued 孤儿扫描恢复
-    ├─ L421 run_dashboard_stats_loop
-    ├─ L425 check_version_update_task
-    └─ L429 add_version_update_notification_task
+  app/startup/lifecycle.py:376  lifespan(app)
+    ├─ L420 migrate_database()（失败时 fail-fast，后续均不执行）
+    ├─ L436 init_db()
+    ├─ L458 await init_database_connection()
+    ├─ L466 await reconcile_orphan_file_state() # 分批对账历史隔离候选
+    ├─ L500 recover_interrupted_orphan_scans()  # running → failed
+    ├─ L514 await update_cron_task_status()
+    ├─ L525 await cron_executor.start()         # 启动 APScheduler
+    │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L381/L563/L1606)
+    ├─ L541 asyncio.create_task(startup_event(app))
+    │             └─ app/downloader/initialization.py:710  startup_event(app)
+    │                  ├─ L736  _async_initialization_tasks
+    │                  ├─ L761  _load_initial_downloaders
+    │                  └─ L827  _perform_initial_full_sync
+    ├─ L545-550 持久化孤儿清理任务恢复
+    ├─ L552-557 queued 孤儿扫描恢复
+    ├─ L559 run_dashboard_stats_loop
+    ├─ L563 run_speed_sampler_loop（统计报表 W1：60s 采样 + 5min 聚合）
+    ├─ L567 check_version_update_task
+    └─ L571 add_version_update_notification_task
 ```
 
 ## 链 2：种子添加流程（HTTP → SDK → DB → 审计）
 
 ```
 HTTP POST /api/v1/torrents/add
-  └─ app/api/endpoints/torrent_crud.py:138  create_torrent()
-       │
-       ├─ L171  await app.state.store.get_snapshot()      # 缓存下载器
-       ├─ L225  asyncio.to_thread(write_temp_file)        # 临时文件
-       ├─ L229  await calculate_info_hash(tmp_file_path)   # → torrent_helpers
-       │
-       ├─ [Transmission 分支 L241]
-       │    ├─ L260  await call_downloader_api(tr_client.add_torrent, ...)   # 统一下载器调用封装
-       │    ├─ L278-282  轮询 get_transmission_torrent_info（最多 30s）
-       │    └─ L302  create_transmission_torrent_record(...)  → db.add/commit
-       │
-       ├─ [qBittorrent 分支 L331]
-       │    ├─ L345  await call_downloader_api(qb_client.torrents_add, ...)  # 统一下载器调用封装
-       │    ├─ L369-373  轮询 call_downloader_api(qb_client.torrents_info)（最多 30s）
-       │    └─ L404  create_qbittorrent_torrent_record(...)  → db.add/commit
-       │
-       └─ L471  asyncio.create_task(write_audit_log_async())
-                  └─ 约 L445  audit_service.log_operation  (异步会话)
+  └─ app/api/endpoints/torrent_crud.py:131  create_torrent()   # 2026-09-05 起为协议无关服务的 HTTP 薄壳
+       └─ app/services/torrent_add_service.py  TorrentAddService.add_torrent()
+            │
+            ├─ await app.state.store.get_snapshot()          # 缓存下载器（store 显式注入）
+            ├─ asyncio.to_thread(write_temp_file)            # 临时文件
+            ├─ await calculate_info_hash(tmp_file_path)       # → app/services/torrent_add_helpers（2026-09-08 自 torrent_helpers 迁入服务层）
+            │
+            ├─ [Transmission 分支]
+            │    ├─ await call_downloader_api(tr_client.add_torrent, ...)   # 统一下载器调用封装（INTERACTIVE lane）
+            │    ├─ 轮询 get_transmission_torrent_info（最多 30s）
+            │    └─ create_transmission_torrent_record(...)  → db.add/commit
+            │
+            ├─ [qBittorrent 分支]
+            │    ├─ await call_downloader_api(qb_client.torrents_add, ...)  # 统一下载器调用封装（INTERACTIVE lane）
+            │    ├─ 轮询 call_downloader_api(qb_client.torrents_info)（最多 30s）
+            │    └─ create_qbittorrent_torrent_record(...)  → db.add/commit
+            │
+            └─ asyncio.create_task(write_audit_log_async())
+                     └─ audit_service.log_operation  (异步会话)
+
+MCP tools/call torrent_add_file（2026-09-08 W3-③）
+  └─ app/mcp/tools/torrent_add.py  handle_torrent_add_file()
+       ├─ 内容校验链（SERVER_PATH_FORBIDDEN / 10-64MiB 双上限 / bencode+info hash）→ require_store → 幂等 LRU
+       └─ 复用同一 TorrentAddService（G4：与 HTTP 同一 service；operator=principal.username）
+```
+
+MCP transport 认证双路径（2026-09-22 W5）
+```
+POST /mcp/（Authorization: Bearer <token> 或 X-Access-Token）
+  └─ app/mcp/auth.py  extract_token_from_request → authenticate_token
+       ├─ looks_like_mcp_api_key(token)（btdmcp_ 前缀）
+       │    └─ McpApiKeyService.resolve_owner（SHA-256 恒定比对 configs.mcp.apikey.v1.keyHash）
+       │         └─ principal.build_principal_for_username（用户存在/启用/强制改密；token 不驻留主体）
+       │              └─ 失败：AUTH_API_KEY_INVALID（密钥面）/ USER_*（归属状态面）
+       └─ 其余（Web 会话 JWT）
+            └─ auth_utils.verify_access_token → build_principal_for_username（同一用户状态加载）
+                 └─ 失败：AUTH_TOKEN_INVALID / AUTH_REQUIRED / USER_*
+  └─ server.py 门禁链：effective_enabled（kill switch 优先）→ 能力门禁 → 认证 → 就绪
 ```
 
 > 详见第三层样例 [../backend/api/endpoints/torrent_crud.md](../backend/api/endpoints/torrent_crud.md)。
@@ -78,11 +99,11 @@ HTTP POST /api/v1/torrents/add
 
 ```
 HTTP DELETE /api/v1/torrents/...
-  └─ app/api/endpoints/torrent_deletion.py  (961 行)
-       └─ app/services/torrent_deletion_by_level.py  TorrentDeletionByLevel (1718 行)
+  └─ app/api/endpoints/torrent_deletion.py  (1064 行)
+       └─ app/services/torrent_deletion_by_level.py  TorrentDeletionByLevel (1767 行)
             ├─ L1  删任务+数据
             ├─ L2  删任务保数据
-            ├─ L3  移回收站  → app/services/recycle_bin_service.py (860 行)
+            ├─ L3  移回收站  → app/services/recycle_bin_service.py (865 行)
             │                 → app/core/file_operations.py (1474 行, .waiting-delete 标记)
             └─ L4  加"待删除"标签  → app/services/tag_service.py / tag_adapters/
 ```
@@ -93,14 +114,14 @@ HTTP DELETE /api/v1/torrents/...
 
 ```
 APScheduler job（注册）
-  app/tasks/cron_executor.py:122/259/1162  add_job(...)
-    └─ app/tasks/scheduler/tracker_reannounce_task.py  TrackerReannounceTask (269 行)
+  app/tasks/cron_executor.py:381/563/1606  add_job(...)
+    └─ app/tasks/scheduler/tracker_reannounce_task.py  TrackerReannounceTask (336 行)
          │  继承 scheduler/torrent_sync/base.py:BaseSyncTask
          │
          └─ app/services/reannounce_service.py  (259 行, API 与定时任务共用)
               ├─ 按下载器分批汇报（适配 qB/Transmission）
               ├─ app/core/reannounce_config_operations.py:1-348  CRUD + 域名匹配
-              └─ app/models/  tracker_reannounce_config 表（ORM 在 torrents/models.py:490）
+              └─ app/models/  tracker_reannounce_config 表（ORM 在 torrents/models.py:496）
 ```
 
 ## 链 5：孤儿文件扫描与清理
@@ -108,8 +129,8 @@ APScheduler job（注册）
 ```
 触发：定时任务 or HTTP /api/v1/orphan-files/scan
   ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (248 行, 提交并等待 dispatcher 终态，阶段摘要进入 Cron task_logs)
-  └─ [HTTP]  app/api/endpoints/orphan_files.py  POST /scan (L387，handler L388)
-       └─ app/services/orphan_scan_job_service.py (490 行)
+  └─ [HTTP]  app/api/endpoints/orphan_files.py  POST /scan (L400，handler L401)
+       └─ app/services/orphan_scan_job_service.py (495 行)
             ├─ 持久化 queued scan_id/task_id 并立即返回
             ├─ GET /scans/{scan_id} 只读单行轮询状态
             └─ OrphanScanDispatcher 串行调度/重启恢复/定时等待终态
@@ -119,7 +140,7 @@ APScheduler job（注册）
                       └─ orphan_lifecycle_service.py (458 行)
                            └─ 每 200 条短事务查询/更新/resolved + db_write_scope
 
-列表：orphan_file_service.py (3902 行)
+列表：orphan_file_service.py (3911 行)
   ├─ 文件夹父行只做 SQL 聚合
   └─ /folders/children 展开后独立分页，仅当前可见文件 stat 硬链接
 
@@ -145,7 +166,7 @@ HTTP POST /api/v1/advanced-search
        │      └─ _sqlite_bt_regexp       (单次 match 10ms 超时 + 查询总预算 2s 双重熔断，防 ReDoS)
        │
        └─ [ORM 查询执行]
-            app/services/advanced_search.py  AdvancedSearchService (1471 行)
+            app/services/advanced_search.py  AdvancedSearchService (1544 行)
               ├─ 20 字段查询引擎；字段级空值操作符 + include/exclude 严格补集
               ├─ Tracker 否定以 NOT EXISTS 覆盖多 Tracker；文本通配符按字面、标签按完整 token
               ├─ 下载器 UI 提交稳定 ID，并兼容当前/历史 nickname；超级做种是/否/不支持三态
@@ -160,12 +181,12 @@ HTTP POST /api/v1/advanced-search
 
 | 模块 | 被引用文件数 | 角色 |
 |------|------------|------|
-| `app.database` | 98 | DB 引擎与会话工厂 |
-| `app.services.*` | 73 | 业务服务层 |
-| `app.auth.dependencies.require_authenticated_user` | 29 | 认证依赖 |
-| `app.core.config` | 40 | 全局配置 |
+| `app.database` | 112 | DB 引擎与会话工厂 |
+| `app.services.*` | 98 | 业务服务层 |
+| `app.auth.dependencies.require_authenticated_user` | 36 | 认证依赖 |
+| `app.core.config` | 42 | 全局配置 |
 | `app.api.responseVO.CommonResponse` | — | 统一响应信封 |
-| `app.core.database_result` | 11 | DatabaseResult 泛型 |
+| `app.core.database_result` | 12 | DatabaseResult 泛型 |
 | `app.core.path_mapping` | 10 | 路径双向映射 |
 
 ## 相关文档（完整论述，避免双份真相）

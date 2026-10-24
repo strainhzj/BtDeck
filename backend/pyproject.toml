@@ -4,7 +4,7 @@
 [tool.black]
 # 代码格式化配置
 line-length = 120
-target-version = ['py311']
+target-version = ['py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -22,7 +22,7 @@ extend-exclude = '''
 # 类型检查配置
 # 策略：渐进式严格化。当前历史代码类型标注不全，先宽松起步，
 # 新增代码应逐步补全类型标注，最终收紧 strict。
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true    # 第三方库无 type stub 时忽略
 follow_imports = "silent"
 warn_redundant_casts = true

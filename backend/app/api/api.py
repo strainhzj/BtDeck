@@ -44,6 +44,21 @@ from app.api.endpoints import orphan_files
 from app.api.endpoints import health
 from app.api.endpoints import platform_capabilities
 
+# MCP 服务配置控制面（mcp-service-capabilities W1；运行时工具挂载在 W2）
+from app.api.endpoints import mcp_settings
+
+# MoviePilot 集成（整理历史同步 + 任务关联查询）
+from app.api.endpoints import moviepilot
+
+# RSS 订阅（feature rss-subscription-2026-09-24）
+from app.api.endpoints import rss_subscriptions
+
+# qB 原生 RSS 代理（feature rss-subscription-phase2-2026-09-24）
+from app.api.endpoints import rss_qb_proxy
+
+# 统计报表（statistics-reports W3：/reports/* 聚合端点）
+from app.api.endpoints import reports
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -55,8 +70,14 @@ api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(cron_tasks.router, prefix="/cronTasks", tags=["cron-tasks"])
 # 主机能力矩阵（dual-mode-client Phase 4：一致降级单一来源）
 api_router.include_router(platform_capabilities.router, prefix="/platform", tags=["platform-capabilities"])
+# MCP 服务配置控制面（W1）：/api/v1/mcp/settings；W2 的 MCP 运行时挂载在根 /mcp，互不冲突
+api_router.include_router(mcp_settings.router, prefix="/mcp", tags=["mcp"])
+# MoviePilot 集成：/api/v1/moviepilot/*（握手/同步/设置/实例/关联查询）
+api_router.include_router(moviepilot.router, prefix="/moviepilot", tags=["moviepilot"])
 # Dashboard
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+# 统计报表（statistics-reports W3）：/api/v1/reports/*
+api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 # 添加高级搜索路由
 api_router.include_router(advanced_search.router, prefix="/advanced-search", tags=["search"])
 # 添加tracker关键词和消息记录路由
@@ -93,6 +114,10 @@ api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce
 api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=["torrent-status"])
 # 添加通知中心路由
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])
+# 添加 RSS 订阅路由（feature rss-subscription-2026-09-24）
+api_router.include_router(rss_subscriptions.router, prefix="/rss", tags=["RSS订阅"])
+# qB 原生 RSS 代理路由（feature rss-subscription-phase2-2026-09-24）
+api_router.include_router(rss_qb_proxy.router, prefix="/rss/qb", tags=["RSS订阅"])
 # 添加孤儿文件管理路由
 api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])
 # API 前缀下保留 liveness/readiness 别名；Docker 使用的规范路径仍是根路径 /health/*。

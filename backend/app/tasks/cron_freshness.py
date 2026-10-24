@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-定时任务数据新鲜度轻量计算（W3-4 / P1-05，PLANS/sync-database-blocking-remediation.md）
+定时任务数据新鲜度轻量计算（W3-4 / P1-05，PLANS/archive/sync-database-blocking-remediation.md）
 
 覆盖问题：P1-05（调度成功、跳过和数据新鲜度语义混乱）。
 

@@ -54,6 +54,7 @@ async def test_android_lifespan_skips_filesystem_recovery_and_dispatchers(monkey
         "update_cron_task_status",
         "startup_event",
         "run_dashboard_stats_loop",
+        "run_speed_sampler_loop",
         "check_version_update_task",
         "add_version_update_notification_task",
     ):

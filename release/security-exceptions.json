@@ -8,9 +8,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.31.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-002",
@@ -19,9 +19,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.30.3；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-003",
@@ -30,9 +30,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.31.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-004",
@@ -41,9 +41,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.32.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-005",
@@ -52,9 +52,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.32.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-006",
@@ -63,9 +63,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.30.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-007",
@@ -74,9 +74,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.32.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-008",
@@ -85,9 +85,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.31.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-009",
@@ -96,9 +96,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.32.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-010",
@@ -107,9 +107,9 @@
    },
    "justification": "axios==0.21.4 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.31.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-011",
@@ -118,9 +118,9 @@
    },
    "justification": "brace-expansion==1.1.12 在 BtDeck 部署形态的暴露面评估：存在修复版本 1.1.16；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-012",
@@ -129,9 +129,9 @@
    },
    "justification": "brace-expansion==1.1.12 在 BtDeck 部署形态的暴露面评估：存在修复版本 1.1.17；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-013",
@@ -140,9 +140,9 @@
    },
    "justification": "brace-expansion==1.1.12 在 BtDeck 部署形态的暴露面评估：存在修复版本 1.1.18；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-014",
@@ -151,9 +151,9 @@
    },
    "justification": "browserslist==4.28.1 在 BtDeck 部署形态的暴露面评估：存在修复版本 4.28.7；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-015",
@@ -162,9 +162,9 @@
    },
    "justification": "browserslist==4.28.1 在 BtDeck 部署形态的暴露面评估：存在修复版本 4.28.7；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-016",
@@ -173,9 +173,9 @@
    },
    "justification": "fast-uri==3.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.1.3；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-017",
@@ -184,9 +184,9 @@
    },
    "justification": "fast-uri==3.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.1.5；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-018",
@@ -195,9 +195,9 @@
    },
    "justification": "fast-uri==3.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.1.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-019",
@@ -206,9 +206,9 @@
    },
    "justification": "fast-uri==3.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.1.4；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-020",
@@ -217,9 +217,9 @@
    },
    "justification": "fast-uri==3.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.1.2；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-021",
@@ -228,9 +228,9 @@
    },
    "justification": "js-cookie==2.2.1 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.0.7；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-022",
@@ -239,9 +239,9 @@
    },
    "justification": "js-yaml==3.14.2 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.15.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-023",
@@ -250,9 +250,9 @@
    },
    "justification": "js-yaml==3.14.2 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.15.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-024",
@@ -261,9 +261,9 @@
    },
    "justification": "lodash-es==4.17.23 在 BtDeck 部署形态的暴露面评估：存在修复版本 4.18.0；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-025",
@@ -272,9 +272,9 @@
    },
    "justification": "nanoid==3.3.11 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.3.16；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-026",
@@ -283,9 +283,9 @@
    },
    "justification": "nanoid==3.3.11 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.3.18；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-027",
@@ -294,9 +294,9 @@
    },
    "justification": "nanoid==3.3.11 在 BtDeck 部署形态的暴露面评估：存在修复版本 3.3.12；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-028",
@@ -305,9 +305,9 @@
    },
    "justification": "nth-check==1.0.2 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.0.1；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-029",
@@ -316,9 +316,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-030",
@@ -327,9 +327,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-031",
@@ -338,9 +338,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-032",
@@ -349,9 +349,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-033",
@@ -360,9 +360,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-034",
@@ -371,9 +371,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-035",
@@ -382,9 +382,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.1.1；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-036",
@@ -393,9 +393,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-037",
@@ -404,9 +404,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-038",
@@ -415,9 +415,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.2.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-039",
@@ -426,9 +426,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-040",
@@ -437,9 +437,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.2.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-041",
@@ -448,9 +448,9 @@
    },
    "justification": "pillow==11.1.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 12.3.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-042",
@@ -459,9 +459,9 @@
    },
    "justification": "postcss==8.5.8 在 BtDeck 部署形态的暴露面评估：存在修复版本 8.5.12；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-043",
@@ -470,9 +470,9 @@
    },
    "justification": "postcss==8.5.8 在 BtDeck 部署形态的暴露面评估：存在修复版本 8.5.18；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-044",
@@ -481,9 +481,9 @@
    },
    "justification": "pyjwt==2.8.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.12.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-045",
@@ -492,9 +492,9 @@
    },
    "justification": "pyjwt==2.8.0 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.13.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-046",
@@ -503,9 +503,9 @@
    },
    "justification": "setuptools==75.8.2 在 BtDeck 部署形态的暴露面评估：存在修复版本 78.1.1；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-047",
@@ -514,9 +514,9 @@
    },
    "justification": "starlette==0.41.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 0.49.1；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-048",
@@ -525,9 +525,9 @@
    },
    "justification": "starlette==0.41.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 1.3.1；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-049",
@@ -536,9 +536,9 @@
    },
    "justification": "starlette==0.41.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 1.1.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-050",
@@ -547,9 +547,9 @@
    },
    "justification": "svgo==1.3.2 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.8.3；命中制品 source-frontend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-051",
@@ -558,9 +558,9 @@
    },
    "justification": "urllib3==2.2.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.6.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-052",
@@ -569,9 +569,9 @@
    },
    "justification": "urllib3==2.2.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.6.3；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-053",
@@ -580,9 +580,9 @@
    },
    "justification": "urllib3==2.2.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.6.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-054",
@@ -591,9 +591,9 @@
    },
    "justification": "urllib3==2.2.3 在 BtDeck 部署形态的暴露面评估：存在修复版本 2.7.0；命中制品 source-backend。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外，升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-055",
@@ -602,9 +602,9 @@
    },
    "justification": "fast-uri==3.1.0 为发行版当前最新修订；暴露面评估：BtDeck 部署形态风险可控；修复 3.1.6，升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-056",
@@ -613,9 +613,9 @@
    },
    "justification": "fast-uri==3.1.0 为发行版当前最新修订；暴露面评估：BtDeck 部署形态风险可控；修复 3.1.6，升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-057",
@@ -624,9 +624,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -637,9 +637,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -650,9 +650,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -663,9 +663,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -676,9 +676,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -689,9 +689,9 @@
    },
    "justification": "curl==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -702,9 +702,9 @@
    },
    "justification": "libc-bin==2.41-12+deb13u3 为发行版当前最新修订；glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）"
   },
@@ -715,9 +715,9 @@
    },
    "justification": "libc6==2.41-12+deb13u3 为发行版当前最新修订；glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "glibc 2.42-17（Debian tracker：sid 已修，trixie no-dsa/Minor 待 point release）"
   },
@@ -728,9 +728,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -741,9 +741,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -754,9 +754,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -767,9 +767,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -780,9 +780,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -793,9 +793,9 @@
    },
    "justification": "libcurl4t64==8.14.1-2+deb13u4 为发行版当前最新修订；curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "curl 8.21.0（curl.se advisory 2026-06-24：last vulnerable 8.20.0）"
   },
@@ -806,9 +806,9 @@
    },
    "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
   },
@@ -819,9 +819,9 @@
    },
    "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
   },
@@ -832,9 +832,9 @@
    },
    "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
   },
@@ -845,9 +845,9 @@
    },
    "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
   },
@@ -858,9 +858,9 @@
    },
    "justification": "perl-base==5.40.1-6 为发行版当前最新修订；perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03",
+   "expires": "2027-04-24",
    "kind": "tracked-no-fix",
    "upstream_fix": "perl 5.40.1-8（Debian tracker：sid 已备，trixie Minor 待 point release）"
   },
@@ -871,9 +871,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-077",
@@ -882,9 +882,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-078",
@@ -893,9 +893,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-079",
@@ -904,9 +904,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-080",
@@ -915,9 +915,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-081",
@@ -926,9 +926,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-082",
@@ -937,9 +937,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-083",
@@ -948,9 +948,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-084",
@@ -959,9 +959,9 @@
    },
    "justification": "curl 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-085",
@@ -970,9 +970,9 @@
    },
    "justification": "gzip 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-086",
@@ -981,9 +981,9 @@
    },
    "justification": "jaraco-context 暴露面评估：BtDeck 部署形态风险可控；修复 6.1.0；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-087",
@@ -992,9 +992,9 @@
    },
    "justification": "libacl1 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-088",
@@ -1003,9 +1003,9 @@
    },
    "justification": "libacl1 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-089",
@@ -1014,9 +1014,9 @@
    },
    "justification": "libc-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-090",
@@ -1025,9 +1025,9 @@
    },
    "justification": "libc-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-091",
@@ -1036,9 +1036,9 @@
    },
    "justification": "libc6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-092",
@@ -1047,9 +1047,9 @@
    },
    "justification": "libc6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-093",
@@ -1058,9 +1058,9 @@
    },
    "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-094",
@@ -1069,9 +1069,9 @@
    },
    "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-095",
@@ -1080,9 +1080,9 @@
    },
    "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-096",
@@ -1091,9 +1091,9 @@
    },
    "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-097",
@@ -1102,9 +1102,9 @@
    },
    "justification": "libcurl4t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-098",
@@ -1113,9 +1113,9 @@
    },
    "justification": "libncursesw6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-099",
@@ -1124,9 +1124,9 @@
    },
    "justification": "libsqlite3-0 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-100",
@@ -1135,9 +1135,9 @@
    },
    "justification": "libsqlite3-0 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-101",
@@ -1146,9 +1146,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-102",
@@ -1157,9 +1157,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-103",
@@ -1168,9 +1168,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-104",
@@ -1179,9 +1179,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-105",
@@ -1190,9 +1190,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-106",
@@ -1201,9 +1201,9 @@
    },
    "justification": "libssh2-1t64 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-107",
@@ -1212,9 +1212,9 @@
    },
    "justification": "libtinfo6 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-108",
@@ -1223,9 +1223,9 @@
    },
    "justification": "ncurses-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-109",
@@ -1234,9 +1234,9 @@
    },
    "justification": "ncurses-bin 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-110",
@@ -1245,9 +1245,9 @@
    },
    "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-111",
@@ -1256,9 +1256,9 @@
    },
    "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-112",
@@ -1267,9 +1267,9 @@
    },
    "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-113",
@@ -1278,9 +1278,9 @@
    },
    "justification": "nginx 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-114",
@@ -1289,9 +1289,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-115",
@@ -1300,9 +1300,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-116",
@@ -1311,9 +1311,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-117",
@@ -1322,9 +1322,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-118",
@@ -1333,9 +1333,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-119",
@@ -1344,9 +1344,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-120",
@@ -1355,9 +1355,9 @@
    },
    "justification": "perl-base 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-121",
@@ -1366,9 +1366,9 @@
    },
    "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.13, 3.14.4, 3.15.0a8；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-122",
@@ -1377,9 +1377,9 @@
    },
    "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.13, 3.14.4, 3.15.0a8；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-123",
@@ -1388,9 +1388,9 @@
    },
    "justification": "python 暴露面评估：BtDeck 部署形态风险可控；修复 3.13.14, 3.14.6, 3.15.0b2；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-124",
@@ -1399,9 +1399,9 @@
    },
    "justification": "tiff 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-125",
@@ -1410,9 +1410,9 @@
    },
    "justification": "tiff 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-126",
@@ -1421,9 +1421,9 @@
    },
    "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-127",
@@ -1432,9 +1432,9 @@
    },
    "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-128",
@@ -1443,9 +1443,9 @@
    },
    "justification": "wget 暴露面评估：BtDeck 部署形态风险可控；修复 上游跟踪；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-129",
@@ -1454,9 +1454,9 @@
    },
    "justification": "wheel 暴露面评估：BtDeck 部署形态风险可控；修复 0.46.2；升级治理批次（v1.0.7）消解",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-03",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-130",
@@ -1465,9 +1465,9 @@
    },
    "justification": "CVE-2026-76642：util-linux 家族（bsdutils/libblkid1/libmount1/login/mount/util-linux 等 9 包实例，docker-backend/trixie）；发行版暂无修复版本（fix=[]，distro 追踪中）。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外——2026-09-04 grype DB 日更暴露的新增 High，与 129 条基线同类（run 33863869869 实证）；升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-04",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-131",
@@ -1476,9 +1476,9 @@
    },
    "justification": "CVE-2026-78408：util-linux 家族（同上 9 包实例，docker-backend/trixie）；发行版暂无修复版本（fix=[]，distro 追踪中）。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外——2026-09-04 grype DB 日更暴露的新增 High，与 129 条基线同类（run 33863869869 实证）；升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-04",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-132",
@@ -1487,9 +1487,9 @@
    },
    "justification": "CVE-2026-78409：util-linux 家族（同上 9 包实例，docker-backend/trixie）；发行版暂无修复版本（fix=[]，distro 追踪中）。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外——2026-09-04 grype DB 日更暴露的新增 High，与 129 条基线同类（run 33863869869 实证）；升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-04",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-133",
@@ -1498,9 +1498,9 @@
    },
    "justification": "CVE-2026-78410：util-linux 家族（同上 9 包实例，docker-backend/trixie）；发行版暂无修复版本（fix=[]，distro 追踪中）。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外——2026-09-04 grype DB 日更暴露的新增 High，与 129 条基线同类（run 33863869869 实证）；升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-04",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   },
   {
    "id": "SEC-134",
@@ -1509,9 +1509,9 @@
    },
    "justification": "CVE-2026-85091：zlib1g（docker-backend/trixie）；发行版暂无修复版本（fix=[]，distro 追踪中）。按 2026-09-03 决策（依赖升级治理独立批次）登记限时例外——2026-09-04 grype DB 日更暴露的新增 High，与 129 条基线同类（run 33863869869 实证）；升级批次统一消解（v1.0.7）。",
    "owner": "huangzj",
-   "remediation_version": "v1.0.7",
+   "remediation_version": "v1.0.8",
    "registered": "2026-09-04",
-   "expires": "2026-10-03"
+   "expires": "2027-04-24"
   }
  ]
 }

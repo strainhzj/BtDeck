@@ -119,8 +119,11 @@ def has_torrent_info_changes(existing: Dict[str, Any], new_mapping: Dict[str, An
     return False
 
 
-# TrackerInfo 变更检测的 6 个业务字段（4 announce/scrape + tracker_name + tracker_host）。
-# 排除 status/msg/seeder_count/leecher_count/download_count（死字段，sync 不写它们）。
+# TrackerInfo 变更检测的 9 个业务字段（4 announce/scrape + tracker_name + tracker_host
+# + 三列 scrape 计数）。计数字段统计报表 W2 激活同步写入（qB trackers 负载
+# num_seeds/num_leeches/num_downloaded、TR trackerStats 同名属性，归一 -1/None→NULL；
+# 存量 NULL→值 即判变更，一个同步周期自动回填）。
+# 仍排除 status/msg（由 tracker 状态判断任务单独维护，sync 不写）。
 _TRACKER_CHANGE_FIELDS = (
     "last_announce_succeeded",
     "last_announce_msg",
@@ -128,6 +131,9 @@ _TRACKER_CHANGE_FIELDS = (
     "last_scrape_msg",
     "tracker_name",
     "tracker_host",
+    "seeder_count",
+    "leecher_count",
+    "download_count",
 )
 
 
@@ -401,7 +407,7 @@ async def bulk_upsert_with_retry(
 ) -> WriteStats:
     """批量 upsert + 真实分批提交 + 批级重试 + db_write_scope 串行化写者。
 
-    核心语义（W1-1，PLANS/sync-database-blocking-remediation.md）：
+    核心语义（W1-1，PLANS/archive/sync-database-blocking-remediation.md）：
     - 真实分批：to_insert / to_update 各自按 batch_size 分块，每批进入
       db_write_scope → 执行该批 DML → 独立 commit，形成真实提交边界，
       不再由一次全量同步持续持有 SQLite 写锁。

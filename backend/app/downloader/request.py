@@ -10,7 +10,7 @@ class RequestDownloader(BaseModel):
     username: str = Field(description="下载器登录用户名", examples=["admin"])
     password: str = Field(description="下载器登录密码", examples=["admin"])
     is_search: bool = Field(description="是否启用搜索的下载器标识，0表示停用，1表示启用", examples=[True])
-    downloader_type: int = Field(description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0])
+    downloader_type: int = Field(description="下载器类型(0=qBittorrent, 1=Transmission, 2=rTorrent)", examples=[0])
     enabled: bool = Field(description="下载器启用标识，0表示停用，1表示启用", examples=[True])
     port: int | None = Field(default=None, description="端口", examples=[1])
     is_ssl: bool = Field(description="是否https，0表示否，1表示是", examples=[True])
@@ -67,7 +67,7 @@ class ListDownloader(BaseModel):
         default=None, description="是否启用搜索的下载器标识，0表示停用，1表示启用", examples=["1"]
     )
     downloader_type: int | None = Field(
-        default=None, description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
+        default=None, description="下载器类型(0=qBittorrent, 1=Transmission, 2=rTorrent)", examples=[0]
     )
     enabled: str | None = Field(default=None, description="下载器启用标识，0表示停用，1表示启用", examples=["1"])
 
@@ -88,7 +88,7 @@ class UpdateDownloader(BaseModel):
         default=None, description="下载器启用标识，0表示停用，1表示启用；缺省表示不修改", examples=[True]
     )
     downloader_type: int | None = Field(
-        default=None, description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
+        default=None, description="下载器类型(0=qBittorrent, 1=Transmission, 2=rTorrent)", examples=[0]
     )
     port: int | None = Field(default=None, description="端口", examples=[1])
     is_ssl: bool | None = Field(
@@ -154,7 +154,7 @@ class DownloaderCheckVO(BaseModel):
     username: str | None = Field(default=None, description="下载器用户名", examples=["admin"])
     password: str | None = Field(default=None, description="下载器密码", examples=["admin123"])
     downloader_type: int | None = Field(
-        default=None, description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
+        default=None, description="下载器类型(0=qBittorrent, 1=Transmission, 2=rTorrent)", examples=[0]
     )
     torrent_save_path: Optional[str] = Field(default=None, description="torrent_save_path")
 

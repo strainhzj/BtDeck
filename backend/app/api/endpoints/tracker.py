@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from app.api.responseVO import CommonResponse
-from sqlalchemy import text, distinct, select
+from sqlalchemy import text, distinct, select, bindparam
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_async_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
@@ -16,7 +16,7 @@ from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel
 from app.torrents.models import TrackerInfo as trackerInfoModel
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
-from app.core.tracker_mapper import resolve_transmission_tracker_status_code
+from app.core.tracker_mapper import is_valid_tracker_url, resolve_transmission_tracker_status_code
 
 # 审计日志相关导入
 from app.services.audit_service import get_audit_service, extract_audit_info_from_request
@@ -719,7 +719,11 @@ async def qb_add_torrents_tracker(db, downloader_vo, todo_tracker_list, torrent_
     )
     current_time = datetime.now()
     for tracker in torrent.trackers:
-        if todo_tracker_list.__contains__(tracker["url"]):
+        tracker_url = str(tracker["url"] or "")
+        # 防御：拦截历史污染条目（非法 scheme 的 tracker URL）入库
+        if not is_valid_tracker_url(tracker_url):
+            continue
+        if todo_tracker_list.__contains__(tracker_url):
             tracker_info = trackerInfoModel(
                 tracker_id=str(uuid.uuid4()),
                 torrent_info_id=torrent_info_id,
@@ -762,6 +766,9 @@ async def tr_add_torrents_tracker(db, downloader_vo, todo_tracker_list, torrent_
     exit_tracker_list = result.all()
     new_count = todo_tracker_list.__len__()
     for row in exit_tracker_list:
+        # 拦截 DB 中历史污染 URL（非法 scheme）回流 Transmission
+        if not is_valid_tracker_url(str(row[0] or "")):
+            continue
         if todo_tracker_list.count(row[0]) == 0:
             todo_tracker_list.append(row[0])
         else:
@@ -898,6 +905,9 @@ async def qb_change_torrents_tracker(db, downloader_vo, todo_tracker_list, torre
     for tracker in torrent.trackers:
         url = str(tracker["url"])
         if url.__contains__("DHT") or url.__contains__("PeX") or url.__contains__("LSD"):
+            continue
+        if not is_valid_tracker_url(url):
+            # 防御：拦截历史污染条目（非法 scheme）入库
             continue
 
         tracker_info = trackerInfoModel(
@@ -1236,3 +1246,209 @@ async def _write_tracker_audit_log_async(
             logging.info(f"审计日志已备份到: {backup_file}")
         except Exception as backup_error:
             logging.critical(f"审计日志备份失败: {str(backup_error)}")
+
+
+# ============ 污染 tracker 清理（qB 5.0+ repr 污染适配） ============
+
+
+@router.post(
+    "/cleanupPollutedTrackers", summary="清理污染tracker（历史bug写入的非法URL条目）", response_model=CommonResponse
+)
+async def cleanup_polluted_trackers(
+    req: Request,
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
+    downloader_id: str = Query(default="", description="限定下载器ID；空=全部下载器"),
+    dry_run: bool = Query(default=False, description="只统计不执行清理"),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """清理 qBittorrent 端与数据库中的污染 tracker。
+
+    背景：采集侧曾用属性赋值缓存 trackers，触发 qbittorrent-api
+    TorrentDictionary.trackers 的 property setter（add_trackers 远程写），
+    把 Tracker 对象 repr 整段当作 URL 写回 qB；qBittorrent 5.0+ 自管
+    TrackerEntry 模型原样存储并回显（status=1 未联系、num_*= -1、
+    url="Tracker({...})"）。写侧已修复（_qb_set_attr），本端点负责存量清理：
+    以库内非法 scheme 的 tracker 行为清单，对 qB 下载器逐种子
+    torrents_remove_trackers 后置 dr=1；Transmission 仅清理库内行
+    （如需远端清理请先修复 TR 端条目后重跑同步）。
+
+    注意：qBittorrent 5.0.0~5.0.3 的 WebAPI removeTrackers 存在已知 bug
+    （5.0.4 修复），期间删除失败会计入 failed，请升级后重试。
+    """
+    # 1) SQL 粗过滤 + python 精滤，取库内污染行（含所属种子与下载器）
+    # SQL 粗过滤排除合法 scheme 前缀（http/https/udp/ws/wss），python 侧
+    # is_valid_tracker_url 精滤兜底（大小写变体等）；查询为纯字面量、无外部输入
+    result = await db.execute(
+        text(
+            "SELECT t.tracker_id, t.tracker_url, ti.torrent_id, ti.downloader_id "
+            "FROM tracker_info t JOIN torrent_info ti ON t.torrent_info_id = ti.info_id "
+            "WHERE t.dr = 0 "
+            "AND lower(t.tracker_url) NOT LIKE 'http%' "
+            "AND lower(t.tracker_url) NOT LIKE 'udp%' "
+            "AND lower(t.tracker_url) NOT LIKE 'ws%'"
+        )
+    )
+    polluted_rows = [row for row in result.all() if not is_valid_tracker_url(str(row[1] or ""))]
+
+    if downloader_id:
+        polluted_rows = [row for row in polluted_rows if row[3] == downloader_id]
+
+    if not polluted_rows:
+        return CommonResponse(
+            status="success",
+            msg="未发现污染tracker",
+            code="200",
+            data={"dry_run": dry_run, "polluted_rows_total": 0, "by_downloader": []},
+        )
+
+    # 2) 按下载器分组
+    dl_result = await db.execute(select(BtDownloaders).where(BtDownloaders.dr == 0))
+    downloader_rows = {d.downloader_id: d for d in dl_result.scalars().all()}
+
+    groups: Dict[str, Dict[str, Any]] = {}
+    for tracker_id, tracker_url, torrent_id, row_dl_id in polluted_rows:
+        group = groups.setdefault(
+            row_dl_id,
+            {"torrents": {}, "tracker_ids": [], "skipped_transmission": False},
+        )
+        group["tracker_ids"].append(tracker_id)
+        group["torrents"].setdefault(str(torrent_id or ""), []).append(str(tracker_url))
+
+    # 3) 执行清理（qB 远端 + DB；TR 仅 DB）
+    try:
+        downloader_vo_map = await _get_downloader_vo_map(req)
+    except _DownloaderUnavailableError as e:
+        logging.error(f"清理污染tracker失败: {str(e)}")
+        return CommonResponse(status="error", msg=str(e), code="500", data={"reasonCode": e.reason_code})
+
+    by_downloader: List[Dict[str, Any]] = []
+    total_db_cleaned = 0
+    total_removed_torrents = 0
+    total_failed_torrents = 0
+    skipped_transmission_rows = 0
+
+    for row_dl_id, group in groups.items():
+        downloader_row = downloader_rows.get(row_dl_id)
+        nickname = getattr(downloader_row, "nickname", None) or row_dl_id
+        entry: Dict[str, Any] = {
+            "downloader_id": row_dl_id,
+            "nickname": nickname,
+            "downloader_type": (
+                "qbittorrent"
+                if getattr(downloader_row, "is_qbittorrent", False)
+                else ("transmission" if getattr(downloader_row, "is_transmission", False) else "unknown")
+            ),
+            "torrents": len(group["torrents"]),
+            "polluted_urls": len(group["tracker_ids"]),
+            "removed_torrents": 0,
+            "failed_torrents": 0,
+            "db_rows_cleaned": 0,
+            "note": "",
+        }
+
+        if downloader_row is None:
+            entry["note"] = "下载器已删除，仅支持 dry_run 统计"
+            skipped_transmission_rows += len(group["tracker_ids"])
+            by_downloader.append(entry)
+            continue
+
+        if downloader_row.is_qbittorrent:
+            cleaned_ids: List[str] = []
+            if not dry_run:
+                try:
+                    downloader_vo = _require_downloader_vo(downloader_vo_map, row_dl_id)
+                except Exception as vo_error:  # noqa: BLE001 下载器不可用不影响其它组
+                    logging.error(f"清理污染tracker失败（下载器不可用） downloader_id={row_dl_id}: {str(vo_error)}")
+                    entry["note"] = f"下载器不可用: {str(vo_error)}"
+                    skipped_transmission_rows += len(group["tracker_ids"])
+                    by_downloader.append(entry)
+                    continue
+                for torrent_id, urls in group["torrents"].items():
+                    try:
+                        await call_downloader_api(
+                            row_dl_id,
+                            DownloadLane.INTERACTIVE,
+                            downloader_vo.client.torrents_remove_trackers,
+                            kwargs={"torrent_hash": torrent_id, "urls": urls},
+                            timeout=_QB_CALL_TIMEOUT,
+                            operation="qb_cleanup_polluted_trackers_remove",
+                        )
+                        entry["removed_torrents"] += 1
+                        total_removed_torrents += 1
+                    except Exception as remove_error:  # noqa: BLE001 单种子失败不断整体
+                        entry["failed_torrents"] += 1
+                        total_failed_torrents += 1
+                        logging.error(
+                            f"清理污染tracker单种子失败 [downloader_id={row_dl_id}, torrent={torrent_id[:16]}]: "
+                            f"{str(remove_error)}"
+                        )
+                # 远端删除成功的种子对应的库行置 dr=1（删除失败的种子保留行，
+                # 靠下一轮同步 mark_removed 自愈兜底；仅当全部成功时才清理全部行）
+                # failed_torrents 无法精确到 url：保守起见仅当全部成功时清理全部行，
+                # 否则按成功比例跳过（失败种子行保留，靠下一轮同步 mark_removed 自愈兜底）
+                if entry["failed_torrents"] == 0:
+                    cleaned_ids = list(group["tracker_ids"])
+                    entry["db_rows_cleaned"] = len(cleaned_ids)
+                    total_db_cleaned += len(cleaned_ids)
+                    for i in range(0, len(cleaned_ids), 500):
+                        await db.execute(
+                            text(
+                                "update tracker_info set update_time=datetime('now'), dr=1 " "where tracker_id in :ids"
+                            ).bindparams(bindparam("ids", expanding=True)),
+                            {"ids": cleaned_ids[i : i + 500]},
+                        )
+                    await db.commit()
+            else:
+                entry["note"] = "dry_run"
+        elif downloader_row.is_transmission:
+            # v1 不动 TR 远端（change_torrent 全量替换语义风险高），仅统计提示
+            entry["note"] = "Transmission：请通过重设 tracker 或重跑同步自愈清理"
+            skipped_transmission_rows += len(group["tracker_ids"])
+        else:
+            entry["note"] = "未知下载器类型，跳过"
+            skipped_transmission_rows += len(group["tracker_ids"])
+
+        by_downloader.append(entry)
+
+    # 4) 审计（后台任务，单条汇总）
+    audit_info = extract_audit_info_from_request(req) or {}
+    background_tasks.add_task(
+        _write_tracker_audit_log_async,
+        operation_type=AuditOperationType.UPDATE_TRACKER,
+        operator="admin",
+        torrent_info_id=None,
+        operation_detail={
+            "operation": "cleanup_polluted_trackers",
+            "downloader_id": downloader_id or "all",
+            "dry_run": dry_run,
+            "polluted_rows_total": len(polluted_rows),
+            "removed_torrents": total_removed_torrents,
+            "failed_torrents": total_failed_torrents,
+            "db_rows_cleaned": total_db_cleaned,
+        },
+        downloader_id=downloader_id or None,
+        operation_result=(AuditOperationResult.SUCCESS if total_failed_torrents == 0 else AuditOperationResult.PARTIAL),
+        audit_info=audit_info,
+    )
+
+    msg = f"清理完成：污染行 {len(polluted_rows)}，涉及种子远端移除 {total_removed_torrents}，失败 {total_failed_torrents}，库内清理 {total_db_cleaned}"
+    if dry_run:
+        msg = f"统计完成（dry_run）：污染行 {len(polluted_rows)}"
+    if total_failed_torrents > 0:
+        msg += "；存在失败种子（qBittorrent 5.0.0~5.0.3 的 removeTrackers 有已知 bug，建议升级至 5.0.4+ 后重试）"
+
+    return CommonResponse(
+        status="success",
+        msg=msg,
+        code="200",
+        data={
+            "dry_run": dry_run,
+            "polluted_rows_total": len(polluted_rows),
+            "by_downloader": by_downloader,
+            "removed_torrents": total_removed_torrents,
+            "failed_torrents": total_failed_torrents,
+            "db_rows_cleaned": total_db_cleaned,
+            "skipped_transmission_rows": skipped_transmission_rows,
+        },
+    )

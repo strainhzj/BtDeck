@@ -15,11 +15,17 @@ jest.mock('@/api/torrents', () => ({
   getTorrentPeers: jest.fn()
 }))
 
+jest.mock('@/api/moviepilot', () => ({
+  getTorrentMoviePilotAssociations: jest.fn()
+}))
+
 import TrackerDetailDataMixin from '@/views/torrents/mixins/detailTabsData'
 import { getTorrentFiles, getTorrentPeers } from '@/api/torrents'
+import { getTorrentMoviePilotAssociations } from '@/api/moviepilot'
 
 const mockedGetFiles = getTorrentFiles as jest.Mock
 const mockedGetPeers = getTorrentPeers as jest.Mock
+const mockedGetMedia = getTorrentMoviePilotAssociations as jest.Mock
 
 @Component({
   name: 'DetailTabsHarness',
@@ -35,7 +41,7 @@ class DetailTabsHarness extends TrackerDetailDataMixin {
     this.currentRow = row
   }
 
-  public setTab(tab: 'tracker' | 'files' | 'peers') {
+  public setTab(tab: 'tracker' | 'files' | 'peers' | 'media') {
     this.activeDetailTab = tab
   }
 }
@@ -308,6 +314,115 @@ describe('TrackerDetailDataMixin Peers 页签（5s 链式轮询 + 生命周期�
     jest.advanceTimersByTime(20000)
     await flush()
     expect(mockedGetPeers).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TrackerDetailDataMixin 媒体库页签（MoviePilot 关联懒加载 + 键控缓存）', () => {
+  let wrapper: Wrapper<DetailTabsHarness>
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+    mockedGetFiles.mockReset()
+    mockedGetPeers.mockReset()
+    mockedGetMedia.mockReset()
+  })
+
+  afterEach(() => {
+    if (wrapper && wrapper.exists()) {
+      wrapper.destroy()
+    }
+    jest.useRealTimers()
+  })
+
+  it('切入 media 懒加载一次；同键再切不重复拉取；手动刷新强制重取', async() => {
+    mockedGetMedia.mockResolvedValue(okEnvelope([{ id: 1, title: 'Movie', associationStatus: 'linked' }]))
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+
+    vm.setRow({ hash: 'h1', downloader_id: 'dl1' })
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(1)
+    // 参数序：(downloaderId, hash)
+    expect(mockedGetMedia).toHaveBeenCalledWith('dl1', 'h1')
+    expect(vm.detailMediaState.list).toHaveLength(1)
+
+    vm.setTab('tracker')
+    await nextTick(wrapper)
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(1)
+
+    vm.handleDetailRefresh('media')
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(2)
+  })
+
+  it('空列表是合法业务态：无错误、不重试（与错误态区分）', async() => {
+    mockedGetMedia.mockResolvedValue(okEnvelope([]))
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+
+    vm.setRow({ hash: 'h1', downloader_id: 'dl1' })
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(vm.detailMediaState.list).toHaveLength(0)
+    expect(vm.detailMediaState.error).toBe('')
+    expect(vm.detailMediaState.loading).toBe(false)
+
+    // 同键缓存命中：空列表也缓存，切回不重拉
+    vm.setTab('tracker')
+    await nextTick(wrapper)
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(1)
+  })
+
+  it('换种子使缓存失效：新键重新拉取', async() => {
+    mockedGetMedia.mockResolvedValue(okEnvelope([{ id: 1, title: 'Movie', associationStatus: 'linked' }]))
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+
+    vm.setRow({ hash: 'h1', downloader_id: 'dl1' })
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(1)
+
+    vm.setRow({ hash: 'h2', downloader_id: 'dl1' })
+    await nextTick(wrapper)
+    await flush()
+    expect(mockedGetMedia).toHaveBeenCalledTimes(2)
+    expect(mockedGetMedia).toHaveBeenLastCalledWith('dl1', 'h2')
+  })
+
+  it('错误响应置错误态保留旧数据；卡片关闭清空', async() => {
+    mockedGetMedia
+      .mockResolvedValueOnce(okEnvelope([{ id: 1, title: 'Old', associationStatus: 'linked' }]))
+      .mockResolvedValueOnce({ status: 'error', code: '500', msg: '集成未启用', data: null })
+    wrapper = mount(DetailTabsHarness, { localVue })
+    const vm: any = wrapper.vm
+
+    vm.setRow({ hash: 'h1', downloader_id: 'dl1' })
+    vm.setTab('media')
+    await nextTick(wrapper)
+    await flush()
+    expect(vm.detailMediaState.error).toBe('')
+
+    vm.handleDetailRefresh('media')
+    await flush()
+    expect(vm.detailMediaState.error).toBe('集成未启用')
+    expect(vm.detailMediaState.list).toHaveLength(1)
+
+    vm.setRow(null)
+    await nextTick(wrapper)
+    await flush()
+    expect(vm.detailMediaState.list).toHaveLength(0)
+    expect(vm.detailMediaState.error).toBe('')
   })
 })
 
