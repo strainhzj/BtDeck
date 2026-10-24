@@ -71,8 +71,27 @@ container_id() { docker ps -q --filter name=w3-life-backend; }
 echo "[SETUP] 从 tag v1.0.6 重建后端夹具镜像（reconstructed）..."
 if git -C "$ROOT" rev-parse v1.0.6^{commit} >/dev/null 2>&1; then
     ARCHIVE_DIR="${WORKDIR}/v106-src"
-    mkdir -p "$ARCHIVE_DIR"
+    mkdir -p "${ARCHIVE_DIR}"
+    V106_SHA="$(git -C "$ROOT" rev-parse v1.0.6^{commit})"
+    # v1.0.6 起后端 Dockerfile 要求构建上下文含 build-info.json（平时由
+    # build-images.sh 生成复制）；夹具以 reconstructed 身份占位（学
+    # make_v105_baseline 先例，alembic_head 为 v1.0.6 tag 实际 head）
     if git -C "$ROOT" archive --format=tar v1.0.6 | tar -xf - -C "$ARCHIVE_DIR" \
+        && python3 - "$V106_SHA" "$ARCHIVE_DIR" <<'PYEOF'
+import json, pathlib, sys
+info = {
+    "schema_version": 1, "product_version": "1.0.6",
+    "git_sha": sys.argv[1], "git_tag": "v1.0.6",
+    "source_date_epoch": 0, "build_id": None, "artifact_kind": "docker-backend",
+    "target_os": "linux", "target_arch": "amd64", "python_version": "3.12",
+    "node_version": None, "alembic_head": "053003337878",
+    "frontend_manifest_sha256": "0" * 64, "source_manifest_sha256": "0" * 64,
+    "dependency_manifest_sha256": None, "dirty": False,
+    "reconstructed": True,
+}
+(pathlib.Path(sys.argv[2]) / "backend" / "build-info.json").write_text(
+    json.dumps(info, indent=2), encoding="utf-8")
+PYEOF
         && docker build -q -t "$BACKEND_V106" \
             --build-arg PIP_INDEX_URL="${BTDECK_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}" \
             "${ARCHIVE_DIR}/backend" >/dev/null; then

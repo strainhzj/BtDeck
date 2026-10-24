@@ -75,7 +75,7 @@
       "python": "3.12（regression.yml/release-gate 主回归 3.12；本地打包/CI/Docker 统一；2026-09-23 契约修订，3.11 退役）",
       "node": "22.23.2",
       "docker_base_digests": {
-        "python:3.12-slim": "sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9（2026-09-23 Docker Hub API 核实，活跃更新）",
+        "python:3.12-slim": "sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704（2026-10-24 Docker Hub API 核实，3.12.15 安全修复线；安全治理批随 pillow13/pyjwt2.14/starlette0.49 升级同步刷新）",
         "python:3.12-bullseye": "sha256:7cc929040c5e8cf6036c5099d62a83708427c131fb7a7c965b5ba51e995eea1c（2026-09-23 Docker Hub API 核实；bullseye 变体已冻结，与原 3.11-bullseye 冻结语义一致）",
         "node:22-bookworm-slim": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
         "nginx:1.25-alpine": "sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00"

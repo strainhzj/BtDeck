@@ -713,8 +713,22 @@ jobs:
 
       - name: Prepare v1.0.6 upgrade baseline (reconstructed from tag)
         run: |
+          # 学 w2 job 既有模式：runner 侧唯一前端构建（Node 22，v1.0.6 的
+          # build_frontend.py 产出 dist+manifest），容器只跑 build-linux.sh
+          #（bullseye 容器 node 12 跑不了前端；v1.0.6 起release 打包强依赖
+          # 唯一前端构建，裸 npm build 会拒收）
+          git worktree add "$RUNNER_TEMP/v106-wt" v1.0.6
+          (cd "$RUNNER_TEMP/v106-wt" && python scripts/release/build_frontend.py)
+          docker run --rm -v "$RUNNER_TEMP/v106-wt:/src" -w /src w2-linux-builder bash -c '
+            set -e
+            git config --global --add safe.directory /src
+            bash deploy/build-linux.sh --release
+          '
           mkdir -p .release-build-v1.0.6/assets
-          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash scripts/release/lifecycle/make_v106_baseline.sh
+          cp "$RUNNER_TEMP/v106-wt/dist/BtDeck-v1.0.6-linux-amd64.deb" \
+             "$RUNNER_TEMP/v106-wt/dist/BtDeck-v1.0.6-linux-amd64.rpm" \
+             .release-build-v1.0.6/assets/
+          git worktree remove --force "$RUNNER_TEMP/v106-wt"
           ls -la .release-build-v1.0.6/assets/
 
       - name: Run DEB/RPM lifecycle scenarios (fail-closed)
@@ -823,16 +837,16 @@ jobs:
         run: |
           $fixtureDir = Join-Path $env:RUNNER_TEMP "v106-fixture"
           git worktree add $fixtureDir v1.0.6
-          # v1.0.6 起入口已 reconfigure UTF-8：v1.0.5 夹具时代的编码垫片
-          # （desktop_main.py 注入 reconfigure shim）随之退役，tag 源直接构建
-          Push-Location "$fixtureDir/frontend"
-          $npm = (Get-Command npm.cmd).Source
-          & $npm ci --legacy-peer-deps
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 npm ci failed" }
-          & $npm run build
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 npm build failed" }
-          Pop-Location
+          # v1.0.6 起按主线同序：唯一前端构建（build_frontend.py 产 dist+
+          # frontend-asset-manifest，Node 门禁 22=runner 环境匹配）→
+          # generate_build_info 产 staging 身份件（spec 强依赖三件：build-info/
+          # source-manifest/frontend-asset-manifest）；v1.0.5 时代的编码垫片已随
+          # 基线切换退役
           Push-Location $fixtureDir
+          & python scripts\release\build_frontend.py
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 build_frontend failed" }
+          & python scripts\release\generate_build_info.py --artifact-kind windows-exe
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 build-info staging failed" }
           & python -m venv .venv-v106
           & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
           if ($LASTEXITCODE -ne 0) { throw "v1.0.6 packaging deps failed" }
