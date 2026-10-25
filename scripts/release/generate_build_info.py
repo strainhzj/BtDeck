@@ -153,23 +153,55 @@ def collect_declared_versions(root: Path) -> Dict[str, str]:
     versions[ISS_RELPATH.as_posix()] = match.group(1)
 
     build_linux = _read_text(root, BUILD_LINUX_RELPATH)
-    match = re.search(r'^VERSION="([^"]+)"', build_linux, re.MULTILINE)
+    # 整行匹配：动态表达式内含双引号（python -c "..."），[^"]+ 会在首个
+    # 内嵌引号处截断（九跑实锤），取赋值整行再分类
+    match = re.search(r'^VERSION=(.+)$', build_linux, re.MULTILINE)
     if not match:
         raise BuildInfoGenerationError("deploy/build-linux.sh 未找到 VERSION= 赋值")
-    versions[BUILD_LINUX_RELPATH.as_posix()] = match.group(1)
-
+    declared = match.group(1).strip()
+    # 动态表达式可能带外层双引号（VERSION="$(...)")：两种形态都识别
+    if declared.startswith("$(") or declared.startswith('"$('):
+        # 动态读取（release-config 单一来源）：运行时必然与 expected 一致，
+        # 静态比对跳过，实质一致性由 _check_versions_dynamic_ok 兑现
+        versions[BUILD_LINUX_RELPATH.as_posix()] = "dynamic-from-release-config"
+    else:
+        versions[BUILD_LINUX_RELPATH.as_posix()] = declared.strip('"')
     return versions
+
+
+def _check_versions_dynamic_ok(root: Path, expected: str) -> bool:
+    """动态 VERSION 声明的实质校验：在 root 实际执行命令替换并与期望比对。"""
+    import subprocess
+
+    build_linux = _read_text(root, BUILD_LINUX_RELPATH)
+    match = re.search(r'^VERSION=(.+)$', build_linux, re.MULTILINE)
+    declared = match.group(1).strip() if match else ""
+    if not declared.startswith("$(") and not declared.startswith('"$('):
+        return True  # 静态声明无需动态校验
+    try:
+        r = subprocess.run(
+            ["bash", "-c", f"echo {declared}"],
+            capture_output=True,
+            text=True,
+            cwd=root,
+            timeout=15,
+        )
+        return r.returncode == 0 and r.stdout.strip() == expected
+    except Exception:
+        return False
 
 
 def check_versions(root: Path) -> List[str]:
     """返回版本不一致描述列表；空列表 = 一致。"""
     versions = collect_declared_versions(root)
     expected = versions[RELEASE_CONFIG_RELPATH.as_posix()]
-    return [
-        f"{source}: {version} != release-config {expected}"
-        for source, version in versions.items()
-        if version != expected
-    ]
+    problems = []
+    for source, version in versions.items():
+        if version != expected:
+            if version == "dynamic-from-release-config" and _check_versions_dynamic_ok(root, expected):
+                continue  # 动态声明实质一致
+            problems.append(f"{source}: {version} != release-config {expected}")
+    return problems
 
 
 # ---------------------------------------------------------------------------
