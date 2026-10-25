@@ -106,9 +106,16 @@ else
 fi
 
 # Step 0: 版本一致性（G1，fail-closed）
+# baseline（BTDECK_BASELINE_GIT_SHA 非空）模式跳过：基线源=tag 检出五处声明
+# + dev 打包工具链两文件（声明=当前发布版本）必然混合，六处比对无意义
+# （generate 的 --git-sha 通道同样跳过，身份以 archive 内 release-config 为准）
 echo "[0/5] Version consistency check..."
 cd "$PROJECT_DIR"
-python3 scripts/release/generate_build_info.py --check-versions || fail "版本声明不一致（六处必须等于 release-config）"
+if [ -z "${BTDECK_BASELINE_GIT_SHA:-}" ]; then
+    python3 scripts/release/generate_build_info.py --check-versions || fail "版本声明不一致（六处必须等于 release-config）"
+else
+    echo "[SKIP] baseline 模式：跳过六处版本一致性（tag 源 + dev 工具链混合声明）"
+fi
 
 # Step 1: 前端
 if [ "$RELEASE_MODE" = "1" ]; then
