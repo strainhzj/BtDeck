@@ -22,6 +22,32 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 
 from app.factory import app
 
+
+def _iter_app_api_routes(app_obj):
+    """遍历应用全部 API 路由（兼容 fastapi 0.115 与 0.116+ 两种挂载形态）。
+
+    fastapi 0.116 起 include_router 产物为惰性容器 _IncludedRouter：
+    APIRoute 挂在内层 original_router，其 path 相对该 router，完整路径
+    需逐级拼接 include_context.prefix（fastapi 0.140.13 + starlette 1.9
+    升级实测：app.routes 顶层只剩文档路由 + 2 个 _IncludedRouter + Mount）。
+    此处按 original_router / include_context 递归展开；旧版直接 APIRoute
+    的形态走 isinstance 分支，两者并存。Mount（/mcp 等子应用）不深入：
+    白名单与鉴权口径仅覆盖本应用 APIRoute 层。
+    """
+
+    def walk(routes, prefix):
+        for route in routes:
+            if isinstance(route, (APIRoute, APIWebSocketRoute)):
+                yield route, prefix + route.path
+            elif (
+                type(route).__name__ == "_IncludedRouter"
+                and hasattr(route, "original_router")
+            ):
+                ctx_prefix = getattr(getattr(route, "include_context", None), "prefix", "") or ""
+                yield from walk(route.original_router.routes, prefix + ctx_prefix)
+
+    yield from walk(app_obj.routes, "")
+
 # 鉴权依赖函数名：未来若引入新的鉴权依赖，在此登记，保持口径集中。
 _AUTH_DEPENDENCY_NAMES = frozenset(
     {
@@ -80,10 +106,7 @@ def test_all_api_routes_require_auth() -> None:
     seen_public: set[str] = set()
     protected_count = 0
 
-    for route in app.routes:
-        if not isinstance(route, (APIRoute, APIWebSocketRoute)):
-            continue
-        path = route.path
+    for route, path in _iter_app_api_routes(app):
         if path in _OPTIONAL_PUBLIC_PATHS:
             continue
         route_kind = "WS" if isinstance(route, APIWebSocketRoute) else ",".join(sorted(route.methods))
