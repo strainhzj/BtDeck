@@ -46,7 +46,15 @@ urllib3~=2.8.0
 # 2026-10-24 安全治理批：显式 pin（GHSA-6q48-6c7w-9gw2 Critical；传递依赖
 # 不显式约束时 pip-compile 曾解析停在旧版）
 certifi>=2026.10.19
-starlette>=0.49.1
+starlette~=1.9.0
+# Windows 传递依赖显式入锁（W3 CI 实测拦截：Linux 侧 pip-compile 会剔掉
+# 不满足 marker 的传递闭包，Windows 制品安装断供）——带平台 marker 声明，
+# pip-compile 会原样保留 marker 写入 requirements-lock.txt：
+#   colorama←click、tzdata←tzlocal、pywin32←mcp（非直接依赖，为锁
+#   可追溯性一并显式声明；版本对齐 08cf6d2 时代旧锁）
+colorama~=0.4.6; sys_platform == "win32"
+tzdata~=2026.3; platform_system == "Windows"
+pywin32~=312; sys_platform == "win32"
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
