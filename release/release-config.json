@@ -78,7 +78,7 @@
         "python:3.12-slim": "sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704（2026-10-24 Docker Hub API 核实，3.12.15 安全修复线；安全治理批随 pillow13/pyjwt2.14/starlette0.49 升级同步刷新）",
         "python:3.12-bullseye": "sha256:7cc929040c5e8cf6036c5099d62a83708427c131fb7a7c965b5ba51e995eea1c（2026-09-23 Docker Hub API 核实；bullseye 变体已冻结，与原 3.11-bullseye 冻结语义一致）",
         "node:22-bookworm-slim": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
-        "nginx:1.25-alpine": "sha256:516475cc129da42866742567714ddc681e5eed7b9ee0b9e9c015e464b4221a00"
+        "nginx:stable-alpine": "sha256:47928bf67eb62a1863cb08d9ecb52d3e704304ba614eaee17884204677702951（2026-10-25 Docker Hub API 核实；1.27-alpine 线 2025-04 后停更 EOL，其 nginx 1.27.5-r1 Critical 无修复，G9 驱动换活跃 stable 线）"
       },
       "node_note": "22 线（本地+CI 双实证，探针见 w0_probes）；W1 已统一 Dockerfile/CI/engines"
     }

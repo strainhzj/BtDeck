@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "autoprefixer": "^10.4.22",
-    "axios": "^0.32.0",
+    "axios": "^0.34.0",
     "core-js": "^3.6.4",
     "echarts": "5.5.1",
     "element-ui": "^2.15.1",

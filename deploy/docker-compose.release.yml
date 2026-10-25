@@ -53,7 +53,7 @@ services:
           memory: 256M
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health/ready', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
