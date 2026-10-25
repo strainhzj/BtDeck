@@ -58,7 +58,10 @@ backend_health() {  # backend_health <version-substr> <max-sec>
     # version 精确断言（v1.0.5 status-only 契约特判已随基线切到 v1.0.6 退役）
     local i=0 want="\"version\":\"$1\""
     while [ $i -lt $(($2 / 5)) ]; do
-        body="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())'" 2>/dev/null || true)"
+        # 嵌套引号链（backend_exec "..." 外层双引号 + python 单引号串 + 串内
+        # 双引号 URL）：内层双引号必须 \" 转义——裸引号会被 bash 吃掉致
+        # python SyntaxError 被静默吞（五跑 v106_up_healthy 420s 零信息超时实锤）
+        body="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen(\"http://localhost:5001/health/live\",timeout=5).read().decode())'" 2>/dev/null || true)"
         case "$body" in
             *"$want"*) return 0 ;;
         esac
@@ -155,8 +158,8 @@ sleep 3
 ID_V107="$(container_id)"
 if backend_health 1.0.7 240 \
     && backend_exec "test -f /app/data/w3-marker.txt" \
-    && backend_exec 'python3 -c "import urllib.request as u;u.urlopen(\"http://localhost:5001/health/ready\",timeout=5)"' >/dev/null 2>&1; then
-    BUILD_BLOCK="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())'" 2>/dev/null)"
+    && backend_exec "python3 -c 'import urllib.request as u;u.urlopen(\"http://localhost:5001/health/ready\",timeout=5)'" >/dev/null 2>&1; then
+    BUILD_BLOCK="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen(\"http://localhost:5001/health/live\",timeout=5).read().decode())'" 2>/dev/null)"
     HEAD_AFTER="$(backend_exec "python -c \"import sqlite3,glob; p=(glob.glob('/app/config/app.db')+glob.glob('/app/data/app.db')); c=sqlite3.connect(p[0]); r=c.execute('select count(*),min(version_num) from alembic_version').fetchone(); print(r[0],r[1]) if p else print('none')\"" 2>/dev/null || echo none)"
     if echo "$BUILD_BLOCK" | grep -q '"status":"ok"' && [ -n "$GIT_SHA_107" ] && echo "$BUILD_BLOCK" | grep -q "$GIT_SHA_107"; then
         phase "upgrade_to_v107" PASS "head: ${HEAD_BEFORE} → $(echo "$HEAD_AFTER" | awk '{print $2}')"
