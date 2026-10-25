@@ -132,6 +132,11 @@ GEN_ARGS="--artifact-kind linux-binary --output-dir ${STAGING_DIR} --node-versio
 if [ "$RELEASE_MODE" != "1" ]; then
     GEN_ARGS="$GEN_ARGS --allow-dirty"
 fi
+# w3 升级基线：容器内构建目录为 git archive 解包（无 .git），宿主机经
+# BTDECK_BASELINE_GIT_SHA 传入 tag sha 走 reconstructed 通道
+if [ -n "${BTDECK_BASELINE_GIT_SHA:-}" ]; then
+    GEN_ARGS="$GEN_ARGS --git-sha ${BTDECK_BASELINE_GIT_SHA}"
+fi
 python3 scripts/release/generate_build_info.py $GEN_ARGS || fail "生成发布身份失败（release 模式要求干净工作区）"
 
 # Step 3: PyInstaller 打包

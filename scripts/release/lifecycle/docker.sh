@@ -76,8 +76,12 @@ if git -C "$ROOT" rev-parse v1.0.6^{commit} >/dev/null 2>&1; then
     # v1.0.6 起后端 Dockerfile 要求构建上下文含 build-info.json（平时由
     # build-images.sh 生成复制）；夹具以 reconstructed 身份占位（学
     # make_v105_baseline 先例，alembic_head 为 v1.0.6 tag 实际 head）
-    if git -C "$ROOT" archive --format=tar v1.0.6 | tar -xf - -C "$ARCHIVE_DIR" \
-        && python3 - "$V106_SHA" "$ARCHIVE_DIR" <<'PYEOF'
+    # heredoc 不可嵌在 && 链里（PYEOF 终止行会结束当前命令，行首 && 成为
+    # 悬空操作符——bash 语法错误，CI 三跑实测）；改为顺序语句 + 状态变量
+    fixture_ok=yes
+    git -C "$ROOT" archive --format=tar v1.0.6 | tar -xf - -C "$ARCHIVE_DIR" || fixture_ok=no
+    if [ "$fixture_ok" = yes ]; then
+        python3 - "$V106_SHA" "$ARCHIVE_DIR" <<'PYEOF' || fixture_ok=no
 import json, pathlib, sys
 info = {
     "schema_version": 1, "product_version": "1.0.6",
@@ -92,9 +96,13 @@ info = {
 (pathlib.Path(sys.argv[2]) / "backend" / "build-info.json").write_text(
     json.dumps(info, indent=2), encoding="utf-8")
 PYEOF
-        && docker build -q -t "$BACKEND_V106" \
+    fi
+    if [ "$fixture_ok" = yes ]; then
+        docker build -q -t "$BACKEND_V106" \
             --build-arg PIP_INDEX_URL="${BTDECK_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}" \
-            "${ARCHIVE_DIR}/backend" >/dev/null; then
+            "${ARCHIVE_DIR}/backend" >/dev/null || fixture_ok=no
+    fi
+    if [ "$fixture_ok" = yes ]; then
         phase "v106_fixture_image" PASS "reconstructed from tag v1.0.6"
     else
         phase "v106_fixture_image" FAIL "tag 重建镜像失败"

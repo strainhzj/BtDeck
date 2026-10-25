@@ -277,7 +277,16 @@ def build_source_manifest(root: Path, tracked_paths: Sequence[str]) -> Tuple[Dic
 # 主流程
 # ---------------------------------------------------------------------------
 
-def _resolve_git_identity(root: Path, allow_dirty: bool) -> Tuple[str, str, int, bool]:
+def _resolve_git_identity(
+    root: Path, allow_dirty: bool, git_sha: Optional[str] = None
+) -> Tuple[str, str, int, bool]:
+    # --git-sha（reconstructed 基线）：git archive 解包目录无 .git，外部
+    # 提供 tag sha；dirty 恒为 False，epoch 鋚 0（学 docker.sh 夹具先例，
+    # baseline 语义不要求可复现时间锚）。仅 w3 升级基线使用。
+    if git_sha:
+        if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
+            raise BuildInfoGenerationError(f"--git-sha 非完整 40 位：{git_sha!r}")
+        return git_sha, "", 0, False
     sha = _git(root, "rev-parse", "HEAD").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise BuildInfoGenerationError(f"git SHA 非完整 40 位：{sha!r}")
@@ -311,6 +320,7 @@ def generate(
     allow_dirty: bool,
     output_dir: Path,
     python_version: Optional[str],
+    git_sha: Optional[str] = None,
 ) -> Dict[str, object]:
     if artifact_kind not in ARTIFACT_KINDS:
         raise BuildInfoGenerationError(f"artifact_kind 非法：{artifact_kind}")
@@ -322,7 +332,7 @@ def generate(
     if mismatches:
         raise BuildInfoGenerationError("版本声明不一致：\n  " + "\n  ".join(mismatches))
 
-    sha, _, commit_epoch, dirty = _resolve_git_identity(root, allow_dirty)
+    sha, _, commit_epoch, dirty = _resolve_git_identity(root, allow_dirty, git_sha=git_sha)
     # SOURCE_DATE_EPOCH 锚定提交时间：同 SHA 的所有制品取值必然一致
     source_date_epoch = commit_epoch
     alembic_head = collect_alembic_head(root / "backend")
@@ -347,6 +357,7 @@ def generate(
         "source_manifest_sha256": source_sha,
         "dependency_manifest_sha256": None,
         "dirty": dirty,
+        "reconstructed": bool(git_sha),
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -377,6 +388,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--python-version", default=None, help="后端制品 Python 版本；默认取当前解释器")
     parser.add_argument("--build-id", default=None, help="CI run id / attempt")
     parser.add_argument("--allow-dirty", action="store_true", help="开发构建：允许脏工作区（dirty=true）")
+    parser.add_argument(
+        "--git-sha",
+        default=None,
+        help="reconstructed 基线：git archive 解包目录无 .git 时外部提供 tag sha（dirty 恒 false，epoch 取 0）",
+    )
     parser.add_argument(
         "--check-versions",
         action="store_true",
@@ -409,6 +425,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             node_version=args.node_version,
             build_id=args.build_id,
             allow_dirty=args.allow_dirty,
+            git_sha=args.git_sha,
             output_dir=output_dir,
             python_version=python_version,
         )
