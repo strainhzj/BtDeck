@@ -328,9 +328,14 @@ def generate(
     product_version = str(config["candidate"]["product_version"])
     git_tag = f"v{product_version}"
 
-    mismatches = check_versions(root)
-    if mismatches:
-        raise BuildInfoGenerationError("版本声明不一致：\n  " + "\n  ".join(mismatches))
+    # --git-sha（reconstructed 基线）时跳过六处版本一致性校验：基线源主体
+    # 为 tag 检出（五处声明=tag 版本），仅打包工具链两文件来自 dev 工作区
+    # （build-linux.sh/generate_build_info.py，声明=当前发布版本），声明面
+    # 必然混合，六处比对无意义；身份仍以 archive 内 release-config 为准。
+    if not git_sha:
+        mismatches = check_versions(root)
+        if mismatches:
+            raise BuildInfoGenerationError("版本声明不一致：\n  " + "\n  ".join(mismatches))
 
     sha, _, commit_epoch, dirty = _resolve_git_identity(root, allow_dirty, git_sha=git_sha)
     # SOURCE_DATE_EPOCH 锚定提交时间：同 SHA 的所有制品取值必然一致
