@@ -28,9 +28,12 @@ PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
 PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
 PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.12}"
 
-# 产品版本唯一输入：release/release-config.json（candidate.product_version），
-# 本变量必须与之一致（版本一致性检查强制）
-VERSION="1.0.7"
+# 产品版本唯一输入：release/release-config.json（candidate.product_version）。
+# 动态读取（八跑实锤：硬编码会被 cp 覆盖进 v1.0.6 基线 archive，fpm 按
+# 1.0.7 给基线包命名定版，升级场景退化成同版本重装）；archive 内读出
+# 即基线版本，主仓库读出即当前发布版本，一处改动两边正确
+VERSION="$(python3 -c 'import json;print(json.load(open("release/release-config.json"))["candidate"]["product_version"])')"
+[ -n "$VERSION" ] || { echo "[ERROR] release-config 读取失败，VERSION 为空" >&2; exit 1; }
 ARCH="amd64"
 
 FRONTEND_DIST="${FRONTEND_DIR}/dist"
