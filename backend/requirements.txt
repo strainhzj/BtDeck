@@ -51,10 +51,11 @@ starlette~=1.9.0
 # 不满足 marker 的传递闭包，Windows 制品安装断供）——带平台 marker 声明，
 # pip-compile 会原样保留 marker 写入 requirements-lock.txt：
 #   colorama←click、tzdata←tzlocal、pywin32←mcp（非直接依赖，为锁
-#   可追溯性一并显式声明；版本对齐 08cf6d2 时代旧锁）
+#   可追溯性一并显式声明；版本对齐 08cf6d2 时代旧锁；pywin32 版本号
+#   为单段 build 号（312），PEP 440 禁止单段 ~=，必须 ==
 colorama~=0.4.6; sys_platform == "win32"
 tzdata~=2026.3; platform_system == "Windows"
-pywin32~=312; sys_platform == "win32"
+pywin32==312; sys_platform == "win32"
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
