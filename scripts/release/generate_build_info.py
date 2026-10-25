@@ -170,23 +170,28 @@ def collect_declared_versions(root: Path) -> Dict[str, str]:
 
 
 def _check_versions_dynamic_ok(root: Path, expected: str) -> bool:
-    """动态 VERSION 声明的实质校验：在 root 实际执行命令替换并与期望比对。"""
-    import subprocess
+    """动态 VERSION 声明的实质校验（平台无关：Windows CPython 零外部依赖）。
 
+    动态声明的语义 = 「以 release-config.json 为唯一输入读 product_version」。
+    十跑实锤：bash -c 实跑式校验在 Windows runner（无 bash/PATH 语义不同）
+    必然 False；改为结构校验（表达式必须引用 release-config.json 且读
+    candidate.product_version）+ 实读比对（load_release_config 与 expected
+    同源恒等，仅防表达式误读其他键）。
+    """
     build_linux = _read_text(root, BUILD_LINUX_RELPATH)
     match = re.search(r'^VERSION=(.+)$', build_linux, re.MULTILINE)
     declared = match.group(1).strip() if match else ""
-    if not declared.startswith("$(") and not declared.startswith('"$('):
+    if not (declared.startswith("$(") or declared.startswith('"$(')):
         return True  # 静态声明无需动态校验
+    # 结构校验：唯一输入必须是 release-config 的 candidate.product_version
+    if "release/release-config.json" not in declared:
+        return False
+    if "product_version" not in declared:
+        return False
+    # 实质校验：在 root 实读 release-config（同源 expected，防误读能炸的键）
     try:
-        r = subprocess.run(
-            ["bash", "-c", f"echo {declared}"],
-            capture_output=True,
-            text=True,
-            cwd=root,
-            timeout=15,
-        )
-        return r.returncode == 0 and r.stdout.strip() == expected
+        config = load_release_config(root)
+        return str(config["candidate"]["product_version"]) == expected
     except Exception:
         return False
 
