@@ -41,7 +41,21 @@ jobs:
           cd backend
           pip-compile --allow-unsafe --generate-hashes \
             --output-file=requirements-lock.txt requirements.txt
-          grep -E '^(pillow|pyjwt|certifi|urllib3|starlette|fastapi)==' requirements-lock.txt || true
+          # Windows 平台标记依赖（colorama/tzdata/pywin32）Linux 侧不会被
+          # pip-compile 产出，从 frag 文件幂等追加（W3 CI 契约：win32 条目
+          # 必须在锁内带平台标记 + 双哈希）
+          python3 - <<'EOF'
+          frag = open('requirements-win32.lock.frag', encoding='utf-8').read()
+          entries = '\n'.join(l for l in frag.splitlines() if not l.lstrip().startswith('#'))
+          lock = open('requirements-lock.txt', encoding='utf-8').read()
+          if 'colorama==' not in lock:
+              with open('requirements-lock.txt', 'a', encoding='utf-8') as f:
+                  f.write('\n# --- win32 marker 条目（手动入锁，见 requirements-win32.lock.frag） ---\n' + entries + '\n')
+              print('appended win32 marker entries')
+          else:
+              print('win32 marker entries already present')
+          EOF
+          grep -E '^(pillow|pyjwt|certifi|urllib3|starlette|fastapi|colorama|tzdata|pywin32)==' requirements-lock.txt || true
 
       - uses: actions/setup-node@v4
         with:
