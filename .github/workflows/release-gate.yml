@@ -724,6 +724,11 @@ jobs:
           SRC_DIR="$RUNNER_TEMP/v106-src"
           mkdir -p "$SRC_DIR"
           git archive --format=tar v1.0.6 | tar -xf - -C "$SRC_DIR"
+          # v1.0.6 的打包工具链没有 --git-sha 通道（四跑实测：旧 build-linux.sh
+          # 无条件 git rev-parse，archive 无 .git 直接挂）——用 dev 版两文件
+          # 覆盖进基线源（基线业务代码仍是 v1.0.6，仅打包工具链用新）
+          cp deploy/build-linux.sh "$SRC_DIR/deploy/build-linux.sh"
+          cp scripts/release/generate_build_info.py "$SRC_DIR/scripts/release/generate_build_info.py"
           (cd "$SRC_DIR" && python scripts/release/build_frontend.py)
           docker run --rm -e BTDECK_BASELINE_GIT_SHA="$V106_SHA" \
             -v "$SRC_DIR:/src" -w /src w2-linux-builder \
@@ -853,6 +858,12 @@ jobs:
           & python scripts\release\generate_build_info.py --artifact-kind windows-exe --output-dir release\build\windows-exe
           if ($LASTEXITCODE -ne 0) { throw "v1.0.6 build-info staging failed" }
           & python -m venv .venv-v106
+          # 四跑实测：仅装 requirements-windows-package.txt 是“光桶 venv”
+          #（PyInstaller 31 个 hidden import 缺失仅告警，产出的 exe 启动即
+          # ModuleNotFoundError: uvicorn）——改用主构建同配方：lock 全量 +
+          # windows-package 增量
+          & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r backend\requirements-lock.txt
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 runtime deps failed" }
           & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
           if ($LASTEXITCODE -ne 0) { throw "v1.0.6 packaging deps failed" }
           & .venv-v106\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
@@ -1009,7 +1020,7 @@ jobs:
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
           for i in $(seq 1 60); do
-            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
+            body=$(docker exec w3-life-backend python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())' 2>/dev/null || true)
             case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done
@@ -1027,7 +1038,7 @@ jobs:
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life restart btdeck-backend
           for i in $(seq 1 60); do
-            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
+            body=$(docker exec w3-life-backend python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())' 2>/dev/null || true)
             case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done

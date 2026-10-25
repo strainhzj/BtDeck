@@ -52,12 +52,13 @@ FRONTEND_V107="btdeck-frontend:v1.0.7"
 up() { (cd "$WORKDIR" && BTDECK_BACKEND_IMAGE="$1" BTDECK_FRONTEND_IMAGE="$FRONTEND_V107" \
     docker compose -f "$COMPOSE_FILE" -p w3life up -d); }
 backend_exec() { docker exec w3-life-backend sh -c "$1"; }
+# 探针统一 python3 urllib：v1.0.7 镜像已去 curl 化（2026-10-25 安全治理批）
 backend_health() {  # backend_health <version-substr> <max-sec>
     # v1.0.6 起基线制品的健康契约含 version/build 字段，基线与升级目标均按
     # version 精确断言（v1.0.5 status-only 契约特判已随基线切到 v1.0.6 退役）
     local i=0 want="\"version\":\"$1\""
     while [ $i -lt $(($2 / 5)) ]; do
-        body="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null || true)"
+        body="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())'" 2>/dev/null || true)"
         case "$body" in
             *"$want"*) return 0 ;;
         esac
@@ -154,8 +155,8 @@ sleep 3
 ID_V107="$(container_id)"
 if backend_health 1.0.7 240 \
     && backend_exec "test -f /app/data/w3-marker.txt" \
-    && backend_exec "curl -fsS http://localhost:5001/health/ready" >/dev/null 2>&1; then
-    BUILD_BLOCK="$(backend_exec "curl -fsS http://localhost:5001/health/live" 2>/dev/null)"
+    && backend_exec 'python3 -c "import urllib.request as u;u.urlopen(\"http://localhost:5001/health/ready\",timeout=5)"' >/dev/null 2>&1; then
+    BUILD_BLOCK="$(backend_exec "python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())'" 2>/dev/null)"
     HEAD_AFTER="$(backend_exec "python -c \"import sqlite3,glob; p=(glob.glob('/app/config/app.db')+glob.glob('/app/data/app.db')); c=sqlite3.connect(p[0]); r=c.execute('select count(*),min(version_num) from alembic_version').fetchone(); print(r[0],r[1]) if p else print('none')\"" 2>/dev/null || echo none)"
     if echo "$BUILD_BLOCK" | grep -q '"status":"ok"' && [ -n "$GIT_SHA_107" ] && echo "$BUILD_BLOCK" | grep -q "$GIT_SHA_107"; then
         phase "upgrade_to_v107" PASS "head: ${HEAD_BEFORE} → $(echo "$HEAD_AFTER" | awk '{print $2}')"
