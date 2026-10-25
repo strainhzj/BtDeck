@@ -1512,6 +1512,61 @@
       "remediation_version": "v1.0.8",
       "registered": "2026-10-25",
       "expires": "2026-11-24"
+    },
+    {
+      "id": "SEC-135",
+      "scope": {
+        "vuln_id": "CVE-2026-102010"
+      },
+      "justification": "CVE-2026-102010：gcc-14 运行时库家族（gcc-14-base/libgcc-s1/libstdc++6，docker-backend/trixie）；distro 无修复版本（fix=[]）。四跑 G9 重扫暴露（run 40186949525，镜像 digest 升 3.12.15 + 去 curl 化后残余 10 项之 6）。",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.8",
+      "registered": "2026-10-25",
+      "expires": "2026-11-24"
+    },
+    {
+      "id": "SEC-136",
+      "scope": {
+        "vuln_id": "CVE-2026-95619"
+      },
+      "justification": "CVE-2026-95619：gcc-14 运行时库家族同 CVE-2026-102010（fix=[]，distro 追踪中）。四跑 G9 重扫暴露。",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.8",
+      "registered": "2026-10-25",
+      "expires": "2026-11-24"
+    },
+    {
+      "id": "SEC-137",
+      "scope": {
+        "vuln_id": "CVE-2026-19499"
+      },
+      "justification": "CVE-2026-19499：glibc 家族（libc-bin/libc6 2.41-12+deb13u4，docker-backend/trixie）；distro 无修复版本（fix=[]）。四跑 G9 重扫暴露；同包 CVE-2026-5435 已由 SEC-089 豁免中。",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.8",
+      "registered": "2026-10-25",
+      "expires": "2026-11-24"
+    },
+    {
+      "id": "SEC-138",
+      "scope": {
+        "vuln_id": "CVE-2026-82560"
+      },
+      "justification": "CVE-2026-82560：perl-base 5.40.1-6+deb13u1（docker-backend/trixie）；distro 无修复版本（fix=[]）。四跑 G9 重扫暴露；同包 CVE-2026-9538 已由 SEC-120 豁免中。",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.8",
+      "registered": "2026-10-25",
+      "expires": "2026-11-24"
+    },
+    {
+      "id": "SEC-139",
+      "scope": {
+        "vuln_id": "CVE-2026-92392"
+      },
+      "justification": "CVE-2026-92392：frontend stable-alpine 基础镜像自带 curl 8.22.0-r0；alpine 尚无修复版（fix=[]）。nginx 1.27→stable-alpine 换线 + apk upgrade 后残余（四跑 G9 重扫暴露）。基础层自带非 apk add 引入，无卸载路径。",
+      "owner": "huangzj",
+      "remediation_version": "v1.0.8",
+      "registered": "2026-10-25",
+      "expires": "2026-11-24"
     }
   ]
 }
