@@ -254,14 +254,38 @@ def build_frontend_asset_manifest(dist_dir: Path) -> Tuple[Dict[str, object], st
     return manifest, canonical_json_sha256(manifest)
 
 
-def build_source_manifest(root: Path, tracked_paths: Sequence[str]) -> Tuple[Dict[str, object], str]:
-    listing = _git(root, "ls-files", "--", *tracked_paths).splitlines()
-    files = []
-    for relpath in sorted(set(line.strip().strip('"') for line in listing if line.strip())):
-        path = root / relpath
-        if not path.is_file():
-            continue  # 子模块/稀疏检出场景下跳过目录条目
-        files.append({"path": relpath, "sha256": sha256_file(path)})
+def build_source_manifest(
+    root: Path, tracked_paths: Sequence[str], fs_walk: bool = False
+) -> Tuple[Dict[str, object], str]:
+    # fs_walk=True：reconstructed 基线（--git-sha）模式下 git archive 解包
+    # 目录无 .git，按 tracked_paths 直接文件系统遍历——archive 只含 tracked
+    # 文件，遍历结果与 git ls-files 等价。
+    if fs_walk:
+        files = []
+        seen: set = set()
+        for tp in tracked_paths:
+            base = root / tp
+            if base.is_file():
+                rel = tp
+                if rel not in seen:
+                    seen.add(rel)
+                    files.append({"path": rel, "sha256": sha256_file(base)})
+            elif base.is_dir():
+                for p in sorted(base.rglob("*")):
+                    if p.is_file():
+                        rel = p.relative_to(root).as_posix()
+                        if rel not in seen:
+                            seen.add(rel)
+                            files.append({"path": rel, "sha256": sha256_file(p)})
+    else:
+        listing = _git(root, "ls-files", "--", *tracked_paths).splitlines()
+        files = []
+        for relpath in sorted(set(line.strip().strip('"') for line in listing if line.strip())):
+            path = root / relpath
+            if not path.is_file():
+                continue  # 子模块/稀疏检出场景下跳过目录条目
+            files.append({"path": relpath, "sha256": sha256_file(path)})
+    files.sort(key=lambda f: f["path"])
     if not files:
         raise BuildInfoGenerationError(f"source manifest 为空：{tracked_paths}")
     manifest: Dict[str, object] = {
@@ -343,7 +367,9 @@ def generate(
     alembic_head = collect_alembic_head(root / "backend")
 
     frontend_manifest, frontend_sha = build_frontend_asset_manifest(root / "frontend" / "dist")
-    source_manifest, source_sha = build_source_manifest(root, SOURCE_MANIFEST_PATHS)
+    source_manifest, source_sha = build_source_manifest(
+        root, SOURCE_MANIFEST_PATHS, fs_walk=bool(git_sha)
+    )
 
     build_info: Dict[str, object] = {
         "schema_version": 1,
