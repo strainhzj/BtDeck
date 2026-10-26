@@ -125,3 +125,7 @@ deploy/iscc
 # 根级运行时数据目录（本地 docker/运行产物：app.db/WAL/迁移备份）。根锚定，
 # 不影响 android/app/src/main/java/com/btdeck/companion/data/（见 2026-08-24 删规则记录）。
 /data/
+
+# 凭据文件（永不入库）：签名 PFX 密码本地暂存
+pat_pwd.txt
+*.pfx
