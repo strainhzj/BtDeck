@@ -8432,6 +8432,81 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **漂移行号全量重测**（行号实测原则）：lifespan L262→L376（详情段 7 个行号锚全重测：init_config L403/migrate L413/init_db L436/... /yield L636）与速查表 L344→L376、finalize L304→L336；torrents_async L732→782/L982→1043/错误原因 L1437→1510/L3824→4029；router.ts 476→543 行；permission.ts 302 行/resolvePageTitle L301；demo 三文件（request 1147 行 L352、store 1029 行 L202、fixtures 1291 行 L1004）；domain lifecycle:404→541。
 - 根 README 元信息"本次新增"追加补漏二轮说明。
 
+
+## 2026-09-28：v1.0.8 PostgreSQL 改造 P0（契约与基线）——worktree BtDeck-pg 交付
+
+- 计划 v7 批准实施（五轮独立审查 + 基线刷新 dev@c7bf20b，37 迁移单 head c9e0f1a2b3c4）；feature `postgresql-datasource-2026-09-23` 转 in_progress，旧 feature `v1.0.8` 标 superseded。
+- **P0 唯一交付物**：`backend/docs/postgresql-contract.md`——§1 版本边界（PG16+/单实例单 worker/多 worker fail-fast）、§2 配置契约（DB_TYPE 唯一判据/DATABASE_URL 废弃路径/URL.create/池分列/TLS 逐模式映射表）、§3 基线七规则+目标库三状态+停写/回退窗口/sequence 校准、§4 双方言语义契约（LIKE 折叠规则/正则共同子集+请求级预算/JSON 按字段契约/布尔裸 SQL 实测清单）、§5 迁移审计矩阵、§6 允许差异登记表（初始 4 条）、§7 类型与 SQL 盘点、§8 静态风险预检与排期重估。
+- **P0.2 审计**：37 迁移全量扫描，13 个含数据操作迁移逐条核验，**13/13 新装免重放成立**（全部为存量回填/修复，seed+现行写入路径覆盖）——演进式基线语义安全的关键证据。
+- **P0.3 盘点修正两类误报**：search_templates.is_default/is_public 实为 Integer 列（非布尔，勿改）；DATETIME 18 处为 sqlalchemy 通用类型（→PG TIMESTAMP 可移植）。真实布尔裸 SQL 4 处锁定：default_templates:256（is_system_default）、speed_sampler:38（enabled）+聚合 SQL（online）、batch_class_validator:217（cron enabled）。
+- **P0.4**：静态风险 5 项（布尔 cast 导入/时间文本双格式/高体量 speed 表/软删同键/反斜杠路径变体）；排期维持 8-12 人日粗估，P1 后二次校准。
+- 下一步：P1 可启动底座（任务1.1 配置 → 1.2 引擎工厂 → 1.3 ORM 模型双方言化 → 1.4 锁文件 → 1.5 启动入口 → 1.6 model_registry → 1.7 PG 基线初始化+migrate_database 接线）。
+
+## 2026-09-30：v1.0.8 PostgreSQL P1（可启动底座）——七任务全交付，全量回归 5437 绿
+
+- **P1.1/1.2 配置与引擎工厂**：`config.py` 新增 `DB_TYPE/DB_*/DB_SSLMODE/DB_SSL_ROOT_CERT` + `DATABASE_DIALECT` 归一化唯一判据（别名归一、非法 fail-fast）；`database.py` 重构为 `build_database_url()`（`URL.create` 结构化，PG 凭据转义；sqlite URL 与历史逐字一致）+ 同步 QueuePool / 异步 AsyncAdaptedQueuePool 分列 + `_pg_ssl_args()` 逐模式 TLS 映射（disable=`ssl False` 不可不传——asyncpg 缺省 prefer；verify-* 加载 CA SSLContext）；PRAGMA/自定义函数仅 sqlite 挂事件；`init_db` WAL 方言门控。
+- **P1.3 ORM 双方言化**：`torrents/models.py` 两处 partial unique index 补 `postgresql_where`（双 where 并存）；ratio CHECK 去 `typeof()`（守卫留迁移链 8f4c2d1a9b7e，ORM 中立数值边界供 PG 基线——契约 §6 登记第 5 条）；`notification.uq_notification_dedupe_key` 归位 ORM。**40 表双方言 DDL 编译 0 失败**，PG 侧实测生成 `WHERE dr=0` partial index。
+- **P1.6/1.7 model_registry + PG 基线**：`app/core/model_registry.py` 单点注册（env.py 归位复用）；`app/core/pg_baseline.py`——空库判定（无版本且无业务表，有表无版本 fail-fast）、共享连接（`Config.attributes["connection"]`）单事务 `create_all+stamp`、`_btdeck_import_state` 导入未完成标记、三状态规则；`alembic/env.py` 方言 URL（% 双写转义）+ PG 空库手工升级守卫（基线路径豁免标记）+ 共享连接优先；`migration.py` PG 分支接线（`_migrate_database_pg`：标记拒启/空库基线/增量 upgrade/未知版本告警/备份外部化/ghost 仅 sqlite）。
+- **P1.5 启动入口**：`startup_guard.py` DB_TYPE 口径（DATABASE_URL 废弃兼容带警告）；PG 多 worker 从"告警"升级 **fail-fast**（契约 §1 单实例单 worker 边界）；`btdeck_startup.sh` 同步；`test_sqlite_worker_guard.py` 按新契约重写（+PG 多 worker 拒启用例）。
+- **P1.4 锁文件**：`requirements.txt`+`requirements-lock.txt` 增 asyncpg==0.31.0 / psycopg2-binary==2.9.13（124 哈希，aliyun 源 pip-compile，字母序拼接，续行完整性 0 损坏）。
+- **测试坑位**：pg_baseline 原子性测试两个关键发现——① `engine.dispose()` 会销毁 StaticPool 内存库（fixture 改 tmp_path 文件库）；② pysqlite 传统隔离模式 DDL 前隐式提交、回滚断言失真（Python 3.12+ `sqlite3.connect(autocommit=False)` 使 DDL 入事务，实测回滚生效）。lint_btdeck BTD305 白名单登记 pg_baseline（f-string 仅插值常量表名）。
+- **验证**：全量 pytest **5437 passed / 18 skipped / 0 failed**（探针 venv /tmp/pg-probe，requirements.txt 全量 + dev 工具）；mypy 4 新模块 0 issue；black/flake8 净；`bash -n` shell 通过；SQLite 空→head 全链演练（43 表，head c9e0f1a2b3c4）。
+- 下一步：P2 业务兼容（2.1 正则双轨/2.2 孤儿分组/2.3 upsert+JSON+布尔清扫/2.4 LIKE 折叠/2.5 门控）。
+
+## 2026-09-30：v1.0.8 PostgreSQL P2（业务兼容）——五任务全交付，全量回归 5451 绿
+
+- **方言分发单点**：新 `app/core/dialect_sql.py`（ci_like/ci_contains/ci_startswith/ci_endswith 大小写匹配、dialect_insert upsert 基座、orphan_parent_dir_expr、json_array_values/_from_literal、regex_match_expr、validate_regex_pattern_for_dialect）+ 契约测试 `tests/core/test_dialect_sql.py` 14 例（父目录矩阵 Python×PG 语义模拟×SQLite 实连三方对拍；SQLite 路径与原生 contains/like 渲染**逐字一致**断言；autoescape 与 SQLAlchemy 参数级等价）。
+- **2.1 正则双轨**：谓词分发（SQLite bt_regexp 零变化 / PG `~`/`~*`）；共同子集校验 7 类拒绝清单（lookaround/命名组/inline flags/\b/反向引用/独占量词/unicode property）请求期 4xx；`pg_search_runtime.PgRegexBudget` 请求级 deadline——每条 SQL 前 `SET LOCAL statement_timeout=剩余预算`（count 后 checkpoint 重 arm）、**剩余≤0 直接终止不发 SQL（禁写 0 值）**、QueryCanceled→rollback→RegexSearchTimeout 错误映射。
+- **2.2 孤儿分组**：两调用点 + 两处运行时注册方言门控；PG 纯 SQL 等价表达式（translate+regexp_replace+coalesce），不引入 PG 自定义函数。
+- **2.3 清扫**：sqlite_insert 4 文件→dialect_insert；INSERT OR IGNORE→ON CONFLICT DO NOTHING；datetime('now') 6 处→CURRENT_TIMESTAMP；is_system_default/enabled=TRUE 布尔字面量；speed_sampler 聚合 SQL 双版本（PG date_trunc 时间戳直比 + online 真值）；JSON 两服务接入分发（SQLite json_valid 守卫零变化 / PG cast 即守卫 fail-fast）；tracker_message_logger 裸 upsert 核验 PG 兼容零改动。
+- **2.4 LIKE 折叠**：advanced_search 匹配算子、torrent_helpers 5 组原始 like、orphan_file_service path 过滤全部经分发（SQLite 原生 ASCII 折叠零变化；PG A–Z 折叠+LIKE，非 ILIKE 非 =）。
+- **2.5 门控**：WAL 快照循环 PG 跳过；ratio 迁移诊断 PG 返回 unavailable。
+- **调试坑位**：advanced_search.search_torrents 为**同步方法**（psycopg2 路径），PgRegexBudget 定为同步接口；lifecycle 模块无 logger 定义补齐；deletion_task_manager 无顶层 app 导入区（插入点锚定失败教训）。
+- **验收**：全量 pytest **5451 passed / 0 failed**（+14 dialect_sql 测试）；black/flake8/mypy 净；grep 残留扫描合规（方言判断=dialect_sql+8 个任务内显式声明位点；init_schema_from_production 为 frozen 灾备白名单）。
+- 状态：23 任务 **16 done**（P0×4+P1×7+P2×5）。下一步 P3 迁移链双轨（3.1 CLI 守卫已随 P1 落地→3.2 备份守卫/3.3 治理文档/3.4 基线对拍 CI 门禁）。
+
+## 2026-09-30：v1.0.8 PostgreSQL P3（迁移链双轨）——四任务全交付，对拍门禁抓出 4 类真实漂移
+
+- **3.4 基线对拍 CI 门禁**（本轮核心）：`tests/core/test_baseline_schema_parity.py`——链 head SQLite 实库跑全链后 introspect ↔ PG 基线 metadata 语义级比较（表/列/类型/可空/PK/索引含 partial 谓词/CHECK/外键；typeof 守卫等价归一；ORM where 表达式 literal_binds 编译+表名前缀归一）。**门禁首跑即抓出 4 类真实漂移并全部归位 ORM**：
+  1. `orphan_hardlink_copy_result/scan_state` 两表：链 c8d9e0f1a2b3 建表但模型从未注册 metadata（旧 env.py 也无——P0.3 盘点未覆盖的历史漏网，PG 基线会漏建两表）；
+  2. `orphan_current_candidate` 缺链侧两索引（ix_orphan_current_candidate_status / ix_orphan_candidate_current_detail_status）；
+  3. `refresh_tokens` 三列 ORM 可空 vs 链 NOT NULL + id 冗余索引（链无 ix_refresh_tokens_id）；
+  4. `search_templates/setting_templates` 索引名前缀漂移（列级 index=True 生成 ix_* vs 链显式 idx_*）。
+- **3.1 CLI 守卫**：提取至 `pg_baseline.guard_manual_upgrade_on_empty_db`（baseline_flag 豁免），env.py 调用；5 个单测。
+- **3.2 守卫适配**：`_migrate_database_pg` 验收测试——未知/ghost 版本告警不降级且**不被 stamp**（ghost 救援仅 sqlite）、备份 spy 断言不调用、head no-op。
+- **3.3 治理文档**：database-migration.md 增 PG squash 冷启动 create_all 白名单（边界：仅 pg_baseline+model_registry 路径）+"双方言迁移编写规范"七条；测试锚点（HEAD 声明/单处"← 当前 HEAD"）保持完整（test_db_migration 30 例全绿）。
+- **坑位**：app.* logger 树 `propagate=False`（app/main.py）致 caplog 不可达——迁移守卫告警断言改用仓库既有 spy logger 模式（patch logger.warning）。
+- **验证**：全量 pytest **5459 passed / 0 failed**（+8：守卫 5+编排 2+对拍 1）；black/flake8/mypy 净。
+- 状态：23 任务 **20 done**（P0×4+P1×7+P2×5+P3×4）。剩 P4：4.1 迁移工具 / 4.2 部署 override / 4.3 强制 PG CI。
+
+## 2026-10-01：v1.0.8 PostgreSQL P4（迁移与部署）——23/23 任务收官，真 PG 9/9 全绿
+
+- **4.1 迁移工具** `backend/scripts/migrate_sqlite_to_pg.py`：六阶段（precheck→基线→导入→校准→对账→切换指引）；契约 §3 三状态（全新走共享基线不 seed/未完成校验 migration_id+源摘要+检查点后 --resume/已有数据退出码 2 拒绝）；JSON 按字段契约（裸标量仅匹配类型可 --auto-wrap-scalar 包裹出报告、对象恒拒、布尔元素拒绝）；行变换（Boolean int→bool、DateTime 文本→datetime）；sequence 校准 23 表含空表 setval(1,false)；12 单测 + 真 PG 端到端全过。
+- **4.2 部署**：`docker-compose.postgres.yml` override 文件机制（契约定案；DB_PASSWORD 缺失 `:?` fail-fast、postgres:16-alpine healthcheck、backend depends_on service_healthy；`docker compose config` 实测）；`docs/database-setup.md`（配置表/内置/外部两形态/首启 squash 行为/迁移与回退窗口指引）。
+- **4.3 强制 PG CI**：`tests/pg_integration/test_pg_smoke.py` 9 例（门控 DB_TYPE=postgresql + BTDECK_PG_TEST_ADMIN_DSN，每用例独占新库 admin 建删）+ regression.yml `pg-integration` job（postgres:16 service）；**本地 docker postgres:16-alpine 实测 9/9 全过**。
+- **真 PG 实测抓出两处盲区（本轮最大价值）**：
+  1. `str(URL)` 密码掩码——SQLAlchemy 2.0 str(URL) 渲染密码为 `***`，P1 引擎工厂因此把字面 `***` 当密码认证失败（单测/mock 全漏，唯真连暴露）；改 `render_as_string(hide_password=False)`；
+  2. 大写 `sqlalchemy.DATETIME` 在 PG 渲染字面 DATETIME 类型（P0.3 盘点误判"通用类型可移植"）——基线 create_all 即失败；全量换 `DateTime`（SQLite 渲染两者同为 DATETIME，DDL 零变化）。
+- 连带修复：conftest 会话库初始化 PG 方言改走 `_migrate_database_pg` 合法入口（原手工 upgrade 撞空库守卫——守卫行为正确）；psycopg2 原生连接 fixture 走 cursor。
+- **验证**：全量 SQLite 回归 **5471 passed / 0 failed**（+12 工具单测，PG 集成 9 例默认 skip）；真 PG 集成 **9/9**；black/flake8/mypy 净；roadmap 三分支补行（core×3 新模块/infra 迁移工具+env 更新/services pg-search）；契约文档 §2.1/§7.1 补记两处实测修正。
+- **收官**：feature `postgresql-datasource-2026-09-23` **done（23/23 任务）**；v1.0.8 五阶段交付完毕（P0 契约/P1 可启动底座/P2 业务兼容/P3 迁移链双轨/P4 迁移部署）。
+
+
+## 2026-10-02：PostgreSQL 分支独立验收（进行中）
+
+- 用户要求验收直到通过；在 BtDeck-pg / feature/postgresql-migration，基点 91dade1 工作。
+- 验收发现并修复迁移内容对账、检查点原子性、首批拒启标记、只读快照、同步 CA 配置及 asyncpg 业务时间绑定缺陷；真实 PG 扩大测试 10 passed。
+- feature 恢复 in_progress，完整待验收清单与证据见 PLANS/postgresql-acceptance.md；尚未达到通过条件，未提交 Git。
+
+
+## 2026-10-03：PostgreSQL 分支独立功能验收通过（未提交、未发布）
+
+- 修复迁移内容对账/检查点事务/只读快照/JSON null、预检与外部资源核对、TLS CA、asyncpg 日期参数、schema 默认值、CLI 提交/降级/空版本守卫、正则共同子集及逐 SQL 时间预算、外部 PG compose 透传。
+- SQLite 全量 5495 passed / 46 skipped；最后 PG 专属守卫变更后核心复跑 68 passed；真实 PG+TLS 最终 29 passed，另无 TLS 五模式 5 passed。
+- mypy 309 文件、black/flake8/架构通过；前端 typecheck/lint/build 通过；compose 三组合、最终 Python3.12 实际镜像启动 HTTP200、init.sh通过。
+- 功能验收报告：PLANS/postgresql-acceptance.md。feature 恢复 done，23任务附验收证据。生产构建 dirty 门禁保持不变；仅一次性容器源码模式测启动，正式发布仍需提交后干净重建。
+- 未执行 Git 提交或发布；本次临时容器/网络和前端依赖软链接清理，日志留在 /tmp。
+
 ## 2026-10-08：通用种子定位底层 service（feature `torrent-lookup-service-2026-10-08`）
 
 - **需求与定案**：用户要求"快速定位种子并获取种子信息的通用方法"，按 qB/TR 双 SDK 设计。三轮确认收敛：①只做底层 service（供后续设计消费，不做端点/MCP 暴露）；②优先毫秒级 hash 匹配，名称/多条件查询后续基于 DB 设计（双端 SDK 均无服务端名称过滤，远程名称搜索大库不可取——本地 DB 先行定位 hash 再远程精确取实时态是既定方向）；③仅 service 层。
@@ -8548,3 +8623,9 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修复**：formatDetailSpeed 复用全局 formatSpeed（仅保留详情页 0/空显示 '0 KB/s' 语义），import 补 formatSpeed；同步修正其 spec 两处固化错误行为的断言（102400 B/s→'100.00 KB/s'、1 B/s→'1.00 B/s'）。
 - **验证**：mobile-torrent-detail.spec 9/9 绿；npm run lint 通过。未提交（待用户要求）。
 - **提交部署**：707a2d8 推 origin dev（ba9b3e7..707a2d8）；build-and-export-images.sh --unraid（192.168.5.51:/mnt/cache/appdata/docker/btdeck，worker 子代理前台执行 ~4m40s）一次过，导出 backend 120M / frontend 54M；双容器 healthy；远端 /health/live gitSha `707a2d834cd7…` = 本地 HEAD ✓、frontendManifestSha256 `32f1e2de…` = 构建输出 ✓——DEPLOY_VERIFY_OK。
+## 2026-10-27：v1.0.8 PostgreSQL 改造合入 dev（merge feature/postgresql-migration）
+
+- 合并对象：`feature/postgresql-migration`（91dade1 全量交付 + a0bd434 验收加固，68 文件），基点 dev@c7bf20b；dev 侧已前进 ~40 提交（v1.0.7 发布 + 安全治理 + 依赖升级）。
+- 8 处冲突全解决：requirements.txt 并集（dev 安全升级版本 + asyncpg/psycopg2-binary）；roadmap 4 README 行级并集与行号重测（core：model-registry/pg-baseline/dialect-sql 三新行 + migration L224/runtime_context L19/L31/startup_guard v1.0.8 行；infra：env.py 并集 offline L72/online L96 + scripts PG 工具节；services：report_service 986 行 + get_speed_history L872；根 README 元信息双侧链按时间序插入 PG 批次）；feature_list 头部取 dev（1.0.7）；progress/session-handoff 按日期交错。
+- requirements-lock.txt 自动合并（feature 侧 130 行纯新增：asyncpg/psycopg2 及传递依赖入锁）。
+- 验证（子代理执行，backend/venv 同步合并后锁文件）：pytest 全量 **5570 passed / 47 skipped**（29 例为 pg_integration 无 PG 环境变量正常跳过）；black 311 文件零改动、flake8 净、pip check 净；mypy 唯一 1 错为存量（auth/dependencies.py:121，dev 侧 0349347 引入、pyjwt 2.14 类型暴露，非合并引入），单独提交修复。锁同步关键包：asyncpg 0.31.0 / psycopg2-binary 2.9.13 / fastapi 0.140.13 / starlette 1.9.0 / setuptools 78.1.1。dev 侧 fastapi 0.140/starlette 1.9 与 PG 代码兼容性由全量回归实证。

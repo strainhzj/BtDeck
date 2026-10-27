@@ -26,48 +26,86 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from sqlalchemy import text
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from app.database import AsyncSessionLocal
+from app.core.dialect_sql import dialect_insert, timestamp_parameter
+from app.database import AsyncSessionLocal, DIALECT
 from app.models.speed_sample import DownloaderSpeedHourly, DownloaderSpeedSample
 from app.tasks.resource_guard import admission_controller
 
 logger = logging.getLogger(__name__)
 
-# 采样基准：bt_downloaders 有效清单（与 downloader_cache_sync 步骤1 同口径）
-_BASE_LIST_SQL = text("SELECT downloader_id FROM bt_downloaders WHERE enabled = 1 AND dr = 0")
+# 采样基准：bt_downloaders 有效清单（与 downloader_cache_sync 步骤1 同口径）。
+# enabled 为 Boolean 列：= TRUE 双方言通用（SQLite TRUE→1，v1.0.8 任务2.3）
+_BASE_LIST_SQL = text("SELECT downloader_id FROM bt_downloaders WHERE enabled = TRUE AND dr = 0")
 
-# 已完整结束小时 → 聚合（未落入 hourly 的分组）；窗口 14d 对齐 raw 保留期，
-# 覆盖后端停机数日后重启的补聚合场景。datetime() 归一两侧存储格式
-# （含/不含微秒后缀的 ISO 字符串）再做等值比较。
-_AGGREGATE_SQL = text(
+
+def _aggregate_sql() -> Any:
+    """已完整结束小时 → 聚合 SQL（方言分发，v1.0.8 任务2.3 双版本白名单位点）。
+
+    - SQLite：strftime 生成整点文本 + datetime() 归一两侧存储格式
+      （含/不含微秒后缀的 ISO 字符串）后等值比较——与历史行为零差异；
+    - PG：date_trunc('hour', ...) 直接产出 timestamp，JOIN 两侧同为
+      timestamp 列直比（无需格式归一）；online 为 boolean 列直用真值。
+    窗口 14d 对齐 raw 保留期，覆盖后端停机数日后重启的补聚合场景。
     """
-    SELECT s.downloader_id AS downloader_id,
-           s.stat_hour AS stat_hour,
-           s.dl_sum AS dl_sum,
-           s.max_dl AS max_dl,
-           s.ul_sum AS ul_sum,
-           s.max_ul AS max_ul,
-           s.sample_count AS sample_count,
-           s.online_count AS online_count
-    FROM (
-        SELECT downloader_id,
-               strftime('%Y-%m-%d %H:00:00', sampled_at) AS stat_hour,
-               SUM(CASE WHEN online = 1 THEN download_speed ELSE 0 END) AS dl_sum,
-               MAX(download_speed) AS max_dl,
-               SUM(CASE WHEN online = 1 THEN upload_speed ELSE 0 END) AS ul_sum,
-               MAX(upload_speed) AS max_ul,
-               COUNT(*) AS sample_count,
-               SUM(CASE WHEN online = 1 THEN 1 ELSE 0 END) AS online_count
-        FROM downloader_speed_sample
-        WHERE sampled_at < :hour_floor AND sampled_at >= :window_start
-        GROUP BY downloader_id, strftime('%Y-%m-%d %H:00:00', sampled_at)
-    ) s
-    LEFT JOIN downloader_speed_hourly h
-        ON h.downloader_id = s.downloader_id AND datetime(h.stat_hour) = datetime(s.stat_hour)
-    WHERE h.id IS NULL
-    """
-)
+    if DIALECT == "sqlite":
+        return text(
+            """
+            SELECT s.downloader_id AS downloader_id,
+                   s.stat_hour AS stat_hour,
+                   s.dl_sum AS dl_sum,
+                   s.max_dl AS max_dl,
+                   s.ul_sum AS ul_sum,
+                   s.max_ul AS max_ul,
+                   s.sample_count AS sample_count,
+                   s.online_count AS online_count
+            FROM (
+                SELECT downloader_id,
+                       strftime('%Y-%m-%d %H:00:00', sampled_at) AS stat_hour,
+                       SUM(CASE WHEN online = 1 THEN download_speed ELSE 0 END) AS dl_sum,
+                       MAX(download_speed) AS max_dl,
+                       SUM(CASE WHEN online = 1 THEN upload_speed ELSE 0 END) AS ul_sum,
+                       MAX(upload_speed) AS max_ul,
+                       COUNT(*) AS sample_count,
+                       SUM(CASE WHEN online = 1 THEN 1 ELSE 0 END) AS online_count
+                FROM downloader_speed_sample
+                WHERE sampled_at < :hour_floor AND sampled_at >= :window_start
+                GROUP BY downloader_id, strftime('%Y-%m-%d %H:00:00', sampled_at)
+            ) s
+            LEFT JOIN downloader_speed_hourly h
+                ON h.downloader_id = s.downloader_id AND datetime(h.stat_hour) = datetime(s.stat_hour)
+            WHERE h.id IS NULL
+            """
+        )
+    return text(
+        """
+        SELECT s.downloader_id AS downloader_id,
+               s.stat_hour AS stat_hour,
+               s.dl_sum AS dl_sum,
+               s.max_dl AS max_dl,
+               s.ul_sum AS ul_sum,
+               s.max_ul AS max_ul,
+               s.sample_count AS sample_count,
+               s.online_count AS online_count
+        FROM (
+            SELECT downloader_id,
+                   date_trunc('hour', sampled_at) AS stat_hour,
+                   SUM(CASE WHEN online THEN download_speed ELSE 0 END) AS dl_sum,
+                   MAX(download_speed) AS max_dl,
+                   SUM(CASE WHEN online THEN upload_speed ELSE 0 END) AS ul_sum,
+                   MAX(upload_speed) AS max_ul,
+                   COUNT(*) AS sample_count,
+                   SUM(CASE WHEN online THEN 1 ELSE 0 END) AS online_count
+            FROM downloader_speed_sample
+            WHERE sampled_at < :hour_floor AND sampled_at >= :window_start
+            GROUP BY downloader_id, date_trunc('hour', sampled_at)
+        ) s
+        LEFT JOIN downloader_speed_hourly h
+            ON h.downloader_id = s.downloader_id AND h.stat_hour = s.stat_hour
+        WHERE h.id IS NULL
+        """
+    )
+
 
 _CLEAN_RAW_SQL = text("DELETE FROM downloader_speed_sample WHERE sampled_at < :cutoff")
 _CLEAN_HOURLY_SQL = text("DELETE FROM downloader_speed_hourly WHERE stat_hour < :cutoff")
@@ -182,10 +220,10 @@ class SpeedSamplerJob:
         async with AsyncSessionLocal() as db:
             agg_rows = (
                 await db.execute(
-                    _AGGREGATE_SQL,
+                    _aggregate_sql(),
                     {
-                        "hour_floor": hour_floor.strftime("%Y-%m-%d %H:%M:%S"),
-                        "window_start": window_start.strftime("%Y-%m-%d %H:%M:%S"),
+                        "hour_floor": timestamp_parameter(hour_floor),
+                        "window_start": timestamp_parameter(window_start),
                     },
                 )
             ).fetchall()
@@ -219,7 +257,7 @@ class SpeedSamplerJob:
                 )
 
             stmt = (
-                sqlite_insert(DownloaderSpeedHourly)
+                dialect_insert(DownloaderSpeedHourly)
                 .values(values)
                 .on_conflict_do_nothing(index_elements=["downloader_id", "stat_hour"])
             )
@@ -247,8 +285,8 @@ class SpeedSamplerJob:
 
     async def _cleanup_expired(self, now: datetime) -> Dict[str, Any]:
         """raw < now-14d、hourly < now-730d 物理删除（append-only 时序数据）。"""
-        raw_cutoff = (now - timedelta(days=self.raw_retention_days)).strftime("%Y-%m-%d %H:%M:%S")
-        hourly_cutoff = (now - timedelta(days=self.hourly_retention_days)).strftime("%Y-%m-%d %H:%M:%S")
+        raw_cutoff = timestamp_parameter(now - timedelta(days=self.raw_retention_days))
+        hourly_cutoff = timestamp_parameter(now - timedelta(days=self.hourly_retention_days))
 
         async with AsyncSessionLocal() as db:
             raw_result = await db.execute(_CLEAN_RAW_SQL, {"cutoff": raw_cutoff})

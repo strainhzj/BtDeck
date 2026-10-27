@@ -8,7 +8,8 @@ import logging
 from app.core.config import settings
 from app.auth.security import get_password_hash
 import yaml
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+from urllib.parse import quote_plus
 from gmssl import func
 from app.auth import utils
 from app.services.sqlite_search_runtime import install_sqlite_search_functions
@@ -16,15 +17,99 @@ from app.services.orphan_folder_grouping import install_orphan_folder_functions
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.DATABASE_PATH}"
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    # timeout=15 秒(SQLAlchemy 的 SQLite 参数)，换算为 busy_timeout=15000ms
-    connect_args={"check_same_thread": False, "timeout": 15},
-    # NullPool：SQLite 单文件库不支持真正的连接池；多线程并发由 NullPool 给每条调用各开独立连接
-    poolclass=NullPool,
-)
+
+# ========== 数据源方言判定（v1.0.8 双数据库架构，契约 docs/postgresql-contract.md §2）==========
+# sqlite（默认，行为与历史版本完全一致）或 postgresql（可选数据源）。
+# 方言唯一判定入口为 settings.DATABASE_DIALECT；本模块不再独立解析 DB_TYPE。
+DIALECT = settings.DATABASE_DIALECT
+
+
+def _pg_ssl_args(*, async_driver: bool) -> Dict[str, Any]:
+    """按契约 §2.3 将 DB_SSLMODE 映射为驱动连接参数。
+
+    psycopg2（同步）：URL sslmode 查询参数（在 build_database_url 内拼接）。
+    asyncpg（异步）：模式串或 SSLContext——disable 必须显式传 False
+    （asyncpg 缺省即 prefer，不传 ssl 仍会尝试 TLS）；verify-ca/verify-full
+    构造加载 DB_SSL_ROOT_CERT 的 SSLContext（verify-full 额外启用主机名校验）。
+    """
+    if not async_driver:
+        return {}  # 同步侧走 URL 查询参数
+    import ssl as _ssl
+
+    mode = (settings.DB_SSLMODE or "prefer").strip().lower()
+    if mode == "disable":
+        return {"ssl": False}
+    if mode in ("prefer", "require"):
+        # prefer：asyncpg 模式串允许回退明文；require：无 CA 校验但强制 TLS
+        return {"ssl": mode}
+    # verify-ca / verify-full：加载 CA 的上下文
+    if not settings.DB_SSL_ROOT_CERT:
+        raise ValueError(f"DB_SSLMODE={mode} 需要 DB_SSL_ROOT_CERT 指向 CA 证书路径")
+    ctx = _ssl.create_default_context(cafile=settings.DB_SSL_ROOT_CERT)
+    if mode == "verify-ca":
+        ctx.check_hostname = False
+    # verify-full：保持 check_hostname=True（create_default_context 默认）
+    return {"ssl": ctx}
+
+
+def build_database_url(*, async_driver: bool = False) -> str:
+    """按当前配置构造数据库 URL（双数据库架构的单一 URL 工厂，契约 §2.1）。
+
+    - sqlite:         sqlite:///{DATABASE_PATH}（默认，与历史行为一致）
+    - sqlite (async): sqlite+aiosqlite:///{DATABASE_PATH}
+    - postgresql:         postgresql+psycopg2://（同步，alembic / sync session）
+    - postgresql (async): postgresql+asyncpg://（异步引擎）
+
+    PG 走 sqlalchemy.engine.URL.create 结构化构造（凭据特殊字符 % @ / : 空格
+    自动转义）；同步侧 TLS 以 sslmode 查询参数携带（契约 §2.3）。
+    """
+    if DIALECT == "postgresql":
+        from sqlalchemy.engine import URL
+
+        query: Dict[str, Any] = {}
+        if not async_driver:
+            query["sslmode"] = (settings.DB_SSLMODE or "prefer").strip().lower()
+            if query["sslmode"] in ("verify-ca", "verify-full") and settings.DB_SSL_ROOT_CERT:
+                query["sslrootcert"] = settings.DB_SSL_ROOT_CERT
+        driver = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
+        url = URL.create(
+            drivername=driver,
+            username=settings.DB_USER,
+            password=settings.DB_PASSWORD,
+            host=settings.DB_HOST,
+            port=settings.DB_PORT,
+            database=settings.DB_NAME,
+            query=query,
+        )
+        # ⚠️ 禁用 str(url)：SQLAlchemy 2.0 的 str(URL) 会把密码掩码为 ***（防泄漏），
+        # 引擎会拿到字面 *** 密码导致认证失败（本地 PG 实测抓出）；必须用
+        # render_as_string(hide_password=False) 取真实凭据 URL
+        return url.render_as_string(hide_password=False)
+    suffix = "+aiosqlite" if async_driver else ""
+    return f"sqlite{suffix}:///{settings.DATABASE_PATH}"
+
+
+def _sync_engine_kwargs() -> Dict[str, Any]:
+    """同步引擎参数：按方言分发，SQLite 路径与历史版本零差异（契约 §2.2）。"""
+    if DIALECT == "postgresql":
+        return {
+            "pool_size": settings.DB_POOL_SIZE,
+            "max_overflow": settings.DB_MAX_OVERFLOW,
+            "pool_timeout": settings.DB_POOL_TIMEOUT,
+            "pool_pre_ping": True,
+            "echo": settings.DB_ECHO,
+        }
+    # SQLite：单文件库不支持真正的连接池，保持 NullPool + timeout=15（历史行为）
+    return {
+        "connect_args": {"check_same_thread": False, "timeout": 15},
+        "poolclass": NullPool,
+    }
+
+
+SQLALCHEMY_DATABASE_URL = build_database_url()
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **_sync_engine_kwargs())
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -47,26 +132,38 @@ def _apply_sqlite_pragmas(dbapi_conn, conn_record):  # noqa: ANN001 - SQLAlchemy
 
 
 # 挂到同步引擎：每个新连接建立时执行 PRAGMA
-event.listens_for(engine, "connect")(_apply_sqlite_pragmas)
+# 挂到同步引擎：每个新连接建立时执行 PRAGMA（仅 SQLite 方言；PG 无 PRAGMA 机制，契约 §2）
+if DIALECT == "sqlite":
+    event.listens_for(engine, "connect")(_apply_sqlite_pragmas)
 
 # ========== 异步数据库引擎配置 ==========
-# 异步数据库URL（使用 aiosqlite 驱动）
-ASYNC_SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{settings.DATABASE_PATH}"
+# 异步数据库URL（sqlite 用 aiosqlite 驱动；postgresql 用 asyncpg 驱动）
+ASYNC_SQLALCHEMY_DATABASE_URL = build_database_url(async_driver=True)
 
-# 创建异步引擎
-# 优化说明：
-# 1. 使用 NullPool：SQLite 单文件库不支持真正的连接池，多协程并发靠 NullPool 各开连接（StaticPool 会让多线程共用同一 sqlite3 连接对象，触发 "Recursive use of cursors not allowed"）
-# 2. timeout=15：SQLAlchemy 的 SQLite 参数(秒)，换算为 busy_timeout=15000ms
-# 3. PRAGMA(WAL/synchronous/busy_timeout) 通过下方事件监听挂到 sync_engine 的每个连接上（init_db 只用临时连接设过 WAL，但 busy_timeout 非持久，新连接需重新下发）
-async_engine = create_async_engine(
-    ASYNC_SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 15},
-    poolclass=NullPool,
-    echo=False,
-)
+# 创建异步引擎（契约 §2.2：PG 用默认 AsyncAdaptedQueuePool——普通 QueuePool 不兼容 asyncio）
+# SQLite 路径与历史行为一致（NullPool + timeout=15 + PRAGMA 事件）。
+if DIALECT == "postgresql":
+    async_engine = create_async_engine(
+        ASYNC_SQLALCHEMY_DATABASE_URL,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_timeout=settings.DB_POOL_TIMEOUT,
+        pool_pre_ping=True,
+        echo=settings.DB_ECHO,
+        connect_args=_pg_ssl_args(async_driver=True),
+    )
+else:
+    async_engine = create_async_engine(
+        ASYNC_SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False, "timeout": 15},
+        poolclass=NullPool,
+        echo=False,
+    )
 
 # 异步引擎需 listen 到其底层 sync_engine 的 connect 事件（直接 listen async_engine 不生效）
-event.listens_for(async_engine.sync_engine, "connect")(_apply_sqlite_pragmas)
+# 自定义搜索/分组函数仅存在于 SQLite 方言；PG 使用原生 SQL 能力（P2 清扫）
+if DIALECT == "sqlite":
+    event.listens_for(async_engine.sync_engine, "connect")(_apply_sqlite_pragmas)
 
 # 创建异步会话工厂
 AsyncSessionLocal = async_sessionmaker(
@@ -135,21 +232,19 @@ def init_db():
     # 表结构由 Alembic 迁移管理（migrate_database），不再用 create_all 兜底。
     # create_all 无法表达 ALTER（字段变更），且会掩盖迁移遗漏（开发能跑生产崩）。
 
-    # 启用 WAL 模式（Write-Ahead Logging）
-    # WAL模式优势：
-    # 1. 读写操作不互相阻塞（提升并发性能）
-    # 2. 更快的提交速度（只写日志，不覆盖原文件）
-    # 3. 更好的崩溃恢复能力
-    try:
-        import sqlite3
+    # 启用 WAL 模式（Write-Ahead Logging）—— 仅 SQLite 方言；PG 由服务端自管（契约 §1）
+    if DIALECT == "sqlite":
+        try:
+            import sqlite3
 
-        conn = sqlite3.connect(db_file)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")  # 平衡安全性和性能
-        conn.close()
-        logger.info("SQLite WAL 模式已启用，并发性能提升")
-    except Exception as e:
-        logger.warning(f"启用 WAL 模式失败: {str(e)}")
+            db_file = settings.DATABASE_PATH
+            conn = sqlite3.connect(db_file)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")  # 平衡安全性和性能
+            conn.close()
+            logger.info("SQLite WAL 模式已启用，并发性能提升")
+        except Exception as e:
+            logger.warning(f"启用 WAL 模式失败: {str(e)}")
 
     # 迁移系统已升级为 Alembic
     # 旧迁移系统（app.migrations.database_migrator）已弃用，所有迁移由 Alembic 管理

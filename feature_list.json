@@ -2823,9 +2823,12 @@
       "id": "v1.0.8",
       "name": "数据库升级",
       "description": "PostgreSQL 支持。推迟中：sync-resource-governance 治理后先验证 DB 写锁瓶颈是否缓解。原计划的下载器连接池已废弃（违反 downloader-connection 约束，app.state.store 已管理客户端连接）。",
-      "status": "pending",
+      "status": "superseded",
       "plan_file": "PLANS/v1.0.8.md",
-      "tasks": []
+      "tasks": [],
+      "evidence": {
+        "superseded_by": "postgresql-datasource-2026-09-23（2026-09-23 重启，连接池部分已由 app.state.store 覆盖作废）"
+      }
     },
     {
       "id": "v1.0.9",
@@ -7546,6 +7549,220 @@
           "evidence": "1024 行重写，源码契约新增『零 Element（禁 <el- 与原生 <select）+ 四自定义组件在场』断言；skip_hash_check 契约原样（恰好 2 处 false、无硬编码回流）；≤768 触控契约保留（44px/36px）。新增行为测试 5 例（拖拽合法/非法/清空、downloaderOptions 徽章状态点机会渲染三态、pathSuggestions 启用过滤+空输入全量）。门禁：typecheck 0 错、lint 净（含 contract:check）、npm run build 成功（~27s）、全量 Jest 136 套 1941 例（唯一失败为 EChart 既有环境性套件加载失败，与本批无关）、./init.sh 退出码 0。；2026-10-18 验收微调：跳过校验去详细介绍（警示卡+hint 撤下降为单行 FormCheckbox，i18n 删 checkPolicy/skipCheckHint zh/en 双键），1024→982 行，契约/行为 spec 复跑全绿。"
         }
       ]
+    },
+    {
+      "id": "postgresql-datasource-2026-09-23",
+      "title": "v1.0.8 PostgreSQL 数据源支持（双数据库架构：主 SQLite 可选 PG）",
+      "status": "done",
+      "scope": "backend,deploy",
+      "description": "【✅ 实现及独立功能验收通过（2026-10-03；23/23 任务；未发布）】重启 2026-09-08 暂缓的 v1.0.8 数据库升级计划，经五轮独立审查（reviewer 4C/6W + 12 点 + 7 点流程冲突 + 4 点契约修正 + 2 点收敛修正）修订。交付边界：PG 单应用实例单 worker 功能兼容与数据迁移（多实例/并发另设验收，不承诺高并发）。决策：①主 SQLite 可选 PG（DB_TYPE，默认 sqlite 零变化，非法 fail-fast）；②单链双方言（存量 37 迁移不动（基线刷新：+RSS×2 +统计报表×2，head c9e0f1a2b3c4），PG 空库演进式 metadata 建库+stamp head，含空库判定/模型集中注册/事务性 DDL 原子性/新装 seed 覆盖审计/最低可降级 revision/CLI 守卫/ghost 仅 sqlite 七条维护规则；否决双链反模式；固定基线可行但治理成本高，择演进式（ORM 单一事实源+对拍 CI））；③PG16+（启动版本守卫）；④部署三组合（默认 SQLite/内置 PG 走 docker-compose.postgres.yml override 文件/外部 PG，无损回退窗口=首次启动前离线核对）。阶段：P0 契约与基线（数据迁移审计/类型盘点重做/预检重估）→ P1 可启动底座（配置/URL.create 结构化工厂/sync QueuePool+async AsyncAdaptedQueuePool/ORM 双方言化/锁文件/启动入口 DB_TYPE 统一+单 worker fail-fast）→ P2 业务兼容（正则共同子集+请求级预算/ASCII 折叠 LIKE autoescape 矩阵/JSON 语义先行测试/upsert 单点/布尔裸 SQL/WAL 门控）→ P3 迁移链双轨（env.py 改造/基线对拍语义级 CI 门禁/治理文档 create_all 白名单）→ P4 迁移工具（一致性快照/空目标库/类型校验/sequence 校准/检查点重跑/软删保留/回滚边界）与强制 PG CI。工作量 8-12 人日粗估，P0 后重估。",
+      "files": [
+        "PLANS/v1.0.8.md"
+      ],
+      "evidence": {
+        "plan": "PLANS/v1.0.8.md（v7 已批准实施 2026-09-28）",
+        "review": "两轮审查：①reviewer 子代理（4 Critical/6 Warning）②用户深度审查 12 点（含事实修正 health.py PRAGMA/33 revision/无长度 String 漏检/DEV=False 语义），全部吸收",
+        "branch": "feature/postgresql-migration（worktree /srv/workspaces/BtDeck-pg）",
+        "baseline_refresh": "2026-09-28：worktree 分支重置至 c7bf20b；新增耦合点 speed_sampler（sqlite_insert/strftime/datetime JOIN/online=1）与 tracker.py 第 5 处 datetime-now 已入盘点；report_service/RSS 实测清洁",
+        "p0": "P0 四任务完成（2026-09-28）：契约文档 backend/docs/postgresql-contract.md 为唯一交付物载体",
+        "p1": "P1 完成（2026-09-30）：全量回归 5437 passed / 0 failed（探针 venv，+7 新测试）；mypy 4 模块 0 issue；black/flake8 净；lint_btdeck 白名单登记 pg_baseline（BTD305，常量表名插值）",
+        "p2": "P2 完成（2026-09-30）：全量回归 5451 passed / 0 failed；方言判断散布=分发单点+8 个任务内显式声明位点（grep 验收合规）；SQLite 零变化由逐字一致断言+全量回归双保证",
+        "p3": "P3 完成（2026-09-30）：全量回归 5459 passed / 0 failed；对拍门禁修复 4 类真实 ORM↔链漂移（含 P0.3 盘点未发现的硬链接两表——历史漂移实证）",
+        "p4": "P4 完成（2026-10-01）：23/23 任务全绿；全量 SQLite 回归 5471 passed / 0 failed；真 PG 16 集成 9/9（本地 docker postgres:16-alpine 实测）。真 PG 实测抓出两处此前盲区并修复：①str(URL) 密码掩码为 ***（P1 引擎工厂潜伏 bug，render_as_string(hide_password=False) 修复）；②大写 sqlalchemy.DATETIME 在 PG 渲染字面类型（P0.3 盘点误判可移植，全量换 DateTime，SQLite 零变化）",
+        "independent_acceptance": "2026-10-03 独立验收通过：SQLite 全量5495 passed/46 skipped；最终核心68 passed；真实PG+TLS 29 passed；无TLS五模式5 passed；mypy/black/flake8/架构、前端typecheck/lint/build、compose三组合、实际Python3.12镜像启动HTTP200、init.sh通过。详见 PLANS/postgresql-acceptance.md；未提交/未发布，正式产物须干净提交重建。"
+      },
+      "tasks": [
+        {
+          "id": "0.1",
+          "title": "契约文档（PG16+/单实例边界/配置优先级/基线七规则/schema 清单模板）",
+          "status": "done",
+          "acceptance": "契约文档评审通过（含基线七规则、schema 清单模板、允许差异登记表）",
+          "evidence": "backend/docs/postgresql-contract.md（§1-§4 版本/边界/配置/基线/语义契约 + §6 允许差异登记表初始 4 条）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "0.2",
+          "title": "历史数据迁移审计（新装 PG 免重放覆盖矩阵；预填 c9e0f1a2b3c4 时区回填=写入路径已修复）",
+          "status": "done",
+          "acceptance": "33 迁移数据操作逐条审计，新装 PG 免重放覆盖矩阵无缺口",
+          "evidence": "postgresql-contract.md §5：37 迁移全量扫描，13 个数据操作迁移逐条审计，13/13 免重放成立",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "0.3",
+          "title": "类型与 SQL 全面盘点重做（mapped_column/布尔/日期绑定/savepoint）",
+          "status": "done",
+          "acceptance": "盘点清单覆盖 mapped_column/布尔比较/日期绑定/默认值来源/savepoint/upsert 冲突目标，入 evidence",
+          "evidence": "postgresql-contract.md §7：mapped_column 全量普查（234 String/43 无长度/DATETIME 18 可移植/server_default 26 可移植）；布尔裸 SQL 4 处实测+Integer 列甄别排除；upsert 5 ORM+3 裸 SQL；savepoint 零使用确认",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "0.4",
+          "title": "数据风险预检与排期重估",
+          "status": "done",
+          "acceptance": "预检报告产出 + 工作量重估结论记录",
+          "evidence": "postgresql-contract.md §8：静态风险 5 项 + 排期重估（维持 8-12 人日，P1 后二次校准）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.1",
+          "title": "数据库配置项（DB_TYPE fail-fast/TLS 驱动映射）",
+          "status": "done",
+          "acceptance": "DB_TYPE=sqlite 行为零变化；非法取值 fail-fast；TLS 逐模式映射（disable=ssl False，非缺省不传）双向实测：无 TLS 服务端双驱动一致 + 有 TLS 服务端验证 disable 建非 TLS 连接",
+          "evidence": "config.py 新增 DB_TYPE/DB_*/DB_SSLMODE/DB_SSL_ROOT_CERT + DATABASE_DIALECT 归一化属性（非法值 fail-fast，含 DB_SSLMODE 校验）；.env.example PG 段文档",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.2",
+          "title": "引擎工厂双方言化（URL.create/sync QueuePool/async AsyncAdaptedQueuePool/连接预算）",
+          "status": "done",
+          "acceptance": "URL.create 特殊字符单测（% @ / : 空格）；sync QueuePool/async AsyncAdaptedQueuePool 分列；连接预算文档化；mypy/flake8/black 通过",
+          "evidence": "database.py：URL.create 结构化 build_database_url（sqlite URL 与历史逐字一致实测）；sync QueuePool/async AsyncAdaptedQueuePool 分列；_pg_ssl_args 逐模式映射（disable=ssl False）；PRAGMA/自定义函数仅 sqlite 挂事件；init_db WAL 方言门控",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.3",
+          "title": "ORM 模型双方言化（typeof CHECK/sqlite+postgresql_where/notification 索引归位/DDL 对拍例外清单）",
+          "status": "done",
+          "acceptance": "PG create_all 建全表成功；SQLite DDL 编译对拍一致（例外清单：notification 索引）；ON CONFLICT 谓词双库可用",
+          "evidence": "torrents/models.py 双 where 索引 + CHECK 去方言化（typeof 守卫留链，ORM 中立形式供 PG）；notification uq 索引归位 ORM；40 表双方言 CreateTable/CreateIndex 编译 0 失败，partial index PG 侧 WHERE dr=0 实测生成",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.4",
+          "title": "依赖与镜像（requirements-lock.txt 同步 + 构建验证）",
+          "status": "done",
+          "acceptance": "requirements-lock.txt 同步；镜像构建后双驱动可用",
+          "evidence": "requirements.txt + requirements-lock.txt：asyncpg==0.31.0/psycopg2-binary==2.9.13（124 哈希，pip-compile aliyun 源生成，续行完整性校验通过）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.5",
+          "title": "启动入口统一（DB_TYPE 口径四处一致/PG 多 worker fail-fast）",
+          "status": "done",
+          "acceptance": "startup_guard/btdeck_startup.sh/健康检查/部署四处 DB_TYPE 口径一致；PG 多 worker fail-fast",
+          "evidence": "startup_guard.py resolve_database_url 改 DB_TYPE 口径（DATABASE_URL 废弃兼容+警告日志）；validate_worker_count/scheduler_scope PG 多 worker fail-fast（契约 §1）；btdeck_startup.sh detect_backend_type/check_worker_config 同步；测试更新 61/61",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.6",
+          "title": "模型集中注册（model_registry 共享模块）",
+          "status": "done",
+          "acceptance": "model_registry 单点注册；create_all 不依赖 API import 顺序（测试验证）",
+          "evidence": "app/core/model_registry.py 单点注册 40 表；alembic/env.py 归位复用",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "1.7",
+          "title": "PG 基线初始化（env.py 方言 URL/共享连接原子 stamp/导入未完成标记+拒启动/故障回滚测试）",
+          "status": "done",
+          "acceptance": "PG 空库启动自动建表+stamp 且重启走增量；建表后 stamp 前故障回滚测试通过；'导入未完成'拒启动；P1 结束 PG 模式可真正启动",
+          "evidence": "app/core/pg_baseline.py（空库判定/共享连接 Config.attributes[\"connection\"] 单事务 create_all+stamp/导入未完成标记/三状态）；env.py 方言 URL+空库手工升级守卫+共享连接优先；migration.py PG 分支接线；tests/core/test_pg_baseline.py 6 例（含 stamp 前故障回滚——pysqlite autocommit=False 使 DDL 入事务）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "2.1",
+          "title": "搜索正则双轨（共同子集+前置校验/请求级预算+≤0 终止）",
+          "status": "done",
+          "acceptance": "共同子集用例矩阵双库一致；PG 前置语法校验拦截子集外表达式（4xx）；剩余预算≤0 终止不发 SQL；超时恢复场景通过",
+          "evidence": "app/core/dialect_sql.py regex_match_expr（SQLite bt_regexp 零变化/PG ~ 与 ~*）+ validate_regex_pattern_for_dialect 共同子集校验（7 类不支持构造拒绝，请求期 4xx）；app/services/pg_search_runtime.py PgRegexBudget（SET LOCAL 剩余预算、≤0 终止禁写 0、QueryCanceled→rollback→RegexSearchTimeout 映射）；api/models/advanced_search.py 请求校验接线",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "2.2",
+          "title": "孤儿分组（契约测试先行/纯 SQL 表达式对拍）",
+          "status": "done",
+          "acceptance": "orphan_parent_dir 契约测试先行；PG 纯 SQL 表达式对拍一致（含反斜杠/末尾分隔符/NULL）",
+          "evidence": "orphan_file_service 两调用点换 orphan_parent_dir_expr（SQLite bt_orphan_parent_dir 零变化/PG translate+regexp_replace+coalesce）；两处运行时函数注册方言门控；tests/core/test_dialect_sql.py 父目录矩阵三实现对拍（Python×PG 语义模拟×SQLite 实连）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "2.3",
+          "title": "upsert/JSON 数组契约/日期/布尔清扫（基线刷新：+speed_sampler strftime 聚合/datetime JOIN/online=1 布尔、tracker.py 第 5 处 datetime-now；report_service 与 RSS 模块实测清洁免改造）",
+          "status": "done",
+          "acceptance": "JSON 按字段契约（orphan_ids_json 整数+PURGE NULL 合法/canonical_paths_json 字符串/active_deletion_ids literal）；裸标量匹配类型可包裹出报告，对象/错误类型拒绝；upsert 单点双库可用；seed 真实 PG 验证",
+          "evidence": "sqlite_insert 4 文件 4 用点→dialect_insert 分发；orphan_lease INSERT OR IGNORE→ON CONFLICT DO NOTHING；datetime(now) 6 处→CURRENT_TIMESTAMP；default_templates is_system_default=TRUE；speed_sampler 聚合 SQL 双版本（date_trunc 时间戳直比/online 真值）+ enabled=TRUE；JSON 展开 2 服务→json_array_values/json_array_values_from_literal；tracker_message_logger 裸 SQL upsert 核验 PG 兼容（idx_tracker_msg_unique 链+ORM 双在）零改动",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "2.4",
+          "title": "LIKE 大小写语义统一（PG 同一 A–Z→a–z 折叠函数+各自 LIKE 模式，非 ILIKE 非 =）",
+          "status": "done",
+          "acceptance": "PG 折叠表达式双 collation（C/en_US.UTF-8）用例通过；autoescape 保留；非 ASCII 登记差异；NULL/否定条件语义不变",
+          "evidence": "advanced_search 三字面量匹配+tag token→ci_contains/ci_startswith/ci_endswith；torrent_helpers 5 组原始 like×2→ci_like（通配符语义保留）；orphan_file_service path_like/path_prefix→ci_like（转义保留）；tests 断言 SQLite 路径与原生渲染逐字一致",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "2.5",
+          "title": "启动链路与运维诊断方言门控",
+          "status": "done",
+          "acceptance": "PG 启动无 WAL 误报；诊断工具不触碰 PRAGMA",
+          "evidence": "lifecycle run_wal_snapshot_loop 方言门控（PG 跳过）；ratio_data_diagnostics.inspect_ratio_migration PG 返回 unavailable；sync_observability WAL 探测由循环门控覆盖",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "3.1",
+          "title": "迁移编排集成（migrate_database 方言分支/CLI 守卫/ghost 仅 sqlite）",
+          "status": "done",
+          "acceptance": "PG 空库手工 alembic upgrade 被守卫拒绝并提示合法入口；ghost 仅 sqlite；SQLite 链零变化",
+          "evidence": "守卫提取至 pg_baseline.guard_manual_upgrade_on_empty_db（env.py 调用，baseline_flag 豁免）；5 个单测（空库拒绝/豁免/versioned/有表无版本/sqlite 不触碰）；ghost 仅 sqlite 由 _migrate_database_pg 内联未知版本告警实现",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "3.2",
+          "title": "迁移守卫适配（备份策略方言化）",
+          "status": "done",
+          "acceptance": "PG 迁移流程不触碰 SQLite 备份链；SQLite 备份链回归通过",
+          "evidence": "_migrate_database_pg 验收测试：未知/ghost 版本告警不降级返回 True 且不被 stamp；备份 spy 断言不调用（PG 外部职责）；head 版本 no-op；迁移链零变化由 test_db_migration.py 30 例全绿保证",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "3.3",
+          "title": "双方言规范与治理文档修订（create_all 白名单）",
+          "status": "done",
+          "acceptance": "双方言规范落地（含 create_all 白名单、最低可降级 revision）；test_db_migration.py 通过",
+          "evidence": "docs/constraints/database-migration.md：create_all 禁令增 PG squash 冷启动白名单例外（仅 pg_baseline+model_registry 路径）；新增\"双方言迁移编写规范\"七条（batch_alter_table/方言分支收口/partial index 双 where/数据操作 seed 覆盖/PG 最低可降级 revision=c9e0f1a2b3c4/初始化入口约束/基线对拍门禁）；测试锚点（HEAD 声明）保持完整",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "3.4",
+          "title": "基线对拍（语义级清单+允许差异登记，CI 门禁）",
+          "status": "done",
+          "acceptance": "语义级对拍 CI 门禁通过（PG 基线↔链 head，允许差异登记表）",
+          "evidence": "tests/core/test_baseline_schema_parity.py 语义级对拍 CI 门禁（链 head SQLite 实库↔PG 基线 metadata；表/列/可空/PK/索引含 partial 谓词/CHECK/外键；typeof 守卫等价归一）；门禁首跑即抓出并修复 4 类真实漂移：orphan_hardlink 两表模型未注册、orphan_current_candidate 缺 2 索引、refresh_tokens 列可空性与 id 冗余索引、search/setting_templates 索引名 ix_*↔idx_* 前缀漂移——全部归位 ORM",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "4.1",
+          "title": "SQLite→PG 迁移工具（三状态规则/停写快照分离/sequence 校准含空表分支与 speed 两表/只读窗口机制）",
+          "status": "done",
+          "acceptance": "三状态规则可用（全新/未完成恢复/拒绝）；最终快照前停写直至切换完成；行数+主键集合+摘要核对一致；sequence 校准含空表分支；非适用字段 NULL 记录通过预检",
+          "evidence": "backend/scripts/migrate_sqlite_to_pg.py：precheck（源版本仅工具 head/JSON 按字段契约含裸标量 auto-wrap 与对象恒拒/布尔取值/日期格式/软删同键报告）→ 共享基线（三状态：全新/未完成校验 ID+摘要+检查点可 --resume/已有数据拒绝退出码 2）→ 依赖序分批导入（row_transform bool/datetime + 单表单事务检查点）→ sequence 校准（23 表，空表 setval(1,false)）→ 行数+主键集合对账 → 切换指引（离线窗口）；12 个单元测试 + 真 PG 端到端（导入/核对/校准后新增 id=8 接续/目标复用拒绝全过）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "4.2",
+          "title": "部署（PG override 文件机制/三组合矩阵）",
+          "status": "done",
+          "acceptance": "override 文件机制：默认 SQLite 不依赖 PG 服务；外部 PG 不拉起内置；三组合矩阵通过",
+          "evidence": "docker-compose.postgres.yml override 文件（postgres:16-alpine + healthcheck + backend DB 注入 + depends_on service_healthy；DB_PASSWORD 缺失 :? fail-fast；docker compose config 实测三组合：默认 SQLite 不依赖 PG/内置 PG/外部不拉起）；docs/database-setup.md（配置表/两形态/首启行为/迁移指引）",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        },
+        {
+          "id": "4.3",
+          "title": "强制 PG CI（七类覆盖+SQLite 全量回归）",
+          "status": "done",
+          "acceptance": "强制 PG CI 七类覆盖全绿；SQLite 全量回归零退化（约 5271 collected）",
+          "evidence": "tests/pg_integration/test_pg_smoke.py 9 例（门控 DB_TYPE=postgresql+admin DSN，每用例独占新库）+ regression.yml pg-integration job（postgres:16 service 容器强制运行）；本地真 PG 16 实测 9/9 全过：空库基线/重复幂等/守卫拒绝、同步+异步查询、partial index upsert（软删共存+仲裁）、LIKE 折叠（含非 ASCII 登记差异断言）、正则预算取消+rollback+≤0 终止、JSON 占用排除+父目录分组（PG 表达式真实执行：反斜杠归一 C:\\media→C:/media）、租约 DO NOTHING、迁移工具端到端",
+          "acceptance_evidence": "2026-10-03：独立验收矩阵及对应测试见 PLANS/postgresql-acceptance.md；在原实现基础上补齐缺陷修复与验证。"
+        }
+      ],
+      "acceptance_review": {
+        "date": "2026-10-03",
+        "status": "passed",
+        "report": "PLANS/postgresql-acceptance.md",
+        "evidence": "2026-10-03 独立验收通过：SQLite 全量5495 passed/46 skipped；最终核心68 passed；真实PG+TLS 29 passed；无TLS五模式5 passed；mypy/black/flake8/架构、前端typecheck/lint/build、compose三组合、实际Python3.12镜像启动HTTP200、init.sh通过。详见 PLANS/postgresql-acceptance.md；未提交/未发布，正式产物须干净提交重建。"
+      }
     }
   ],
   "tasks": [

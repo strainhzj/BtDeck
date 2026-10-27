@@ -248,6 +248,15 @@ def inspect_ratio_migration(
     sample_limit: int = 20,
 ) -> Dict[str, Any]:
     """Build an evidence report without modifying the database or its backups."""
+    # v1.0.8 任务2.5：SQLite 专属只读运维诊断（PRAGMA integrity_check 等），
+    # PG 方言下显式返回不可用（契约 §2；PG 备份验证由外部机制负责，任务3.2）
+    from app.database import DIALECT
+
+    if DIALECT != "sqlite":
+        return {
+            "status": "unavailable",
+            "error": "ratio migration diagnostics are SQLite-only (DB_TYPE != sqlite)",
+        }
     path = Path(database_path)
     database = inspect_sqlite_file(path)
     report: Dict[str, Any] = {

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from datetime import datetime
 import re
 
+from app.core.dialect_sql import validate_regex_pattern_for_dialect
 from app.contracts.advanced_search import (
     FRONTEND_TO_BACKEND_OPERATOR,
     MAX_REGEX_CONDITIONS,
@@ -168,6 +169,9 @@ def _normalize_condition_value(field: str, operator: str, value: Any) -> Any:
         if not isinstance(case_sensitive, bool):
             raise ValueError("regex caseSensitive must be boolean")
         validate_regex_pattern(pattern, case_sensitive=case_sensitive)
+        # v1.0.8 任务2.1：双方言共同子集前置校验（SQLite 全语法不设限；
+        # PG 拒绝 ARE 不支持构造，请求期 4xx 而非执行期语义分歧，契约 §4.2）
+        validate_regex_pattern_for_dialect(pattern)
         return {"pattern": pattern, "caseSensitive": case_sensitive}
     if operator == "last_days":
         value_dict = _object_value(value, operator="last_days")

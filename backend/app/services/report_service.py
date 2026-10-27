@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dialect_sql import timestamp_parameter
 from app.core.runtime_context import RuntimeContext
 from app.downloader.torrent_stats_cache import DOWNLOADING_STATES, PAUSED_STATES, SEEDING_STATES
 
@@ -893,9 +894,9 @@ async def get_speed_history(
     first_sample = _as_dt(first_result.scalar())
 
     # 单条参数化 SQL（BTD305 合规：不做字符串拼接；可选下载器过滤用
-    # ``:dl_id IS NULL OR`` 谓词表达，参数不参与 SQL 文本）
+    # ``CAST(:dl_id AS VARCHAR) IS NULL OR`` 谓词表达，参数不参与 SQL 文本）
     params: Dict[str, Any] = {
-        "start": window_start.strftime("%Y-%m-%d %H:%M:%S"),
+        "start": timestamp_parameter(window_start),
         "dl_id": downloader_id,
     }
 
@@ -905,7 +906,7 @@ async def get_speed_history(
         raw_sql = text(
             "SELECT downloader_id, sampled_at, download_speed, upload_speed, online "
             "FROM downloader_speed_sample "
-            "WHERE sampled_at >= :start AND (:dl_id IS NULL OR downloader_id = :dl_id) "
+            "WHERE sampled_at >= :start AND (CAST(:dl_id AS VARCHAR) IS NULL OR downloader_id = :dl_id) "
             "ORDER BY sampled_at"
         )
         for row in (await db.execute(raw_sql, params)).fetchall():
@@ -922,7 +923,7 @@ async def get_speed_history(
             "SELECT downloader_id, stat_hour, avg_download_speed, max_download_speed, "
             "avg_upload_speed, max_upload_speed, sample_count, online_count "
             "FROM downloader_speed_hourly "
-            "WHERE stat_hour >= :start AND (:dl_id IS NULL OR downloader_id = :dl_id) "
+            "WHERE stat_hour >= :start AND (CAST(:dl_id AS VARCHAR) IS NULL OR downloader_id = :dl_id) "
             "ORDER BY stat_hour"
         )
         for row in (await db.execute(hourly_sql, params)).fetchall():
@@ -938,19 +939,20 @@ async def get_speed_history(
         # raw 尾段拼接：定位 hourly 最大 stat_hour H → raw >= H+1h；无 hourly → raw 全窗口
         max_hour_result = await db.execute(
             text(
-                "SELECT MAX(stat_hour) FROM downloader_speed_hourly " "WHERE (:dl_id IS NULL OR downloader_id = :dl_id)"
+                "SELECT MAX(stat_hour) FROM downloader_speed_hourly "
+                "WHERE (CAST(:dl_id AS VARCHAR) IS NULL OR downloader_id = :dl_id)"
             ),
             params,
         )
         max_hour = _as_dt(max_hour_result.scalar())
         if max_hour is not None:
-            tail_start = (max_hour + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+            tail_start = timestamp_parameter(max_hour + timedelta(hours=1))
         else:
             tail_start = params["start"]
         raw_sql = text(
             "SELECT downloader_id, sampled_at, download_speed, upload_speed, online "
             "FROM downloader_speed_sample "
-            "WHERE sampled_at >= :start AND (:dl_id IS NULL OR downloader_id = :dl_id) "
+            "WHERE sampled_at >= :start AND (CAST(:dl_id AS VARCHAR) IS NULL OR downloader_id = :dl_id) "
             "ORDER BY sampled_at"
         )
         for row in (await db.execute(raw_sql, {**params, "start": tail_start})).fetchall():

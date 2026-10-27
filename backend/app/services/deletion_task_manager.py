@@ -12,7 +12,9 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set
 from enum import Enum
 from dataclasses import dataclass, field
 
-from sqlalchemy import String, cast as sql_cast, func, literal, select
+from sqlalchemy import String, cast as sql_cast, select
+
+from app.core.dialect_sql import json_array_values_from_literal
 
 
 class TaskStatus(str, Enum):
@@ -316,6 +318,7 @@ def build_active_deletion_exclusion(column: Any) -> Optional[Any]:
         return None
 
     payload = json.dumps(sorted(active_ids), ensure_ascii=False)
-    values = func.json_each(literal(payload)).table_valued("value").alias("active_deletion_ids")
+    # v1.0.8 任务2.3：内联 literal 经方言分发（SQLite json_each / PG cast+jsonb_array_elements_text）
+    values = json_array_values_from_literal(payload, "active_deletion_ids")
     active_ids_query = select(sql_cast(values.c.value, String))
     return column.notin_(active_ids_query)

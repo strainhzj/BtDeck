@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 from sqlalchemy import Column, MetaData, String, Table, and_, asc, desc, false, func, or_
 from sqlalchemy.orm import Session
 
+from app.core.dialect_sql import ci_like
 from app.torrents.models import TorrentInfo, TrackerInfo
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.reannounce_config_operations import extract_domains_from_trackers
@@ -105,18 +106,18 @@ def get_torrent_infos(
 
     if downloader_name_like:
         like_pattern = f"%{downloader_name_like}%"
-        query = query.filter(TorrentInfo.downloader_name.like(like_pattern))
-        count_query = count_query.filter(TorrentInfo.downloader_name.like(like_pattern))
+        query = query.filter(ci_like(TorrentInfo.downloader_name, like_pattern))
+        count_query = count_query.filter(ci_like(TorrentInfo.downloader_name, like_pattern))
 
     if name_like:
         like_pattern = f"%{name_like}%"
-        query = query.filter(TorrentInfo.name.like(like_pattern))
-        count_query = count_query.filter(TorrentInfo.name.like(like_pattern))
+        query = query.filter(ci_like(TorrentInfo.name, like_pattern))
+        count_query = count_query.filter(ci_like(TorrentInfo.name, like_pattern))
 
     if save_path_like:
         like_pattern = f"%{save_path_like}%"
-        query = query.filter(TorrentInfo.save_path.like(like_pattern))
-        count_query = count_query.filter(TorrentInfo.save_path.like(like_pattern))
+        query = query.filter(ci_like(TorrentInfo.save_path, like_pattern))
+        count_query = count_query.filter(ci_like(TorrentInfo.save_path, like_pattern))
 
     if size_min is not None:
         size_min_bytes = parse_size_string(size_min)
@@ -156,13 +157,13 @@ def get_torrent_infos(
 
     if tags_like:
         like_pattern = f"%{tags_like}%"
-        query = query.filter(TorrentInfo.tags.like(like_pattern))
-        count_query = count_query.filter(TorrentInfo.tags.like(like_pattern))
+        query = query.filter(ci_like(TorrentInfo.tags, like_pattern))
+        count_query = count_query.filter(ci_like(TorrentInfo.tags, like_pattern))
 
     if category_like:
         like_pattern = f"%{category_like}%"
-        query = query.filter(TorrentInfo.category.like(like_pattern))
-        count_query = count_query.filter(TorrentInfo.category.like(like_pattern))
+        query = query.filter(ci_like(TorrentInfo.category, like_pattern))
+        count_query = count_query.filter(ci_like(TorrentInfo.category, like_pattern))
 
     # 状态与 Tracker 是种子行级属性：若参与同内容分组候选判定，组内仅剩一条
     # 错误/命中任务时整个 (name,size) 组会因“不同 Hash 数 < 2”被筛塌，与功能

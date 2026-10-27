@@ -12,7 +12,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, Optional
-from sqlalchemy import String, Integer, Boolean, Text, DateTime
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import serialize_utc_datetime
@@ -36,6 +36,19 @@ class Notification(Base):
     """
 
     __tablename__ = "notification"
+
+    # 索引归位 ORM（v1.0.8 任务1.3，审查 W3）：原仅存在于迁移链 b075727f7182，
+    # PG squash 基线 create_all 会漏建且 autogenerate 产生幻影 diff；双方言 where 声明。
+    # SQLite 存量库已由链建索引（此处为声明归位，不改变存量 schema）。
+    __table_args__ = (
+        Index(
+            "uq_notification_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            sqlite_where=text("dedupe_key IS NOT NULL"),
+            postgresql_where=text("dedupe_key IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
     type: Mapped[str] = mapped_column(

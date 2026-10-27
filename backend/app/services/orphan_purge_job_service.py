@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import Integer, String, case, cast as sql_cast, func, select, true, update
+from sqlalchemy import Integer, String, cast as sql_cast, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.core.platform_capabilities import require_capability
+from app.core.dialect_sql import json_array_values
 from app.models.orphan_purge_job import OrphanPurgeJob
 from app.services.notification_service import NotificationService
 from app.services.orphan_stats_cache import orphan_stats_cache
@@ -36,9 +37,13 @@ NOTIFICATION_ROUTE = "/orphan-files/index"
 
 
 def _active_job_json_values(column: Any, alias_name: str) -> Any:
-    """展开合法 JSON 数组；坏数据按空数组处理。"""
-    json_source = case((func.json_valid(column) == 1, column), else_="[]")
-    return func.json_each(json_source).table_valued("value").alias(alias_name)
+    """展开合法 JSON 数组。
+
+    v1.0.8 任务2.3：经方言分发单点——SQLite 保持 json_valid 守卫+json_each
+    （坏数据→空集，历史宽容行为）；PG cast 即守卫（契约违规 fail-fast，
+    契约 §4.3 按字段定契约：orphan_ids_json 整数/canonical_paths_json 字符串）。
+    """
+    return json_array_values(column, alias_name)
 
 
 def active_cleanup_orphan_ids_query() -> Any:

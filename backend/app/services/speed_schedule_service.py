@@ -49,7 +49,7 @@ class SpeedScheduleService:
                    ul_speed_limit, ul_speed_unit, days_of_week
             FROM speed_schedule_rules
             WHERE downloader_setting_id = :setting_id
-              AND enabled = 1
+              AND enabled = TRUE
               AND start_time <= :current_time
               AND end_time >= :current_time
             ORDER BY sort_order ASC, created_at ASC

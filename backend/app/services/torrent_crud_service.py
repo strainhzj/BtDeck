@@ -599,7 +599,7 @@ def delete_torrent_info(db: Session, info_id: str, downloader_id: str) -> bool:
     db_torrent.update_by = "admin"
     # 删除tracker表数据
     db.execute(
-        text("update tracker_info set update_time=datetime('now'),dr=1 where torrent_info_id =:info_id;"),
+        text("update tracker_info set update_time=CURRENT_TIMESTAMP,dr=1 where torrent_info_id =:info_id;"),
         {"info_id": info_id},
     )
     db.commit()

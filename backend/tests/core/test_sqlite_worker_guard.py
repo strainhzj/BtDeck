@@ -114,10 +114,19 @@ class TestValidateWorkerCount:
         assert "请改为 1" in msg
         assert "不能通过启动多个 SQLite Worker 缓解接口卡顿" in msg
 
-    @pytest.mark.parametrize("backend", [BACKEND_POSTGRES, BACKEND_MYSQL, BACKEND_OTHER])
+    @pytest.mark.parametrize("backend", [BACKEND_MYSQL, BACKEND_OTHER])
     @pytest.mark.parametrize("workers", [2, 4])
     def test_non_sqlite_backends_not_blocked(self, backend, workers):
         validate_worker_count(backend, workers)  # 不应被 SQLite 检查误杀
+
+    @pytest.mark.parametrize("workers", [2, 4])
+    def test_postgres_multi_worker_now_blocked(self, workers):
+        """v1.0.8 契约 §1：PG 单实例单 worker 交付边界，多 worker fail-fast（原仅告警已废弃）。"""
+        with pytest.raises(StartupGuardError, match="PostgreSQL 后端当前仅支持单 Worker"):
+            validate_worker_count(BACKEND_POSTGRES, workers)
+
+    def test_postgres_single_worker_passes(self):
+        validate_worker_count(BACKEND_POSTGRES, 1)  # 不应抛异常
 
     def test_non_integer_worker_count_fails(self):
         with pytest.raises(StartupGuardError, match="WORKERS"):
@@ -125,9 +134,24 @@ class TestValidateWorkerCount:
 
 
 class TestResolveDatabaseUrl:
-    """DATABASE_URL 实际生效优先级解析。"""
+    """DB_TYPE 唯一方言判据 + DATABASE_URL 废弃兼容路径（v1.0.8 契约 §2.1）。"""
 
-    def test_database_url_precedence(self):
+    def test_db_type_postgresql_wins(self):
+        url = resolve_database_url(
+            {"DB_TYPE": "postgresql", "DB_HOST": "h", "DB_PORT": "5432", "DB_USER": "u", "DB_PASSWORD": "p", "DB_NAME": "d"}
+        )
+        assert url == "postgresql://u:p@h:5432/d"
+
+    def test_db_type_alias_pg_normalized(self):
+        url = resolve_database_url({"DB_TYPE": "pg", "DB_HOST": "h", "DB_USER": "u"})
+        assert url.startswith("postgresql://u:")
+
+    def test_db_type_sqlite_uses_database_path(self):
+        url = resolve_database_url({"DB_TYPE": "sqlite", "DATABASE_PATH": "/tmp/a.db"})
+        assert url == "sqlite:////tmp/a.db"
+
+    def test_database_url_deprecated_fallback(self):
+        """DB_TYPE 未设且 DATABASE_URL 已设：废弃兼容路径仍生效（防存量脚本失效）。"""
         url = resolve_database_url({"DATABASE_URL": "postgresql://x/db", "DATABASE_PATH": "/tmp/a.db"})
         assert url == "postgresql://x/db"
 
@@ -162,9 +186,19 @@ class TestValidateFromEnv:
             validate_from_env({"WORKERS": "0"})
 
     def test_postgresql_url_not_blocked(self):
-        backend, workers, _ = validate_from_env({"DATABASE_URL": "postgresql://user:pass@host/db", "WORKERS": "2"})
+        """PG 单 worker 放行；多 worker 由 validate_worker_count 拦（契约 §1）。"""
+        backend, workers, _ = validate_from_env(
+            {"DB_TYPE": "postgresql", "DB_HOST": "host", "DB_USER": "user", "DB_PASSWORD": "pass", "WORKERS": "1"}
+        )
         assert backend == BACKEND_POSTGRES
-        assert workers == 2
+        assert workers == 1
+
+    def test_postgresql_multi_worker_env_fails(self):
+        """v1.0.8 契约 §1：PG 多 worker fail-fast。"""
+        with pytest.raises(StartupGuardError, match="仅支持单 Worker"):
+            validate_from_env(
+                {"DB_TYPE": "postgresql", "DB_HOST": "host", "DB_USER": "user", "DB_PASSWORD": "pass", "WORKERS": "2"}
+            )
 
     def test_mysql_url_not_blocked(self):
         backend, workers, _ = validate_from_env({"DATABASE_URL": "mysql+pymysql://u:p@h/db", "WORKERS": "4"})
@@ -192,8 +226,9 @@ class TestValidateSchedulerScope:
             validate_scheduler_scope(BACKEND_SQLITE, 2)
 
     def test_postgres_multi_worker_leader_not_implemented(self):
-        msg = validate_scheduler_scope(BACKEND_POSTGRES, 2)
-        assert "Leader 未实现" in msg
+        """v1.0.8 契约 §1：PG 多 worker 纵深防御亦 fail-fast（原告警口径已废弃）。"""
+        with pytest.raises(StartupGuardError, match="单实例单 worker"):
+            validate_scheduler_scope(BACKEND_POSTGRES, 2)
 
     def test_postgres_single_worker_ok(self):
         validate_scheduler_scope(BACKEND_POSTGRES, 1)  # 不应抛异常

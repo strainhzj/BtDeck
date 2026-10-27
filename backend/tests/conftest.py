@@ -93,7 +93,16 @@ def isolated_application_database():
     if configured != _TEST_DATABASE_PATH or configured == _UNSAFE_DEVELOPMENT_DB:
         raise RuntimeError(f"pytest 数据库隔离失效: {configured}")
 
-    command.upgrade(_build_alembic_config(str(configured)), "head")
+    from app.core.config import settings
+
+    if settings.DATABASE_DIALECT == "postgresql":
+        # v1.0.8：PG 方言走合法编排入口（空库基线/head no-op）——手工 command.upgrade
+        # 会被 env.py 空库守卫拒绝（契约 §3 规则 6，tests/pg_integration 场景）
+        from app.core.migration import _migrate_database_pg
+
+        _migrate_database_pg()
+    else:
+        command.upgrade(_build_alembic_config(str(configured)), "head")
     yield
 
 

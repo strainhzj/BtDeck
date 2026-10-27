@@ -1,3 +1,5 @@
+from sqlalchemy import text
+
 # -*- coding: utf-8 -*-
 """
 搜索模板 ORM 模型（第四轨归位）
@@ -20,7 +22,7 @@ Column(JSON) 读取时会二次解析报错。
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Index, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -47,26 +49,40 @@ class SearchTemplate(Base):
     """
 
     __tablename__ = "search_templates"
+    # v1.0.8 任务3.4 对拍归位：显式索引名对齐迁移链（95ef8bd8b47a 用 idx_* 前缀；
+    # 列级 index=True 生成 ix_* 默认名，与链索引名不一致 → 基线/链索引名漂移）
+    __table_args__ = (
+        Index("idx_search_templates_user_id", "user_id"),
+        Index("idx_search_templates_is_public", "is_public"),
+        Index("idx_search_templates_preset_key", "preset_key"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="模板唯一标识（UUID）")
-    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="所属用户 ID")
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="所属用户 ID")
     name: Mapped[str] = mapped_column(String(100), nullable=False, comment="模板名称")
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="模板描述")
     conditions: Mapped[str] = mapped_column(Text, nullable=False, comment="查询条件（JSON 字符串）")
     preset_key: Mapped[Optional[str]] = mapped_column(
         String(64),
         nullable=True,
-        index=True,
         comment="系统预设稳定身份键（用户自定义恒为 NULL，不做唯一约束——幂等由 init 逻辑保证）",
     )
     is_default: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义"
+        Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义", server_default="0"
     )
-    is_public: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True, comment="是否公开可见")
-    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="使用次数")
-    created_time: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, comment="创建时间")
+    is_public: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="是否公开可见", server_default="0"
+    )
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="使用次数", server_default="0")
+    created_time: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, default=datetime.utcnow, comment="创建时间", server_default=text("CURRENT_TIMESTAMP")
+    )
     updated_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间"
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="更新时间",
+        server_default=text("CURRENT_TIMESTAMP"),
     )
 
     def __init__(

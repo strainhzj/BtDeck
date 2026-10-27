@@ -55,16 +55,25 @@ ensure_log_dir() {
     fi
 }
 
-# ==== SQLite 单 Worker 启动约束（W2-4 / P0-06，fail-fast）====
-# 解析后端类型：DATABASE_URL 环境变量优先；未设置时按默认文件型 SQLite（app.db）处理。
+# ==== 单 Worker 启动约束（W2-4 / P0-06 + v1.0.8 契约 §1，fail-fast）====
+# 解析后端类型：DB_TYPE 环境变量优先（v1.0.8 唯一方言判据，契约 §2.1）；
+# DB_TYPE 未设时兼容旧 DATABASE_URL scheme 判别（废弃路径）；均未设按默认 SQLite 文件库。
 detect_backend_type() {
-    local url="${DATABASE_URL:-}"
-    case "$url" in
-        sqlite* | sqlite3*) echo "sqlite" ;;
-        postgres* | postgresql*) echo "postgres" ;;
-        mysql* | mariadb*) echo "mysql" ;;
-        "") echo "sqlite" ;;  # 未配置 DATABASE_URL 即默认 SQLite 文件库
-        *) echo "other" ;;
+    local db_type="${DB_TYPE:-}"
+    db_type="${db_type,,}"  # 转小写
+    case "$db_type" in
+        postgresql | postgres | pg) echo "postgres" ;;
+        sqlite) echo "sqlite" ;;
+        *)
+            local url="${DATABASE_URL:-}"
+            case "$url" in
+                sqlite* | sqlite3*) echo "sqlite" ;;
+                postgres* | postgresql*) echo "postgres" ;;
+                mysql* | mariadb*) echo "mysql" ;;
+                "") echo "sqlite" ;;  # 未配置即默认 SQLite 文件库
+                *) echo "other" ;;
+            esac
+            ;;
     esac
 }
 
@@ -76,11 +85,21 @@ check_worker_config() {
     if [ "$backend" = "sqlite" ] && [ "$WORKERS" -ne 1 ]; then
         log_error "========================================"
         log_error "启动约束校验失败：SQLite 后端禁止多 Worker 启动"
-        log_error "当前 DATABASE_URL=${DATABASE_URL:-<未设置，默认 SQLite 文件库>}，WORKERS=$WORKERS"
+        log_error "当前 DB_TYPE=${DB_TYPE:-<未设置，默认 SQLite>}，WORKERS=$WORKERS"
         log_error "SQLite 文件库的写锁治理与资源准入（db_write_scope / 信号量）均为进程内对象，"
         log_error "多 Worker 会使锁与准入失效并放大写锁争用，且各进程都会各自启动 scheduler；"
         log_error "不能通过启动多个 SQLite Worker 缓解接口卡顿。请将 WORKERS 改为 1 后重启。"
-        log_error "如确需多 Worker，请先切换 PostgreSQL 后端（scheduler Leader 选举另行实现）。"
+        log_error "========================================"
+        exit 1
+    fi
+    # v1.0.8 契约 §1：PG 单实例单 worker 交付边界，多 worker fail-fast
+    if [ "$backend" = "postgres" ] && [ "$WORKERS" -ne 1 ]; then
+        log_error "========================================"
+        log_error "启动约束校验失败：PostgreSQL 后端当前仅支持单 Worker"
+        log_error "当前 DB_TYPE=$DB_TYPE，WORKERS=$WORKERS"
+        log_error "v1.0.8 交付边界为单应用实例单 worker（docs/postgresql-contract.md §1）："
+        log_error "scheduler Leader 选举与多实例写入治理未实现，多 Worker 会重复执行定时任务。"
+        log_error "请将 WORKERS 改为 1 后重启；多实例扩展另行立项。"
         log_error "========================================"
         exit 1
     fi

@@ -44,9 +44,15 @@ class OrphanPurgeJob(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True, comment="任务提交端 IP（后台执行时写入审计日志）"
     )
-    total_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="待处理数量")
-    purged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="成功删除数量")
-    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="失败数量")
+    total_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="待处理数量", server_default="0"
+    )
+    purged_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="成功删除数量", server_default="0"
+    )
+    failed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="失败数量", server_default="0"
+    )
     total_size: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0", comment="成功处理的文件总大小"
     )

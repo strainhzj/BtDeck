@@ -11,7 +11,7 @@ import uuid
 import json
 import logging
 
-from sqlalchemy import String, Text, DATETIME
+from sqlalchemy import DateTime, String, Text  # v1.0.8：DATETIME→DateTime（同上，PG 渲染 TIMESTAMP）
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.core.json_parser import safe_json_parse_with_validator
@@ -47,13 +47,13 @@ class TorrentAuditLog(Base):
 
     # 操作信息
     operator: Mapped[Optional[str]] = mapped_column(String(50), index=True, comment="操作人")
-    operation_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, index=True, comment="操作时间")
+    operation_time: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True, comment="操作时间")
     operation_result: Mapped[Optional[str]] = mapped_column(String(20), comment="操作结果：success/failed/partial")
     error_message: Mapped[Optional[str]] = mapped_column(Text, comment="错误信息（如果失败）")
 
     # 关联信息
     downloader_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, comment="下载器ID")
-    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="日志创建时间")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="日志创建时间")
 
     # 冗余字段（用于列表显示和搜索，避免关联查询）
     torrent_name: Mapped[Optional[str]] = mapped_column(

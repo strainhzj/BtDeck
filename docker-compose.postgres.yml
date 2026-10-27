@@ -1,0 +1,56 @@
+# BtDeck PostgreSQL 部署形态（v1.0.8 双数据库架构）
+#
+# 用法（PG override 文件机制——契约 docs/postgresql-contract.md §2.1 与 PLANS/v1.0.8.md 任务4.2）：
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# 三种配置组合（互斥，验收矩阵见任务4.2）：
+#   1. 默认 SQLite：仅 docker-compose.yml（本文件不参与——不依赖 PG 服务）
+#   2. 内置 PG：上方命令（本文件启用 postgres 服务 + backend 切 DB_TYPE）
+#   3. 外部 PG：仅设 DB_TYPE/DB_* 环境变量（不引入本文件——不拉起内置数据库）
+#
+# 注意：
+# - PG 模式强制 WORKERS=1（单实例单 worker 交付边界，契约 §1；多 worker fail-fast）
+# - PG 16+（JSON 守卫依赖 IS JSON 谓词，契约 §1）
+# - 首次启动：PG 空库自动走 squash 基线（建全表 + stamp，不 seed 前置）；
+#   从 SQLite 迁移存量数据用 backend/scripts/migrate_sqlite_to_pg.py（先停写）
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: btdeck-postgres
+    environment:
+      # 凭据从 .env 读取（示例见 .env.example PG 段）；POSTGRES_DB/USER 与 backend 的 DB_* 对齐
+      - POSTGRES_USER=${DB_USER:-btdeck}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-btdeck}
+      # 时区对齐应用 TZ=UTC 单基准（CURRENT_TIMESTAMP 语义一致性，任务2.3）
+      - TZ=UTC
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-btdeck} -d ${DB_NAME:-btdeck}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - btdeck_network
+    restart: unless-stopped
+
+  backend:
+    environment:
+      # ===== v1.0.8 双数据库：切换 PostgreSQL（唯一方言判据 DB_TYPE，契约 §2.1）=====
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-btdeck}
+      - DB_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-btdeck}
+      # 连接池（sync QueuePool / async AsyncAdaptedQueuePool；契约 §2.2 连接预算）
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+      # TLS 默认 prefer（disable/prefer/require/verify-ca/verify-full，契约 §2.3）
+      - DB_SSLMODE=${DB_SSLMODE:-prefer}
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -75,15 +75,31 @@ def _parse_bool(raw: str) -> bool:
 
 
 def resolve_database_url(env: Optional[Mapping[str, str]] = None) -> str:
-    """按仓库实际生效优先级解析 DATABASE_URL。
+    """按仓库实际生效优先级解析数据库 URL（v1.0.8 任务1.5，契约 §2.1）。
 
-    1. DATABASE_URL 环境变量（未来 PostgreSQL/MySQL 等后端入口）；
-    2. sqlite:///DATABASE_PATH（与 app/database.py / alembic/env.py 同源）；
+    1. ``DB_TYPE`` 环境变量（**唯一方言判据**，与 settings.DATABASE_DIALECT 同源）：
+       postgresql → 由 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME 拼接探测用 URL；
+       sqlite → sqlite:///DATABASE_PATH（与 app/database.py / alembic/env.py 同源）；
+    2. DB_TYPE 未设且 DATABASE_URL 已设：废弃兼容路径（detect_backend 从 URL scheme 判别，
+       部署不再推荐，仅防存量脚本失效）；
     3. 均未配置：返回空串（detect_backend 按默认 SQLite 文件库处理）。
     """
     environ = env if env is not None else os.environ
+    db_type = (environ.get("DB_TYPE") or "").strip().lower()
+    if db_type in ("postgresql", "postgres", "pg"):
+        auth_user = environ.get("DB_USER", "btdeck")
+        auth_pass = environ.get("DB_PASSWORD", "")
+        host = environ.get("DB_HOST", "localhost")
+        port = environ.get("DB_PORT", "5432")
+        name = environ.get("DB_NAME", "btdeck")
+        return f"postgresql://{auth_user}:{auth_pass}@{host}:{port}/{name}"
+    if db_type == "sqlite":
+        db_path = environ.get("DATABASE_PATH", "")
+        return f"sqlite:///{db_path}" if db_path else ""
+    # DB_TYPE 未显式设置：废弃兼容路径（仅 DATABASE_URL 存量脚本）
     url = environ.get("DATABASE_URL", "")
     if url:
+        logger.warning("DATABASE_URL 已废弃（v1.0.8 契约 §2.1）：请改用 DB_TYPE 配置数据源")
         return url
     db_path = environ.get("DATABASE_PATH", "")
     if db_path:
@@ -92,10 +108,13 @@ def resolve_database_url(env: Optional[Mapping[str, str]] = None) -> str:
 
 
 def validate_worker_count(database_backend: str, worker_count: int, scheduler_enabled: bool = True) -> None:
-    """核心校验：SQLite 后端 + worker_count != 1 即失败（错误信息可操作）。
+    """核心校验：SQLite 与 PostgreSQL 后端均要求单 Worker（v1.0.8 契约 §1）。
 
-    scheduler_enabled 保留为参数：当 scheduler 关闭时多 Worker 仍违反锁治理约束，
-    因此本校验不因 scheduler 开关而放宽；参数仅供启动清单日志使用。
+    - SQLite + 多 Worker：锁治理失效（历史约束 W2-4）；
+    - PostgreSQL + 多 Worker：本期交付边界为单实例单 worker（契约 §1），
+      scheduler Leader 选举未实现，多 worker 会重复执行定时任务——fail-fast；
+    scheduler_enabled 保留为参数：多 Worker 违反锁治理约束与 scheduler 单实例约束，
+      不因 scheduler 开关而放宽；参数仅供启动清单日志使用。
     """
     if not isinstance(worker_count, int):
         raise StartupGuardError(f"WORKERS 必须是整数，当前值 {worker_count!r}")
@@ -105,7 +124,13 @@ def validate_worker_count(database_backend: str, worker_count: int, scheduler_en
             "SQLite 文件库的写锁治理与资源准入（db_write_scope / 信号量）均为进程内对象，"
             "多 Worker 会使锁与准入失效并放大写锁争用，且各进程都会各自启动 scheduler；"
             "不能通过启动多个 SQLite Worker 缓解接口卡顿。"
-            "如确需多 Worker，请先切换 PostgreSQL 后端（scheduler Leader 选举另行实现）。"
+        )
+    if database_backend == BACKEND_POSTGRES and worker_count != 1:
+        raise StartupGuardError(
+            f"PostgreSQL 后端当前仅支持单 Worker：当前 WORKERS={worker_count}，请改为 1。"
+            "v1.0.8 交付边界为单应用实例单 worker（docs/postgresql-contract.md §1）："
+            "scheduler Leader 选举与多实例写入治理未实现，多 Worker 会重复执行定时任务；"
+            "多实例扩展另行立项。"
         )
 
 
@@ -131,18 +156,20 @@ def validate_scheduler_scope(database_backend: str, worker_count: int) -> str:
         )
         raise StartupGuardError(msg)
     if database_backend == BACKEND_POSTGRES and worker_count > 1:
+        # v1.0.8 契约 §1：PG 模式多 worker fail-fast（原仅告警已废弃——单实例单 worker 为本期交付边界，
+        # scheduler Leader 选举未实现，多进程会重复执行定时任务）
         msg = (
-            f"PostgreSQL 多 Worker（WORKERS={worker_count}）scheduler Leader 未实现："
-            "多个进程各自启动 scheduler 会造成定时任务重复执行，请保持 WORKERS=1 "
-            "或外置独立 scheduler 进程"
+            f"PostgreSQL 多 Worker（WORKERS={worker_count}）违反单实例单 worker 交付边界"
+            "（docs/postgresql-contract.md §1）：scheduler Leader 选举未实现，"
+            "多个进程各自启动 scheduler 会造成定时任务重复执行，请保持 WORKERS=1；多实例扩展另行立项"
         )
-        logger.warning(
-            "scheduler_scope database_backend=%s worker_count=%d status=leader_not_implemented %s",
+        logger.error(
+            "scheduler_scope database_backend=%s worker_count=%d status=blocked %s",
             database_backend,
             worker_count,
             msg,
         )
-        return msg
+        raise StartupGuardError(msg)
     msg = f"scheduler 单实例安全 database_backend={database_backend} worker_count={worker_count}"
     logger.info(
         "scheduler_scope database_backend=%s worker_count=%d status=ok %s",

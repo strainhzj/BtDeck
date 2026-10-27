@@ -61,9 +61,16 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L111) + `run_migrations_online`(L135)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
+| Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L72) + `run_migrations_online`(L96)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS`；v1.0.8：模型经 `app/core/model_registry.py` 单点注册与共享连接、独立升级显式事务提交、PG 空库手工 upgrade 守卫与基线降级下限、SQLite 原链不变 |
 | Alembic revisions versions | `versions/` | **37 个** revision 文件；当前 head 为 `c9e0f1a2b3c4`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
-`env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
+
+`env.py` 经 `app/core/model_registry.py` 单点注册全部 ORM 模型（v1.0.8 归位）以确保 autogenerate 检测全部表。
+
+### scripts/ — 运维工具（PG 相关）
+
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| PG 数据迁移 migrate-sqlite-to-pg ✨v1.0.8 | `migrate_sqlite_to_pg.py` | 工具 1.1.0：`precheck` L287（结构/类型/模板/密钥/备份）、`import_table` L366（每表原子检查点）、`verify_counts_and_digests` L453（流式全列对账）、`run_migration` L516（只读 WAL 快照）；见 docs/database-setup.md |
 
 ### alembic/versions/（37 个迁移文件）
 

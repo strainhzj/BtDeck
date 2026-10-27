@@ -71,6 +71,9 @@ ALLOWLIST: dict[str, set[str]] = {
         "app/api/endpoints/downloader_settings.py",
         "app/services/advanced_search.py",
         "app/tasks/cron_executor.py",
+        # pg_baseline（v1.0.8）：f-string 仅插值模块级常量 IMPORT_STATE_TABLE
+        # （_btdeck_import_state 标记表名，非用户输入；标识符常量无法参数化）
+        "app/core/pg_baseline.py",
     },
     "BTD103": {
         # principal.py: REASON_* 为拒绝原因稳定码（"TOKEN_MISSING" 等枚举
@@ -257,8 +260,7 @@ class BtDeckVisitor(ast.NodeVisitor):
         elif name == "os.system":
             self.add("BTD303", node, "禁止 os.system() 调用，请使用 subprocess 参数列表")
         elif name == "subprocess.call" and any(
-            kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True
-            for kw in node.keywords
+            kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in node.keywords
         ):
             self.add("BTD304", node, "禁止 subprocess.call(shell=True)")
 
@@ -321,9 +323,7 @@ def scan_migration_rollback_annotation() -> list[Issue]:
     if not ALEMBIC_VERSIONS_ROOT.exists():
         return issues
 
-    destructive_pattern = re.compile(
-        r"\bop\.(drop_column|alter_column|drop_table)\b"
-    )
+    destructive_pattern = re.compile(r"\bop\.(drop_column|alter_column|drop_table)\b")
     rollback_marker_pattern = re.compile(r"【不可回滚】|【受限回滚】")
 
     for path in ALEMBIC_VERSIONS_ROOT.rglob("*.py"):
@@ -340,8 +340,7 @@ def scan_migration_rollback_annotation() -> list[Issue]:
                         and isinstance(child.func, ast.Attribute)
                         and isinstance(child.func.value, ast.Name)
                         and child.func.value.id == "op"
-                        and child.func.attr
-                        in ("drop_column", "alter_column", "drop_table")
+                        and child.func.attr in ("drop_column", "alter_column", "drop_table")
                     ):
                         upgrade_has_destructive = True
                         break

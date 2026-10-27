@@ -44,7 +44,7 @@ KNOWN_GHOST_VERSIONS: dict = {
 
 
 def _read_db_version(db_path: str) -> Optional[str]:
-    """读取数据库的 alembic_version；无表/无文件返回 None。"""
+    """读取数据库的 alembic_version；无表/无文件返回 None（SQLite 方言）。"""
     if not Path(db_path).exists():
         return None
     try:
@@ -63,14 +63,25 @@ def _read_db_version(db_path: str) -> Optional[str]:
         return None
 
 
+def _read_db_version_dispatch(db_path: str) -> Optional[str]:
+    """按方言分发版本读取（v1.0.8 任务1.7）：PG 走引擎连接读（契约 §3）。"""
+    if settings.DATABASE_DIALECT == "postgresql":
+        from app.core.pg_baseline import read_pg_version_standalone
+
+        return read_pg_version_standalone()
+    return _read_db_version(db_path)
+
+
 def _build_alembic_config(db_path: str) -> Config:
     """构造指向指定 DB 的 Alembic Config。
 
     关键：设 DATABASE_PATH 环境变量，env.py 会优先读它（防串库）。
     同时动态设置 script_location 为绝对路径（frozen 下 cwd 不可靠）。
     """
-    # 设环境变量，让 env.py 与 config.py 消费同一来源（B3：config.py property 也读此变量）
-    os.environ["DATABASE_PATH"] = db_path
+    # 设环境变量，让 env.py 与 config.py 消费同一来源（B3：config.py property 也读此变量）；
+    # 仅 SQLite 方言（PG 不消费文件路径，v1.0.8 契约 §2.1）
+    if settings.DATABASE_DIALECT == "sqlite":
+        os.environ["DATABASE_PATH"] = db_path
 
     root_path = settings.ROOT_PATH
     # frozen（PyInstaller）模式下 ROOT_PATH 解析到 _MEIPASS，alembic 目录已打包至此
@@ -142,6 +153,74 @@ def _rescue_or_warn_version(
     return True
 
 
+def _migrate_database_pg() -> bool:
+    """PG 方言迁移编排（v1.0.8 任务1.7，契约 §3）。
+
+    - 导入未完成标记 → 拒绝启动（三状态规则）
+    - 空库 → initialize_pg_baseline（共享基线函数，不 seed）
+    - 已 stamp → 正常增量 upgrade；未知版本告警不降级（与 SQLite 口径一致）
+    - 备份：PG 无文件备份链，显式日志提示外部备份职责（任务3.2）
+    - ghost 救援：仅 SQLite 历史快照语义，PG 不启用（契约 §3 规则 7）
+    """
+    from app.core.pg_baseline import (
+        get_import_state,
+        initialize_pg_baseline,
+        pg_sync_engine,
+        read_pg_alembic_version,
+        validate_pg_server,
+    )
+
+    db_path = str(settings.DATABASE_PATH)  # 仅作日志上下文；PG 不消费
+    cfg = _build_alembic_config(db_path)
+    cfg.attributes["configure_logger"] = False
+
+    sd = ScriptDirectory.from_config(cfg)
+    heads = sd.get_heads()
+    if not heads:
+        raise RuntimeError("迁移链无 head revision，请检查 alembic/versions/")
+    if len(heads) > 1:
+        raise RuntimeError(f"迁移链有 {len(heads)} 个 head（分叉）：{heads}。请先合并分叉（alembic merge）再启动。")
+    head = heads[0]
+
+    engine = pg_sync_engine()
+    try:
+        with engine.connect() as conn:
+            validate_pg_server(conn)
+            import_state = get_import_state(conn)
+            if import_state is not None:
+                raise RuntimeError(
+                    f"检测到 SQLite→PG 导入未完成标记（migration_id={import_state['migration_id']}），"
+                    "拒绝启动以防后台任务修改半成品数据；请重跑迁移工具或人工处理（契约 §3 三状态规则）"
+                )
+            current = read_pg_alembic_version(conn)
+    finally:
+        engine.dispose()
+
+    if current is None:
+        # 空库（或有表无版本 → 基线函数内部 fail-fast；连接失败 → 基线函数抛真实错误）
+        logger.info("PG 库无 alembic_version：走 squash 基线初始化（契约 §3）")
+        initialize_pg_baseline(cfg, head)
+    else:
+        valid_revs = {r.revision for r in sd.walk_revisions()}
+        if current not in valid_revs:
+            logger.warning(
+                "PG 库版本 %s 不在当前代码迁移链中（可能回滚或数据损坏）；保留现状不降级（与 SQLite 口径一致）",
+                current,
+            )
+            return True
+        if current != head:
+            logger.info(f"执行 PG 增量迁移（当前版本={current}，目标={head}）；备份由外部机制负责（任务3.2）")
+            command.upgrade(cfg, "head")
+        else:
+            logger.info(f"PG 数据库已是最新版本 {current}")
+
+    final_version = _read_db_version_dispatch(db_path)
+    if final_version != head:
+        raise RuntimeError(f"PG 迁移后版本仍为 {final_version}，预期 {head}")
+    logger.info("PG 数据库迁移完成")
+    return True
+
+
 def migrate_database() -> bool:
     """
     统一数据库迁移入口。
@@ -161,6 +240,8 @@ def migrate_database() -> bool:
         RuntimeError: 生产环境（DEV=False）迁移失败时
     """
     try:
+        if settings.DATABASE_DIALECT == "postgresql":
+            return _migrate_database_pg()
         db_path = str(settings.DATABASE_PATH)
         cfg = _build_alembic_config(db_path)
         # 应用启动期间不得让 Alembic fileConfig 覆盖 app.* 的 stdout handler，
@@ -180,7 +261,7 @@ def migrate_database() -> bool:
         head = heads[0]
 
         # 1. 读当前版本（在备份和救援前）
-        current = _read_db_version(db_path)
+        current = _read_db_version_dispatch(db_path)
 
         # 2. 迁移前备份（current != head 时，含幽灵版本 9aea... != head）
         if current != head and Path(db_path).exists():
@@ -203,7 +284,7 @@ def migrate_database() -> bool:
         logger.info(f"执行数据库迁移（当前版本={current}，目标={head}）")
         command.upgrade(cfg, "head")
 
-        final_version = _read_db_version(db_path)
+        final_version = _read_db_version_dispatch(db_path)
         if final_version != head:
             raise RuntimeError(f"Alembic upgrade 返回后版本仍为 {final_version}，预期 {head}")
 

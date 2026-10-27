@@ -25,6 +25,18 @@ services:
       # scheduler，导致定时任务重复执行。
       # 数据库路径由 CONFIG_DIR=/app/config（Dockerfile 设置）决定，落在持久化卷 config/
       # 不再设无效的 DATABASE_URL（应用不消费此变量）
+      # 外部 PostgreSQL：仅透传配置，默认 SQLite 不启动数据库服务。
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-btdeck}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_NAME=${DB_NAME:-btdeck}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+      - DB_POOL_TIMEOUT=${DB_POOL_TIMEOUT:-30}
+      - DB_SSLMODE=${DB_SSLMODE:-prefer}
+      - DB_SSL_ROOT_CERT=${DB_SSL_ROOT_CERT:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # ===== 安全加固透传（W11）：修复 .env.example 指引与 compose 断链 =====
       # DEV 默认 true 保持向后兼容（现有部署升级不崩）；生产加固三件套：
