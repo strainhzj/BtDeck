@@ -11,7 +11,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # 默认从 Docker Hub 拉取官方镜像（v1.0.6+）；本地源码构建用 docker compose up --build
-    image: strainthomas/btdeck-backend:v1.0.6
+    image: strainthomas/btdeck-backend:v1.0.7
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
@@ -79,7 +79,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
     # 默认从 Docker Hub 拉取官方镜像（v1.0.6+）；本地源码构建用 docker compose up --build
-    image: strainthomas/btdeck-frontend:v1.0.6
+    image: strainthomas/btdeck-frontend:v1.0.7
     container_name: btdeck-frontend
     environment:
       # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime
