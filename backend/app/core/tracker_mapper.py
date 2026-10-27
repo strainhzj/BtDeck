@@ -23,6 +23,36 @@ from app.core.tracker_judgment import judgment_engine, TrackerStatus
 logger = logging.getLogger(__name__)
 
 
+# 合法 tracker URL scheme 白名单（qBittorrent/Transmission 实际可用的 tracker 协议）
+VALID_TRACKER_URL_SCHEMES = frozenset({"http", "https", "udp", "ws", "wss"})
+
+
+def is_valid_tracker_url(tracker_url: str) -> bool:
+    """校验 tracker URL 是否为合法协议 URL。
+
+    用于采集/入库/写回链路过滤污染条目：历史上 qbittorrent-api 的
+    TorrentDictionary.trackers 属性赋值会触发 add_trackers 远程写，把
+    Tracker 对象 repr 整段当作 URL 写回 qBittorrent（形如
+    "Tracker({'msg': '', ..., 'url': 'https://...'})"）；qBittorrent 5.0+
+    的自管 TrackerEntry 模型会原样存储并回显这类无效 URL。所有
+    tracker 入库/写回点统一用本函数拦截，mark_removed 语义会随同步
+    自愈清理库内既有污染行。
+
+    Args:
+        tracker_url: tracker URL 字符串
+
+    Returns:
+        是否合法（scheme 在白名单内；"** [DHT] **" 等伪条目无 scheme，同样不合法）
+    """
+    if not tracker_url:
+        return False
+    try:
+        parsed = urlparse(str(tracker_url))
+    except Exception:
+        return False
+    return (parsed.scheme or "").lower() in VALID_TRACKER_URL_SCHEMES
+
+
 def extract_tracker_host(tracker_url: str) -> str:
     """
     从tracker URL中提取主机名
@@ -175,16 +205,20 @@ def map_qbittorrent_tracker(tracker: Dict) -> Dict:
     并使用判断引擎基于消息内容进行智能状态判断。
 
     Args:
-        tracker: qBittorrent返回的tracker字典，包含以下字段:
+        tracker: qBittorrent返回的tracker字典（torrents_trackers 负载），包含以下字段:
             - url: tracker URL
             - status: 状态数值(0-4)
             - msg: tracker返回的消息
             - tier: 层级
-            - num_peers: 连接的peer数量
-            - num_seeds: 连接的seed数量
-            - num_leeches: 连接的leech数量
-            - downloaded: 下载量
-            - uploaded: 上传量
+            - num_peers: 已连接的 peer 数量（当前与该 tracker 建立的连接数）
+            - num_seeds: scrape 群体 seed 总数（swarm 内做种者总数，非已连接数。
+              2026-09-24 W2 纠错：此前误标为"连接的seed数量"；已连接数是 num_peers。
+              真机 qB v4.3.9/API 2.8.2 实测键集：
+              {msg, num_downloaded, num_leeches, num_peers, num_seeds, status, tier, url}）
+            - num_leeches: scrape 群体 leech 总数（swarm 内下载者总数，非已连接数）
+            - num_downloaded: scrape 群体累计完播下载数（未知时为 -1 哨兵；
+              下方返回键沿用历史形态 downloaded/uploaded，qB 负载并无这两个键，
+              恒为默认 0，仅为兼容旧消费方保留）
 
     Returns:
         映射后的tracker信息字典，包含:
@@ -192,11 +226,11 @@ def map_qbittorrent_tracker(tracker: Dict) -> Dict:
             - status: 最终判定的状态
             - msg: tracker消息
             - tier: 层级
-            - num_peers: peer数量
-            - num_seeds: seed数量
-            - num_leeches: leech数量
-            - downloaded: 下载量
-            - uploaded: 上传量
+            - num_peers: 已连接 peer 数量
+            - num_seeds: scrape 群体 seed 总数
+            - num_leeches: scrape 群体 leech 总数
+            - downloaded: 兼容保留键（qB 负载无此键，恒 0）
+            - uploaded: 兼容保留键（qB 负载无此键，恒 0）
 
     示例:
         >>> tracker = {

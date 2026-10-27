@@ -323,7 +323,8 @@ class TestSecretAllowlist:
         allow, problems = scanner.load_secret_allowlist(
             _REPO_ROOT / "release" / "secret-allowlist.json"
         )
-        assert problems == [] and len(allow) == 9
+        # 2026-10-24 安全治理批：新增 3 条 PRESET_KEY_PREV 测试夹具常量白名单（12 条）
+        assert problems == [] and len(allow) == 12
 
 
 class TestTrackedNoFixPolicy:

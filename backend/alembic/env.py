@@ -51,6 +51,16 @@ from app.models.orphan_purge_job import OrphanPurgeJob
 # 同步检查点（W3-2 持久化续跑）
 from app.models.sync_checkpoint import SyncCheckpoint
 
+# MoviePilot 集成（整理历史镜像 + 实例注册）
+from app.models.moviepilot_instance import MoviePilotInstance
+from app.models.moviepilot_transfer_history import MoviePilotTransferHistory
+
+# RSS 订阅（feature rss-subscription-2026-09-24）
+from app.models.rss_subscription import RssFeed, RssArticle
+
+# 速度采样（统计报表 W1）
+from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config

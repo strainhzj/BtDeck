@@ -153,23 +153,60 @@ def collect_declared_versions(root: Path) -> Dict[str, str]:
     versions[ISS_RELPATH.as_posix()] = match.group(1)
 
     build_linux = _read_text(root, BUILD_LINUX_RELPATH)
-    match = re.search(r'^VERSION="([^"]+)"', build_linux, re.MULTILINE)
+    # 整行匹配：动态表达式内含双引号（python -c "..."），[^"]+ 会在首个
+    # 内嵌引号处截断（九跑实锤），取赋值整行再分类
+    match = re.search(r'^VERSION=(.+)$', build_linux, re.MULTILINE)
     if not match:
         raise BuildInfoGenerationError("deploy/build-linux.sh 未找到 VERSION= 赋值")
-    versions[BUILD_LINUX_RELPATH.as_posix()] = match.group(1)
-
+    declared = match.group(1).strip()
+    # 动态表达式可能带外层双引号（VERSION="$(...)")：两种形态都识别
+    if declared.startswith("$(") or declared.startswith('"$('):
+        # 动态读取（release-config 单一来源）：运行时必然与 expected 一致，
+        # 静态比对跳过，实质一致性由 _check_versions_dynamic_ok 兑现
+        versions[BUILD_LINUX_RELPATH.as_posix()] = "dynamic-from-release-config"
+    else:
+        versions[BUILD_LINUX_RELPATH.as_posix()] = declared.strip('"')
     return versions
+
+
+def _check_versions_dynamic_ok(root: Path, expected: str) -> bool:
+    """动态 VERSION 声明的实质校验（平台无关：Windows CPython 零外部依赖）。
+
+    动态声明的语义 = 「以 release-config.json 为唯一输入读 product_version」。
+    十跑实锤：bash -c 实跑式校验在 Windows runner（无 bash/PATH 语义不同）
+    必然 False；改为结构校验（表达式必须引用 release-config.json 且读
+    candidate.product_version）+ 实读比对（load_release_config 与 expected
+    同源恒等，仅防表达式误读其他键）。
+    """
+    build_linux = _read_text(root, BUILD_LINUX_RELPATH)
+    match = re.search(r'^VERSION=(.+)$', build_linux, re.MULTILINE)
+    declared = match.group(1).strip() if match else ""
+    if not (declared.startswith("$(") or declared.startswith('"$(')):
+        return True  # 静态声明无需动态校验
+    # 结构校验：唯一输入必须是 release-config 的 candidate.product_version
+    if "release/release-config.json" not in declared:
+        return False
+    if "product_version" not in declared:
+        return False
+    # 实质校验：在 root 实读 release-config（同源 expected，防误读能炸的键）
+    try:
+        config = load_release_config(root)
+        return str(config["candidate"]["product_version"]) == expected
+    except Exception:
+        return False
 
 
 def check_versions(root: Path) -> List[str]:
     """返回版本不一致描述列表；空列表 = 一致。"""
     versions = collect_declared_versions(root)
     expected = versions[RELEASE_CONFIG_RELPATH.as_posix()]
-    return [
-        f"{source}: {version} != release-config {expected}"
-        for source, version in versions.items()
-        if version != expected
-    ]
+    problems = []
+    for source, version in versions.items():
+        if version != expected:
+            if version == "dynamic-from-release-config" and _check_versions_dynamic_ok(root, expected):
+                continue  # 动态声明实质一致
+            problems.append(f"{source}: {version} != release-config {expected}")
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -254,14 +291,38 @@ def build_frontend_asset_manifest(dist_dir: Path) -> Tuple[Dict[str, object], st
     return manifest, canonical_json_sha256(manifest)
 
 
-def build_source_manifest(root: Path, tracked_paths: Sequence[str]) -> Tuple[Dict[str, object], str]:
-    listing = _git(root, "ls-files", "--", *tracked_paths).splitlines()
-    files = []
-    for relpath in sorted(set(line.strip().strip('"') for line in listing if line.strip())):
-        path = root / relpath
-        if not path.is_file():
-            continue  # 子模块/稀疏检出场景下跳过目录条目
-        files.append({"path": relpath, "sha256": sha256_file(path)})
+def build_source_manifest(
+    root: Path, tracked_paths: Sequence[str], fs_walk: bool = False
+) -> Tuple[Dict[str, object], str]:
+    # fs_walk=True：reconstructed 基线（--git-sha）模式下 git archive 解包
+    # 目录无 .git，按 tracked_paths 直接文件系统遍历——archive 只含 tracked
+    # 文件，遍历结果与 git ls-files 等价。
+    if fs_walk:
+        files = []
+        seen: set = set()
+        for tp in tracked_paths:
+            base = root / tp
+            if base.is_file():
+                rel = tp
+                if rel not in seen:
+                    seen.add(rel)
+                    files.append({"path": rel, "sha256": sha256_file(base)})
+            elif base.is_dir():
+                for p in sorted(base.rglob("*")):
+                    if p.is_file():
+                        rel = p.relative_to(root).as_posix()
+                        if rel not in seen:
+                            seen.add(rel)
+                            files.append({"path": rel, "sha256": sha256_file(p)})
+    else:
+        listing = _git(root, "ls-files", "--", *tracked_paths).splitlines()
+        files = []
+        for relpath in sorted(set(line.strip().strip('"') for line in listing if line.strip())):
+            path = root / relpath
+            if not path.is_file():
+                continue  # 子模块/稀疏检出场景下跳过目录条目
+            files.append({"path": relpath, "sha256": sha256_file(path)})
+    files.sort(key=lambda f: f["path"])
     if not files:
         raise BuildInfoGenerationError(f"source manifest 为空：{tracked_paths}")
     manifest: Dict[str, object] = {
@@ -277,7 +338,16 @@ def build_source_manifest(root: Path, tracked_paths: Sequence[str]) -> Tuple[Dic
 # 主流程
 # ---------------------------------------------------------------------------
 
-def _resolve_git_identity(root: Path, allow_dirty: bool) -> Tuple[str, str, int, bool]:
+def _resolve_git_identity(
+    root: Path, allow_dirty: bool, git_sha: Optional[str] = None
+) -> Tuple[str, str, int, bool]:
+    # --git-sha（reconstructed 基线）：git archive 解包目录无 .git，外部
+    # 提供 tag sha；dirty 恒为 False，epoch 鋚 0（学 docker.sh 夹具先例，
+    # baseline 语义不要求可复现时间锚）。仅 w3 升级基线使用。
+    if git_sha:
+        if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
+            raise BuildInfoGenerationError(f"--git-sha 非完整 40 位：{git_sha!r}")
+        return git_sha, "", 0, False
     sha = _git(root, "rev-parse", "HEAD").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise BuildInfoGenerationError(f"git SHA 非完整 40 位：{sha!r}")
@@ -311,6 +381,7 @@ def generate(
     allow_dirty: bool,
     output_dir: Path,
     python_version: Optional[str],
+    git_sha: Optional[str] = None,
 ) -> Dict[str, object]:
     if artifact_kind not in ARTIFACT_KINDS:
         raise BuildInfoGenerationError(f"artifact_kind 非法：{artifact_kind}")
@@ -318,17 +389,24 @@ def generate(
     product_version = str(config["candidate"]["product_version"])
     git_tag = f"v{product_version}"
 
-    mismatches = check_versions(root)
-    if mismatches:
-        raise BuildInfoGenerationError("版本声明不一致：\n  " + "\n  ".join(mismatches))
+    # --git-sha（reconstructed 基线）时跳过六处版本一致性校验：基线源主体
+    # 为 tag 检出（五处声明=tag 版本），仅打包工具链两文件来自 dev 工作区
+    # （build-linux.sh/generate_build_info.py，声明=当前发布版本），声明面
+    # 必然混合，六处比对无意义；身份仍以 archive 内 release-config 为准。
+    if not git_sha:
+        mismatches = check_versions(root)
+        if mismatches:
+            raise BuildInfoGenerationError("版本声明不一致：\n  " + "\n  ".join(mismatches))
 
-    sha, _, commit_epoch, dirty = _resolve_git_identity(root, allow_dirty)
+    sha, _, commit_epoch, dirty = _resolve_git_identity(root, allow_dirty, git_sha=git_sha)
     # SOURCE_DATE_EPOCH 锚定提交时间：同 SHA 的所有制品取值必然一致
     source_date_epoch = commit_epoch
     alembic_head = collect_alembic_head(root / "backend")
 
     frontend_manifest, frontend_sha = build_frontend_asset_manifest(root / "frontend" / "dist")
-    source_manifest, source_sha = build_source_manifest(root, SOURCE_MANIFEST_PATHS)
+    source_manifest, source_sha = build_source_manifest(
+        root, SOURCE_MANIFEST_PATHS, fs_walk=bool(git_sha)
+    )
 
     build_info: Dict[str, object] = {
         "schema_version": 1,
@@ -347,6 +425,7 @@ def generate(
         "source_manifest_sha256": source_sha,
         "dependency_manifest_sha256": None,
         "dirty": dirty,
+        "reconstructed": bool(git_sha),
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -377,6 +456,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--python-version", default=None, help="后端制品 Python 版本；默认取当前解释器")
     parser.add_argument("--build-id", default=None, help="CI run id / attempt")
     parser.add_argument("--allow-dirty", action="store_true", help="开发构建：允许脏工作区（dirty=true）")
+    parser.add_argument(
+        "--git-sha",
+        default=None,
+        help="reconstructed 基线：git archive 解包目录无 .git 时外部提供 tag sha（dirty 恒 false，epoch 取 0）",
+    )
     parser.add_argument(
         "--check-versions",
         action="store_true",
@@ -409,6 +493,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             node_version=args.node_version,
             build_id=args.build_id,
             allow_dirty=args.allow_dirty,
+            git_sha=args.git_sha,
             output_dir=output_dir,
             python_version=python_version,
         )

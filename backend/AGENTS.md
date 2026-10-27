@@ -1,6 +1,6 @@
 # AGENTS.md - BtDeck 后端（端规则指针）
 
-> **技术栈**: Python 3.11+ | FastAPI 0.115.0 | SQLAlchemy 2.0.15 | SQLite
+> **技术栈**: Python 3.12+ | FastAPI 0.115.0 | SQLAlchemy 2.0.15 | SQLite
 > **更新**: 2026-06-18
 
 本文件是后端规则指针。**全栈工作流、Git 规范、功能状态、进度日志统一在根目录**（`../AGENTS.md`、`../feature_list.json`、`../progress.md`），本文件不再重复，亦不回指根目录工作流。

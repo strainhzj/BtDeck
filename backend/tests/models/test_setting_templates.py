@@ -45,13 +45,30 @@ class TestDownloaderTypeEnumNormalize:
         """字符串 'TRANSMISSION' 大写也应转换为 1"""
         assert DownloaderTypeEnum.normalize("TRANSMISSION") == 1
 
-    def test_normalize_invalid_int_defaults_to_0(self):
-        """无效整数（如 99）应默认返回 0"""
-        assert DownloaderTypeEnum.normalize(99) == 0
+    def test_normalize_invalid_int_raises(self):
+        """无效整数（如 99）应抛 ValueError（P0 修复：不再静默归 0）"""
+        with pytest.raises(ValueError):
+            DownloaderTypeEnum.normalize(99)
 
-    def test_normalize_invalid_str_defaults_to_0(self):
-        """无效字符串应默认返回 0"""
-        assert DownloaderTypeEnum.normalize("invalid") == 0
+    def test_normalize_invalid_str_raises(self):
+        """无效字符串应抛 ValueError（P0 修复：不再静默归 0）"""
+        with pytest.raises(ValueError):
+            DownloaderTypeEnum.normalize("invalid")
+
+    def test_normalize_rtorrent(self):
+        """rTorrent 新类型：2 / "2" / "rtorrent" / 大写名称全形态归一（P0-A）"""
+        assert DownloaderTypeEnum.normalize(2) == 2
+        assert DownloaderTypeEnum.normalize("2") == 2
+        assert DownloaderTypeEnum.normalize("rtorrent") == 2
+        assert DownloaderTypeEnum.normalize("RTORRENT") == 2
+        assert DownloaderTypeEnum(2).to_name() == "rtorrent"
+        assert DownloaderTypeEnum.RTORRENT.is_rtorrent()
+
+    def test_to_name_explicit_no_fallback(self):
+        """to_name 三类型显式映射（旧实现 else 回退 transmission 是 P0 修复对象）"""
+        assert DownloaderTypeEnum(0).to_name() == "qbittorrent"
+        assert DownloaderTypeEnum(1).to_name() == "transmission"
+        assert DownloaderTypeEnum(2).to_name() == "rtorrent"
 
     def test_normalize_none_defaults_to_0(self):
         """None 值应默认返回 0"""

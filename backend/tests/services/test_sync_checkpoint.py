@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-SyncCheckpoint 持久化检查点测试（W3-2，PLANS/sync-database-blocking-remediation.md）
+SyncCheckpoint 持久化检查点测试（W3-2，PLANS/archive/sync-database-blocking-remediation.md）
 
 覆盖行为契约：
 1. 模型 CRUD + 唯一约束（同 downloader+sync_type 重复插入失败）。

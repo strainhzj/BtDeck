@@ -32,6 +32,11 @@ REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_temp
 REV_HEAD = current_head()  # 动态读取（曾硬编码 c1d2e3f4a5b6，迁移新增后漂移致 CI 红）
 
 
+def _current_head() -> str:
+    """迁移链真实 head（dev1.0.7 合入；委托集中式 helper，防局部实现漂移）。"""
+    return current_head()
+
+
 def _make_cfg(db_path: str) -> Config:
     """构造指向指定 DB 的 Alembic Config。"""
     os.environ["DATABASE_PATH"] = db_path
@@ -166,7 +171,7 @@ class TestLevel2BackupRestore:
 
         # 2. 模拟升级（migrate_database 会先备份）
         migrate_database()
-        assert _get_all_versions(db_path) == REV_HEAD
+        assert _get_all_versions(db_path) == _current_head()
 
         # 确认备份生成了（版本是 95ef8bd8b47a）
         backups = list(tmp_path.glob("*.pre-migration-*"))
@@ -337,4 +342,4 @@ class TestRollbackSafetyInvariants:
         # 不变量：幽灵版本总是被救援到真实版本
         final = _get_all_versions(db_path)
         assert final != "9aea25308aff", "安全不变量：幽灵版本总是被救援（KNOWN_GHOST_VERSIONS）"
-        assert final == REV_HEAD, f"救援后应为 head，实际 {final}"
+        assert final == _current_head(), f"救援后应为 head，实际 {final}"

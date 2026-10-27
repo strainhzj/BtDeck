@@ -11,7 +11,7 @@
  * - clipboard.ts copyTextToClipboard（移动任务/日志/孤儿/设置页复制）
  * - error-normalize.ts 兜底（移动页间接经 request 层消费）
  * - traditionalStatusFilter 固定项键（传统视图状态筛选）
- * - downloader store 兜底键 / 主题键（zh 字节冻结）
+ * - 主题键（zh 字节冻结）
  */
 import { buildSyncTaskNotice } from '@/views/downloader/sync-task'
 import { SyncTaskStatusData } from '@/api/downloader'
@@ -135,19 +135,7 @@ describe('C01 移动中文回归抽查：共享层 zh 逐字节 + en 切换', ()
     })
   })
 
-  describe('store 兜底键与主题键 zh 字节冻结', () => {
-    it('downloader.store 九条兜底 zh 与原内联逐字节一致', () => {
-      setLocale('zh-CN')
-      expect(translate('downloader.store.getSettingsFailed')).toBe('获取设置失败')
-      expect(translate('downloader.store.updateSettingsFailed')).toBe('更新设置失败')
-      expect(translate('downloader.store.getCapabilitiesFailed')).toBe('获取能力信息失败')
-      expect(translate('downloader.store.getTemplatesFailed')).toBe('获取模板列表失败')
-      expect(translate('downloader.store.getTemplateDetailFailed')).toBe('获取模板详情失败')
-      expect(translate('downloader.store.createTemplateFailed')).toBe('创建模板失败')
-      expect(translate('downloader.store.updateTemplateFailed')).toBe('更新模板失败')
-      expect(translate('downloader.store.deleteTemplateFailed')).toBe('删除模板失败')
-      expect(translate('downloader.store.applyTemplateFailed')).toBe('应用模板失败')
-    })
+  describe('主题键与 404/演示横幅 zh 字节冻结', () => {
 
     it('主题三套名/描述 zh 与原内联逐字节一致（ThemeSwitcher 展示）', () => {
       setLocale('zh-CN')

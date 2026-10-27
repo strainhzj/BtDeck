@@ -189,7 +189,10 @@ export const torrent = {
     title: 'Add Torrents',
     fileLabel: 'Torrent files',
     filePlaceholder: 'Click to select .torrent files (no limit)',
+    fileDropHint: 'or drag & drop .torrent files here',
     filesSelected: '{count} files selected',
+    clearFiles: 'Clear',
+    removeFile: 'Remove file',
     fileHint: 'Only .torrent files are supported; they are processed asynchronously in the background',
     downloaderLabel: 'Downloader',
     downloaderPlaceholder: 'Select a downloader',
@@ -198,9 +201,7 @@ export const torrent = {
     pathTypeDefault: 'Default path',
     pathTypeInUse: 'In use',
     pathCount: '{count} torrents',
-    checkPolicy: 'Verification policy',
     skipCheck: 'Skip recheck (seed directly when data is complete)',
-    skipCheckHint: 'Tick this when the save path already contains complete data (cross-seed / re-seed): it skips the qBittorrent local recheck and avoids CheckingDL. Do not tick for fresh downloads (they would be treated as completed and never download). Applies to qBittorrent only.',
     category: 'Category',
     categoryPlaceholder: 'Select category (optional)',
     tags: 'Tags',
@@ -295,6 +296,11 @@ export const torrent = {
         batch: 'Are you sure you want to delete {count} selected torrents?'
       }
     },
+    /** Level-1 deletion: extra confirmation when the downloader is offline (local-record-only deletion, downloader API skipped) */
+    offlineConfirm: {
+      title: 'Warning: downloader offline',
+      message: 'Downloader(s) {names} offline. If you continue, the downloader API will not be called and only BtDeck records will be deleted; data files and downloader-side tasks will be kept. Continue?'
+    },
     msg: {
       selectFirst: 'Select torrents to delete first',
       submitFailed: 'Failed to submit the deletion task',
@@ -321,12 +327,12 @@ export const torrent = {
       taskFailed: 'Batch deletion failed: {error}',
       taskPartial: 'Batch deletion partially finished: {success} succeeded, {failed} failed',
       failedDetail: 'The following torrents failed to delete: {names}',
-      failedDetailMore: 'The following torrents failed to delete: {names} and {count} more',
+      failedDetailMore: 'The following torrents failed to delete: {names} ({count} torrents in total)',
       fileMissingDetail: 'No files were found for the following torrents; file operations were skipped and they were moved to the recycle bin directly: {names}',
-      fileMissingDetailMore: 'No files were found for the following torrents; file operations were skipped and they were moved to the recycle bin directly: {names} and {count} more',
+      fileMissingDetailMore: 'No files were found for the following torrents; file operations were skipped and they were moved directly to the recycle bin: {names} ({count} torrents in total)',
       downgraded: '{count} torrents were downgraded to Level 4 deletion (backup failed)',
       downgradeDetail: 'Backup failed for the following torrents; they were downgraded to Level 4: {names}',
-      downgradeDetailMore: 'Backup failed for the following torrents; they were downgraded to Level 4: {names} and {count} more',
+      downgradeDetailMore: 'Backup failed for the following torrents; they were downgraded to Level 4: {names} ({count} torrents in total)',
       syncPartialFailed: 'Deletion finished: {count} failed',
       level3Success: 'Level 3 deletion succeeded for {count} torrents',
       level3SuccessWithMissing: 'Level 3 deletion succeeded for {count} torrents ({missing} had no files on disk; file operations were skipped)',

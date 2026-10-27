@@ -1,3 +1,3 @@
 # Services module initialization
 
-__all__ = []
+__all__: list[str] = []

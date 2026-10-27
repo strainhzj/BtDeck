@@ -382,7 +382,7 @@ export default class TransferDialog extends Vue {
       }
     } catch (error: any) {
       console.error('删除原种子异常:', error)
-      this.$message.error(error.response?.data?.msg || '删除原种子失败')
+      this.$message.error(error.response?.data?.msg || this.$t('transfer.msg.deleteSourceFailed').toString())
       this.deleteConfirmVisible = false
       this.handleClose()
       this.$emit('success')

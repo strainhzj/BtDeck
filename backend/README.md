@@ -1,7 +1,7 @@
 # BTDeck 后端项目
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python Version](https://img.shields.io/badge/python-3.11+-brightgreen)](https://python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.12+-brightgreen)](https://python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green)](https://fastapi.tiangolo.com/)
 
 基于 FastAPI + Python 的 BitTorrent 管理器后端服务。
@@ -23,7 +23,7 @@ BTDeck 后端是基于 FastAPI 框架的 BitTorrent 下载管理平台，支持�
 ### 技术栈
 
 - **框架**: FastAPI 0.115.0
-- **Python**: 3.11+
+- **Python**: 3.12+
 - **ORM**: SQLAlchemy 2.0.15（异步）
 - **数据验证**: Pydantic 2.12.4
 - **数据库**: SQLite
@@ -37,14 +37,14 @@ BTDeck 后端是基于 FastAPI 框架的 BitTorrent 下载管理平台，支持�
 
 ### 环境要求
 
-- Python 3.11+
+- Python 3.12+
 - conda（推荐）或 venv
 
 ### 安装依赖
 
 ```bash
 # 创建 conda 环境
-conda create -n btdeck python=3.11
+conda create -n btdeck python=3.12
 conda activate btdeck
 
 # 安装依赖

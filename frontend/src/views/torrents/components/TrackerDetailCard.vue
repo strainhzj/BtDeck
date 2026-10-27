@@ -250,6 +250,68 @@
             <div v-if="peersTruncateNote" class="tracker-truncate-note">{{ peersTruncateNote }}</div>
           </template>
         </template>
+
+        <template v-else-if="activeTab === 'media'">
+          <div v-if="mediaEmptyState === 'loading'" class="tracker-placeholder">{{ $t('moviepilot.media.loading') }}</div>
+          <el-alert
+            v-else-if="mediaEmptyState === 'error'"
+            class="torrent-error-alert"
+            :title="$t('moviepilot.media.loadFailed')"
+            :description="mediaState.error"
+            type="error"
+            show-icon
+            :closable="false"
+          />
+          <div v-else-if="mediaEmptyState === 'empty'" class="tracker-placeholder">
+            {{ $t('moviepilot.media.empty') }}
+          </div>
+          <template v-else>
+            <div class="tracker-detail-toolbar">
+              <span class="tracker-detail-count">{{ $t('moviepilot.media.count', {count: mediaState.list.length}) }}</span>
+              <el-button type="text" size="mini" @click="handleRefresh">{{ $t('moviepilot.media.refresh') }}</el-button>
+            </div>
+            <div v-if="mediaState.error" class="tracker-stale-note" :title="mediaState.error">{{ $t('moviepilot.media.stale') }}</div>
+            <div class="tracker-table-wrapper">
+              <table class="tracker-table tracker-table-detail tracker-fixed-table">
+                <thead>
+                  <tr>
+                    <th>{{ $t('moviepilot.media.colTitle') }}</th>
+                    <th style="width: 100px;">{{ $t('moviepilot.media.colSeason') }}</th>
+                    <th style="width: 80px;">{{ $t('moviepilot.media.colMode') }}</th>
+                    <th>{{ $t('moviepilot.media.colDest') }}</th>
+                    <th>{{ $t('moviepilot.media.colSrc') }}</th>
+                    <th style="width: 120px;">{{ $t('moviepilot.media.colInstance') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in mediaState.list" :key="item.id">
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="mediaTitleText(item)">{{ mediaTitleText(item) }}</span>
+                      <span
+                        v-if="item.status === false"
+                        class="tracker-matched-tag"
+                        :title="item.errmsg || $t('moviepilot.media.failedTag')"
+                      >{{ $t('moviepilot.media.failedTag') }}</span>
+                    </td>
+                    <td>{{ mediaSeasonsText(item) }}</td>
+                    <td>{{ mediaModeText(item.transferMode) }}</td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.destPath || '-'">{{ item.destPath || '-' }}</span>
+                    </td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.srcPath || '-'">{{ item.srcPath || '-' }}</span>
+                    </td>
+                    <td class="tracker-ellipsis-cell">
+                      <span class="tracker-cell-ellipsis" :title="item.instanceName || item.instanceId">
+                        {{ item.instanceName || item.instanceId }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </template>
       </div>
     </section>
   </template>
@@ -258,6 +320,7 @@
   import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
   import LucideIcon from '@/components/common/LucideIcon.vue'
   import type { TrackerInfo, TorrentFileInfo, TorrentPeerInfo } from '@/api/torrents'
+  import type { MoviePilotAssociationItem } from '@/api/moviepilot'
   import { formatFileSize, formatSpeed } from '@/utils/formatters'
   import type {
     DetailTabDataState,
@@ -282,7 +345,8 @@
   export const DEFAULT_TRACKER_DETAIL_TABS: TrackerDetailTab[] = [
     { label: 'Tracker', value: 'tracker' },
     { label: '文件', value: 'files' },
-    { label: 'Peers', value: 'peers' }
+    { label: 'Peers', value: 'peers' },
+    { label: '媒体库', value: 'media' }
   ]
 
   /** 大列表渲染截断阈值（文件/Peers 行数超限时只渲染前 N 行并提示总数） */
@@ -311,6 +375,7 @@
     @Prop({ type: String, default: '' }) errorReason!: string
     @Prop({ type: Object, default: () => emptyDetailState<TorrentFileInfo>() }) filesState!: DetailTabDataState<TorrentFileInfo>
     @Prop({ type: Object, default: () => emptyDetailState<TorrentPeerInfo>() }) peersState!: DetailTabDataState<TorrentPeerInfo>
+    @Prop({ type: Object, default: () => emptyDetailState<MoviePilotAssociationItem>() }) mediaState!: DetailTabDataState<MoviePilotAssociationItem>
 
     /** 顶部收起条箭头随布局取收起方向：list 随行下挂（向上折叠），traditional 底部锚定（向下折叠） */
     private get collapseIconName(): string {
@@ -442,12 +507,49 @@
       return 'empty'
     }
 
+    // ====== 媒体库页签（MoviePilot 整理关联，纯展示） ======
+
+    private get mediaEmptyState(): 'loading' | 'error' | 'empty' | '' {
+      const state = this.mediaState
+      if (state.list.length > 0) return ''
+      if (state.loading) return 'loading'
+      if (state.error) return 'error'
+      return 'empty'
+    }
+
+    /** 标题 + 年份（含整理失败标记的完整悬浮文案） */
+    private mediaTitleText(item: MoviePilotAssociationItem): string {
+      const title = item.title || this.$t('moviepilot.shared.unknownTitle').toString()
+      return item.year ? `${title} (${item.year})` : title
+    }
+
+    private mediaSeasonsText(item: MoviePilotAssociationItem): string {
+      const parts: string[] = []
+      if (item.seasons) parts.push(item.seasons)
+      if (item.episodes) parts.push(item.episodes)
+      return parts.length > 0 ? parts.join(' ') : '-'
+    }
+
+    private mediaModeText(mode: string | null): string {
+      if (!mode) return '-'
+      const labels: Record<string, string> = {
+        copy: this.$t('moviepilot.shared.transferMode.copy').toString(),
+        move: this.$t('moviepilot.shared.transferMode.move').toString(),
+        link: this.$t('moviepilot.shared.transferMode.link').toString(),
+        hardlink: this.$t('moviepilot.shared.transferMode.hardlink').toString()
+      }
+      return labels[mode] || mode
+    }
+
     // ====== Tracker 页签辅助 ======
 
-    /** 页签展示名：仅内置 files 页签本地化（Tracker/Peers 本身英文）；自定义 tabs 保留原 label */
+    /** 页签展示名：内置 files/media 页签本地化（Tracker/Peers 本身英文）；自定义 tabs 保留原 label */
     private trackerTabLabel(tab: TrackerDetailTab): string {
       if (tab.value === 'files') {
         return this.$t('tracker.detail.files.tab').toString()
+      }
+      if (tab.value === 'media') {
+        return this.$t('moviepilot.media.tab').toString()
       }
       return tab.label
     }

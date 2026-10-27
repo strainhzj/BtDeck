@@ -1,10 +1,10 @@
 # BtDeck Release Gate（W0 探针阶段）
 #
-# 职责（PLANS/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
+# 职责（PLANS/archive/release-artifact-equivalence-gate.md §8.3 / §11 W0）：
 #   w0-windows-runner : windows-2022 上验证 Inno Setup 安装/静默安装卸载 + NSSM 服务生命周期
 #   w0-linux-systemd  : ubuntu Runner 上验证 Debian 12 / Rocky 9 systemd 特权容器拓扑
 #   w0-node-matrix    : Node 22 下前端全量矩阵（contract:check/typecheck/Jest/build）
-#   w0-glibc-bullseye : python:3.11-bullseye 构建 Linux 二进制并在两发行版运行验证
+#   w0-glibc-bullseye : python:3.12-bullseye 构建 Linux 二进制并在两发行版运行验证
 #
 # 本文件当前只承载 W0 能力探针；G0～G10 完整门禁 DAG 在后续批次（W2+/W5）加入。
 # 语义：fail-closed —— 任一探针失败/超时/证据缺失即 job 失败，不允许跳过。
@@ -92,7 +92,7 @@ concurrency:
 env:
   # W0 探针锁定的工具链（与 release/release-config.json 对齐；W1 起由 config 单一来源化）
   W0_NODE_VERSION: "22.23.2"
-  W0_PYTHON_BUILD_IMAGE: python:3.11-bullseye
+  W0_PYTHON_BUILD_IMAGE: python:3.12-bullseye
   W0_TEST_DISTROS: '["debian:12", "rockylinux:9"]'
 
 jobs:
@@ -395,10 +395,10 @@ jobs:
           python3 scripts/release/generate_build_info.py --artifact-kind linux-binary
           --output-dir release/build/linux-binary --allow-dirty
 
-      - name: PyInstaller build in python:3.11-bullseye
+      - name: PyInstaller build in python:3.12-bullseye
         run: |
           docker volume rm w0out >/dev/null 2>&1 || true
-          docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.11-bullseye bash -c "\
+          docker run --rm -v "$PWD:/src" -v w0out:/out -w /src python:3.12-bullseye bash -c "\
             pip install --no-cache-dir --prefer-binary --require-hashes -r backend/requirements-lock.txt \
             && pip install --no-cache-dir --prefer-binary -r deploy/requirements-linux-package.txt \
             && pyinstaller --clean --noconfirm --distpath /out --workpath /tmp/pyi-build deploy/btdeck.spec"
@@ -418,7 +418,7 @@ jobs:
             ' _ "$distro"
           done
           cat > w0-glibc-bullseye.json <<EOF
-          {"probe":"w0-glibc-bullseye","build_image":"python:3.11-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
+          {"probe":"w0-glibc-bullseye","build_image":"python:3.12-bullseye","tested":["debian:12","rockylinux:9"],"executed_at":"$(date -u +%FT%TZ)"}
           EOF
 
       - name: Write G0 gate fragment
@@ -470,7 +470,7 @@ jobs:
       - name: Setup Python (release tooling)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         run: |
@@ -479,11 +479,26 @@ jobs:
       - name: Build Linux strict toolchain image (bullseye + fpm + rpmbuild)
         run: |
           docker build -t w2-linux-builder - <<'EOF'
-          FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          FROM python:3.12-bullseye
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           EOF
 
       - name: Run deploy/build-linux.sh --release (fail-closed)
@@ -536,7 +551,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         shell: pwsh
@@ -565,7 +580,7 @@ jobs:
           if (-not (Test-Path $exe)) { throw "dist/btdeck.exe missing" }
           $vi = (Get-Item $exe).VersionInfo
           $sha = (Get-Content release\build\windows-exe\build-info.json | ConvertFrom-Json).git_sha
-          if ($vi.ProductVersion -ne "1.0.6") { throw "ProductVersion mismatch: $($vi.ProductVersion)" }
+          if ($vi.ProductVersion -ne "1.0.7") { throw "ProductVersion mismatch: $($vi.ProductVersion)" }
           if ($vi.Comments -notmatch $sha) { throw "Comments missing full git sha: $($vi.Comments)" }
           Write-Output "VERSION_RESOURCE_OK ProductVersion=$($vi.ProductVersion) sha=$($sha.Substring(0,12))"
 
@@ -600,7 +615,7 @@ jobs:
       - name: Setup Python (release tooling)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         run: python scripts/release/build_frontend.py
@@ -646,7 +661,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -661,7 +676,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -669,11 +684,26 @@ jobs:
       - name: Build strict Linux packages
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          FROM python:3.12-bullseye
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -681,11 +711,33 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Prepare v1.0.5 upgrade baseline (reconstructed from tag)
+      - name: Prepare v1.0.6 upgrade baseline (reconstructed from tag)
         run: |
-          mkdir -p .release-build-v1.0.5/assets
-          docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash scripts/release/lifecycle/make_v105_baseline.sh
-          ls -la .release-build-v1.0.5/assets/
+          # git archive 解包替代 worktree：worktree 的 .git 指向宿主机绝对
+          # 路径，挂进容器后 git 失效（三跑实测 exit 128）。archive 目录无
+          # .git，容器内 build-linux.sh 经 BTDECK_BASELINE_GIT_SHA 走
+          # generate_build_info --git-sha reconstructed 通道。
+          # runner 侧唯一前端构建（Node 22，v1.0.6 的 build_frontend.py 产
+          # dist+manifest），容器只跑 build-linux.sh（bullseye 容器 node 12
+          # 跑不了前端；v1.0.6 起 release 打包强依赖唯一前端构建）
+          V106_SHA="$(git rev-parse v1.0.6^{commit})"
+          SRC_DIR="$RUNNER_TEMP/v106-src"
+          mkdir -p "$SRC_DIR"
+          git archive --format=tar v1.0.6 | tar -xf - -C "$SRC_DIR"
+          # v1.0.6 的打包工具链没有 --git-sha 通道（四跑实测：旧 build-linux.sh
+          # 无条件 git rev-parse，archive 无 .git 直接挂）——用 dev 版两文件
+          # 覆盖进基线源（基线业务代码仍是 v1.0.6，仅打包工具链用新）
+          cp deploy/build-linux.sh "$SRC_DIR/deploy/build-linux.sh"
+          cp scripts/release/generate_build_info.py "$SRC_DIR/scripts/release/generate_build_info.py"
+          (cd "$SRC_DIR" && python scripts/release/build_frontend.py)
+          docker run --rm -e BTDECK_BASELINE_GIT_SHA="$V106_SHA" \
+            -v "$SRC_DIR:/src" -w /src w2-linux-builder \
+            bash deploy/build-linux.sh --release
+          mkdir -p .release-build-v1.0.6/assets
+          cp "$SRC_DIR/dist/BtDeck-v1.0.6-linux-amd64.deb" \
+             "$SRC_DIR/dist/BtDeck-v1.0.6-linux-amd64.rpm" \
+             .release-build-v1.0.6/assets/
+          ls -la .release-build-v1.0.6/assets/
 
       - name: Run DEB/RPM lifecycle scenarios (fail-closed)
         run: BTDECK_SKIP_MIRROR=1 bash scripts/release/lifecycle/run_deb_rpm.sh
@@ -708,7 +760,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -723,12 +775,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
 
-      - name: Build v1.0.6 images (strict, labels verified)
+      - name: Build v1.0.7 images (strict, labels verified)
         run: bash build-images.sh --release
 
       - name: Run docker lifecycle scenarios (fail-closed)
@@ -751,7 +803,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - name: Checkout (full history + tags for v1.0.5 baseline)
+      - name: Checkout (full history + tags for v1.0.6 baseline)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -766,7 +818,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         shell: pwsh
@@ -784,60 +836,46 @@ jobs:
           }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
 
-      - name: Build v1.0.6 strict Windows artifacts
+      - name: Build v1.0.7 strict Windows artifacts
         shell: cmd
         run: deploy\build-windows.bat --release
 
-      - name: Prepare v1.0.5 portable fixture (reconstructed from tag)
+      - name: Prepare v1.0.6 portable fixture (reconstructed from tag)
         shell: pwsh
         run: |
-          $fixtureDir = Join-Path $env:RUNNER_TEMP "v105-fixture"
-          git worktree add $fixtureDir v1.0.5
-          # 启动编码垫片（等价 v1.0.6 的 desktop_main 入口 reconfigure 修复）：
-          # PyInstaller bootloader 对 frozen app 隔离 PYTHONIOENCODING/PYTHONUTF8
-          # （W3 CI 十二~十五轮 env 注入全路线实证无效），v1.0.5 lifespan 的
-          # 中文 print 在 cp1252 stderr 句柄上崩启动链。与 Linux 夹具带 R9
-          # 热修同型（reconstructed 夹具允许编码热修，不改业务行为）。
-          $dm = Join-Path $fixtureDir "backend\app\desktop_main.py"
-          $src = Get-Content $dm -Raw -Encoding UTF8
-          $anchor = 'os.environ.setdefault("ALLOWED_HOSTS"'
-          $idx = $src.IndexOf($anchor)
-          if ($idx -lt 0) { throw "desktop_main anchor not found" }
-          $lineEnd = $src.IndexOf("`n", $idx)
-          $shim = @'
-
-          # W3 CI 夹具垫片（reconstructed）：启动编码热修，等价 v1.0.6 修复
-          import sys as _sys
-          if _sys.stdout is None and _sys.stderr is not None:
-              _sys.stdout = _sys.stderr
-          for _s in (_sys.stdout, _sys.stderr):
-              if hasattr(_s, "reconfigure"):
-                  _s.reconfigure(encoding="utf-8", errors="replace")
-          '@
-          $patched = $src.Insert($lineEnd + 1, $shim + "`n")
-          Set-Content $dm -Value $patched -Encoding UTF8 -NoNewline
-          Write-Output "v1.0.5 fixture encoding shim applied"
-          Push-Location "$fixtureDir/frontend"
-          $npm = (Get-Command npm.cmd).Source
-          & $npm ci --legacy-peer-deps
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm ci failed" }
-          & $npm run build
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 npm build failed" }
-          Pop-Location
+          $fixtureDir = Join-Path $env:RUNNER_TEMP "v106-fixture"
+          git worktree add $fixtureDir v1.0.6
+          # v1.0.6 起按主线同序：唯一前端构建（build_frontend.py 产 dist+
+          # frontend-asset-manifest，Node 门禁 22=runner 环境匹配）→
+          # generate_build_info 产 staging 身份件（spec 强依赖三件：build-info/
+          # source-manifest/frontend-asset-manifest）；v1.0.5 时代的编码垫片已随
+          # 基线切换退役
           Push-Location $fixtureDir
-          & python -m venv .venv-v105
-          & .venv-v105\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 packaging deps failed" }
-          & .venv-v105\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
-          if ($LASTEXITCODE -ne 0) { throw "v1.0.5 pyinstaller failed" }
+          & python scripts\release\build_frontend.py
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 build_frontend failed" }
+          # --output-dir 必须与 btdeck-windows.spec 的 RELEASE_STAGING 对齐
+          #（默认 <root>/release，不传则 spec 找不到三件套——三跑实测）
+          & python scripts\release\generate_build_info.py --artifact-kind windows-exe --output-dir release\build\windows-exe
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 build-info staging failed" }
+          & python -m venv .venv-v106
+          # 四跑实测：仅装 requirements-windows-package.txt 是“光桶 venv”
+          #（PyInstaller 31 个 hidden import 缺失仅告警，产出的 exe 启动即
+          # ModuleNotFoundError: uvicorn）——改用主构建同配方：lock 全量 +
+          # windows-package 增量
+          & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r backend\requirements-lock.txt
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 runtime deps failed" }
+          & .venv-v106\Scripts\python.exe -m pip install -q --prefer-binary -r deploy\requirements-windows-package.txt
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 packaging deps failed" }
+          & .venv-v106\Scripts\pyinstaller.exe --clean --noconfirm deploy\btdeck-windows.spec
+          if ($LASTEXITCODE -ne 0) { throw "v1.0.6 pyinstaller failed" }
           Pop-Location
-          "V105_FIXTURE=$(Join-Path $fixtureDir 'dist/btdeck.exe')" | Add-Content -Path $env:GITHUB_ENV
+          "V106_FIXTURE=$(Join-Path $fixtureDir 'dist/btdeck.exe')" | Add-Content -Path $env:GITHUB_ENV
 
       - name: Run Windows lifecycle scenarios (fail-closed)
         shell: pwsh
         run: |
-          $fixture = if ($env:V105_FIXTURE -and (Test-Path $env:V105_FIXTURE)) { $env:V105_FIXTURE } else { "" }
-          pwsh -File scripts\release\lifecycle\windows.ps1 -V105PortableExe $fixture
+          $fixture = if ($env:V106_FIXTURE -and (Test-Path $env:V106_FIXTURE)) { $env:V106_FIXTURE } else { "" }
+          pwsh -File scripts\release\lifecycle\windows.ps1 -V106PortableExe $fixture
           if ($LASTEXITCODE -ne 0) { throw "windows lifecycle failed" }
 
       - name: Upload lifecycle report
@@ -873,7 +911,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -881,11 +919,26 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          FROM python:3.12-bullseye
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -893,7 +946,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Snapshot DEB / RPM / Docker instances (C01~C12 + restart C10)
@@ -926,7 +979,7 @@ jobs:
           docker rm -f w4-stub-host >/dev/null 2>&1 || true
           docker run -d --name w4-stub-host --network w4net-deb --network-alias w4-stub \
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
-            python:3.11-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
+            python:3.12-slim sh -c 'python /stub/qb_tr_stub.py --role qb --port 18080 & python /stub/qb_tr_stub.py --role tr --port 18081 & python /stub/qb_tr_stub.py --role qb --port 18082 & wait' >/dev/null
           docker network connect --alias w4-stub w4net-rpm w4-stub-host
 
           # 等待逻辑用仓库内脚本文件（scripts/release/lifecycle/w4_install_wait.sh）：
@@ -953,22 +1006,22 @@ jobs:
             docker rm -f "w4-$name" >/dev/null
           }
 
-          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.deb" w4net-deb
+          snapshot_pkg deb w4-debian-sysd "/src/dist/BtDeck-v1.0.7-linux-amd64.deb" w4net-deb
           # rpm 与 deb 用不同 systemd 容器（发行版覆盖）
-          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.6-linux-amd64.rpm" w4net-rpm
+          snapshot_pkg rpm w4-rocky-sysd "/src/dist/BtDeck-v1.0.7-linux-amd64.rpm" w4net-rpm
 
           # Docker 组合快照（backend 容器内执行 runner；stub 由 w4-stub override
           # 提供同网服务）。w4-override 对齐生产形态（DEV=false+测试 SECRET_KEY）
           # ——compose 默认 DEV=true 会开 openapi，与 deb/rpm 生产形态不一致造成
           # C02 伪差异（第九轮实测 route_count 0 vs 191 共 216 条）。
           # 组合保持运行：后续 Mutation drill 步骤复用该组合。
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life up -d
           for i in $(seq 1 60); do
-            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
-            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            body=$(docker exec w3-life-backend python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())' 2>/dev/null || true)
+            case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done
           if [ "$i" = "60" ]; then
@@ -980,13 +1033,13 @@ jobs:
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
             --base-url http://127.0.0.1:5001 --scenario-set FULL --downloader-stub-host w4-stub \
             --spa-base-url http://w3-life-frontend --output /tmp/snapshot-docker.json
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life restart btdeck-backend
           for i in $(seq 1 60); do
-            body=$(docker exec w3-life-backend curl -fsS http://localhost:5001/health/live 2>/dev/null || true)
-            case "$body" in *'"version":"1.0.6"'*) break;; esac
+            body=$(docker exec w3-life-backend python3 -c 'import urllib.request as u;print(u.urlopen("http://localhost:5001/health/live",timeout=5).read().decode())' 2>/dev/null || true)
+            case "$body" in *'"version":"1.0.7"'*) break;; esac
             sleep 3
           done
           docker exec w3-life-backend python3 /tmp/contract_runner.py \
@@ -1031,14 +1084,14 @@ jobs:
           docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
           docker run -d --name w4-mut-proxy --network w4life_w3life_net \
             -v "$PWD/scripts/release/fixtures/qb_tr_stub.py:/stub/qb_tr_stub.py:ro" \
-            python:3.11-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
+            python:3.12-slim python /stub/qb_tr_stub.py --role mutate-proxy --port 5002 \
             --upstream http://w3-life-backend:5001 --mutate-route /health/live \
-            --mutate-field data.version --mutate-value 1.0.6-mutated >/dev/null
+            --mutate-field data.version --mutate-value 1.0.7-mutated >/dev/null
           sleep 2
           docker run --rm --network w4life_w3life_net \
             -v "$PWD/release/evidence/w4:/out" \
             -v "$PWD/scripts/release/contract_runner.py:/runner/contract_runner.py:ro" \
-            python:3.11-slim python /runner/contract_runner.py \
+            python:3.12-slim python /runner/contract_runner.py \
             --base-url http://w4-mut-proxy:5002 --scenarios C01 --output /out/m2-mutated-c01.json
           python scripts/release/slice_snapshot.py --input release/evidence/w4/snapshot-docker.json \
             --scenarios C01_health_identity --output /tmp/m2-baseline-c01.json
@@ -1052,7 +1105,7 @@ jobs:
           echo 'M2 PASS: 响应字段差异已按预期拦截'
 
           docker rm -f w4-mut-proxy >/dev/null 2>&1 || true
-          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.6 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.6 \
+          BTDECK_BACKEND_IMAGE=btdeck-backend:v1.0.7 BTDECK_FRONTEND_IMAGE=btdeck-frontend:v1.0.7 \
             docker compose -f scripts/release/lifecycle/docker-compose.test.yml \
               -f scripts/release/lifecycle/docker-compose.w4-override.yml \
               -f scripts/release/lifecycle/docker-compose.w4-stub.yml -p w4life down -v >/dev/null
@@ -1089,7 +1142,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once
         run: python scripts/release/build_frontend.py
@@ -1097,11 +1150,26 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          FROM python:3.12-bullseye
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1109,7 +1177,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Generate SBOMs (five targets, digest-pinned syft)
@@ -1150,7 +1218,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Build frontend once (single build + manifest)
         shell: pwsh
@@ -1224,7 +1292,7 @@ jobs:
       - name: Setup Python (release tooling + jsonschema)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install manifest validation deps
         run: pip install jsonschema
@@ -1252,11 +1320,26 @@ jobs:
       - name: Build strict Linux packages (DEB + RPM)
         run: |
           docker build -t w2-linux-builder - <<'BUILDEREOF'
-          FROM python:3.11-bullseye
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-                ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+          FROM python:3.12-bullseye
+          # bullseye LTS 已结束（2026-08），Debian 迁移 archive.debian.org 进行中：
+          # deb.debian.org 的 bullseye-security 池已被源头排空（欧美 fastly 边缘
+          # 404，亚太边缘残存缓存——run 34366368985/34367636116/34372894948 三轮
+          # 实证含 5 次重试环仍 404，属地缘确定性缺失非瞬时漂移；bullseye main
+          # 池完好，200+ 包全量可下）。工具链不需要 security 套件的安全补丁版
+          # ruby——sources.list 覆写为仅 bullseye main；保留 Valid-Until 容忍 +
+          # 重试环 + command -v 硬校验。若未来 main 也排空，切换
+          # archive.debian.org/debian（已就绪）即可
+          RUN echo 'deb http://deb.debian.org/debian bullseye main' > /etc/apt/sources.list \
+              && for i in 1 2 3 4 5; do \
+                apt-get -o Acquire::Check-Valid-Until=false update \
+                && apt-get install -y --no-install-recommends \
+                      ruby ruby-dev build-essential git nodejs npm rpm rpm2cpio cpio \
+                && break \
+                || { echo "apt attempt $i failed, retry in 15s"; sleep 15; }; \
+              done \
               && rm -rf /var/lib/apt/lists/* \
-              && gem install fpm --no-document
+              && gem install fpm --no-document \
+              && command -v fpm && command -v ruby && command -v node && command -v npm
           BUILDEREOF
           docker run --rm -v "$PWD:/src" -w /src w2-linux-builder bash -c '
             set -e
@@ -1264,7 +1347,7 @@ jobs:
             bash deploy/build-linux.sh --release
           '
 
-      - name: Build v1.0.6 docker images
+      - name: Build v1.0.7 docker images
         run: bash build-images.sh --release
 
       - name: Install pinned cosign (sha256 from tool-versions.json)
@@ -1366,7 +1449,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install aggregator deps
         run: pip install jsonschema

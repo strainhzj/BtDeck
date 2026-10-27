@@ -14,7 +14,6 @@
 - 不依赖真实文件系统
 """
 
-import pytest
 from unittest.mock import patch, mock_open
 
 from app.yamlConfig import Yaml

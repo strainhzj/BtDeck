@@ -83,6 +83,12 @@ const ALLOWLIST: Array<{ file: string, contains: string, reason: string }> = [
       + '该常量仅在调用方自定义 tabs 时作为回退'
   },
   {
+    file: 'src/views/torrents/components/TrackerDetailCard.vue',
+    contains: "{ label: '媒体库', value: 'media' }",
+    reason: '内置页签默认 label 常量：展示经 trackerTabLabel 走 moviepilot.media.tab 键本地化，'
+      + '该常量仅在调用方自定义 tabs 时作为回退（同 files 页签先例）'
+  },
+  {
     file: 'src/components/torrents/AdvancedMultiSelect.vue',
     contains: "getLocale() === 'en' ? 'e.g. |,~,##' : '如: |,~,##'",
     reason: '分隔符示例按 locale 常量直出（含 | 与 ~ 字符，走 vue-i18n 会被复数分隔符解析破坏），本身即双语实现'
@@ -438,7 +444,11 @@ function findChineseViolations(file: string): string[] {
     let code = line.replace(/\/\/.*$/, '')
     // 行内 HTML 注释（含跨 `<a <!-- --> b` 的单行形态）整段剔除
     code = code.replace(/<!--[\s\S]*?-->/g, '')
-    // 行内自闭块注释剔除；行尾开启的块注释则截断并进入块注释态
+    // 行内块注释：先剔同行闭合形态（`import(/* webpackChunkName */ ...)`）——
+    // 旧实现只要行含 `/*` 就置 inBlockComment=true 且等待「下一行」的 `*/`，
+    // 导致懒加载 import 之后的文件尾被静默跳过（router.ts onError 预存漏译
+    // 因此漏拦，statistics-reports W6 实测暴露）；仅行尾开启的未闭合注释进入块注释态
+    code = code.replace(/\/\*[\s\S]*?\*\//g, '')
     const blockOpen = code.indexOf('/*')
     if (blockOpen >= 0) {
       code = code.slice(0, blockOpen)
@@ -662,14 +672,11 @@ describe('遗留补译 - 源码契约（壳层/控制台/store 走 i18n 键）',
     expect(src).toContain("$t('common.pwa.dismiss')")
   })
 
-  it('PlatformCapabilityPanel：面板文案走 settings.capability 键，服务端 note 原文透传', () => {
-    const src = read('src/components/settings/PlatformCapabilityPanel.vue')
-    expect(src).toContain("$t('settings.capability.title')")
-    expect(src).toContain("$t('settings.capability.levelUnsupported')")
-    expect(src).toContain("$t('settings.capability.platformAndroidServer')")
-    // 服务端下发的能力 label/note 必须原样透传（E03 语义）
-    expect(src).toContain('{{ row.note }}')
-    expect(src).toContain('{{ row.label }}')
+  it('PlatformCapabilityPanel：组件已按 dev1.0.7 282f494 移除，禁止从历史恢复（合并 PLANS/merge-dev107-into-dev.md 类 B）', () => {
+    // 设置页「主机能力」页签与组件在 dev1.0.7 刻意移除（能力矩阵保留 API，仅去 UI 入口）；
+    // 若误恢复组件，此处的源码契约（settings.capability 键）已随语言包演进漂移，
+    // 必红提醒重新评估，而不是静默放行。
+    expect(existsSync(resolve(__dirname, '../../src/components/settings/PlatformCapabilityPanel.vue'))).toBe(false)
   })
 
   it('downloader 控制台：操作反馈走 downloader.msg 键，禁 response.msg 中文兜底', () => {

@@ -936,11 +936,14 @@ def apply_downloader_settings(
             # 字符串数字 -> 整数
             "0": 0,
             "1": 1,
+            "2": 2,
             # 英文名称 -> 整数
             "qbittorrent": 0,
             "qbt": 0,
             "transmission": 1,
             "tr": 1,
+            "rtorrent": 2,
+            "rt": 2,
         }
 
         # 如果是字符串，进行转换
@@ -967,10 +970,13 @@ def apply_downloader_settings(
             logger.info(f"下载器类型转换: '{db_downloader_type}' (str) -> {normalized_type} (int)")
             db_downloader_type = normalized_type
         else:
-            # 如果是整数，验证有效性
-            if db_downloader_type not in [0, 1]:
+            # 如果是整数，验证有效性（枚举成员值为准：0=qB/1=TR/2=rTorrent）
+            if db_downloader_type not in [e.value for e in DownloaderTypeEnum]:
                 return CommonResponse(
-                    status="error", msg=f"无效的下载器类型: {db_downloader_type} (期望: 0或1)", code="500", data=None
+                    status="error",
+                    msg=f"无效的下载器类型: {db_downloader_type} (期望: {sorted(e.value for e in DownloaderTypeEnum)})",
+                    code="500",
+                    data=None,
                 )
             logger.debug(f"下载器类型已是整数: {db_downloader_type}")
 
@@ -1312,6 +1318,14 @@ async def test_downloader_settings(
                         code="200",
                         data={"success": False, "message": f"连接失败: {str(e)}", "delay": None},
                     )
+            else:
+                # rTorrent（2）等未适配类型：显式拒绝测试连接，避免悬空返回 None
+                return CommonResponse(
+                    status="success",
+                    msg="测试完成",
+                    code="200",
+                    data={"success": False, "message": "rTorrent 测试连接暂未适配，待适配层落地后开放", "delay": None},
+                )
 
         except Exception as e:
             logger.error(f"测试连接失败: {e}")

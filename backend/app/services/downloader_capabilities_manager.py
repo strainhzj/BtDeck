@@ -9,6 +9,8 @@ from typing import Dict, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
+import json
+
 from app.models.downloader_capabilities import DownloaderCapabilities
 from app.models.setting_templates import DownloaderTypeEnum
 from app.downloader.models import BtDownloaders
@@ -18,6 +20,31 @@ from app.downloader.exceptions import (
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 扩展能力键常量：RSS 管理（qB 原生 RSS 代理可用性；Phase 2 feature
+# rss-subscription-phase2-2026-09-24）。存 extended_capabilities JSON。
+EXTENDED_KEY_RSS_MANAGEMENT = "rss_management"
+
+
+def supports_rss_management(db: Session, downloader_id: str, downloader_type: int) -> bool:
+    """解析下载器是否具备 qB 原生 RSS 管理能力。
+
+    优先级：DB extended_capabilities.rss_management 覆盖 > 按类型回退
+    （qB=True，其余 False）。缺行/缺键/JSON 损坏均安全回退，不抛错。
+    """
+    try:
+        row = db.query(DownloaderCapabilities).filter(DownloaderCapabilities.downloader_id == downloader_id).first()
+    except Exception as e:  # noqa: BLE001 - 能力读取失败按类型回退，不阻断主链路
+        logger.warning("RSS 能力键读取失败 [downloader_id=%s]: %s", downloader_id, e)
+        return downloader_type == 0
+    if row is not None and row.extended_capabilities:
+        try:
+            extended = json.loads(row.extended_capabilities)
+            if isinstance(extended, dict) and EXTENDED_KEY_RSS_MANAGEMENT in extended:
+                return bool(extended[EXTENDED_KEY_RSS_MANAGEMENT])
+        except (ValueError, TypeError):
+            logger.warning("extended_capabilities JSON 损坏 [downloader_id=%s]，按类型回退", downloader_id)
+    return downloader_type == 0
 
 
 class DownloaderCapabilitiesManager:
@@ -121,6 +148,7 @@ class DownloaderCapabilitiesManager:
                     supports_port_settings=True,
                     supports_advanced_settings=True,
                     supports_peer_limits=True,
+                    extended_capabilities=json.dumps({EXTENDED_KEY_RSS_MANAGEMENT: True}),
                     synced_from_downloader=False,
                     manual_override=False,
                 )
@@ -135,6 +163,7 @@ class DownloaderCapabilitiesManager:
                     supports_port_settings=True,
                     supports_advanced_settings=True,
                     supports_peer_limits=True,
+                    extended_capabilities=json.dumps({EXTENDED_KEY_RSS_MANAGEMENT: False}),
                     synced_from_downloader=False,
                     manual_override=False,
                 )

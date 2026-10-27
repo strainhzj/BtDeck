@@ -114,7 +114,7 @@ export const common = {
     useSeparators: 'Separate multiple values with {separators}',
     separatorJoin: ', ',
     spaceSeparator: 'space',
-    multiSelected: '{first} + {count} more',
+    multiSelected: '{first} ({count} selected)',
     ariaSelect: 'Select multiple values',
     ariaClear: 'Clear selected values'
   },
@@ -125,6 +125,14 @@ export const common = {
     expand: 'Expand page size options',
     collapse: 'Collapse page size options',
     options: 'Page size presets'
+  },
+  /** FormSelect/FormAutocomplete form-level custom selectors (2026-10 add-torrent dialog de-Elementizing) */
+  formSelect: {
+    noOptions: 'No options',
+    noMatch: 'No matches',
+    clear: 'Clear selection',
+    removeTag: 'Remove {label}',
+    searchPlaceholder: 'Search...'
   },
   /** Theme switcher (P6-5 leftover fix: theme.ts config now uses nameKey/descriptionKey) */
   theme: {

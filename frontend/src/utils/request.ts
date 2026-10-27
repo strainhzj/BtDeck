@@ -233,6 +233,10 @@ service.interceptors.request.use(
     if (UserModule.token) {
       // 认证契约收敛：只发送 Authorization: Bearer。
       // 后端 dependencies.py 已兼容读取 Bearer，移除冗余的 x-access-token。
+      // axios 0.32 起 AxiosRequestConfig.headers 收紧为可空，赋值前兜底初始化
+      if (!config.headers) {
+        config.headers = {}
+      }
       config.headers['Authorization'] = `Bearer ${UserModule.token}`
       if (DEBUG_MODE) {
         console.log('✅ token已设置到请求头（脱敏）:', maskToken(UserModule.token))

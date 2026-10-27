@@ -13,8 +13,8 @@
 | 目标 Android API | 以提审时 Google Play 官方要求为准（当前预期 35/36） | `target API 34+` **不作为验收口径**；为 API 36 兼容预留 |
 | Chaquopy | 17.x（当前主线） | 版本兼容矩阵: https://chaquo.com/chaquopy/doc/current/versions.html |
 | Android Gradle Plugin / Gradle | 以 Chaquopy 17 要求为准，锁定在 android-wheels 仓库 | 随 Phase 0B 最小工程一并固定并记录 hash |
-| Python（Android） | 3.12（Chaquopy 提供的 cp312） | 与桌面 3.11 的边界见 `toolchain-matrix.md` |
-| Python（桌面） | 3.11（Docker 镜像）/ 3.12.4（Windows 打包 venv） | 不因安卓目标机械改动 pyproject |
+| Python（Android） | 3.12（Chaquopy 提供的 cp312） | 与桌面同为 3.12，统一契约见 `toolchain-matrix.md` |
+| Python（桌面） | 3.12（Docker 镜像 / Windows 打包 venv 3.12.4 / Linux 打包） | 单一契约版本，制品与检查一致 |
 | ABI | `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` | 四 ABI 全量矩阵，缺一即 Phase 0B 闸门失败 |
 | native 依赖 | `pydantic-core` 及 ABI 敏感依赖（bcrypt/regex/Pillow/pycryptodomex/gmssl 等） | 完整 import graph 见 android-wheels 仓库清单 |
 | 16 KB page-size | 必须兼容 | Android 15+ 要求，真实设备或等效环境验证 |

@@ -140,7 +140,7 @@ interface ApiErrorLike {
 })
 export default class TemplateSelectionDialog extends Vue {
   @Prop({ default: false }) visible!: boolean
-  @Prop({ required: true }) downloaderType!: 0 | 1
+  @Prop({ required: true }) downloaderType!: 0 | 1 | 2
   @Prop({ required: true }) downloaderId!: string
 
   // 加载状态
@@ -256,6 +256,7 @@ export default class TemplateSelectionDialog extends Vue {
   private getDownloaderTypeLabel(type: number): string {
     if (type === 0) return 'qBittorrent'
     if (type === 1) return 'Transmission'
+    if (type === 2) return 'rTorrent'
     return this.$t('downloader.template.unknownType').toString()
   }
 }

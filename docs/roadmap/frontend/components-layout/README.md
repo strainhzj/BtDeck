@@ -1,35 +1,47 @@
 # frontend/components-layout — 通用组件与布局骨架
 
-> 通用可复用组件（24 个 .vue，实测 2026-09-21）+ 布局骨架（layout/ 下 9 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
+> 通用可复用组件（27 个 .vue，实测 2026-10-09）+ 布局骨架（layout/ 下 9 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/components-layout/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
 
 ### components/ — 通用组件
 
-#### components/common/（4 个 .vue + 2 测试）✨v1.0.6.28
+#### components/common/（8 个 .vue + 1 mixin + 1 类型模块 + 6 测试）✨v1.0.6.28 / 2026-10-09 扩容
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 品牌 Logo app-logo | `AppLogo.vue` | Vue 2 Logo 统一封装：`full` 为 D 形 mark + `BtDeck` 字标，另有 `mark`/`micro` 光学尺寸与 `brand`/`inverse` 色调；移动头部使用反白微型版，按 `BASE_URL` 解析 public 品牌资源 |
 | 品牌 Logo 单测 app-logo-test | `__tests__/AppLogo.spec.ts` | 覆盖完整、标准、微缩及反白资源选择契约 |
-| Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标 |
+| Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标；✨2026-09-23 补 clapperboard（设置页 MoviePilot 页签）；✨2026-09-25 补 sprout（统计·做种）+ radar（统计·Tracker）（lucide@1.27 实测存在，orbit/gauge 备选未启用）；✨2026-10-09 补 plus-circle/file/loader-2（添加种子弹窗全自定义组件化） |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
 | PWA 更新提示 refresh-prompt | `RefreshPrompt.vue` | 监听 Service Worker 更新事件，提供用户确认后刷新提示（桌面/移动布局共用）；✨2026-09-19 遗留清扫：三条文案走 common.pwa.*（发现新版本/立即刷新/暂不刷新 aria） |
 | Demo 模式提示 demo-banner | `DemoModeBanner.vue` | Demo 构建固定顶部提示“数据为本地模拟”，提供本地 store 重置并刷新当前页面；2026-09-20 P6-5 双语（common.demo.* 四键，demo fixtures 数据范围另立项未译） |
+| 弹窗壳 base-dialog | `BaseDialog.vue` | 全自定义弹窗壳（零 Element）：overlay 蒙层/渐变头（Lucide 图标+标题）/关闭钮/ESC 关闭/body 滚动锁（模块级计数支持叠弹）/进出场动画/≤768 顶部铆定与全宽覆盖；内容经默认插槽与 footer-left/footer-right 注入，双事件 update:visible+close；✨2026-10-18 三段纵列布局——头/底 flex-shrink:0 固定、仅 modal-body 滚动（flex:1/min-height:0/overflow-y:auto + themed-scrollbar 6px 主题色胶囊），滚动条收进表单区不再整窗贴边；2026-10-09 首个消费者 TorrentAddDialog，其余弹窗可渐进迁移 |
+| 下拉选择 form-select | `FormSelect.vue` | 全自定义下拉选择器（零 Element，替代 el-select）：single/multiple 双模式（多选 tag chips 可单独移除）+ filterable/clearable/disabled/invalid；键盘流（触发器 ↓/Enter 展开，浮层内 ↑↓/Enter/Esc）+ ARIA combobox/listbox/activedescendant；option 具名插槽支持富选项行（徽章/状态点机会渲染）；浮层 teleport 复用 FloatingDropdown mixin；✨2026-10-18 下拉列表滚动条 themed-scrollbar 主题化（替全局通用样式） |
+| 自动补全输入 form-autocomplete | `FormAutocomplete.vue` | 全自定义自动补全输入（零 Element，替代 el-autocomplete）：suggestions 由宿主计算注入（过滤逻辑留业务侧），focus/click/input 展开，↑↓ 高亮（初始无高亮，对齐 el-autocomplete）+ Enter 选中/Esc 收起；suggestion 作用域插槽渲染富建议行；mono 等宽模式；✨2026-10-18 建议列表滚动条 themed-scrollbar 主题化（与 FormSelect 一致） |
+| 复选框 form-checkbox | `FormCheckbox.vue` | 全自定义复选框（零 Element）：原生 input 承载键盘/读屏语义（视觉隐藏），令牌化绘制勾选盒，v-model 绑定 boolean |
+| 浮层定位 mixin floating-dropdown | `floatingDropdown.ts` | 下拉浮层定位 mixin（自 PageSizeCombobox 已验证方案抽取）：展开时 teleport 到 body + fixed 定位（上下自适应/横向防溢出/最小宽度对齐触发器），scroll 捕获/resize rAF 节流重定位，文档级 mousedown 点击外部收起，关闭时节点还原父级；契约 ref=root + ref=options |
+| 表单控件类型 form-controls | `formControls.ts` | FormSelect/FormAutocomplete 共享类型（FormSelectOption/FormAutocompleteSuggestion/FormSelectBadgeTone）；独立 .ts 而非 .vue 具名导出：*.vue shim 只声明默认导出，具名导入报 TS2614 |
+| 表单控件单测 form-controls-test | `__tests__/BaseDialog.spec.ts` + `FormSelect.spec.ts` + `FormAutocomplete.spec.ts` + `FormCheckbox.spec.ts` | 4 组件 31 例（2026-10-18 实测校准）：壳关闭三路径（钮/蒙层/ESC）与滚动锁、≤768 源码契约（自 torrent-add-dialog.spec 迁入）；单/多选选择与 chips 增删、filterable 过滤+Enter、键盘导航、外部点击收起、invalid 透传（v-model 回写走宿主组件验证）；复选框翻转/disabled；✨2026-10-18 +4 源码契约——BaseDialog 滚动结构整体化（整窗滚动禁回流/头底 flex-shrink:0/仅 body 滚动）+ themed-scrollbar 主题色着色（中性灰禁令），FormSelect/FormAutocomplete 列表滚动条接入契约；jsdom 坑位——focus 事件仅焦点转移时触发（选中后重开靠 @click）、mixin 类必须 @Component 否则字段不进响应式 data |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
+
+#### components/charts/（1 个 .vue + 1 测试）✨2026-09-25（统计报表 W4）
+
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|------------|
+| 图表封装 echarts | `EChart.vue` | echarts@5.5.1 精确钉版按需+懒加载封装（class 风格 @Component）：echarts/core + **深路径按需**（echarts/lib/chart/{bar,line,pie,scatter} + lib/component/{grid,tooltip,legend,dataZoom,title} + installCanvasRenderer 显式 use——sideEffects 白名单致命名空间入口 339KB gz，深路径修复后 199.3KB gz 达标）统一 webpackChunkName "echarts"；模块级单例 promise（多实例一次加载）；import 竞态防护（beforeDestroy 置 disposed，import 完成即 setOption）；watch 浅比较（顶层键值同引用跳过）；setOption notMerge:true；ResizeObserver 自适应；beforeDestroy dispose+disconnect；空态具名插槽 empty；Props：option/height/loading |
+| 图表封装单测 echarts-test | `__tests__/EChart.spec.ts` | 7 例：动态 import 生命周期（竞态/ disposed）/watch 浅比较契约（新数组引用必重渲染）/ResizeObserver 自适应与销毁断开/空态插槽；坑位——jest.mock 工厂禁引用外层变量（句柄经 globalThis.__mocks 存活）、组件模块级 promise 缓存逐例 resetModules 后 require 重取、类字段 jest.fn 不可 spyOn（RO stub 改原型方法） |
 
 #### 顶层 + 单件目录
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 主机能力面板 platform-capability ✨2026-09-21 补录 | `settings/PlatformCapabilityPanel.vue` | 设置页「主机能力」面板（dual-mode-client Phase 4）：消费 `api/platform-capabilities.ts` 单例缓存，按平台形态展示各能力支持级别/降级计数，加载中/不可用两态；桌面 ≥768 表格、窄屏卡片双形态；文案走 settings.capability.* |
 | 批量按钮 batch-button | `BatchButton/index.vue` | 批量操作按钮（含下拉菜单） |
 | 批量按钮测试 batch-button-test | `BatchButton/__tests__/BatchButton.spec.ts` | BatchButton 回归测试：提供 `lucide-icon`/`lucide-size` props 时用 LucideIcon 渲染、未提供时回退 el-icon、disabled 抑制点击 |
 | 面包屑 breadcrumb | `Breadcrumb/index.vue` | 面包屑导航（标题经 `routeTitle()`：titleKey 双语键优先，双语 P1） |
 | 可折叠面板 collapsible-panel | `CollapsiblePanel.vue` | 通用可折叠面板（management-panel 风格标题区 + Lucide 折叠箭头，`aria-expanded`/`aria-controls` 无障碍）：折叠状态按 `storageKey` prop 经 getStorage/setStorage 持久化 |
-| 侧边栏折叠 hamburger | `Hamburger/index.vue` | 侧边栏折叠按钮 |
 | 分页 pagination | `Pagination/index.vue` | 分页组件封装 |
 | 主题切换 theme-switcher | `ThemeSwitcher/index.vue` | 主题色切换器（翡翠绿/活力橙/石墨灰），触发器与选项图标统一使用 Lucide；2026-09-20 P6-5 双语：主题名/描述/切换 toast 走 common.theme.*（theme.ts 改 nameKey/descriptionKey） |
 

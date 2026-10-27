@@ -3,7 +3,7 @@
 ; 版本: v1.0.6（唯一版本输入见 release/release-config.json，由版本一致性检查强制对齐）
 
 #define AppName "BtDeck"
-#define AppVersion "1.0.6"
+#define AppVersion "1.0.7"
 #define AppPublisher "BtDeck Team"
 #define AppURL "https://github.com/strainhzj/BtDeck"
 #define AppExeName "btdeck.exe"

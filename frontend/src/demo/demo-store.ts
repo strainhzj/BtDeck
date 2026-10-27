@@ -1,16 +1,35 @@
-import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE } from '@/demo/fixtures'
+import { DEMO_ACTIVITIES, DEMO_FIXTURE_BUNDLE, DEMO_TIME ,
+  DEMO_REPORT_FUN_SUMMARY,
+  DEMO_REPORT_OVERVIEW,
+  DEMO_REPORT_SEEDING,
+  DEMO_REPORT_TRACKERS,
+  demoReportsSpeedHistory,
+  demoReportsTrends,
+  demoReportsYearly
+} from '@/demo/fixtures'
 import {
   DemoActivity,
   DemoAuditLog,
   DemoDashboardData,
   DemoDownloader,
   DemoFixtureBundle,
+  DemoMcpApiKey,
+  DemoMcpSettings,
+  DemoMoviePilotAssociation,
+  DemoMoviePilotInstance,
   DemoNotification,
   DemoOrphanFile,
   DemoPage,
   DemoQueryTemplate,
   DemoQueryTemplateConditions,
   DemoRecycleItem,
+  DemoRssArticle,
+  DemoRssFeed,
+  DemoRssRule,
+  DemoQbRssNode,
+  DemoQbRssArticle,
+  DemoQbRssRule,
+  DemoQbRssPreferences,
   DemoTask,
   DemoTaskLog,
   DemoTorrent,
@@ -19,6 +38,7 @@ import {
   DemoTrackerMessage,
   DemoTrackerReannounceConfig
 } from '@/demo/types'
+import { ReportsFunSummaryData, ReportsFunYearlyData, ReportsOverviewData, ReportsSeedingData, ReportsTrendsData, ReportsTrackersData, SpeedHistory, SpeedRange, TrendsPeriod } from '@/types/reports'
 
 export interface DemoPageParams {
   page?: number
@@ -42,6 +62,17 @@ export interface DemoTorrentQuery extends DemoPageParams {
   sort_order?: 'asc' | 'desc'
 }
 
+export interface DemoRssFeedInput {
+  downloaderId?: string
+  name?: string
+  url?: string
+  enabled?: boolean
+}
+
+export interface DemoRssArticleQuery extends DemoPageParams {
+  status?: 'pending' | 'added'
+}
+
 export interface DemoTemplateInput {
   name?: string
   description?: string | null
@@ -54,8 +85,8 @@ export interface DemoDownloaderInput {
   nickname?: string
   host?: string
   port?: string | number
-  downloaderType?: 0 | 1
-  downloader_type?: 0 | 1
+  downloaderType?: 0 | 1 | 2
+  downloader_type?: 0 | 1 | 2
   isSearch?: '0' | '1'
   is_search?: '0' | '1'
   isSsl?: '0' | '1'
@@ -115,6 +146,19 @@ export interface DemoOrphanCleanupResult {
 }
 
 export type DemoRestoreResult = DemoDeleteResult
+
+/** 关联镜像 + 任务快照（linked 且任务存在时由 store 附带，供面板/详情页展示） */
+export interface DemoMoviePilotAssociationWithTask extends DemoMoviePilotAssociation {
+  task?: {
+    infoId: string
+    name: string | null
+    status: string | null
+    downloaderId: string
+    downloaderName: string | null
+    savePath: string | null
+    size: number | null
+  }
+}
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -194,6 +238,38 @@ export class DemoStore {
     return clone(this.state)
   }
 
+  // ==================== 统计报表（statistics-reports W7） ====================
+  // 报表聚合口径属后端域逻辑，Demo 侧不做二次实现：直接返回静态 fixture
+  // （速度历史/年度报告为参数化生成；见 fixtures/index.ts 尾部口径注释）。
+
+  public getReportsOverview(): ReportsOverviewData {
+    return DEMO_REPORT_OVERVIEW
+  }
+
+  public getReportsTrends(period: TrendsPeriod, limit: number): ReportsTrendsData {
+    return demoReportsTrends(period, limit)
+  }
+
+  public getReportsSeeding(): ReportsSeedingData {
+    return DEMO_REPORT_SEEDING
+  }
+
+  public getReportsTrackers(): ReportsTrackersData {
+    return DEMO_REPORT_TRACKERS
+  }
+
+  public getReportsFunSummary(): ReportsFunSummaryData {
+    return DEMO_REPORT_FUN_SUMMARY
+  }
+
+  public getReportsFunYearly(year: number): ReportsFunYearlyData {
+    return demoReportsYearly(year)
+  }
+
+  public getReportsSpeedHistory(range: SpeedRange, downloaderId?: string): SpeedHistory {
+    return demoReportsSpeedHistory(range, downloaderId)
+  }
+
   public getDashboardData(): DemoDashboardData {
     const online = this.state.downloaders.filter(item => item.status === 'online').length
     const activeTorrents = this.state.torrents.filter(isActiveTorrent)
@@ -255,7 +331,8 @@ export class DemoStore {
 
   public createDownloader(input: DemoDownloaderInput): DemoDownloader {
     const nextId = `demo-downloader-local-${this.state.downloaders.length + 1}`
-    const downloaderType = input.downloaderType ?? input.downloader_type ?? 0
+    const rawType = input.downloaderType ?? input.downloader_type ?? 0
+    const downloaderType: 0 | 1 | 2 = (rawType === 1 || rawType === 2) ? rawType : 0
     const isSearch = input.isSearch ?? input.is_search ?? '1'
     const item: DemoDownloader = {
       downloaderId: nextId,
@@ -263,7 +340,7 @@ export class DemoStore {
       host: input.host || 'new-node.example.invalid',
       port: String(input.port || '8080'),
       downloaderType,
-      downloaderTypeName: downloaderType === 1 ? 'transmission' : 'qbittorrent',
+      downloaderTypeName: downloaderType === 1 ? 'transmission' : (downloaderType === 2 ? 'rtorrent' : 'qbittorrent'),
       isSearch,
       enabled: input.enabled ?? '1',
       status: 'online',
@@ -290,7 +367,7 @@ export class DemoStore {
     if (input.downloaderType !== undefined || input.downloader_type !== undefined) {
       const downloaderType = input.downloaderType ?? input.downloader_type ?? item.downloaderType
       item.downloaderType = downloaderType
-      item.downloaderTypeName = downloaderType === 1 ? 'transmission' : 'qbittorrent'
+      item.downloaderTypeName = downloaderType === 1 ? 'transmission' : (downloaderType === 2 ? 'rtorrent' : 'qbittorrent')
     }
     if (input.isSearch !== undefined || input.is_search !== undefined) {
       item.isSearch = input.isSearch ?? input.is_search ?? item.isSearch
@@ -524,6 +601,287 @@ export class DemoStore {
     if (!template) return null
     template.usage_count += 1
     return clone(template)
+  }
+
+  // ==================== RSS 订阅（feature rss-subscription-2026-09-24） ====================
+
+  public listRssFeeds(downloaderId: string): Array<Omit<DemoRssFeed, 'articles'> & { pendingCount: number }> {
+    return this.state.rssFeeds
+      .filter(feed => feed.downloaderId === downloaderId)
+      .map(feed => {
+        const { articles, ...rest } = feed
+        void articles
+        return { ...rest, pendingCount: feed.articles.filter(article => article.status === 'pending').length }
+      })
+  }
+
+  public getRssFeed(feedId: string): DemoRssFeed | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    return feed ? clone(feed) : null
+  }
+
+  public createRssFeed(input: DemoRssFeedInput): DemoRssFeed & { pendingCount: number } {
+    const feedId = `demo-rss-feed-local-${this.state.rssFeeds.length + 1}`
+    const feed: DemoRssFeed = {
+      feedId,
+      downloaderId: input.downloaderId || 'demo-downloader-001',
+      name: input.name || '未命名 Demo 订阅源',
+      url: input.url || 'https://rss.example.invalid/new-feed.xml',
+      enabled: input.enabled !== false,
+      lastFetchAt: null,
+      lastFetchStatus: 'never',
+      lastError: null,
+      articles: []
+    }
+    this.state.rssFeeds.push(feed)
+    return { ...clone(feed), pendingCount: 0 }
+  }
+
+  public updateRssFeed(feedId: string, input: DemoRssFeedInput): DemoRssFeed | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    if (!feed) return null
+    if (input.name !== undefined) feed.name = input.name
+    if (input.url !== undefined) feed.url = input.url
+    if (input.enabled !== undefined) feed.enabled = input.enabled
+    return clone(feed)
+  }
+
+  public deleteRssFeed(feedId: string): boolean {
+    const originalLength = this.state.rssFeeds.length
+    this.state.rssFeeds = this.state.rssFeeds.filter(item => item.feedId !== feedId)
+    return this.state.rssFeeds.length !== originalLength
+  }
+
+  public refreshRssFeed(feedId: string): { newCount: number, articleCount: number } | null {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    if (!feed) return null
+    // Demo 语义：每次刷新补一篇固定文章（幂等 id 去重），状态改 ok
+    let newCount = 0
+    const demoId = `demo-rss-refresh-${feedId}`
+    if (!feed.articles.some(article => article.articleId === demoId)) {
+      feed.articles.unshift({
+        articleId: demoId,
+        feedId: feed.feedId,
+        title: 'Demo.Refresh.Article.1080p',
+        link: 'magnet:?xt=urn:btih:demorefreshdemo0001demo0001demo0001',
+        publishedAt: '2026-09-24 12:00:00',
+        fetchedAt: '2026-09-24 12:00:00',
+        status: 'pending',
+        addedAt: null
+      })
+      newCount = 1
+    }
+    feed.lastFetchAt = '2026-09-24 12:00:00'
+    feed.lastFetchStatus = 'ok'
+    feed.lastError = null
+    return { newCount, articleCount: feed.articles.length }
+  }
+
+  public listRssArticles(feedId: string, query: DemoRssArticleQuery = {}): DemoPage<DemoRssArticle> {
+    const feed = this.state.rssFeeds.find(item => item.feedId === feedId)
+    const articles = feed
+      ? feed.articles.filter(article => !query.status || article.status === query.status)
+      : []
+    return paginate(articles, query)
+  }
+
+  public addRssArticle(articleId: string): DemoRssArticle | null {
+    for (const feed of this.state.rssFeeds) {
+      const article = feed.articles.find(item => item.articleId === articleId)
+      if (article) {
+        if (article.status === 'added') return null
+        article.status = 'added'
+        article.addedAt = '2026-09-24 12:30:00'
+        return clone(article)
+      }
+    }
+    return null
+  }
+
+  // ==================== RSS Phase 2：模式 + 引擎规则 + qB 代理 ====================
+
+  /** 关键词匹配（与后端语义一致：include OR + exclude AND NOT，大小写不敏感子串） */
+  private static matchesKeywords(title: string, include: string, exclude: string | null): boolean {
+    const parts = (raw: string | null): string[] =>
+      (raw || '').split(',').map(part => part.trim()).filter(part => part.length > 0)
+    const lower = title.toLowerCase()
+    if (!parts(include).some(kw => lower.includes(kw.toLowerCase()))) return false
+    return !parts(exclude).some(kw => lower.includes(kw.toLowerCase()))
+  }
+
+  public getRssMode(downloaderId: string): { mode: 'btdeck' | 'qb_native', qbNativeAvailable: boolean } {
+    const downloader = this.state.downloaders.find(item => item.downloaderId === downloaderId)
+    const row = this.state.rssModes.find(item => item.downloaderId === downloaderId)
+    return {
+      mode: row ? row.mode : 'btdeck',
+      qbNativeAvailable: Boolean(downloader && downloader.downloaderType === 0)
+    }
+  }
+
+  public updateRssMode(downloaderId: string, mode: 'btdeck' | 'qb_native'): void {
+    const row = this.state.rssModes.find(item => item.downloaderId === downloaderId)
+    if (row) {
+      row.mode = mode
+    } else {
+      this.state.rssModes.push({ downloaderId, mode })
+    }
+  }
+
+  public listRssRules(downloaderId: string, params: DemoPageParams = {}): DemoPage<DemoRssRule> {
+    return paginate(
+      this.state.rssRules.filter(rule => rule.downloaderId === downloaderId),
+      params
+    )
+  }
+
+  public getRssRule(ruleId: string): DemoRssRule | null {
+    return clone(this.state.rssRules.find(rule => rule.ruleId === ruleId) || null)
+  }
+
+  public createRssRule(input: Partial<DemoRssRule> & { downloaderId: string }): DemoRssRule & { backfill: { matched: number, pushed: number, failed: number, skippedMode: number } } {
+    const ruleId = `demo-rss-rule-local-${this.state.rssRules.length + 1}`
+    const rule: DemoRssRule = {
+      ruleId,
+      downloaderId: input.downloaderId,
+      name: input.name || '未命名规则',
+      enabled: input.enabled !== false,
+      includeKeywords: input.includeKeywords || '',
+      excludeKeywords: input.excludeKeywords ?? null,
+      useRegex: Boolean(input.useRegex),
+      targetDownloaderId: input.targetDownloaderId ?? null,
+      savePath: input.savePath ?? null,
+      tags: input.tags ?? null,
+      feedIds: input.feedIds ? [...input.feedIds] : [],
+      matchCount: 0,
+      lastMatchedAt: null
+    }
+    this.state.rssRules.push(rule)
+    const backfill = this.backfillRssRule(rule)
+    return clone({ ...rule, backfill })
+  }
+
+  public updateRssRule(ruleId: string, input: Partial<DemoRssRule>): (DemoRssRule & { backfill: { matched: number, pushed: number, failed: number, skippedMode: number } }) | null {
+    const rule = this.state.rssRules.find(item => item.ruleId === ruleId)
+    if (!rule) return null
+    if (input.name !== undefined) rule.name = input.name
+    if (input.enabled !== undefined) rule.enabled = input.enabled
+    if (input.includeKeywords !== undefined) rule.includeKeywords = input.includeKeywords
+    if (input.excludeKeywords !== undefined) rule.excludeKeywords = input.excludeKeywords
+    if (input.useRegex !== undefined) rule.useRegex = input.useRegex
+    if (input.targetDownloaderId !== undefined) rule.targetDownloaderId = input.targetDownloaderId
+    if (input.savePath !== undefined) rule.savePath = input.savePath
+    if (input.tags !== undefined) rule.tags = input.tags
+    if (input.feedIds !== undefined) rule.feedIds = [...input.feedIds]
+    const backfill = this.backfillRssRule(rule)
+    return clone({ ...rule, backfill })
+  }
+
+  public deleteRssRule(ruleId: string): boolean {
+    const index = this.state.rssRules.findIndex(item => item.ruleId === ruleId)
+    if (index === -1) return false
+    this.state.rssRules.splice(index, 1)
+    return true
+  }
+
+  private backfillRssRule(rule: DemoRssRule): { matched: number, pushed: number, failed: number, skippedMode: number } {
+    const counts = { matched: 0, pushed: 0, failed: 0, skippedMode: 0 }
+    if (!rule.enabled) return counts
+    const targetMode = this.getRssMode(rule.targetDownloaderId || rule.downloaderId).mode
+    const feeds = this.state.rssFeeds.filter(
+      feed => feed.downloaderId === rule.downloaderId && (rule.feedIds.length === 0 || rule.feedIds.includes(feed.feedId))
+    )
+    for (const feed of feeds) {
+      for (const article of feed.articles) {
+        if (article.status !== 'pending') continue
+        if (!DemoStore.matchesKeywords(article.title, rule.includeKeywords, rule.excludeKeywords)) continue
+        counts.matched += 1
+        if (targetMode === 'qb_native') {
+          counts.skippedMode += 1
+          continue
+        }
+        article.status = 'added'
+        article.addedAt = '2026-09-24 12:30:00'
+        counts.pushed += 1
+      }
+    }
+    if (counts.pushed > 0) {
+      rule.matchCount += counts.pushed
+      rule.lastMatchedAt = '2026-09-24 12:30:00'
+    }
+    return counts
+  }
+
+  public previewRssRule(ruleId: string): Array<DemoRssArticle & { feedName: string | null }> | null {
+    const rule = this.state.rssRules.find(item => item.ruleId === ruleId)
+    if (!rule) return null
+    if (!rule.enabled) return []
+    const feeds = this.state.rssFeeds.filter(
+      feed => feed.downloaderId === rule.downloaderId && (rule.feedIds.length === 0 || rule.feedIds.includes(feed.feedId))
+    )
+    const items: Array<DemoRssArticle & { feedName: string | null }> = []
+    for (const feed of feeds) {
+      for (const article of feed.articles) {
+        if (article.status !== 'pending') continue
+        if (!DemoStore.matchesKeywords(article.title, rule.includeKeywords, rule.excludeKeywords)) continue
+        items.push({ ...clone(article), feedName: feed.name })
+      }
+    }
+    return items.slice(0, 50)
+  }
+
+  // ==================== qB 原生 RSS 代理（demo） ====================
+
+  public getQbRssTree(): DemoQbRssNode[] {
+    return clone(this.state.qbRssTree)
+  }
+
+  public getQbRssArticles(path: string, onlyUnread: boolean): { list: DemoQbRssArticle[], total: number, unreadCount: number } {
+    const articles = (this.state.qbRssArticles[path] || []).map(article => ({
+      ...clone(article),
+      isRead: article.isRead || this.state.qbRssReadArticleIds.includes(article.articleId)
+    }))
+    const filtered = onlyUnread ? articles.filter(article => !article.isRead) : articles
+    const unreadCount = articles.filter(article => !article.isRead).length
+    return { list: filtered, total: filtered.length, unreadCount }
+  }
+
+  public markQbRssRead(path: string, articleId: string | null): void {
+    if (articleId) {
+      this.state.qbRssReadArticleIds.push(articleId)
+      return
+    }
+    for (const article of this.state.qbRssArticles[path] || []) {
+      this.state.qbRssReadArticleIds.push(article.articleId)
+    }
+  }
+
+  public listQbRssRules(): DemoQbRssRule[] {
+    return clone(this.state.qbRssRules)
+  }
+
+  public setQbRssRule(name: string, ruleDef: Partial<Omit<DemoQbRssRule, 'name'>>): void {
+    const existing = this.state.qbRssRules.find(rule => rule.name === name)
+    if (existing) {
+      Object.assign(existing, clone(ruleDef), { name })
+    } else {
+      this.state.qbRssRules.push(clone({ ...ruleDef, name }))
+    }
+  }
+
+  public deleteQbRssRule(name: string): boolean {
+    const index = this.state.qbRssRules.findIndex(rule => rule.name === name)
+    if (index === -1) return false
+    this.state.qbRssRules.splice(index, 1)
+    return true
+  }
+
+  public getQbRssPreferences(): DemoQbRssPreferences {
+    return clone(this.state.qbRssPreferences)
+  }
+
+  public updateQbRssPreferences(input: Partial<DemoQbRssPreferences>): DemoQbRssPreferences {
+    this.state.qbRssPreferences = { ...this.state.qbRssPreferences, ...input }
+    return clone(this.state.qbRssPreferences)
   }
 
   public listTasks(params: DemoPageParams = {}): DemoPage<DemoTask> {
@@ -783,6 +1141,174 @@ export class DemoStore {
 
   public listReannounceConfigs(params: DemoPageParams = {}): DemoPage<DemoTrackerReannounceConfig> {
     return paginate(this.state.trackerReannounceConfigs, params)
+  }
+
+  // ====== MCP 服务配置（demo 全局/能力开关，revision CAS 与真实端点一致） ======
+
+  public getMcpSettings(): DemoMcpSettings {
+    return clone(this.state.mcpSettings)
+  }
+
+  /** CAS 更新；revision 不匹配返回 null（请求层转 409），成功后 revision+1 */
+  public updateMcpSettings(input: {
+    enabled: boolean
+    capabilities: Record<string, boolean>
+    expectedRevision: number
+    updatedBy: string
+  }): DemoMcpSettings | null {
+    if (input.expectedRevision !== this.state.mcpSettings.revision) return null
+    this.state.mcpSettings = {
+      ...this.state.mcpSettings,
+      enabled: input.enabled,
+      capabilities: { ...input.capabilities },
+      revision: this.state.mcpSettings.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: input.updatedBy
+    }
+    return this.getMcpSettings()
+  }
+
+  // ====== MCP 服务密钥（demo 固定演示密钥；rotate 的 revision CAS 与真实端点一致） ======
+
+  public getMcpApiKey(): DemoMcpApiKey {
+    return clone(this.state.mcpApiKey)
+  }
+
+  /** CAS 刷新：revision 不匹配返回 null（请求层转 409）；成功后 revision+1、更换演示密钥尾串 */
+  public rotateMcpApiKey(expectedRevision: number): DemoMcpApiKey | null {
+    if (expectedRevision !== this.state.mcpApiKey.revision) return null
+    const rotated: DemoMcpApiKey = {
+      ...this.state.mcpApiKey,
+      revision: this.state.mcpApiKey.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: '演示管理员'
+    }
+    this.state.mcpApiKey = rotated
+    return clone(rotated)
+  }
+
+  // ====== MoviePilot 集成（全局开关 CAS + 实例/关联镜像） ======
+
+  public getMoviePilotSettings(): DemoFixtureBundle['moviepilotSettings'] {
+    return clone(this.state.moviepilotSettings)
+  }
+
+  /** CAS 更新；revision 不匹配返回 null（请求层转 409），成功后 revision+1 */
+  public updateMoviePilotSettings(input: {
+    enabled: boolean
+    expectedRevision: number
+    updatedBy: string
+  }): DemoFixtureBundle['moviepilotSettings'] | null {
+    if (input.expectedRevision !== this.state.moviepilotSettings.revision) return null
+    this.state.moviepilotSettings = {
+      ...this.state.moviepilotSettings,
+      enabled: input.enabled,
+      revision: this.state.moviepilotSettings.revision + 1,
+      updatedAt: DEMO_TIME,
+      updatedBy: input.updatedBy
+    }
+    return this.getMoviePilotSettings()
+  }
+
+  public listMoviePilotInstances(params: DemoPageParams = {}): DemoPage<DemoMoviePilotInstance> {
+    return paginate(this.state.moviepilotInstances, params)
+  }
+
+  public updateMoviePilotInstance(
+    instanceId: string,
+    input: { name?: string, enabled?: boolean, downloaderMapping?: Record<string, string> }
+  ): DemoMoviePilotInstance | null {
+    const instance = this.state.moviepilotInstances.find(item => item.instanceId === instanceId)
+    if (!instance) return null
+    if (input.name !== undefined) instance.name = input.name
+    if (input.enabled !== undefined) instance.enabled = input.enabled
+    if (input.downloaderMapping !== undefined) instance.downloaderMapping = { ...input.downloaderMapping }
+    instance.updatedAt = DEMO_TIME
+    // 映射变化后 linked/unmapped 状态按新映射重解析（与真实端点语义一致）
+    this.state.moviepilotAssociations.forEach(item => this.reresolveAssociation(item))
+    return clone(instance)
+  }
+
+  public deleteMoviePilotInstance(instanceId: string): { instanceId: string, deletedHistories: number } | null {
+    const index = this.state.moviepilotInstances.findIndex(item => item.instanceId === instanceId)
+    if (index < 0) return null
+    this.state.moviepilotInstances.splice(index, 1)
+    const before = this.state.moviepilotAssociations.length
+    this.state.moviepilotAssociations = this.state.moviepilotAssociations.filter(
+      item => item.instanceId !== instanceId
+    )
+    return { instanceId, deletedHistories: before - this.state.moviepilotAssociations.length }
+  }
+
+  /** 正向：(downloaderId, hash) → 整理历史；linked 项附带任务快照 */
+  public listMoviePilotAssociations(
+    params: DemoPageParams & { downloaderId?: string, hash?: string }
+  ): DemoPage<DemoMoviePilotAssociationWithTask> {
+    const items = this.state.moviepilotAssociations
+      .filter(item =>
+        (!params.downloaderId || item.btDownloaderId === params.downloaderId) &&
+        (!params.hash || item.downloadHash === params.hash))
+      .map(item => this.withTaskSnapshot(item))
+    return paginate(items, params)
+  }
+
+  /** 反向：媒体库/源路径前缀匹配 → 关联历史（含任务快照） */
+  public reverseMoviePilotAssociations(
+    params: DemoPageParams & { path?: string, mode?: 'src' | 'dest' | 'both' }
+  ): DemoPage<DemoMoviePilotAssociationWithTask> {
+    const prefix = (params.path || '').trim()
+    const mode = params.mode || 'both'
+    const items = this.state.moviepilotAssociations
+      .filter(item => {
+        if (!prefix) return false
+        const srcHit = mode !== 'dest' && Boolean(item.srcPath && item.srcPath.startsWith(prefix))
+        const destHit = mode !== 'src' && Boolean(item.destPath && item.destPath.startsWith(prefix))
+        return srcHit || destHit
+      })
+      .map(item => this.withTaskSnapshot(item))
+    return paginate(items, params)
+  }
+
+  /** linked 项按 (btDownloaderId, downloadHash) 反查 demo 种子生成任务快照 */
+  private withTaskSnapshot(item: DemoMoviePilotAssociation): DemoMoviePilotAssociationWithTask {
+    if (item.associationStatus !== 'linked' || !item.downloadHash) return { ...item }
+    const torrent = this.state.torrents.find(candidate => candidate.hash === item.downloadHash)
+    if (!torrent) return { ...item }
+    return {
+      ...item,
+      task: {
+        infoId: torrent.infoId,
+        name: torrent.name,
+        status: torrent.status,
+        downloaderId: torrent.downloaderId,
+        downloaderName: torrent.downloaderName,
+        savePath: torrent.savePath,
+        size: torrent.size
+      }
+    }
+  }
+
+  /** 映射变化后按 (mpDownloader → btDownloaderId) 重解析关联状态 */
+  private reresolveAssociation(item: DemoMoviePilotAssociation): void {
+    if (!item.downloadHash || !item.mpDownloader) {
+      item.associationStatus = 'unassociated'
+      return
+    }
+    const instance = this.state.moviepilotInstances.find(candidate => candidate.instanceId === item.instanceId)
+    const mappedDownloaderId = instance?.downloaderMapping[item.mpDownloader]
+    if (!mappedDownloaderId) {
+      item.associationStatus = 'unmapped'
+      item.btDownloaderId = null
+      return
+    }
+    const torrent = this.state.torrents.find(candidate => candidate.hash === item.downloadHash)
+    if (!torrent) {
+      item.associationStatus = 'unmapped'
+      item.btDownloaderId = null
+      return
+    }
+    item.btDownloaderId = mappedDownloaderId
+    item.associationStatus = torrent.downloaderId === mappedDownloaderId ? 'linked' : 'unmapped'
   }
 
   public getCategories(): string[] {

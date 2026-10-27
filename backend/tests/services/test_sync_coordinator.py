@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-SyncCoordinator 单元测试（W2-1，PLANS/sync-database-blocking-remediation.md）
+SyncCoordinator 单元测试（W2-1，PLANS/archive/sync-database-blocking-remediation.md）
 
 覆盖行为契约：
 1. 手动与 Cron 触发相同输入时调用相同 Coordinator 方法及同一写入服务

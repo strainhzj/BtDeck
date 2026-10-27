@@ -72,6 +72,20 @@ class TestRealRepository:
                     break
             else:
                 pytest.fail(f"{pkg} 锁条目缺失（无 == 起始行）")
+        # pywin32 是 mcp SDK 的 win 标记传递依赖（W4-c 入锁，锁内独有——
+        # 非直接依赖，不要求 requirements.txt 声明）：同样必须带平台标记。
+        # G10 Docker 黑盒实证（2026-09-09）：pip-compile 在 Windows 解析 mcp 双
+        # python_version 分支的 win32 约束时会丢标记，Linux 侧
+        # pip wheel --require-hashes 直接 "No matching distribution found for
+        # pywin32==312"，Docker/DEB/RPM 三条 Linux 产线全断——此处锚定防复发。
+        for line in lock_text.splitlines():
+            if line.startswith("pywin32=="):
+                assert (
+                    "win32" in line or "Windows" in line
+                ), f"pywin32 锁条目缺平台标记：{line}（Linux 解析时无发行版可装，制品产线全断）"
+                break
+        else:
+            pytest.fail("pywin32 锁条目缺失（mcp SDK win32 传递依赖入锁契约）")
 
 
 def _write_dep_tree(root: Path, *, lock_text: str, packaging_text: str) -> None:

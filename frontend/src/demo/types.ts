@@ -44,8 +44,8 @@ export interface DemoDownloader {
   nickname: string
   host: string
   port: string
-  downloaderType: 0 | 1
-  downloaderTypeName: 'qbittorrent' | 'transmission'
+  downloaderType: 0 | 1 | 2
+  downloaderTypeName: 'qbittorrent' | 'transmission' | 'rtorrent'
   isSearch: '0' | '1'
   enabled: '0' | '1'
   status: 'online' | 'offline'
@@ -142,7 +142,7 @@ export interface DemoDashboardData {
   downloader_list: Array<{
     downloader_id: string
     nickname: string
-    downloader_type: 0 | 1
+    downloader_type: 0 | 1 | 2
     status: 'online' | 'offline'
     downloading: number
     seeding: number
@@ -163,6 +163,89 @@ export interface DemoNotification {
   extra_data: null
   created_at: string
   read_at: string | null
+}
+
+/** RSS 订阅文章（feature rss-subscription-2026-09-24 demo 分支；字段与 RssArticle 对齐） */
+export interface DemoRssArticle {
+  articleId: string
+  feedId: string
+  title: string
+  link: string
+  publishedAt: string | null
+  fetchedAt: string | null
+  status: 'pending' | 'added'
+  addedAt: string | null
+}
+
+/** RSS 订阅源（demo 分支内嵌文章，便于会话内推送演示） */
+export interface DemoRssFeed {
+  feedId: string
+  downloaderId: string
+  name: string
+  url: string
+  enabled: boolean
+  lastFetchAt: string | null
+  lastFetchStatus: 'never' | 'ok' | 'failed'
+  lastError: string | null
+  articles: DemoRssArticle[]
+}
+
+
+export interface DemoRssRule {
+  ruleId: string
+  downloaderId: string
+  name: string
+  enabled: boolean
+  includeKeywords: string
+  excludeKeywords: string | null
+  useRegex: boolean
+  targetDownloaderId: string | null
+  savePath: string | null
+  tags: string | null
+  feedIds: string[]
+  matchCount: number
+  lastMatchedAt: string | null
+}
+
+export interface DemoRssMode {
+  downloaderId: string
+  mode: 'btdeck' | 'qb_native'
+}
+
+/** qB 原生 RSS 树节点（demo 固定形态） */
+export interface DemoQbRssNode {
+  type: 'folder' | 'feed'
+  name: string
+  path: string
+  articleCount?: number
+  unreadCount?: number
+  children?: DemoQbRssNode[]
+}
+
+export interface DemoQbRssArticle {
+  articleId: string
+  title: string
+  link: string
+  published: string | null
+  isRead: boolean
+}
+
+export interface DemoQbRssRule {
+  name: string
+  enabled?: boolean
+  mustContain?: string
+  mustNotContain?: string
+  affectedFeeds?: string[]
+  savePath?: string
+  assignedCategory?: string
+  addPaused?: boolean
+}
+
+export interface DemoQbRssPreferences {
+  rssProcessingEnabled: boolean
+  rssAutoDownloadingEnabled: boolean
+  rssRefreshInterval: number
+  rssMaxArticlesPerFeed: number
 }
 
 export interface DemoQueryTemplateConditions {
@@ -346,6 +429,104 @@ export interface DemoBackup {
   uploader_username: string
 }
 
+/** MCP 能力目录元数据（镜像后端 contracts.py CAPABILITY_CATALOG，demo 只读展示） */
+export interface DemoMcpCapabilityMeta {
+  code: string
+  tool: string
+  risk: 'read' | 'write' | 'high'
+  description: string
+  /** 与后端 contracts.py 成对下发的英文描述（面板按 locale 选取） */
+  descriptionEn: string
+  defaultEnabled: boolean
+  requiresConfirm: boolean
+  requiresIdempotencyKey: boolean
+}
+
+/** MCP 服务密钥（demo 固定演示密钥；revision 与真实端点 CAS 语义一致） */
+export interface DemoMcpApiKey {
+  status: 'absent' | 'active' | 'unreadable'
+  exists: boolean
+  revision: number
+  createdAt: string | null
+  createdBy: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+  keyPrefix: string
+  key?: string
+}
+
+/** MCP 服务配置存储意图（effectiveEnabled 由请求层按 enabled && !forceDisabled 推导） */
+export interface DemoMcpSettings {
+  schemaVersion: number
+  enabled: boolean
+  capabilities: Record<string, boolean>
+  revision: number
+  updatedAt: string | null
+  updatedBy: string | null
+  forceDisabled: boolean
+}
+
+/** MoviePilot 集成全局开关（revision 供 demo CAS 演练） */
+export interface DemoMoviePilotSettings {
+  schemaVersion: number
+  enabled: boolean
+  revision: number
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+export interface DemoMoviePilotInstance {
+  id: number
+  instanceId: string
+  name: string
+  enabled: boolean
+  protocolVersion: number | null
+  pluginVersion: string | null
+  moviepilotVersion: string | null
+  /** MoviePilot 下载器名 → BtDeck downloader_id */
+  downloaderMapping: Record<string, string>
+  boundUsername: string | null
+  lastHandshakeAt: string | null
+  lastSyncAt: string | null
+  lastSyncStats: {
+    inserted?: number
+    updated?: number
+    skipped?: number
+    failed?: number
+  }
+  syncedHistoryCount: number
+  lastError: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/** MoviePilot 整理历史关联镜像（linked 项按 downloadHash 关联 demo 种子） */
+export interface DemoMoviePilotAssociation {
+  id: number
+  instanceId: string
+  instanceName: string | null
+  historyId: number
+  srcStorage: string | null
+  srcPath: string | null
+  destStorage: string | null
+  destPath: string | null
+  transferMode: string | null
+  mediaType: string | null
+  title: string | null
+  year: string | null
+  seasons: string | null
+  episodes: string | null
+  tmdbId: number | null
+  doubanId: string | null
+  mpDownloader: string | null
+  downloadHash: string | null
+  btDownloaderId: string | null
+  associationStatus: 'linked' | 'unmapped' | 'unassociated'
+  status: boolean | null
+  errmsg: string | null
+  recordedAt: string | null
+}
+
 export interface DemoFixtureBundle {
   user: DemoUser
   downloaders: DemoDownloader[]
@@ -361,8 +542,21 @@ export interface DemoFixtureBundle {
   trackerMessages: DemoTrackerMessage[]
   trackerReannounceConfigs: DemoTrackerReannounceConfig[]
   backups: DemoBackup[]
+  mcpSettings: DemoMcpSettings
+  mcpApiKey: DemoMcpApiKey
+  moviepilotSettings: DemoMoviePilotSettings
+  moviepilotInstances: DemoMoviePilotInstance[]
+  moviepilotAssociations: DemoMoviePilotAssociation[]
   categories: string[]
   tags: string[]
+  rssFeeds: DemoRssFeed[]
+  rssRules: DemoRssRule[]
+  rssModes: DemoRssMode[]
+  qbRssTree: DemoQbRssNode[]
+  qbRssArticles: Record<string, DemoQbRssArticle[]>
+  qbRssRules: DemoQbRssRule[]
+  qbRssPreferences: DemoQbRssPreferences
+  qbRssReadArticleIds: string[]
   trackerDomains: string[]
 }
 
@@ -378,10 +572,11 @@ export const DEMO_SPEED_TICK_INTERVAL = 5000
 export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/dashboard', title: '仪表盘', category: 'core', summary: '统计卡片、节点状态、活动时间线' },
   { path: '/downloader/index', title: '下载器', category: 'core', summary: '节点矩阵、筛选、连接测试、同步反馈' },
+  { path: '/downloader/rss', title: 'RSS 管理', category: 'extended', summary: '跨下载器统一 RSS：模式切换、引擎规则、qB 原生代理（Phase 2）' },
   { path: '/torrents/index', title: '种子列表', category: 'core', summary: '筛选、分页、排序、视图切换、详情与状态操作' },
   { path: '/torrents/traditional', title: '种子传统视图', category: 'core', summary: '与列表视图共享 Demo 种子状态' },
   { path: '/torrents/detail/:hash', title: '种子详情', category: 'core', summary: '详情、Tracker、文件和 Peers 的静态展示' },
-  { path: '/query-templates/index', title: '查询模板', category: 'core', summary: '新增、编辑、应用、删除均只更新本地状态' },
+  { path: '/torrents/query-templates', title: '查询模板', category: 'core', summary: '新增、编辑、应用、删除均只更新本地状态' },
   { path: 'notification-drawer', title: '通知中心', category: 'core', summary: '未读角标、详情、已读/未读、删除' },
   { path: '/tracker/*', title: 'Tracker 管理', category: 'extended', summary: '关键词、消息、汇报配置使用脱敏静态数据' },
   { path: '/tasks/index', title: '定时任务', category: 'extended', summary: '任务、日志与校验结果静态展示' },
@@ -390,6 +585,11 @@ export const DEMO_ROUTE_MATRIX: DemoRouteDefinition[] = [
   { path: '/orphan-files/index', title: '孤儿文件', category: 'readonly', summary: '扫描、筛选、清理预览为本地状态机' },
   { path: '/settings/index', title: '系统设置', category: 'readonly', summary: '显示 Demo 状态，密码/二因素不执行' },
   { path: '/torrents/file-management', title: '种子文件管理', category: 'readonly', summary: '文件选择可预览，上传/导入不产生后端副作用' },
+  { path: '/statistics/overview', title: '统计总览', category: 'readonly', summary: '库存、状态分布与下载器对比的静态聚合' },
+  { path: '/statistics/trends', title: '统计趋势', category: 'readonly', summary: '新增/完成趋势、库龄与速度曲线静态展示' },
+  { path: '/statistics/seeding', title: '做种报表', category: 'readonly', summary: '分享率分布、摸鱼象限与辅种网络静态展示' },
+  { path: '/statistics/trackers', title: 'Tracker 报表', category: 'readonly', summary: '站点构成、健康榜与冷热静态展示' },
+  { path: '/statistics/fun-report', title: '趣味报告', category: 'readonly', summary: '战报与年度报告翻页流静态演示' },
   { path: '/login', title: '桌面登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' },
   { path: '/m/login', title: '移动登录', category: 'disabled', summary: 'Demo 构建提供进入演示入口，不执行真实认证' }
 ]
@@ -401,3 +601,8 @@ export const DEMO_DISABLED_CAPABILITIES = [
   '真实文件系统扫描、上传、备份导入与物理删除',
   '真实 Cron/脚本执行和外部导出副作用'
 ] as const
+
+// 统计报表契约复用（statistics-reports W7，PLANS/statistics-reports.md §4.4：
+// demo 从 @/types/reports 复用纯 JSON 契约；@/ 别名 jest/tsconfig/webpack 三处齐备，
+// demo 引入后间接触达该模块属预期）
+export * from '@/types/reports'

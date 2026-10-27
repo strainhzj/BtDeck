@@ -26,11 +26,14 @@ PACKAGE_REQUIREMENTS="${DEPLOY_DIR}/requirements-linux-package.txt"
 PACKAGE_VENV="${PROJECT_DIR}/.venv-packaging-linux"
 PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
 PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
-PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
+PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.12}"
 
-# 产品版本唯一输入：release/release-config.json（candidate.product_version），
-# 本变量必须与之一致（版本一致性检查强制）
-VERSION="1.0.6"
+# 产品版本唯一输入：release/release-config.json（candidate.product_version）。
+# 动态读取（八跑实锤：硬编码会被 cp 覆盖进 v1.0.6 基线 archive，fpm 按
+# 1.0.7 给基线包命名定版，升级场景退化成同版本重装）；archive 内读出
+# 即基线版本，主仓库读出即当前发布版本，一处改动两边正确
+VERSION="$(python3 -c 'import json;print(json.load(open("release/release-config.json"))["candidate"]["product_version"])')"
+[ -n "$VERSION" ] || { echo "[ERROR] release-config 读取失败，VERSION 为空" >&2; exit 1; }
 ARCH="amd64"
 
 FRONTEND_DIST="${FRONTEND_DIR}/dist"
@@ -106,9 +109,16 @@ else
 fi
 
 # Step 0: 版本一致性（G1，fail-closed）
+# baseline（BTDECK_BASELINE_GIT_SHA 非空）模式跳过：基线源=tag 检出五处声明
+# + dev 打包工具链两文件（声明=当前发布版本）必然混合，六处比对无意义
+# （generate 的 --git-sha 通道同样跳过，身份以 archive 内 release-config 为准）
 echo "[0/5] Version consistency check..."
 cd "$PROJECT_DIR"
-python3 scripts/release/generate_build_info.py --check-versions || fail "版本声明不一致（六处必须等于 release-config）"
+if [ -z "${BTDECK_BASELINE_GIT_SHA:-}" ]; then
+    python3 scripts/release/generate_build_info.py --check-versions || fail "版本声明不一致（六处必须等于 release-config）"
+else
+    echo "[SKIP] baseline 模式：跳过六处版本一致性（tag 源 + dev 工具链混合声明）"
+fi
 
 # Step 1: 前端
 if [ "$RELEASE_MODE" = "1" ]; then
@@ -131,6 +141,11 @@ echo "[2/5] Generating release identity..."
 GEN_ARGS="--artifact-kind linux-binary --output-dir ${STAGING_DIR} --node-version $(node -v | tr -d v)"
 if [ "$RELEASE_MODE" != "1" ]; then
     GEN_ARGS="$GEN_ARGS --allow-dirty"
+fi
+# w3 升级基线：容器内构建目录为 git archive 解包（无 .git），宿主机经
+# BTDECK_BASELINE_GIT_SHA 传入 tag sha 走 reconstructed 通道
+if [ -n "${BTDECK_BASELINE_GIT_SHA:-}" ]; then
+    GEN_ARGS="$GEN_ARGS --git-sha ${BTDECK_BASELINE_GIT_SHA}"
 fi
 python3 scripts/release/generate_build_info.py $GEN_ARGS || fail "生成发布身份失败（release 模式要求干净工作区）"
 

@@ -37,7 +37,7 @@ from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
-from app.core.tracker_mapper import extract_tracker_host, resolve_transmission_tracker_status_code
+from app.core.tracker_mapper import extract_tracker_host, is_valid_tracker_url, resolve_transmission_tracker_status_code
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
@@ -730,6 +730,55 @@ async def update_or_restore_tracker_with_retry_async(
         return False
 
 
+def _normalize_tracker_count(value: Any) -> Optional[int]:
+    """scrape 群体计数归一：-1/None/非法 → None（NULL），非负 int 原样。
+
+    qB num_* 未知时为 -1 哨兵；TR trackerStats 的 downloadCount 等也可能为 -1
+    （真机 TTG 实测，2026-09-24 W2 首步）。NULL 表示"未知/不适用"，
+    不压低火种 min 判定（决策 6）。
+    """
+    if value is None:
+        return None
+    try:
+        iv = int(value)
+    except (TypeError, ValueError):
+        return None
+    return iv if iv >= 0 else None
+
+
+def _qb_tracker_counts(tracker: Any) -> Dict[str, Optional[int]]:
+    """qB trackers 负载 → 三列 scrape 计数（决策 6：num_seeds/num_leeches/
+    num_downloaded 为 scrape 群体计数，已连接数是 num_peers；真机 qB v4.3.9
+    API 2.8.2 实测键集 {msg, num_downloaded, num_leeches, num_peers,
+    num_seeds, status, tier, url}）。"""
+    return {
+        "seeder_count": _normalize_tracker_count(tracker.get("num_seeds")),
+        "leecher_count": _normalize_tracker_count(tracker.get("num_leeches")),
+        "download_count": _normalize_tracker_count(tracker.get("num_downloaded")),
+    }
+
+
+def _tr_tracker_counts(tracker_status: Any) -> Dict[str, Optional[int]]:
+    """TR trackerStats → 三列 scrape 计数（seederCount/leecherCount/downloadCount）。
+
+    backup 条目（isBackup=True）保留行与 URL、仅三列计数置 NULL
+    （决策 6 审批 P1-3：批量同步 Step4 会把本批缺失的 tracker 标 dr=1
+    ——元组 IN 语义，直接排除会误删现有展示与健康统计；陈旧计数不可信
+    故置 NULL，也不压低火种 min 判定）。
+    """
+    try:
+        is_backup = bool(tracker_status.fields.get("isBackup", False))
+    except Exception:
+        is_backup = False
+    if is_backup:
+        return {"seeder_count": None, "leecher_count": None, "download_count": None}
+    return {
+        "seeder_count": _normalize_tracker_count(tracker_status.fields.get("seederCount")),
+        "leecher_count": _normalize_tracker_count(tracker_status.fields.get("leecherCount")),
+        "download_count": _normalize_tracker_count(tracker_status.fields.get("downloadCount")),
+    }
+
+
 def extract_tracker_rows_from_torrent(
     torrent_info: Any, torrent_info_id: str, downloader_type: str, current_time: Any
 ) -> tuple[list[dict], set]:
@@ -755,7 +804,9 @@ def extract_tracker_rows_from_torrent(
 
     if downloader_type == "qbittorrent":
         try:
-            trackers_data = getattr(torrent_info, "trackers", None)
+            # 本地数据优先读取（规避 TorrentDictionary.trackers property 远程读；
+            # 详见 _qb_read_trackers docstring）
+            trackers_data = _qb_read_trackers(torrent_info)
             if callable(trackers_data):
                 trackers_data = trackers_data()
             trackers_data = trackers_data or []
@@ -763,6 +814,7 @@ def extract_tracker_rows_from_torrent(
             logger.error(f"Failed to get qbittorrent trackers: {str(e)}")
             trackers_data = []
 
+        invalid_tracker_count = 0
         for tracker in trackers_data:
             try:
                 url = tracker.get("url")
@@ -770,6 +822,11 @@ def extract_tracker_rows_from_torrent(
                     continue
                 url = str(url)
                 if "DHT" in url or "PeX" in url or "LSD" in url:
+                    continue
+                if not is_valid_tracker_url(url):
+                    # 历史污染条目（Tracker repr 被当作 URL 写回 qB 5.0+）：拦截入库，
+                    # mark_removed 语义会随同步自愈清理库内既有污染行
+                    invalid_tracker_count += 1
                     continue
                 current_tracker_urls.add(url)
                 tracker_rows.append(
@@ -783,6 +840,7 @@ def extract_tracker_rows_from_torrent(
                         "last_announce_msg": tracker.get("msg"),
                         "last_scrape_succeeded": tracker.get("status"),
                         "last_scrape_msg": tracker.get("msg"),
+                        **_qb_tracker_counts(tracker),
                         "create_time": current_time,
                         "create_by": "admin",
                         "update_time": current_time,
@@ -793,6 +851,7 @@ def extract_tracker_rows_from_torrent(
             except Exception as tracker_err:
                 logger.error(f"Failed to process tracker [{tracker}]: {str(tracker_err)}")
                 continue
+        _log_invalid_trackers_if_any(invalid_tracker_count, torrent_info, "QB_TRACKER_SYNC")
 
     elif downloader_type == "transmission":
         tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
@@ -816,6 +875,7 @@ def extract_tracker_rows_from_torrent(
                     "last_announce_msg": tracker_status.last_announce_result,
                     "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
+                    **_tr_tracker_counts(tracker_status),
                     "create_time": current_time,
                     "create_by": "admin",
                     "update_time": current_time,
@@ -878,6 +938,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
             trackerInfoModel.last_announce_msg,
             trackerInfoModel.last_scrape_succeeded,
             trackerInfoModel.last_scrape_msg,
+            trackerInfoModel.seeder_count,
+            trackerInfoModel.leecher_count,
+            trackerInfoModel.download_count,
         )
         .where(trackerInfoModel.torrent_info_id.in_(batch_info_ids))
         .where(trackerInfoModel.dr == 0)
@@ -890,6 +953,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
             "last_announce_msg": row.last_announce_msg,
             "last_scrape_succeeded": row.last_scrape_succeeded,
             "last_scrape_msg": row.last_scrape_msg,
+            "seeder_count": row.seeder_count,
+            "leecher_count": row.leecher_count,
+            "download_count": row.download_count,
         }
         for row in existing_rows.all()
     }
@@ -943,6 +1009,9 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
                     "last_announce_msg": stmt.excluded.last_announce_msg,
                     "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
                     "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                    "seeder_count": stmt.excluded.seeder_count,
+                    "leecher_count": stmt.excluded.leecher_count,
+                    "download_count": stmt.excluded.download_count,
                     "update_time": current_time,
                     "update_by": "admin",
                 },
@@ -994,11 +1063,18 @@ async def sync_add_tracker_async(
     current_tracker_urls = set()
     tracker_rows = []
     tracker_source = getattr(torrent_info, "_tracker_source", None)
-    torrent_hash = getattr(torrent_info, "hash", None) or getattr(torrent_info, "hashString", None)
+    # hash 统一小写口径：qB 原生小写、TR/rTorrent 大写，DB 唯一索引与复合键均为
+    # 大小写敏感比较，统一 lower 避免同一种子在库中出现两套身份（P0-D）
+    torrent_hash = (
+        str(getattr(torrent_info, "hash", None) or getattr(torrent_info, "hashString", None) or "").strip().lower()
+        or None
+    )
 
     if downloader_type == "qbittorrent":
         try:
-            trackers_data = getattr(torrent_info, "trackers", None)
+            # 本地数据优先读取（规避 TorrentDictionary.trackers property 远程读；
+            # 详见 _qb_read_trackers docstring）
+            trackers_data = _qb_read_trackers(torrent_info)
             if callable(trackers_data):
                 trackers_data = trackers_data()
             trackers_data = trackers_data or []
@@ -1006,6 +1082,7 @@ async def sync_add_tracker_async(
             logger.error(f"Failed to get qbittorrent trackers: {str(e)}")
             trackers_data = []
 
+        invalid_tracker_count = 0
         for tracker in trackers_data:
             try:
                 url = tracker.get("url")
@@ -1013,6 +1090,11 @@ async def sync_add_tracker_async(
                     continue
                 url = str(url)
                 if "DHT" in url or "PeX" in url or "LSD" in url:
+                    continue
+                if not is_valid_tracker_url(url):
+                    # 历史污染条目（Tracker repr 被当作 URL 写回 qB 5.0+）：拦截入库，
+                    # mark_removed 语义会随同步自愈清理库内既有污染行
+                    invalid_tracker_count += 1
                     continue
                 current_tracker_urls.add(url)
                 tracker_rows.append(
@@ -1026,6 +1108,7 @@ async def sync_add_tracker_async(
                         "last_announce_msg": tracker.get("msg"),
                         "last_scrape_succeeded": tracker.get("status"),
                         "last_scrape_msg": tracker.get("msg"),
+                        **_qb_tracker_counts(tracker),
                         "create_time": current_time,
                         "create_by": "admin",
                         "update_time": current_time,
@@ -1036,6 +1119,7 @@ async def sync_add_tracker_async(
             except Exception as tracker_err:
                 logger.error(f"Failed to process tracker [{tracker}]: {str(tracker_err)}")
                 continue
+        _log_invalid_trackers_if_any(invalid_tracker_count, torrent_info, "QB_TRACKER_SYNC")
 
     elif downloader_type == "transmission":
         tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
@@ -1059,6 +1143,7 @@ async def sync_add_tracker_async(
                     "last_announce_msg": tracker_status.last_announce_result,
                     "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
+                    **_tr_tracker_counts(tracker_status),
                     "create_time": current_time,
                     "create_by": "admin",
                     "update_time": current_time,
@@ -1144,6 +1229,9 @@ async def sync_add_tracker_async(
                     "last_announce_msg": stmt.excluded.last_announce_msg,
                     "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
                     "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                    "seeder_count": stmt.excluded.seeder_count,
+                    "leecher_count": stmt.excluded.leecher_count,
+                    "download_count": stmt.excluded.download_count,
                     "update_time": current_time,
                     "update_by": "admin",
                     "dr": 0,
@@ -1381,7 +1469,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             setattr(torrent_info, "_tracker_source", tracker_source)
         except Exception:
             pass
-        cached_data = existing_torrents_cache.get(torrent_info.hashString)
+        cached_data = existing_torrents_cache.get(str(torrent_info.hashString or "").strip().lower())
 
         # 计算进度值
         raw_percent_done = (
@@ -1434,7 +1522,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             "downloader_id": bt_downloader.downloader_id,
             "downloader_name": downloader_name_to_use,  # ✅ 使用原始值保持主键一致
             "torrent_id": torrent_info.id,
-            "hash": torrent_info.hashString,
+            "hash": str(torrent_info.hashString or "").strip().lower(),
             "name": torrent_info.name,
             "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
@@ -1442,7 +1530,12 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             "size": torrent_info.total_size,
             "progress": progress_value,
             "torrent_file": torrent_info.torrent_file,
-            "added_date": torrent_info.added_date,
+            # TR added_date 时区写路径修复（统计报表 W2 决策 8）：改用
+            # _parse_qb_epoch 直转 fields["addedDate"] 原始 epoch → naive 本地，
+            # 与 qB 路径同构；transmission_rpc 的 torrent_info.added_date 属性
+            # 返回 aware UTC（库内 fromtimestamp(epoch, timezone.utc)），
+            # 直接落库会偏 8h（done_date 库内 astimezone() 本地转换无此问题）。
+            "added_date": _parse_qb_epoch(torrent_info.fields.get("addedDate")),
             "completed_date": torrent_info.done_date if torrent_info.done_date else None,
             "tags": ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             "category": "",
@@ -1588,7 +1681,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                         backup_service.backup_torrent_file,
                         kwargs={
                             "info_id": torrent_info_id,
-                            "torrent_hash": torrent_info.hashString,
+                            "torrent_hash": str(torrent_info.hashString or "").strip().lower(),
                             "torrent_name": torrent_info.name,
                             "downloader_type": "transmission",
                             "save_path": torrent_info.download_dir,
@@ -1619,7 +1712,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                             # 检查是否已存在相同 info_hash + downloader_id 的记录
                             existing_backup = await db.execute(
                                 select(TorrentFileBackup).filter(
-                                    TorrentFileBackup.info_hash == torrent_info.hashString,
+                                    TorrentFileBackup.info_hash == str(torrent_info.hashString or "").strip().lower(),
                                     TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
                                     TorrentFileBackup.is_deleted.is_(False),
                                 )
@@ -1630,7 +1723,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                                 # 不存在则插入新记录
                                 backup_manager = TorrentFileBackupManagerService(db=db)
                                 await backup_manager.repository.create(
-                                    info_hash=torrent_info.hashString,
+                                    info_hash=str(torrent_info.hashString or "").strip().lower(),
                                     file_path=backup_result["backup_file_path"],
                                     file_size=None,  # 可选：如果需要文件大小可以获取
                                     task_name=torrent_info.name,
@@ -1660,7 +1753,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                 # 检查是否已存在相同 info_hash + downloader_id 的记录
                 existing_backup = await db.execute(
                     select(TorrentFileBackup).filter(
-                        TorrentFileBackup.info_hash == torrent_info.hashString,
+                        TorrentFileBackup.info_hash == str(torrent_info.hashString or "").strip().lower(),
                         TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
                         TorrentFileBackup.is_deleted.is_(False),
                     )
@@ -1680,7 +1773,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
                         # 补录历史数据
                         backup_manager = TorrentFileBackupManagerService(db=db)
                         await backup_manager.repository.create(
-                            info_hash=torrent_info.hashString,
+                            info_hash=str(torrent_info.hashString or "").strip().lower(),
                             file_path=backup_file_path,
                             file_size=file_size,
                             task_name=torrent_info.name,
@@ -2670,6 +2763,37 @@ def _qb_set_attr(obj: Any, key: str, value: Any, downloader_id: Optional[str] = 
         )
 
 
+def _qb_read_trackers(obj: Any) -> Any:
+    """读取 torrent 对象上的 trackers 数据（本地数据优先，规避不必要的远程读）。
+
+    qbittorrent-api 的 TorrentDictionary.trackers 是 property：读取触发一次
+    远程 torrents_trackers 调用（qBittorrent < 5.1 的 torrents_info 响应不含
+    trackers 字段时需要该兜底）；而属性赋值会触发 add_trackers 远程写
+    （P0 污染根因，写侧已改走 _qb_set_attr）。读取时本地 dict 键优先——
+    _enrich 已写入或 qBittorrent >= 5.1 include_trackers 返回的数据直接使用，
+    避免每种子一次额外远程调用；TorrentDictionary 无本地键时回退 property
+    getter 保持既有兜底行为；普通字典无键时返回 None（不走属性协议）。
+    """
+    if isinstance(obj, dict):
+        if "trackers" in obj:
+            return obj["trackers"]
+        if not hasattr(obj, "add_trackers"):
+            # 普通字典（非 qbittorrent-api TorrentDictionary）且无 trackers 键
+            return None
+    return getattr(obj, "trackers", None)
+
+
+def _log_invalid_trackers_if_any(invalid_count: int, torrent_info: Any, log_prefix: str) -> None:
+    """采集到非法 tracker URL（历史污染条目）时聚合告警一次。"""
+    if invalid_count <= 0:
+        return
+    torrent_hash = str(_qb_get_attr(torrent_info, "hash") or "")[:16]
+    logger.warning(
+        f"[{log_prefix}] 跳过 {invalid_count} 条非法 tracker URL"
+        f"（历史污染条目，可用 cleanupPollutedTrackers 端点清理） torrent={torrent_hash}..."
+    )
+
+
 async def _hydrate_qb_incremental_torrents(
     client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str, strict: bool = True
 ) -> List[Any]:
@@ -3005,7 +3129,10 @@ async def _enrich_qb_torrents_with_trackers(
                 fetched_hash, trackers = result
                 torrent_info = info_by_hash.get(fetched_hash)
                 if torrent_info:
-                    torrent_info.trackers = trackers
+                    # 禁止裸属性赋值：qbittorrent-api 的 TorrentDictionary.trackers
+                    # 是 property，赋值会触发 add_trackers 远程写，把 Tracker 对象
+                    # repr 当作 URL 写回 qB（P0 污染根因）；dict 条目写入绕过 property
+                    _qb_set_attr(torrent_info, "trackers", trackers, downloader_id=downloader_id)
                     _qb_set_attr(
                         torrent_info,
                         "_btdeck_tracker_enriched",
@@ -3151,7 +3278,7 @@ async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, remove
 
 # ==============================================================================
 # W3-3 第一部分（P1-02）：info-only 现有记录分页读取 + 单轮预算/缓冲上限
-# 详见 PLANS/sync-database-blocking-remediation.md W3-3
+# 详见 PLANS/archive/sync-database-blocking-remediation.md W3-3
 # ==============================================================================
 
 
@@ -3811,7 +3938,9 @@ async def tr_add_torrents_info_only_async(
     # 全序锚点（游标语义依赖 hash 字典序）：slim base 排序后切批（批间有序），
     # 每批 detail 结果再按 hashString 重排（TR 服务端按 id 序返回，id 序≠hash
     # 序），批内有序——两者叠加与旧实现"全量收齐后整体排序"严格等价。
-    base_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
+    # 每批 detail 结果再按 hashString 重排（TR 服务端按 id 序返回，id 序≠hash
+    # 序；小写口径与 cursor 字典序一致，P0-D）
+    base_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or "").strip().lower())
 
     phase_times["fetch"] = (time.monotonic() - phase_start) * 1000.0
     phase_start = time.monotonic()
@@ -3851,7 +3980,8 @@ async def tr_add_torrents_info_only_async(
     pending_torrent_count = sum(
         1
         for torrent in base_torrents
-        if (torrent_hash := str(getattr(torrent, "hashString", "") or ""))
+        # hash 统一小写口径（与 DB 唯一索引/cursor 字典序一致，P0-D）
+        if (torrent_hash := str(getattr(torrent, "hashString", "") or "").strip().lower())
         and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
     )
     last_processed_hash: Optional[str] = None
@@ -3887,11 +4017,12 @@ async def tr_add_torrents_info_only_async(
         phase_times["fetch"] += (time.monotonic() - detail_fetch_start) * 1000.0
 
         # 批内重排：TR 服务端按 id 序返回，须恢复 hash 字典序（游标前缀依赖）
-        detail_batch.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+        # 批内重排：TR 服务端按 id 序返回，须恢复 hash 字典序（小写口径，游标前缀依赖）
+        detail_batch.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or "").strip().lower())
 
         diff_start = time.monotonic()
         for torrent_info in detail_batch:
-            torrent_hash = str(getattr(torrent_info, "hashString", "") or "")
+            torrent_hash = str(getattr(torrent_info, "hashString", "") or "").strip().lower()
             if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
                 continue
             # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
@@ -3952,7 +4083,9 @@ async def tr_add_torrents_info_only_async(
                 "size": torrent_info.total_size,
                 "progress": progress_value,
                 "torrent_file": torrent_info.torrent_file,
-                "added_date": torrent_info.added_date,
+                # TR added_date 时区写路径修复（统计报表 W2 决策 8）：同全量路径，
+                # epoch 直转 naive 本地（fields["addedDate"] 为 TR_DETAIL_FIELDS 已请求字段）
+                "added_date": _parse_qb_epoch(torrent_info.fields.get("addedDate")),
                 "completed_date": torrent_info.done_date if torrent_info.done_date else None,
                 "tags": (
                     ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else ""
@@ -4628,8 +4761,8 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             "nickname": nickname,
         }
 
-    # 全序锚点：slim 按 hashString 排序后切批，批间 hash 字典序稳定
-    slim_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or ""))
+    # 全序锚点：slim 按 hashString 排序后切批，批间 hash 字典序稳定（小写口径）
+    slim_torrents.sort(key=lambda t: str(getattr(t, "hashString", "") or "").strip().lower())
 
     # === 第3步：过滤已存在种子并同步 tracker ===
     tracker_count = 0
@@ -4681,11 +4814,11 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
         )
         detail_fetch_duration += (datetime.now() - detail_fetch_start).total_seconds()
 
-        # 批内按 hashString 重排（TR 服务端按 id 序返回），与 slim 全序对齐
-        torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
+        # 批内按 hashString 重排（TR 服务端按 id 序返回），与 slim 全序对齐（小写口径）
+        torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or "").strip().lower())
 
         for torrent_info in torrent_info_list:
-            torrent_hash = getattr(torrent_info, "hashString", None)
+            torrent_hash = str(getattr(torrent_info, "hashString", None) or "").strip().lower() or None
             if not torrent_hash:
                 continue
             info_id = hash_to_info_id.get(torrent_hash)
@@ -4742,3 +4875,10 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     return _build_tracker_only_result(
         "Transmission", nickname, tracker_count, tracker_total_rows, error_count, tracker_count + skipped_new
     )
+
+
+# 添加后 tracker 刷新钩子注册（依赖倒置）：把本模块的提取/批量写入实现注册给
+# 共享 service 层（torrent_add_helpers 禁止 import endpoint 层，MCP purity 守卫）
+from app.services.torrent_add_helpers import register_tracker_sync_hooks as _register_add_refresh_hooks
+
+_register_add_refresh_hooks(extract_tracker_rows_from_torrent, sync_trackers_batch_async)

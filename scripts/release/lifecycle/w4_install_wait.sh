@@ -15,7 +15,7 @@ wait_healthy() {
     for i in $(seq 1 60); do
         body=$(curl -fsS --max-time 5 http://127.0.0.1:5001/health/live 2>/dev/null || true)
         case "$body" in
-            *'"version":"1.0.6"'*) return 0 ;;
+            *'"version":"1.0.7"'*) return 0 ;;
         esac
         sleep 3
     done

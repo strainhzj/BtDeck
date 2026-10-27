@@ -195,7 +195,7 @@ class TestLifecycleDriversContract:
             "restart_twice",
             "remove_keeps_data",
             "purge_removes_data",
-            "v105_to_v106_upgrade",
+            "v106_to_v107_upgrade",
             "SECRET_KEY 未重置",
             "Alembic 单 head",
             "write_report",
@@ -207,7 +207,7 @@ class TestLifecycleDriversContract:
         for marker in (
             "fresh_install",
             "reinstall_same_version",
-            "v105_to_v106_upgrade",
+            "v106_to_v107_upgrade",
             "remove_keeps_data",
             "R11/RPM",
             "write_report",
@@ -218,14 +218,14 @@ class TestLifecycleDriversContract:
         text = (_LIFECYCLE / "run_deb_rpm.sh").read_text(encoding="utf-8")
         assert "--privileged --cgroupns=host" in text
         assert "w3-debian-sysd" in text and "w3-rocky-sysd" in text
-        assert ".release-build-v1.0.5/assets" in text
+        assert ".release-build-v1.0.6/assets" in text
 
     def test_docker_driver_scenarios(self):
         text = (_LIFECYCLE / "docker.sh").read_text(encoding="utf-8")
         for marker in (
             "repeat_up_no_recreate",
             "force-recreate",
-            "upgrade_to_v106",
+            "upgrade_to_v107",
             "same_digest_up_no_recreate",
             "down_up_keeps_volume",
             "reconstructed",
@@ -257,23 +257,23 @@ class TestLifecycleDriversContract:
         assert "single_port_listener" in text and "alembic_head" in text
 
 
-class TestV105HealthContract:
-    """v1.0.5 冻结制品健康契约（W3 CI 第七轮实测拦截）。
+class TestV106HealthContract:
+    """v1.0.6 冻结基线健康契约（基线随 v1.0.7 升位从 v1.0.5 切换）。
 
-    v1.0.5 的 /health/live 响应为 {"status":"success",...,"data":{"status":"alive"}}，
-    无 version/build 字段（version 是 v1.0.6 W1 引入）。四驱动的 v1.0.5 就绪谓词
-    必须断言 data.status=alive；等 "version":"1.0.5" 会必然超时（CI 420s 复现）。
+    v1.0.6 起基线制品健康契约含 version 字段（v1.0.6 W1 引入），四驱动的
+    基线就绪谓词必须按 version=1.0.6 精确断言；v1.0.5 时代的 status-only
+    特判（data.status=alive）已随基线切换退役（deb/rpm/docker 三驱动的
+    参数化 wait/backend_health 统一走 version 谓词，windows 保留字面形态）。
     """
 
-    def test_v105_predicates_use_alive(self):
-        for name in ("deb.sh", "rpm.sh", "docker.sh", "windows.ps1"):
+    def test_v106_predicates_use_version(self):
+        for name in ("deb.sh", "rpm.sh"):
             text = (_LIFECYCLE / name).read_text(encoding="utf-8")
-            code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
-            assert "1.0.5" in code, f"{name} 未区分 v1.0.5 基线就绪契约"
-            # alive 谓词分支必须存在（bash 驱动为转义形态，ps1 为字面形态）
-            bash_form = '\\"status\\":\\"alive\\"' in code
-            literal_form = '"status":"alive"' in code
-            assert bash_form or literal_form, f"{name} 缺 v1.0.5 alive 谓词"
+            assert 'wait_healthy "1.0.6"' in text, f"{name} 缺 v1.0.6 基线 version 谓词调用"
+        docker_text = (_LIFECYCLE / "docker.sh").read_text(encoding="utf-8")
+        assert "backend_health 1.0.6" in docker_text, "docker.sh 缺 v1.0.6 基线 version 谓词调用"
+        ps1_text = (_LIFECYCLE / "windows.ps1").read_text(encoding="utf-8")
+        assert '"version":"1.0.6"' in ps1_text, "windows.ps1 缺 v1.0.6 基线 version 谓词"
 
     def test_no_version_105_wait_regression(self):
         # 负向变异拦截：任何驱动恢复 "version":"1.0.5" 等待串即失败
@@ -281,7 +281,7 @@ class TestV105HealthContract:
             text = (_LIFECYCLE / name).read_text(encoding="utf-8")
             assert (
                 '\\"version\\":\\"1.0.5\\"' not in text and '"version":"1.0.5"' not in text
-            ), f"{name} 出现 v1.0.5 version 等待串（v1.0.5 响应无该字段，必然超时）"
+            ), f"{name} 出现 v1.0.5 version 等待串（v1.0.5 已非基线，等待串必然超时）"
 
     def test_windows_predicates_compact_json(self):
         # 健康接口是紧凑 JSON（无空格分隔符）；带空格的 -match 串永远不命中（CI 实测）

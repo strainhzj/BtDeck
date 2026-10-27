@@ -23,11 +23,10 @@ from app.database import AsyncSessionLocal
 from app.services.audit_context import AuditContext
 from app.services.audit_service import get_audit_service
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
-from app.api.endpoints.torrent_helpers import (
+from app.services.torrent_add_helpers import (
     calculate_info_hash,
-    get_transmission_torrent_info,
-    create_qbittorrent_torrent_record,
-    create_transmission_torrent_record,
+    refresh_trackers_after_add,
+    wait_and_upsert_torrent_row,
 )
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo
@@ -63,12 +62,23 @@ class TorrentAddResult:
 
     reason_code 为双语 P4 错误契约增量：失败路径携带稳定 reasonCode，由端点映射进
     CommonResponse.data.reasonCode（信封四字段不变，仅 data 新增字段；成功路径 None）。
+    以下补充字段供 MCP（W3-③ torrent_add_file）读取领域事实；HTTP 端点只消费
+    status/code/msg，新增字段对其零影响。失败路径保持缺省 None。
     """
 
     status: str = "success"
     code: str = "200"
     msg: str = "种子添加成功"
     reason_code: Optional[str] = None
+    # 种子 info hash（十六进制小写）
+    info_hash: Optional[str] = None
+    # 数据库记录标识与种子名（成功路径必填）
+    info_id: Optional[str] = None
+    name: Optional[str] = None
+    # 下载器昵称（仅昵称；连接信息永不进入领域结果）
+    downloader_nickname: Optional[str] = None
+    # True=新建 DB 记录；False=记录已存在（重复添加语义）
+    created: Optional[bool] = None
 
     @property
     def ok(self) -> bool:
@@ -116,6 +126,7 @@ class TorrentAddService:
         tmp_file_path: Optional[str] = None
         info_hash: Optional[str] = None
         db_torrent: Optional[TorrentInfo] = None
+        db_torrent_created = False
         downloader: Any = None
 
         # ========== 从注入的 store 获取缓存的下载器（强制规范） ==========
@@ -230,42 +241,20 @@ class TorrentAddService:
                     result.reason_code = "TORRENT_FILE_REQUIRED"
                     return result
 
-                # 等待Transmission处理种子（最多30秒）
-                tr_torrent = None
-                max_retries = 30
-                retry_count = 0
-                while tr_torrent is None and retry_count < max_retries:
-                    await asyncio.sleep(1)
-                    tr_torrent = await get_transmission_torrent_info(downloader_id, tr_client, info_hash)
-                    retry_count += 1
-
-                if not tr_torrent:
+                # 添加后统一「轮询定位 + 落库/刷新」（feature torrent-lookup-service-2026-10-08 二期）：
+                # TorrentLookupService 服务端 O(1) 索引 + 统一 VO；无行创建/有行刷新实时字段，
+                # 替代原手写 30×1s 轮询 + create_transmission_torrent_record
+                db_torrent, db_torrent_created, lookup_err = await wait_and_upsert_torrent_row(
+                    self.db, self.store, downloader, info_hash, operator=operator
+                )
+                if db_torrent is None:
                     result.code = "408"
                     result.msg = "获取种子信息超时，请检查Transmission连接"
                     result.reason_code = "TORRENT_INFO_TIMEOUT"
                     return result
 
-                # 检查数据库中是否已存在该种子
-                # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
-                # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
-                # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
-                existing_torrent = (
-                    self.db.query(TorrentInfo)
-                    .filter(TorrentInfo.hash == info_hash)
-                    .filter(TorrentInfo.dr == 0)
-                    .filter(TorrentInfo.downloader_id == downloader_id)
-                    .first()
-                )
-
-                if existing_torrent is None:
-                    # 不存在：创建新记录
-                    db_torrent = create_transmission_torrent_record(downloader, downloader_id, tr_torrent)
-                    self.db.add(db_torrent)
-                    self.db.commit()
-                    self.db.refresh(db_torrent)
-                else:
-                    # 已存在：使用现有记录
-                    db_torrent = existing_torrent
+                # 立即刷新 tracker 行（best-effort，失败不影响添加结果）
+                await refresh_trackers_after_add(self.store, downloader, info_hash, db_torrent.info_id)
 
             except TransmissionError as e:
                 result.code = "500"
@@ -324,53 +313,22 @@ class TorrentAddService:
                     operation="add_torrent",
                 )
 
-                # 从qBittorrent获取种子信息（最多30秒）
-                torrents = None
-                max_retries = 30
-                retry_count = 0
-                while (torrents is None or len(torrents) == 0) and retry_count < max_retries:
-                    await asyncio.sleep(1)
-                    # P0-04 修复：轮询内的 torrents_info 同样经 INTERACTIVE lane 执行
-                    torrents = await call_downloader_api(
-                        downloader_id,
-                        DownloadLane.INTERACTIVE,
-                        qb_client.torrents_info,
-                        kwargs={"torrent_hashes": info_hash},
-                        timeout=_QB_CALL_TIMEOUT,
-                        operation="get_qb_torrent_info",
-                    )
-                    retry_count += 1
-
-                # 双重检查：确保torrents列表不为空
-                if not torrents or len(torrents) == 0:
+                # 添加后统一「轮询定位 + 落库/刷新」（feature torrent-lookup-service-2026-10-08 二期）：
+                # 验收修复——删除前置可见性轮询（原 30×1s torrents_info 手写循环），
+                # 与 TR 分支对齐直接走 TorrentLookupService 轮询定位（命中即停）；
+                # 消除正常路径 1 次冗余远程调用与病态场景 60s 叠加超时
+                assert info_hash is not None  # mypy 收窄： torrents_add 前已同步计算
+                db_torrent, db_torrent_created, lookup_err = await wait_and_upsert_torrent_row(
+                    self.db, self.store, downloader, info_hash, operator=operator
+                )
+                if db_torrent is None:
                     result.code = "500"
                     result.msg = "种子添加到qBittorrent后无法获取信息"
                     result.reason_code = "TORRENT_INFO_UNAVAILABLE"
                     return result
 
-                qb_torrent = torrents[0]
-
-                # 检查数据库中是否已存在该种子
-                # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
-                # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
-                # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
-                existing_torrent = (
-                    self.db.query(TorrentInfo)
-                    .filter(TorrentInfo.hash == info_hash)
-                    .filter(TorrentInfo.dr == 0)
-                    .filter(TorrentInfo.downloader_id == downloader_id)
-                    .first()
-                )
-
-                if existing_torrent is None:
-                    # 不存在：创建新记录
-                    db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
-                    self.db.add(db_torrent)
-                    self.db.commit()
-                    self.db.refresh(db_torrent)
-                else:
-                    # 已存在：使用现有记录
-                    db_torrent = existing_torrent
+                # 立即刷新 tracker 行（best-effort，失败不影响添加结果）
+                await refresh_trackers_after_add(self.store, downloader, info_hash, db_torrent.info_id)
             except APIError as e:
                 result.code = "500"
                 result.msg = str(e)
@@ -443,5 +401,14 @@ class TorrentAddService:
                 os.unlink(tmp_file_path)
             except OSError:
                 pass
+
+        # 领域事实回填（MCP 消费；HTTP 端点只读 status/code/msg 不受影响）
+        result.info_hash = info_hash
+        result.created = db_torrent_created
+        if db_torrent is not None:
+            result.info_id = db_torrent.info_id
+            result.name = db_torrent.name
+        if downloader is not None:
+            result.downloader_nickname = downloader.nickname
 
         return result

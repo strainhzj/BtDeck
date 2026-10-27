@@ -6,8 +6,9 @@
 # 阶段1: builder - 编译所有依赖的 wheel
 # ============================================
 # 基础镜像 digest 固定（release-artifact-equivalence-gate W1/G2）：
-# python:3.11-slim @ sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
-FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 AS builder
+# python:3.12-slim @ sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+# （工具链统一 3.12：digest 经 Docker Hub API 核实于 2026-09-23）
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704 AS builder
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端构建阶段 - wheel 编译"
@@ -53,11 +54,11 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
 # ============================================
 # 阶段2: runtime - 生产运行时
 # ============================================
-# digest 同 builder 阶段（python:3.11-slim）
-FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
+# digest 同 builder 阶段（python:3.12-slim）
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
 LABEL maintainer="BTDeck Team"
-LABEL description="BTDeck 后端服务 - FastAPI + Python 3.11"
+LABEL description="BTDeck 后端服务 - FastAPI + Python 3.12"
 
 # OCI 身份标签（G1/G10）：正式构建由 build-images.sh / release-gate 注入
 # --build-arg OCI_VERSION=1.0.6 OCI_REVISION=<40位SHA> OCI_CREATED=<RFC3339>
@@ -67,7 +68,7 @@ ARG OCI_REVISION=""
 ARG OCI_CREATED=""
 ARG OCI_SOURCE="https://github.com/strainhzj/BtDeck"
 LABEL org.opencontainers.image.title="BtDeck backend" \
-      org.opencontainers.image.description="BTDeck 后端服务 - FastAPI + Python 3.11" \
+      org.opencontainers.image.description="BTDeck 后端服务 - FastAPI + Python 3.12" \
       org.opencontainers.image.version="${OCI_VERSION}" \
       org.opencontainers.image.revision="${OCI_REVISION}" \
       org.opencontainers.image.created="${OCI_CREATED}" \
@@ -94,14 +95,14 @@ ENV PYTHONPATH=/app \
     TZ=${APP_TZ}
 
 # 安装运行时系统依赖（最小集）
-# curl: 健康检查；tzdata: 时区数据
+# tzdata: 时区数据；健康检查由 compose 用 python3 urllib 探测
+# （2026-10-25 安全治理批移除 curl：deb13 的 curl/libcurl 无修复 Critical 集中爆发）
 # 创建非特权用户 appuser (uid=1001)
 # APT_MIRROR 为 host-only 形态；security 源路径映射同 builder 阶段说明
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s|security.debian.org/debian-security|${APT_MIRROR}/debian-security|g; s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/share/zoneinfo/${APP_TZ} /etc/localtime \

@@ -103,7 +103,7 @@ describe('views/mobile/torrent-detail', () => {
     expect(wrapper.find('.m-detail-name').text()).toBe('移动端测试种子')
     expect(wrapper.text()).toContain('下载中')
     expect(wrapper.find('.m-detail-progress-text').text()).toContain('42.5')
-    expect(wrapper.find('.m-detail-speed').text()).toContain('100.00 MB/s')
+    expect(wrapper.find('.m-detail-speed').text()).toContain('100.00 KB/s')
     expect(wrapper.find('.m-tracker-toggle').text()).toContain('Tracker 明细（2）')
   })
 
@@ -148,7 +148,7 @@ describe('views/mobile/torrent-detail', () => {
     await vm().pollActive()
     expect(wrapper.find('.m-detail-progress-text').text()).toContain('99.0')
     expect(wrapper.text()).toContain('7 / 8')
-    expect(wrapper.find('.m-detail-speed').text()).toContain('1 KB/s')
+    expect(wrapper.find('.m-detail-speed').text()).toContain('1.00 B/s')
   })
 
   it('暂停/恢复：携带复合键调用现有 API 并刷新', async() => {

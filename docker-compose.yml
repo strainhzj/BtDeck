@@ -4,14 +4,14 @@
 
 services:
   # ==================== 后端服务 ====================
-  # FastAPI + Python 3.11
+  # FastAPI + Python 3.12
   # 端口：5001 (API服务)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     # 默认从 Docker Hub 拉取官方镜像（v1.0.6+）；本地源码构建用 docker compose up --build
-    image: strainthomas/btdeck-backend:v1.0.6
+    image: strainthomas/btdeck-backend:v1.0.7
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
@@ -65,7 +65,7 @@ services:
           memory: 256M
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health/ready', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,7 +79,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
     # 默认从 Docker Hub 拉取官方镜像（v1.0.6+）；本地源码构建用 docker compose up --build
-    image: strainthomas/btdeck-frontend:v1.0.6
+    image: strainthomas/btdeck-frontend:v1.0.7
     container_name: btdeck-frontend
     environment:
       # 时区默认 UTC（2026-09-07 时间戳单基准）：naive datetime.now() 写库 + serialize_utc_datetime

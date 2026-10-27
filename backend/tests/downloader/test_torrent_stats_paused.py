@@ -51,6 +51,37 @@ class TestCachePausedStats:
         assert stats["paused"] == 1
         assert stats["other"] == 0
 
+    def test_tr_mapped_paused_value_bucketed(self):
+        """统计报表 W2 决策 7：TR stopped 经 TorrentStatusMapper 映射后的 DB 值
+        'paused' 也归暂停桶（常量提升后 PAUSED_STATES 扩充；报表侧按 DB 值
+        分桶时 TR 暂停种子不再落 other）。"""
+        from app.core.torrent_status_mapper import TorrentStatusMapper
+
+        mapped = TorrentStatusMapper.convert_transmission_status("stopped")
+        assert mapped == "paused"
+        cache = TorrentStatsCache("d1")
+        _feed(cache, ["paused", "pauseddl", "stopped", "seeding"])
+        stats = cache.get_stats()
+        assert stats["paused"] == 3
+        assert stats["seeding"] == 1
+        assert stats["other"] == 0
+
+    def test_module_level_constants_exported(self):
+        """常量提升锁：三集合为模块级导出，供报表五桶等下游复用（决策 7）。"""
+        from app.downloader.torrent_stats_cache import (
+            DOWNLOADING_STATES,
+            PAUSED_STATES,
+            SEEDING_STATES,
+        )
+
+        assert {"queueddl", "checkingdl"} <= DOWNLOADING_STATES
+        assert {"pausedup", "checkingup"} <= SEEDING_STATES
+        assert {"pauseddl", "stoppeddl", "stopped", "paused"} <= PAUSED_STATES
+        # 三个集合互不相交（同一状态不得多桶计数）
+        assert not (DOWNLOADING_STATES & SEEDING_STATES)
+        assert not (DOWNLOADING_STATES & PAUSED_STATES)
+        assert not (SEEDING_STATES & PAUSED_STATES)
+
 
 class TestStatusColdDataPaused:
     async def test_qb_status_passthrough_paused(self):

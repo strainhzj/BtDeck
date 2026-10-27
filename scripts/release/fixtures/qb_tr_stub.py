@@ -29,7 +29,7 @@ Transmission 假服务；为 G8 变异演练（M2）提供响应字段改写反�
   python qb_tr_stub.py --role mutate-proxy --port 5002 \
       --upstream http://127.0.0.1:5001 \
       --mutate-route /health/live --mutate-field data.build.version \
-      --mutate-value 1.0.6-mutated
+      --mutate-value 1.0.7-mutated
 """
 
 from __future__ import annotations

@@ -4,6 +4,23 @@
 > 依据：`PLANS/desktop-bilingual.md` §5 验收矩阵 / §6 高风险专项 / §7 门禁与完成定义。
 > 口径：**自动化绿 ≠ 人工视觉通过**（计划 §7 明文）；本清单逐项标注证据类别。
 
+## 〇、合并后复测与范围扩界（2026-09-22）
+
+> dev1.0.7（MCP+MoviePilot 线）合入 dev 后，v1.0.7 新增桌面面已并入 M2 双语范围并完成实现；
+> 本节为合并 + 双语扩界批（提交 213bafa / 0314687）后的自动化证据刷新。
+
+| 项 | 结果（2026-09-22 实测） |
+|---|---|
+| 前端全量 | **125 套 1833 例全绿**（较 09-20 基线 +1 套 +19 例：MCP/MoviePilot 面板与 demo 用例） |
+| 前端 typecheck / lint / build | 全绿 |
+| 后端全量 | **5215 passed / 18 skipped / 0 failed**，覆盖率 **66.80%**（阈值 40%） |
+| 全栈环境 | `./init.sh` 通过 |
+| 双语静态门禁 | parity + 键可达性 + 漏译审计（全桌面负向排除）绿；**MCP/MoviePilot 面与媒体库页签已入审计覆盖**（排除清单 2 条与白名单 16 条随双语化移除） |
+| reasonCode 契约 | 既有 p2~p6b 全绿；**新增 MCP_SETTINGS_*（2）/ MOVIEPILOT_*（10）12 键**（mcp_settings/moviepilot 端点 + errors.byCode zh/en + apiErrorMessage 接线） |
+| M2 范围扩界 | McpSettingsPanel、MoviePilotPanel、种子详情「媒体库」页签、关联反查、settings 新页签——全部键化双语（zh 与原内联逐字节一致零回归，en 全量翻译） |
+
+浏览器视觉验收与 R01～R06 签认仍待用户执行（下表 ◐/⏳ 项不变，新增 MCP/MoviePilot 面建议纳入抽查清单）。
+
 ## 一、自动化回归证据（本轮实测，2026-09-20）
 
 | 项 | 命令 | 结果 |

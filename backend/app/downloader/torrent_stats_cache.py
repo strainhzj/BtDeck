@@ -22,6 +22,35 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+# =====================================================================
+# 状态桶常量（统计报表 W2 决策 7：从 get_stats 方法内提升为模块级，供报表
+# 五桶等下游复用；集合必须全小写——比较前会 status.lower()，驼峰写法
+# （"stalledUP" 等）永不匹配）。
+# qBittorrent 状态值参考：
+# https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.2+)#get-torrent-list
+# =====================================================================
+DOWNLOADING_STATES = {
+    "downloading",  # 下载中
+    "stalleddl",  # 下载停滞（无下载速度，有上传速度）
+    "queueddl",  # 排队等待下载
+    "checkingdl",  # 下载中检查数据
+}
+
+SEEDING_STATES = {
+    "seeding",  # 做种中
+    "stalledup",  # 做种停滞（无上传速度）
+    "queuedup",  # 排队等待做种
+    "pausedup",  # 上传暂停（已完成但在做种队列）
+    "checkingup",  # ✅ 做种中检查数据（应归入做种而非下载）
+}
+
+# qB 的 pausedDL/stoppedDL + Transmission 的 stopped（stats 缓存原值）与
+# paused（TR stopped 经 TorrentStatusMapper 映射后的 DB 值，统计报表 W2 补齐：
+# 报表侧按 DB 值分桶时 TR 暂停种子必须归暂停桶而非 other）。
+# 注意：pausedUP 归入"做种"而非"暂停"（因为种子已完成下载）
+PAUSED_STATES = {"pauseddl", "stoppeddl", "stopped", "paused"}
+
+
 @dataclass
 class TorrentCacheEntry:
     """单个种子的缓存条目"""
@@ -135,28 +164,7 @@ class TorrentStatsCache:
                 'other': 其他
             }
         """
-        # 定义精确的状态集合（避免模糊子字符串匹配导致的数据互换）
-        # qBittorrent 状态值参考：https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.2+)#get-torrent-list
-        # 注意：集合必须全小写——下方比较前会 status.lower()，驼峰写法（"stalledUP" 等）永不匹配
-        DOWNLOADING_STATES = {
-            "downloading",  # 下载中
-            "stalleddl",  # 下载停滞（无下载速度，有上传速度）
-            "queueddl",  # 排队等待下载
-            "checkingdl",  # 下载中检查数据
-        }
-
-        SEEDING_STATES = {
-            "seeding",  # 做种中
-            "stalledup",  # 做种停滞（无上传速度）
-            "queuedup",  # 排队等待做种
-            "pausedup",  # 上传暂停（已完成但在做种队列）
-            "checkingup",  # ✅ 做种中检查数据（应归入做种而非下载）
-        }
-
-        # qB 的 pausedDL/stoppedDL + Transmission 的 stopped（TR 已完成/未完成暂停统一为 stopped）
-        # 注意：pausedUP 归入"做种"而非"暂停"（因为种子已完成下载）
-        PAUSED_STATES = {"pauseddl", "stoppeddl", "stopped"}
-
+        # 状态集合已提升为模块级常量（统计报表 W2 决策 7），行为不变
         downloading = 0
         seeding = 0
         paused = 0

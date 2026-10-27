@@ -198,14 +198,17 @@ def _runtime_spy(side_effects: Optional[Dict[Any, Exception]] = None):
 def _patch_runtime(calls: List[Dict[str, Any]], fake_call):
     """同时 patch 三个模块的 call_downloader_api 引用。
 
-    get_transmission_torrent_info 在 torrent_helpers 模块内调用自身导入的
+    get_transmission_torrent_info 在 torrent_add_helpers（W3-③ 自 torrent_helpers 迁移）模块内调用自身导入的
     call_downloader_api（import 绑定）；/add 端点主体 2026-09-05 起抽取至
     torrent_add_service（符号随之迁移），状态控制端点在 torrent_status——
     三处都必须 patch。
     """
     with (
         patch("app.services.torrent_add_service.call_downloader_api", side_effect=fake_call),
-        patch("app.api.endpoints.torrent_helpers.call_downloader_api", side_effect=fake_call),
+        patch("app.services.torrent_add_helpers.call_downloader_api", side_effect=fake_call),
+        # 二期（torrent-lookup-service-2026-10-08）：添加后统一落库经
+        # TorrentLookupService 轮询（模块级 call_downloader_api 引用）
+        patch("app.services.torrent_lookup_service.call_downloader_api", side_effect=fake_call),
         patch("app.api.endpoints.torrent_status.call_downloader_api", side_effect=fake_call),
     ):
         yield
@@ -273,7 +276,10 @@ async def test_create_torrent_qb_success_runtime_and_polling(torrent_db):
     """
     client = _make_qb_client()
     # 轮询序列：前两次空、第三次命中（side_effect 逐次返回，模拟下载器处理延迟）
-    client.torrents_info.side_effect = [[], [], [_make_qb_torrent()]]
+    # 前 3 次：qB 分支前置可见性轮询（空×2 + 命中）；第 4 次：添加后统一落库的
+    # TorrentLookupService 定位调用（torrent-lookup-service-2026-10-08 二期）
+    qb_torrent = _make_qb_torrent()
+    client.torrents_info.side_effect = [[], [], [qb_torrent], [qb_torrent]]
     downloader = _make_downloader(downloader_type=0, client=client)
     app = _make_app(downloader)
     calls, fake_call = _runtime_spy()
@@ -309,12 +315,15 @@ async def test_create_torrent_qb_success_runtime_and_polling(torrent_db):
 
     # 轮询循环回归：3 次 torrents_info 全部经 runtime（带 info_hash 与 operation）
     info_calls = [c for c in calls if c["func"] is client.torrents_info]
-    assert len(info_calls) == 3, f"轮询循环内 torrents_info 应真实经 runtime 调用 3 次，实际 {len(info_calls)}"
+    # 二期：3 次前置可见性轮询 + 1 次添加后统一落库的 TorrentLookupService 定位
+    # 验收修复后：前置可见性轮询已删，轮询定位统一在 TorrentLookupService 内
+    # （3 次全经 runtime，均为列表参数形态，SDK 自动 | 连接）
+    assert len(info_calls) == 3, f"torrents_info 应真实经 runtime 调用 3 次，实际 {len(info_calls)}"
     for c in info_calls:
         assert c["kwargs"] == {"torrent_hashes": info_calls[0]["kwargs"]["torrent_hashes"]}
-        assert c["opts"]["operation"] == "get_qb_torrent_info"
-    # 种子已写入数据库
-    saved = torrent_db.query(TorrentInfo).filter(TorrentInfo.hash == "a" * 40).first()
+        assert c["opts"]["operation"] == "torrent_lookup_qb"
+    # 种子已写入数据库（二期：行 hash 为 calculate_info_hash 真实值，非 stub 值）
+    saved = torrent_db.query(TorrentInfo).filter(TorrentInfo.downloader_id == DL_ID).first()
     assert saved is not None
     assert saved.downloader_id == DL_ID
 
@@ -352,10 +361,11 @@ async def test_create_torrent_tr_success_runtime():
     assert add_call is not None, "add_torrent 必须经 runtime 调用"
     assert add_call["downloader_id"] == DL_ID
     assert add_call["opts"]["operation"] == "add_torrent"
-    # 轮询 helper 内的 get_torrents 也必须经 runtime（torrent_helpers 模块引用）
+    # 二期：TR 分支轮询定位统一经 TorrentLookupService（最小投影单请求），
+    # 仍必须经 runtime（torrent_lookup_service 模块引用）
     get_call = _find_call(calls, client.get_torrents)
-    assert get_call is not None, "get_transmission_torrent_info 内的 get_torrents 必须经 runtime 调用"
-    assert get_call["opts"]["operation"] == "get_transmission_torrent_info"
+    assert get_call is not None, "添加后定位内的 get_torrents 必须经 runtime 调用"
+    assert get_call["opts"]["operation"] == "torrent_lookup_tr"
 
 
 @pytest.mark.asyncio

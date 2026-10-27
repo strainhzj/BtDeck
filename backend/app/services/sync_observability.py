@@ -312,7 +312,7 @@ def log_event(event_name: str, level: int = logging.INFO, **fields: Any) -> None
 
 # ==================== 告警阈值（W4-1 第 5 节初始值） ====================
 
-# 初始值来自 PLANS/sync-database-blocking-remediation.md W4-1「观测和告警初始阈值」。
+# 初始值来自 PLANS/archive/sync-database-blocking-remediation.md W4-1「观测和告警初始阈值」。
 # 两周基线数据后校准；任何调整必须留变更记录（阈值注释/本模块 git 历史）。
 # 注意：计划中"critical event"在日志级观测中统一以 WARNING 级别发射
 # （不引入分级告警通道，避免误报噪音；严重度判定留给指标层）。

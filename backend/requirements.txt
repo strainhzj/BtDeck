@@ -13,7 +13,7 @@ werkzeug~=3.1.3
 colorama==0.4.6; sys_platform == "win32"
 uvicorn~=0.35.0
 sqlalchemy~=2.0.15
-setuptools~=75.8.0
+setuptools~=78.1.0
 click~=8.1.8
 requests~=2.32.3
 regex>=2024.11.6,<2027.0.0
@@ -22,7 +22,11 @@ pydantic~=2.12.4
 # fastapi 0.115.6 起放宽 starlette 上限至 <0.42，配套升级（W13）。
 # 历史组合 fastapi~=0.115.0 + starlette~=0.41.3 是矛盾锁定（pip 只能解析到
 # fastapi 0.115.2，starlette 永远停留在受 CVE 影响的 0.38.x）。
-fastapi~=0.115.6
+# 2026-10-24 安全治理批（v1.0.7 G9 首跑暴露 starlette 3 条 CVE）：升到
+# fastapi 0.140 稳定线（2026-07 末，自带 starlette>=0.49 约束），另显式
+# 下限 starlette>=0.49.1 覆盖三条 CVE 的最低修复线；实际组合由
+# requirements-lock.txt（pip-compile）解析锁定。
+fastapi~=0.140.0
 pyotp~=2.9.0
 qrcode~=8.1
 pycryptodomex~=3.23.0
@@ -35,12 +39,27 @@ gmssl~=3.2.2
 # 升级需重新验证 FORCE_SCHEME_FROM_HOST/HTTPADAPTER_ARGS 行为）
 qbittorrent-api~=2025.2.0
 ping3~=4.0.8
-pyjwt~=2.8.0
 aiosqlite~=0.21.0
-pillow~=11.1.0
+pillow~=13.0.0
 transmission-rpc~=7.0.11
-urllib3~=2.2.2
-starlette~=0.41.3
+urllib3~=2.8.0
+# 2026-10-24 安全治理批：显式 pin（GHSA-6q48-6c7w-9gw2 Critical；传递依赖
+# 不显式约束时 pip-compile 曾解析停在旧版）
+certifi>=2026.10.19
+# 2026-10-25 安全治理批补：镜像内打包工具链传递面（GHSA-58pv jaraco-context 5.3.0→6.1.0、
+# GHSA-8rrh wheel 0.45.1→0.46.2）；显式声明入锁，随 setuptools 78.1.1 一起锁定
+jaraco-context~=6.1
+wheel~=0.46.2
+starlette~=1.9.0
+# Windows 传递依赖显式入锁（W3 CI 实测拦截：Linux 侧 pip-compile 会剔掉
+# 不满足 marker 的传递闭包，Windows 制品安装断供）——带平台 marker 声明，
+# pip-compile 会原样保留 marker 写入 requirements-lock.txt：
+#   colorama←click、tzdata←tzlocal、pywin32←mcp（非直接依赖，为锁
+#   可追溯性一并显式声明；版本对齐 08cf6d2 时代旧锁；pywin32 版本号
+#   为单段 build 号（312），PEP 440 禁止单段 ~=，必须 ==
+colorama~=0.4.6; sys_platform == "win32"
+tzdata~=2026.3; platform_system == "Windows"
+pywin32==312; sys_platform == "win32"
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
@@ -53,7 +72,15 @@ python-multipart~=0.0.20
 pydantic-settings~=2.12.0
 croniter~=3.0.4
 httpx~=0.28.0
+# RSS/Atom 订阅解析（feature rss-subscription-2026-09-24；配套锁 feedparser-sgmllib）
+feedparser~=6.0.14
 packaging~=24.0
 # 审计日志 Excel 导出（openpyxl 直写；pandas/numpy 已随 dual-mode-client
 # Phase 1.3 依赖瘦身移除，全仓零 import 已核实）
 openpyxl~=3.1.0
+# MCP 服务运行时（feature mcp-service-capabilities，官方 mcp SDK streamable HTTP；
+# 探针矩阵见 backend/scripts/mcp_sdk_probe.py，W0 §10.4 选型）。SDK 最低要求
+# pyjwt>=2.10.1 且带 [crypto] extra（引入 cryptography）——与原 pyjwt~=2.8.0
+# 冲突，随本依赖一并升级（JWT 用面为 HS256 encode/decode，2.10 兼容）。
+mcp~=1.30.0
+pyjwt[crypto]~=2.14.0

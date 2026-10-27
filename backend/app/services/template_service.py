@@ -85,8 +85,10 @@ class TemplateService:
             raise ValueError("模板描述长度不能超过500")
 
         downloader_type = data.get("downloader_type")
-        if downloader_type not in [0, 1]:
-            raise ValueError("下载器类型必须是0（qBittorrent）或1（Transmission）")
+        if downloader_type not in [e.value for e in DownloaderTypeEnum]:
+            raise ValueError(
+                f"下载器类型必须是 0（qBittorrent）/1（Transmission）/2（rTorrent）之一，当前值: {downloader_type}"
+            )
 
         template_config = data.get("template_config")
         if not template_config or not isinstance(template_config, dict):
@@ -198,8 +200,10 @@ class TemplateService:
 
         if "downloader_type" in data:
             downloader_type = data["downloader_type"]
-            if downloader_type not in [0, 1]:
-                raise ValueError("下载器类型必须是0（qBittorrent）或1（Transmission）")
+            if downloader_type not in [e.value for e in DownloaderTypeEnum]:
+                raise ValueError(
+                    f"下载器类型必须是 0（qBittorrent）/1（Transmission）/2（rTorrent）之一，当前值: {downloader_type}"
+                )
             update_fields["downloader_type"] = downloader_type
             updated = True
 

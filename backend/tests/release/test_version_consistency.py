@@ -37,7 +37,13 @@ class TestRealRepositoryConsistency:
     def test_declared_sources_are_six(self, generator):
         versions = generator.collect_declared_versions(_REPO_ROOT)
         assert len(versions) == 6
-        assert set(versions.values()) == {versions["release/release-config.json"]}
+        expected = versions["release/release-config.json"]
+        # 动态声明（build-linux.sh VERSION="$(... release-config ...)"）返回占位串
+        # "dynamic-from-release-config"：版本唯一输入是 release-config，静态值不存在；
+        # 其实质一致性由 test_all_six_version_sources_agree 的 check_versions
+        # → _check_versions_dynamic_ok 结构校验+实读比对兑现
+        static_values = {v for v in versions.values() if v != "dynamic-from-release-config"}
+        assert static_values == {expected}
 
     def test_alembic_single_head_on_real_chain(self, generator):
         head = generator.collect_alembic_head(_REPO_ROOT / "backend")

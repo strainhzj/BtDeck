@@ -123,7 +123,7 @@ import {
   TrackerInfo,
   ActiveTorrentSpeed
 } from '@/api/torrents'
-import { extractErrorMessage, formatRatio } from '@/utils/formatters'
+import { extractErrorMessage, formatRatio, formatSpeed } from '@/utils/formatters'
 import {
   isTrackerAnnounceSuccess,
   getTrackerStatusClass
@@ -140,11 +140,11 @@ import {
   formatTorrentSize
 } from '@/views/mobile/torrent-status'
 
-/** 移动端速度展示：0/空显示 0（详情页语义与列表不同，空串会造成空白） */
+/** 移动端速度展示：0/空显示 0（详情页语义与列表不同，空串会造成空白）；
+ * 输入单位为 bytes/s（active-torrents 与列表字段同口径），复用全局 formatSpeed 逐级换算 */
 function formatDetailSpeed(speed: number | null | undefined): string {
   if (speed === null || speed === undefined || speed <= 0) return '0 KB/s'
-  if (speed >= 1024) return `${(speed / 1024).toFixed(2)} MB/s`
-  return `${Math.round(speed)} KB/s`
+  return formatSpeed(speed)
 }
 
 const BASE_REFETCH_LIMIT = 100

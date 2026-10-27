@@ -1,0 +1,49 @@
+// ============================================================
+// settings-panel.scss —— 系统设置页签卡片壳统一规范
+// ============================================================
+// 使用方式：在组件 scoped 样式内 `@import '@/styles/settings-panel';`
+// 后以 `@extend %settings-card;` 等占位符继承（占位符本身不产出 CSS，
+// 各组件得到带自身 scope 的规则，双主题令牌自动生效）。
+//
+// 统一规范（2026-09-23 设置页 UI 重构）：
+// - 卡片壳：960px 最大宽度（宽面板大胆取宽）、xl 内边距、xl 圆角、md 阴影
+// - 标题：20px/700 + 渐变竖条 accent（左对齐 flex 布局）
+// - 描述：14px、次级文本色、1.6 行高
+// 消费方：views/settings/index.vue、components/McpSettingsPanel.vue、
+//         components/MoviePilotPanel.vue（新增页签面板时同样继承）
+
+%settings-card {
+  width: 100%;
+  max-width: 960px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+}
+
+%settings-card-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+
+  &::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+}
+
+%settings-card-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: var(--spacing-sm) 0 var(--spacing-md);
+  line-height: 1.6;
+}

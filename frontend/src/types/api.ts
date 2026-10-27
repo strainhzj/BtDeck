@@ -58,7 +58,7 @@ export interface ErrorResponse {
  * - response getter：兼容存量 e.response.data.msg 读取（约 15 个文件），
  *   并保留 status 供 FileManagement.vue 等依赖 e.response.status 的分支使用
  *
- * 详见审计修复 PLANS/v1.0.5-audit.md P0-1。
+ * 详见审计修复 PLANS/archive/v1.0.5-audit.md P0-1。
  */
 export class ApiError extends Error {
   /** 业务码（与后端 CommonResponse.code 同值，如 '401'/'422'/'500'） */

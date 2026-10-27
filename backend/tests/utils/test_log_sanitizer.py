@@ -9,7 +9,6 @@
 - should_sanitize: 环境判断
 """
 
-import pytest
 from app.utils.log_sanitizer import (
     sanitize_ip,
     sanitize_username,

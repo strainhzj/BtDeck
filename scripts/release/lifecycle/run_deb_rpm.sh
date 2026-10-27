@@ -4,8 +4,8 @@
 #
 # 用法：run_deb_rpm.sh [--project-root DIR] [--evidence-dir DIR] [--skip deb|rpm]
 # 前置：
-#   <root>/dist/BtDeck-v1.0.6-linux-amd64.{deb,rpm}          新制品（build-linux.sh --release）
-#   <root>/.release-build-v1.0.5/assets/BtDeck-v1.0.5-linux-amd64.{deb,rpm}  升级基线（本地正式制品）
+#   <root>/dist/BtDeck-v1.0.7-linux-amd64.{deb,rpm}          新制品（build-linux.sh --release）
+#   <root>/.release-build-v1.0.6/assets/BtDeck-v1.0.6-linux-amd64.{deb,rpm}  升级基线（make_v106_baseline.sh 重建）
 # fail-closed：任一场景失败整体非零退出。
 
 set -u
@@ -27,10 +27,10 @@ done
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ROOT}/release/evidence/w3}"
 mkdir -p "$EVIDENCE_DIR"
 
-NEW_DEB="${ROOT}/dist/BtDeck-v1.0.6-linux-amd64.deb"
-NEW_RPM="${ROOT}/dist/BtDeck-v1.0.6-linux-amd64.rpm"
-OLD_DEB="${ROOT}/.release-build-v1.0.5/assets/BtDeck-v1.0.5-linux-amd64.deb"
-OLD_RPM="${ROOT}/.release-build-v1.0.5/assets/BtDeck-v1.0.5-linux-amd64.rpm"
+NEW_DEB="${ROOT}/dist/BtDeck-v1.0.7-linux-amd64.deb"
+NEW_RPM="${ROOT}/dist/BtDeck-v1.0.7-linux-amd64.rpm"
+OLD_DEB="${ROOT}/.release-build-v1.0.6/assets/BtDeck-v1.0.6-linux-amd64.deb"
+OLD_RPM="${ROOT}/.release-build-v1.0.6/assets/BtDeck-v1.0.6-linux-amd64.rpm"
 
 fail() { echo "[FATAL] $1" >&2; exit 2; }
 
@@ -114,14 +114,14 @@ build_sysd_images
 
 if [ "$SKIP" != "deb" ]; then
     [ -f "$NEW_DEB" ] || fail "缺少新 DEB：$NEW_DEB"
-    [ -f "$OLD_DEB" ] || fail "缺少 v1.0.5 基线 DEB：$OLD_DEB"
+    [ -f "$OLD_DEB" ] || fail "缺少 v1.0.6 基线 DEB：$OLD_DEB"
     run_scenario deb-fresh   w3-debian-sysd deb.sh --report /tmp/report.json --scenario fresh   --new-deb "/src${NEW_DEB#$ROOT}"
     run_scenario deb-upgrade w3-debian-sysd deb.sh --report /tmp/report.json --scenario upgrade --new-deb "/src${NEW_DEB#$ROOT}" --old-deb "/src${OLD_DEB#$ROOT}"
 fi
 
 if [ "$SKIP" != "rpm" ]; then
     [ -f "$NEW_RPM" ] || fail "缺少新 RPM：$NEW_RPM"
-    [ -f "$OLD_RPM" ] || fail "缺少 v1.0.5 基线 RPM：$OLD_RPM"
+    [ -f "$OLD_RPM" ] || fail "缺少 v1.0.6 基线 RPM：$OLD_RPM"
     run_scenario rpm-fresh   w3-rocky-sysd rpm.sh --report /tmp/report.json --scenario fresh   --new-rpm "/src${NEW_RPM#$ROOT}"
     run_scenario rpm-upgrade w3-rocky-sysd rpm.sh --report /tmp/report.json --scenario upgrade --new-rpm "/src${NEW_RPM#$ROOT}" --old-rpm "/src${OLD_RPM#$ROOT}"
 fi

@@ -58,13 +58,23 @@ def _tracker_is_not_contacted(tracker: TrackerInfo, downloader_type: Any) -> boo
 
     if type_name == "qbittorrent":
         return announce_status == 1
-    return announce_status in {0, 1}
+    if type_name == "transmission":
+        return announce_status in {0, 1}
+    # rTorrent 等未适配类型：中性状态码语义未定义，不假设"未联系"，
+    # 交给证据分类（unknown 保留数据库原值），避免误用 qB/TR 口径
+    return False
 
 
 def _tracker_is_working(tracker: TrackerInfo, downloader_type: Any) -> bool:
     """判断 Tracker 是否处于下载器定义的 Working 状态。"""
     status = _tracker_announce_status(tracker, downloader_type)
-    return status is not None and status[1] == 2
+    if status is None:
+        return False
+    type_name, announce_status = status
+    if type_name not in ("qbittorrent", "transmission"):
+        # rTorrent 等未适配类型：状态码 2 的 Working 语义属于 qB/TR，不采信
+        return False
+    return announce_status == 2
 
 
 def evaluate_tracker_error_state(

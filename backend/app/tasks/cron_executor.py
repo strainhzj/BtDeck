@@ -446,9 +446,7 @@ class CronTaskExecutor:
                             await self.add_task_to_scheduler(task)
                         else:
                             rejected.append(task)
-                    logger.info(
-                        f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务"
-                    )
+                    logger.info(f"成功加载 {len(tasks) - len(rejected) - len(capability_rejected)} 个定时任务")
                     if rejected:
                         await self._notify_policy_rejected_tasks(db, rejected)
                     if capability_rejected:
@@ -1120,7 +1118,7 @@ class CronTaskExecutor:
         - 按 task_code 查 TASK_PROFILES，重型任务进入 TaskAdmissionController 背压，
           同类已运行/排队满则跳过本轮，避免后台任务挤占请求侧资源；
         - 未注册的 task_code 视为轻量任务，走原路径不进入背压。
-        详见 PLANS/sync-resource-governance.md。
+        详见 PLANS/archive/sync-resource-governance.md。
         """
         executor_code = task["executor"]
         task_code = task.get("task_code")
