@@ -1,3 +1,19 @@
+## 2026-10-27 交接：v1.0.8 PostgreSQL 改造合入 dev（merge `c66f5d7` + mypy 修复 `51a9fe3`，全绿未推送）
+
+### 已完成
+
+- 合并 `feature/postgresql-migration`（91dade1+a0bd434，68 文件）到 dev（基点 c7bf20b，dev 已前迵 ~40 提交）；8 冲突全解：requirements 并集（dev 安全升级 + asyncpg/psycopg2-binary）、roadmap 4 README 行级并集与行号实测重测（core 三新行 migration L224/runtime L19/L31；infra env L72/L96+scripts PG 节；services report 986 行 get_speed_history L872）、feature_list 头部取 dev（1.0.7）、progress/session-handoff 按日期交错。
+- 子代理验证：venv 同步合并后锁文件（asyncpg 0.31.0/psycopg2-binary 2.9.13/fastapi 0.140.13/starlette 1.9.0/setuptools 78.1.1）→ pytest **5570 passed/47 skipped**（29 例 pg_integration 无 PG 环境变量正常跳过）+ black/flake8/pip check 净；mypy 唯一存量错（auth/dependencies.py:121，dev 0349347 引入、pyjwt 2.14 类型暴露）单独提交 `51a9fe3` 修复，mypy 310 文件零错误。
+- 锁文件自动合并健康（feature 130 行纯新增）；pg-integration CI job 随合并进入 dev，远端首跑待 push 后观察。
+
+### 待办
+
+- **未推送**：dev 领先 origin/dev 4 提交，待用户确认后 push。
+- CI：pg-integration job 首跑 + regression 全套在远端验证。
+- 真 PG 16 docker 环境本地复验（可选，沙箱无 docker socket）。
+
+---
+
 ## 2026-10-17 交接：报表文件优先口径（statistics-reports 追加 W8，全绿未提交）
 
 ### 已完成（用户三轮确认：文件>种子总则 + 三点拍板 a/b/c）
