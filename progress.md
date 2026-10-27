@@ -1,3 +1,10 @@
+## 2026-10-27（续）：Docker Hub 镜像 v1.0.7+latest、PR #9 合并、regression 版本测试修复
+
+- **Docker Hub 镜像**：strainthomas/btdeck-{backend,frontend} 推送 v1.0.7 + latest 双 tag。构建在 Hermes 机器（磁盘根因：build cache 33GB，prune 后 42GB 可用）；复用 build-and-export-images.sh（DEFAULT_DEPLOY_ENABLED sed 为 0 关自动 unraid 部署）+ --quick；OCI 标签 v1.0.7 @e08274f61a0c 验证通过。Docker Hub 密码登录被拒（2FA/凭据失效），改 Hermes docker save 4 tag 去重 tar（467MB，sha256 b884bbfb…）→ 内网 http.server:8401 → 用户 192 机器 wget/load/手动 docker login+push。
+- **CI 修复（78f3acc）**：PR #9 Backend/pytest 失败=tests/release/test_version_consistency.py::test_declared_sources_are_six 未接受 build-linux.sh 动态 VERSION 占位串（regression 直测内部函数暴露；release-gate 走 check_versions 路径不受影响）。修复：静态源全等断言 + 动态占位豁免（实质一致性由 check_versions→_check_versions_dynamic_ok 兑现）。修后 CI 4 success + 3 skipped，mergeable_state=clean。
+- **PR #9 合并**：用户手动合并（merge commit 8bf3b5e，2026-10-27T14:46Z），master 已含 v1.0.7 全部发布内容。
+- 遗留更新：secret-allowlist 旧条目 2026-11-02 到期；安全例外 139 条 2026-11-24 到期（v1.0.8 消解）；/tmp/btdeck-build 构建产物（Hermes tmpfs，重启自清）。
+
 ## 2026-10-27：v1.0.7 正式发布（Release 上线，全链闭环）
 
 **Release**: https://github.com/strainhzj/BtDeck/releases/tag/v1.0.7（id 425302777，commit e08274f，6 资产：签名后 btdeck.exe + BtDeck-v1.0.7-windows-x64-setup.exe + deb + rpm + btdeck-release.cer + SHA256SUMS.txt）
