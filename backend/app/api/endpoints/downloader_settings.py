@@ -31,6 +31,7 @@ from app.services.downloader_api_runtime import DownloadLane, call_downloader_ap
 from app.utils.encryption import encrypt_password, decrypt_password
 from app.models.enums import SpeedUnitEnum
 from app.models.setting_templates import DownloaderTypeEnum
+from app.core.dialect_sql import timestamp_parameter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -565,7 +566,8 @@ async def update_downloader_settings(
         """
         existing = db.execute(text(check_sql), {"downloader_id": downloader_id}).fetchone()
 
-        current_time = datetime.now().isoformat()
+        # v1.0.8 双方言收口：SQLite 保持秒级文本（历史行为）、PG 绑 datetime（asyncpg 严格类型/psycopg2 原生）
+        current_time = timestamp_parameter(datetime.now())
 
         if existing:
             # 更新现有配置
@@ -615,30 +617,28 @@ async def update_downloader_settings(
                 (:downloader_id, :dl_speed_limit, :ul_speed_limit, :dl_speed_unit, :ul_speed_unit,
                  :enable_schedule, :username, :password, :advanced_settings, :override_local,
                  :created_at, :updated_at)
-            """
-            insert_result = cast(
-                CursorResult[Any],
-                db.execute(
-                    text(insert_sql),
-                    {
-                        "downloader_id": downloader_id,
-                        "dl_speed_limit": global_dl_speed_limit,
-                        "ul_speed_limit": global_ul_speed_limit,
-                        "dl_speed_unit": global_dl_speed_unit,
-                        "ul_speed_unit": global_ul_speed_unit,
-                        "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
-                        "username": body_data.get("username"),
-                        "password": encrypted_password,
-                        "advanced_settings": advanced_settings_json,
-                        "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
-                        "created_at": current_time,
-                        "updated_at": current_time,
-                    },
-                ),
-            )
-
-            # 获取新创建记录的 ID
-            setting_id = insert_result.lastrowid
+                RETURNING id
+                """
+            # v1.0.8 双方言收口：lastrowid 在 PG 两条驱动均不可用（psycopg2 无 OID 表恒返回 0，
+            # asyncpg 适配层无该属性）→ RETURNING id 双方言取回（SQLite>=3.35，与已依赖的
+            # ON CONFLICT DO UPDATE（>=3.24）同级特性）
+            setting_id = db.execute(
+                text(insert_sql),
+                {
+                    "downloader_id": downloader_id,
+                    "dl_speed_limit": global_dl_speed_limit,
+                    "ul_speed_limit": global_ul_speed_limit,
+                    "dl_speed_unit": global_dl_speed_unit,
+                    "ul_speed_unit": global_ul_speed_unit,
+                    "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
+                    "username": body_data.get("username"),
+                    "password": encrypted_password,
+                    "advanced_settings": advanced_settings_json,
+                    "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
+                    "created_at": current_time,
+                    "updated_at": current_time,
+                },
+            ).scalar()
 
         # 保存分时段规则
         if parsed_schedule_rules is not None:

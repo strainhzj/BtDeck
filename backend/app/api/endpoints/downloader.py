@@ -1108,12 +1108,14 @@ def get_downloader_simple_list(
     try:
         # 基础条件：未删除的下载器
         conditions = ["dr = 0"]
-        params = {}
+        params: dict[str, Any] = {}
 
         # 可选条件：是否启用
         if enabled is not None:
             conditions.append("enabled = :enabled")
-            params["enabled"] = 1 if enabled else 0
+            # v1.0.8 双方言收口：Boolean 列传 bool 参数（原 int 1/0 在 PG 上 boolean = integer
+            # 无此 operator，psycopg2/asyncpg 双驱动均报错）
+            params["enabled"] = bool(enabled)
 
         # 构建 SQL 查询
         sql = f"""
@@ -1169,7 +1171,7 @@ async def getlist_from_cache(
 
         # 构建查询条件
         conditions = []
-        params = {}
+        params: dict[str, Any] = {}
 
         if downloader_request:
             if downloader_request.nickname:
@@ -1181,12 +1183,14 @@ async def getlist_from_cache(
                 params["host"] = f"%{downloader_request.host}%"
 
             if downloader_request.is_search:
-                conditions.append("is_search LIKE :is_search")
-                params["is_search"] = f"%{downloader_request.is_search}%"
+                # v1.0.8 双方言收口：布尔列等值过滤——PG boolean 列无 LIKE 文本 operator（直接报错），
+                # 且原 '%True%' 模式在 SQLite 上也是恒空过滤；等值 + bool 参数双库语义一致
+                conditions.append("is_search = :is_search")
+                params["is_search"] = bool(downloader_request.is_search)
 
             if downloader_request.enabled:
-                conditions.append("enabled LIKE :enabled")
-                params["enabled"] = f"%{downloader_request.enabled}%"
+                conditions.append("enabled = :enabled")
+                params["enabled"] = bool(downloader_request.enabled)
 
         # 组装 SQL
         if conditions:

@@ -8623,6 +8623,17 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修复**：formatDetailSpeed 复用全局 formatSpeed（仅保留详情页 0/空显示 '0 KB/s' 语义），import 补 formatSpeed；同步修正其 spec 两处固化错误行为的断言（102400 B/s→'100.00 KB/s'、1 B/s→'1.00 B/s'）。
 - **验证**：mobile-torrent-detail.spec 9/9 绿；npm run lint 通过。未提交（待用户要求）。
 - **提交部署**：707a2d8 推 origin dev（ba9b3e7..707a2d8）；build-and-export-images.sh --unraid（192.168.5.51:/mnt/cache/appdata/docker/btdeck，worker 子代理前台执行 ~4m40s）一次过，导出 backend 120M / frontend 54M；双容器 healthy；远端 /health/live gitSha `707a2d834cd7…` = 本地 HEAD ✓、frontendManifestSha256 `32f1e2de…` = 构建输出 ✓——DEPLOY_VERIFY_OK。
+## 2026-10-27（续二）：PG 改造合并后补漏——downloader 双端点双方言收口（4 缺口修复 + 2 实库用例）
+
+- 用户暂缓推送，要求验证 PG 改造缺口；全仓两轮词法扫描（SQLite 专有构造 + raw text() 写操作 × PG 分支未触碰文件交叉面）实证 4 个真缺口，全部位于 P2 审计面外（PG 分支基点 c7bf20b 后的 dev 侧代码）：
+  1. downloader_settings.py：`datetime.now().isoformat()` 字符串绑 DateTime 列（asyncpg 绑定错/psycopg2 隐式转换侥幸）→ `timestamp_parameter` 单点收口；
+  2. downloader_settings.py:641：raw INSERT 后 `lastrowid`（psycopg2 无 OID 表恒 0→setting_id=0 静默坏数据；asyncpg 无该属性）→ `RETURNING id`（SQLite>=3.35，与已依赖的 ON CONFLICT>=3.24 同级）；
+  3. downloader.py 简单列表：Boolean 列 `= :enabled` 传 int 1/0（PG boolean=integer 无此 operator）→ bool 参数；
+  4. downloader.py 列表模糊过滤：Boolean 列 `LIKE '%True%'`（PG 报 operator 不存在；SQLite 上亦为恒空过滤——双库语义 bug）→ 等值 + bool。
+- 其余命中全部排除（有实证）：方言 import 收敛 dialect_sql 单点；UDF 安装 isinstance 门控；db_backup/PRAGMA/legacy migrator 均 sqlite-only 分支或已弃用；tracker_message_logger/token_cleanup/default_search_templates 真 datetime + 双方言原生语法（后者即验收 seed 幂等路径）；gmssl random_hex/func.date 假警报。
+- 新增 `tests/pg_integration/test_pg_endpoints.py` 2 例（限速设置 INSERT RETURNING+时间参数往返、列表布尔等值过滤）+ conftest.py 再导出 fixture——堵"实库端点级验收"盲区，CI postgres service 下生效，本地按门控跳过。
+- 验证（worker 子代理）：全量 **5570 passed / 49 skipped**（downloader/downloader_settings/speed_schedule 链路 211 例顺序复跑两轮绿）；black 311 文件/flake8/mypy 310 文件全净。坑位：本仓测试不可多 pytest 进程并行（共享测试资源互扰产假失败）。
+
 ## 2026-10-27：v1.0.8 PostgreSQL 改造合入 dev（merge feature/postgresql-migration）
 
 - 合并对象：`feature/postgresql-migration`（91dade1 全量交付 + a0bd434 验收加固，68 文件），基点 dev@c7bf20b；dev 侧已前进 ~40 提交（v1.0.7 发布 + 安全治理 + 依赖升级）。
