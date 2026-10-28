@@ -405,6 +405,11 @@ class TestMigrationToolEndToEnd:
 
         from scripts.migrate_sqlite_to_pg import main as migrate_main
 
+        # attempt 绑定隔离到 tmp（CLI resume 凭据来源；database-migration-ui W1-6）
+        monkeypatch.setenv("CONFIG_DIR", str(tmp_path / "cfg"))
+        from app.services.db_migration import sqlite_to_pg as service
+        from app.services.db_migration import pipeline as pipeline_mod
+
         # 构建 SQLite 源（链 head + 样本：users 自增 PK / notification）。
         # 进程 DB_TYPE=postgresql 下 env.py 会构造 PG URL 撞空库守卫——
         # 源库构建期间定向覆盖 settings.DB_TYPE 使 env.py 走 sqlite 分支
@@ -430,37 +435,50 @@ class TestMigrationToolEndToEnd:
         sconn.close()
 
         # 首表失败后仍有拒启标记，且可续传；源库始终只读。
-        from scripts import migrate_sqlite_to_pg as tool
         from app.core import pg_baseline
         import hashlib
 
         source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        original_import = tool.import_table
+        original_import = service.import_table
 
         def fail_first(*args, **kwargs):
             raise RuntimeError("injected import failure")
 
-        monkeypatch.setattr(tool, "import_table", fail_first)
+        monkeypatch.setattr(service, "import_table", fail_first)
         assert migrate_main(["--source", str(source)]) == 3
         with pytest.raises(RuntimeError, match="导入未完成"):
-            pg_baseline.initialize_pg_baseline(_make_cfg(), tool._tool_head())
-        monkeypatch.setattr(tool, "import_table", original_import)
-        # 工具版本漂移必须拒绝。
-        original_version = tool.TOOL_VERSION
-        monkeypatch.setattr(tool, "TOOL_VERSION", "incompatible")
+            pg_baseline.initialize_pg_baseline(_make_cfg(), service.tool_head())
+        monkeypatch.setattr(service, "import_table", original_import)
+        # 工具版本漂移必须拒绝（checkpoint 协议绑定校验）。
+        original_version = pipeline_mod.TOOL_VERSION
+        monkeypatch.setattr(pipeline_mod, "TOOL_VERSION", "incompatible")
         assert migrate_main(["--source", str(source), "--resume"]) == 2
-        monkeypatch.setattr(tool, "TOOL_VERSION", original_version)
+        monkeypatch.setattr(pipeline_mod, "TOOL_VERSION", original_version)
 
         def fail_after_committed_tables(sqlite_conn, pg_engine, table, **kwargs):
             if table.name == "users":
                 raise RuntimeError("injected middle-table failure")
             return original_import(sqlite_conn, pg_engine, table, **kwargs)
 
-        monkeypatch.setattr(tool, "import_table", fail_after_committed_tables)
+        monkeypatch.setattr(service, "import_table", fail_after_committed_tables)
         assert migrate_main(["--source", str(source), "--resume"]) == 3
-        monkeypatch.setattr(tool, "import_table", original_import)
+        monkeypatch.setattr(service, "import_table", original_import)
         assert migrate_main(["--source", str(source), "--resume"]) == 0
         assert hashlib.sha256(source.read_bytes()).hexdigest() == source_digest
+
+        # receipt=VERIFIED（新协议完成凭据；数据库迁移 UI W1）
+        from scripts.migrate_sqlite_to_pg import load_latest_attempt_binding
+
+        binding = load_latest_attempt_binding()
+        assert binding and binding["attempt_id"].startswith("sqlite-to-pg/")
+        engine_r = pg_baseline.pg_sync_engine()
+        try:
+            with engine_r.connect() as conn:
+                receipt = pg_baseline.read_receipt(conn, binding["attempt_id"])
+        finally:
+            engine_r.dispose()
+        assert receipt is not None and receipt["status"] == "VERIFIED"
+        assert receipt["table_counts"].get("users") == 7
 
         from app.core import pg_baseline
         from app.core.model_registry import register_all_models
@@ -840,7 +858,8 @@ def test_regex_budget_total_deadline_and_timeout_restoration(fresh_pg_db):
 def test_migration_digest_with_unicode_keys_and_native_json(fresh_pg_db):
     from sqlalchemy import Column, String, JSON, MetaData, Table
     from app.core import pg_baseline
-    from scripts.migrate_sqlite_to_pg import import_table, verify_counts_and_digests
+    from app.services.db_migration.pipeline import PipelineContext
+    from app.services.db_migration.sqlite_to_pg import import_table, verify_counts_and_digests
 
     table = Table("unicode_json", MetaData(), Column("id", String, primary_key=True), Column("payload", JSON))
     engine = pg_baseline.pg_sync_engine()
@@ -850,8 +869,9 @@ def test_migration_digest_with_unicode_keys_and_native_json(fresh_pg_db):
     source.execute("CREATE TABLE unicode_json(id TEXT PRIMARY KEY,payload JSON)")
     source.executemany("INSERT INTO unicode_json VALUES (?,?)", [("ä", None), ("A", "null"), ("a", '{"x":1}')])
     try:
-        import_table(source, engine, table, state={"completed": {}}, migration_id="test", source_digest="digest")
-        assert verify_counts_and_digests(source, engine, [table]) == []
+        ctx = PipelineContext(attempt_id="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", ownership_nonce="n")
+        import_table(source, engine, table, ctx=ctx, migration_id=ctx.attempt_id, source_digest="digest")
+        assert verify_counts_and_digests(source, engine, [table])[0] == []
     finally:
         source.close()
         engine.dispose()

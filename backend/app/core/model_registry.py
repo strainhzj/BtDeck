@@ -73,3 +73,11 @@ def register_all_models() -> None:
 
     # 速度采样（统计报表 W1）
     from app.models.speed_sample import DownloaderSpeedSample, DownloaderSpeedHourly  # noqa: F401
+
+    # 数据库迁移协议元数据（database-migration-ui W1-1）：三张协议表注册后，
+    # 业务表分类 = sorted_tables − 协议表（app.models.database_migration.business_tables）
+    from app.models.database_migration import (  # noqa: F401
+        BtDatabaseIdentity,
+        BtDatabaseMigrationReceipt,
+        BtDatabaseMigrationEvent,
+    )

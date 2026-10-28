@@ -30,6 +30,16 @@ from app.core.db_backup import MigrationBackupError, backup_before_migration
 
 logger = logging.getLogger(__name__)
 
+
+class ManagedStartupBlockError(RuntimeError):
+    """受管数据库状态拒绝普通启动（database-migration-ui W1-4，fail-closed）。
+
+    触发面：受管 active 配置未核验 / 未完成受管切换 attempt / 半成品导入标记 /
+    VERIFIED 未激活 receipt / 安卓×PG 平台不支持。与 MigrationBackupError 同级：
+    DEV/生产均不吞——调用方（生命周期）必须停止普通启动，不得继续 seed/修复。
+    """
+
+
 # 历史幽灵版本黑名单：production schema 初始化写入的虚构版本号，不在迁移链中。
 # 这些库的 schema 与某个真实 head 一致（schema 快照按对应 head 生成），
 # 可安全 stamp 到该真实版本，让后续 upgrade 只应用增量迁移。
@@ -72,15 +82,18 @@ def _read_db_version_dispatch(db_path: str) -> Optional[str]:
     return _read_db_version(db_path)
 
 
-def _build_alembic_config(db_path: str) -> Config:
+def _build_alembic_config(db_path: str, *, target_url: Optional[str] = None) -> Config:
     """构造指向指定 DB 的 Alembic Config。
 
-    关键：设 DATABASE_PATH 环境变量，env.py 会优先读它（防串库）。
-    同时动态设置 script_location 为绝对路径（frozen 下 cwd 不可靠）。
+    默认路径：设 DATABASE_PATH 环境变量，env.py 会优先读它（防串库），
+    并与 config.py 消费同一来源（B3：双源一致性）；仅 SQLite 方言。
+
+    database-migration-ui W1-4 显式目标（T14）：``target_url`` 提供时**不修改
+    全局 env/settings**——env.py 经 ``attributes["target_url"]`` 优先消费，
+    供迁移管线（如 PG 运行态下重放原生链到新 SQLite staging）使用；
+    同一操作的连接/URL 只作用于该次操作（PLANS §4.1）。
     """
-    # 设环境变量，让 env.py 与 config.py 消费同一来源（B3：config.py property 也读此变量）；
-    # 仅 SQLite 方言（PG 不消费文件路径，v1.0.8 契约 §2.1）
-    if settings.DATABASE_DIALECT == "sqlite":
+    if target_url is None and settings.DATABASE_DIALECT == "sqlite":
         os.environ["DATABASE_PATH"] = db_path
 
     root_path = settings.ROOT_PATH
@@ -90,6 +103,8 @@ def _build_alembic_config(db_path: str) -> Config:
 
     cfg = Config(str(ini_path))
     cfg.set_main_option("script_location", script_location)
+    if target_url is not None:
+        cfg.attributes["target_url"] = target_url
     return cfg
 
 
@@ -157,12 +172,15 @@ def _migrate_database_pg() -> bool:
     """PG 方言迁移编排（v1.0.8 任务1.7，契约 §3）。
 
     - 导入未完成标记 → 拒绝启动（三状态规则）
+    - VERIFIED/IMPORTING receipt 存在而未激活 → 拒绝普通启动（W1-4：首次激活
+      不匹配拒启的 W1 层实现；完整 commit/ACK 核验 W3 交付）
     - 空库 → initialize_pg_baseline（共享基线函数，不 seed）
     - 已 stamp → 正常增量 upgrade；未知版本告警不降级（与 SQLite 口径一致）
     - 备份：PG 无文件备份链，显式日志提示外部备份职责（任务3.2）
     - ghost 救援：仅 SQLite 历史快照语义，PG 不启用（契约 §3 规则 7）
     """
     from app.core.pg_baseline import (
+        RECEIPT_TABLE,
         get_import_state,
         initialize_pg_baseline,
         pg_sync_engine,
@@ -192,6 +210,21 @@ def _migrate_database_pg() -> bool:
                     f"检测到 SQLite→PG 导入未完成标记（migration_id={import_state['migration_id']}），"
                     "拒绝启动以防后台任务修改半成品数据；请重跑迁移工具或人工处理（契约 §3 三状态规则）"
                 )
+            # W1-4：未激活 receipt 拒启（IMPORTING=半成品；VERIFIED=已导入未激活——
+            # 正常启动会静默结束无损回退窗口，必须等激活流程；ACTIVATED 为历史凭据放行）
+            from sqlalchemy import inspect as sa_inspect
+
+            if sa_inspect(conn).has_table(RECEIPT_TABLE):
+                blocking = conn.exec_driver_sql(
+                    f"SELECT attempt_id, status FROM {RECEIPT_TABLE} " "WHERE status IN ('IMPORTING', 'VERIFIED')"
+                ).fetchall()
+                if blocking:
+                    detail = ", ".join(f"{r[0]}({r[1]})" for r in blocking)
+                    raise ManagedStartupBlockError(
+                        f"当前库存在未激活迁移凭据（{detail}）：拒绝普通启动；"
+                        "IMPORTING 为半成品、VERIFIED 需完成切换激活流程后才可正常启动。"
+                        "请使用迁移控制面恢复/激活，或切换回源库。"
+                    )
             current = read_pg_alembic_version(conn)
     finally:
         engine.dispose()
@@ -221,11 +254,73 @@ def _migrate_database_pg() -> bool:
     return True
 
 
+def _evaluate_managed_startup_block(config_path: Optional[str] = None) -> None:
+    """W1 fail-closed 启动分流接线（database-migration-ui，PLANS §4.1/§4.3）。
+
+    在任何迁移/seed/修复副作用之前评估：
+    - 平台：Android 本机服务 × PG（env 或 active）→ 拒绝（驱动加载前语义的
+      W1 层；全生命周期早期引导 W2 接线）；
+    - 受管 active：核验能力未完备（W3 交付 commit/ACK 核验）→ 拒绝；
+    - 未完成受管 attempt / SQLite 半成品标记 → 拒绝；
+    - SQLite 目标库存在 IMPORTING/VERIFIED receipt → 拒绝（首次激活分流）。
+
+    任一命中 → ManagedStartupBlockError（DEV/生产均不吞，同 MigrationBackupError）。
+    """
+    from app.core import database_bootstrap as bootstrap
+    from app.core.database_protocol import RECEIPT_TABLE
+
+    try:
+        effective = bootstrap.resolve_effective_database_config(config_path or str(settings.YAML_PATH))
+        bootstrap.assert_platform_database_support(effective)
+        control = bootstrap.read_control(str(settings.CONFIG_PATH))
+        pending = bootstrap.pending_attempt_from_control(control)
+        sqlite_marker = effective.dialect == bootstrap.DIALECT_SQLITE and bootstrap.sqlite_has_import_marker(
+            effective.sqlite_path or str(settings.DATABASE_PATH)
+        )
+    except (
+        bootstrap.ManagedConfigError,
+        bootstrap.ManagedStateError,
+        bootstrap.PlatformDatabaseUnsupportedError,
+    ) as exc:
+        raise ManagedStartupBlockError(f"受管数据库配置/状态不可用，拒绝普通启动（fail-closed）: {exc}") from exc
+
+    disposition = bootstrap.evaluate_startup_disposition(
+        effective, control=control, pending_attempt=pending, sqlite_marker_present=sqlite_marker
+    )
+    if not disposition.normal:
+        raise ManagedStartupBlockError(f"[{disposition.reason_code}] {disposition.detail}")
+
+    # SQLite 目标库的未激活 receipt 拒启（与 PG 分支对称；ACTIVATED 历史凭据放行）
+    if effective.dialect == bootstrap.DIALECT_SQLITE:
+        db_path = effective.sqlite_path or str(settings.DATABASE_PATH)
+        if Path(db_path).exists():
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                has_receipt_table = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (RECEIPT_TABLE,)
+                ).fetchone()
+                if has_receipt_table:
+                    # 标识符常量无法参数化（同 pg_baseline 先例）；用字面量避免动态拼接面
+                    blocking = conn.execute(
+                        "SELECT attempt_id, status FROM bt_database_migration_receipt "
+                        "WHERE status IN ('IMPORTING', 'VERIFIED')"
+                    ).fetchall()
+                    if blocking:
+                        detail = ", ".join(f"{r[0]}({r[1]})" for r in blocking)
+                        raise ManagedStartupBlockError(
+                            f"当前 SQLite 库存在未激活迁移凭据（{detail}）：拒绝普通启动；"
+                            "请完成切换激活流程或切换回源库。"
+                        )
+            finally:
+                conn.close()
+
+
 def migrate_database() -> bool:
     """
     统一数据库迁移入口。
 
-    执行顺序（B2 修正：备份在救援前）：
+    执行顺序（B2 修正：备份在救援前；W1-4：受管状态分流在最前）：
+    0. 受管启动分流（平台/active/pending/半成品标记/未激活 receipt → fail-closed）
     1. 读当前版本
     2. 若 current != head（含幽灵版本）：迁移前备份
     3. 版本救援/告警（黑名单逻辑）
@@ -233,6 +328,7 @@ def migrate_database() -> bool:
 
     失败处理：
     - 迁移前备份失败：所有环境无条件终止，禁止绕过恢复点
+    - 受管启动阻断（ManagedStartupBlockError）：无条件终止（不得继续 seed/修复）
     - DEV=True：捕获异常并返回 False；生命周期入口仍必须停止启动
     - DEV=False：向上抛出（生产终止）
 
@@ -240,6 +336,8 @@ def migrate_database() -> bool:
         RuntimeError: 生产环境（DEV=False）迁移失败时
     """
     try:
+        # 0. 受管启动分流（fail-closed；先于备份/升级/seed 等一切副作用）
+        _evaluate_managed_startup_block()
         if settings.DATABASE_DIALECT == "postgresql":
             return _migrate_database_pg()
         db_path = str(settings.DATABASE_PATH)
@@ -295,6 +393,10 @@ def migrate_database() -> bool:
         # A destructive migration must never continue when its recovery point
         # cannot be trusted, including in DEV mode.
         logger.exception("迁移前备份未通过验证，已无条件阻止迁移")
+        raise
+    except ManagedStartupBlockError:
+        # 受管状态 fail-closed：DEV 也不吞——普通启动必须停止，禁止 seed/修复继续
+        logger.error("受管数据库状态阻断普通启动（fail-closed），已阻止迁移/初始化")
         raise
     except Exception as e:
         error_msg = f"数据库迁移失败: {e}"

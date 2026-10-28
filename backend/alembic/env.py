@@ -48,6 +48,13 @@ except Exception:
     default_db = Path(__file__).parent.parent / "config" / "app.db"
     config.set_main_option("sqlalchemy.url", f"sqlite:///{default_db}")
 
+# database-migration-ui W1-4：显式目标 URL 最高优先级（T14）——迁移管线重放
+# 原生链到任意目标（如 PG 运行态下重放到新 SQLite staging）而不修改全局
+# settings/os.environ；只作用于本次操作（PLANS §4.1）
+_target_url = config.attributes.get("target_url")
+if _target_url:
+    config.set_main_option("sqlalchemy.url", str(_target_url).replace("%", "%%"))
+
 # Interpret the config file for Python logging.
 # 守卫：fileConfig 会按 alembic.ini 重新配置 logging，可能覆盖应用配置。
 # 这里仅在 alembic 独立运行时生效；应用内编程式调用后由应用自行管理 logging。

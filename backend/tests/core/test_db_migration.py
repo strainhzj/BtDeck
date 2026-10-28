@@ -64,7 +64,9 @@ def _clean_database_path_env():
 #       → d4a7f1c9e2b6(rss phase2 modes rules and rule feeds; feature rss-subscription-phase2-2026-09-24)
 #       → b7d8e9f0a1c2(speed samples 两表 downloader_speed_sample/hourly，统计报表 W1；合并重挂自 a1f7c9e3d2b4 至 d4a7f1c9e2b6)
 #       → c9e0f1a2b3c4(TR added_date UTC→本地回填数据迁移，统计报表 W2；⚠️ 不可重复执行)
-EXPECTED_HEAD = "c9e0f1a2b3c4"
+#       → e9f0a1b2c3d4(数据库迁移 UI 协议元数据三表 + 存量身份 seed，database-migration-ui W1-1；
+#         downgrade 受限：receipt/events 存在行时拒绝)
+EXPECTED_HEAD = "e9f0a1b2c3d4"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
@@ -192,7 +194,7 @@ class TestMigrationChainIntegrity:
         assert GHOST_VERSION not in valid_revs, f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
 
     def test_empty_db_upgrade_head_builds_full_schema(self, tmp_path):
-        """空库 alembic upgrade head 应建起完整 schema（42 张业务表）。
+        """空库 alembic upgrade head 应建起完整 schema（45 张表 = 42 业务 + 3 协议元数据）。
 
         这是删除 create_all 的核心前提：迁移链能独立承担建库。
         """
@@ -213,9 +215,11 @@ class TestMigrationChainIntegrity:
         # + 8fabba8687b0 加 bt_rss_feeds + bt_rss_articles = 37（RSS Phase 1）
         # + d4a7f1c9e2b6 加 bt_rss_modes + bt_rss_rules + bt_rss_rule_feeds = 40（RSS Phase 2）
         # + b7d8e9f0a1c2 加 downloader_speed_sample + downloader_speed_hourly = 42（统计报表 W1）
+        # + e9f0a1b2c3d4 加协议元数据三表 = 45（database-migration-ui W1-1：
+        #   42 业务 + bt_database_identity/bt_database_migration_receipt/events）
         assert (
-            count == 42
-        ), f"空库 upgrade 应建 42 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表 + RSS 订阅五表 + 速度采样两表），实际 {count}"
+            count == 45
+        ), f"空库 upgrade 应建 45 张表（42 业务 + 3 协议元数据；含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens + moviepilot 集成两表 + RSS 订阅五表 + 速度采样两表），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -813,7 +817,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 42
+        assert _table_count(str(target_db)) == 45
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

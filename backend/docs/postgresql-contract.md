@@ -59,6 +59,15 @@ URL 构造：sqlalchemy.engine.URL.create（结构化，凭据转义；特殊字
 6. **CLI 一致性**：合法初始化入口 = 应用启动（`migrate_database`）+ 迁移工具（共享基线函数）；`env.py` 空库守卫拒绝手工 `alembic upgrade head`
 7. **ghost 版本**：`KNOWN_GHOST_VERSIONS` 仅 sqlite 方言启用
 
+### 3.1 迁移协议元数据（database-migration-ui W1，2026-10-28）
+
+- **三协议表**（Alembic 管理，revision `e9f0a1b2c3d4`，链 head 同步前移）：`bt_database_identity`（库身份单例，id=1 CHECK+uuid4，seed 幂等不重生成，**导入不得从源复制**）、`bt_database_migration_receipt`（完成凭据：attempt_id PK/ownership_nonce/origin_epoch 不可变/eligible_epoch 可撤销/全表 counts+digests/状态机 IMPORTING→VERIFIED→ACTIVATED（STALE/ABANDONED 失效））、`bt_database_migration_events`（本地审计回放去重）。
+- **业务表分类**：`metadata.sorted_tables − 三协议表`（42 张）；预检/基线空库判定/schema 对拍/双方向 verify 共用；未知对象仍拒绝（不是忽略所有 `_btdeck_*`）。
+- **基线增量**：`initialize_pg_baseline(engine=…)` 引擎显式参数化+方言强断言（非 PG 引擎在任何 DDL 前拒绝）；基线事务内生成目标**自身** identity（普通新装也有）；携带完整 ownership（迁移基线）时同事务写 IMPORTING receipt+初始 checkpoint（首表导入前即持久 nonce 绑定）。
+- **目标拒启**：IMPORTING/VERIFIED receipt 存在而未激活 → 应用拒绝普通启动（半成品/已导入未激活，不得 seed）；ACTIVATED 为历史凭据放行，正常升级不受历史导入 revision 限制。SQLite 方向同口径（标记表+receipt 双拒）。
+- **完成凭据与标记分离**：finalize 在目标**同一事务**把既有 IMPORTING receipt 更新为 VERIFIED 并清 `_btdeck_import_state` 标记；checkpoint（工具 2.0.0）携带 attempt/nonce/epoch 绑定，旧 1.1.0 checkpoint 明确拒绝恢复。
+- **有效配置优先级（W1 预布）**：config.yaml `database.active` 存在时完整覆盖相应方言配置（含 sqlite_path/TLS，方言字段互斥）；无 active 保持原 env 行为；active 损坏 fail-closed 不回 env。Android 本机服务 × PG（env 或 active）驱动加载前拒绝（冻结决策 D6）。
+
 **目标库三状态**（迁移工具）：全新→共享基线函数（只 schema+stamp，不 seed 不起任务）；导入未完成→校验迁移 ID/快照摘要/工具版本/检查点后恢复，应用遇标记拒启动；已有数据/来源不明→拒绝。
 **源库停写**：最终快照前停写并保持至切换完成；在线快照仅预演。
 **无损回退窗口**：仅限导入完成后、应用首次正常启动前的离线核对；首次启动即结束。DB 只读会话仅额外保护。

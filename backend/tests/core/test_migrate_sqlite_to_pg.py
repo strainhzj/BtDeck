@@ -1,8 +1,8 @@
-"""SQLite→PG 迁移工具单元测试（v1.0.8 任务4.1）。
+"""SQLite→PG 迁移服务层单元测试（v1.0.8 任务4.1 → database-migration-ui W1-5 服务化）。
 
 不依赖真实 PG：预检/行变换为纯 SQLite 逻辑；导入与对账编排用 SQLite 文件库
 替身目标（pg_baseline 基线建表后经 SQLAlchemy Core 写入——引擎无关路径）。
-真实 PG 端到端归 P4.3 强制 CI。
+真实 PG 端到端归 tests/pg_integration（CI postgres service）。
 """
 
 from __future__ import annotations
@@ -14,8 +14,10 @@ from typing import Any, Iterator
 
 import pytest
 
-from scripts.migrate_sqlite_to_pg import (
+from app.services.db_migration.pipeline import PipelineContext
+from app.services.db_migration.sqlite_to_pg import (
     _JSON_CONTRACT,
+    tool_head,
     check_boolean_columns,
     check_datetime_text,
     check_json_contract,
@@ -25,6 +27,12 @@ from scripts.migrate_sqlite_to_pg import (
     row_transform,
     verify_counts_and_digests,
 )
+
+_TEST_ATTEMPT = "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+
+
+def _test_ctx() -> PipelineContext:
+    return PipelineContext(attempt_id=_TEST_ATTEMPT, ownership_nonce="test-nonce")
 
 
 @pytest.fixture(scope="module")
@@ -157,9 +165,11 @@ class TestPrecheckChecks:
         assert isinstance(warnings, list)
 
     def test_precheck_reports_version(self, source_db: Path) -> None:
+        from tests.core.alembic_head import current_head
+
         errors, _, version = precheck(str(source_db))
         assert errors == []
-        assert version == "c9e0f1a2b3c4"
+        assert version == current_head()
 
 
 class TestRowTransform:
@@ -192,29 +202,34 @@ class TestImportAndVerify:
 
         from app.core import pg_baseline
         from app.core.model_registry import register_all_models
-        from app.database import Base
 
         target_path = tmp_path / "target.db"
         target_engine = create_engine(f"sqlite:///{target_path}")
 
-        # 基线建表（复用 pg_baseline：共享单事务 create_all + stamp）
+        # 基线建表（复用 pg_baseline：共享单事务 create_all + stamp）。
+        # 测试分层同 fake_pg_engine fixture：SQLite 替身验证引擎无关逻辑，
+        # 方言强断言由 T14 用例与 CI 真 PG 集成覆盖
         monkeypatch.setattr(pg_baseline, "pg_sync_engine", lambda: target_engine)
+        monkeypatch.setattr(pg_baseline, "assert_postgresql_target", lambda target: None)
         from alembic.config import Config
 
         cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
         cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "alembic"))
         cfg.attributes["configure_logger"] = False
-        assert pg_baseline.initialize_pg_baseline(cfg, "c9e0f1a2b3c4") is True
+        assert pg_baseline.initialize_pg_baseline(cfg, tool_head()) is True
 
         register_all_models()
+        from app.models.database_migration import business_tables
+
+        expected_tables = business_tables()
         sqlite_conn = sqlite3.connect(f"file:{source_db}?mode=ro", uri=True)
         sqlite_conn.row_factory = sqlite3.Row
         try:
-            state = {"completed": {}}
+            ctx = _test_ctx()
             imported = {}
-            for table in Base.metadata.sorted_tables:
+            for table in expected_tables:
                 imported[table.name] = import_table(
-                    sqlite_conn, target_engine, table, state=state, migration_id="test-mig", source_digest="digest"
+                    sqlite_conn, target_engine, table, ctx=ctx, migration_id=ctx.attempt_id, source_digest="digest"
                 )
             assert imported["users"] == 5
             assert imported["orphan_purge_job"] == 2
@@ -222,17 +237,33 @@ class TestImportAndVerify:
             # 检查点已写入（标记表存在且记录完成表数）
             with target_engine.connect() as conn:
                 st = pg_baseline.get_import_state(conn)
-            assert st is not None and st["migration_id"] == "test-mig"
-            assert len(st["checkpoint"]["completed"]) == len(Base.metadata.sorted_tables)
+            assert st is not None and st["migration_id"] == _TEST_ATTEMPT
+            # checkpoint 与 receipt 同步携带 ownership 绑定（§3.3）
+            assert st["checkpoint"]["attempt_id"] == _TEST_ATTEMPT
+            assert st["checkpoint"]["ownership_nonce"] == "test-nonce"
+            assert len(st["checkpoint"]["completed"]) == len(expected_tables)
 
-            # 对账通过
-            problems = verify_counts_and_digests(sqlite_conn, target_engine, Base.metadata.sorted_tables)
+            # 协议元数据表不导入：目标身份由基线自身生成，不得等于源身份（不复制，§3.2）
+            with target_engine.connect() as conn:
+                target_identity = conn.exec_driver_sql("SELECT database_id FROM bt_database_identity").scalar()
+            source_ro = sqlite3.connect(f"file:{source_db}?mode=ro", uri=True)
+            try:
+                source_identity = source_ro.execute("SELECT database_id FROM bt_database_identity").fetchone()[0]
+            finally:
+                source_ro.close()
+            assert (
+                target_identity and target_identity != source_identity
+            ), "协议表不属于导入范围；目标身份须由基线生成且不等于源身份"
+
+            # 对账通过（业务表）；receipt counts/digests 一并产出
+            problems, counts, digests = verify_counts_and_digests(sqlite_conn, target_engine, expected_tables)
             assert problems == []
+            assert counts["users"] == 5 and "users" in digests
 
             # 相同主键和行数不能掩盖内容损坏。
             with target_engine.begin() as conn:
                 conn.exec_driver_sql("UPDATE users SET password = 'corrupted' WHERE id = 1")
-            problems = verify_counts_and_digests(sqlite_conn, target_engine, Base.metadata.sorted_tables)
+            problems, _, _ = verify_counts_and_digests(sqlite_conn, target_engine, expected_tables)
             assert any("users" in problem and "内容" in problem for problem in problems)
 
             # 布尔/JSON 契约数据落库正确
@@ -259,18 +290,21 @@ def test_checkpoint_failure_rolls_back_import(tmp_path, monkeypatch):
     source.execute("INSERT INTO sample VALUES (1)")
     target = create_engine(f"sqlite:///{tmp_path / 'atomic.db'}")
     table.create(target)
-    state = {"completed": {}}
 
     def fail(*args, **kwargs):
         raise RuntimeError("checkpoint failure")
 
-    monkeypatch.setattr(pg_baseline, "set_import_state", fail)
+    # 服务层已 from-import set_import_state：patch 服务模块引用（生产路径不变）
+    from app.services.db_migration import sqlite_to_pg as service
+
+    monkeypatch.setattr(service, "set_import_state", fail)
     try:
         with pytest.raises(RuntimeError, match="checkpoint failure"):
-            import_table(source, target, table, state=state, migration_id="test", source_digest="digest")
+            import_table(
+                source, target, table, ctx=_test_ctx(), migration_id=_TEST_ATTEMPT, source_digest="digest"
+            )
         with target.connect() as conn:
             assert conn.execute(select(func.count()).select_from(table)).scalar() == 0
-        assert state == {"completed": {}}
     finally:
         source.close()
         target.dispose()
@@ -333,21 +367,21 @@ def test_json_sql_null_and_json_null_remain_distinct(tmp_path):
     target = create_engine(f"sqlite:///{tmp_path / 'native-json.db'}")
     table.create(target)
     try:
-        import_table(source, target, table, state={"completed": {}}, migration_id="json", source_digest="json")
+        import_table(source, target, table, ctx=_test_ctx(), migration_id=_TEST_ATTEMPT, source_digest="json")
         with target.connect() as conn:
             assert conn.execute(text("SELECT payload IS NULL FROM native_json ORDER BY id")).scalars().all() == [
                 1,
                 0,
                 0,
             ]
-        assert verify_counts_and_digests(source, target, [table]) == []
+        assert verify_counts_and_digests(source, target, [table])[0] == []
     finally:
         source.close()
         target.dispose()
 
 
 def test_external_assets_keys_and_backup_files(tmp_path):
-    from scripts.migrate_sqlite_to_pg import check_external_assets
+    from app.services.db_migration.sqlite_to_pg import check_external_assets
 
     source = sqlite3.connect(":memory:")
     source.execute("CREATE TABLE bt_downloaders(password TEXT)")

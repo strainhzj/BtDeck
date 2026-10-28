@@ -74,6 +74,12 @@ ALLOWLIST: dict[str, set[str]] = {
         # pg_baseline（v1.0.8）：f-string 仅插值模块级常量 IMPORT_STATE_TABLE
         # （_btdeck_import_state 标记表名，非用户输入；标识符常量无法参数化）
         "app/core/pg_baseline.py",
+        # db_migration 双向管线（database-migration-ui W1-5）：f-string 仅插值
+        # ORM metadata 的表名/列名（Base.metadata，开发者控制）与模块级协议常量
+        # （表名/状态枚举），非用户输入；标识符无法参数化——同 pg_baseline 先例。
+        # 行值一律走绑定参数（bindparam/insert().values）。
+        "app/services/db_migration/sqlite_to_pg.py",
+        "app/services/db_migration/pg_to_sqlite.py",
     },
     "BTD103": {
         # principal.py: REASON_* 为拒绝原因稳定码（"TOKEN_MISSING" 等枚举
