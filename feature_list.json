@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.7",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.7，发布流程进行中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.6（2026-09-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-10-27",
+  "last_updated": "2026-10-28",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -50,6 +50,152 @@
     "notes": "Android 两个 APK 均为 debug 签名，minSdk 24、targetSdk 35；LAN 版仅用于明确授权的局域网明文测试，应用层私有主机与风险确认策略仍生效。"
   },
   "features": [
+    {
+      "id": "database-migration-ui-2026-10-28",
+      "title": "SQLite ↔ PostgreSQL 页面双向迁移（A 指引+B 一键切换）",
+      "status": "in_progress",
+      "scope": "fullstack,deploy",
+      "branch": "dev",
+      "description": "W0 设计完成；W1 已实施（2026-10-28）：三协议表/身份/receipt、pg_baseline 强化、只读引导分流、显式目标重放、双向管线服务化+CLI 2.0.0。W2-W6 待做。用户冻结决策：双向、A+B、同堆栈、不创建 PG 服务、安卓不支持 PostgreSQL。",
+      "files": [
+        "PLANS/database-migration-ui.md",
+        "PLANS/database-migration-ui-review-round2.md"
+      ],
+      "evidence": {
+        "plan": "PLANS/database-migration-ui.md v4；18项二审处置映射和T01-T22验收矩阵；W1-W6均pending。",
+        "review": "v3二审原报告保留。acceptance-reviewer-gpt对v4定向设计复核：15项已有条款，补充3处矛盾后再次复核均设计已补，见计划§16；不是功能测试通过。",
+        "w1": "2026-10-28 W1 七子批交付（设计假设经用户确认+会话01a18094定向复核后实施）。W1-1 三协议表（revision e9f0a1b2c3d4，head c9e0f1a2b3c4→e9f0a1b2c3d4，表 42→45=42业务+3协议；身份 seed 幂等；downgrade 受限 receipt/events 有行即拒）；W1-2 pg_baseline：engine 显式参数化+assert_postgresql_target 方言强断言（T14 DDL 前拒）、基线同事务生成目标自身 identity、ownership 迁移基线写 IMPORTING receipt+marker、finalize_receipt_verified 同事务 VERIFIED+清 marker、verify_receipt_ownership nonce/目标核对；W1-3 database_bootstrap：EffectiveDatabaseConfig（active 优先完整覆盖/损坏 fail-closed 不回 env）、Android×PG 拒绝（D6）、control/manifest 只读+UUID 尾段目录映射防穿越、fail-closed 分流桩；W1-4 migration：ManagedStartupBlockError（DEV 不吞）拦截 active/pending/SQLite 半成品标记/IMPORTING|VERIFIED 未激活 receipt（双方言）；ACTIVATED 合法旧 revision 正常升级（T01 前半）；env.py target_url 显式目标重放原生链不改全局 env（T14 后半）；W1-5 服务五模块：canonical（btdeck-canonical-v1：JSON SQL NULL 边注/UTC/C collation 方言感知/schema 指纹）、target_params（显式 URL.create，禁 str(URL) 掩码）、pipeline（PipelineContext nonce/epoch/进度/协作取消接口、checkpoint 绑定、旧 1.1.0 明确拒绝）、sqlite_to_pg（六阶段+每表事务 checkpoint+ownership 基线）、pg_to_sqlite（O_EXCL staging+sidecar 先于 DDL+inode 归属核验、REPEATABLE READ 快照、AUTOINCREMENT 探测、Float NaN/Infinity+时间 infinity 预检拒 T12）；W1-6 CLI 薄壳 2.0.0：退出码 0|1|2|3 保持、attempt 绑定本地持久（0600，resume 不进命令行）、active fail-closed 提示 --connection-profile（W3）。验证：本地全量 pytest 5654 passed/53 skipped/0 failed（T19/T12 真 PG 用例已交付 tests/pg_integration，本地无 PG skip 不计通过；CI pg-integration job 实证待推送）；mypy 319 文件 0 错、black/flake8 app/ 净、架构守卫 BTD305 白名单登记（标识符常量无法参数化，同 pg_baseline 先例）；T01 组件级证据（ACTIVATED 升级+未激活拒启+身份不重生成），完整 commit/ACK 集成留 W3；T19 双向回环/T12 拒收/T02 sidecar 归属/T14 双向/T20 CLI 矩阵均有本地单测+CI 真 PG 用例。契约同步：postgresql-contract.md §3.1 新增；database-migration.md 链/head 同步（test_db_migration 强校验）。",
+        "environment": "本地后端 venv 3.13.5：全量终跑 pytest 5655 passed/53 skipped（pg_integration 本地 skip）；mypy 319 文件 0 错；black/flake8 app/ 净；./init.sh --ci 收口执行。",
+        "not_run": "T19/T12 真 PG 执行、故障注入、前端面、W2-W6 均未开始；未提交未推送。"
+      },
+      "tasks": [
+        {
+          "id": "database-migration-ui.W0",
+          "title": "v4方案修订、状态/故障矩阵及定向设计复核",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "PLANS/database-migration-ui.md",
+            "PLANS/database-migration-ui-review-round2.md",
+            "PLANS/README.md"
+          ],
+          "evidence": "仅设计完成：冻结决策保留；18项逐项映射；补审3处矛盾已改并再次设计复核闭合。所有实现验收T01-T22仍NOT RUN。"
+        },
+        {
+          "id": "database-migration-ui.W1",
+          "title": "服务化、三表Alembic身份/receipt分类、双向管线及CLI",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/database_protocol.py",
+            "backend/app/core/database_bootstrap.py",
+            "backend/app/models/database_migration.py",
+            "backend/app/core/model_registry.py",
+            "backend/app/core/pg_baseline.py",
+            "backend/app/core/migration.py",
+            "backend/alembic/env.py",
+            "backend/alembic/versions/e9f0a1b2c3d4_add_database_migration_protocol_tables.py",
+            "backend/app/services/db_migration/__init__.py",
+            "backend/app/services/db_migration/pipeline.py",
+            "backend/app/services/db_migration/sqlite_to_pg.py",
+            "backend/app/services/db_migration/pg_to_sqlite.py",
+            "backend/app/services/db_migration/canonical.py",
+            "backend/app/services/db_migration/target_params.py",
+            "backend/scripts/migrate_sqlite_to_pg.py",
+            "backend/scripts/lint_btdeck.py",
+            "backend/docs/postgresql-contract.md",
+            "backend/docs/constraints/database-migration.md",
+            "backend/tests/core/test_database_migration_protocol.py",
+            "backend/tests/core/test_database_bootstrap.py",
+            "backend/tests/core/test_migration_startup_gates.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_pg_baseline.py",
+            "backend/tests/core/test_migrate_sqlite_to_pg.py",
+            "backend/tests/services/test_db_migration_pipeline.py",
+            "backend/tests/pg_integration/test_pg_protocol_baseline.py",
+            "backend/tests/pg_integration/test_pg_protocol_roundtrip.py",
+            "backend/tests/pg_integration/test_pg_smoke.py"
+          ],
+          "evidence": "2026-10-28 W1 七子批交付（设计假设经用户确认+会话01a18094定向复核后实施）。W1-1 三协议表（revision e9f0a1b2c3d4，head c9e0f1a2b3c4→e9f0a1b2c3d4，表 42→45=42业务+3协议；身份 seed 幂等；downgrade 受限 receipt/events 有行即拒）；W1-2 pg_baseline：engine 显式参数化+assert_postgresql_target 方言强断言（T14 DDL 前拒）、基线同事务生成目标自身 identity、ownership 迁移基线写 IMPORTING receipt+marker、finalize_receipt_verified 同事务 VERIFIED+清 marker、verify_receipt_ownership nonce/目标核对；W1-3 database_bootstrap：EffectiveDatabaseConfig（active 优先完整覆盖/损坏 fail-closed 不回 env）、Android×PG 拒绝（D6）、control/manifest 只读+UUID 尾段目录映射防穿越、fail-closed 分流桩；W1-4 migration：ManagedStartupBlockError（DEV 不吞）拦截 active/pending/SQLite 半成品标记/IMPORTING|VERIFIED 未激活 receipt（双方言）；ACTIVATED 合法旧 revision 正常升级（T01 前半）；env.py target_url 显式目标重放原生链不改全局 env（T14 后半）；W1-5 服务五模块：canonical（btdeck-canonical-v1：JSON SQL NULL 边注/UTC/C collation 方言感知/schema 指纹）、target_params（显式 URL.create，禁 str(URL) 掩码）、pipeline（PipelineContext nonce/epoch/进度/协作取消接口、checkpoint 绑定、旧 1.1.0 明确拒绝）、sqlite_to_pg（六阶段+每表事务 checkpoint+ownership 基线）、pg_to_sqlite（O_EXCL staging+sidecar 先于 DDL+inode 归属核验、REPEATABLE READ 快照、AUTOINCREMENT 探测、Float NaN/Infinity+时间 infinity 预检拒 T12）；W1-6 CLI 薄壳 2.0.0：退出码 0|1|2|3 保持、attempt 绑定本地持久（0600，resume 不进命令行）、active fail-closed 提示 --connection-profile（W3）。验证：本地全量终跑 pytest 5655 passed/53 skipped/0 failed（T19/T12 真 PG 用例已交付 tests/pg_integration，本地无 PG skip 不计通过；CI pg-integration job 实证待推送）；mypy 319 文件 0 错、black/flake8 app/ 净、架构守卫 BTD305 白名单登记（标识符常量无法参数化，同 pg_baseline 先例）；T01 组件级证据（ACTIVATED 升级+未激活拒启+身份不重生成），完整 commit/ACK 集成留 W3；T19 双向回环/T12 拒收/T02 sidecar 归属/T14 双向/T20 CLI 矩阵均有本地单测+CI 真 PG 用例。契约同步：postgresql-contract.md §3.1 新增；database-migration.md 链/head 同步（test_db_migration 强校验）。",
+          "acceptance": "T01/T02/T12/T14/T19/T20+后端门禁；真 PG 证据以 CI pg-integration job 实际执行为准（本地 skip 不计）；T01 完整 commit/ACK 集成随 W3 收口。"
+        },
+        {
+          "id": "database-migration-ui.W2",
+          "title": "准入排空fence、只读生命周期、维护认证/审计与worker取消epoch",
+          "status": "pending",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/db_migration/manager.py",
+            "backend/app/services/db_migration/maintenance.py",
+            "backend/app/services/db_migration/maintenance_auth.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/services/sync_db_write.py",
+            "backend/app/services/async_deletion_executor.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/core/platform_capabilities.py"
+          ],
+          "acceptance": "T03/T05/T06/T07/T13/T18/T22；全部实际写面登记和lease交接，具体受影响循环/审计/鉴权/测试文件在实施时补齐，不以短清单代替穷举。"
+        },
+        {
+          "id": "database-migration-ui.W3",
+          "title": "journal/配置仓储、A+B commit/ACK、同库交接、清理及控制面API",
+          "status": "pending",
+          "scope": "backend,deploy",
+          "files": [
+            "backend/app/services/db_migration/journal.py",
+            "backend/app/services/db_migration/activation.py",
+            "backend/app/core/config.py",
+            "backend/app/core/startup_guard.py",
+            "backend/app/api/endpoints/database_migration.py",
+            "backend/app/api/endpoints/health.py",
+            "backend/btdeck_startup.sh",
+            "docker-compose.yml"
+          ],
+          "acceptance": "T04/T08/T09/T10/T11/T15/T16/T17/T21；鉴权登记、审计枚举/事务、API注册及测试实际文件在实施时补齐。"
+        },
+        {
+          "id": "database-migration-ui.W4",
+          "title": "设置面板、独立维护客户端、平台/demo/i18n与移动端",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/settings/index.vue",
+            "frontend/src/views/settings/components/DatabaseMigrationPanel.vue",
+            "frontend/src/api/database-migration.ts",
+            "frontend/src/api/platform-capabilities.ts"
+          ],
+          "acceptance": "Vue2完整类型、A/B均可用、503/维护令牌不互相失效、Android本机拒PG；typecheck/lint/全量Jest/build及i18n双语门禁；实际locale/demo/spec路径在实施时补齐。"
+        },
+        {
+          "id": "database-migration-ui.W5",
+          "title": "全量真PG/故障门禁、契约/API/runbook/roadmap及证据收口",
+          "status": "pending",
+          "scope": "fullstack,deploy",
+          "files": [
+            "backend/docs/postgresql-contract.md",
+            "backend/docs/constraints/database-migration.md",
+            "docs/database-setup.md",
+            "PLANS/database-migration-ui.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "acceptance": "T01-T22按层提供真实证据，真PG skip不能当通过，schema/配置契约随实现批次同步而非最后补写；实际CI/测试/roadmap文件在实施时补齐。"
+        },
+        {
+          "id": "database-migration-ui.W6",
+          "title": "授权隔离环境同堆栈双向与A+B真实验收",
+          "status": "pending",
+          "scope": "deploy",
+          "files": [
+            "PLANS/database-migration-ui.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "acceptance": "用户授权后用隔离数据在unraid验证双向、托管重启、同库A/B交接及故障场景；不在生产库演练，不创建或管理PG服务。"
+        }
+      ]
+    },
     {
       "id": "ui-fixes-2026-09-21",
       "name": "两项 UI 修复：移动端下载器表单地址上移至端口上方 + 登录页语言切换统一 Navbar 同款胶囊",

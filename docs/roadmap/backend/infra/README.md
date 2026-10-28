@@ -70,7 +70,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| PG 数据迁移 migrate-sqlite-to-pg ✨v1.0.8 | `migrate_sqlite_to_pg.py` | 工具 1.1.0：`precheck` L287（结构/类型/模板/密钥/备份）、`import_table` L366（每表原子检查点）、`verify_counts_and_digests` L453（流式全列对账）、`run_migration` L516（只读 WAL 快照）；见 docs/database-setup.md |
+| PG 数据迁移 migrate-sqlite-to-pg ✨v1.0.8 ✨2026-10-28（W1-6 服务化） | `migrate_sqlite_to_pg.py` | CLI 薄壳（协议 2.0.0）：`main` L133 保留参数/退出码 0|1|2|3；attempt 绑定持久化（db-migration/attempts/*/attempt.json 0600，resume 凭据不进命令行）；受管 active 存在→fail-closed 提示 --connection-profile（W3）；逻辑在 `app/services/db_migration/sqlite_to_pg.py`（工具 1.1.0 逻辑迁入）；见 docs/database-setup.md |
 
 ### alembic/versions/（37 个迁移文件）
 

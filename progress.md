@@ -1,3 +1,32 @@
+## 2026-10-28（续三）：数据库迁移 UI W1 实施批（七子批交付，全绿未提交）
+
+- **用户确认**：W1 实现假设 7 子批方案 + 会话 01a18094（v4 修订参与会话）定向复核意见收敛后开始；复核关键约束已落实：纯常量模块防引擎副作用、普通新装/迁移基线分流、active fail-closed 不回 env、T01 组件级证据、W1 必须落实 epoch/原子 checkpoint/协作取消接口。
+- **W1-1 三协议表**：新 revision `e9f0a1b2c3d4`（head c9e0f1a2b3c4→e9f0a1b2c3d4，表 42→45=42 业务+3 协议，锚点三处同步）：`bt_database_identity`（单例 id=1 CHECK，seed 幂绝不重生成）、`bt_database_migration_receipt`（attempt PK/nonce/origin_epoch 不可变/eligible_epoch/counts+digests/五状态机）、`bt_database_migration_events`；downgrade 受限（receipt/events 有行即拒）；`app/core/database_protocol.py` 纯常量模块（无引擎副作用，子进程验证）+ `models/database_migration.py` `business_tables()` 分类；model_registry 注册（45 表）。
+- **W1-2 pg_baseline**：`initialize_pg_baseline(engine=…, ownership=…)` 显式参数化+`assert_postgresql_target` 方言强断言（T14：SQLite 引擎 DDL 前拒，无豁免参数）；基线同事务生成目标自身 identity（普通新装/迁移基线均生成）；ownership 迁移基线同事务写 IMPORTING receipt（target_database_id 由基线注入实际身份）+初始 checkpoint marker；`finalize_receipt_verified`（同事务 VERIFIED+清 marker，竞态校验）/`verify_receipt_ownership`（nonce/目标/操作类型不符即拒）/`mark_receipt_status`（仅 STALE/ABANDONED）；测试分层：fake_pg_engine fixture 补方言豁免缝（生产断言不放宽）+真 PG CI 用例。
+- **W1-3 database_bootstrap**：`EffectiveDatabaseConfig`/`PostgresParams`（repr 排密码）；active 优先完整覆盖（方言互斥/绝对路径/uuid/attempt 形态/TLS 五档严格校验，损坏抛错绝不回 env）；Android×PG 拒绝（复用 platform_capabilities.resolve_platform）；SQLite 半成品标记/control/manifest 只读检测（UUID 尾段目录映射防穿越，manifest attempt 声明一致性校验）；`evaluate_startup_disposition` fail-closed 桩。
+- **W1-4 migration/env**：`ManagedStartupBlockError`（与 MigrationBackupError 同级 DEV 不吞）拦截 active 未核验/pending attempt/SQLite 标记/IMPORTING|VERIFIED 未激活 receipt（双方言对称）；ACTIVATED 历史凭据放行+合法旧 revision 正常升级+身份不重生成（T01 组件级）；env.py `target_url` 最高优先级（显式目标重放原生链，不写 os.environ，T14 后半：源库零 DDL）。
+- **W1-5 服务五模块**（`app/services/db_migration/`）：`canonical.py`（btdeck-canonical-v1：JSON SQL NULL 边注区分/UTC 微秒/PG C collation 方言感知/schema 指纹/dict-list 归一）；`target_params.py`（URL.create 显式参数+NullPool+只读 URI 引擎）；`pipeline.py`（PipelineContext nonce/epoch/进度/协作取消接口；checkpoint 与 receipt 同步绑定；`validate_checkpoint_prefix` 绑定/版本/依赖序前缀，旧 1.1.0 明确拒绝）；`sqlite_to_pg.py`（工具逻辑迁入+六阶段+每表数据/checkpoint 同事务+批间取消）；`pg_to_sqlite.py`（O_EXCL staging+sidecar 先于 DDL 持久+inode 归属核验；REPEATABLE READ 只读快照；AUTOINCREMENT 探测报告跳过；Float NaN/±Infinity+时间 infinity 预检拒绝即不建目标 T12）。
+- **W1-6 CLI 薄壳 2.0.0**：退出码 0|1|2|3 保持；attempt 绑定本地持久化（`db-migration/attempts/<uuid>/attempt.json` 0600 原子写，resume 凭据不进命令行）；受管 active 存在→fail-closed 提示 `--connection-profile`（W3 提供）；CI 端到端用例改造为服务层 fault injection+receipt 断言。
+- **验证**：本地全量 pytest **5655 passed / 53 skipped / 0 failed（终跑，含全部新增用例）**（首轮 1 失败=架构守卫 BTD305 拦新服务 f-string SQL，按 pg_baseline 先例白名单登记：仅插值 ORM metadata 标识符/模块常量；migration.py 改字面量、pipeline.py 改 ORM 构造消除）；mypy 319 文件 0 错；black/flake8 app/ 净。T19/T12/T02/T14/T20 真 PG 用例已交付 `tests/pg_integration/`（本地 skip 不计通过，CI pg-integration job 实证待推送）。
+- **文档**：postgresql-contract.md 新增 §3.1 迁移协议元数据；constraints/database-migration.md 链+head 同步（强校验测试锚点 EXPECTED_HEAD/表计数 45）；roadmap 五文件同步（根速查+core 三新行两改写+services 五新行+data-models/infra 各一行）。
+- **坑（3 条）**：①pydantic v2 BaseSettings property（DATABASE_PATH）不可 setattr，测试须走 env 变量；②SQLAlchemy `Connection.execution_options(isolation_level=…)` 支持 REPEATABLE READ 但 SET TRANSACTION READ ONLY 须为事务首语句（懒开启下直接 exec_driver_sql 即可）；③pg_baseline.initialize 会 dispose 传入的显式引擎（NullPool 无碍，复用需知晓）。
+- **待办**：提交待用户指示；推送后 regression CI（含 pg-integration 实库 job）实证 T19/T12；W2（准入排空 fence/只读生命周期/维护认证）待启动。
+
+## 2026-10-28（续）：数据库迁移 UI 方案修订 v4（仅 W0 设计完成，未实施）
+
+- **用户授权**：开始修订方案，不启动业务实现。保持双向、A+B、同堆栈、不创建 PG 服务、安卓不支持 PostgreSQL。
+- **修订**：`PLANS/database-migration-ui.md` v4 落实二审18项：lease关准入/排空/fence、维护只读引导/鉴权/本地审计、Alembic三元数据表与持久receipt、合法旧版本正常升级、manifest COMMITTED/目标ACK/本地ACK、路径/TLS/配置RMW、所有权清理与取消epoch。B改为激活独立SQLite路径，不覆盖旧app.db/WAL三件；新增控制面健康语义与整栈前端可用约束。
+- **定向复核**：acceptance-reviewer-gpt先确认15项已有条款，补出3个设计矛盾；已修订并再次复核设计闭合：HANDOFF_SAME_DB同连接fence/ACK防自锁、baseline即IMPORTING ownership及SQLite早期sidecar、eligible_epoch重绑与旧回调拒绝。见计划§16；不是整体验收或功能测试通过。
+- **追踪**：feature_list新增 `database-migration-ui-2026-10-28`，整体in_progress，仅W0设计done，W1–W6 pending；新revision/代码/实库尚未创建或执行。二审原报告保留历史OPEN结论并加v4处置链接；PLANS索引同步。
+- **环境**：worker执行 `./init.sh --ci` 根exit=0，两端完成但有告警（当前shell后端venv/工具未就绪，前端ESLint/TS/API配置识别不全）；未安装依赖。功能pytest/真PG/故障注入/构建/部署均NOT RUN。文档未提交。
+
+## 2026-10-28：数据库迁移 UI v3 第二轮计划审查（需修改后执行，未实施）
+
+- **用户决策保持**：SQLite↔PostgreSQL 页面双向迁移，A 指引+B 一键切换均要，不创建 PG 服务、支持同堆栈；安卓不支持 PostgreSQL，其余 D1/D3/D4/D5 已认可。
+- **审查**：plan-reviewer + acceptance-reviewer-gpt 两路只读审查（原 reliability-reviewer 遇供应商限额后替代），合并去重 **4 P0 / 9 P1 / 5 P2**；报告 `PLANS/database-migration-ui-review-round2.md`。
+- **P0**：启动严格等于 head 阻断正常升级；清导入标记后无持久 migration receipt；停写缺准入/排空/冻结屏障；B 轨缺跨文件事务 manifest 与激活 ACK。另需处理 GET/审计/鉴权写副作用、维护启动 seed、取消线程确认、配置路径/TLS/损坏、清记录回旧库、目标清理所有权等。
+- **处置**：主计划与索引改为“v3 二审需修改后执行”；第一轮建议写入文档不视为已验证关闭。未改业务代码、未开始 W1、未改 feature_list 实现状态；本轮静态审查，未跑 pytest/构建/部署。
+
 ## 2026-10-27（续）：Docker Hub 镜像 v1.0.7+latest、PR #9 合并、regression 版本测试修复
 
 - **Docker Hub 镜像**：strainthomas/btdeck-{backend,frontend} 推送 v1.0.7 + latest 双 tag。构建在 Hermes 机器（磁盘根因：build cache 33GB，prune 后 42GB 可用）；复用 build-and-export-images.sh（DEFAULT_DEPLOY_ENABLED sed 为 0 关自动 unraid 部署）+ --quick；OCI 标签 v1.0.7 @e08274f61a0c 验证通过。Docker Hub 密码登录被拒（2FA/凭据失效），改 Hermes docker save 4 tag 去重 tar（467MB，sha256 b884bbfb…）→ 内网 http.server:8401 → 用户 192 机器 wget/load/手动 docker login+push。

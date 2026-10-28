@@ -10,6 +10,7 @@
 | 关键词 | 文件 | 表名 / 一句话职责 |
 |--------|------|-------------------|
 | 模型导出 models-init | `__init__.py` | **有实质内容**：集中导出所有模型 + 常量（见下方说明） |
+| 迁移协议元数据 model database-migration ✨2026-10-28（W1-1） | `database_migration.py` | 三协议表（revision e9f0a1b2c3d4）：`bt_database_identity` 库身份单例（id=1 CHECK，seed 幂等不重生成，导入不复制）；`bt_database_migration_receipt` 完成凭据（attempt PK、nonce/epoch、counts/digests、状态机 IMPORTING/VERIFIED/ACTIVATED/STALE/ABANDONED）；`bt_database_migration_events` 回放去重行；`business_tables()` L39 = sorted_tables−协议表（42 业务） |
 | 下载器能力 model capability | `downloader_capabilities.py` | `downloader_capabilities`：下载器能力配置 |
 | 能力 VO capability-vo | `downloader_capabilities_vo.py` | 下载器能力响应 VO（Pydantic） |
 | 路径维护 model path-maintenance | `downloader_path_maintenance.py` | `downloader_path_maintenance`：默认/在用路径 |

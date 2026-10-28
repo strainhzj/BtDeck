@@ -1,3 +1,27 @@
+## 2026-10-28（续三）交接：数据库迁移 UI W1 实施批完成（全绿未提交）
+
+- **状态**：`database-migration-ui.W1` 已 done（七子批全交付）；W2-W6 pending。本地全量 pytest 5655 passed/53 skipped/0 failed（终跑）；mypy 319 文件 0 错；black/flake8 app/ 净；./init.sh --ci exit 0。**未提交未推送**。
+- **新链 head**：`e9f0a1b2c3d4`（三协议表+存量身份 seed；表 42→45=42业务+3协议）。约束文档/EXPECTED_HEAD/表计数锚点均已同步；PG_MINIMUM_REVISION 仍为 c9e0f1a2b3c4（历史边界勿动）。
+- **新模块**：`core/database_protocol.py`（纯常量，无引擎副作用——新增代码禁止在其中 import app.*）、`core/database_bootstrap.py`（有效配置/平台门控/fail-closed 分流）、`models/database_migration.py`（三表+business_tables）、`services/db_migration/` 五模块（pipeline/sqlite_to_pg/pg_to_sqlite/canonical/target_params）；CLI `scripts/migrate_sqlite_to_pg.py` 已薄壳化（协议 2.0.0；旧 1.1.0 checkpoint 拒绝）。
+- **待 CI 实证**：T19 双向回环/T12 拒收/T02/T14/T20 真 PG 用例在 `tests/pg_integration/`（本地 skip 不计通过）；推送后 regression pg-integration job 绿了才登记完整验收。
+- **下一步**：W2（准入排空 fence/只读生命周期/维护认证与本地审计/取消 epoch，gate T03/T05/T06/T07/T13/T18/T22）；W3 前置依赖：journal/config 仓储与 --connection-profile 受保护档案、A+B commit/ACK 完整接线（W1 只到 fail-closed 分流桩+组件级核验）。
+- **坑位提醒**：pydantic v2 settings property 不可 setattr（测试走 env）；init.sh --ci 的 venv 告警为存量预期；测试不可多进程并行；fake_pg_engine fixture 已含方言豁免缝（生产断言未放宽，勿再扩大）。
+
+## 2026-10-28（续）交接：数据库迁移 UI v4 修订与定向设计复核完成（未实施）
+
+- 当前代码仍 `dev@8d67da3`；只修改计划/追踪文档。用户本轮仅授权修订方案，不自动开始 W1。主计划 `PLANS/database-migration-ui.md` v4，二审历史报告保留在 `PLANS/database-migration-ui-review-round2.md`，处置映射§13、补审记录§16。
+- 冻结决策不变：双向、A指引+B一键、同堆栈、不创建PG服务、安卓不支持PG。v4安全收口为B直接激活独立sqlite_path，不覆盖旧app.db/-wal/-shm；正常Alembic升级与首次激活校验分开。
+- v4补齐停写lease/排空/fence、只读维护启动/关闭/鉴权、本地审计、三表Alembic身份/receipt/events、持久commit/ACK与恢复矩阵。定向复核补出的同库clear自锁、初始nonce落点、恢复epoch重绑已改并再次设计层闭合；不把这些结论当作实现或测试通过。
+- feature_list已登记 `database-migration-ui-2026-10-28`：整体in_progress，仅W0设计done，W1–W6 pending。若用户接下来要求实现，先按W1做revision/元数据分类/服务抽取/双向CLI管线，随后W2屏障、W3提交与API、W4前端、W5门禁文档、W6授权隔离真环境。
+- 验证：`./init.sh --ci` 根exit=0但当前shell后端venv/工具、前端ESLint/TS/API识别有告警，未安装依赖；pytest/真PG/故障注入/构建/部署NOT RUN。不得因root exit0声称质量门绿。文档未提交；既有`.pi/`等无关内容不动。
+
+## 2026-10-28 交接：数据库迁移 UI v3 二审未放行（仅设计审查，未实施）
+
+- 当前代码 `dev@8d67da3`。主计划 `PLANS/database-migration-ui.md`；完整二审报告 `PLANS/database-migration-ui-review-round2.md`（两路独立子代理，4P0/9P1/5P2，全部 OPEN）。
+- 用户冻结决策：双向迁移；**A 指引+B 一键切换均保留**；不创建 PG 服务、支持 Docker 同堆栈；**安卓不支持 PostgreSQL**。不要重新询问已确认决策或删掉 B 回避问题。
+- 下一步先修订设计：停写准入/排空屏障与只读维护启动；持久数据库身份/receipt/首次激活 ACK 且不阻断正常 Alembic 升级；跨文件切换 manifest 与故障恢复矩阵；维护鉴权与审计；线程取消确认、epoch 作废、目标所有权清理；完整路径/TLS 配置及安卓引导层拒 PG。
+- 主计划/索引已撤回“定稿待 W1”状态；本轮没有把审查建议自动视为修复，也未改业务代码/feature_list 实现状态。仅静态查证，未运行测试、构建或部署；文档未提交，其他现有未跟踪内容保持不动。
+
 ## 2026-10-27 交接：v1.0.8 PostgreSQL 改造合入 dev（merge `c66f5d7` + mypy 修复 `51a9fe3`，全绿未推送）
 
 ### 已完成
