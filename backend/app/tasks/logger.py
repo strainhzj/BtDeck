@@ -48,7 +48,31 @@ class TaskLogger:
         self.log_details.append(f"[{timestamp}] {message}")
 
     async def _log_to_db(self, duration: int, success: bool):
-        """将日志记录到数据库"""
+        """将日志记录到数据库。
+
+        维护哨兵（database-migration-ui W2-2，T06）：维护模式下绝不写源库——
+        落维护本地审计哨兵行（不含任务日志正文，防敏感内容外泄面扩大）。
+        """
+        from app.services.db_migration.maintenance import maintenance_active
+
+        if maintenance_active():
+            from app.services.db_migration.local_audit import MaintenanceLocalAudit
+            from app.core.config import settings
+
+            try:
+                audit = MaintenanceLocalAudit(str(settings.CONFIG_PATH))
+                audit.audit_event(
+                    "task_logger_sentinel",
+                    action="task-log-suppressed",
+                    target=self.task_name or "",
+                    outcome="suppressed",
+                    detail={"duration": duration, "success": success},
+                    critical=False,
+                )
+            except Exception as exc:
+                print(f"[维护哨兵] TaskLogger 抑制记录失败（任务 {self.task_name}）: {exc}")
+            return
+
         db = SessionLocal()
         try:
             log_detail = "\n".join(self.log_details)

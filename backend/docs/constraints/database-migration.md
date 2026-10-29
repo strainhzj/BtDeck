@@ -148,6 +148,11 @@ stamp 当前 head）；**今后新增迁移必须同时可迁移 SQLite 已有�
 
 **启动顺序**（FastAPI lifespan，`app/startup/lifecycle.py`）：
 ```
+0.5 维护启动分流 _startup_maintenance_gate()（database-migration-ui W2-2）
+    └─ 命中受管态（database.active/未完成 attempt/SQLite 半成品标记/
+       maintenance-intent.json 崩溃残留）→ 维护分支：不迁移/不 seed/
+       无 cron/无后台任务/无下载器初始化；MCP mark_closed；
+       /health/ready=503；仅 /api/v1/maintenance/* 控制面（独立维护鉴权）
 1. init_config_file() + yaml.reload()
 2. migrate_database()   ← 统一迁移入口（编程式 alembic API）
    └─ 未到达目标 head 时立即终止启动，DEV 模式也不得继续
@@ -159,6 +164,68 @@ stamp 当前 head）；**今后新增迁移必须同时可迁移 SQLite 已有�
 其中备份失败是独立硬门禁。任何 migration 异常或升级后版本未到达目标 head，均在
 seed、孤儿对账和调度器之前终止应用启动；未知未来版本的显式代码回滚仍按 rollback
 guide 保留“不降级、不 stamp”的兼容路径。
+
+## 维护模式运行时约束（database-migration-ui W2，强制）
+
+详细设计见 `PLANS/database-migration-ui.md` §5；实现层约束：
+
+### 状态机与准入 lease（§5.1）
+
+- 状态机 `NORMAL→PREPARING→DRAINING→FROZEN→IMPORTING→VERIFYING→READY_TO_SWITCH`
+  （+`HELD` 降级/`ABANDONED` 放弃/`COMMITTED` 终态）由
+  `app/services/db_migration/maintenance.MaintenanceController` 单点管理，
+  挂 `app.state.maintenance`（进程级默认单例 `set_default_controller`）。
+- **准入判定与计数共享同一 threading 临界区**；业务面（HTTP/MCP/cron/后台循环）
+  自入口持操作级 lease 直至 finally 收尾；子任务 `register_child` 原子继承，
+  父收尾前计数不可降零。维护态（含 HELD）拒绝一切新普通准入。
+- **PREPARING 先持久 intent（`db-migration/maintenance-intent.json`，0600 原子写）
+  再关门**；不可等待重任务 → 安全撤销（409）+清 intent；崩溃残留 intent →
+  重启进维护分支（fail-safe）。
+- 排空超时→HELD（未冻结未快照）；有目标副作用或 worker 未收尾时禁止撤销——
+  禁止抢先恢复业务。FROZEN 进入条件：计数归零 + fence 令牌在握。
+
+### 屏障与源保护（§5.2）
+
+- `app/api/maintenance_barrier.MaintenanceBarrierMiddleware`（纯 ASGI）：普通
+  模式业务面（`/api/*` 与 `/mcp*`）持 lease；维护模式默认拒**全部普通业务 API
+  （含 GET）**与新 MCP/业务 WS→503+`MAINTENANCE_MODE`。放行仅：/health/live、
+  /health/ready（自身 503 语义）、静态前端、`/api/v1/maintenance/*`。
+- MCP `tools/call` 经准入包装（`McpErrorCode.MAINTENANCE_MODE`）；cron
+  `_execute_task`/孤儿两 dispatcher/后台循环经准入包装（维护期跳过且零源写）；
+  TaskLogger 维护哨兵（落本地审计，不写源库）。
+- 源 fence（`app/services/db_migration/source_fence.py`）：SQLite 专用连接
+  `BEGIN IMMEDIATE`；PG REPEATABLE READ+逐表 SHARE 锁（固定顺序、有界
+  lock_timeout）。fence 连接只锁/读/释放；锁丢失/漏写→HELD；重启必须重新取
+  fence 并核指纹（漂移拒绝）。异库断言：源/目标不可区分即拒（同 inode/host+db），
+  HANDOFF_SAME_DB 例外仅显式确认参数。
+- 零写 oracle（T18）：SQLite 同连接 `PRAGMA data_version`+内容摘要；PG 独立
+  连接 `pg_stat_user_tables` 三元组增量+内容摘要。阳性对照（同主键同计数
+  UPDATE）必须令 oracle 失败。
+
+### 维护认证与本地审计（§5.3）
+
+- `/api/v1/maintenance/auth[+/renew|/status]`：只读用户行校验（SQLite mode=ro /
+  PG 会话只读）+独立 audience/scope 短期 token（默认 15 分钟，jti 唯一，绑定
+  attempt/epoch）；**不走普通 login/refresh 路径**（零源写）；失败限流/撤销/
+  重放防护落 `db-migration/maintenance-auth-state.json`（0600+文件锁）；
+  缺 seed（无 users 表）→离线恢复，不绕过鉴权。
+- 维护 token 不携带 `verify_secret`——普通业务 API 天然拒绝；普通 access
+  token 无维护 aud 同样被维护面拒绝（双向不可互用）。
+- 本地审计（`db-migration/maintenance-audit.jsonl`，0600 逐行 fsync）：关键
+  副作用前先持久化；磁盘满/容量上限→拒绝新危险动作（`LocalAuditUnavailable`）；
+  密码/TOTP/token/确认口令一律 `<redacted>`；回放按 event_id 去重（W3 ACK
+  归档接线）。
+
+### 取消与 epoch（§6.4）
+
+- `request_cancel` 协作取消 + worker `ack_cancel`（阻塞等 ACK）；epoch 前进
+  后晚到回调/ACK 一律拒绝（`StaleEpochError`）；HELD/ABANDONED 无漂移可重绑
+  （漂移拒绝保持 HELD）；COMMITTED 终态禁重绑/禁退出。
+
+### 新增静态门禁
+
+- BTD306：`app/` 新文件禁止裸 `asyncio.create_task/to_thread`（存量白名单
+  盘点登记）；新代码须走 lifecycle 准入包装或 `register_child` 登记。
 
 ### SQLite 大库与中断恢复约束
 

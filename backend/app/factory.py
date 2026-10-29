@@ -138,6 +138,14 @@ def create_app(configure_routes: bool = True) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 维护准入/屏障中间件（database-migration-ui W2-3，PLANS §5.2）：
+    # 普通模式业务面持 lease；维护模式默认拒普通 API（含 GET）/MCP/WS → 503。
+    # 纯 ASGI 中间件（覆盖挂载子应用与 WebSocket）；后加包外层（在 CORS 之内
+    # 先行拒，避免维护期业务面被 CORS 预检穿透）。
+    from app.api.maintenance_barrier import MaintenanceBarrierMiddleware
+
+    _app.add_middleware(MaintenanceBarrierMiddleware)
+
     # 注册全局异常处理器：归一化 HTTPException/422/未捕获异常为 CommonResponse
     from app.exception_handlers import register_exception_handlers
 

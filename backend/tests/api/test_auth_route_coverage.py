@@ -56,6 +56,9 @@ _AUTH_DEPENDENCY_NAMES = frozenset(
         # MCP 设置控制面（mcp-service-capabilities W1）：principal 内核，
         # 校验比 require_authenticated_user 更严（查 DB 用户存在/启用/非强制改密）
         "require_mcp_control_plane_user",
+        # 维护控制面（database-migration-ui W2-5）：独立维护 token 校验
+        # （aud/scope/jti/吊销/重放防护，普通 access token 不可用）
+        "require_maintenance_token",
         # MoviePilot 集成/管理面（moviepilot-integration）：同一 principal 内核链路
         "require_moviepilot_integration_user",
     }
@@ -67,6 +70,11 @@ _REQUIRED_PUBLIC_PATHS = frozenset(
     {
         "/api/v1/auth/login",
         "/api/v1/auth/refresh",
+        # 维护认证入口（database-migration-ui W2-5）：必须匿名可达（与 login
+        # 同理——挂鉴权等于无人能进维护面）；仅维护模式生效（普通模式 409），
+        # 密码/TOTP 只读校验 + 失败限流 + 独立短 token（见 maintenance_auth.py）
+        "/api/v1/maintenance/auth",
+        "/api/v1/maintenance/auth/renew",
         "/health/live",
         "/health/ready",
         "/api/v1/health/live",

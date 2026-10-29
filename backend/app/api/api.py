@@ -59,8 +59,13 @@ from app.api.endpoints import rss_qb_proxy
 # 统计报表（statistics-reports W3：/reports/* 聚合端点）
 from app.api.endpoints import reports
 
+# 维护控制面（database-migration-ui W2-5：维护认证/状态；仅维护模式可用）
+from app.api.endpoints import maintenance
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
+# 维护控制面（W2-5）：/api/v1/maintenance/*（维护认证+粗粒度状态；屏障内独立鉴权）
+api_router.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance"])
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
 api_router.include_router(cuser.router, prefix="/user", tags=["user"])
 api_router.include_router(cuser.router, prefix="/users", tags=["users"])  # 添加/users前缀支持前端调用

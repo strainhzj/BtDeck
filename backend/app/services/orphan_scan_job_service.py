@@ -318,6 +318,20 @@ class OrphanScanDispatcher:
             return await OrphanScanJobService(db).get_scan(scan_id)
 
     async def execute_scan(self, scan_id: str) -> Dict[str, Any]:
+        """维护准入包装（database-migration-ui W2-3）：维护模式零源写跳过本轮。"""
+        from app.services.db_migration.maintenance import AdmissionRejected, get_default_controller
+
+        controller = get_default_controller()
+        if controller is None:
+            return await self._execute_scan_body(scan_id)
+        try:
+            with controller.admission_slot(kind=f"orphan-scan:{scan_id}"):
+                return await self._execute_scan_body(scan_id)
+        except AdmissionRejected:
+            logger.info("维护模式：跳过孤儿扫描 %s（不落库，零源写）", scan_id)
+            return {"scan_id": scan_id, "status": "skipped", "error": "maintenance", "execution_log": []}
+
+    async def _execute_scan_body(self, scan_id: str) -> Dict[str, Any]:
         require_capability("orphan_files", "orphan_files.execute_scan")
         from app.services.orphan_scanner import OrphanScanner
 

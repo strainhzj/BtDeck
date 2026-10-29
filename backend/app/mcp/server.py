@@ -182,10 +182,30 @@ def create_mcp_server_bundle(state: Any) -> McpServerBundle:
 
     @server.call_tool(validate_input=False)
     async def _call_tool(name: str, arguments: Dict[str, Any]) -> mcp_types.CallToolResult:
-        """执行门禁：全局 → 能力 → 认证 → 就绪 → 入参校验 → dispatch → 脱敏出口。
+        """执行门禁：维护准入包装（W2-3，T03 在途 MCP）→ 全局 → 能力 → 认证
+        → 就绪 → 入参校验 → dispatch → 脱敏出口。
 
         自捕获一切异常（SDK 装饰器会把未捕获异常以 str(e) 外泄——见模块注释）。
-        """
+        维护态新调用准入拒绝 → MAINTENANCE_MODE；在途调用持 lease 直至完成
+        （排空等它收尾）。"""
+        from app.services.db_migration.maintenance import AdmissionRejected, get_default_controller
+
+        try:
+            controller = get_default_controller()
+            if controller is not None:
+                with controller.admission_slot(kind=f"mcp:{name}"):
+                    return await _execute_call_tool(name, arguments)
+            return await _execute_call_tool(name, arguments)
+        except AdmissionRejected:
+            return _error_call_result(McpToolError(McpErrorCode.MAINTENANCE_MODE))
+        except McpToolError as err:
+            return _error_call_result(err)
+        except Exception:
+            logger.exception("MCP tools/call 意外异常 tool=%s", name)
+            return _error_call_result(McpToolError(McpErrorCode.INTERNAL_ERROR))
+
+    async def _execute_call_tool(name: str, arguments: Dict[str, Any]) -> mcp_types.CallToolResult:
+        """原执行链（门禁：全局 → 能力 → 认证 → 就绪 → 校验 → dispatch → 脱敏）。"""
         try:
             snapshot = await runtime.settings_snapshot_async()
             if not snapshot.effective_enabled:

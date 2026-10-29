@@ -41,6 +41,8 @@ class McpErrorCode(str, Enum):
 
     # ---- 运行时与生命周期（G9）----
     RUNTIME_NOT_READY = "RUNTIME_NOT_READY"
+    # 维护模式（database-migration-ui W2-3）：准入拒绝/屏障拒新调用
+    MAINTENANCE_MODE = "MAINTENANCE_MODE"
 
     # ---- 输入与预算（G6/G8）----
     INVALID_ARGUMENT = "INVALID_ARGUMENT"
@@ -86,6 +88,9 @@ HTTP_ALIGNMENT: Dict[McpErrorCode, HttpAlignment] = {
     McpErrorCode.SERVICE_DISABLED: HttpAlignment(503, "全局开关关闭/环境 kill switch 生效"),
     McpErrorCode.CAPABILITY_DISABLED: HttpAlignment(404, "能力关闭即不可发现；对缓存旧定义直调等价 404 语义的稳定拒绝"),
     McpErrorCode.RUNTIME_NOT_READY: HttpAlignment(503, "store/scheduler 未就绪或应用关闭中，稳定拒绝不重试自愈"),
+    McpErrorCode.MAINTENANCE_MODE: HttpAlignment(
+        503, "数据库维护模式（database-migration-ui W2-3）：准入/屏障拒绝，不重试自愈"
+    ),
     McpErrorCode.INVALID_ARGUMENT: HttpAlignment(422, "参数结构/取值不满足 schema"),
     McpErrorCode.FORBIDDEN_ARGUMENT: HttpAlignment(403, "工具参数携带 user_id/operator 等主体伪造字段"),
     McpErrorCode.PAGE_SIZE_EXCEEDED: HttpAlignment(422, "pageSize 超过 200 上限（HTTP 高级搜索沿用自身上限，不联动）"),
@@ -115,6 +120,7 @@ DEFAULT_MESSAGES: Dict[McpErrorCode, str] = {
     McpErrorCode.PASSWORD_CHANGE_REQUIRED: "用户处于强制改密状态，需先完成改密。",
     McpErrorCode.SERVICE_DISABLED: "MCP 服务未启用。",
     McpErrorCode.CAPABILITY_DISABLED: "该能力未启用或已被关闭。",
+    McpErrorCode.MAINTENANCE_MODE: "维护模式中，MCP 调用被拒绝。",
     McpErrorCode.RUNTIME_NOT_READY: "服务运行时尚未就绪，请稍后重试。",
     McpErrorCode.INVALID_ARGUMENT: "参数不符合工具契约。",
     McpErrorCode.FORBIDDEN_ARGUMENT: "操作者身份只能来自认证主体，禁止通过参数指定。",

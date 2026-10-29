@@ -558,6 +558,20 @@ class OrphanPurgeJobDispatcher:
         return {"recovered_count": len(pending_ids), "notification_retry_count": len(notification_ids)}
 
     async def execute_job(self, task_id: str) -> None:
+        """维护准入包装（database-migration-ui W2-3）：维护模式零源写跳过本轮。"""
+        from app.services.db_migration.maintenance import AdmissionRejected, get_default_controller
+
+        controller = get_default_controller()
+        if controller is None:
+            return await self._execute_job_body(task_id)
+        try:
+            with controller.admission_slot(kind=f"orphan-purge:{task_id}"):
+                return await self._execute_job_body(task_id)
+        except AdmissionRejected:
+            logger.info("维护模式：跳过隔离区彻底删除任务 %s（不落库，零源写）", task_id)
+            return None
+
+    async def _execute_job_body(self, task_id: str) -> None:
         """领取并执行单个任务，任务终态先落库再发送通知。"""
         require_capability("orphan_files", "orphan_files.execute_purge")
         async with self._serial_lock:

@@ -175,10 +175,24 @@ async def health_live() -> CommonResponse[Dict[str, Any]]:
 async def health_ready(request: Request):
     """执行严格有界的只读 readiness 检查。
 
+    维护模式（database-migration-ui W2-2）：业务面一律不可用（503 +
+    MAINTENANCE_MODE），不做数据库探针——维护期源零写铁律且库可能已被 fence；
+    控制面可用性由 /api/v1/maintenance/status 表达（§5.4，不得伪报健康）。
+
     build-info 非法（缺失字段/dirty/畸形）时 reasonCodes 追加
     build_identity_invalid 并整体 503（fail-closed，G1）；dev 源码模式
     （无嵌入身份）不阻断开发环境。
     """
+    if getattr(request.app.state, "maintenance_mode", False):
+        return JSONResponse(
+            status_code=503,
+            content=_common_response(
+                "error",
+                "维护模式：业务不可用",
+                "503",
+                {"status": "maintenance", "reasonCode": "MAINTENANCE_MODE"},
+            ),
+        )
     worker_check, worker_reason = _worker_readiness_check()
     lag_check, lag_reason = _lag_readiness_check(request.app)
     database_check, database_reason = await _database_readiness_check()

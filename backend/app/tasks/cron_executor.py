@@ -599,6 +599,24 @@ class CronTaskExecutor:
             return None
 
     async def _execute_task(self, task_id: int):
+        """维护准入包装（database-migration-ui W2-3，T03/T06）。
+
+        维护模式：跳过本轮且**零源写**（不落库 skip——维护期源零写铁律），
+        仅日志；正常模式：任务体（含落库收尾/TaskLogger）整体持操作级 lease，
+        排空等它收尾（最后业务提交→通知/审计）。"""
+        from app.services.db_migration.maintenance import AdmissionRejected, get_default_controller
+
+        controller = get_default_controller()
+        if controller is None:
+            return await self._execute_task_body(task_id)
+        try:
+            with controller.admission_slot(kind=f"cron:{task_id}"):
+                return await self._execute_task_body(task_id)
+        except AdmissionRejected:
+            logger.info("维护模式：跳过定时任务 %s（不落库，零源写）", task_id)
+            return None
+
+    async def _execute_task_body(self, task_id: int):
         """执行定时任务 - 使用异步数据库操作
 
         会话生命周期三段式（greenlet 交错治理）：读会话（读任务+写开始时间后即关闭）→

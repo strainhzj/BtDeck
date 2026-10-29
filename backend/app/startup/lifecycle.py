@@ -114,6 +114,174 @@ async def run_process_memory_loop(app: FastAPI) -> None:
         await asyncio.sleep(interval)
 
 
+# =============================================================================
+# 维护启动分流与后台循环准入（database-migration-ui W2-2/W2-3，PLANS §4.3/§5）
+# ==============================================================================
+
+_MAINTENANCE_GATE_POLL_SECONDS = 2.0
+
+
+async def _acquire_step_admission(kind: str):
+    """后台循环步进准入：无控制器直通；维护中阻塞等待（零写零跑，§5.2）。
+
+    返回（lease, cm）：正常放行时 cm 已进入（调用方 finally 必须 exit）；
+    无控制器时返回（None, None）——原行为零变化。维护期间不产生任何源写入，
+    也不推进任务（“不能偷偷发任务日志”，§5.2）。
+    """
+    from app.services.db_migration.maintenance import AdmissionRejected, get_default_controller
+
+    while True:
+        controller = get_default_controller()
+        if controller is None:
+            return None, None
+        cm = controller.admission_slot(kind)
+        try:
+            lease = cm.__enter__()
+            return lease, cm
+        except AdmissionRejected:
+            await asyncio.sleep(_MAINTENANCE_GATE_POLL_SECONDS)
+
+
+async def _run_gated_once(kind: str, factory) -> Any:
+    """一次性后台任务准入包装：维护中阻塞等待（零写零跑），放行后整体持 lease。"""
+    lease, admission_cm = await _acquire_step_admission(kind)
+    try:
+        return await factory()
+    finally:
+        if admission_cm is not None:
+            admission_cm.__exit__(None, None, None)
+
+
+def _startup_maintenance_gate(
+    app: FastAPI,
+    *,
+    yaml_path: str | None = None,
+    config_dir: str | None = None,
+    db_path: str | None = None,
+    secret_key: str | None = None,
+) -> bool:
+    """W2-2 维护启动分流：受管态存在 → 只读维护控制面（不迁移/不 seed/无后台任务）。
+
+    路径参数可注入（测试）；缺省取 settings（生产）。
+
+    判定面（与 W1-4 ``_evaluate_managed_startup_block`` 同源，另加 PREPARING
+    intent 崩溃残留）：受管 active、未完成 attempt、SQLite 导入标记、维护
+    intent 文件——任一命中即进入维护启动分支（T06 维护重入与退出无普通写入）。
+
+    返回 True=维护分支（lifespan 提前 yield+return）；False=正常启动。
+    配置/状态损坏仍抛错 fail-closed（不进入维护也不默认化，同 W1 语义）。
+    """
+    from app.core import database_bootstrap as bootstrap
+    from app.services.db_migration.local_audit import KIND_GATE_CHANGE, MaintenanceLocalAudit
+    from app.services.db_migration.maintenance import (
+        MaintenanceController,
+        get_default_controller,
+        read_intent,
+        set_default_controller,
+    )
+
+    if get_default_controller() is not None:
+        print("[WARN] 维护控制器已初始化（重复 lifespan？），跳过分流")
+        return False
+    try:
+        effective = bootstrap.resolve_effective_database_config(str(yaml_path or settings.YAML_PATH))
+        bootstrap.assert_platform_database_support(effective)
+        _config_dir = str(config_dir or settings.CONFIG_PATH)
+        control = bootstrap.read_control(_config_dir)
+        pending = bootstrap.pending_attempt_from_control(control)
+        sqlite_marker = effective.dialect == bootstrap.DIALECT_SQLITE and bootstrap.sqlite_has_import_marker(
+            effective.sqlite_path or str(db_path or settings.DATABASE_PATH)
+        )
+        intent = read_intent(_config_dir)
+    except (
+        bootstrap.ManagedConfigError,
+        bootstrap.ManagedStateError,
+        bootstrap.PlatformDatabaseUnsupportedError,
+    ) as exc:
+        print(f"[ERROR] 受管数据库配置/状态不可用，拒绝启动（fail-closed）: {exc}")
+        raise
+    except RuntimeError as exc:
+        print(f"[ERROR] 维护 intent 损坏，拒绝启动（fail-closed）: {exc}")
+        raise
+
+    disposition = bootstrap.evaluate_startup_disposition(
+        effective, control=control, pending_attempt=pending, sqlite_marker_present=sqlite_marker
+    )
+    if disposition.normal and intent is None:
+        return False
+
+    reason_code = disposition.reason_code or "MAINTENANCE_INTENT_PRESENT"
+    attempt_id = pending or (intent or {}).get("attempt_id")
+    print(f"=== 维护启动分支（{reason_code}；attempt={attempt_id}）: 不迁移/不 seed/无后台任务 ===")
+
+    controller = MaintenanceController(_config_dir)
+    controller.enter_maintenance_boot(attempt_id=attempt_id if isinstance(attempt_id, str) else None)
+    set_default_controller(controller)
+    app.state.maintenance = controller
+    app.state.maintenance_mode = True
+    app.state.maintenance_disposition = {"reasonCode": reason_code, "detail": disposition.detail}
+
+    # 本地审计（维护期源零写；磁盘满时关键动作拒绝——T22）
+    audit = MaintenanceLocalAudit(_config_dir)
+    app.state.maintenance_audit = audit
+    audit.audit_event(
+        KIND_GATE_CHANGE,
+        action="maintenance-boot",
+        outcome="ok",
+        detail={"reasonCode": reason_code},
+        attempt_id=attempt_id if isinstance(attempt_id, str) else None,
+        epoch=controller.epoch,
+    )
+
+    # 维护认证：只读用户读取器（零源写；缺 seed 时认证不可用→离线恢复，§5.3）
+    try:
+        if effective.dialect == bootstrap.DIALECT_POSTGRESQL and effective.pg is not None:
+            from app.services.db_migration.maintenance_auth import MaintenanceAuthService, pg_user_reader
+            from app.services.db_migration.target_params import build_pg_url
+
+            reader = pg_user_reader(build_pg_url(effective.pg))
+        else:
+            from app.services.db_migration.maintenance_auth import MaintenanceAuthService, sqlite_user_reader
+
+            reader = sqlite_user_reader(effective.sqlite_path or str(db_path or settings.DATABASE_PATH))
+        app.state.maintenance_auth = MaintenanceAuthService(
+            _config_dir, reader, secret_key=str(secret_key or settings.SECRET_KEY)
+        )
+    except Exception as exc:  # 认证面初始化失败不阻断控制面，仅置为不可用
+        print(f"[WARN] 维护认证服务初始化失败（认证不可用，转离线恢复）: {exc}")
+        app.state.maintenance_auth = None
+
+    # MCP 拒新调用（在途由准入 lease 覆盖；此处 mark_closed 立即拒新会话）
+    mcp_bundle = getattr(app.state, "mcp_bundle", None)
+    if mcp_bundle is not None:
+        mcp_bundle.runtime.mark_closed()
+        print("[OK] 维护模式：MCP 服务已标记关闭（新调用拒绝）")
+    return True
+
+
+async def _maintenance_shutdown(app: FastAPI) -> None:
+    """维护分支关闭：仅控制面清理（无后台任务/调度器/下载器可关，T06）。"""
+    from app.services.db_migration.local_audit import KIND_GATE_CHANGE
+    from app.services.db_migration.maintenance import set_default_controller
+
+    audit = getattr(app.state, "maintenance_audit", None)
+    controller = getattr(app.state, "maintenance", None)
+    if audit is not None:
+        try:
+            audit.audit_event(
+                KIND_GATE_CHANGE,
+                action="maintenance-shutdown",
+                outcome="ok",
+                attempt_id=controller.attempt_id if controller is not None else None,
+                epoch=controller.epoch if controller is not None else None,
+                critical=False,
+            )
+        except Exception as exc:
+            print(f"[WARN] 维护关闭审计失败: {exc}")
+    set_default_controller(None)
+    app.state.maintenance_mode = False
+
+
 async def run_dashboard_stats_loop(app: FastAPI) -> None:
     """Periodic dashboard stats refresh loop."""
     job = DashboardStatsJob(app=app)
@@ -121,12 +289,16 @@ async def run_dashboard_stats_loop(app: FastAPI) -> None:
     interval = getattr(job, "default_interval", 60)
 
     while True:
+        lease, admission_cm = await _acquire_step_admission("loop:dashboard-stats")
         try:
             await job.execute(app=app)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             print(f"[WARN] dashboard stats task failed: {exc}")
+        finally:
+            if admission_cm is not None:
+                admission_cm.__exit__(None, None, None)
 
         await asyncio.sleep(interval)
 
@@ -142,6 +314,7 @@ async def run_speed_sampler_loop(app: FastAPI) -> None:
     interval = getattr(job, "default_interval", 60)
 
     while True:
+        lease, admission_cm = await _acquire_step_admission("loop:speed-sampler")
         try:
             await job.execute(app=app)
             await job.maybe_aggregate()
@@ -150,6 +323,9 @@ async def run_speed_sampler_loop(app: FastAPI) -> None:
             raise
         except Exception as exc:
             print(f"[WARN] speed sampler task failed: {exc}")
+        finally:
+            if admission_cm is not None:
+                admission_cm.__exit__(None, None, None)
 
         await asyncio.sleep(interval)
 
@@ -419,6 +595,17 @@ async def lifespan(app: FastAPI):
 
         traceback.print_exc()
 
+    # 0.8 维护启动分流（database-migration-ui W2-2，PLANS §4.3/§5）：
+    # 受管 active/未完成 attempt/半成品标记/PREPARING intent 崩溃残留 →
+    # 只读维护控制面（不迁移/不 seed/无 cron/无后台任务/无下载器初始化，T06）。
+    if _startup_maintenance_gate(app):
+        try:
+            print("=== 维护模式：控制面就绪（业务 API 503；/api/v1/maintenance/* 可用）===")
+            yield
+        finally:
+            await _maintenance_shutdown(app)
+        return
+
     # 1. 执行数据库迁移（在所有其他初始化之前）
     # 四轨治理后统一入口：migrate_database()（编程式 alembic，含幽灵版本救援/备份）
     # 无论 DEV 与否，只要迁移未完成就停止启动。继续加载新 ORM 会把首因掩盖为
@@ -548,7 +735,16 @@ async def lifespan(app: FastAPI):
     print("=== 创建后台下载器加载任务（将在 FastAPI 启动后执行）===")
 
     # ✅ 保存后台任务引用，用于后续清理
-    downloader_task = asyncio.create_task(startup_event(app))  # ← 传递正确的 app 实例
+    # W2-3：下载器初始化持操作级 lease（维护排空等它收尾；维护中阻塞等待）
+    async def _startup_event_gated() -> None:
+        lease, admission_cm = await _acquire_step_admission("downloader-init")
+        try:
+            await startup_event(app)
+        finally:
+            if admission_cm is not None:
+                admission_cm.__exit__(None, None, None)
+
+    downloader_task = asyncio.create_task(_startup_event_gated())  # ← 传递正确的 app 实例
     app.state.downloader_task = downloader_task
 
     if not is_android_server():
@@ -556,14 +752,18 @@ async def lifespan(app: FastAPI):
         from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
 
         orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
-        orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
+        orphan_purge_recovery_task = asyncio.create_task(
+            _run_gated_once("orphan-purge-recovery", orphan_purge_dispatcher.recover_pending_jobs)
+        )
         app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
 
         # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
         from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
 
         orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
-        orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
+        orphan_scan_recovery_task = asyncio.create_task(
+            _run_gated_once("orphan-scan-recovery", orphan_scan_dispatcher.recover_pending_scans)
+        )
         app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
 
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
@@ -574,11 +774,13 @@ async def lifespan(app: FastAPI):
     app.state.speed_sampler_task = speed_sampler_task
 
     # 版本更新检查任务
-    version_check_task = asyncio.create_task(check_version_update_task(app))
+    version_check_task = asyncio.create_task(_run_gated_once("version-check", lambda: check_version_update_task(app)))
     app.state.version_check_task = version_check_task
 
     # 本地版本更新通知任务（自动添加，不依赖 GitHub）
-    version_notification_task = asyncio.create_task(add_version_update_notification_task(app))
+    version_notification_task = asyncio.create_task(
+        _run_gated_once("version-notification", lambda: add_version_update_notification_task(app))
+    )
     app.state.version_notification_task = version_notification_task
 
     # 6.5 事件循环 lag 采样器挂载（W4-1 第二部分）：观测启动失败不阻断应用启动；
@@ -612,7 +814,9 @@ async def lifespan(app: FastAPI):
     if settings.INFO_SYNC_STARTUP_BACKFILL_ENABLED:
         from app.services.torrent_added_date_backfill import backfill_torrent_added_dates
 
-        added_date_backfill_task = asyncio.create_task(backfill_torrent_added_dates(app))
+        added_date_backfill_task = asyncio.create_task(
+            _run_gated_once("added-date-backfill", lambda: backfill_torrent_added_dates(app))
+        )
         app.state.added_date_backfill_task = added_date_backfill_task
         print("[OK] 存量 added_date 回填任务已启动")
 

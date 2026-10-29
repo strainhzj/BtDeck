@@ -41,6 +41,10 @@ PLACEHOLDER_VALUES = {
 ALLOWLIST: dict[str, set[str]] = {
     "BTD201": {
         "app/api/endpoints/advanced_search.py",
+        # 维护端点（database-migration-ui W2-5）：维护 token 为独立 aud/scope，
+        # 不能用普通认证 dependency 提取——自行读取 X-Access-Token/Bearer 后
+        # 经 require_maintenance_token 校验（BTD201 记忆例外，同 W1 复核意见）
+        "app/api/endpoints/maintenance.py",
         "app/api/endpoints/cron_tasks.py",
         "app/api/endpoints/cuser.py",
         "app/api/endpoints/downloader.py",
@@ -80,6 +84,52 @@ ALLOWLIST: dict[str, set[str]] = {
         # 行值一律走绑定参数（bindparam/insert().values）。
         "app/services/db_migration/sqlite_to_pg.py",
         "app/services/db_migration/pg_to_sqlite.py",
+        # 源 fence（database-migration-ui W2-4）：表名来自注入的固定清单
+        # （ORM 元数据/协议常量），同上先例；行值一律参数化。
+        "app/services/db_migration/source_fence.py",
+    },
+    "BTD306": {
+        # 存量裸 asyncio.create_task/to_thread 盘点（database-migration-ui W2-8，
+        # 2026-10-28）：新文件禁止裸调用（维护排空 lease 会漏登子任务，T03），
+        # 须经 lifecycle 的准入包装（_run_gated_once/_acquire_step_admission）或
+        # controller.register_child 登记。存量登记为遗留面（W5 观测收敛）。
+        "app/api/endpoints/duplicate_quick_delete.py",
+        "app/api/endpoints/torrent_crud.py",
+        "app/api/endpoints/torrent_deletion.py",
+        "app/api/endpoints/torrents_async.py",
+        "app/api/endpoints/torrent_speed.py",
+        "app/core/background_task_manager.py",
+        "app/downloader/initialization.py",
+        "app/mcp/runtime.py",
+        "app/mcp/server.py",
+        "app/mcp/tools/search_templates.py",
+        "app/mcp/tools/torrent_add.py",
+        "app/mcp/tools/torrents.py",
+        "app/services/downloader_adapters/qbittorrent_location.py",
+        "app/services/downloader_adapters/qbittorrent.py",
+        "app/services/downloader_adapters/transmission_location.py",
+        "app/services/downloader_adapters/transmission.py",
+        "app/services/downloader_api_runtime.py",
+        "app/services/orphan_file_service.py",
+        "app/services/orphan_hardlink_scan_service.py",
+        "app/services/orphan_lease.py",
+        "app/services/orphan_manifest.py",
+        "app/services/orphan_purge_job_service.py",
+        "app/services/orphan_scan_job_service.py",
+        "app/services/orphan_scanner.py",
+        "app/services/path_mapping_validation.py",
+        "app/services/recycle_bin_service.py",
+        "app/services/rss_feed_service.py",
+        "app/services/torrent_add_helpers.py",
+        "app/services/torrent_add_service.py",
+        "app/services/torrent_batch_add_service.py",
+        "app/services/torrent_file_backup_manager.py",
+        "app/startup/lifecycle.py",
+        "app/tasks/cron_executor.py",
+        "app/tasks/scheduler/downloader_path_scan.py",
+        "app/tasks/scheduler/torrent_tracker_status_judge.py",
+        "app/tasks/scheduler/tracker_reannounce_task.py",
+        "app/utils/connectivity.py",
     },
     "BTD103": {
         # principal.py: REASON_* 为拒绝原因稳定码（"TOKEN_MISSING" 等枚举
@@ -90,6 +140,10 @@ ALLOWLIST: dict[str, set[str]] = {
         # （AUTH_TOKEN_INVALID/PASSWORD_CHANGE_REQUIRED 等，禁止重命名），
         # 同为启发式误伤，非密钥
         "app/mcp/errors.py",
+        # db_migration 维护认证（database-migration-ui W2-5）：audience/scope/
+        # REASON_* 为跨版本稳定字符串常量（错误码/声明标识），名称含 token
+        # 触发启发式，非密钥材料
+        "app/services/db_migration/maintenance_auth.py",
         # W5 服务密钥面（2026-09-22）：以下为稳定标识符常量，名称含
         # apikey/api_key 触发启发式，均非密钥材料——
         # contracts.py: MCP_APIKEY_CONFIG_KEY 为 configs 表键名
@@ -269,6 +323,13 @@ class BtDeckVisitor(ast.NodeVisitor):
             kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in node.keywords
         ):
             self.add("BTD304", node, "禁止 subprocess.call(shell=True)")
+        elif name in ("asyncio.create_task", "asyncio.to_thread", "create_task", "to_thread"):
+            self.add(
+                "BTD306",
+                node,
+                "裸 create_task/to_thread 会绕过维护排空登记（T03）；新文件须经准入包装"
+                "（lifecycle._run_gated_once/_acquire_step_admission 或 register_child），存量登记白名单",
+            )
 
         if name.endswith(".execute") or name in {"execute", "text"}:
             if node.args:
