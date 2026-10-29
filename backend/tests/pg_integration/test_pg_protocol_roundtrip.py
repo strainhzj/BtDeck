@@ -77,22 +77,24 @@ def _build_sqlite_source(path: Path) -> Path:
 
 def _business_digests_sqlite(db_path: Path) -> dict:
     register_all_models()
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    from sqlalchemy import create_engine, select
+
+    # 类型化读取：raw sqlite3 取回的是存储文本（源 datetime('now') 无微秒 vs
+    # 产物 SQLAlchemy DATETIME 格式 ".000000"）——经 SQLAlchemy 类型列两侧同为
+    # datetime，由 canonical.normalize_value 统一 isoformat 微秒精度
+    engine = create_engine(f"sqlite:///{db_path}")
     try:
         digests = {}
         for table in business_tables():
-            order = ", ".join(f'"{c.name}"' for c in table.primary_key.columns)
-            rows = [
-                {k: row[k] for k in row.keys()}
-                for row in conn.execute(
-                    f"SELECT * FROM {table.name} ORDER BY {order}" if order else f"SELECT * FROM {table.name}"
-                )
-            ]
+            with engine.connect() as conn:
+                rows = [
+                    dict(r._mapping)
+                    for r in conn.execute(select(table).order_by(*canonical.sqlite_pk_order_expr(table)))
+                ]
             digests[table.name] = canonical.digest_rows(rows)
         return digests
     finally:
-        conn.close()
+        engine.dispose()
 
 
 class TestBidirectionalRoundtripT19:

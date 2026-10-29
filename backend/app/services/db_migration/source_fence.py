@@ -222,10 +222,11 @@ class PgSourceFence:
         for name in self._table_names:
             row = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar()
             counts.append((name, int(row if row is not None else -1)))
-        try:
+        # to_regclass 无表返回 NULL 不报错——语句级 except 不可用：报错会令
+        # SQLAlchemy 2.0 自动回滚整个事务，SHARE 锁随之释放（真 PG 实测教训）
+        version = None
+        if conn.execute(text("SELECT to_regclass('alembic_version')")).scalar() is not None:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        except Exception:
-            version = None  # 测试库可能无 alembic_version 表
         return _digest_pairs([("alembic", version)] + counts)
 
     def verify(self) -> bool:
