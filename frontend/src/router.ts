@@ -46,6 +46,14 @@ const router = new Router({
       meta: { hidden: true }
     },
     {
+      // 维护恢复页（database-migration-ui W4-3）：维护屏障下业务 API 503 时的独立
+      // 可达恢复面。顶层路由：不挂桌面 Layout、无 meta.requiredCapability；
+      // 认证走维护通道自身（maintenance token 仅内存），permission.ts 白名单豁免
+      path: '/maintenance',
+      component: () => import(/* webpackChunkName: "maintenance" */ '@/views/maintenance/index.vue'),
+      meta: { hidden: true }
+    },
+    {
       // 移动版布局（Phase 4 M1）：底部 Tab 壳；桌面侧栏不展示（hidden）
       path: '/m',
       component: MobileLayout,
@@ -144,6 +152,14 @@ const router = new Router({
           path: 'settings',
           component: () => import(/* webpackChunkName: "m-settings" */ '@/views/mobile/settings.vue'),
           meta: { hidden: true, title: '系统设置' }
+        },
+        {
+          // 维护只读入口（database-migration-ui W4-4）：认证 + 状态徽标 +
+          // restartPending 提示；无凭据重输（操作面在桌面 /maintenance）。
+          // 不加 requiredCapability——维护/恢复面必须全平台可达（§9）
+          path: 'maintenance',
+          component: () => import(/* webpackChunkName: "m-maintenance" */ '@/views/mobile/maintenance.vue'),
+          meta: { hidden: true, title: '维护' }
         }
       ]
     },

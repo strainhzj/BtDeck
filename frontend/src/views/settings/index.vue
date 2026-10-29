@@ -329,6 +329,17 @@
         </div>
       </el-tab-pane>
 
+      <!-- 数据库（database-migration-ui W4-2：有效库状态/PG 目标探测/A/B 切换入口；移动端经包装自动同源） -->
+      <el-tab-pane name="database">
+        <span slot="label" class="settings-tab-label">
+          <LucideIcon name="database" :size="16" :stroke-width="1.8" />
+          {{ $t('settings.tabs.database') }}
+        </span>
+        <div class="settings-content">
+          <database-panel />
+        </div>
+      </el-tab-pane>
+
       <!-- 状态诊断：故障转储/排查/状态分析导出（原后端 /health/sync 业务健康视图改造） -->
       <el-tab-pane name="diagnosis">
         <span slot="label" class="settings-tab-label">
@@ -365,6 +376,7 @@ import { exportDiagnosisFile } from '@/api/health'
 import { isDemoMode } from '@/demo/config'
 import McpSettingsPanel from './components/McpSettingsPanel.vue'
 import MoviePilotPanel from './components/MoviePilotPanel.vue'
+import DatabasePanel from './components/DatabasePanel.vue'
 import { loginPathForMode } from '@/utils/ui-mode'
 import { apiErrorMessage } from '@/i18n'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -372,7 +384,7 @@ import request from '@/utils/request'
 
 @Component({
   name: 'Settings',
-  components: { McpSettingsPanel, MoviePilotPanel }
+  components: { McpSettingsPanel, MoviePilotPanel, DatabasePanel }
 })
 export default class extends Vue {
   // 当前激活的标签页

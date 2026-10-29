@@ -22,7 +22,8 @@ export const settings = {
     password: 'Change Password',
     mcp: 'MCP Service',
     moviepilot: 'MoviePilot',
-    diagnosis: 'Diagnostics'
+    diagnosis: 'Diagnostics',
+    database: 'Database'
   },
   twofa: {
     title: 'Two-Factor Authentication',

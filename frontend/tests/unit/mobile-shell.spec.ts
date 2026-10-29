@@ -165,7 +165,7 @@ describe('layout/mobile/MobileLayout', () => {
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉：桌面分组已移除；能力 fail-closed 下仅渲染 9 项（回收站/孤儿文件隐藏）', async() => {
+  it('汉堡按钮打开抽屉：桌面分组已移除；能力 fail-closed 下仅渲染 10 项（回收站/孤儿文件隐藏）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
@@ -173,15 +173,16 @@ describe('layout/mobile/MobileLayout', () => {
     expect((wrapper.vm as any).drawerVisible).toBe(true)
 
     // 能力矩阵未加载（cache=null）时 FILESYSTEM 能力 fail-closed：回收站/孤儿文件隐藏
+    //（维护入口不做能力门控：恢复面全平台可达，W4-4 新增后共 10 项）
     const items = wrapper.findAll('.mobile-menu-item')
-    expect(items.length).toBe(9)
+    expect(items.length).toBe(10)
     expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
-      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '日志', 'Tracker关键词', '定时任务', '系统设置']
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '日志', 'Tracker关键词', '定时任务', '系统设置', '维护']
     )
     expect(wrapper.text()).not.toContain('全部功能')
   })
 
-  it('能力矩阵已加载且支持时：抽屉渲染全部 11 项移动菜单', async() => {
+  it('能力矩阵已加载且支持时：抽屉渲染全部 12 项移动菜单', async() => {
     setPlatformCapabilityCacheForTesting({
       schemaVersion: 1,
       platform: 'desktop',
@@ -196,9 +197,9 @@ describe('layout/mobile/MobileLayout', () => {
     wrapper.find('.mobile-header-menu').trigger('click')
     await wrapper.vm.$nextTick()
     const items = wrapper.findAll('.mobile-menu-item')
-    expect(items.length).toBe(11)
+    expect(items.length).toBe(12)
     expect((wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)).toEqual(
-      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置']
+      ['仪表盘', '下载器', '种子', '通知', '高级搜索', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件', '系统设置', '维护']
     )
   })
 

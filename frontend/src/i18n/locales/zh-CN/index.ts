@@ -26,6 +26,7 @@ import { auditLogs } from './auditLogs'
 import { auth } from './auth'
 import { common } from './common'
 import { dashboard } from './dashboard'
+import { database } from './database'
 import { downloader } from './downloader'
 import { errors } from './errors'
 import { fileManagement } from './fileManagement'
@@ -49,6 +50,7 @@ const messages: MessageTree = {
   auth,
   common,
   dashboard,
+  database,
   downloader,
   errors,
   fileManagement,

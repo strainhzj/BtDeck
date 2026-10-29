@@ -93,7 +93,7 @@ describe('设置页页签布局（2026-09-23 重构）', () => {
     await setViewportWidth(originalWidth)
   })
 
-  it('宽视口：左侧垂直导航渲染，五个页签顺序固定且各带图标', async() => {
+  it('宽视口：左侧垂直导航渲染，六个页签顺序固定且各带图标', async() => {
     await setViewportWidth(1280)
     const { wrapper, vm } = mountSettings()
     // el-tabs 的 nav 在 mounted 后异步重渲染，需等 flush
@@ -103,17 +103,18 @@ describe('设置页页签布局（2026-09-23 重构）', () => {
     expect(wrapper.find('.settings-tabs.el-tabs--left').exists()).toBe(true)
 
     const items = wrapper.findAll('.settings-tabs .el-tabs__item')
-    expect(items).toHaveLength(5)
-    // 顺序锚定：2fa → password → mcp → moviepilot → diagnosis
+    expect(items).toHaveLength(6)
+    // 顺序锚定：2fa → password → mcp → moviepilot → database → diagnosis
     expect(items.at(0).attributes('id')).toBe('tab-2fa')
     expect(items.at(1).attributes('id')).toBe('tab-password')
     expect(items.at(2).attributes('id')).toBe('tab-mcp')
     expect(items.at(3).attributes('id')).toBe('tab-moviepilot')
-    expect(items.at(4).attributes('id')).toBe('tab-diagnosis')
+    expect(items.at(4).attributes('id')).toBe('tab-database')
+    expect(items.at(5).attributes('id')).toBe('tab-diagnosis')
 
     // 每个页签：Lucide 图标（svg）+ i18n 文案，不允许退化为裸 label
-    const labelsZh = ['双因素认证', '修改密码', 'MCP 服务', 'MoviePilot', '状态诊断']
-    for (let i = 0; i < 5; i++) {
+    const labelsZh = ['双因素认证', '修改密码', 'MCP 服务', 'MoviePilot', '数据库', '状态诊断']
+    for (let i = 0; i < 6; i++) {
       const label = items.at(i).find('.settings-tab-label')
       expect(label.exists()).toBe(true)
       expect(label.find('svg').exists()).toBe(true)

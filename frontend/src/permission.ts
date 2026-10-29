@@ -21,6 +21,12 @@ NProgress.configure({ showSpinner: false })
 /** 登录页路径集合（桌面/移动双入口，Phase 4 M1） */
 const loginPaths = ['/login', '/m/login']
 
+/** 维护恢复页路径（database-migration-ui W4-3）：维护屏障下普通认证/能力门控
+ *  可能整体降级（业务 API 503 → GetUserInfo 失败即中止导航），本页必须无条件
+ *  可达——它自带独立认证（maintenance token 仅内存），不依赖普通会话状态，
+ *  也不参与登录页 redirect 语义（有业务 token 时访问不被弹回 '/'） */
+const maintenancePaths = ['/maintenance']
+
 /**
  * UI 模式重定向（Phase 4 M1）：认证检查之前按用户偏好/视口分流。
  * - 移动模式访问桌面顶层页（/、/dashboard、/torrents*）→ 对应移动页；
@@ -161,6 +167,14 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
   const modeRedirect = uiModeRedirectPath(to)
   if (modeRedirect) {
     next({ path: modeRedirect, replace: true })
+    NProgress.done()
+    return
+  }
+
+  // 维护恢复页白名单豁免（W4-3）：在认证/能力门控之前无条件放行，
+  // 保证维护屏障降级普通会话时恢复面仍可达（页面自身完成维护认证）
+  if (maintenancePaths.indexOf(to.path) !== -1) {
+    next()
     NProgress.done()
     return
   }

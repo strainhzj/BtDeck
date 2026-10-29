@@ -22,7 +22,8 @@ export const settings = {
     password: '修改密码',
     mcp: 'MCP 服务',
     moviepilot: 'MoviePilot',
-    diagnosis: '状态诊断'
+    diagnosis: '状态诊断',
+    database: '数据库'
   },
   twofa: {
     title: '双因素认证',

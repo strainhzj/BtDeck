@@ -269,7 +269,9 @@ export default class MobileLayout extends WideViewport {
       { label: 'Tracker关键词', path: '/m/tracker/keywords-board' },
       { label: '定时任务', path: '/m/tasks' },
       { label: '孤儿文件', path: '/m/orphan-files', requiredCapability: 'orphan_files' },
-      { label: '系统设置', path: '/m/settings' }
+      { label: '系统设置', path: '/m/settings' },
+      // 维护只读入口（W4-4）：不做能力门控——恢复面必须全平台可达
+      { label: '维护', path: '/m/maintenance' }
     ].filter(item => !item.requiredCapability || isCapabilityAvailable(item.requiredCapability))
   }
 
