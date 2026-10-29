@@ -1,3 +1,17 @@
+## 2026-10-28（续七）交接：W4 前端批完成（全绿未提交）
+
+- **状态**：W4 五子批 done。lint（env -u NODE_ENV）0 错；typecheck 0；test:unit 2058 全绿；build 成功。**未提交未推送**（本地 dev：W1×2+W2×2+W3×3+W4 待提交）。
+- **交付**：api/database.ts+maintenance-client.ts+DatabasePanel.vue（settings 页签）+/maintenance 恢复页（守卫白名单）+平台门控三键+移动 /m/maintenance+i18n database 域双语+6 spec 61 用例。
+- **下一步**：W5（真 PG CI fence/T19/T12 实证+故障注入全量+契约/API 文档/runbook/roadmap 同步）→ W6（unraid 真实同堆栈双向/托管重启/掉电）。推送待用户授权。
+- **坑**：lint 须 env -u NODE_ENV（沙箱 NODE_ENV=production 假警报 278 条）；新页签同步 tabs 锚定 spec。
+
+## 2026-10-28（续六）交接：W4 前端批启动（W4-1 已交付未提交）
+
+- **W4 子批**：W4-1 API 层+维护通道（✅ done）；W4-2 设置 DatabasePanel.vue（settings-panel.scss 复用/有效库+托管能力/PG 五档 TLS/A-B 入口）；W4-3 维护恢复页 views/maintenance/（token 认证/各阶段状态/NEEDS_CREDENTIALS/等待重启；路由挂桌面 Layout children+移动 /m/*；不设登录守卫拦截——维护期业务 401/503 也要可达）；W4-4 平台门控（db_migration 能力矩阵注册消费/Android 三层拒/demo 只读样例）；W4-5 收口（lint/typecheck/Jest 全量/build+feature_list/progress）。
+- **W4-1 交付**：src/api/database.ts（11 函数+20 类型，snake_case 与后端契约核对）+src/utils/maintenance-client.ts（独立 axios 实例零拦截器/token 仅内存/401 订阅制 subscribeAuthExpired/503 静默无 refresh）+30 Jest 用例；tsc 0 错。
+- **前端关键约定**（侦察）：Vue2 class 风格（vue-property-decorator @Component）；面板挂 views/settings/components/ + settings/index.vue el-tabs 增页签；i18n 双语 zh-CN/en 按域拆分+parity 门禁；路由单文件 src/router.ts；平台能力 src/api/platform-capabilities.ts+meta.requiredCapability；Jest tests/unit/*.spec.ts；npm run lint/typecheck/build。
+- axios 现状：503 已在 TRANSIENT_RETRY_STATUSES 仅幂等 GET 单次重试（request.ts），维护页须用 maintenance-client 而非 request。
+
 ## 2026-10-28（续五）交接：数据库迁移 UI W3 实施批完成（全绿未提交）
 
 - **状态**：W3 九子批 done（评审修正案落实）。全量 5805 passed/56 skipped/0 failed；mypy 333/0；black/flake8/lint 净。**未提交未推送**（本地 dev 领先 origin：W1×2+W2×2+W3 未提交）。

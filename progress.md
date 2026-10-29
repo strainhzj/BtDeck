@@ -1,3 +1,13 @@
+## 2026-10-28（续六）：数据库迁移 UI W4 前端批（五子批交付，全绿未提交）
+
+- W4-1 API 层+维护通道（src/api/database.ts 11 函数+20 类型；maintenance-client 独立 axios 零拦截器/token 仅内存/401 订阅制/503 静默——评审死循环要求全落实）。
+- W4-2 设置 DatabasePanel（有效库实况/PG 六档 TLS/CA 联动/A 仅预览 B 受管说明/restartPending 轮询清理）；settings 增页签（锚定 mcp→database→diagnosis）。
+- W4-3 维护恢复页 /maintenance（守卫白名单无条件放行；NEEDS_CREDENTIALS 重输；进度 phase 常显不 100% 掩盖；maintenanceRequest 直调控制端点类型复用）。
+- W4-4 平台门控（能力矩阵只读消费+demo 门+Android UA 叠加拒，三键独立）+移动只读维护页 /m/maintenance+菜单。
+- W4-5 收口：tabs 锚定 5→6 修正；lint（env -u NODE_ENV 干净）0 错/typecheck 0/test:unit 2058 全绿/build 成功。
+- 坑（2）：①沙箱 shell NODE_ENV=production 令 no-console 成 error（278 条假警报）——lint 须 env -u NODE_ENV；②组件新增页签须同步 settings-tabs-layout 锚定断言。
+- 待办：提交待指示；W5 实库+故障注入全量+runbook；W6 unraid 同堆栈/真实托管重启。
+
 ## 2026-10-28（续五）：数据库迁移 UI W3 实施批（九子批按评审修正案交付，全绿未提交）
 
 - **评审确认**（对话 01a18094）：九子批可行+六处修正——①journal 单一权威（intent 为兼容投影，COMMITTED 不放回 NORMAL）②动作 API 前完整 worker/fence 生命周期 ③前缀放行≠授权（显式依赖+鉴权矩阵）④托管退出须 opt-in（cgroup/INVOCATION_ID 不证明重启）⑤bootstrap/lifespan 真接线（移除 W1 active 一律未核验桩，保正常旧 revision 升级）⑥T04 须含子进程实际中断。
