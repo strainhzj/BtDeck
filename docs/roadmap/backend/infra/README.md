@@ -22,7 +22,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L376)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L336) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控）；✨2026-09-25 统计报表 W1：新增 `run_speed_sampler_loop`（L124，60s 采样 + 5min hourly 聚合检查 + 每日清理，SpeedSamplerJob 挂 app.state；L563 create_task 启动，关闭阶段取消） |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L376)：迁移未完成时在 seed/对账/调度器前 fail-fast；桌面成功后对账孤儿隔离状态并恢复扫描/清理任务；Android 仅由 `finalize_android_orphan_jobs`(L336) 终结未完成任务，不创建 dispatcher、不扫描文件系统；✨2026-09-05 新增 `run_process_memory_loop`（6.8 节，SYNC_PROCESS_MEMORY_SAMPLE_SECONDS 门控）周期采样进程 RSS 发射 process_memory 事件并刷新 last-sample 供 /sync 端点透出；采样后按 SYNC_PROCESS_MEMORY_TRIM_ENABLED 触发分配器空闲归还（glibc malloc_trim/bionic M_PURGE，RSS 棘轮变锯齿）；android-server 形态跳过 WAL 快照循环（移动端 profile，is_android_server 门控）；✨2026-09-25 统计报表 W1：新增 `run_speed_sampler_loop`（L124，60s 采样 + 5min hourly 聚合检查 + 每日清理，SpeedSamplerJob 挂 app.state；L563 create_task 启动，关闭阶段取消）；✨2026-10-28 数据库迁移 UI W2：`_startup_maintenance_gate`（L155 起）维护启动分流（受管态/intent 崩溃残留→只读控制面分支：不迁移/不 seed/无后台任务/MCP mark_closed/本地审计+维护认证装载，控制器 HELD 进入）；全部后台循环/一次性任务经 `_acquire_step_admission`/`_run_gated_once` 准入包装（维护期零写零跑）；TaskLogger 维护哨兵（见 app/tasks/logger.py） |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程

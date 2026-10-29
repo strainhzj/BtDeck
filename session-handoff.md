@@ -1,3 +1,12 @@
+## 2026-10-28（续四）交接：数据库迁移 UI W2 实施批完成（全绿未提交）
+
+- **状态**：`database-migration-ui.W2` 已 done（八子批全交付）；W3-W6 pending。本地全量 pytest 5729 passed/56 skipped/0 failed（W2 后终跑）；mypy 325 文件 0 错；black/flake8/lint（含新 BTD306）净。**未提交未推送**（W1 两提交 1b22be0/f21af2f 也未推送）。
+- **W2 新面**：`services/db_migration/{maintenance,source_fence,local_audit,maintenance_auth}.py`、`api/maintenance_barrier.py`、`api/endpoints/maintenance.py`；改造 lifecycle（维护启动分流+循环准入）、mcp server/errors（MAINTENANCE_MODE）、cron/orphan 两 dispatcher（包装）、tasks/logger（哨兵）、factory/api/health（屏障/路由/ready 503）、lint（BTD306+白名单）。
+- **关键语义**：受管态→lifespan 只读控制面分支（业务 API 503，/api/v1/maintenance/* 独立 token：aud=btdeck-maintenance，不携 verify_secret，与普通 token 双向不可互用）；准入 lease 覆盖 HTTP/MCP/cron/循环；PREPARING 崩溃残留 intent → 重启进维护分支。
+- **待 CI 实证**：PG fence SHARE 锁/T18-PG 观测在 tests/pg_integration/test_pg_fence.py（本地 skip 不计通过）。
+- **下一步 W3**（gate T04/T08/T09/T10/T11/T15/T16/T17/T21）：journal/config 仓储（吸收 maintenance-intent.json+maintenance-auth-state.json+maintenance-audit 回放归档）、A+B commit/ACK 接线（controller mark_committed 入口）、同库 HANDOFF_SAME_DB clear、ownership discard、health 三探针（control-ready）+compose 探针改造、托管重启适配。
+- **坑位**：MCP 新错误码须同时补 DEFAULT_MESSAGES+HTTP_ALIGNMENT_TABLE；跨测试模块复用须显式 import fixture；CONFIG_PATH/DATABASE_PATH 是 property（经 CONFIG_DIR 字段+env 注入）；BTD306 白名单为新文件管控（存量 37 文件已盘点）。
+
 ## 2026-10-28（续三）交接：数据库迁移 UI W1 实施批完成（全绿未提交）
 
 - **状态**：`database-migration-ui.W1` 已 done（七子批全交付）；W2-W6 pending。本地全量 pytest 5655 passed/53 skipped/0 failed（终跑）；mypy 319 文件 0 错；black/flake8 app/ 净；./init.sh --ci exit 0。**未提交未推送**。

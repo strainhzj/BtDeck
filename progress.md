@@ -1,3 +1,17 @@
+## 2026-10-28（续四）：数据库迁移 UI W2 实施批（八子批交付，全绿未提交）
+
+- **用户确认**：W2 实现假设（八子批 W2-1→W2-8+四项实现选型：threading 临界区/ASKI 屏障中间件/维护 token 复用 JWT 体系换独立 aud+scope/裸任务扫描落 BTD306 存量白名单）后开始。
+- **W2-1/7 maintenance.py**：MaintenanceController 状态机+准入 lease（判定与计数同 threading 临界区；子任务 register_child 原子继承、父收尾等子）；PREPARING 先持久 intent 再关门再查重任务（不可等待→409 安全撤销+清 intent）；排空超时 HELD；取消协作（阻塞等 ACK）+epoch 晚回调拒绝；无漂移重绑/COMMITTED 禁重绑；enter_maintenance_boot 重启 HELD 进入。
+- **W2-2 lifecycle 维护启动分流**：_startup_maintenance_gate（受管 active/pending attempt/SQLite 标记/intent 崩溃残留→维护分支：不迁移/不 seed/无 cron/无后台任务/无下载器初始化/MCP mark_closed；本地审计+维护认证装载）；后台循环（dashboard/speed-sampler）逐次准入包装、一次性任务（版本检查/通知/回填/孤儿恢复/下载器初始化）整体准入包装（维护期阻塞等待零写零跑）；TaskLogger 维护哨兵（落本地审计不写源库）。
+- **W2-3 屏障**：MaintenanceBarrierMiddleware 纯 ASGI（普通模式 /api/* 与 /mcp* 持 lease 至响应完成；维护模式默认拒含 GET→503+MAINTENANCE_MODE，WS 1013 close；放行 health/静态/维护端点）；MCP tools/call 准入包装（新 MAINTENANCE_MODE 错误码+503 对齐表+默认文案）；cron _execute_task 重命名包装（维护期跳过零源写）；孤儿 purge/scan 两 dispatcher 执行点同样包装。
+- **W2-4 source_fence.py**：SqliteSourceFence（BEGIN IMMEDIATE+schema/行数指纹）；PgSourceFence（REPEATABLE READ+逐表 SHARE 锁固定顺序+有界 lock_timeout，事务保持至 release；verify=pg_locks ShareLock 计数）；assert_distinct_targets（同 inode/host+db 拒，HANDOFF_SAME_DB 显式确认例外）；SourceWriteOracle（T18：SQLite 同连接 PRAGMA data_version+内容摘要；PG pg_stat 三元组增量+内容摘要；阳性对照同主键同计数 UPDATE 必失败）。
+- **W2-5 维护认证**：maintenance_auth.py+/api/v1/maintenance/auth[/renew|/status]：只读用户行校验（sqlite mode=ro/PG 会话只读；复用 verify_password/verify_totp 零源写——data_version 断言）；独立 aud/scope 短 token（15min，jti 唯一绑定 attempt/epoch；不携 verify_secret→普通 API 天然拒）；限流 5/5min 锁 15min/撤销/重放防护落 0600 文件锁状态；缺 seed→NO_USERS 离线恢复；assert_admin_via_existing_auth 供 W3 start（有 token≠管理员）。
+- **W2-6 本地审计**：maintenance-audit.jsonl 逐行 fsync；关键副作用前先持久化；磁盘满/容量上限（10MiB/2 万条）拒危险动作；禁记键递归 <redacted>；非关键超容聚合哨兵；replay 按 event_id 去重（W3 ACK 归档预留）。
+- **W2-8**：BTD306 新规则（app/ 新文件禁裸 create_task/to_thread，37 存量文件白名单盘点登记）；BTD305/103/201 白名单登记；constraints/database-migration.md 新增“维护模式运行时约束”节。
+- **验证**：本地全量 pytest **5729 passed/56 skipped/0 failed**（首轮 1 失败=tests/api/test_auth_route_coverage 契约测试：维护公开端点未登记——按契约机制登记 _REQUIRED_PUBLIC_PATHS（auth/auth/renew）与 _AUTH_DEPENDENCY_NAMES（require_maintenance_token）后全绿）；mypy 325 文件 0 错；black/flake8 app/ 净；lint（含 BTD306）净。新增测试 8 文件 78 例（controller 25/fence 12+3CI/audit 8/auth 14/barrier 11/lifespan 3/mcp 2）。
+- **坑（3）**：①McpError 新错误码必须同时补 DEFAULT_MESSAGES+HTTP_ALIGNMENT_TABLE 否则契约测试红（且构造时 KeyError 会伪装成奇怪错误面）；②tests 跨模块复用 _ToolStack 须显式 import auth_utils_patch fixture（仅 import 模块不注册 fixture）；③pydantic property（CONFIG_PATH/DATABASE_PATH）不可 setattr——经 CONFIG_DIR 字段+DATABASE_PATH env 注入。
+- **待办**：提交待用户指示；推送后 regression CI（含 pg-integration 实证 PG fence/T18-PG）；W3（journal/config 仓储、A+B commit/ACK、同库 clear、ownership discard、health 三探针/compose）待启动。
+
 ## 2026-10-28（续三）：数据库迁移 UI W1 实施批（七子批交付，全绿未提交）
 
 - **用户确认**：W1 实现假设 7 子批方案 + 会话 01a18094（v4 修订参与会话）定向复核意见收敛后开始；复核关键约束已落实：纯常量模块防引擎副作用、普通新装/迁移基线分流、active fail-closed 不回 env、T01 组件级证据、W1 必须落实 epoch/原子 checkpoint/协作取消接口。
