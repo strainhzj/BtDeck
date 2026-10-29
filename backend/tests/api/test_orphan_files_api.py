@@ -294,7 +294,9 @@ class TestOrphanFilesCleanupWiring:
 
         assert response.status_code == 200
         assert response.json()["data"] == submission
-        assert elapsed < 1.0
+        # CI 负载下同套断言实测可达 ~1.3s（快照 40913867120/40917072321）；
+        # 本断言防“等待后台完成才返回”回归（那将是秒级以上串行扫描），非精确性能门
+        assert elapsed < 3.0
         submit_scan.assert_awaited_once_with(scan_type="manual", operator="tester")
         dispatcher.submit.assert_called_once_with("scan-background-1")
         scanner_scan.assert_not_awaited()
