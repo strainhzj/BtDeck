@@ -50,7 +50,7 @@ from app.core.pg_baseline import (
     validate_pg_server,
     verify_receipt_ownership,
 )
-from app.models.database_migration import business_tables
+from app.models.database_migration import PROTOCOL_TABLE_NAMES, business_tables
 from app.services.db_migration import canonical, pipeline
 from app.services.db_migration.pipeline import (
     CheckpointIncompatible,
@@ -172,7 +172,7 @@ def pg_precheck(pg_engine: Engine) -> Tuple[List[str], List[str]]:
             return errors, warnings
         insp = inspect(conn)
         existing = set(insp.get_table_names(schema="public"))
-        known = {t.name for t in tables} | {"alembic_version"}
+        known = {t.name for t in tables} | set(PROTOCOL_TABLE_NAMES) | {"alembic_version"}
         unknown = existing - known
         if unknown:
             errors.append(f"源 PG 存在未知表（拒绝）：{sorted(unknown)[:10]}")

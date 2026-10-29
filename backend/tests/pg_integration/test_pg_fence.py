@@ -33,8 +33,11 @@ def fence_table(fresh_pg_db: str) -> str:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
 
-    # 直接复用 admin DSN（含认证信息），仅替换库名
-    url = f"{os.environ['BTDECK_PG_TEST_ADMIN_DSN'].rstrip('/')}/{fresh_pg_db}"
+    # 直接复用 admin DSN（含认证信息）；admin DSN 自带管理库名，须经 make_url 替换
+    # database 分量（字符串拼接会产生 "postgres/<db>" 非法库名）
+    from sqlalchemy.engine.url import make_url
+
+    url = make_url(os.environ["BTDECK_PG_TEST_ADMIN_DSN"]).set(database=fresh_pg_db).render_as_string(hide_password=False)
     engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS fence_t"))

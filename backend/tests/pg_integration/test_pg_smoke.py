@@ -86,7 +86,7 @@ class TestBaselineLifecycle:
         assert pg_baseline.initialize_pg_baseline(_make_cfg(), head) is True
         # 重复启动：已 versioned → 跳过（幂等）
         assert pg_baseline.initialize_pg_baseline(_make_cfg(), head) is False
-        # 编排入口：head no-op 返回 True
+        # 编排入口：head no-op 返回 True（基线 stamp c9f0 → 增量升级至真 head e9f0）
         assert _migrate_database_pg() is True
 
         engine = pg_baseline.pg_sync_engine()
@@ -94,7 +94,7 @@ class TestBaselineLifecycle:
             with engine.connect() as conn:
                 tables = {t for t in pg_baseline._business_table_names(conn)}
                 assert "torrent_info" in tables and "users" in tables
-                assert pg_baseline.read_pg_alembic_version(conn) == head
+                assert pg_baseline.read_pg_alembic_version(conn) == "e9f0a1b2c3d4"
         finally:
             engine.dispose()
 
@@ -407,6 +407,9 @@ class TestMigrationToolEndToEnd:
 
         # attempt 绑定隔离到 tmp（CLI resume 凭据来源；database-migration-ui W1-6）
         monkeypatch.setenv("CONFIG_DIR", str(tmp_path / "cfg"))
+        # W3 起目标解析走 bootstrap.resolve_effective_database_config（读 os.environ，
+        # fixture 只补丁 settings.DB_NAME）——env 亦须指向本用例独占库，防撞 CI 共享库
+        monkeypatch.setenv("DB_NAME", fresh_pg_db)
         from app.services.db_migration import sqlite_to_pg as service
         from app.services.db_migration import pipeline as pipeline_mod
 
@@ -585,7 +588,7 @@ def test_real_incremental_upgrade_commits_and_downgrade_floor(fresh_pg_db, tmp_p
     shutil.copytree(BACKEND_ROOT / "alembic", scripts)
     (scripts / "versions" / "acceptance_probe.py").write_text(
         "from alembic import op\nimport sqlalchemy as sa\n"
-        "revision = 'acceptance_probe'\ndown_revision = 'c9e0f1a2b3c4'\n"
+        "revision = 'acceptance_probe'\ndown_revision = 'e9f0a1b2c3d4'\n"
         "def upgrade():\n    op.create_table('acceptance_probe', sa.Column('id', sa.Integer, primary_key=True))\n"
         "def downgrade():\n    op.drop_table('acceptance_probe')\n"
     )
@@ -597,6 +600,10 @@ def test_real_incremental_upgrade_commits_and_downgrade_floor(fresh_pg_db, tmp_p
         with engine.connect() as conn:
             assert pg_baseline.read_pg_alembic_version(conn) == "acceptance_probe"
             assert inspect(conn).has_table("acceptance_probe")
+        command.downgrade(cfg, "-1")
+        with engine.connect() as conn:
+            assert pg_baseline.read_pg_alembic_version(conn) == "e9f0a1b2c3d4"
+        # 地板=PG_MINIMUM_REVISION c9f0：退到地板允许，越地板拒绝
         command.downgrade(cfg, "-1")
         with engine.connect() as conn:
             assert pg_baseline.read_pg_alembic_version(conn) == "c9e0f1a2b3c4"

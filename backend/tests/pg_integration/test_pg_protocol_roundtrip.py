@@ -219,14 +219,14 @@ class TestNonFinitePrecheckT12:
             with engine.begin() as conn:
                 conn.execute(
                     text(
-                        "INSERT INTO torrent_info (info_id, downloader_id, downloader_name, size) "
-                        "VALUES ('nan-row', 'd1', 'dn1', 'NaN'::float8)"
+                        "INSERT INTO torrent_info (info_id, downloader_id, downloader_name, size, has_tracker_error) "
+                        "VALUES ('nan-row', 'd1', 'dn1', 'NaN'::float8, false)"
                     )
                 )
                 conn.execute(
                     text(
-                        "INSERT INTO torrent_info (info_id, downloader_id, downloader_name, size) "
-                        "VALUES ('inf-row', 'd1', 'dn1', 'Infinity'::float8)"
+                        "INSERT INTO torrent_info (info_id, downloader_id, downloader_name, size, has_tracker_error) "
+                        "VALUES ('inf-row', 'd1', 'dn1', 'Infinity'::float8, false)"
                     )
                 )
                 conn.execute(

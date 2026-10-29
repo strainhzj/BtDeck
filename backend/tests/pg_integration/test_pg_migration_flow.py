@@ -41,9 +41,15 @@ DB_ID = "66666666-2222-3333-4444-555555555555"
 
 @pytest.fixture
 def pg_url(fresh_pg_db: str) -> Iterator[str]:
-    """指向本用例专属库的完整 DSN（admin 凭据直连）。"""
-    url = f"{os.environ['BTDECK_PG_TEST_ADMIN_DSN'].rstrip('/')}/{fresh_pg_db}"
-    yield url
+    """指向本用例专属库的完整 DSN（admin 凭据直连）。
+
+    admin DSN 自带管理库名（CI 为 /postgres）——必须经 make_url 替换 database
+    分量，字符串拼接会产生 "postgres/btdeck_test_x" 形态的非法库名。
+    """
+    from sqlalchemy.engine.url import make_url
+
+    url = make_url(os.environ["BTDECK_PG_TEST_ADMIN_DSN"]).set(database=fresh_pg_db)
+    yield url.render_as_string(hide_password=False)
     engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
         for table in ("t_a", "t_b", "t_foreign", "bt_database_migration_receipts"):
