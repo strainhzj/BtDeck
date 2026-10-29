@@ -49,6 +49,19 @@ URL 构造：sqlalchemy.engine.URL.create（结构化，凭据转义；特殊字
 实测要求双向：无 TLS 服务端双驱动行为一致；**有 TLS 服务端验证 disable 实际建立非 TLS 连接**。
 边界：支持"客户端验证服务器证书"；"客户端证书认证"（DB 端要求客户端证书）本期边界外。
 
+### 2.4 受管 active 覆盖（database-migration-ui，W1-W5）
+
+`config.yaml` 的 `database.active`（B 模式受管证据）存在且有效时**完整覆盖** env 路径：
+
+- 覆盖域：DIALECT + 连接 URL + TLS 五档 + 池参数（§4.1 同源实现，禁与 env 混用路径/TLS/池）；
+- URL 构造唯一源：`db_migration/target_params.build_pg_url`，与 `app.database` 对拍一致（凭据转义同 §2.1 纪律）；
+- active **无效**（损坏/版本不符）：fail-closed 拒绝启动（不默认化重建、不静默回落 env——防数据错位）；
+- active **有效但激活核验未完备**（无 `ACTIVATED_ACK`）：bootstrap §4.4 分流——`COMMITTED` → 维护态 redo（幂等补发布+目标 ACK+本地 ACK 后正常启动，失败保持维护）；其余未核验 → 拒绝普通启动；
+- 无 active：env 回退路径与历史行为**逐字节一致**（回归测试钉扎）；
+- 受管证据（`db-migration/control.json`、`attempts/*/manifest.json`）唯一写者 `db_migration/journal.py`（文件锁+CAS+原子写）。
+
+详见 `backend/docs/constraints/database-migration.md`（§4/§6/§7/§8）。
+
 ## 3. 基线策略七规则（演进式建库）
 
 1. **空库判定**：无 `alembic_version` **且无业务表**（information_schema 白名单）；有表无版本 → fail-fast 人工介入

@@ -3,6 +3,18 @@
 > 契约文档：`backend/docs/postgresql-contract.md`（配置/基线/语义契约）
 > 迁移计划：`PLANS/v1.0.8.md`（五轮审查 + 基线刷新 v7）
 
+## 数据库迁移控制面（v1.0.8+ 数据库迁移 UI）
+
+除下述静态配置外，v1.0.8 提供应用内迁移控制面（SQLite ⇄ PostgreSQL 双向）：
+
+- **入口**：设置 →「数据库」面板（展示**有效**库实况/来源徽标/托管能力；PG 目标五档 TLS 探测）；迁移执行须进入维护模式。
+- **维护页**：迁移冻结期间业务 API 返回 503，前端 `/maintenance`（守卫豁免、无需业务登录）用**维护账号**登录查看进度/重输丢失凭据；移动端 `/m/maintenance` 只读。
+- **提交与激活**：A（env 交接）与 B（应用托管）两种模式；提交后 `RESTART_PENDING` —— 托管环境（systemd/docker）且显式设置 `BTD_MIGRATION_MANAGED_RESTART=1` 才自动退出重启，否则提示手动重启；重启后自动完成目标 ACK 与激活确认。
+- **平台边界**：Android 本机（伴侣 App WebView）与 demo 模式不支持 PG/迁移（页面只读指引）。
+
+运维操作手册（回退/掉电/凭据丢失/同库交接决策树）：`docs/operations/database-migration-runbook.md`；
+技术约束：`backend/docs/constraints/database-migration.md`。
+
 ## SQLite（默认，零配置）
 
 无需任何配置。数据库文件落在 `CONFIG_DIR/app.db`（Docker 部署为 `./data/backend/config/app.db` 持久化卷）。

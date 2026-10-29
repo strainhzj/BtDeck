@@ -13,7 +13,7 @@
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 | 能力门禁依赖 platform-guard | `platform_guard.py` | ✨2026-09-21 roadmap 同步补录（3ac6f54，Android 主服务端远端文件系能力硬禁用）：`capability_dependency()` 依赖工厂组合“先认证（`require_authenticated_user`）+ 再能力检查（`require_capability`）”，供路径映射/孤儿/备份/转移等主机文件系域能路由组复用；服务层保留同能力二次检查 |
 
-### endpoints/（44 个文件；✨2026-09-25 统计报表 W3 +reports.py；2026-10-09 feature/reports 合并后实测）
+### endpoints/（45 个文件；✨2026-10-28 数据库迁移 UI W3 +database.py；此前 2026-09-25 +reports.py）
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 高级搜索 API advanced-search | `advanced_search.py` | 高级搜索 API（13 字段全字段搜索 + 多选排除）；v1.0.6.27 起接入 `sqlite_search_runtime`（正则执行熔断）与 `app.contracts`（操作符契约校验），防 ReDoS 与前后端漂移 |
@@ -25,6 +25,7 @@
 | 健康检查 health | `health.py` | liveness/readiness 与受认证故障转储/状态分析导出：`GET /api/v1/health/diagnosis` 以 JSON 附件（`Content-Disposition: attachment`，文件名 `btdeck-diagnosis-*.json`）聚合版本/构建身份、readiness 检查、同步业务健康（原 `/health/sync` 数据并入 `sync` 字段）与进程 RSS（2026-09-07 改造）；数据库查询和聚合构建均有界超时；live/ready 的 data 携带 version（伴侣模式 Phase 2 版本提示，2026-08-23 起） |
 | MCP 配置控制面 mcp-settings ✨2026-09-08 | `mcp_settings.py` | MCP 服务配置 GET/PUT（`/api/v1/mcp/settings`，revision CAS 409）；principal 内核门禁 `require_mcp_control_plane_user`（禁用/强制改密 403）；PUT best-effort 审计（W1，本行 2026-09-09 补记漂移）；✨2026-09-22 W5：服务密钥控制面 `GET/POST /api/v1/mcp/apikey[/rotate]`（三态视图，active 才返回明文并写查看审计；rotate revision CAS 409 + reasonCode MCP_APIKEY_CONFLICT，previousOwner/rotatedBy 入审计）+ catalog 透出成对 `descriptionEn`（前端按 locale 选取） |
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.py` | `/api/v1/moviepilot/*`：集成面（POST /handshake、POST /sync/transfer-history 批量幂等 upsert）+ 管理面（GET/PUT /settings CAS、GET/instances、PUT/DELETE /instances/{id} 含映射重解析）+ 查询面（GET /associations 正向按 (bt 下载器, hash)、GET /associations/reverse 路径精确/目录前缀反查带任务快照）；集成/管理面 `require_moviepilot_integration_user`（principal 内核），查询面 require_authenticated_user；同步/设置/实例 best-effort 审计 |
+| 数据库迁移控制 database-migration ✨2026-10-28（W3-4/5） | `database.py` | /api/v1/database/* 11 路由（status/migration-status/target-readiness/test-connection/migration-start/credentials/cancel/leave/discard-target/switch/activation-clear）；require_database_control_access 模式分派（普通态=普通管理员/维护态=维护 token，双向不可互用）；动作组 CAS（attemptId+epoch+stateVersion）；test-connection 只读三态；屏障前缀放行仅为传输 |
 | 下载器核心 downloader | `downloader.py` | 下载器核心 API（连通性测试/添加管理）；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed |
 | 能力探测 capability | `downloader_capabilities.py` | 下载器能力探测 |
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |
