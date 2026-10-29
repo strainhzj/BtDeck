@@ -1,3 +1,13 @@
+## 2026-10-28（续七）：数据库迁移 UI W5 验证与文档批（四子批交付，全绿未提交）
+
+- W5-1 实库用例 test_pg_migration_flow.py 7 例（test-connection 三态/discard 实库/activation 全链路真 PG receipt ACK/handoff env 三态）；CI pg-integration 自动纳入。
+- W5-2 故障注入矩阵 failure_matrix.py 5 例（发布失败 COMMITTED 不回退/崩溃窗口 redo/目标 ACK 失败本地不前进/候选写失败收敛）。
+- W5-3 文档：postgresql-contract §2.4 受管 active；database-setup 迁移控制面节。
+- W5-4 runbook：docs/operations/database-migration-runbook.md（七阶段流程/故障决策树/同库交接/证据索引）。
+- W5-5 roadmap：api/README database-migration 行。全量 5811 passed/63 skipped/0 failed。
+- 坑（1）：activation 内发布/ACK 函数是调用点局部导入——注入须打 config_store 模块属性而非 activation 属性。
+- 待办：提交待指示；W6 unraid 同堆栈（T08 真实跨盘/T16 真实托管重启/掉电）；CI 实跑证据随推送取。
+
 ## 2026-10-28（续六）：数据库迁移 UI W4 前端批（五子批交付，全绿未提交）
 
 - W4-1 API 层+维护通道（src/api/database.ts 11 函数+20 类型；maintenance-client 独立 axios 零拦截器/token 仅内存/401 订阅制/503 静默——评审死循环要求全落实）。

@@ -1,3 +1,10 @@
+## 2026-10-28（续八）交接：W5 验证与文档批完成（全绿未提交）
+
+- **状态**：W5 四子批 done。全量 5811 passed/63 skipped/0 failed。**未提交未推送**（dev 领先 origin：W1×2+W2×2+W3×3+W4×2+W5 待提交）。
+- **交付**：pg_integration/test_pg_migration_flow.py（7 实库例，CI 自动纳入，本地 skip 不计通过）+failure_matrix.py（5 注入例）+postgresql-contract §2.4+database-setup 控制面节+runbook+roadmap api 行。
+- **W6 剩余**：unraid 真实同堆栈双向迁移、T08 真实跨盘 EXDEV、T16 真实托管重启（BTD_MIGRATION_MANAGED_RESTART）、A/B 交接实机、掉电/磁盘故障场景、CI 实跑证据归档。
+- **推送**：待用户授权；推后 regression pg-integration 实跑 test_pg_migration_flow（7 例）即取 W5 实库证据。
+
 ## 2026-10-28（续七）交接：W4 前端批完成（全绿未提交）
 
 - **状态**：W4 五子批 done。lint（env -u NODE_ENV）0 错；typecheck 0；test:unit 2058 全绿；build 成功。**未提交未推送**（本地 dev：W1×2+W2×2+W3×3+W4 待提交）。
