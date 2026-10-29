@@ -147,7 +147,9 @@ class TestDiscardRealPg:
         """清单对象 marker 核验：无 btdeck 专属 COMMENT 视为外部内容。"""
         foreign: List[str] = []
         for obj in objects:
-            comment = conn.execute(text("SELECT obj_description(:t::regclass, 'pg_class')"), {"t": obj}).scalar()
+            comment = conn.execute(
+                text("SELECT obj_description(CAST(:t AS regclass), 'pg_class')"), {"t": obj}
+            ).scalar()
             if (comment or "") != "btdeck-migration":
                 foreign.append(obj)
         return foreign
@@ -225,7 +227,7 @@ class TestActivationRealPg:
         assert committed["configPublished"] is True and committed["restartScheduled"] is False
         assert (journal.read_control() or {}).get("restart_pending") is True
         # 目标 ACK（真 PG receipt）先 → 本地 ACTIVATED_ACK 后 → 清 RESTART_PENDING
-        done = svc.complete_activation()
+        done = svc.complete_activation(ATTEMPT)
         assert done["commitPhase"] == "ACTIVATED_ACK"
         assert (journal.read_control() or {}).get("restart_pending") is False
         with engine.connect() as conn:
@@ -237,7 +239,7 @@ class TestActivationRealPg:
                 is True
             )
         # 幂等重放
-        replay = svc.complete_activation()
+        replay = svc.complete_activation(ATTEMPT)
         assert replay.get("idempotent") is True
         engine.dispose()
 

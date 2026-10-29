@@ -234,14 +234,16 @@ class PgSourceFence:
             return False
         try:
             expected = len(self._table_names)
-            got = self._conn.execute(
-                text(
-                    "SELECT count(*) FROM pg_locks WHERE mode = 'ShareLock' "
-                    "AND relation::regclass::text = ANY(:names)"
-                ),
-                {"names": list(self._table_names)},
-            ).scalar()
-            return int(got if got is not None else 0) >= expected
+            got = 0
+            for name in self._table_names:
+                # 逐表计数：(:tbl)::regclass 形态的绑定安全（x::cast 紧跟绑定名会令
+                # SQLAlchemy 2.0 误判字面量，真 PG 实测 SyntaxError → verify 假阴性）
+                n = self._conn.execute(
+                    text("SELECT count(*) FROM pg_locks WHERE mode = 'ShareLock' AND relation = (:tbl)::regclass"),
+                    {"tbl": name},
+                ).scalar()
+                got += int(n if n is not None else 0)
+            return got >= expected
         except Exception:
             return False
 

@@ -241,6 +241,7 @@ def begin_receipt_on_staging(staging_engine: Engine, ctx: PipelineContext, *, so
                 "operation_kind": ctx.operation_kind,
                 "source_database_id": ctx.source_database_id,
                 "deployment_id": ctx.deployment_id,
+                "target_database_id": identity,
                 "ownership_nonce": ctx.ownership_nonce,
                 "revision_at_import": tool_head(),
                 "schema_fingerprint": fingerprint,

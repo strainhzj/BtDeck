@@ -37,7 +37,9 @@ def fence_table(fresh_pg_db: str) -> str:
     # database 分量（字符串拼接会产生 "postgres/<db>" 非法库名）
     from sqlalchemy.engine.url import make_url
 
-    url = make_url(os.environ["BTDECK_PG_TEST_ADMIN_DSN"]).set(database=fresh_pg_db).render_as_string(hide_password=False)
+    url = (
+        make_url(os.environ["BTDECK_PG_TEST_ADMIN_DSN"]).set(database=fresh_pg_db).render_as_string(hide_password=False)
+    )
     engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS fence_t"))
@@ -92,10 +94,12 @@ class TestPgSourceFence:
         try:
             engine = create_engine(fence_table, poolclass=NullPool)
             writer = engine.connect()
-            writer.exec_driver_sql("SET lock_timeout = '500ms'")
+            # SET 与 INSERT 同事务：先裸 exec 会 autobegin，显式 begin() 即 InvalidRequest
             with pytest.raises(sqlalchemy.exc.OperationalError):
                 with writer.begin():
+                    writer.exec_driver_sql("SET lock_timeout = '500ms'")
                     writer.execute(text("INSERT INTO fence_t VALUES ('blocked', 0)"))
+            writer.rollback()  # 释放被锁超时中止的事务
             writer.close()
             engine.dispose()
         finally:
