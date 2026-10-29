@@ -41,12 +41,20 @@ _MAINTENANCE_503_BODY = {
 }
 
 
+_DATABASE_CONTROL_API_PREFIX = "/api/v1/database/"
+
+
 def _is_business_path(path: str) -> bool:
-    """业务面判定：/api/*（除维护控制端点）与 /mcp*。"""
+    """业务面判定：/api/*（除维护/数据库控制端点）与 /mcp*。
+
+    W3-4：``/api/v1/database/`` 前缀放行仅为**传输可达**（维护期迁移/交接/
+    恢复动作需要）；授权由各端点 ``require_database_control_access`` 依赖
+    分派（普通态=普通管理员；维护态=维护 token）——前缀放行不是授权豁免。
+    """
     if path.startswith("/mcp"):
         return True
     if path.startswith("/api/"):
-        return not path.startswith(_MAINTENANCE_API_PREFIX)
+        return not (path.startswith(_MAINTENANCE_API_PREFIX) or path.startswith(_DATABASE_CONTROL_API_PREFIX))
     return False
 
 

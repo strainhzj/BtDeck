@@ -430,16 +430,24 @@ class StartupDisposition:
         return self.mode == DISPOSITION_NORMAL
 
 
+REASON_ACTIVATION_COMPLETE = "ACTIVATION_COMPLETE"
+REASON_ACTIVATION_PENDING_RESTART = "ACTIVATION_PENDING_RESTART"
+
+
 def evaluate_startup_disposition(
     effective: EffectiveDatabaseConfig,
     *,
     control: Optional[Mapping[str, Any]] = None,
     pending_attempt: Optional[str] = None,
     sqlite_marker_present: bool = False,
+    pending_commit_phase: Optional[str] = None,
 ) -> StartupDisposition:
-    """W1 fail-closed 分流：受管态存在而核验未完备 → 拒绝普通启动（只读指引）。
+    """fail-closed 分流：受管态存在而核验未完备 → 拒绝普通启动（只读指引）。
 
-    - active（无论方言）：W1 尚无完整 commit/ACK 核验（W3 交付）→ fail-closed；
+    - active × 双 ACK 完成（pending attempt commit_phase=ACTIVATED_ACK）：
+      **正常启动**（§4.4：合法旧 revision 是升级输入，交 migrate_database
+      升至新 head；W3 移除 W1"active 一律未核验"桩；全量摘要复核归 W5/W6）；
+    - active × 未完成激活（含 COMMITTED 待重启/待 ACK）→ fail-closed 维护；
     - control/pending attempt：存在未完成受管切换 → fail-closed；
     - SQLite 导入标记：pg_to_sqlite 半成品 → fail-closed（PG 侧标记由
       migration.py 既有逻辑拒启，语义一致）。
@@ -448,12 +456,21 @@ def evaluate_startup_disposition(
     恢复路径，绝不在本判断后继续 seed/修复/后台任务。
     """
     if effective.source == "active":
+        if pending_attempt is not None and pending_commit_phase == "ACTIVATED_ACK":
+            # 双 ACK 完成的激活：身份/凭据已在 ACK 事务内核验；正常升级路径
+            return StartupDisposition(DISPOSITION_NORMAL, REASON_ACTIVATION_COMPLETE, "")
+        if pending_attempt is not None and pending_commit_phase == "COMMITTED":
+            return StartupDisposition(
+                DISPOSITION_FAIL_CLOSED,
+                REASON_ACTIVATION_PENDING_RESTART,
+                "存在已提交（COMMITTED）未完成 ACK 的切换：进入维护分支幂等 redo"
+                "（完成配置发布与目标 ACK）后重启/继续。",
+            )
         return StartupDisposition(
             DISPOSITION_FAIL_CLOSED,
             REASON_ACTIVE_CONFIG_UNVERIFIED,
-            "存在受管有效配置 database.active，但当前版本尚未具备完整激活核验"
-            "（W3 交付 commit/ACK 核验）；拒绝普通启动以防未核实切换。"
-            "请保持数据只读并使用具备核验能力的版本完成恢复。",
+            "存在受管有效配置 database.active，且激活核验未完备（无 ACTIVATED_ACK "
+            "凭据）：拒绝普通启动以防未核实切换；请经迁移控制面完成激活或恢复。",
         )
     if pending_attempt is not None:
         return StartupDisposition(

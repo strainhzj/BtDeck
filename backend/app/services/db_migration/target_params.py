@@ -31,6 +31,23 @@ from app.core.database_bootstrap import PostgresParams
 __all__ = ["PostgresParams", "build_pg_url", "pg_engine", "sqlite_readonly_engine", "sqlite_engine"]
 
 
+def pg_params_from_mapping(mapping: Dict[str, Any]) -> PostgresParams:
+    """API 表单映射 → PostgresParams（缺省补全；校验交由 dataclass）。"""
+    return PostgresParams(
+        host=str(mapping.get("host", "localhost")),
+        port=int(mapping.get("port", 5432)),
+        user=str(mapping.get("user", "btdeck")),
+        password=str(mapping.get("password", "")),
+        database=str(mapping.get("database", "btdeck")),
+        schema=str(mapping.get("schema", "public")),
+        sslmode=str(mapping.get("sslmode", "prefer")),
+        ssl_root_cert=mapping.get("ssl_root_cert"),
+        pool_size=int(mapping.get("pool_size", 10)),
+        max_overflow=int(mapping.get("max_overflow", 20)),
+        pool_timeout=int(mapping.get("pool_timeout", 30)),
+    )
+
+
 def build_pg_url(params: PostgresParams, *, async_driver: bool = False) -> str:
     """显式参数构造 PG URL（同步 psycopg2 / 异步 asyncpg；TLS 按契约 §2.3）。"""
     query: Dict[str, Any] = {}

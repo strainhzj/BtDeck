@@ -160,23 +160,6 @@ class _Lease:
             return True
 
 
-def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
-    """0600 原子写（tmp + os.replace；目录不存在则创建）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    finally:
-        with contextlib.suppress(OSError):
-            if tmp.exists():
-                tmp.unlink()
-
-
 class MaintenanceController:
     """单进程维护控制器（lifespan 构造并挂 ``app.state.maintenance``）。"""
 
@@ -192,6 +175,8 @@ class MaintenanceController:
         self._cancel_ack_event = threading.Event()
         self._target_side_effects = False
         self._boot_recovery = False
+        self._worker_generation = 0  # W3-3：worker 代次（晚回调拒绝过期 worker）
+        self._config_dir: Optional[os.PathLike[str] | str] = config_dir
         self._intent_path: Optional[Path] = (
             Path(config_dir) / DB_MIGRATION_DIR / INTENT_FILENAME if config_dir is not None else None
         )
@@ -357,6 +342,23 @@ class MaintenanceController:
             self._held_reason = None
             self.abort_prepare(reason=reason)
 
+    def abort_from_frozen(self, *, reason: str = "") -> None:
+        """FROZEN → NORMAL：放弃回源（leave；W3-3）。
+
+        前置由调用方（manager.leave）保证：worker 已安全收尾（线程 join+ACK）、
+        journal 已持久撤销 switch_eligible 并推进 epoch（资格作废）。此处仅当
+        目标无不可放弃副作用争议且准入计数为零时放行；否则保持 FROZEN。
+        """
+        with self._cond:
+            if self._state != STATE_FROZEN:
+                raise TransitionError(f"只有 FROZEN 可放弃回源（当前 {self._state}）")
+            if self._target_side_effects:
+                raise TransitionError("已存在目标副作用，禁止直接回源（转 discard/ABANDONED 流程）")
+            if self._active:
+                raise TransitionError("仍有未收尾准入（保持 FROZEN，§5.1）")
+            self._state = STATE_PREPARING  # 借道 abort_prepare 的 NORMAL 收尾
+            self.abort_prepare(reason=reason or "leave-from-frozen")
+
     def note_fence_lost(self, detail: str = "") -> None:
         """锁丢失/漏写/未知 writer → HELD（不继续宣称冻结，§5.2）。"""
         with self._cond:
@@ -396,10 +398,17 @@ class MaintenanceController:
             self._cond.notify_all()
 
     def exit_maintenance(self, *, to_state: str = STATE_NORMAL) -> None:
-        """维护退出（正常退出或放弃后回业务；COMMITTED 除外——那是 W3 终态）。"""
+        """维护退出（正常退出或放弃后回业务；COMMITTED 除外——提交流程重启）。
+
+        评审修正（W3-1）：journal 权威（manifest commit_phase ∈ COMMITTED/
+        ACTIVATED_ACK）存在时**禁止回 NORMAL**——持久提交决定只能被幂等 redo
+        或新代次交接消费，不能被运行视图/残留 intent 撤销。
+        """
         with self._cond:
             if self._state == STATE_COMMITTED:
-                raise TransitionError("COMMITTED 终态不可经本方法退出（进程将由 W3 提交流程重启）")
+                raise TransitionError("COMMITTED 终态不可经本方法退出（进程将由提交流程重启）")
+            if to_state == STATE_NORMAL and self._journal_committed_pending_restart():
+                raise TransitionError("journal 已持久 COMMITTED 决定（等待重启幂等 redo），禁止放回 NORMAL")
             self._state = to_state
             if to_state == STATE_NORMAL:
                 self._mode = "normal"
@@ -410,9 +419,31 @@ class MaintenanceController:
                 self._clear_intent()
             self._cond.notify_all()
 
+    def _journal_committed_pending_restart(self) -> bool:
+        """读 journal 权威（无 config_dir/无证据 → False；损坏 → True 保守拒回）。"""
+        if self._config_dir is None:
+            return False
+        try:
+            from app.services.db_migration.journal import Journal
+
+            return Journal(self._config_dir).evaluate_intent_authority().committed_pending_restart
+        except Exception:
+            return True  # 受管证据损坏 fail-closed：宁保持维护不回业务
+
     # ------------------------------------------------------------------
     # 取消与 epoch（§6.4，W2-7）
     # ------------------------------------------------------------------
+
+    def next_worker_generation(self) -> int:
+        """派生 worker 时自增并返回代次（cancel/progress/checkpoint 回调携带）。"""
+        with self._cond:
+            self._worker_generation += 1
+            return self._worker_generation
+
+    @property
+    def worker_generation(self) -> int:
+        with self._cond:
+            return self._worker_generation
 
     @property
     def epoch(self) -> str:
@@ -544,13 +575,20 @@ class MaintenanceController:
             "recorded_at": time.time() if now is None else now,
             "pid": os.getpid(),
         }
-        _atomic_write_json(self._intent_path, payload)
+        # W3-1：intent 是 journal 的兼容投影（同路径同格式），写入经 journal
+        # 统一纪律（锁+原子写）；权威事实在 control/manifest。
+        from app.services.db_migration.journal import Journal
+
+        assert self._config_dir is not None  # _intent_path 非 None 的前提
+        Journal(self._config_dir).write_intent_projection(payload)
 
     def _clear_intent(self) -> None:
         if self._intent_path is None:
             return
-        with contextlib.suppress(OSError):
-            self._intent_path.unlink()
+        from app.services.db_migration.journal import Journal
+
+        assert self._config_dir is not None
+        Journal(self._config_dir).clear_intent_projection()
 
 
 class _ControllerCancellation(RuntimeError):
@@ -559,6 +597,10 @@ class _ControllerCancellation(RuntimeError):
     def __init__(self, epoch: str) -> None:
         super().__init__(f"维护控制面已请求取消（epoch={epoch}）")
         self.epoch = epoch
+
+
+#: 公开别名（manager/管线分类用；下划线名保留兼容 W2 测试）
+ControllerCancellation = _ControllerCancellation
 
 
 def read_intent(config_dir: os.PathLike[str] | str) -> Optional[Dict[str, Any]]:

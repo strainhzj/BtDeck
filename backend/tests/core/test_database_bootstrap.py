@@ -292,7 +292,21 @@ class TestStartupDisposition:
         disposition = evaluate_startup_disposition(effective)
         assert not disposition.normal
         assert disposition.reason_code == "ACTIVE_CONFIG_UNVERIFIED"
-        assert "只读" in disposition.detail
+        assert "拒绝普通启动" in disposition.detail
+
+    def test_active_activated_ack_normal_and_committed_pending(self, tmp_path):
+        """W3：双 ACK 完成的激活→正常启动；COMMITTED 待重启→维护分支（§4.4）。"""
+        effective = resolve_effective_database_config(_write_config(tmp_path, _active_pg_yaml()))
+        done = evaluate_startup_disposition(
+            effective, pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+            pending_commit_phase="ACTIVATED_ACK",
+        )
+        assert done.normal and done.reason_code == "ACTIVATION_COMPLETE"
+        pending = evaluate_startup_disposition(
+            effective, pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+            pending_commit_phase="COMMITTED",
+        )
+        assert not pending.normal and pending.reason_code == "ACTIVATION_PENDING_RESTART"
 
     def test_pending_attempt_fail_closed(self, tmp_path):
         disposition = evaluate_startup_disposition(

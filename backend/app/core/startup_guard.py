@@ -200,6 +200,33 @@ def validate_from_env(env: Optional[Mapping[str, str]] = None) -> Tuple[str, int
     return backend, workers, scheduler_enabled
 
 
+def effective_database_label(config_path: Optional[str] = None) -> Tuple[str, str]:
+    """有效数据库标签（方言, 来源）——active 优先，env 回退（T15 日志同源）。
+
+    仅供启动清单/日志展示：active 解析失败回 env 标签并记 WARNING（真正的
+    fail-closed 在 bootstrap/database 导入层，不在此重复阻断）。
+    """
+    environ_dialect = (
+        "postgresql"
+        if (os.environ.get("DB_TYPE") or "").strip().lower()
+        in (
+            "postgresql",
+            "postgres",
+            "pg",
+        )
+        else "sqlite"
+    )
+    try:
+        from app.core import database_bootstrap as bootstrap
+        from app.core.config import settings
+
+        effective = bootstrap.resolve_effective_database_config(config_path or str(settings.YAML_PATH))
+        return effective.dialect, effective.source
+    except Exception as exc:  # noqa: BLE001 - 展示面兜底
+        logger.warning("有效数据库配置解析失败，启动清单回退 env 标签: %s", exc)
+        return environ_dialect, "env"
+
+
 def log_startup_manifest(
     database_backend: str,
     worker_count: int,

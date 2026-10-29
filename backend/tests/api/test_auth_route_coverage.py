@@ -59,6 +59,9 @@ _AUTH_DEPENDENCY_NAMES = frozenset(
         # 维护控制面（database-migration-ui W2-5）：独立维护 token 校验
         # （aud/scope/jti/吊销/重放防护，普通 access token 不可用）
         "require_maintenance_token",
+        # 数据库迁移控制面（database-migration-ui W3-4）：模式分派依赖
+        # （普通态=普通管理员语义；维护态=维护 token；前缀放行不是授权豁免）
+        "require_database_control_access",
         # MoviePilot 集成/管理面（moviepilot-integration）：同一 principal 内核链路
         "require_moviepilot_integration_user",
     }
@@ -77,6 +80,8 @@ _REQUIRED_PUBLIC_PATHS = frozenset(
         "/api/v1/maintenance/auth/renew",
         "/health/live",
         "/health/ready",
+        "/health/control-ready",
+        "/api/v1/health/control-ready",
         "/api/v1/health/live",
         "/api/v1/health/ready",
     }

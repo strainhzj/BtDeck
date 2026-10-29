@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from app.core.database_protocol import DB_MIGRATION_DIR
 
@@ -225,8 +225,44 @@ class MaintenanceLocalAudit:
     def iter_events(self) -> Iterator[Dict[str, Any]]:
         yield from self.replay_events()
 
+    # ------------------------------------------------------------------
+    # 归档快照令牌（W3-1 评审修正：回放期间新追加不丢尾部；clear 需快照未变）
+    # ------------------------------------------------------------------
+
+    def snapshot_for_archive(self) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """锁内快照：返回（去重事件列表, 快照令牌：inode+size+mtime_ns）。
+
+        归档方在事务内写入快照事件；提交后经 ``clear_if_unchanged(token)``
+        清理——仅当文件自快照以来未追加（否则保留 spool 等待下轮 cursor 归档）。
+        """
+        with self._lock:
+            rows = self.replay_events()
+            try:
+                st = self._path.stat()
+                token = {"inode": st.st_ino, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+            except FileNotFoundError:
+                token = {"inode": -1, "size": 0, "mtime_ns": 0}
+            return rows, token
+
+    def clear_if_unchanged(self, token: Mapping[str, Any]) -> bool:
+        """仅当 spool 自快照以来未变化时清理（防丢尾部）；返回是否已清理。"""
+        with self._lock:
+            try:
+                st = self._path.stat()
+                current = {"inode": st.st_ino, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+            except FileNotFoundError:
+                return True
+            if (
+                current["inode"] != token.get("inode")
+                or current["size"] != token.get("size")
+                or current["mtime_ns"] != token.get("mtime_ns")
+            ):
+                return False
+            self._path.unlink()
+            return True
+
     def clear(self) -> None:
-        """归档完成后的显式清理（W3 ACK 流程调用；普通路径禁止触碰）。"""
+        """归档完成后的显式清理（普通路径禁止触碰；见 snapshot_for_archive）。"""
         with self._lock:
             try:
                 self._path.unlink()

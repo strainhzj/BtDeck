@@ -21,8 +21,24 @@ logger = logging.getLogger(__name__)
 
 # ========== 数据源方言判定（v1.0.8 双数据库架构，契约 docs/postgresql-contract.md §2）==========
 # sqlite（默认，行为与历史版本完全一致）或 postgresql（可选数据源）。
-# 方言唯一判定入口为 settings.DATABASE_DIALECT；本模块不再独立解析 DB_TYPE。
-DIALECT = settings.DATABASE_DIALECT
+# W3-2 T15 同源收口：database.active（受管激活，config.yaml）存在则完整覆盖
+# 相应方言配置（§4.1，经 bootstrap EffectiveDatabaseConfig 唯一解析口）；
+# 否则回退 settings.DATABASE_DIALECT（env；与历史行为逐字节一致）。
+# 受管 active 损坏 → 导入即 fail-closed（禁止默认化回 env）。
+from app.core.database_bootstrap import (  # noqa: E402
+    EffectiveDatabaseConfig,
+    resolve_effective_database_config,
+)
+
+_EFFECTIVE_DATABASE_CONFIG: EffectiveDatabaseConfig = resolve_effective_database_config(settings.YAML_PATH)
+
+
+def get_effective_database_config() -> EffectiveDatabaseConfig:
+    """当前有效配置（active 优先；引擎/Alembic/健康/日志统一取此，T15）。"""
+    return _EFFECTIVE_DATABASE_CONFIG
+
+
+DIALECT = _EFFECTIVE_DATABASE_CONFIG.dialect
 
 
 def _pg_ssl_args(*, async_driver: bool) -> Dict[str, Any]:
@@ -63,7 +79,32 @@ def build_database_url(*, async_driver: bool = False) -> str:
 
     PG 走 sqlalchemy.engine.URL.create 结构化构造（凭据特殊字符 % @ / : 空格
     自动转义）；同步侧 TLS 以 sslmode 查询参数携带（契约 §2.3）。
+    W3-2：database.active 存在时从有效配置构造（完整覆盖，不混用 env 的
+    路径/TLS/池参数，§4.1）；否则走 settings（env）历史路径。
     """
+    effective = _EFFECTIVE_DATABASE_CONFIG
+    if effective.source == "active" and effective.pg is not None:
+        from sqlalchemy.engine import URL
+
+        pg = effective.pg
+        active_query: Dict[str, Any] = {}
+        if not async_driver:
+            active_query["sslmode"] = pg.sslmode
+            if pg.sslmode in ("verify-ca", "verify-full") and pg.ssl_root_cert:
+                active_query["sslrootcert"] = pg.ssl_root_cert
+        url = URL.create(
+            drivername="postgresql+asyncpg" if async_driver else "postgresql+psycopg2",
+            username=pg.user,
+            password=pg.password,
+            host=pg.host,
+            port=pg.port,
+            database=pg.database,
+            query=active_query,
+        )
+        return url.render_as_string(hide_password=False)
+    if effective.source == "active" and effective.dialect == "sqlite":
+        suffix = "+aiosqlite" if async_driver else ""
+        return f"sqlite{suffix}:///{effective.sqlite_path}"
     if DIALECT == "postgresql":
         from sqlalchemy.engine import URL
 
@@ -91,7 +132,19 @@ def build_database_url(*, async_driver: bool = False) -> str:
 
 
 def _sync_engine_kwargs() -> Dict[str, Any]:
-    """同步引擎参数：按方言分发，SQLite 路径与历史版本零差异（契约 §2.2）。"""
+    """同步引擎参数：按方言分发，SQLite 路径与历史版本零差异（契约 §2.2）。
+
+    W3-2：active 存在时池参数从有效配置取（完整覆盖 env，§4.1）。
+    """
+    effective = _EFFECTIVE_DATABASE_CONFIG
+    if effective.source == "active" and effective.pg is not None:
+        return {
+            "pool_size": effective.pg.pool_size,
+            "max_overflow": effective.pg.max_overflow,
+            "pool_timeout": effective.pg.pool_timeout,
+            "pool_pre_ping": True,
+            "echo": settings.DB_ECHO,
+        }
     if DIALECT == "postgresql":
         return {
             "pool_size": settings.DB_POOL_SIZE,
@@ -449,6 +502,10 @@ def init_db():
 def init_config_file(
     config_path: str = settings.YAML_PATH, custom_config: Optional[Dict[str, Any]] = None, overwrite: bool = False
 ) -> bool:
+    # W3-2 T09：config.yaml 全部写入共用 config_store RMW 锁 + 原子写
+    # （与 activation 候选发布/交接同锁；防多写者交错破坏 active 节）。
+    from app.services.db_migration.config_store import config_lock, write_yaml_atomic
+
     try:
         # 确保配置文件目录存在
         config_dir = os.path.dirname(config_path)
@@ -493,8 +550,8 @@ def init_config_file(
                     new_config["security"]["jwt_secret_key"] = jwt_secret_key
                     logging.warning("配置文件中缺少jwt_secret_key，已添加。")
 
-                with open(config_path, "w", encoding="utf-8") as f:
-                    yaml.dump(new_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                with config_lock(config_path):
+                    write_yaml_atomic(config_path, new_config)
 
                 return True
             except Exception as read_error:
@@ -530,9 +587,9 @@ def init_config_file(
         if custom_config:
             merge_configs(default_config, custom_config)
 
-        # 写入配置文件
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(default_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        # 写入配置文件（锁内原子写；W3-2）
+        with config_lock(config_path):
+            write_yaml_atomic(config_path, default_config)
 
         # 验证文件是否成功创建
         if not os.path.exists(config_path):

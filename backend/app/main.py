@@ -82,7 +82,14 @@ except Exception as e:
 try:
     _startup_backend, _startup_workers, _startup_scheduler_enabled = validate_from_env()
     # 启动清单日志：database_backend / worker_count / scheduler_enabled / process_id
-    # 启动配置与实际进程数在此日志中可核对。
+    # 启动配置与实际进程数在此日志中可核对。W3-2 T15：env 标签仅代表探测口径，
+    # 运行实况以有效配置（database.active 优先）为准，同源记录不误报方言。
+    from app.core.startup_guard import effective_database_label
+
+    _eff_dialect, _eff_source = effective_database_label()
+    logger.info(
+        "startup_effective_database dialect=%s source=%s env_backend=%s", _eff_dialect, _eff_source, _startup_backend
+    )
     log_startup_manifest(_startup_backend, _startup_workers, _startup_scheduler_enabled)
 except StartupGuardError as exc:
     logger.error("启动约束校验失败，拒绝启动: %s", exc)

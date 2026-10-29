@@ -62,10 +62,15 @@ from app.api.endpoints import reports
 # 维护控制面（database-migration-ui W2-5：维护认证/状态；仅维护模式可用）
 from app.api.endpoints import maintenance
 
+# 数据库迁移控制面（database-migration-ui W3-4/5：/api/v1/database/*；屏障放行前缀，
+# 每路由 require_database_control_access 分派鉴权——普通态普通管理员/维护态维护 token）
+from app.api.endpoints import database as database_endpoint
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 # 维护控制面（W2-5）：/api/v1/maintenance/*（维护认证+粗粒度状态；屏障内独立鉴权）
 api_router.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance"])
+api_router.include_router(database_endpoint.router, prefix="/database", tags=["database"])
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
 api_router.include_router(cuser.router, prefix="/user", tags=["user"])
 api_router.include_router(cuser.router, prefix="/users", tags=["users"])  # 添加/users前缀支持前端调用

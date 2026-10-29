@@ -284,8 +284,20 @@ def _evaluate_managed_startup_block(config_path: Optional[str] = None) -> None:
     ) as exc:
         raise ManagedStartupBlockError(f"受管数据库配置/状态不可用，拒绝普通启动（fail-closed）: {exc}") from exc
 
+    pending_commit_phase: Optional[str] = None
+    if pending is not None:
+        try:
+            from app.services.db_migration.journal import Journal
+
+            pending_commit_phase = Journal(str(settings.CONFIG_PATH)).evaluate_intent_authority().commit_phase
+        except Exception:
+            pending_commit_phase = None  # 损坏按未核验处理（fail-closed 由 disposition 兜底）
     disposition = bootstrap.evaluate_startup_disposition(
-        effective, control=control, pending_attempt=pending, sqlite_marker_present=sqlite_marker
+        effective,
+        control=control,
+        pending_attempt=pending,
+        sqlite_marker_present=sqlite_marker,
+        pending_commit_phase=pending_commit_phase,
     )
     if not disposition.normal:
         raise ManagedStartupBlockError(f"[{disposition.reason_code}] {disposition.detail}")

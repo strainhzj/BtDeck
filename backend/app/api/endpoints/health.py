@@ -154,6 +154,25 @@ def _record_readiness_failures(reason_codes: Iterable[str]) -> None:
         )
 
 
+@router.get("/health/control-ready", summary="控制面就绪检查（database-migration-ui W3-8）")
+async def health_control_ready(request: Request):
+    """纯控制面可安全响应 → 200 + businessReady=false；普通模式沿用业务就绪。
+
+    §5.4：维护期容器探针用本端点区分"维护中"与"死锁"（业务 ready 会把维护
+    中容器误判不健康）；不泄露数据库/凭据，仅粗粒度状态。
+    """
+    maintenance_mode = bool(getattr(request.app.state, "maintenance_mode", False))
+    if not maintenance_mode:
+        # 普通模式：委托业务就绪判定（不绕发布身份门禁）
+        return await health_ready(request)
+    return _common_response(
+        "success",
+        "控制面就绪（业务维护中）",
+        "200",
+        {"businessReady": False, "maintenance": True},
+    )
+
+
 @router.get("/health/live", summary="进程存活检查")
 async def health_live() -> CommonResponse[Dict[str, Any]]:
     """只证明事件循环能处理请求；不访问数据库、下载器或其它外部依赖。

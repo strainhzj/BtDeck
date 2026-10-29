@@ -222,6 +222,38 @@ guide 保留“不降级、不 stamp”的兼容路径。
   后晚到回调/ACK 一律拒绝（`StaleEpochError`）；HELD/ABANDONED 无漂移可重绑
   （漂移拒绝保持 HELD）；COMMITTED 终态禁重绑/禁退出。
 
+### A+B 提交/ACK 与同库交接（W3，§7；强制）
+
+- **单一写权威**：db-migration/control.json、attempts/*/manifest.json、
+  commit_phase（NONE→PREPARED→COMMITTED→ACTIVATED_ACK 单向）只经
+  `db_migration/journal.py` 写（部署文件锁+代次/state_version CAS+原子写+
+  fsync）；controller 是运行视图，maintenance-intent.json 仅兼容投影——
+  **COMMITTED 决定绝不被残留 intent 或 exit_maintenance 放回 NORMAL**。
+- **config RMW 统一锁**：config.yaml 全部写入（init_config_file/activation
+  发布/交接）共用 `config_store.config_lock`；原子写保留未知节；受管证据
+  损坏禁止默认化重建（T09）。受保护候选/前代 YAML 0600/0700（含 B 凭据，
+  绝不进导出/Git）。
+- **提交顺序（§7.2）**：候选/前代+PREPARED 先持久 → fsync COMMITTED（本地
+  持久决定）→ B 原子发布 active / A 发布去旧候选 → control RESTART_PENDING
+  +新代次 → 托管退出。目标 ACK **先**、本地 ACTIVATED_ACK 后、审计归档同
+  事务+cursor（spool 回放期间新追加不丢尾部）。
+- **托管重启（T16）**：cgroup/INVOCATION_ID 只证明环境不证明重启策略；
+  自动退出需 已知适配器 + `BTD_MIGRATION_MANAGED_RESTART=1` 显式 opt-in +
+  非 PID1；否则 RESTART_PENDING+手动提示。compose：backend 探针
+  /health/control-ready，前端依赖 service_started（维护期静态页可达）。
+- **同库交接（§7.3）**：clear=受控 HANDOFF_SAME_DB 交接，仅允许 env 指向
+  **同一当前服务库**（同 dialect+samefile/host:port/db），异库拒绝引导新
+  迁移；不核历史导入摘要；ACK 用单连接事务（SQLite 同一 BEGIN IMMEDIATE
+  核旧 generation→CAS 新；禁跨连接自锁）。
+- **discard（§6.5）**：仅 manifest 固定目标+nonce/database_id/对象清单+
+  双确认 token；PG 逐清单对象**禁 CASCADE/DROP DATABASE/SCHEMA**，外部
+  内容拒；SQLite 仅专属 staging/final（hash/inode 核）；COMMITTED 后禁
+  discard。
+- **控制端点鉴权（§8）**：`/api/v1/database/*` 屏障放行仅为传输可达；
+  每路由 `require_database_control_access` 分派（普通态=普通管理员；维护态
+  =维护 token；双向不可互用）；维护态修改请求携带 attemptId+epoch+
+  stateVersion（CAS）。
+
 ### 新增静态门禁
 
 - BTD306：`app/` 新文件禁止裸 `asyncio.create_task/to_thread`（存量白名单

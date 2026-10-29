@@ -152,6 +152,66 @@ async def _run_gated_once(kind: str, factory) -> Any:
             admission_cm.__exit__(None, None, None)
 
 
+def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
+    """COMMITTED 待 ACK 的幂等 redo（§7.2.6-8）→ True=激活完成可正常启动。
+
+    顺序：读持久决定 → 幂等补配置发布 → **目标 ACK 先**（activated_at/
+    generation，单连接事务）→ 本地 ACTIVATED_ACK → 审计归档（cursor）→
+    清 RESTART_PENDING。任一步失败 → False（保持维护分支，绝不回旧库）。
+    """
+    from app.services.db_migration.activation import ActivationService
+    from app.services.db_migration.local_audit import MaintenanceLocalAudit
+
+    service = ActivationService(config_dir)
+    redo = service.redo_pending_activation()
+    if redo is None or not redo.get("awaitingTargetAck"):
+        return False
+    attempt_id = str(redo["attemptId"])
+
+    def _archive(attempt: str) -> int:
+        audit = MaintenanceLocalAudit(config_dir)
+        from app.database import build_database_url
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
+
+        rows, token = audit.snapshot_for_archive()
+        engine = create_engine(build_database_url(), poolclass=NullPool)
+        archived = 0
+        try:
+            with engine.begin() as conn:
+                for row in rows:
+                    if row.get("attempt_id") not in (None, attempt):
+                        continue
+                    result = conn.execute(
+                        text(
+                            "INSERT INTO bt_database_migration_events (event_id, attempt_id, seq, summary, created_at) "
+                            "VALUES (:eid, :aid, :seq, :summary, :created) ON CONFLICT (event_id) DO NOTHING"
+                        ),
+                        {
+                            "eid": row.get("event_id"),
+                            "aid": attempt,
+                            "seq": row.get("seq", 0),
+                            "summary": str(row.get("summary", row.get("kind", "event")))[:512],
+                            "created": row.get("ts"),
+                        },
+                    )
+                    archived += max(result.rowcount or 0, 0)
+        finally:
+            engine.dispose()
+        if rows:
+            service.advance_archive_cursor(str(rows[-1].get("event_id", "")))
+            audit.clear_if_unchanged(token)
+        return archived
+
+    try:
+        outcome = service.complete_activation(attempt_id, archive_audit=_archive)
+        print(f"[OK] 激活 redo：{outcome}")
+        return True
+    except Exception as exc:  # noqa: BLE001 - redo 失败保持维护
+        print(f"[WARN] 激活 redo 未完成（保持维护分支）: {exc}")
+        return False
+
+
 def _startup_maintenance_gate(
     app: FastAPI,
     *,
@@ -204,11 +264,34 @@ def _startup_maintenance_gate(
         print(f"[ERROR] 维护 intent 损坏，拒绝启动（fail-closed）: {exc}")
         raise
 
+    # W3-6：journal 权威（commit_phase）参与分流——双 ACK 完成的激活走正常启动；
+    # COMMITTED 待重启/待 ACK 进维护分支幂等 redo。
+    from app.services.db_migration.journal import Journal, JournalCorrupted
+
+    try:
+        authority = Journal(_config_dir).evaluate_intent_authority()
+    except JournalCorrupted as exc:
+        print(f"[ERROR] journal 受管证据损坏，拒绝启动（fail-closed）: {exc}")
+        raise
+    pending_commit_phase = authority.commit_phase if authority is not None else None
+
     disposition = bootstrap.evaluate_startup_disposition(
-        effective, control=control, pending_attempt=pending, sqlite_marker_present=sqlite_marker
+        effective,
+        control=control,
+        pending_attempt=pending,
+        sqlite_marker_present=sqlite_marker,
+        pending_commit_phase=pending_commit_phase,
     )
     if disposition.normal and intent is None:
         return False
+    if disposition.reason_code == bootstrap.REASON_ACTIVATION_COMPLETE:
+        # 双 ACK 完成的激活：正常启动（合法旧 revision 交 migrate_database 升级）
+        print("=== 受管激活已完成（ACTIVATED_ACK）：按正常启动继续（§4.4）===")
+        return False
+    if authority is not None and authority.committed_pending_restart:
+        if _startup_activation_redo(app, _config_dir):
+            print("=== 激活 redo 完成（目标 ACK→本地 ACK）：按正常启动继续 ===")
+            return False
 
     reason_code = disposition.reason_code or "MAINTENANCE_INTENT_PRESENT"
     attempt_id = pending or (intent or {}).get("attempt_id")
