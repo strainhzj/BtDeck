@@ -1,3 +1,17 @@
+## 2026-10-28（续五）：数据库迁移 UI W3 实施批（九子批按评审修正案交付，全绿未提交）
+
+- **评审确认**（对话 01a18094）：九子批可行+六处修正——①journal 单一权威（intent 为兼容投影，COMMITTED 不放回 NORMAL）②动作 API 前完整 worker/fence 生命周期 ③前缀放行≠授权（显式依赖+鉴权矩阵）④托管退出须 opt-in（cgroup/INVOCATION_ID 不证明重启）⑤bootstrap/lifespan 真接线（移除 W1 active 一律未核验桩，保正常旧 revision 升级）⑥T04 须含子进程实际中断。
+- **W3-1 journal.py**：部署文件锁+代次 CAS+原子写（SIGKILL 子进程实测）；commit_phase 单向；intent 投影+权威评估；审计归档 cursor+快照令牌。
+- **W3-2 config_store.py**：config.yaml RMW 统一锁（init_config_file 接线）+未知节保留+候选/前代 0600；database.py T15 同源（active 优先完整覆盖 DIALECT/URL/池参数，env 回退字节不变）；startup_guard 有效方言标签。
+- **W3-3 manager.py**：单飞行 start 编排/NEEDS_CREDENTIALS/cancel(CANCELLING→ACK→CANCELLED)/leave（持久撤销+epoch 前进+FROZEN 回源，COMMITTED 双拒）/worker_generation 晚回调拒/rebind 三段式（二次 CAS→PREPARED→目标 CAS→ACK）。
+- **W3-4/5 端点**：/api/v1/database/* 11 路由+require_database_control_access 分派（鉴权矩阵测：维护 token 通过/匿名 401/普通 token 维护态拒）；屏障前缀放行仅传输（/api/v1/database-evil 503 边界测）；discard §6.5 双确认。
+- **W3-6 activation.py**：PREPARED（候选先持久）→COMMITTED（fsync 先于发布）→RESTART_PENDING→托管退出；目标 ACK 先/本地后/审计归档同事务；lifespan redo 接线（COMMITTED→幂等补发+双 ACK→正常启动）；bootstrap §4.4 分流（ACTIVATED_ACK 正常升级/COMMITTED 维护 redo）。
+- **W3-7 handoff.py**：同库交接（env 候选三态；异库拒）；单连接 ACK（BEGIN IMMEDIATE 核旧→CAS 新，幂等）。
+- **W3-8**：restart_adapter（opt-in 门+PID1 双检）+/health/control-ready 三探针+compose 双文件（backend 探针 control-ready/前端 service_started）。
+- **验证**：全量 pytest 5805 passed/56 skipped/0 failed；mypy 333 文件 0 错；black/flake8/lint 净。新增测试 5 文件 61 例+bootstrap 分流扩充。
+- **坑（5）**：①controller.admission_slot 是 contextmanager 不能裸取 lease（worker 属维护控制面非业务准入——线程句柄即收尾判定）②controller 运行 epoch 与管线 eligible_epoch 双轨（取消判定用运行 epoch，资格 CAS 用 manifest epoch）③pydantic Settings 属性（YAML_PATH/CONFIG_PATH）不可 setattr，经 CONFIG_DIR 字段④set_pipeline_state 的失败转移有合法集（FROZEN→failed 拒，worker 兜底须 suppress）⑤auth 契约测试新公开端点（/health/control-ready×2 挂载路径）+新依赖名（require_database_control_access）须登记。
+- **待办**：提交待指示；W4 前端（设置面板/维护客户端/A/B/axios 503 无刷新死循环/Jest）；W5 实库+故障注入全量；W6 unraid 同堆栈/真实托管重启。
+
 ## 2026-10-28（续四）：数据库迁移 UI W2 实施批（八子批交付，全绿未提交）
 
 - **用户确认**：W2 实现假设（八子批 W2-1→W2-8+四项实现选型：threading 临界区/ASKI 屏障中间件/维护 token 复用 JWT 体系换独立 aud+scope/裸任务扫描落 BTD306 存量白名单）后开始。

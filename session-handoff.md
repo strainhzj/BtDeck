@@ -1,3 +1,12 @@
+## 2026-10-28（续五）交接：数据库迁移 UI W3 实施批完成（全绿未提交）
+
+- **状态**：W3 九子批 done（评审修正案落实）。全量 5805 passed/56 skipped/0 failed；mypy 333/0；black/flake8/lint 净。**未提交未推送**（本地 dev 领先 origin：W1×2+W2×2+W3 未提交）。
+- **新模块**：services/db_migration/{journal,config_store,manager,activation,discard,handoff,restart_adapter}.py+api/endpoints/database.py；改造 database.py（T15 同源）/bootstrap（§4.4 分流）/migration.py（commit_phase 参与分流）/lifecycle（激活 redo）/maintenance（worker_generation/abort_from_frozen/exit 守卫）/maintenance_barrier（database 前缀放行）/health（control-ready）/api.py/init_config_file/config_store 接线/compose 双文件。
+- **关键语义**：journal 单一写权威（COMMITTED 不回 NORMAL）；提交顺序=候选先持久→COMMITTED fsync→发布→RESTART_PENDING→opt-in 托管退出；目标 ACK 先本地后；激活完成走正常升级（W1 桩移除）。
+- **下一步 W4**（前端门禁）：设置数据库面板（settings-panel.scss/Vue2 Options/完整 TS）、维护独立客户端（token 通道/axios 503 不刷新死循环/beforeDestroy 清理/密码不进 localStorage）、A/B 入口、demo/Android 门控、Jest 全量。**不先开放未受屏障保护的端点**。
+- **W5**：真 PG fence/T19/T12 CI+故障注入全量+runbook；**W6**：unraid 真实同堆栈/托管重启/掉电。
+- 推送待用户授权（评审建议先推拿 pg-integration 基线）。
+
 ## 2026-10-28（续四）交接：数据库迁移 UI W2 实施批完成（全绿未提交）
 
 - **状态**：`database-migration-ui.W2` 已 done（八子批全交付）；W3-W6 pending。本地全量 pytest 5729 passed/56 skipped/0 failed（W2 后终跑）；mypy 325 文件 0 错；black/flake8/lint（含新 BTD306）净。**未提交未推送**（W1 两提交 1b22be0/f21af2f 也未推送）。
