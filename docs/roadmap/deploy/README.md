@@ -8,6 +8,7 @@
 | 关键词 | 模式/文件 | 一句话职责 |
 |--------|-----------|-----------|
 | Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
+| PostgreSQL 形态 postgres-compose ✨2026-10-30（v1.0.8/数据库迁移 UI W6 前置） | 根 `docker-compose.postgres.yml`（内置 PG override）+ `deploy/docker-compose.release.postgres.yml`（发布/unraid 变体，与主 release 文件叠加，--env-file compose-release.env 不变）+ `.env.example` BTD_MIGRATION_MANAGED_RESTART 段 | 「一开始就采用 PostgreSQL」：全新 data/postgres 卷首启自动 squash 基线建库，无需先跑 SQLite；内置 override 默认托管重启 opt-in（提交→优雅退出→restart: unless-stopped 拉起→目标 ACK 激活，外部 PG 经 .env 开）；PG 资源限额（limits 512M/shm 256mb，NAS 口径）；G10 digest 铁律只约束自有镜像（postgres 第三方官方 tag 豁免，可 BTDECK_POSTGRES_IMAGE=@sha256 锁版）；PG 模式强制单 worker（契约 §1） |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.sh` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；sh 含 3 profile 镜像源重试链（原 bat 已迁移为本地 sh 脚本） |
 | PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；Windows EXE 嵌入 BtDeck 多尺寸品牌 ICO，Linux ELF 无内嵌图标约定（品牌图标经包管理器交付）；SPA fallback = `factory.py:_mount_frontend_static` |

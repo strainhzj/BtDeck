@@ -2,7 +2,7 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 272 个 test_*.py，2026-10-09 feature/reports 合并后重测）
+## 后端测试分布（共 301 个 test_*.py，2026-10-30 复测；此前 2026-10-09 feature/reports 合并后为 272）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
@@ -25,7 +25,7 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 5，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **272** 个 test_*.py（2026-10-09 feature/reports W5-W7 合入 dev 后重测；含统计报表批 +7 个 test 文件 77 例（另有 reports_fixtures.py 共享基建）、qB 污染批 +1 文件 13 例、RSS Phase 1/2 批 +4 文件、torrent-lookup 批既有文件 +8 例保护，及历史双语契约六批等；W5-W7 前端批零后端新增）。
+> 合计：当前实测 **301** 个 test_*.py（2026-10-30 复测：数据库迁移 UI W1~W5 批 +29——db_migration 单元+pg_integration 真 PG 七文件（CI 执行）+激活故障注入矩阵，全量 5811 全绿；此前 2026-10-09 feature/reports W5-W7 合入 dev 后为 272；含统计报表批 +7 个 test 文件 77 例（另有 reports_fixtures.py 共享基建）、qB 污染批 +1 文件 13 例、RSS Phase 1/2 批 +4 文件、torrent-lookup 批既有文件 +8 例保护，及历史双语契约六批等；W5-W7 前端批零后端新增）。
 > 注：`tests/api/`（89 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### 2026-09-24/25 统计报表批新增后端测试（statistics-reports W1-W3）
@@ -170,7 +170,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（实测 2026-10-18：118 个 unit spec；总量见 ../tests/README.md 141 套 / 144 spec 文件（含 src 内嵌 23 与 e2e 3，e2e 不入 Jest 套数））
+### `frontend/tests/unit/`（实测 2026-10-30：124 个 unit spec（W4 +6 database/maintenance）；总量见 ../tests/README.md 147 套 / 150 spec 文件（含 src 内嵌 23 与 e2e 3，e2e 不入 Jest 套数））
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|

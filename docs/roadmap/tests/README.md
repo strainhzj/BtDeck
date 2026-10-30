@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（272 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 144 个：tests/ 121（unit 118 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1991 例（2026-10-17 Jest 复测：141/141 套、1986/1986 例全部通过，exit=0；2026-10-09 合并后为 1984 例，W8-1 trends.spec 增例；✨2026-10-18 添加种子弹窗验收固化批 +5 例——BaseDialog 滚动结构整体化与主题色滚动条源码契约×2、FormSelect/FormAutocomplete 列表滚动条契约、跳过校验精简+i18n 双语契约，复测 1991/1991 绿））。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（301 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件；✨2026-10-28~30 数据库迁移 UI W1~W5 批 +29：db_migration 单元（协议/bootstrap/启动门禁/管线/journal/维护/fence/激活故障矩阵）+ pg_integration 真 PG 七文件（CI 执行），全量 5811 全绿（W5 收口）；✨2026-09-24/25 统计报表批 +7：speed_sampler/tracker_count_activation/reports_* 五文件等）+ 前端 Jest（spec 文件 150 个：tests/ 127（unit 124 + e2e/mobile 3）+ src 组件内嵌 23；✨统计报表批 +6 spec（EChart/四页签/fun-report）+ 2026-10-09 弹窗组件化批 +4 spec；全量 141 套 1991 例（2026-10-17 Jest 复测：141/141 套、1986/1986 例全部通过，exit=0；2026-10-09 合并后为 1984 例，W8-1 trends.spec 增例；✨2026-10-18 添加种子弹窗验收固化批 +5 例——BaseDialog 滚动结构整体化与主题色滚动条源码契约×2、FormSelect/FormAutocomplete 列表滚动条契约、跳过校验精简+i18n 双语契约，复测 1991/1991 绿））。✨2026-10-30 数据库迁移 UI W4 批 +6 spec 61 例（database-api/maintenance-client/database-settings/database-platform-gating/maintenance-page/mobile-maintenance），test:unit 全量 147 套 2058 例全绿。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -15,6 +15,7 @@
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
 | 端点集成测试 endpoints | `backend/tests/endpoints/` | 端点集成测试（对应 app/api/endpoints/） |
+| 真 PG 集成 pg_integration ✨2026-10-28~30 | `backend/tests/pg_integration/` | 真 PostgreSQL 实库用例（CI pg-integration job 专属执行，本地默认 skip）：smoke/protocol_baseline/protocol_roundtrip/fence/endpoints/tls/migration_flow 七文件——基线建库/identity+receipt 协议/双向回环/SHARE 锁与指纹（✨2026-10-30 三轮实跑修复：DSN 库名替换、逐表绑定安全化、to_regclass NULL 预检）/控制面端点/全链路迁移（W5） |
 | 枚举测试 enums | `backend/tests/enums/` | 枚举测试（对应 app/enums/） |
 | 模型测试 models | `backend/tests/models/` | ORM 模型测试（对应 app/models/） |
 | 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
@@ -22,11 +23,11 @@
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/）；✨2026-09-25 统计报表 W1 +test_speed_sampler 13 例（DB 基准对齐/断网 online=0 采样/hourly 聚合幂等与全离线 avg=0/每日清理/KB/s 换算） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 118 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard；✨2026-09-25 计数实测校准） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 124 个 Jest 单元测试（✨2026-10-30 W4 +6：database-api/database-settings/database-platform-gating/maintenance-client/maintenance-page/mobile-maintenance；同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard、错误 tooltip 滚动收起、真实全屏 loading、桌面折叠侧栏 Lucide 父图标、后台种子添加完成刷新与下载器手动同步异步终态单独覆盖；双语 P1~P6 域 i18n 契约与遗留审计门禁 i18n-leftover-guard；✨2026-09-25 计数实测校准） |
 | 移动 e2e e2e-mobile | `frontend/tests/e2e/mobile/` | 3 个 spec（login/mobile-interactions/mobile-routes，移动端端到端场景，与 unit 分目录组织；✨2026-09-25 实测校准） |
 | 组件内嵌测试 component-test | `frontend/src/**/__tests__/` | 23 个 spec：种子搜索组件 7 个 + common 6 个（LucideIcon/AppLogo + BaseDialog/FormAutocomplete/FormCheckbox/FormSelect ✨2026-10-09 弹窗组件化批）+ charts/EChart 1 个（✨2026-09-25）+ BatchButton、状态常量各 1 个 + 统计报表五页 5 个（✨2026-09-24/25）+ torrents/utils 2 个（traditionalStatusFilter/torrentBatchDeleteLevel）（✨2026-10-18 实测校准） |
 
-## backend/tests/（272 个 test_*.py + 支持文件；✨2026-09-25 实测校准，2026-10-18 复测）
+## backend/tests/（301 个 test_*.py + 支持文件；✨2026-09-25 实测校准，2026-10-30 复测）
 
 ### 顶层
 
@@ -119,7 +120,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 272 个 test_*.py（2026-10-18 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 301 个 test_*.py（2026-10-30 重测），按源码分支镜像组织（api/architecture/auth/core/downloader/endpoints/enums/integration/pg_integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

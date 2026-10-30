@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### utils/（16 个 .ts 文件，实测 2026-09-21）
+### utils/（17 个 .ts 文件，实测 2026-10-30）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -19,6 +19,7 @@
 | 会话维护 session | `session.ts` ✨2026-08-17 | 🔵 双令牌会话主动维护（纯逻辑为主，便于单测）：`getTokenExp`/`isTokenExpired`（JWT exp 解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 模式登录跳转 URL）、`syncTokenFromCookie`（标签页可见时 cookie→内存快照回同步）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录） |
 | 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-18 三态 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次刷新批，三态结果（renewed/rejected/transient，`isDefiniteFailure` 判定后端明确 401 才判死），definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3 次） |
 | 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError`；P6-5 兑底文案走 i18n（errors.paramValidation/requestError/generic，E01 未识别错误当前语言兑底） |
+| 维护独立通道 maintenance-client ✨2026-10-30（W4） | `maintenance-client.ts` | 维护模式独立 HTTP 通道（252 行）：独立 axios 实例不经 request.ts 拦截器（不弹网络 toast/不做幂等 GET 重试/401 不静默续期不重放/绝不 redirectToLogin——防维护屏障 503 洪泛触发无限 refresh）；维护 token 仅模块级内存（禁 localStorage/sessionStorage/URL，刷新即失效）；401 派发 onMaintenanceAuthExpired 订阅回调由 UI 呈现重认证；503 静默以 ApiError 拒绝；错误归一化复用 error-normalize 纯函数 |
 | 部署恢复 deployment-recovery | `deployment-recovery.ts` | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | 下载器类型 downloader-type | `downloaderType.ts` | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
 | 存储 cookies | `cookies.ts` | sidebar status / 双令牌 access+refresh token（cookie） / userId（localStorage） + 通用 `getStorage`/`setStorage` |

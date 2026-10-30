@@ -1,9 +1,9 @@
 # frontend/api — axios API 封装
 
-> 18 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`（✨2026-09-25 统计报表 W4 +reports.ts 实测校准；历史：✨2026-09-24 +rss.ts）。
+> 19 个领域 API 模块，统一通过 `@/utils/request`（axios 封装）调用后端 `/api/v1/*`（✨2026-10-30 数据库迁移 UI W4 +database.ts；✨2026-09-25 统计报表 W4 +reports.ts 实测校准；历史：✨2026-09-24 +rss.ts）。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 关键词速查（18 个 .ts，跳过 torrents_patch.txt）
+## 关键词速查（19 个 .ts，跳过 torrents_patch.txt）
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 与 downloadComplete 兼容字段；`TorrentListParams.tracker_domain` L201 支持 Tracker 主机域名多选，`single_error_only` L205 支持错误单种全局唯一排查，`getTrackerDomains()` L260 读取定时同步已采集的域名；`getActiveTorrents()` L1490 获取 200/206 实时快照，`reconcileRuntimeTorrentStates()` L1501 低频核验复合键终态；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
@@ -23,6 +23,7 @@
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
 | 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
 | 统计报表 reports ✨2026-09-25（W4） | `reports.ts` | 统计报表七函数照 dashboard.ts 信封惯例（`res.code==='200' && res.data`）：getReportsOverview / getReportsTrends（period=month|week）/ getReportsSeeding / getReportsTrackers / getReportsFunSummary / getReportsFunYearly（year 可选）/ getReportsSpeedHistory（range=24h|7d|30d，downloaderId 可选）；类型全部来自 `@/types/reports` 纯 JSON 契约（feature statistics-reports-2026-09；消费方 views/statistics 五子页，W5/W6 已交付） |
+| 数据库迁移控制面 database ✨2026-10-30（W4） | `database.ts` | 迁移控制面 11 函数（ApiEnvelope 信封）：getDatabaseStatus / getMigrationStatus / getTargetReadiness / testConnection / startMigration / provideCredentials / cancelMigration / leaveMigration / discardTarget / switchDatabase / clearActivation 等；类型内联契约（DatabaseStatusData/MigrationStatusData/SwitchCommitData/PgMasked/MigrationCasPayload CAS 载荷等；feature database-migration-ui，消费方 settings DatabasePanel；维护页另走 utils/maintenance-client.ts 独立通道同构函数） |
 | 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |
 
 > 所有文件均 `import request from '@/utils/request'`（行号见上表）。`torrents.ts` 是最大且最核心的 API 模块。
