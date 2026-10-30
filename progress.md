@@ -1,3 +1,9 @@
+## 2026-10-29（续）：compose PostgreSQL 全新采用形态（10674d5 已推送）
+
+- 用户需求：compose 添加 PG 配置并考虑「一开始就采用 PostgreSQL」的全新部署。
+- 交付：deploy/docker-compose.release.postgres.yml（发布/unraid 内置 PG 变体，G10 digest 铁律只约束自有镜像）；dev PG override 升级（全新部署首启自动基线说明+BTD_MIGRATION_MANAGED_RESTART=1+资源限额 512M/shm256mb）；根 compose 透传托管重启开关（外部 PG 用户 .env opt-in）；.env.example+database-setup 形态三。
+- 验证：docker compose config 三组合全过+合并语义抽查（DB_TYPE/managed restart/postgres healthy 门/frontend service_started 保持）。
+
 ## 2026-10-29：W5 CI 实跑收口（四轮迭代全绿）+ W4 前端批推送
 
 - 推送 8d67da3..bf990ae（W1-W5 全量 12+7 提交）；regression 四轮迭代至 **run 40918907847 全绿**（pg-integration 44+6 实跑通过）。
