@@ -1,3 +1,13 @@
+## 2026-10-30：沙箱实测「首次部署即 PostgreSQL」全链路（进程级，证据齐）
+
+- 环境：沙箱无 docker socket → 进程级部署——pgserver wheel 解包取 PG16.2 二进制（initdb scram-sha-256 认证/纯 TCP 55432，沙箱禁 unix socket）+ venv uvicorn :55001 + 非根 nginx :8080 静态 dist+API 反代。
+- **冷启动**（全新 CONFIG_DIR+PG 空库）：日志「PG 库无 alembic_version→squash 基线初始化（create_all+stamp e9f0a1b2c3d4 单事务）→迁移完成→Creating default admin user」；/health/control-ready=ready（databaseBackend=postgres/worker=1）；46 表；bt_database_identity 生成。
+- **登录与持久化**：admin/admin 登录成功（含经 nginx 反代一次）；Bearer 调 /api/v1/database/status（W3 新端点）200（effective source=env dialect=postgresql）；login_logs 3 行入 PG。
+- **二次启动幂等**：已 versioned 跳过基线；默认模板「已存在跳过」。
+- **前端**：dist 首页 200+静态资产 200。
+- 结论：compose「一开始就采用 PG」形态对应路径（postgres healthy→backend 连空库→基线→seed→就绪）在进程级全量复现通过；W6 实机仅剩容器编排差异面。
+- 注意：沙箱 bash 工具后台进程跨调用回收——长链路须单次编排调用内完成（PG/后端/验证/拆栈一体）。
+
 ## 2026-10-29（续）：compose PostgreSQL 全新采用形态（10674d5 已推送）
 
 - 用户需求：compose 添加 PG 配置并考虑「一开始就采用 PostgreSQL」的全新部署。
