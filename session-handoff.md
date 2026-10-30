@@ -1,3 +1,9 @@
+## 2026-10-29 交接：W1-W5 全部推送且 CI 全绿（run 40918907847）
+
+- **状态**：dev=origin=bf990ae。regression 四 job：pg-integration success（44+6）/Backend success/Frontend success。W5 实库证据（migration_flow 7 例+fence 3 例+T19 往返摘要全等）全部 CI 实跑取得。
+- **CI 迭代史**：40906107557(9f)→40910164386(6f)→40913867120(3f+1 backend flake)→40917072321(pg 绿)→40918907847(全绿)。修复面：fence 指纹探测/verify 绑定/反向 receipt ownership/roundtrip 摘要类型化/DSN 拼接/预检白名单/head 锚定——多数为 W1-W3 从未上过 CI 的实库路径盲区。
+- **剩余**：仅 W6（unraid 实机：T08 真实跨盘 EXDEV、T16 真实托管重启 opt-in、A/B 交接实机、掉电/磁盘故障）——依赖真实部署环境与用户配合。
+
 ## 2026-10-28（续八）交接：W5 验证与文档批完成（全绿未提交）
 
 - **状态**：W5 四子批 done。全量 5811 passed/63 skipped/0 failed。**未提交未推送**（dev 领先 origin：W1×2+W2×2+W3×3+W4×2+W5 待提交）。

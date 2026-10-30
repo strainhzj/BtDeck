@@ -1,3 +1,10 @@
+## 2026-10-29：W5 CI 实跑收口（四轮迭代全绿）+ W4 前端批推送
+
+- 推送 8d67da3..bf990ae（W1-W5 全量 12+7 提交）；regression 四轮迭代至 **run 40918907847 全绿**（pg-integration 44+6 实跑通过）。
+- 四轮 CI 修复（详见 feature_list w5 evidence）：DSN make_url 替换、pg_precheck 协议表白名单、W1 head 锚定/双头探针、bootstrap 目标 env 对齐、fence verify 逐表绑定（:x::cast 陷阱）、fence 指纹 to_regclass（语句报错→2.0 自动回滚→锁释放）、反向 receipt 补 target_database_id、roundtrip 摘要类型化读取、orphan 计时放宽。
+- 通用坑三条（跨项目级）：①SQLAlchemy 2.0 text() 中 `:name::cast` 绑定名后紧跟 :: 会被判字面量（用 `CAST(:x AS t)` 或 `(:x)::t`）；②语句级报错会触发事务自动回滚——探测类查询必须无错（to_regclass）；③admin DSN 自带库名时 URL 拼接必错（make_url.set）。
+- 待办：W6 unraid 实机（T08 跨盘/T16 托管重启/A-B 交接/掉电）。
+
 ## 2026-10-28（续七）：数据库迁移 UI W5 验证与文档批（四子批交付，全绿未提交）
 
 - W5-1 实库用例 test_pg_migration_flow.py 7 例（test-connection 三态/discard 实库/activation 全链路真 PG receipt ACK/handoff env 三态）；CI pg-integration 自动纳入。
