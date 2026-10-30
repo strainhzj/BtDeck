@@ -1,0 +1,65 @@
+# BtDeck 发布形态 PostgreSQL 变体（database-migration-ui W6 前置 / v1.0.8 双数据库）
+#
+# 用法（与发布主文件叠加；digest 经 compose-release.env 注入，PG 镜像默认官方 tag）：
+#   docker compose -f deploy/docker-compose.release.yml \
+#     -f deploy/docker-compose.release.postgres.yml \
+#     --env-file deploy/compose-release.env up -d
+#
+# 语义：
+# - 面向 unraid/发布部署「一开始就采用 PostgreSQL」的用户：全新 data/postgres 卷
+#   首启自动 squash 基线建库（契约 §3），无需先经 SQLite；
+# - 主文件 G10 digest 铁律只约束 BtDeck 自有镜像（release manifest 配对）；
+#   postgres 为第三方官方镜像，默认可变 tag，如需锁版设
+#   BTDECK_POSTGRES_IMAGE=postgres:16-alpine@sha256:<digest>
+# - 凭据经环境注入：必须提供 DB_PASSWORD（与主文件 SECRET_KEY/ALLOWED_HOSTS 同 .env）；
+# - BTD_MIGRATION_MANAGED_RESTART=1（同堆栈托管重启 opt-in，W3-8）：迁移提交→
+#   优雅退出→restart: unless-stopped 拉起→目标 ACK 激活闭环；
+# - PG 模式强制单 worker（契约 §1），PG 16+。
+
+services:
+  postgres:
+    image: ${BTDECK_POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: btdeck-postgres
+    environment:
+      - POSTGRES_USER=${DB_USER:-btdeck}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-btdeck}
+      - TZ=UTC
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    # NAS 场景资源上限（与 dev override 同口径）
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-btdeck} -d ${DB_NAME:-btdeck}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - btdeck_network
+    restart: unless-stopped
+
+  backend:
+    environment:
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-btdeck}
+      - DB_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-btdeck}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+      - DB_SSLMODE=${DB_SSLMODE:-prefer}
+      # 同堆栈托管重启 opt-in：提交→退出→拉起→激活 redo（runbook §2）
+      - BTD_MIGRATION_MANAGED_RESTART=1
+    depends_on:
+      postgres:
+        condition: service_healthy

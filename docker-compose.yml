@@ -37,6 +37,10 @@ services:
       - DB_POOL_TIMEOUT=${DB_POOL_TIMEOUT:-30}
       - DB_SSLMODE=${DB_SSLMODE:-prefer}
       - DB_SSL_ROOT_CERT=${DB_SSL_ROOT_CERT:-}
+      # 迁移控制面托管重启 opt-in（database-migration-ui W3-8）：内置 PG override 已默认 1；
+      # 外部 PG 用户在 .env 设 BTD_MIGRATION_MANAGED_RESTART=1 可获得提交→退出→
+      # 守护拉起→自动激活闭环；默认空=提交后提示手动重启（runbook §1 阶段 6）
+      - BTD_MIGRATION_MANAGED_RESTART=${BTD_MIGRATION_MANAGED_RESTART:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # ===== 安全加固透传（W11）：修复 .env.example 指引与 compose 断链 =====
       # DEV 默认 true 保持向后兼容（现有部署升级不崩）；生产加固三件套：

@@ -50,7 +50,9 @@ echo "DB_PASSWORD=强密码" >> .env
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 ```
 
-- 自动启用 `postgres:16-alpine` 服务（healthcheck + 持久化卷 `./data/postgres`）并注入 backend 的 DB 配置
+- 自动启用 `postgres:16-alpine` 服务（healthcheck + 持久化卷 `./data/postgres` + 资源限额）并注入 backend 的 DB 配置
+- **一开始就采用 PG**：全新部署直接用此命令即可——首启空库自动基线建库（无需先跑 SQLite）
+- **托管重启已开启**（override 内置 `BTD_MIGRATION_MANAGED_RESTART=1`）：应用内迁移提交后 backend 优雅退出，由容器 restart 策略自动拉起完成激活闭环
 - 默认 SQLite 部署不受影响（不依赖 PG 服务）
 
 ### 形态二：外部 PG
@@ -59,6 +61,20 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 DB_TYPE=postgresql DB_HOST=pg.internal DB_PORT=5432 DB_USER=btdeck \
 DB_PASSWORD=*** DB_NAME=btdeck WORKERS=1 python main.py
 ```
+
+### 形态三：发布/unraid 堆栈 + 内置 PG（release 变体）
+
+发布镜像部署（digest 锁定）用户采用 PG 时叠加 release 变体：
+
+```bash
+docker compose -f deploy/docker-compose.release.yml \
+  -f deploy/docker-compose.release.postgres.yml \
+  --env-file deploy/compose-release.env up -d
+```
+
+- 语义与形态一一致（全新 PG 部署/托管重启/持久化卷）；PG 镜像默认官方 `postgres:16-alpine` tag，锁版用 `BTDECK_POSTGRES_IMAGE=<image>@sha256:<digest>`
+- 外部 PG（形态二）+ 发布堆栈：不叠加本文件，在 `.env` 设 `DB_*` 与 `BTD_MIGRATION_MANAGED_RESTART=1`
+
 
 Docker 外部数据库同样使用主 compose：在 `.env` 设置这些 `DB_*` 变量后执行
 `docker compose -f docker-compose.yml up -d`，不引入 PostgreSQL override 文件。

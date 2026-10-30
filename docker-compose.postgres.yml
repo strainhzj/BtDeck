@@ -11,8 +11,13 @@
 # 注意：
 # - PG 模式强制 WORKERS=1（单实例单 worker 交付边界，契约 §1；多 worker fail-fast）
 # - PG 16+（JSON 守卫依赖 IS JSON 谓词，契约 §1）
-# - 首次启动：PG 空库自动走 squash 基线（建全表 + stamp，不 seed 前置）；
-#   从 SQLite 迁移存量数据用 backend/scripts/migrate_sqlite_to_pg.py（先停写）
+# - 全新部署直接采用 PG（无需先跑 SQLite）：首次启动 PG 空库自动走 squash 基线
+#   （建全表 + stamp，不 seed 前置），data/postgres 卷即为此形态的持久化库；
+#   已有 SQLite 存量数据则走应用内迁移控制面（设置→数据库，runbook：
+#   docs/operations/database-migration-runbook.md）
+# - BTD_MIGRATION_MANAGED_RESTART=1（下方 backend 已设）：同堆栈托管重启
+#   opt-in——迁移提交后 backend 优雅退出，由 restart: unless-stopped 自动拉起
+#   完成目标 ACK 激活闭环（database-migration-ui W3-8；外部 PG 见 .env.example）
 
 services:
   postgres:
@@ -27,6 +32,16 @@ services:
       - TZ=UTC
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+    # NAS 场景资源上限（PG16-alpine 空闲 ~100MB；基线初始化峰值 ~300MB）
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-btdeck} -d ${DB_NAME:-btdeck}"]
       interval: 5s
@@ -51,6 +66,8 @@ services:
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
       # TLS 默认 prefer（disable/prefer/require/verify-ca/verify-full，契约 §2.3）
       - DB_SSLMODE=${DB_SSLMODE:-prefer}
+      # ===== 迁移控制面托管重启 opt-in（W3-8）：提交→优雅退出→restart 策略拉起→激活 redo =====
+      - BTD_MIGRATION_MANAGED_RESTART=1
     depends_on:
       postgres:
         condition: service_healthy
