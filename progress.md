@@ -1,3 +1,12 @@
+## 2026-10-30（续）：迁移控制面双向往返实跑（PG→SQLite→PG 闭环，e9ca340 已推送）
+
+- 用户需求：全栈部署实测 PG 迁 SQLite 再迁回 PG——用**真实控制面端点**（非直调服务）。
+- **闭环达成**：A) pg-to-sqlite start→READY（46 表+全列摘要核对）→switch B→COMMITTED/发布/RESTART_PENDING；B) 重启激活 redo（目标 ACK→ACTIVATED_ACK→审计归档 4 事件）→正常启动 SQLite（effective=active，T15 受管覆盖 env 实证）→重置空库→sqlite-to-pg start→READY→switch B；C) 重启→受管激活正常启动（effective active postgresql）→登录写 PG→receipt ACTIVATED。数据全程对齐（users/configs/login_logs 13→15→16）。
+- **实跑揪出并修复 11 处 W3 交付盲区**（多为单测替身掩盖的真实路径缺陷）：manager 未接线（端点恒 503）、start 失败无回滚（楔死维护态）、真 fence 未 acquire、管线状态非法字面量+跳步、candidate_active 无人写、final_path 落 CWD、worker 参数未重解析、switch 无就绪门（failed attempt 可提交+发布空 active）、激活 ACK 复数表名/未翻 status、启动守卫不放行已激活凭据、反向对账全列比对假阳性、审计归档 epoch 塞 timestamp 列、健康面 backend 误报 env。
+- **fail-closed 实证**：删 journal 后 active 成无凭据→维护态启动（§4.4 正确拦截）；COMMITTED 未 ACK→维护 redo。
+- 坑（3）：①manifest 必须 JSON-safe（对象经 worker 侧重解析，不入 journal）；②receipt 表名单数（bt_database_migration_receipt，协议常量 RECEIPT_TABLE）；③表名 f-string 须登记 BTD305 白名单（常量插值先例）。
+- 全量 5811 passed/0 failed；mypy 333/0；已推送 e9ca340（CI 待跑）。
+
 ## 2026-10-30：沙箱实测「首次部署即 PostgreSQL」全链路（进程级，证据齐）
 
 - 环境：沙箱无 docker socket → 进程级部署——pgserver wheel 解包取 PG16.2 二进制（initdb scram-sha-256 认证/纯 TCP 55432，沙箱禁 unix socket）+ venv uvicorn :55001 + 非根 nginx :8080 静态 dist+API 反代。

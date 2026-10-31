@@ -1,3 +1,10 @@
+## 2026-10-30 交接：compose PG 形态+首次部署实测+双向往返实跑（e9ca340）
+
+- **状态**：dev=origin=e9ca340（本轮 CI 待跑）。W6 前置大量完成：进程级全栈复现 compose「一开始即 PG」（冷启动基线/seed/就绪）+迁移控制面 PG→SQLite→PG 真实端点双向往返闭环。
+- **实跑修复 11+ 处**（详见 progress 2026-10-30 续）：manager 接线/回滚/fence acquire/状态机/candidate_active/就绪门/ACK 表名+status/守卫放行/对账主键列/归档时间戳/健康面标签——全量 5811 绿。
+- **W6 剩余**：unraid 真实容器编排面（override 合并/托管重启拉起/掉电）；已知小项：审计归档幂等跳过后 spool 残留不自动重试（下次归档机会补）；maintenance 态下经 /api/v1/maintenance/auth 取 token 再操作控制端点（实跑脚本先例）。
+- 复验环境保存在 /tmp/btpg（PG 数据）+/tmp/btdeck-pg（config+sqlite 产物）；pgserver wheel 二进制 /tmp/pgx。
+
 ## 2026-10-29 交接：W1-W5 全部推送且 CI 全绿（run 40918907847）
 
 - **状态**：dev=origin=bf990ae。regression 四 job：pg-integration success（44+6）/Backend success/Frontend success。W5 实库证据（migration_flow 7 例+fence 3 例+T19 往返摘要全等）全部 CI 实跑取得。
