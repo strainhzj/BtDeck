@@ -251,8 +251,33 @@ class TestRestartAdapter:
         monkeypatch.delenv("BTD_MIGRATION_MANAGED_RESTART", raising=False)
         cap = hosting_capability()
         assert cap["autoRestartCapable"] is False  # 默认无 opt-in → 不自动退出
+        assert cap["hintCode"] == "MANAGED_RESTART_MANUAL"
         monkeypatch.setenv("BTD_MIGRATION_MANAGED_RESTART", "1")
         cap = hosting_capability(opt_in=True)
         assert cap["optIn"] is True
         # hosting unknown/pid1 由环境决定——只验证 opt-in 门控逻辑生效
-        assert cap["autoRestartCapable"] == (cap["hosting"] in {"systemd", "docker"} and not cap["pid1Self"])
+        assert cap["autoRestartCapable"] == (cap["hosting"] == "docker" or (cap["hosting"] == "systemd" and not cap["pid1Self"]))
+
+    def test_capability_matrix_deterministic(self, monkeypatch):
+        """W6-B 发现①回归：docker+opt-in 允许 PID1（容器主进程即常态）；
+        systemd/unknown 的 PID1 自检仍拒绝；capable 时无 hint/hintCode。"""
+        import app.services.db_migration.restart_adapter as adapter
+
+        cases = [
+            ("docker", True, True, True),
+            ("docker", True, False, True),
+            ("docker", False, True, False),
+            ("systemd", True, True, False),
+            ("systemd", True, False, True),
+            ("unknown", True, False, False),
+        ]
+        for hosting, opt_in, pid1_self, capable in cases:
+            monkeypatch.setattr(adapter, "detect_hosting", lambda h=hosting: h)
+            monkeypatch.setattr("os.getpid", lambda p=1 if pid1_self else 42: p)
+            cap = hosting_capability(opt_in=opt_in)
+            assert cap["autoRestartCapable"] is capable, (hosting, opt_in, pid1_self)
+            if capable:
+                assert cap["hint"] is None and cap["hintCode"] is None
+            else:
+                assert cap["hintCode"] == "MANAGED_RESTART_MANUAL"
+                assert cap["hint"] and "BTD_MIGRATION_MANAGED_RESTART" in cap["hint"]

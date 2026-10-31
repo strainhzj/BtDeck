@@ -143,6 +143,59 @@ class TestManagedStartupBlock:
             monkeypatch.delenv("DB_TYPE", raising=False)
 
 
+class TestEffectiveDialectDispatch:
+    """W6-B 发现④回归：启动迁移分发面向有效配置（active 优先），
+    不再盲读 settings.DATABASE_DIALECT（B 模式 active=PG 而 env 未声明时
+    曾会打进默认 SQLite）。"""
+
+    def test_dispatch_follows_effective_dialect(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(migration, "_evaluate_managed_startup_block", lambda *a, **k: None)
+        seen: dict = {}
+
+        def fake_pg() -> bool:
+            seen["pg"] = True
+            return True
+
+        monkeypatch.setattr(migration, "_migrate_database_pg", fake_pg)
+        monkeypatch.setattr(migration, "_effective_runtime_dialect", lambda: "postgresql")
+        assert migration.migrate_database() is True
+        assert seen.get("pg") is True
+
+    def test_effective_dialect_prefers_active_over_env(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "database": {
+                        "active": {
+                            "version": 1,
+                            "generation": "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+                            "dialect": "sqlite",
+                            "sqlite_path": "/data/app.db.migrated.sqlite",
+                            "postgresql": None,
+                            "expected_database_id": "11111111-2222-4333-8444-555555555555",
+                            "receipt_attempt_id": "pg-to-sqlite/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+                            "revision_at_import": "e9f0a1b2c3d4",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(migration.settings, "CONFIG_DIR", str(tmp_path))
+        # env 側即便声明 PG，分发也以 active（sqlite）为准
+        monkeypatch.setenv("DB_TYPE", "postgresql")
+        try:
+            assert migration._effective_runtime_dialect() == "sqlite"
+        finally:
+            monkeypatch.delenv("DB_TYPE", raising=False)
+
+    def test_effective_dialect_env_fallback_when_no_active(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(migration.settings, "CONFIG_DIR", str(tmp_path))
+        monkeypatch.delenv("DB_TYPE", raising=False)
+        assert migration._effective_runtime_dialect() == "sqlite"
+
+
 class TestActivatedLibraryUpgradesNormally:
     """T01 前半：已激活（ACTIVATED）库停在旧 revision → 正常升级，历史导入 revision 不拒启。"""
 

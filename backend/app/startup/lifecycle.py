@@ -220,6 +220,49 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
         return False
 
 
+def _mount_maintenance_control_services(
+    app: FastAPI,
+    config_dir: str,
+    *,
+    db_path: str | None = None,
+    secret_key: str | None = None,
+) -> None:
+    """装载维护本地审计与维护认证服务（W6-B 发现②修正）。
+
+    正常启动与维护启动分支都装载：屏障以 controller.in_maintenance 判定
+    维护，运行时迁移窗口（start→COMMITTED 未重启）下 /api/v1/maintenance/
+    auth 必须可签发，否则普通 token 过期后控制面将锁死至重启。
+    认证面初始化失败不阻断业务（仅置为不可用，离线恢复语义不变）。
+    """
+    from app.core import database_bootstrap as bootstrap
+    from app.core.config import settings
+    from app.services.db_migration.local_audit import MaintenanceLocalAudit
+    from app.services.db_migration.maintenance_auth import MaintenanceAuthService
+
+    if getattr(app.state, "maintenance_audit", None) is None:
+        app.state.maintenance_audit = MaintenanceLocalAudit(config_dir)
+
+    if getattr(app.state, "maintenance_auth", None) is not None:
+        return
+    try:
+        effective = bootstrap.resolve_effective_database_config(str(settings.YAML_PATH))
+        if effective.dialect == bootstrap.DIALECT_POSTGRESQL and effective.pg is not None:
+            from app.services.db_migration.maintenance_auth import pg_user_reader
+            from app.services.db_migration.target_params import build_pg_url
+
+            reader = pg_user_reader(build_pg_url(effective.pg))
+        else:
+            from app.services.db_migration.maintenance_auth import sqlite_user_reader
+
+            reader = sqlite_user_reader(effective.sqlite_path or str(db_path or settings.DATABASE_PATH))
+        app.state.maintenance_auth = MaintenanceAuthService(
+            config_dir, reader, secret_key=str(secret_key or settings.SECRET_KEY)
+        )
+    except Exception as exc:  # 认证面初始化失败不阻断控制面，仅置为不可用
+        print(f"[WARN] 维护认证服务初始化失败（认证不可用，转离线恢复）: {exc}")
+        app.state.maintenance_auth = None
+
+
 def _attach_migration_manager(app: FastAPI, config_dir: str) -> None:
     """普通启动末尾挂 app.state.database_migration_manager（W3-3 接线）。
 
@@ -238,6 +281,10 @@ def _attach_migration_manager(app: FastAPI, config_dir: str) -> None:
         print("[OK] 数据库迁移管理器已就绪（/api/v1/database/*）")
     except Exception as e:  # noqa: BLE001 - 控制面可选装载
         print(f"[WARN] 数据库迁移管理器初始化失败（迁移控制面不可用）: {e}")
+        return
+    # W6-B 发现②：运行时迁移窗口需要维护认证可签发（普通 token 过期后的
+    # 控制面恢复路径），与维护启动分支同一套服务。
+    _mount_maintenance_control_services(app, config_dir)
 
 
 def _startup_maintenance_gate(
@@ -260,7 +307,7 @@ def _startup_maintenance_gate(
     配置/状态损坏仍抛错 fail-closed（不进入维护也不默认化，同 W1 语义）。
     """
     from app.core import database_bootstrap as bootstrap
-    from app.services.db_migration.local_audit import KIND_GATE_CHANGE, MaintenanceLocalAudit
+    from app.services.db_migration.local_audit import KIND_GATE_CHANGE
     from app.services.db_migration.maintenance import (
         MaintenanceController,
         get_default_controller,
@@ -332,35 +379,18 @@ def _startup_maintenance_gate(
     app.state.maintenance_mode = True
     app.state.maintenance_disposition = {"reasonCode": reason_code, "detail": disposition.detail}
 
-    # 本地审计（维护期源零写；磁盘满时关键动作拒绝——T22）
-    audit = MaintenanceLocalAudit(_config_dir)
-    app.state.maintenance_audit = audit
-    audit.audit_event(
-        KIND_GATE_CHANGE,
-        action="maintenance-boot",
-        outcome="ok",
-        detail={"reasonCode": reason_code},
-        attempt_id=attempt_id if isinstance(attempt_id, str) else None,
-        epoch=controller.epoch,
-    )
-
-    # 维护认证：只读用户读取器（零源写；缺 seed 时认证不可用→离线恢复，§5.3）
-    try:
-        if effective.dialect == bootstrap.DIALECT_POSTGRESQL and effective.pg is not None:
-            from app.services.db_migration.maintenance_auth import MaintenanceAuthService, pg_user_reader
-            from app.services.db_migration.target_params import build_pg_url
-
-            reader = pg_user_reader(build_pg_url(effective.pg))
-        else:
-            from app.services.db_migration.maintenance_auth import MaintenanceAuthService, sqlite_user_reader
-
-            reader = sqlite_user_reader(effective.sqlite_path or str(db_path or settings.DATABASE_PATH))
-        app.state.maintenance_auth = MaintenanceAuthService(
-            _config_dir, reader, secret_key=str(secret_key or settings.SECRET_KEY)
+    # 本地审计 + 维护认证（W6-B 发现②：改用与普通启动同一装载器，两分支能力一致）
+    _mount_maintenance_control_services(app, _config_dir, db_path=db_path, secret_key=secret_key)
+    audit = getattr(app.state, "maintenance_audit", None)
+    if audit is not None:
+        audit.audit_event(
+            KIND_GATE_CHANGE,
+            action="maintenance-boot",
+            outcome="ok",
+            detail={"reasonCode": reason_code},
+            attempt_id=attempt_id if isinstance(attempt_id, str) else None,
+            epoch=controller.epoch,
         )
-    except Exception as exc:  # 认证面初始化失败不阻断控制面，仅置为不可用
-        print(f"[WARN] 维护认证服务初始化失败（认证不可用，转离线恢复）: {exc}")
-        app.state.maintenance_auth = None
 
     # MCP 拒新调用（在途由准入 lease 覆盖；此处 mark_closed 立即拒新会话）
     mcp_bundle = getattr(app.state, "mcp_bundle", None)

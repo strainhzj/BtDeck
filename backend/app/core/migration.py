@@ -73,9 +73,29 @@ def _read_db_version(db_path: str) -> Optional[str]:
         return None
 
 
+def _effective_runtime_dialect() -> str:
+    """启动迁移应面向的有效方言（W6-B 发现④修正）。
+
+    以 bootstrap 有效配置（active 优先/env 回退）为准，与 /api/v1/database/
+    status、build_database_url 同源：B 模式激活后（active 已指向 PG）而 env
+    未声明 DB_TYPE 时，settings.DATABASE_DIALECT 仍是 sqlite——若按其分发，
+    增量 upgrade 会打到默认 SQLite 而非 active PG，且事后版本对账也读错库。
+    """
+    try:
+        from app.core import database_bootstrap as bootstrap
+
+        return bootstrap.resolve_effective_database_config(str(settings.YAML_PATH)).dialect
+    except Exception:  # noqa: BLE001 - 有效配置解析失败时回退 env 判定（fail-closed 由更早的 bootstrap/守卫承担）
+        return str(settings.DATABASE_DIALECT)
+
+
 def _read_db_version_dispatch(db_path: str) -> Optional[str]:
-    """按方言分发版本读取（v1.0.8 任务1.7）：PG 走引擎连接读（契约 §3）。"""
-    if settings.DATABASE_DIALECT == "postgresql":
+    """按方言分发版本读取（v1.0.8 任务1.7）：PG 走引擎连接读（契约 §3）。
+
+    方言取有效配置（W6-B 发现④）：与 upgrade 面向同一个库，避免
+    「升级打 A 库、对账读 B 库」的假绿。
+    """
+    if _effective_runtime_dialect() == "postgresql":
         from app.core.pg_baseline import read_pg_version_standalone
 
         return read_pg_version_standalone()
@@ -189,7 +209,12 @@ def _migrate_database_pg() -> bool:
     )
 
     db_path = str(settings.DATABASE_PATH)  # 仅作日志上下文；PG 不消费
-    cfg = _build_alembic_config(db_path)
+    # W6-B 发现④：显式目标 URL（与 pg_sync_engine 同源的有效库）传给 env.py，
+    # 消除 alembic 侧 settings(env/默认) 解析源——B 模式 active=PG 而 env 未
+    # 声明时，upgrade 不再落到默认 SQLite。
+    from app.database import build_database_url
+
+    cfg = _build_alembic_config(db_path, target_url=build_database_url())
     cfg.attributes["configure_logger"] = False
 
     sd = ScriptDirectory.from_config(cfg)
@@ -351,10 +376,18 @@ def migrate_database() -> bool:
     try:
         # 0. 受管启动分流（fail-closed；先于备份/升级/seed 等一切副作用）
         _evaluate_managed_startup_block()
-        if settings.DATABASE_DIALECT == "postgresql":
+        if _effective_runtime_dialect() == "postgresql":
             return _migrate_database_pg()
-        db_path = str(settings.DATABASE_PATH)
-        cfg = _build_alembic_config(db_path)
+        # W6-B 发现④：SQLite 分支同样面向有效库（B 模式反向激活后 active
+        # sqlite_path 可为独立产物路径，不再盲取 settings.DATABASE_PATH）。
+        try:
+            from app.core import database_bootstrap as bootstrap
+
+            _effective = bootstrap.resolve_effective_database_config(str(settings.YAML_PATH))
+            db_path = str(_effective.sqlite_path or settings.DATABASE_PATH)
+        except Exception:  # noqa: BLE001 - 解析失败回退 env 路径（与旧行为一致）
+            db_path = str(settings.DATABASE_PATH)
+        cfg = _build_alembic_config(db_path, target_url=f"sqlite:///{db_path}")
         # 应用启动期间不得让 Alembic fileConfig 覆盖 app.* 的 stdout handler，
         # 否则迁移首个异常会从 docker logs 中消失，只剩后续 ORM 二次错误。
         cfg.attributes["configure_logger"] = False

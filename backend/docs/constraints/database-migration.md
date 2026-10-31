@@ -238,8 +238,12 @@ guide 保留“不降级、不 stamp”的兼容路径。
   +新代次 → 托管退出。目标 ACK **先**、本地 ACTIVATED_ACK 后、审计归档同
   事务+cursor（spool 回放期间新追加不丢尾部）。
 - **托管重启（T16）**：cgroup/INVOCATION_ID 只证明环境不证明重启策略；
-  自动退出需 已知适配器 + `BTD_MIGRATION_MANAGED_RESTART=1` 显式 opt-in +
-  非 PID1；否则 RESTART_PENDING+手动提示。compose：backend 探针
+  自动退出需 已知适配器 + `BTD_MIGRATION_MANAGED_RESTART=1` 显式 opt-in；
+  进程角色验证：systemd 形态拒绝 PID1（误当 init 运行无编排器保证），
+  **docker 形态允许 PID1**（容器主进程即常态，opt-in 已声明 restart
+  策略，退出交编排器拉起；W6-B 发现①修正）；否则 RESTART_PENDING+手动
+  提示（status 同源下发 hintCode=MANAGED_RESTART_MANUAL+hint 原文，前端
+  按码本地化）。compose：backend 探针
   /health/control-ready，前端依赖 service_started（维护期静态页可达）。
 - **同库交接（§7.3）**：clear=受控 HANDOFF_SAME_DB 交接，仅允许 env 指向
   **同一当前服务库**（同 dialect+samefile/host:port/db），异库拒绝引导新
@@ -251,8 +255,21 @@ guide 保留“不降级、不 stamp”的兼容路径。
   discard。
 - **控制端点鉴权（§8）**：`/api/v1/database/*` 屏障放行仅为传输可达；
   每路由 `require_database_control_access` 分派（普通态=普通管理员；维护态
-  =维护 token；双向不可互用）；维护态修改请求携带 attemptId+epoch+
-  stateVersion（CAS）。
+  =维护 token；双向不可互用）；**维护态判定 = 启动维护分支（app.state.
+  maintenance_mode）或运行时迁移窗口（controller.in_maintenance），与屏障
+  中间件同一面**（W6-B 发现②修正：三重判定不一致会让 COMMITTED 未重启
+  窗口旧普通 token 可用而新维护 token 签不到，token 过期后控制面锁死）；
+  维护认证服务（app.state.maintenance_auth）在普通启动与维护启动两分支
+  均装载，运行时迁移窗口可经 /api/v1/maintenance/auth 签发/续期；维护态
+  修改请求携带 attemptId+epoch+stateVersion（CAS）。
+- **健康面同源（T15）**：/health/* 的 databaseBackend 取进程导入期有效库
+  快照（与 /api/v1/database/status 同源）；control-ready 在运行时迁移窗口
+  同样返回 200+businessReady=false（与启动维护分支同语义，W6-B 发现③
+  修正：防「已发布未重启」窗口重读 config.yaml 误报新方言）。
+- **启动迁移分发（T14/T19）**：migrate_database 的方言分发/db_path/target_url
+  面向 bootstrap 有效配置（active 优先、env 回退）——B 模式 active 指向 PG
+  而 env 未声明时，升级与版本对账都落在 active 库，不落默认 SQLite
+  （W6-B 发现④修正；alembic env.py 经 attributes["target_url"] 消费）。
 
 ### 新增静态门禁
 

@@ -46,8 +46,20 @@ _ERROR_CODES = {
 
 
 async def require_database_control_access(request: Request) -> Dict[str, Any]:
-    """数据库控制面鉴权（模式分派；显式依赖名供契约测试登记）。"""
+    """数据库控制面鉴权（模式分派；显式依赖名供契约测试登记）。
+
+    维护态判定 = 启动维护分支（app.state.maintenance_mode）**或**运行时
+    迁移窗口（controller.in_maintenance，W6-B 发现②修正：三重判定不一致
+    会让 COMMITTED 未重启窗口内旧普通 token 可用而新维护 token 签不到，
+    token 过期后控制面锁死至重启）——两部判定与屏障中间件同一面。
+    """
     maintenance_mode = bool(getattr(request.app.state, "maintenance_mode", False))
+    if not maintenance_mode:
+        from app.services.db_migration.maintenance import get_default_controller
+
+        controller = get_default_controller()
+        status = controller.status() if controller is not None else None
+        maintenance_mode = bool(status is not None and status.in_maintenance)
     if maintenance_mode:
         from app.api.endpoints.maintenance import require_maintenance_token
 

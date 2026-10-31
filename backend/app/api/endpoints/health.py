@@ -85,13 +85,28 @@ async def _database_readiness_check() -> Tuple[Dict[str, Any], Optional[str]]:
     return ({"status": "ok"}, None)
 
 
+def _runtime_database_backend() -> str:
+    """进程实际服务方言（导入期有效库快照，与 /api/v1/database/status 同源）。
+
+    W6-B 发现③：不得经 effective_database_label 重读 config.yaml——COMMITTED
+    发布后未重启窗口内磁盘 active 已指向新库而进程仍服务旧库，重读会
+    误报新方言（「显示已切 PG 实际服务 SQLite」误导窗口）。
+    """
+    try:
+        from app.database import get_effective_database_config
+
+        return get_effective_database_config().dialect
+    except Exception:  # noqa: BLE001 - 快照不可用时回退既有解析
+        return resolve_runtime_info()[0]
+
+
 def _worker_readiness_check() -> Tuple[Dict[str, Any], Optional[str]]:
     """复用 startup_guard 的 SQLite 单 Worker 规则，不复制判断逻辑。"""
-    backend = "unknown"
+    backend = _runtime_database_backend()
     worker_count: Optional[int] = None
     scheduler_enabled: Optional[bool] = None
     try:
-        backend, worker_count, scheduler_enabled = resolve_runtime_info()
+        _, worker_count, scheduler_enabled = resolve_runtime_info()
         validate_worker_count(backend, worker_count, bool(scheduler_enabled))
     except (StartupGuardError, TypeError, ValueError):
         return (
@@ -160,9 +175,24 @@ async def health_control_ready(request: Request):
 
     §5.4：维护期容器探针用本端点区分"维护中"与"死锁"（业务 ready 会把维护
     中容器误判不健康）；不泄露数据库/凭据，仅粗粒度状态。
+
+    W6-B 发现③修正：运行时迁移窗口（controller.in_maintenance，非启动
+    维护分支）同样返回 200+businessReady=false——与 compose 探针注释及
+    W3-8 设计一致（容器保持 healthy，不触发重启风暴）。
     """
     maintenance_mode = bool(getattr(request.app.state, "maintenance_mode", False))
     if not maintenance_mode:
+        from app.services.db_migration.maintenance import get_default_controller
+
+        controller = get_default_controller()
+        status = controller.status() if controller is not None else None
+        if status is not None and status.in_maintenance:
+            return _common_response(
+                "success",
+                "控制面就绪（业务维护中）",
+                "200",
+                {"businessReady": False, "maintenance": True},
+            )
         # 普通模式：委托业务就绪判定（不绕发布身份门禁）
         return await health_ready(request)
     return _common_response(

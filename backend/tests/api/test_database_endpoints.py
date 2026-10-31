@@ -4,6 +4,9 @@
 - 普通模式：/api/v1/database/* 未认证 401；认证后 200（依赖分派普通管理员）；
 - 维护模式：屏障放行传输；无维护 token → 401；普通 access token 同样拒绝
   （维护依赖只认 aud=btdeck-maintenance）；带维护 token → 200；
+- 运行时迁移窗口（W6-B 发现②③修正）：controller.in_maintenance 而
+  app.state.maintenance_mode=False 时，鉴权/维护认证/control-ready 与启动
+  维护分支同一语义（维护 token 必需且可签发；businessReady=false）；
 - 路径边界：/api/v1/database-evil 不在放行前缀（屏障 503）；
 - 三探针：live 200/ready 503/control-ready 200+businessReady=false（维护）。
 """
@@ -119,6 +122,51 @@ class TestMaintenanceModeAuthMatrix:
         client.headers.update({"Authorization": "Bearer normal-looking-token"})
         resp = client.get("/api/v1/database/migration/status")
         assert resp.status_code == 401
+
+
+def _enter_runtime_maintenance(client, tmp_path):
+    """模拟运行时迁移窗口（start→FROZEN）：controller 进入维护、但
+    app.state.maintenance_mode 保持 False（非启动维护分支）。"""
+    from app.services.db_migration.maintenance import (
+        MaintenanceController,
+        set_default_controller,
+    )
+
+    controller = MaintenanceController(str(tmp_path))
+    controller.enter_maintenance_boot()
+    set_default_controller(controller)
+    client.app.state.maintenance = controller
+    assert getattr(client.app.state, "maintenance_mode", False) is False
+    assert controller.status().in_maintenance is True
+    return controller
+
+
+class TestRuntimeMigrationWindow:
+    """运行时迁移窗口鉴权/探针一致性（W6-B 发现②③回归）。"""
+
+    def test_control_requires_maintenance_token_not_normal(self, app, tmp_path):
+        client = TestClient(app)
+        _enter_runtime_maintenance(client, tmp_path)
+        assert client.get("/api/v1/database/migration/status").status_code == 401
+        client.headers.update({"Authorization": "Bearer normal-looking-token"})
+        assert client.get("/api/v1/database/migration/status").status_code == 401
+
+    def test_maintenance_auth_issuable_and_accepted(self, app, tmp_path):
+        client = TestClient(app)
+        _enter_runtime_maintenance(client, tmp_path)
+        token = _maintenance_token(client, tmp_path)  # 服务已装载+in_maintenance → 可签发
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        resp = client.get("/api/v1/database/migration/status")
+        assert resp.status_code == 503  # 鉴权通过（manager 未装载 → 不可用语义）
+
+    def test_control_ready_business_not_ready(self, app, tmp_path):
+        client = TestClient(app)
+        _enter_runtime_maintenance(client, tmp_path)
+        control = client.get("/health/control-ready")
+        assert control.status_code == 200
+        data = control.json().get("data") or control.json()
+        assert data.get("businessReady") is False
+        assert data.get("maintenance") is True
 
 
 class TestBarrierPathBoundary:
