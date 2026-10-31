@@ -1,10 +1,29 @@
 # P7 收口验收清单（M2 收口，desktop-bilingual-20260918.p7）
 
-> 状态：**自动化回归已完成（2026-09-20 实测）；浏览器视觉验收与 R01～R06 签认待用户执行**。
+> 状态：**自动化回归已完成（2026-09-20 实测）；浏览器级自动化实测已完成（2026-10-31，见 §〇-2，A01/A02/L03/L04/V01/C01 PASS、V02 报 1 真实缺陷）；剩余：用户人工视觉复核/签认、R01～R06 签认、D01/D02/T02/T03 真实下载器联调**。
 > 依据：`PLANS/desktop-bilingual.md` §5 验收矩阵 / §6 高风险专项 / §7 门禁与完成定义。
 > 口径：**自动化绿 ≠ 人工视觉通过**（计划 §7 明文）；本清单逐项标注证据类别。
 
 ## 〇、合并后复测与范围扩界（2026-09-22）
+
+## 〇-2、自动化浏览器实测（2026-10-31，Hermes 隔离栈 Playwright，dev@2007fc2e）
+
+> 非人工签认：以下为浏览器级自动化证据（en-US context、hash 路由、隔离 SQLite 栈），供用户签认时参考；人工视觉复核与 R01～R06 签认仍待用户执行。
+
+| 项 | 结果 | 关键实测 |
+|---|---|---|
+| A01 | ✅ PASS | htmlLang=en、title="Sign in"、强制改密落 /#/settings/index?forceChange=1 全英文，改密后新密码复登进 dashboard |
+| A02 | ✅ PASS | 错密 "Incorrect username or password."；断网 "Network connection failed. Please check your network."（错密仅 2 次，低于锁定线） |
+| L03 | ✅ PASS | "Seeding" 筛选选中态 zh→en 切换后保留（selectionRetained=true） |
+| L04 | ✅ PASS（方法调整） | modal-overlay z-index 1040>navbar 1030 遮挡，「弹窗内切语言」实测不可达→改为中英分别开弹窗对比，列设置弹窗文案/footer/docTitle 逐项一致 |
+| V01 | ✅ PASS | 1024/1280/1440/1920 × 8 页 scrollWidth==clientWidth 零横向溢出、pageerror=0 |
+| C01 | ✅ PASS | 375px /m/torrents 与 /m/maintenance 全中文零溢出零报错 |
+| V02 | ❌ FAIL（真实缺陷） | 列设置弹窗取消路径非零副作用：复选框 v-model 直绑 columnSettings 同源数组，Cancel 只关弹窗不还原→取消即生效，重开勾选态已变，刷新才恢复。建议开单修复 |
+| D01/D02/T02/T03 | ⏳ SKIP | 需真实 qB/TR（同下） |
+
+**新发现缺陷（待处置）**：①V02-F01 列设置取消缺陷（同上）；②V01-F01：EN 界面 settings→Database 面板显示后端硬编码中文 hint（`backend/app/services/db_migration/restart_adapter.py:66` 托管提示自由文本，未入 reasonCode 契约）；③V02-F02 轻微：notification-drawer 一处 aria-label 空值、若干 el-dialog 用 Element 默认 "dialog" 标签；④L04-F01：清单 §三 步骤「弹窗打开时切换语言」在真实 UI 不可达（遮窗阻挡 pointer events），验收方法已按上表调整。
+
+证据：50+ 截图 `/tmp/btdeck-p7-shots.tar.gz`（sha256 9996bf0f…88 0d2，54 文件 6.97MB，Hermes 主机留存）；仓库零修改实测（find -newermt 排除 venv/node_modules/.git 后 0 文件）。
 
 > dev1.0.7（MCP+MoviePilot 线）合入 dev 后，v1.0.7 新增桌面面已并入 M2 双语范围并完成实现；
 > 本节为合并 + 双语扩界批（提交 213bafa / 0314687）后的自动化证据刷新。

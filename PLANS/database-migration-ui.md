@@ -3,7 +3,7 @@
 > **版本/状态**：v4，2026-10-28 修订完成，**二审问题定向设计复核完成，未实施**（见 §16）。不得把设计处置或本文验收清单登记为功能测试/整体验收通过。
 > **冻结决策**：D1/D3/D4/D5 认可；**D2=A 指引+B 一键切换均保留**；**D6 安卓不支持 PostgreSQL**。不创建 PG 服务，支持 Docker 同堆栈。
 > **关联**：[v1.0.8 基础](./v1.0.8.md)、[已有 PG 验收](./postgresql-acceptance.md)、[v3 二审原报告](./database-migration-ui-review-round2.md)；现行契约 `backend/docs/postgresql-contract.md`。
-> **feature id**：`database-migration-ui-2026-10-28`（仅设计阶段；W0 设计修订/定向复核 done，W1–W6 均 pending）。
+> **feature id**：`database-migration-ui-2026-10-28`（W0–W5 全量交付 2026-10-28~29，CI run 40918907847 全绿；W6 实机面 2026-10-31：生产部署 2007fc2e + 隔离容器栈双向闭环 S1–S10 全过，剩掉电/磁盘故障、T08 真实跨盘、A-B 交接实机执行，另有 ①–⑤ 五项发现待处置，见 feature_list w6a/w6b）。
 
 ## 1. 目标、边界与本轮修订
 
@@ -360,7 +360,7 @@ app/services/db_migration/
 | W3 | journal/config 仓储、A+B commit/ACK、同库 clear、ownership discard、健康与托管 API | pending；T04/T08/T09/T10/T11/T15/T16/T17/T21 |
 | W4 | 设置面板、维护独立客户端、A/B、平台/demo/i18n/移动、Jest | pending；前端门禁与 API 联调；不先开放未受屏障保护的端点 |
 | W5 | 全量/真 PG CI/故障注入、契约/API/runbook/roadmap 同步与证据 | pending；不得把普通单测替代故障/实库证据 |
-| W6 | unraid 真实同堆栈双向、已知托管重启、A/B交接、掉电/磁盘故障场景 | pending；经用户授权的隔离测试数据，不碰生产库演练 |
+| W6 | unraid 真实同堆栈双向、已知托管重启、A/B交接、掉电/磁盘故障场景 | 主体 done（2026-10-31：生产部署 2007fc2e + 隔离栈 SQLite⇄PG 双向往返 S1–S10 全过/激活 redo/屏障/清场零残余/生产零影响；A-B 交接实机执行与掉电/磁盘故障、T08 真实跨盘 EXDEV 未做；发现①托管重启不自动与②维护窗口锁死待处置） |
 
 新增 schema 与配置优先级契约在对应实现批次同改，不推迟到最后才对齐：§2.1 有效配置+受管锚点；§3 暂停/receipt/ACK/回退窗口；database-migration.md 三协议表分类及维护只读启动；平台矩阵、MCP 维护整体停用、health/compose 与运维恢复步骤。
 

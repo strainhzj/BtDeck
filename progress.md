@@ -1,3 +1,24 @@
+## 2026-10-31（续四）：验收缺陷修复批（W6-B ①②③④ + P7 V02-F01/V01-F01，5 提交）
+
+- **触发**：用户授权按建议顺序开修七项积压缺陷（含提交授权）。
+- **fix(deploy) 22fd2d2**：三处 compose 前端健康检查 wget 改 127.0.0.1（busybox wget 对 localhost 只试 [::1]×nginx 仅听 IPv4，W6-A 实机假阴性实证；unraid 生产已先行热修，本提交收口仓库）。
+- **fix(frontend) b8f6012**：列设置弹窗取消零副作用（P7 V02-F01）——列表/传统两视图改草稿驱动（openColumnSettings 快照/复选框绑 columnSettingsDraft/resetColumnSettings 仅作用草稿/applyColumnSettings 回写+持久化/Cancel 关闭即弃）；传统视图草稿随行携带 labelKey（模板按 labelKey 渲染，首版漏带致保存路径列测试红）；+4 Jest；受影响 spec 修正（保存路径列用例先 openColumnSettings 再断言）。
+- **fix(frontend) 2e5e30c**：托管提示 hintCode 本地化（P7 V01-F01）——api/database.ts HostingCapabilityData.hintCode、DatabasePanel hostingHint getter、zh/en database.status.hostingHints.MANAGED_RESTART_MANUAL（zh 与后端原文逐字节一致）。
+- **fix(backend) 8e6c057**：W6-B 四项发现——①restart_adapter docker+opt-in 允许 PID1（容器主进程即常态；systemd/unknown 仍拒）+退出时刻能力复核+hintCode；②_mount_maintenance_control_services 双分支共用装载（运行时迁移窗口 /maintenance/auth 可签发）+控制面鉴权维护态判定=启动分支 OR controller.in_maintenance（与屏障同面，消除 COMMITTED 未重启窗口锁死）；③control-ready 运行时维护窗口 200+businessReady=false + health databaseBackend 取进程有效库快照；④migrate_database 分发/db_path/target_url 面向 bootstrap 有效配置（B 模式 active=PG 而 env 未声明不再落默认 SQLite）。+7 测试（运行时窗口鉴权矩阵 3/托管矩阵确定性 1/有效方言分发 3）。
+- **docs(roadmap) 07330fd**：五文件同步（services 托管规则/infra 双分支装载/api 鉴权与 control-ready/core 迁移分发/views 列设置草稿+DatabasePanel）+ tests/README 全量计数（前端 147 套 2062 例、后端 5818 passed/63 skipped）。
+- **验证**（worker 子代理全量+主会话复核）：后端 pytest **5818 passed / 63 skipped / 0 failed**（332s 单进程）、mypy 333 文件 0 错、black/flake8 净；前端 lint（contract:check 绿零 autofix）/typecheck 0 错/**Jest 147 套 2062/2062 全绿**（首跑 6 failed 中 5 为与 build 并行负载假阳、顺序复跑绿；1 真红=传统视图保存路径列，系草稿驱动改造后需先开弹窗，已修 spec 并复绿）/build 绿（echarts gz 199.89KiB）。
+- **验证边界**：①②③④修复经单测+全量回归；真实容器内 T16 自动拉起与②③窗口行为**待下次实机部署复验**（建议：构建部署 unraid 后在隔离栈复跑 S6-S8，观察 switch 后容器 RestartCount 递增与 /maintenance/auth 可签发）。
+- **未做**：V02-F02 空 aria-label（静态复查无缺陷，运行时数据态）；sqlite3 CLI 补镜像（发现⑤，属镜像工程项随下个构建批处理）；W6 掉电/T08 跨盘/A-B 交接实机（依赖用户安排）。
+
+## 2026-10-31（续三）：全项目待办盘点 + 可验收项集中验收（W6-A 生产部署 / W6-B 容器演练 / P7 浏览器实测）
+
+- **盘点**：96 feature 中非完成态 5 项（数据库迁移 UI、双语、MoviePilot、静态 Demo、双模式安卓[v1.0.6 状态不一致待核对]）+ RSS Phase2 真实联调；其余为用户侧签认/联调类。CI 在 dev@2007fc2 全绿（run 41171680492）。
+- **本地冒烟**：沙箱进程级冷启动（uvicorn+全新 CONFIG_DIR）health/live+control-ready 200、/api/v1/database/status 返回 effective env/sqlite+hosting systemd/optIn=false+T16 手动重启 hint——运行时接线正确（后台进程跨 bash 调用回收，须单调用内编排）。compose 三组合合并验证通过；发现根目录 .env 为字符设备节点（compose 须 --env-file 显式传入）。
+- **W6-A（Hermes）**：生产 unraid 部署 dev@2007fc2e 全绿（gitSha/frontendManifestSha256/alembicHead e9f0a1b2c3d4 自动迁移含 1.26GB 迁移前备份/control-ready/双容器 healthy；回滚锚点 backup-pre-w6 双标签+compose 备份）。实机抓出两缺陷：①构建 dirty=true 触发 G1 身份门 fail-closed（干净检出重建通过）；②busybox wget 健康检查打 localhost 只试 [::1] 而 nginx 仅听 IPv4→假阴性 unhealthy（远端热修+本仓 3 处 compose 同步修复 127.0.0.1，未提交）。
+- **W6-B（Hermes，用户手动放行后收官）**：unraid 隔离栈（btdeck-w6test，15001/18080，PG16.15）SQLite⇄PG 双向往返闭环 S1-S10 全过：正向（造数模板 id6/7→四阶段→ready_to_switch 42 表→屏障 503→switch COMMITTED→restart 激活 redo ACTIVATED_ACK→effective=postgresql active→receipt ACTIVATED@13:52→数据无损）+反向（attempt 14359145：131 行导入+42 表行数/主键/内容摘要全等 VERIFIED→switch→restart→effective=sqlite active→新 receipt ACTIVATED@13:55→数据无损）+S9 同库交接=API 仅计划预览（HANDOFF_SAME_DB 5 步+confirmToken，执行需维护态/CLI，与 runbook §6 一致）+S10 清场三容器/卷/网络/目录零残余；生产终证 gitSha=2007fc2e 双容器 healthy Up 8h 零接触；证据 /root/w6b-evidence/（S7-S10-raw.log md5=7e16fe36）。五项发现：①T16 托管重启不自动（PID1 自检拒退出，S8 复现）②COMMITTED 未重启窗口三重维护判定不一致→旧 token 过期后控制面锁死至重启 ③control-ready 重读 config.yaml 与 effective 快照误导窗口 ④alembic/env.py 引擎取 settings(env) 而非 effective(active)——boot 时 Context impl 仍 SQLiteImpl（未发现落错库，三套解析源并存待确认意图）⑤backend 镜像无 sqlite3 CLI（取证需 python3 fallback）。
+- **P7 双语（Hermes Playwright）**：浏览器自动化验收 A01/A02/L03/L04/V01/C01 六项 PASS（英文登录+强制改密全英文、错密/断网文案、筛选跨语言保留、弹窗双语一致、四宽度 8 页零横向溢出零 JS 错、移动 375px 中文零溢出）；V02 抓出真实缺陷：列设置弹窗取消路径非零副作用（v-model 直绑 columnSettings，Cancel 不还原→取消即生效）。另发现 EN 界面 Database 面板显示后端硬编码中文 hint（restart_adapter.py:66）。50+ 截图 tar sha256=9996bf0f…（Hermes 主机 /tmp 留存）。PLANS/bilingual/p7-acceptance-checklist.md 增 §〇-2；feature_list 双语 evidence 回填。
+- **追踪**：feature_list 增 database-migration-ui w6a/w6b + desktop-bilingual p7_browser_2026_10_31 证据；3 处 compose healthcheck 修复（未提交）。剩余待用户：放行 Hermes 两条命令（docker restart btdeck-w6-backend 续 S7/S8 + 演练栈清场、P7 收尾 swapoff/rm）、双语 R01-R06 签认、MoviePilot/RSS 真实联调、安卓发布验收、W6 掉电/T08 真实跨盘/A-B 交接。
+
 ## 2026-10-30（续）：迁移控制面双向往返实跑（PG→SQLite→PG 闭环，e9ca340 已推送）
 
 - 用户需求：全栈部署实测 PG 迁 SQLite 再迁回 PG——用**真实控制面端点**（非直调服务）。
