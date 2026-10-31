@@ -209,9 +209,14 @@ class TestActivationRealPg:
         engine = create_engine(pg_url, poolclass=NullPool)
         with engine.begin() as conn:
             conn.execute(
-                text("CREATE TABLE bt_database_migration_receipt " "(attempt_id TEXT PRIMARY KEY, activated_at TEXT)")
+                text(
+                    "CREATE TABLE bt_database_migration_receipt "
+                    "(attempt_id TEXT PRIMARY KEY, status TEXT, activated_at TEXT)"
+                )
             )
-            conn.execute(text("INSERT INTO bt_database_migration_receipt VALUES (:aid, NULL)"), {"aid": ATTEMPT})
+            conn.execute(
+                text("INSERT INTO bt_database_migration_receipt VALUES (:aid, 'VERIFIED', NULL)"), {"aid": ATTEMPT}
+            )
         monkeypatch.setattr(database_module, "build_database_url", lambda: pg_url, raising=True)
         svc = ActivationService(str(tmp_path), yaml_path=str(tmp_path / "config.yaml"))
         # PREPARED：候选/前代先持久
