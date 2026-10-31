@@ -301,7 +301,9 @@ class ActivationService:
         kind = manifest.get("operation_kind", "MIGRATE")
         if kind == "HANDOFF_SAME_DB":
             raise ActivationError("HANDOFF_SAME_DB 的 ACK 由同库单连接专径完成（§7.3），不走本默认实现")
-        # MIGRATE：写目标 receipt（默认经当前有效连接）
+        # MIGRATE：写目标 receipt（默认经当前有效连接；表名以协议常量为准——
+        # 实跑曾用复数字面量致 pg-to-sqlite 激活 ACK 永远 no such table）
+        from app.core.database_protocol import RECEIPT_TABLE
         from app.database import build_database_url
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
@@ -310,7 +312,10 @@ class ActivationService:
         try:
             with engine.begin() as conn:
                 conn.execute(
-                    text("UPDATE bt_database_migration_receipts SET activated_at = :now " "WHERE attempt_id = :aid"),
+                    text(
+                        f"UPDATE {RECEIPT_TABLE} SET status = 'ACTIVATED', activated_at = :now "
+                        "WHERE attempt_id = :aid"
+                    ),
                     {"now": _now(), "aid": attempt_id},
                 )
         finally:

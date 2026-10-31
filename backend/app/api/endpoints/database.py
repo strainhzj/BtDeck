@@ -321,8 +321,20 @@ async def migration_switch(request: Request, payload: SwitchRequest) -> CommonRe
     from app.services.db_migration.activation import ActivationError, ActivationService
 
     service = ActivationService(str(settings.CONFIG_DIR))
+    # 就绪门（W6 实跑补）：只有管理器报 ready_to_switch 才可提交——worker
+    # 失败/进行中的 attempt 提交会造成"空 candidate_active 发布"（fail-closed 炸弹）
+    manager = _manager(request)
+    mstatus = manager.status()
+    if mstatus.attempt_id != payload.attempt_id or mstatus.phase != "ready_to_switch":
+        return CommonResponse(
+            status="error",
+            code="409",
+            msg=f"attempt 未就绪（phase={mstatus.phase}；workerError={mstatus.detail.get('workerError') or '无'}）",
+        )
     try:
         manifest = service.manifest(payload.attempt_id)
+        if not manifest.get("candidate_active"):
+            return CommonResponse(status="error", code="409", msg="manifest 无 candidate_active（worker 未产出候选）")
         identity = {
             "expected_database_id": (manifest.get("target", {}) or {}).get("database_id"),
             "receipt_attempt_id": payload.attempt_id,

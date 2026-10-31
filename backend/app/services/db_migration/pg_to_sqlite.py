@@ -336,20 +336,27 @@ def verify_pg_vs_sqlite(
             if p_count != s_count:
                 problems.append(f"{table.name}: 行数不一致 pg={p_count} sqlite={s_count}")
                 continue
-            ordering = canonical.pg_pk_order_expr(table)
-            p_pks = (
-                pg_conn.execution_options(stream_results=True)
-                .execute(table.select().order_by(*ordering) if ordering else table.select())
-                .all()
-            )
-            sqlite_ordering = canonical.sqlite_pk_order_expr(table)
-            s_pks = (
-                staging.execution_options(stream_results=True)
-                .execute(table.select().order_by(*sqlite_ordering) if sqlite_ordering else table.select())
-                .all()
-            )
-            if canonical.digest_pk_tuples(p_pks) != canonical.digest_pk_tuples(s_pks):
-                problems.append(f"{table.name}: 主键集合不一致")
+            # 只选主键列（与正向 sqlite_to_pg.verify 同源）：此前误用 table.select()
+            # 全列行喂 digest_pk_tuples，跨库存储格式差异（datetime 文本/布尔等）
+            # 造成"主键集合不一致"假阳性（W6 实跑抓出）
+            pk_columns = list(table.primary_key.columns)
+            if pk_columns:
+                from sqlalchemy import select as sa_select
+
+                ordering = canonical.pg_pk_order_expr(table)
+                p_pks = (
+                    pg_conn.execution_options(stream_results=True)
+                    .execute(sa_select(*pk_columns).order_by(*ordering))
+                    .all()
+                )
+                sqlite_ordering = canonical.sqlite_pk_order_expr(table)
+                s_pks = (
+                    staging.execution_options(stream_results=True)
+                    .execute(sa_select(*pk_columns).order_by(*sqlite_ordering))
+                    .all()
+                )
+                if canonical.digest_pk_tuples(p_pks) != canonical.digest_pk_tuples(s_pks):
+                    problems.append(f"{table.name}: 主键集合不一致")
                 continue
 
             def _pg_rows():
@@ -468,7 +475,13 @@ def run_pg_to_sqlite(
                 schema_fingerprint=canonical.schema_fingerprint(tables),
             )
         logger.info("[完成] receipt=VERIFIED，导入标记已清除；final=%s", staging)
-        return {"attempt_id": ctx.attempt_id, "final": str(staging), "tables": len(tables), "counts": counts}
+        return {
+            "attempt_id": ctx.attempt_id,
+            "final": str(staging),
+            "tables": len(tables),
+            "counts": counts,
+            "database_id": identity,  # staging 自身身份（activation 候选 expected_database_id）
+        }
     except MigrationCancelled as exc:
         raise MigrationInterrupted(f"协作取消：{exc}") from exc
     except (PrecheckFailed, TargetInvalid):

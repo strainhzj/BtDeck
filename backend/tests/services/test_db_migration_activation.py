@@ -195,8 +195,8 @@ class TestHandoffSameDb:
 
         db = tmp_path / "h.db"
         conn = sqlite3.connect(db)
-        conn.execute("CREATE TABLE bt_database_migration_receipts (attempt_id TEXT, status TEXT, activation_generation TEXT, created_at TEXT)")
-        conn.execute("INSERT INTO bt_database_migration_receipts VALUES ('a1','ACTIVATED','g-old','2026-01-01')")
+        conn.execute("CREATE TABLE bt_database_migration_receipt (attempt_id TEXT, status TEXT, activation_generation TEXT, created_at TEXT)")
+        conn.execute("INSERT INTO bt_database_migration_receipt VALUES ('a1','ACTIVATED','g-old','2026-01-01')")
         conn.commit()
         conn.close()
         # 旧代次不符 → False（保持维护）

@@ -183,7 +183,15 @@ def validate_scheduler_scope(database_backend: str, worker_count: int) -> str:
 def resolve_runtime_info(env: Optional[Mapping[str, str]] = None) -> Tuple[str, int, bool]:
     """解析启动运行时信息（不校验）：(database_backend, worker_count, scheduler_enabled)。"""
     environ = env if env is not None else os.environ
-    backend = detect_backend(resolve_database_url(environ))
+    if env is None:
+        # 运行时健康面：受管 active 优先（T15 同源）——databaseBackend 与
+        # 有效库一致，不误报 env 方言；显式 env（测试/探测）仍走 env 判定
+        try:
+            backend = effective_database_label()[0]
+        except Exception:  # noqa: BLE001 - 展示面回退 env 探测
+            backend = detect_backend(resolve_database_url(environ))
+    else:
+        backend = detect_backend(resolve_database_url(environ))
     workers = parse_worker_count(environ.get("WORKERS"))
     scheduler_enabled = _parse_bool(environ.get("SCHEDULER_ENABLED", "1"))
     return backend, workers, scheduler_enabled

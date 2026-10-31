@@ -53,6 +53,11 @@ class _FakeFence:
 
     def __init__(self) -> None:
         self.released = False
+        self.acquired = False
+
+    def acquire(self, *, timeout_seconds: float = 30.0):  # noqa: ARG002 - 对齐真 fence API
+        self.acquired = True
+        return self.token
 
     def release(self) -> None:
         self.released = True

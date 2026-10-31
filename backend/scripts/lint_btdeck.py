@@ -87,6 +87,10 @@ ALLOWLIST: dict[str, set[str]] = {
         # 源 fence（database-migration-ui W2-4）：表名来自注入的固定清单
         # （ORM 元数据/协议常量），同上先例；行值一律参数化。
         "app/services/db_migration/source_fence.py",
+        # 激活 ACK/同库交接（W6 实跑修复）：f-string 仅插值协议常量 RECEIPT_TABLE
+        # （表名，非用户输入；标识符无法参数化）；行值一律绑定参数。
+        "app/services/db_migration/activation.py",
+        "app/services/db_migration/handoff.py",
     },
     "BTD306": {
         # 存量裸 asyncio.create_task/to_thread 盘点（database-migration-ui W2-8，

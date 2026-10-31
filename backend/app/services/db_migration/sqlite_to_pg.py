@@ -714,7 +714,13 @@ def _run_snapshot(
             conn, ctx.attempt_id, table_counts=counts, table_digests=digests, schema_fingerprint=fingerprint
         )
     logger.info("[完成] receipt=VERIFIED，导入标记已清除")
-    return {"attempt_id": ctx.attempt_id, "tables": len(tables), "rows": total_rows, "counts": counts}
+    return {
+        "attempt_id": ctx.attempt_id,
+        "tables": len(tables),
+        "rows": total_rows,
+        "counts": counts,
+        "database_id": _target_identity(pg_engine),  # 目标自身身份（activation 候选）
+    }
 
 
 def sqlite_ro(source_path: str) -> sqlite3.Connection:

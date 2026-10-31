@@ -349,9 +349,10 @@ class MaintenanceController:
         journal 已持久撤销 switch_eligible 并推进 epoch（资格作废）。此处仅当
         目标无不可放弃副作用争议且准入计数为零时放行；否则保持 FROZEN。
         """
+        _frozen_family = (STATE_FROZEN, STATE_IMPORTING, STATE_VERIFYING, STATE_READY_TO_SWITCH)
         with self._cond:
-            if self._state != STATE_FROZEN:
-                raise TransitionError(f"只有 FROZEN 可放弃回源（当前 {self._state}）")
+            if self._state not in _frozen_family:
+                raise TransitionError(f"只有 FROZEN/管线阶段可放弃回源（当前 {self._state}）")
             if self._target_side_effects:
                 raise TransitionError("已存在目标副作用，禁止直接回源（转 discard/ABANDONED 流程）")
             if self._active:

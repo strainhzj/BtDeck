@@ -216,7 +216,8 @@ def _migrate_database_pg() -> bool:
 
             if sa_inspect(conn).has_table(RECEIPT_TABLE):
                 blocking = conn.exec_driver_sql(
-                    f"SELECT attempt_id, status FROM {RECEIPT_TABLE} " "WHERE status IN ('IMPORTING', 'VERIFIED')"
+                    f"SELECT attempt_id, status FROM {RECEIPT_TABLE} "
+                    "WHERE status IN ('IMPORTING', 'VERIFIED') AND activated_at IS NULL"
                 ).fetchall()
                 if blocking:
                     detail = ", ".join(f"{r[0]}({r[1]})" for r in blocking)

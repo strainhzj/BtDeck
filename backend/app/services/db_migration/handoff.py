@@ -20,6 +20,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from app.core import database_bootstrap as bootstrap
+from app.core.database_protocol import RECEIPT_TABLE
 from app.services.db_migration.journal import Journal, make_manifest_payload
 from app.services.db_migration.pipeline import DIGEST_VERSION_CANONICAL_V1, TOOL_VERSION
 
@@ -138,7 +139,7 @@ def handoff_same_db_ack_sqlite(
 ) -> bool:
     """单连接 fence/ACK（SQLite）：同一 BEGIN IMMEDIATE 连接核旧→CAS 新→提交。
 
-    目标列 = ``bt_database_migration_receipts.activation_generation``（既有
+    目标列 = ``<RECEIPT_TABLE>.activation_generation``（既有
     ACTIVATED receipt 的代次，§3.3）；核旧不符/表缺失 → False（保持维护，
     不跨连接等待自己持有的写锁）。幂等：已是新代次直接成功。
     """
@@ -147,11 +148,11 @@ def handoff_same_db_ack_sqlite(
     conn = sqlite3.connect(db_path, isolation_level=None, timeout=15)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if not sqlite_has_table(conn, "bt_database_migration_receipts"):
+        if not sqlite_has_table(conn, RECEIPT_TABLE):
             conn.execute("ROLLBACK")
             return False
         row = conn.execute(
-            "SELECT activation_generation FROM bt_database_migration_receipts " "ORDER BY created_at DESC LIMIT 1"
+            f"SELECT activation_generation FROM {RECEIPT_TABLE} ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
         if row is None:
             conn.execute("ROLLBACK")
@@ -163,7 +164,7 @@ def handoff_same_db_ack_sqlite(
             conn.execute("ROLLBACK")
             return False
         conn.execute(
-            "UPDATE bt_database_migration_receipts SET activation_generation = ? " "WHERE activation_generation = ?",
+            f"UPDATE {RECEIPT_TABLE} SET activation_generation = ? WHERE activation_generation = ?",
             (new_generation, expected_old_generation),
         )
         conn.execute("COMMIT")

@@ -179,6 +179,14 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
         archived = 0
         try:
             with engine.begin() as conn:
+                from datetime import datetime, timezone
+
+                def _created(value: Any) -> Any:
+                    # spool ts 为 epoch 数值；PG created_at 为 timestamp——归一 naive UTC
+                    if isinstance(value, (int, float)):
+                        return datetime.fromtimestamp(float(value), tz=timezone.utc).replace(tzinfo=None)
+                    return value
+
                 for row in rows:
                     if row.get("attempt_id") not in (None, attempt):
                         continue
@@ -192,7 +200,7 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
                             "aid": attempt,
                             "seq": row.get("seq", 0),
                             "summary": str(row.get("summary", row.get("kind", "event")))[:512],
-                            "created": row.get("ts"),
+                            "created": _created(row.get("ts")),
                         },
                     )
                     archived += max(result.rowcount or 0, 0)
@@ -210,6 +218,26 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
     except Exception as exc:  # noqa: BLE001 - redo 失败保持维护
         print(f"[WARN] 激活 redo 未完成（保持维护分支）: {exc}")
         return False
+
+
+def _attach_migration_manager(app: FastAPI, config_dir: str) -> None:
+    """普通启动末尾挂 app.state.database_migration_manager（W3-3 接线）。
+
+    /api/v1/database/* 动作组经它编排（单飞行 begin_prepare→drain→freeze）；
+    维护启动分支不挂（只读控制面；迁移只能从普通态发起）。失败仅告警不阻断
+    业务（迁移控制面不可用，其余功能照常）。
+    """
+    try:
+        from app.services.db_migration.manager import MigrationManager
+
+        manager = MigrationManager(config_dir)
+        from app.services.db_migration.maintenance import set_default_controller
+
+        set_default_controller(manager.controller)
+        app.state.database_migration_manager = manager
+        print("[OK] 数据库迁移管理器已就绪（/api/v1/database/*）")
+    except Exception as e:  # noqa: BLE001 - 控制面可选装载
+        print(f"[WARN] 数据库迁移管理器初始化失败（迁移控制面不可用）: {e}")
 
 
 def _startup_maintenance_gate(
@@ -927,6 +955,11 @@ async def lifespan(app: FastAPI):
         else:
             mcp_bundle.runtime.mark_ready()
             print("[OK] MCP 服务会话管理器已启动（/mcp，stateless）")
+
+    # 6.9 数据库迁移管理器（database-migration-ui：普通态发起迁移的控制面锚点）
+    from app.core.config import settings as _settings
+
+    _attach_migration_manager(app, str(getattr(app.state, "btdeck_config_dir", None) or _settings.CONFIG_DIR))
 
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:

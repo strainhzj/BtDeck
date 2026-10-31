@@ -174,7 +174,11 @@ class MigrationManager:
                 worker_generation=self._controller.worker_generation,
                 needs_credentials=self._credentials_lost(manifest),
                 restart_pending=bool((self._journal.read_control() or {}).get("restart_pending", False)),
-                detail={"progress": self._last_progress, "target": self._target_desc or manifest.get("target", {})},
+                detail={
+                    "progress": self._last_progress,
+                    "target": self._target_desc or manifest.get("target", {}),
+                    **({"workerError": self._worker_error} if self._worker_error else {}),
+                },
             )
 
     def _credentials_lost(self, manifest: Dict[str, Any]) -> bool:
@@ -222,69 +226,111 @@ class MigrationManager:
                 raise StateConflict("排空超时→HELD（等待人工处置；不可自动恢复业务）")
             self._phase = "draining"
             # 3. 冻结（fence 令牌进 controller；指纹进 manifest）
-            fence = self._acquire_source_fence(direction, source_desc)
-            self._controller.enter_frozen(getattr(fence, "token", None))
-            self._phase = "frozen"
-            fingerprint = getattr(getattr(fence, "token", None), "fingerprint", "")
-            # 4. journal：manifest+control 持久（先持久锚点才允许目标副作用）
-            self._ctx = PipelineContext(attempt_id=attempt_id, operation_kind=OPERATION_KIND_MIGRATE)
-            manifest = make_manifest_payload(
-                attempt_id=attempt_id,
-                direction=direction,
-                operation_kind=OPERATION_KIND_MIGRATE,
-                epoch=self._ctx.eligible_epoch,
-                source=source_desc or {"dialect": "sqlite" if direction == "sqlite-to-pg" else "postgresql"},
-                target={k: v for k, v in target.items() if k != "password"},
-                tool_version=TOOL_VERSION,
-                digest_version=DIGEST_VERSION_CANONICAL_V1,
-                source_snapshot={"fingerprint": fingerprint, "taken_at": time.time()},
-            )
-            manifest["ownership_nonce"] = self._ctx.ownership_nonce
-            manifest["origin_epoch"] = self._ctx.origin_epoch
-            manifest["worker_generation"] = self._controller.next_worker_generation()
-            self._journal.write_control(
-                lambda c: {**c, "pending_attempt": attempt_id, "restart_pending": False},
-                deployment_id=self._deployment_id,
-            )
-            self._journal.write_manifest(attempt_id, manifest)
-            self._store_credentials(attempt_id, target, password)
-            self._target_desc = {k: v for k, v in target.items() if k != "password"}
-            self._audit.audit_event(
-                "migration",
-                action="start",
-                outcome="ok",
-                detail={"direction": direction, "attemptId": attempt_id},
-                attempt_id=attempt_id,
-            )
-            # 5. worker 线程（register_child 继承准入；cancel_check 核 epoch+代次）
-            self._spawn_worker(manifest)
-            return self.status()
+            try:
+                fence = self._acquire_source_fence(direction, source_desc)
+                fence.acquire()  # 取源保护锁+固定指纹（真实 fence 须显式 acquire；§5.1）
+                self._controller.enter_frozen(getattr(fence, "token", None))
+                self._phase = "frozen"
+                fingerprint = getattr(getattr(fence, "token", None), "fingerprint", "")
+                # 4. journal：manifest+control 持久（先持久锚点才允许目标副作用）
+                self._ctx = PipelineContext(attempt_id=attempt_id, operation_kind=OPERATION_KIND_MIGRATE)
+                manifest = make_manifest_payload(
+                    attempt_id=attempt_id,
+                    direction=direction,
+                    operation_kind=OPERATION_KIND_MIGRATE,
+                    final_path=(str(target.get("final_path") or "") if direction == "pg-to-sqlite" else None),
+                    epoch=self._ctx.eligible_epoch,
+                    source=self._source_manifest_desc(direction, source_desc),
+                    target={k: v for k, v in target.items() if k != "password"},
+                    tool_version=TOOL_VERSION,
+                    digest_version=DIGEST_VERSION_CANONICAL_V1,
+                    source_snapshot={"fingerprint": fingerprint, "taken_at": time.time()},
+                )
+                manifest["ownership_nonce"] = self._ctx.ownership_nonce
+                manifest["origin_epoch"] = self._ctx.origin_epoch
+                manifest["worker_generation"] = self._controller.next_worker_generation()
+                self._journal.write_control(
+                    lambda c: {**c, "pending_attempt": attempt_id, "restart_pending": False},
+                    deployment_id=self._deployment_id,
+                )
+                self._journal.write_manifest(attempt_id, manifest)
+                self._store_credentials(attempt_id, target, password)
+                self._target_desc = {k: v for k, v in target.items() if k != "password"}
+                self._audit.audit_event(
+                    "migration",
+                    action="start",
+                    outcome="ok",
+                    detail={"direction": direction, "attemptId": attempt_id},
+                    attempt_id=attempt_id,
+                )
+                # 5. worker 线程（register_child 继承准入；cancel_check 核 epoch+代次）
+                self._spawn_worker(manifest)
+                return self.status()
+            except Exception as exc:
+                # 启动编排失败回滚（W6 实跑补）：不留"无 attempt 的楔死维护态"——
+                # journal 撤销（若已持久）→ controller 归 NORMAL → 回 idle 后重抛
+                from app.services.db_migration.maintenance import TransitionError as _TE
+
+                try:
+                    control = self._journal.read_control() or {}
+                    _attempt = control.get("pending_attempt")
+                    if isinstance(_attempt, str):
+                        _m = self._journal.read_manifest(_attempt)
+                        if not _m.get("abandoned"):
+                            _m["abandoned"] = True
+                            _m["epoch"] = f"epoch-{uuid.uuid4().hex[:16]}"
+                            self._journal.write_manifest(_attempt, _m, expect_state_version=_m["state_version"])
+                        self._journal.write_control(lambda c: {**c, "pending_attempt": None})
+                except Exception:  # noqa: BLE001 - 回滚尽力而为，保留原异常
+                    pass
+                try:
+                    _state = self._controller.status().state
+                    if _state == "FROZEN":
+                        self._controller.abort_from_frozen(reason=f"start-failed: {exc}")
+                    else:
+                        self._controller.abort_prepare(reason=f"start-failed: {exc}")
+                    self._controller.exit_maintenance()
+                except _TE:  # noqa: B014
+                    pass
+                with self._lock:
+                    self._phase = "idle"
+                    self._ctx = None
+                raise
 
     def _acquire_source_fence(self, direction: str, source_desc: Optional[Dict[str, Any]]):
         """按方向取源 fence（测试可注入 fence_factory；缺省真实实现）。"""
         factory = getattr(self, "fence_factory", None)
         if factory is not None:
             return factory(direction, source_desc)
+        from app.core.database_bootstrap import resolve_effective_database_config
         from app.models.database_migration import business_tables
-        from app.models.model_registry import register_all_models
+        from app.core.model_registry import register_all_models
 
         register_all_models()
         tables = [t.name for t in business_tables()]
+        effective = resolve_effective_database_config(os.path.join(self._config_dir, "config.yaml"))
         if direction == "sqlite-to-pg":
             from app.services.db_migration.source_fence import SqliteSourceFence
 
-            source_path = (source_desc or {}).get("path") or os.environ.get("DATABASE_PATH", "app.db")
+            source_path = (source_desc or {}).get("path") or effective.sqlite_path
             if not source_path:
-                raise ManagerError("sqlite-to-pg 需要 source_desc['path']")
+                raise ManagerError("sqlite-to-pg 需要 source_desc['path']（当前有效源无 sqlite_path）")
             return SqliteSourceFence(str(source_path), tables)
         from app.services.db_migration.target_params import PostgresParams, build_pg_url
 
         from app.services.db_migration.source_fence import PgSourceFence
 
         pg = (source_desc or {}).get("pg") if source_desc else None
-        params = pg if isinstance(pg, PostgresParams) else None
-        if params is None:
-            raise ManagerError("pg-to-sqlite 需要 source_desc['pg']=PostgresParams")
+        if isinstance(pg, PostgresParams):
+            params = pg
+        elif isinstance(pg, dict) and pg:
+            from app.services.db_migration.target_params import pg_params_from_mapping
+
+            params = pg_params_from_mapping(pg)
+        elif effective.pg is not None:
+            params = effective.pg  # 缺省=当前有效 PG 源（控制面调用方无需自带参数）
+        else:
+            raise ManagerError("pg-to-sqlite 需要 source_desc['pg']（当前有效源非 PG）")
         return PgSourceFence(build_pg_url(params), tables)
 
     def _spawn_worker(self, manifest: Dict[str, Any]) -> None:
@@ -312,11 +358,15 @@ class MigrationManager:
         def run() -> None:
             try:
                 self._phase = "importing"
+                controller.set_pipeline_state("IMPORTING")  # 顺序驱动准入可见阶段（§5.1）
                 result = self._pipeline_runner(ctx, manifest)
                 self._worker_result = result
                 self._phase = "verifying"
-                controller.set_pipeline_state("verified")
+                controller.set_pipeline_state("VERIFYING")
+                controller.set_pipeline_state("READY_TO_SWITCH")
                 self._phase = "ready_to_switch"
+                # 候选 active 持久（switch 端点经 manifest.candidate_active 提交；§7.2）
+                self._persist_candidate_active(manifest, result or {})
                 self._audit.audit_event(
                     "migration",
                     action="verify-done",
@@ -432,7 +482,7 @@ class MigrationManager:
         # 2. controller 侧同源推进 + 退出维护（journal 守卫：COMMITTED 拒回 NORMAL）
         try:
             state = self._controller.status().state
-            if state == "FROZEN":
+            if state in ("FROZEN", "IMPORTING", "VERIFYING", "READY_TO_SWITCH"):
                 self._controller.abort_from_frozen(reason="leave")
             else:
                 self._controller.abort_from_held(reason="leave")
@@ -530,6 +580,74 @@ class MigrationManager:
                 f"≠ expect {expect_epoch!r}/{expect_state_version}"
             )
 
+    def _source_manifest_desc(self, direction: str, source_desc: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """manifest.source 描述（JSON-safe）：缺省补当前有效源的关键路径/方言。
+
+        worker 消费：sqlite-to-pg 读 source.path；pg-to-sqlite 经有效配置重解析
+        PG 参数（凭据不入 manifest）。
+        """
+        if source_desc:
+            merged = dict(source_desc)
+        else:
+            merged = {"dialect": "sqlite" if direction == "sqlite-to-pg" else "postgresql"}
+        if direction == "sqlite-to-pg" and not merged.get("path"):
+            from app.core.database_bootstrap import resolve_effective_database_config
+
+            eff = resolve_effective_database_config(os.path.join(self._config_dir, "config.yaml"))
+            if eff.sqlite_path:
+                merged["path"] = eff.sqlite_path
+                merged["dialect"] = "sqlite"
+        return merged
+
+    def _persist_candidate_active(self, manifest: Dict[str, Any], result: Dict[str, Any]) -> None:
+        """worker 成功后把 candidate_active 写入 manifest（switch 的提交素材）。
+
+        结构严格对齐 bootstrap._config_from_active 校验（version/generation/
+        expected_database_id/receipt_attempt_id/revision_at_import + 方言字段）。
+        """
+        attempt_id = manifest["attempt_id"]
+        database_id = str(result.get("database_id") or "")
+        if not database_id:
+            raise ManagerError("worker 结果缺 database_id（无法构造 candidate_active）")
+        base = {
+            "version": 1,
+            "generation": str(uuid.uuid4()),
+            "expected_database_id": database_id,
+            "receipt_attempt_id": attempt_id,
+            "revision_at_import": manifest.get("tool_version", ""),
+        }
+        if manifest.get("direction") == "pg-to-sqlite":
+            final = str(result.get("final") or "")
+            if not final:
+                raise ManagerError("worker 结果缺 final（sqlite 候选路径）")
+            candidate = {**base, "dialect": "sqlite", "sqlite_path": final}
+        else:
+            import json as _json
+
+            cred = _json.loads(self._credentials_path(attempt_id).read_text(encoding="utf-8"))
+            tgt = dict(cred.get("target") or {})
+            password = str(cred.get("password") or "")
+            candidate = {
+                **base,
+                "dialect": "postgresql",
+                "postgresql": {
+                    "host": tgt.get("host", "localhost"),
+                    "port": int(tgt.get("port", 5432)),
+                    "user": tgt.get("user", "btdeck"),
+                    "password": password,
+                    "database": tgt.get("database", "btdeck"),
+                    "schema": tgt.get("schema", "public"),
+                    "sslmode": tgt.get("sslmode", "prefer"),
+                    **({"ssl_root_cert": tgt["ssl_root_cert"]} if tgt.get("ssl_root_cert") else {}),
+                    "pool_size": int(tgt.get("pool_size", 10)),
+                    "max_overflow": int(tgt.get("max_overflow", 20)),
+                    "pool_timeout": int(tgt.get("pool_timeout", 30)),
+                },
+            }
+        merged = dict(self._journal.read_manifest(attempt_id))
+        merged["candidate_active"] = candidate
+        self._journal.write_manifest(attempt_id, merged, expect_state_version=merged["state_version"])
+
     def _default_pipeline_runner(self, ctx: PipelineContext, manifest: Dict[str, Any]) -> Dict[str, Any]:
         direction = manifest.get("direction")
         if direction == "sqlite-to-pg":
@@ -539,7 +657,19 @@ class MigrationManager:
             target = manifest.get("target", {})
             params = target.get("_pg_params") if isinstance(target, dict) else None
             if not isinstance(params, PostgresParams):
-                raise ManagerError("sqlite-to-pg 需要 target['_pg_params']=PostgresParams（凭据路径）")
+                # 重解析（W6 实跑补）：manifest 保持 JSON-safe 不落对象——
+                # 目标参数=manifest.target（无密码描述）∪ 受保护凭据仓密码
+                import json as _json
+
+                from app.services.db_migration.target_params import pg_params_from_mapping
+
+                try:
+                    cred = _json.loads(self._credentials_path(manifest["attempt_id"]).read_text(encoding="utf-8"))
+                    mapping = {**(cred.get("target") or {}), "password": cred.get("password", "")}
+                    mapping.pop("_pg_params", None)
+                    params = pg_params_from_mapping(mapping)
+                except Exception as exc:
+                    raise ManagerError(f"sqlite-to-pg 目标参数重解析失败（凭据仓不可读）: {exc}") from exc
             from sqlalchemy import create_engine
             from app.services.db_migration.target_params import build_pg_url
             from sqlalchemy.pool import NullPool
@@ -555,7 +685,14 @@ class MigrationManager:
             source = manifest.get("source", {})
             params = source.get("_pg_params")
             if params is None:
-                raise ManagerError("pg-to-sqlite 需要 source['_pg_params']")
+                # 重解析（W6 实跑补）：缺省=当前有效 PG 源（与 fence 同源）
+                from app.core.database_bootstrap import resolve_effective_database_config
+                from app.services.db_migration.target_params import PostgresParams
+
+                eff = resolve_effective_database_config(os.path.join(self._config_dir, "config.yaml"))
+                if eff.pg is None:
+                    raise ManagerError("pg-to-sqlite 需要 source['_pg_params']（当前有效源非 PG）")
+                params = eff.pg
             from sqlalchemy import create_engine
             from sqlalchemy.pool import NullPool
 
