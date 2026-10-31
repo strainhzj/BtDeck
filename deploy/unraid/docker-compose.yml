@@ -96,7 +96,9 @@ services:
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      # busybox wget 只试 localhost 解析的第一个地址（[::1]），nginx 仅听 IPv4
+      # ——必须显式 127.0.0.1，否则假阴性 unhealthy（2026-10-31 W6 实机实证）
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 3s
       retries: 3
