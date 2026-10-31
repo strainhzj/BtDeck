@@ -246,7 +246,7 @@
         type="default"
         lucide-icon="settings"
         :tooltip="$t('torrent.list.toolbar.columns')"
-        @click="showColumnSettings = true"
+        @click="openColumnSettings"
       />
 
       <!-- 视图切换 -->
@@ -749,7 +749,7 @@
         <div class="modal-body">
           <div class="columns-grid">
             <label
-              v-for="column in columnSettings"
+              v-for="column in columnSettingsDraft"
               :key="column.key"
               class="column-checkbox"
             >
@@ -1107,6 +1107,10 @@ export default class extends mixins(
     { key: 'addedDate', visible: true },
     { key: 'actions', visible: true }
   ]
+
+  // 列设置弹窗草稿（P7 V02-F01 修复：取消路径零副作用）
+  // 复选框只绑草稿；Apply 才提交回 columnSettings；Cancel 仅关闭弹窗
+  private columnSettingsDraft: Array<{ key: string, visible: boolean }> = []
 
   // 下载器列表
   private downloaderList: DownloaderSimple[] = []
@@ -1748,13 +1752,20 @@ export default class extends mixins(
     return this.columnSettings.find(col => col.key === key) || { visible: true }
   }
 
+  /** 打开列设置弹窗：先快照当前勾选态到草稿（Cancel 零副作用的前提） */
+  private openColumnSettings() {
+    this.columnSettingsDraft = this.columnSettings.map(col => ({ key: col.key, visible: col.visible }))
+    this.showColumnSettings = true
+  }
+
   private updateColumnVisibility() {
     // 强制更新视图，使 v-if 条件重新评估
     this.$forceUpdate()
   }
 
   private resetColumnSettings() {
-    this.columnSettings.forEach(column => {
+    // 仅作用于草稿：重置也是待确认变更，Cancel 可一并放弃（P7 V02-F01）
+    this.columnSettingsDraft.forEach(column => {
       column.visible = true
     })
   }
@@ -1766,6 +1777,11 @@ export default class extends mixins(
   }
 
   private applyColumnSettings() {
+    // 提交草稿回 columnSettings（此前 v-model 直绑实数组，取消即生效——P7 V02-F01）
+    this.columnSettingsDraft.forEach(draft => {
+      const column = this.columnSettings.find(col => col.key === draft.key)
+      if (column) column.visible = draft.visible
+    })
     this.showColumnSettings = false
     this.saveUserPreferences()
     this.updateColumnVisibility()

@@ -757,6 +757,10 @@ describe('TraditionalView component regressions', () => {
 
     wrapper = mountTraditionalView()
     await flushLifecycle()
+    // 列设置弹窗改为草稿驱动（P7 V02-F01）：勾选列表仅在打开弹窗时快照渲染
+    const dialogVm = wrapper.vm as unknown as { openColumnSettings: () => void }
+    dialogVm.openColumnSettings()
+    await flushLifecycle()
 
     const headers = wrapper.findAll('thead th').wrappers
     const categoryIndex = headers.findIndex(header => header.classes().includes('col-category'))
@@ -1985,5 +1989,75 @@ describe('详情卡片文件/Peers 页签数据接线（TrackerDetailDataMixin �
     jest.advanceTimersByTime(15000)
     await flushMicro()
     expect(mockGetTorrentPeers).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('传统视图列设置弹窗取消零副作用（P7 V02-F01 回归）', () => {
+  type ColumnItem = { key: string, visible: boolean }
+  interface ColumnVm {
+    columnSettings: ColumnItem[]
+    columnSettingsDraft: ColumnItem[]
+    showColumnSettings: boolean
+    openColumnSettings: () => void
+    applyColumnSettings: () => void
+  }
+  const asColumnVm = (wrapper: Wrapper<Vue>): ColumnVm =>
+    wrapper.vm as unknown as ColumnVm
+  const visibleOf = (cols: ColumnItem[], key: string): boolean | undefined => {
+    const hit = cols.find(col => col.key === key)
+    return hit ? hit.visible : undefined
+  }
+  const flushColumn = async() => {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await localVue.nextTick()
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('打开即快照：改草稿后取消，实数组与持久化零变化，重开草稿还原', async() => {
+    const wrapper = mountTraditionalView()
+    const vm = asColumnVm(wrapper)
+
+    const nameCol = vm.columnSettings.find(col => col.key === 'name')
+    if (nameCol) nameCol.visible = true
+
+    vm.openColumnSettings()
+    expect(vm.showColumnSettings).toBe(true)
+    expect(vm.columnSettingsDraft.map(col => col.visible))
+      .toEqual(vm.columnSettings.map(col => col.visible))
+
+    const draftName = vm.columnSettingsDraft.find(col => col.key === 'name')
+    if (draftName) draftName.visible = false
+    vm.showColumnSettings = false // Cancel
+    await flushColumn()
+
+    expect(visibleOf(vm.columnSettings, 'name')).toBe(true)
+    expect(localStorage.getItem('traditional_columns_visibility')).toBeNull()
+
+    vm.openColumnSettings()
+    expect(visibleOf(vm.columnSettingsDraft, 'name')).toBe(true)
+    wrapper.destroy()
+  })
+
+  it('Apply 才提交：草稿写回实数组并持久化，弹窗关闭', async() => {
+    const wrapper = mountTraditionalView()
+    const vm = asColumnVm(wrapper)
+
+    vm.openColumnSettings()
+    const draftProgress = vm.columnSettingsDraft.find(col => col.key === 'progress')
+    if (draftProgress) draftProgress.visible = false
+    vm.applyColumnSettings()
+    await flushColumn()
+
+    expect(vm.showColumnSettings).toBe(false)
+    expect(visibleOf(vm.columnSettings, 'progress')).toBe(false)
+    const saved = JSON.parse(
+      localStorage.getItem('traditional_columns_visibility') as string
+    ) as Record<string, boolean>
+    expect(saved.progress).toBe(false)
+    expect(saved.name).toBe(true)
+    wrapper.destroy()
   })
 })

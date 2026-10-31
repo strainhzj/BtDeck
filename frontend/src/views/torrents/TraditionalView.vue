@@ -131,7 +131,7 @@
           type="text"
           size="small"
           icon="el-icon-setting"
-          @click="showColumnSettings = true"
+          @click="openColumnSettings"
           :title="$t('torrent.list.toolbar.columns')"
         ></el-button>
         <div class="tool-divider"></div>
@@ -879,7 +879,7 @@
       </template>
       <div class="columns-grid-trad">
         <label
-          v-for="column in columnSettings"
+          v-for="column in columnSettingsDraft"
           :key="column.key"
           class="column-checkbox-trad"
         >
@@ -1190,6 +1190,9 @@ export default class extends mixins(
     { key: 'savePath', labelKey: 'torrent.list.column.savePath', visible: true },
     { key: 'added', labelKey: 'torrent.list.column.addedDate', visible: true }
   ]
+
+  // 列设置弹窗草稿（P7 V02-F01 修复：取消路径零副作用；与列表视图同构）
+  private columnSettingsDraft: Array<{ key: string, labelKey: string, visible: boolean }> = []
 
   // 防抖搜索
   private debouncedSearch: any = null
@@ -2454,8 +2457,19 @@ export default class extends mixins(
     return this.columnSettings.find(col => col.key === key) || { visible: true }
   }
 
+  /** 打开列设置弹窗：先快照当前勾选态到草稿（Cancel 零副作用的前提） */
+  private openColumnSettings() {
+    this.columnSettingsDraft = this.columnSettings.map(col => ({
+      key: col.key,
+      labelKey: col.labelKey,
+      visible: col.visible
+    }))
+    this.showColumnSettings = true
+  }
+
   private resetColumnSettings() {
-    this.columnSettings.forEach(column => { column.visible = true })
+    // 仅作用于草稿：重置也是待确认变更，Cancel 可一并放弃（P7 V02-F01）
+    this.columnSettingsDraft.forEach(column => { column.visible = true })
   }
 
   /** 列设置菜单：全部列宽恢复默认（ColumnResizeMixin 提供 resetColumnWidths） */
@@ -2465,6 +2479,11 @@ export default class extends mixins(
   }
 
   private applyColumnSettings() {
+    // 提交草稿回 columnSettings（此前 v-model 直绑实数组，取消即生效——P7 V02-F01）
+    this.columnSettingsDraft.forEach(draft => {
+      const column = this.columnSettings.find(col => col.key === draft.key)
+      if (column) column.visible = draft.visible
+    })
     this.showColumnSettings = false
     this.saveColumnPreferences()
     this.$message.success(this.$t('torrent.list.columnSettings.saved'))
