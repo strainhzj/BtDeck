@@ -45,7 +45,10 @@ export const database = {
     restartPendingNo: 'Effective',
     hosting: 'Hosting',
     autoRestart: 'Auto restart capable',
-    noAutoRestart: 'Manual restart required'
+    noAutoRestart: 'Manual restart required',
+    hostingHints: {
+      MANAGED_RESTART_MANUAL: 'Unknown hosting or managed restart not opted in (BTD_MIGRATION_MANAGED_RESTART=1): restart manually after the switch is committed'
+    }
   },
   form: {
     title: 'PostgreSQL Migration Target',

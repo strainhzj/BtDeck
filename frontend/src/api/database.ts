@@ -62,6 +62,9 @@ export interface HostingCapabilityData {
   optIn: boolean
   pid1Self: boolean
   autoRestartCapable: boolean
+  /** 结构化提示码（P7 V01-F01：前端按码本地化；capable 时为 null） */
+  hintCode?: string | null
+  /** 后端中文原文，仅作 hintCode 未覆盖时的回退展示 */
   hint: string | null
 }
 

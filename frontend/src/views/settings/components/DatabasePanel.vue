@@ -63,7 +63,7 @@
             {{ hosting.autoRestartCapable ? $t('database.status.autoRestart') : $t('database.status.noAutoRestart') }}
           </el-tag>
         </div>
-        <p v-if="hosting.hint" class="db-description db-hosting-hint">{{ hosting.hint }}</p>
+        <p v-if="hostingHint" class="db-description db-hosting-hint">{{ hostingHint }}</p>
       </template>
     </div>
 
@@ -314,7 +314,16 @@ export default class extends Vue {
     optIn: false,
     pid1Self: false,
     autoRestartCapable: false,
+    hintCode: null,
     hint: null
+  }
+
+  /** 托管提示：优先按 hintCode 本地化（P7 V01-F01），未识别码回退后端原文 */
+  private get hostingHint(): string | null {
+    if (this.hosting.hintCode) {
+      return this.$t(`database.status.hostingHints.${this.hosting.hintCode}`) as string
+    }
+    return this.hosting.hint
   }
 
   // 迁移状态（仅用于 start 入口的 attempt 进行中判定；503/失败按未知处理）

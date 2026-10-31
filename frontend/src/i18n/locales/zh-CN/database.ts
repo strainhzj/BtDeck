@@ -44,7 +44,12 @@ export const database = {
     restartPendingNo: '已生效',
     hosting: '托管环境',
     autoRestart: '支持托管重启',
-    noAutoRestart: '需手动重启'
+    noAutoRestart: '需手动重启',
+    hostingHints: {
+      // zh 与后端 restart_adapter.hint 字面量逐字节一致（P7 V01-F01：后端
+      // 自由文本改 hintCode 后由前端本地化；capable 时无 hint）
+      MANAGED_RESTART_MANUAL: '未知托管或未显式 opt-in（BTD_MIGRATION_MANAGED_RESTART=1）：切换提交后需手动重启'
+    }
   },
   form: {
     title: 'PostgreSQL 迁移目标',
