@@ -52,7 +52,7 @@ def pg_url(fresh_pg_db: str) -> Iterator[str]:
     yield url.render_as_string(hide_password=False)
     engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
-        for table in ("t_a", "t_b", "t_foreign", "bt_database_migration_receipts"):
+        for table in ("t_a", "t_b", "t_foreign", "bt_database_migration_receipt"):
             conn.execute(text(f'DROP TABLE IF EXISTS "{table}"'))
     engine.dispose()
 
@@ -209,9 +209,9 @@ class TestActivationRealPg:
         engine = create_engine(pg_url, poolclass=NullPool)
         with engine.begin() as conn:
             conn.execute(
-                text("CREATE TABLE bt_database_migration_receipts " "(attempt_id TEXT PRIMARY KEY, activated_at TEXT)")
+                text("CREATE TABLE bt_database_migration_receipt " "(attempt_id TEXT PRIMARY KEY, activated_at TEXT)")
             )
-            conn.execute(text("INSERT INTO bt_database_migration_receipts VALUES (:aid, NULL)"), {"aid": ATTEMPT})
+            conn.execute(text("INSERT INTO bt_database_migration_receipt VALUES (:aid, NULL)"), {"aid": ATTEMPT})
         monkeypatch.setattr(database_module, "build_database_url", lambda: pg_url, raising=True)
         svc = ActivationService(str(tmp_path), yaml_path=str(tmp_path / "config.yaml"))
         # PREPARED：候选/前代先持久
@@ -233,7 +233,7 @@ class TestActivationRealPg:
         with engine.connect() as conn:
             assert (
                 conn.execute(
-                    text("SELECT activated_at IS NOT NULL FROM bt_database_migration_receipts WHERE attempt_id = :a"),
+                    text("SELECT activated_at IS NOT NULL FROM bt_database_migration_receipt WHERE attempt_id = :a"),
                     {"a": ATTEMPT},
                 ).scalar()
                 is True
