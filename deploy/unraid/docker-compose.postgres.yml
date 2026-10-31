@@ -1,0 +1,59 @@
+# BtDeck unraid PostgreSQL 变体（与上文件叠加；W6 迁移实测用）
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# 语义（与 deploy/docker-compose.release.postgres.yml 同源，适配 unraid 本地镜像栈）：
+# - 全新部署直接采用 PG：首启空库自动 squash 基线建库，data/postgres 为持久化卷；
+# - 凭据：.env 或下方 environment 中提供 DB_PASSWORD（必填）；
+# - postgres healthy 门控 backend（backend 自身 control-ready 探针不变）；
+# - 托管重启已在主文件开启（BTD_MIGRATION_MANAGED_RESTART=1）。
+#
+# ⚠️ 迁移实测前置（W6）：主库先以 SQLite 正常运行并写入真实数据，再从
+# 应用内「设置→数据库」发起迁移（runbook §1 七阶段）；不要直接用本文件
+# 覆盖已有 SQLite 部署后期望自动迁移。
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: btdeck-postgres
+    environment:
+      - POSTGRES_USER=${DB_USER:-btdeck}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-btdeck}
+      - TZ=UTC
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-btdeck} -d ${DB_NAME:-btdeck}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - btdeck_network
+    restart: unless-stopped
+
+  backend:
+    environment:
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-btdeck}
+      - DB_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-btdeck}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+      - DB_SSLMODE=${DB_SSLMODE:-prefer}
+    depends_on:
+      postgres:
+        condition: service_healthy

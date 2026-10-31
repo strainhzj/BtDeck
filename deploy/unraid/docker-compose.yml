@@ -1,0 +1,123 @@
+# BtDeck unraid 实机 Compose（database-migration-ui W6 / v1.0.8）
+#
+# 基于 2026-10-31 用户提供现网配置修正，三处关键变更（其余保持原样）：
+# 1. backend healthcheck：curl -f /docs → python3 urllib /health/control-ready
+#    - v1.0.8 镜像已移除 curl（2026-10-25 安全治理批）；/docs 非维护感知探针
+#    - control-ready 在迁移冻结期返回 200（businessReady=false）——容器保持
+#      healthy，不触发重启风暴（W3-8 设计）
+# 2. frontend depends_on：service_healthy → service_started
+#    - 迁移冻结期业务 API 503，若按 healthy 门控前端将永不启动，维护页
+#      /#/maintenance 不可达（W3-8：维护期静态页必须可达）
+# 3. 新增 BTD_MIGRATION_MANAGED_RESTART=1：迁移提交后 backend 优雅退出，
+#    由 restart: unless-stopped 自动拉起完成激活闭环（runbook §2）
+#
+# ⚠️ 镜像要求：btdeck-backend:latest 必须为 dev≥163deca 构建（v1.0.8 未发版，
+#    /health/control-ready 与 /api/v1/database/* 均为 dev 新增——旧镜像探针 404
+#    会导致容器永 unhealthy）。
+
+version: '3.8'
+
+services:
+  # ============================================
+  # 后端服务 - FastAPI 应用
+  # ============================================
+  backend:
+    image: btdeck-backend:latest
+    container_name: btdeck-backend
+
+    user: root
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+      - LOG_LEVEL=INFO
+      # 迁移控制面托管重启 opt-in（提交→退出→本 compose restart 策略拉起→激活 redo）
+      - BTD_MIGRATION_MANAGED_RESTART=1
+
+    ports:
+      - "5001:5001"  # API 端口
+
+    volumes:
+      # 绑定挂载优先（如果目录存在）
+      - ./data/backend/data:/app/data
+      - ./data/backend/logs:/app/logs
+      - ./data/backend/config:/app/config
+      - ./data/backend/backup:/app/backup
+      - /mnt/disk3/pt1/:/Downloads/ipan
+      - /mnt/disk5/anime/:/Downloads/hpan
+      - /mnt/disk2/pt2/:/Downloads/jpan
+      - /mnt/disk6/pt3/:/Downloads/kpan
+      - /mnt/disk7/pt4/:/Downloads/lpan
+      - /mnt/cache:/cache
+
+    networks:
+      - btdeck_network
+
+    restart: unless-stopped
+
+    healthcheck:
+      # 维护感知探针（W3-8）：迁移冻结期 200+businessReady=false；镜像无 curl 用 python3
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health/control-ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # 前端服务 - Nginx 静态文件服务
+  # ============================================
+  frontend:
+    image: btdeck-frontend:latest
+    container_name: btdeck-frontend
+
+    environment:
+      - TZ=UTC
+
+    ports:
+      - "8080:80"  # 前端 Web UI（容器内80端口映射到宿主机8080）
+
+    volumes:
+      # Nginx 缓存和日志（使用命名卷）
+      - frontend_cache:/var/cache/nginx
+      - frontend_logs:/var/log/nginx
+
+    networks:
+      - btdeck_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    depends_on:
+      backend:
+        condition: service_started  # W3-8：维护期 backend 不满足业务 ready 也要起前端（维护页可达）
+
+# ============================================
+# 网络配置
+# ============================================
+networks:
+  btdeck_network:
+    driver: bridge
+
+# ============================================
+# 数据卷配置
+# ============================================
+volumes:
+  frontend_cache:
+    driver: local
+  frontend_logs:
+    driver: local
