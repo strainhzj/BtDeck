@@ -19,6 +19,13 @@
 - **P7 双语（Hermes Playwright）**：浏览器自动化验收 A01/A02/L03/L04/V01/C01 六项 PASS（英文登录+强制改密全英文、错密/断网文案、筛选跨语言保留、弹窗双语一致、四宽度 8 页零横向溢出零 JS 错、移动 375px 中文零溢出）；V02 抓出真实缺陷：列设置弹窗取消路径非零副作用（v-model 直绑 columnSettings，Cancel 不还原→取消即生效）。另发现 EN 界面 Database 面板显示后端硬编码中文 hint（restart_adapter.py:66）。50+ 截图 tar sha256=9996bf0f…（Hermes 主机 /tmp 留存）。PLANS/bilingual/p7-acceptance-checklist.md 增 §〇-2；feature_list 双语 evidence 回填。
 - **追踪**：feature_list 增 database-migration-ui w6a/w6b + desktop-bilingual p7_browser_2026_10_31 证据；3 处 compose healthcheck 修复（未提交）。剩余待用户：放行 Hermes 两条命令（docker restart btdeck-w6-backend 续 S7/S8 + 演练栈清场、P7 收尾 swapoff/rm）、双语 R01-R06 签认、MoviePilot/RSS 真实联调、安卓发布验收、W6 掉电/T08 真实跨盘/A-B 交接。
 
+## 2026-10-31：unraid compose 修正（2007fc2）+ Hermes 镜像构建交付
+
+- 现网 compose 三处修正入库 deploy/unraid/（control-ready 探针防 curl 缺失+重启风暴；frontend service_started 保维护页可达；托管重启 opt-in）+ PG 变体 + README（W6 七步骤）。
+- Hermes 构建（run_6eb37c51725a4，用户授权）：commit 2007fc2 双镜像 --no-cache aliyun profile 一次过——backend f3278de75651（tar 330MB/sha256 5bb1da74…）/frontend 691f83d91c1f（193MB/00c43600…）；http://192.168.5.43:8401 驻留供 unraid docker load；未推 Hub。
+- 构建机备注：buildx cross-builder（container 驱动绕过加速直连 docker.io 慢）已切 default——下次构建先查 builder。
+- 待用户 unraid：load 镜像→替换 compose→按 README 执行 W6 迁移实测（最后验收批）。
+
 ## 2026-10-30（续）：迁移控制面双向往返实跑（PG→SQLite→PG 闭环，e9ca340 已推送）
 
 - 用户需求：全栈部署实测 PG 迁 SQLite 再迁回 PG——用**真实控制面端点**（非直调服务）。
