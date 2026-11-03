@@ -31,9 +31,11 @@ from app.services.downloader_api_runtime import DownloadLane
 URL = "/api/v1/torrents/active-torrents"
 RECONCILE_URL = "/api/v1/torrents/runtime-state/reconcile"
 
-# 前端 ActiveTorrentSpeed 接口声明的实时字段（torrents.ts）
+# 前端 ActiveTorrentSpeed 接口声明的实时字段（torrents.ts；name 为仪表盘一期
+# W2 补充的可选展示字段，后端恒返回，前端类型 name?: string）
 EXPECTED_SPEED_FIELDS = {
     "hash",
+    "name",
     "downloadSpeed",
     "uploadSpeed",
     "progress",
@@ -225,6 +227,7 @@ class TestSpeedFieldContract:
             torrents=[
                 {
                     "hash": "h1",
+                    "name": "ubuntu-24.04.iso",
                     "dlspeed": 100,
                     "upspeed": 50,
                     "progress": 0.5,
@@ -247,11 +250,13 @@ class TestSpeedFieldContract:
         assert data[0]["progress"] == 50.0
         assert data[0]["downloadSpeed"] == 100
         assert data[0]["uploadSpeed"] == 50
+        assert data[0]["name"] == "ubuntu-24.04.iso"
 
     def test_tr_speed_dict_keys(self, client):
         """Transmission 活跃种子返回字段 keys 集合 == 前端 6 字段。"""
         t = MagicMock()
         t.hashString = "t1"
+        t.name = "debian-13.iso"
         t.rate_download = 200
         t.rate_upload = 0
         t.percent_done = 0.25
@@ -269,6 +274,7 @@ class TestSpeedFieldContract:
         assert core_fields == EXPECTED_SPEED_FIELDS
         assert data[0]["progress"] == 25.0
         assert data[0]["downloadSpeed"] == 200
+        assert data[0]["name"] == "debian-13.iso"
 
 
 class TestCompletionConvergence:
@@ -319,6 +325,7 @@ class TestCompletionConvergence:
             active_response = client.get(URL).json()
             assert active_response["data"][0] == {
                 "hash": "done-hash",
+                "name": "",
                 "downloadSpeed": 4096.0,
                 "uploadSpeed": 0.0,
                 "progress": 99.37,
@@ -337,6 +344,7 @@ class TestCompletionConvergence:
         assert terminal_response["data"] == [
             {
                 "hash": "done-hash",
+                "name": "",
                 "downloadSpeed": 0,
                 "uploadSpeed": 0,
                 "progress": 100.0,
