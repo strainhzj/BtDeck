@@ -88,7 +88,7 @@ def client(async_db):
     app.dependency_overrides.clear()
 
 
-async def _add_cron(async_db, *, task_code, task_status=0, dr=0, task_name="t"):
+async def _add_cron(async_db, *, task_code, task_status=0, dr=0, task_name="t", enabled=True):
     """插入 cron_task 行（task_name/code/type/executor/cron_plan/create_by/update_by 均 NOT NULL）。"""
     task = CronTask(
         task_name=task_name,
@@ -97,6 +97,7 @@ async def _add_cron(async_db, *, task_code, task_status=0, dr=0, task_name="t"):
         task_type=0,
         executor="echo",
         cron_plan="0 * * * *",
+        enabled=enabled,
         dr=dr,
     )
     async_db.add(task)
@@ -187,7 +188,15 @@ class TestAuthAndStructure:
         assert body["msg"] == "获取成功"
         data = body["data"]
         assert data["downloaders"] == {"total": 0, "online": 0, "offline": 0}
-        assert data["torrents"] == {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
+        assert data["torrents"] == {
+            "active": 0,
+            "downloading": 0,
+            "seeding": 0,
+            "paused": 0,
+            # W1 新增段：缓存缺失时同样零值降级（五桶全零 + 空站点列表）
+            "statusBuckets": {"error": 0, "downloading": 0, "seeding": 0, "paused": 0, "other": 0},
+            "siteBuckets": [],
+        }
         assert data["downloader_list"] == []
         assert data["activities"] == []
 
@@ -204,7 +213,7 @@ class TestTasksStats:
         r = client.get(URL)
         body = r.json()
         assert body["msg"] == "获取成功", "防 service 异常被吞成 data=null 时 KeyError 误报"
-        assert body["data"]["tasks"] == {"total": 0, "running": 0, "stopped": 0}
+        assert body["data"]["tasks"] == {"total": 0, "running": 0, "stopped": 0, "enabled": 0}
 
     @pytest.mark.asyncio
     async def test_running_count(self, client, async_db):
@@ -233,6 +242,26 @@ class TestTasksStats:
         tasks = r.json()["data"]["tasks"]
         assert tasks["total"] == 1, "dr=1 软删除须被 WHERE dr=0 过滤"
         assert tasks["running"] == 1, "返回的须是 alive(status=1) 而非 deleted(status=0)"
+
+    @pytest.mark.asyncio
+    async def test_enabled_key_counts_only_enabled_alive_rows(self, client, async_db):
+        """enabled 键（W1 决策 #1）：dr=0 AND enabled=true；缓存缺失时同口径回源。"""
+        await _add_cron(async_db, task_code="e1", enabled=True)
+        await _add_cron(async_db, task_code="e2", enabled=True)
+        await _add_cron(async_db, task_code="off", enabled=False)
+        await _add_cron(async_db, task_code="del", enabled=True, dr=1)
+        r = client.get(URL)
+        tasks = r.json()["data"]["tasks"]
+        assert tasks["enabled"] == 2
+        # 现有三键语义不受新键影响
+        assert tasks["total"] == 3
+        assert tasks["running"] == 0
+
+    def test_enabled_key_prefers_job_cache(self, client, async_db):
+        """DashboardStatsJob 60s 缓存存在时直接取用，不再回源 DB。"""
+        client.app.state.dashboard_task_stats = {"enabled": 7}
+        r = client.get(URL)
+        assert r.json()["data"]["tasks"]["enabled"] == 7
 
 
 # ==================== 组3：activities SQL（TOP-10 + 归一化） ====================

@@ -30,7 +30,11 @@ def _dl(nickname, downloading, seeding, paused, fail_time=0):
 
 class TestDashboardStatsJobPaused:
     async def test_paused_aggregated_from_online_downloaders(self):
-        """在线下载器 paused 求和；离线下载器（fail_time!=0）整体不计。"""
+        """在线下载器 paused 求和；离线下载器（fail_time!=0）整体不计。
+
+        W1 起成功路径附带 DB 聚合段（statusBuckets/siteBuckets/enabled）——
+        隔离文件库为空表时降级为零值（五桶全零 + 空站点），不影响四主键。
+        """
         app = SimpleNamespace(
             state=SimpleNamespace(
                 store=FakeStore([_dl("a", 1, 10, 2), _dl("b", 0, 5, 3), _dl("off", 9, 9, 9, fail_time=1)])
@@ -39,7 +43,17 @@ class TestDashboardStatsJobPaused:
         job = DashboardStatsJob(app)
         result = await job.execute()
         assert result["status"] == "success"
-        assert app.state.torrent_stats == {"active": 16, "downloading": 1, "seeding": 15, "paused": 5}
+        stats = app.state.torrent_stats
+        assert {k: stats[k] for k in ("active", "downloading", "seeding", "paused")} == {
+            "active": 16,
+            "downloading": 1,
+            "seeding": 15,
+            "paused": 5,
+        }
+        # DB 聚合段（隔离文件库空表）降级零值不报错
+        assert stats["statusBuckets"] == {"error": 0, "downloading": 0, "seeding": 0, "paused": 0, "other": 0}
+        assert stats["siteBuckets"] == []
+        assert app.state.dashboard_task_stats == {"enabled": 0}
 
     async def test_missing_paused_count_attr_defaults_zero(self):
         """旧缓存对象无 paused_count 属性 → getattr 兜底 0，不抛错。"""

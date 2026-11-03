@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.runtime_context import TORRENT_STATS_ABSENT, RuntimeContext
+from app.tasks.scheduler.dashboard_stats import STATUS_BUCKET_KEYS
 from app.torrents.audit_enums import AuditOperationType
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,20 @@ class DashboardService:
         offline = total - online
         return {"total": total, "online": online, "offline": offline}
 
-    async def _get_torrents_stats(self) -> Dict[str, int]:
+    async def _get_torrents_stats(self) -> Dict[str, Any]:
         # 三态语义（与原 hasattr 实现一致）：属性缺失（ABSENT 哨兵）→ 零值字典；
         # 属性存在但为 None → 原样返回 None（known behavior，测试已钉）。
+        # 零值字典含 W1 新增段（五桶全零 + 空站点列表），保证响应形状稳定。
         if self.runtime.torrent_stats is not TORRENT_STATS_ABSENT:
             return self.runtime.torrent_stats
-        return {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
+        return {
+            "active": 0,
+            "downloading": 0,
+            "seeding": 0,
+            "paused": 0,
+            "statusBuckets": {k: 0 for k in STATUS_BUCKET_KEYS},
+            "siteBuckets": [],
+        }
 
     async def _get_tasks_stats(self) -> Dict[str, int]:
         query = """
@@ -67,7 +76,17 @@ class DashboardService:
         total = int(row[0] or 0) if row else 0
         running = int(row[1] or 0) if row else 0
         stopped = max(total - running, 0)
-        return {"total": total, "running": running, "stopped": stopped}
+        # enabled 键（仪表盘一期 W1 决策 #1：KPI 显示"已启用"口径）：来自
+        # DashboardStatsJob 60s 缓存；缓存缺失（启动初期）时同口径回源，保证键恒在。
+        # 现有 total/running/stopped 三键语义保留不动。
+        cached = self.runtime.dashboard_task_stats
+        if isinstance(cached, dict):
+            enabled = int(cached.get("enabled") or 0)
+        else:
+            fallback = await self.db.execute(text("SELECT COUNT(*) FROM cron_task WHERE dr = 0 AND enabled = TRUE"))
+            fallback_row = fallback.fetchone()
+            enabled = int(fallback_row[0] or 0) if fallback_row else 0
+        return {"total": total, "running": running, "stopped": stopped, "enabled": enabled}
 
     async def _get_system_stats(self) -> Dict[str, Any]:
         start_time = self.runtime.start_time
