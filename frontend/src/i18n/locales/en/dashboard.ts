@@ -93,7 +93,29 @@ export const dashboard = {
     cycleWidth: 'Cycle column width'
   },
   screen: {
-    enter: 'Data screen'
+    enter: 'Data screen',
+    title: 'BtDeck Data Screen',
+    exit: 'Exit (Esc)',
+    uptime: 'Uptime {duration}',
+    onlineCount: '{count} instances online',
+    upload24h: 'Upload (last 24h)',
+    enabledTasks: 'Enabled tasks',
+    uptimeLabel: 'System uptime',
+    radarTitle: 'Instance link radar',
+    waveTitle: 'Throughput · live',
+    tickerTitle: 'Active task ticker',
+    refreshNote: 'Data refreshes every 5s (SSE push is a separate phase-2 project)',
+    brand: 'BtDeck · Data screen',
+    dateLine: '{w}, {m}/{d}/{y}',
+    weekday: {
+      0: 'Sun',
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat'
+    }
   },
   widgets: {
     liveTag: 'Live',

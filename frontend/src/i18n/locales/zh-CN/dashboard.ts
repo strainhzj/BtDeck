@@ -93,7 +93,29 @@ export const dashboard = {
     cycleWidth: '循环切换列宽'
   },
   screen: {
-    enter: '进入大屏'
+    enter: '进入大屏',
+    title: 'BtDeck 数据大屏',
+    exit: '退出大屏（Esc）',
+    uptime: '系统连续运行 {duration}',
+    onlineCount: '{count} 实例在线',
+    upload24h: '近 24h 上传',
+    enabledTasks: '已启用任务',
+    uptimeLabel: '系统运行时长',
+    radarTitle: '实例链路雷达',
+    waveTitle: '系统吞吐 · 实时波动',
+    tickerTitle: '活跃任务播报',
+    refreshNote: '数据每 5s 更新（SSE 推送为二期另立项）',
+    brand: 'BtDeck · 数据大屏',
+    dateLine: '{y} 年 {m} 月 {d} 日 星期{w}',
+    weekday: {
+      0: '日',
+      1: '一',
+      2: '二',
+      3: '三',
+      4: '四',
+      5: '五',
+      6: '六'
+    }
   },
   widgets: {
     liveTag: '实时',

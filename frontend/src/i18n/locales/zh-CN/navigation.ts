@@ -25,6 +25,7 @@ export const navigation = {
     login: '登录',
     notFound: '页面不存在',
     dashboard: '首页',
+    dashboardScreen: '数据大屏',
     downloader: '下载器管理',
     downloaderGroup: '下载器管理',
     rssManagement: 'RSS 管理',

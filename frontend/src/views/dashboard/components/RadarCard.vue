@@ -31,6 +31,8 @@ interface RadarNode {
 export default class RadarCard extends Vue {
   @Prop({ required: true }) private list!: DownloaderListItem[]
   @Prop({ default: 'radar-canvas' }) private radarTestId!: string
+  /** 深色模式（数据大屏 --screen-* 画布；默认浅色应用主题） */
+  @Prop({ default: false }) private dark!: boolean
 
   private angle = 0
   private rafId = 0
@@ -107,9 +109,10 @@ export default class RadarCard extends Vue {
     const R = Math.min(W, H) * 0.44
     const dpr = window.devicePixelRatio || 1
     const styles = getComputedStyle(document.documentElement)
-    const primary = styles.getPropertyValue('--color-primary').trim() || '#059669'
-    const error = styles.getPropertyValue('--color-error').trim() || '#EF4444'
-    const gridLine = 'rgba(31,41,55,.10)'
+    const primary = this.dark ? styles.getPropertyValue('--screen-accent').trim() || '#34D399' : styles.getPropertyValue('--color-primary').trim() || '#059669'
+    const error = this.dark ? '#F87171' : styles.getPropertyValue('--color-error').trim() || '#EF4444'
+    const gridLine = this.dark ? 'rgba(255,255,255,.10)' : 'rgba(31,41,55,.10)'
+    const labelColor = this.dark ? 'rgba(226,232,240,.75)' : 'rgba(31,41,55,.55)'
 
     ctx.clearRect(0, 0, W, H)
     // 网格环与十字
@@ -133,7 +136,7 @@ export default class RadarCard extends Vue {
     ctx.translate(cx, cy)
     ctx.rotate(this.angle)
     const sweep = ctx.createLinearGradient(0, 0, R, 0)
-    sweep.addColorStop(0, 'rgba(5,150,105,.40)')
+    sweep.addColorStop(0, this.dark ? 'rgba(52,211,153,.45)' : 'rgba(5,150,105,.40)')
     sweep.addColorStop(1, 'rgba(5,150,105,0)')
     ctx.fillStyle = sweep
     ctx.beginPath()
@@ -164,7 +167,7 @@ export default class RadarCard extends Vue {
       ctx.arc(x, y, rr + 4 * dpr * (1 + Math.sin(this.angle * 3) * 0.5), 0, Math.PI * 2)
       ctx.stroke()
       ctx.globalAlpha = 1
-      ctx.fillStyle = 'rgba(31,41,55,.55)'
+      ctx.fillStyle = labelColor
       ctx.font = `${11 * dpr}px Fira Code, monospace`
       ctx.fillText(n.name, x + rr + 4, y + 4)
     }

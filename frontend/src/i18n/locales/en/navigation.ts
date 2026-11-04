@@ -25,6 +25,7 @@ export const navigation = {
     login: 'Sign in',
     notFound: 'Page not found',
     dashboard: 'Home',
+    dashboardScreen: 'Data screen',
     downloader: 'Downloaders',
     downloaderGroup: 'Downloaders',
     rssManagement: 'RSS Manager',

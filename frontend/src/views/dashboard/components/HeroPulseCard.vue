@@ -66,14 +66,7 @@
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import { ActiveTorrentSpeed } from '@/api/torrents'
 import { formatSpeed } from '@/utils/formatters'
-
-interface WaveLayer {
-  amp: number
-  len: number
-  speed: number
-  color: string
-  off: number
-}
+import { drawWaves, fitCanvasToContainer, HERO_WAVE_LAYERS } from './waveCanvas'
 
 @Component({ name: 'HeroPulseCard' })
 export default class HeroPulseCard extends Vue {
@@ -88,14 +81,6 @@ export default class HeroPulseCard extends Vue {
   private resizeObserver: ResizeObserver | null = null
   private visible = true
 
-  private get layers(): WaveLayer[] {
-    return [
-      { amp: 0.3, len: 1.15, speed: 0.028, color: 'rgba(5,150,105,.28)', off: 0.55 },
-      { amp: 0.2, len: 0.8, speed: -0.04, color: 'rgba(59,130,246,.22)', off: 0.7 },
-      { amp: 0.12, len: 1.6, speed: 0.02, color: 'rgba(16,185,129,.40)', off: 0.82 }
-    ]
-  }
-
   private get tickerTorrents(): ActiveTorrentSpeed[] {
     return [...this.activeTorrents]
       .sort((a, b) => b.downloadSpeed - a.downloadSpeed)
@@ -107,11 +92,11 @@ export default class HeroPulseCard extends Vue {
     const canvas = this.$refs.canvas as HTMLCanvasElement | undefined
     if (!canvas) return
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => this.fitCanvas())
+      this.resizeObserver = new ResizeObserver(() => fitCanvasToContainer(canvas, canvas.parentElement))
       this.resizeObserver.observe(canvas.parentElement || canvas)
     }
     document.addEventListener('visibilitychange', this.onVisibility)
-    this.fitCanvas()
+    fitCanvasToContainer(canvas, canvas.parentElement)
     this.loop()
   }
 
@@ -147,25 +132,7 @@ export default class HeroPulseCard extends Vue {
     if (!canvas || canvas.offsetParent === null) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const W = canvas.width
-    const H = canvas.height
-    ctx.clearRect(0, 0, W, H)
-    for (const L of this.layers) {
-      const base = H * L.off
-      ctx.beginPath()
-      ctx.moveTo(0, H)
-      for (let x = 0; x <= W; x += 6) {
-        const y =
-          base +
-          Math.sin((x / W) * Math.PI * 2 * L.len + this.t * L.speed * 10) * H * L.amp * 0.45 +
-          Math.sin((x / W) * Math.PI * 2 * L.len * 2.7 + this.t * L.speed * 6) * H * L.amp * 0.18
-        ctx.lineTo(x, y)
-      }
-      ctx.lineTo(W, H)
-      ctx.closePath()
-      ctx.fillStyle = L.color
-      ctx.fill()
-    }
+    drawWaves(ctx, canvas.width, canvas.height, this.t, HERO_WAVE_LAYERS)
     this.t += 1
   }
 
