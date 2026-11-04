@@ -1,3 +1,9 @@
+## 2026-11-03（续）交接：一期已合并 dev 推送 origin 并完成 unraid 生产部署（8db992a 双容器 healthy，三级回滚锚点）
+
+- **git**：feature 分支重写历史移除方案文件（计划 md+mockup 仅本地留存）→ --no-ff 合并 dev（8db992a）→ origin/dev 已推送。
+- **部署**：Hermes 构建（--no-cache 15 分钟，dirty=false，双 tar sha256 已记 progress）→ 凭据通道 SSH unraid → backup-pre-8db992a 锚点 → tar wget+load → .btdeck-remote-deploy.sh（backend 20s healthy）→ 验证 /health/live gitSha 匹配+前端 200+双容器 healthy；compose 文件未变；8401 已关。
+- **待用户**：浏览器实机验收一期新仪表盘（生产 http://192.168.5.51:8080）；不满意可三级回滚（backup-pre-8db992a 即 2d8b274 旧版）。
+
 ## 2026-11-03 交接：仪表盘风格改造一期全量交付（W0~W5 5 提交，待用户实机浏览器验收后定合并）
 
 - **分支**：feature/dashboard-redesign-2026-11（基于 dev 6f08a1a）；提交链 0240b7e（计划入库+BitMatrix 验收示意图+PLANS 转一期动工）→ 14e893f（W1 后端）→ 5ffaa21（W2 骨架）→ 6e62c93（W3 图表）→ 74ff04f（W4 大屏）→ 本次 W5（测试+文档收口，待提交）。未合回 dev、未推 origin（边界：合并与推送由用户另行决定）。
