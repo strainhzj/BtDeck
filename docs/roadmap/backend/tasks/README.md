@@ -31,7 +31,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
-| 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
+| 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务（207 行，60s 主循环 + 5min 站点独立节流）；✨2026-11-03 一期 W1 扩展（feature `dashboard-redesign-2026-11`）——原零 DB 查询并入 DB 聚合段（AsyncSessionLocal 注入 + 异常独立降级）：`aggregate_status_buckets` 五桶 CASE SQL（error 优先口径=report_service._status_bucket，has_tracker_error 优先）/`aggregate_site_buckets`（tracker_info JOIN torrent_info DISTINCT (info_id,host) → Python _normalize_host 归一后再按种子去重，TopN8+other）/`count_enabled_tasks`（dr=0 AND enabled=true，决策 #1）；产物 `app.state.torrent_stats` 新增 statusBuckets/siteBuckets 键 + `app.state.dashboard_task_stats.enabled`；DB 故障保留旧缓存不破坏主统计 |
 | 速度采样 speed-sampler ✨2026-09-25（统计报表 W1） | `speed_sampler.py` | `SpeedSamplerJob`（L122，lifecycle `run_speed_sampler_loop` L124 驱动 60s 一轮）：①原始采样——DB 有效清单（enabled=TRUE AND dr=0）为基准对齐 store 快照，缓存缺失（含 300s 剔除者）或 is_online=False 仍记 online=0 速度 0 行（断网采样承诺），在线判定只认 is_online 禁 fail_time，KB/s×1024 对齐 dashboard_service，每轮 add_all 单次 commit 包 db_write_scope；②5min hourly 聚合检查——完整结束小时 + LEFT JOIN 排除已聚合 + INSERT OR IGNORE 幂等，avg 分母=online_count（全离线小时 avg=0），SQLite datetime() 归一时间；PG date_trunc 聚合与 datetime 参数绑定；③每日清理 raw 14d / hourly 730d；android 守卫名单含 run_speed_sampler_loop |
 | 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L16，fail_time 死代码的替代自愈机制） |
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance；`execute` L57 先要求 `path_mapping`，Android 不触发目录/映射读写 |

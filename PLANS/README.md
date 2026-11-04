@@ -7,7 +7,7 @@
 
 | 计划 | 范围 | 状态 |
 |------|------|------|
-| [仪表盘风格改造一期](./dashboard-redesign-2026-11.md) | 首页对齐 BitMatrix 风格（KPI 行/widget 网格/预设档位/编辑模式/沉浸大屏）；后端仅 DashboardStatsJob S 级扩展（五桶/站点/任务启用计数，v2 审查后口径修正），新增表与缺失数据源均二期 | 🚧 一期动工（2026-11-03 终审通过；feature `dashboard-redesign-2026-11`，W1~W5 进行中） |
+| [仪表盘风格改造一期](./dashboard-redesign-2026-11.md) | 首页对齐 BitMatrix 风格（KPI 行/widget 网格/预设档位/编辑模式/沉浸大屏）；后端仅 DashboardStatsJob S 级扩展（五桶/站点/任务启用计数，v2 审查后口径修正），新增表与缺失数据源均二期 | 🚧 一期 W1~W5 全量交付（2026-11-03，feature `dashboard-redesign-2026-11` 5 提交：后端三聚合+双节流/前端组件族+预设+编辑/四图表/大屏/8 spec 66 例；全量 Jest 155 套 2128 例、echarts gz 199.31KB、后端受影响面 2075 passed；待用户实机浏览器验收后定合并） |
 | [数据库迁移 UI](./database-migration-ui.md) | SQLite ↔ PostgreSQL 双向页面迁移（停写屏障、独立 SQLite 产物、A指引+B持久提交/ACK、维护认证与恢复） | 🚧 W0–W5 交付（CI 全绿）；W6 主体 done（2026-10-31 生产已上 2007fc2e + 隔离容器栈双向闭环全过），剩掉电/跨盘/交接实机与①–⑤发现处置，见 feature_list w6a/w6b |
 | [桌面 Web 中英双语](./desktop-bilingual.md) | M1 核心桌面英文闭环 → M2 全部桌面双语；语言基础、错误标识、系统预设、危险操作及视觉验收 | 🚧 P1～P6-5 已完成（2026-09-18~09-20 dev 主线交付，P6-5 收口含审计门禁翻转），P7 收口与验收准备中；feature `desktop-bilingual-20260918`；2026-09-22 合并注：MCP/MoviePilot 新面双语另立项（见 PLANS/merge-dev107-into-dev.md §8） |
 | [MoviePilot 整理联动](./moviepilot-integration.md) | BtDeckBridge 插件（V2）、整理历史只读镜像同步、下载器映射与任务关联查询、设置页/种子详情媒体库页签 | 🚧 第一版闭环落地（2026-09-09 后端/前端/插件代码+自动化测试全绿，66+38 项）；真实宿主联调待部署信息；feature `moviepilot-integration-2026-09-09`；2026-09-22 随 dev1.0.7 合入 dev |

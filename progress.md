@@ -1,3 +1,13 @@
+## 2026-11-03：仪表盘风格改造一期全量交付（W0~W5，5 提交，feature dashboard-redesign-2026-11）
+
+- **范围**：PLANS/dashboard-redesign-2026-11.md（v2 终审版）一期全量——W1 后端 S 级扩展 / W2 前端骨架 / W3 图表 / W4 大屏 / W5 i18n+测试+门禁；二期清单（异常待办/ratio/账号级布局/执行态/较昨日/SSE）零越界。
+- **提交**：0240b7e 计划入库+BitMatrix 验收示意图+PLANS 状态转一期动工 → 14e893f W1（DashboardStatsJob 五桶/站点/启用计数+双节流+前端契约类型） → 5ffaa21 W2（index.vue 拆分 16 文件组件族+预设四档+编辑模式+dashboard-theme.scss；active-torrents 响应补 name 键 qB/TR/补查三路） → 6e62c93 W3（SpeedSpark 3s×60 点采样曲线/DailyTraffic 近 24h 分桶积分/StatusDonut 五桶环形/SiteBars host 条形） → 74ff04f W4（/dashboard/screen 大屏 DataScreen：--screen-* 深色/KPI 六项/波浪+雷达+播报 5s 轮询/Esc 退出）+ W5 测试与文档。
+- **W1 事实**：DashboardStatsJob 零 DB 查询→AsyncSessionLocal 聚合段（异常独立降级保主统计）；五桶 CASE SQL 与 report_service._status_bucket 同口径（error 优先），statusBuckets 与 /reports/overview 逐桶对拍钉死；siteBuckets DISTINCT(info_id,host) 后 Python 归一再去重（SQL 层去重会漏同站不同端口合并），TopN8+other，5min 独立节流（实例属性存时间戳，job 长驻单实例）；tasks.enabled=dr=0 AND enabled=true（决策 #1），service 缓存缺失同口径回源；新测试 12 例含双节流回拨与 DB 故障降级。
+- **W2/W3 事实**：index.vue 1002→578 行拆 16 文件；预设 custom 自动进编辑、回预设自动退出；localStorage 宽容解析（未知 id 丢弃/缺失卡回填默认末尾/非法 span 剔除）；block 注释 --spacing-*/--radius-* 提前终止 SCSS 块注释致 build 红（已知坑复现，改用顿号分隔）；tracker_info UNIQUE(torrent_info_id, tracker_url) 同 host 重复行需不同 URL（测试数据构造修正）；SQL DISTINCT 原始 host 不消归一后重复→去重移到 Python 归一后（测试抓出实现 bug 修复）。
+- **验证**：后端受影响面 pytest 全绿（聚合+job+api+active-torrents+reports_overview 73 例；tests/tasks+api 全量 2075 passed/5 skipped；tests/mcp+core 1044 passed，其中 test_startup_migration_guard 2 例组合失败为 dev 既有基线——stash 后 dev 同样挂、单独跑全绿，与本批无关）；mypy/black/flake8 净。前端 typecheck 净、定向 eslint 净（全量 277 错为既有基线，CI regression.yml 门禁不含 lint 步骤）、contract:check 过、build DONE（echarts chunk gz 204093B=199.31KB<200KB 红线实测）、全量 Jest 155 套 2128 例全绿（新增 8 spec 66 例：layout12/kpi-widget8/cards12/grid6/page7/screen6/i18n-parity8/binning7，跨 0 点/五桶对拍/大屏 Esc/预设编辑联动/localStorage 宽容解析/键平齐+口径钉死）、i18n-leftover-guard 20 例过。./init.sh ci 全过。
+- **文档**：feature_list +dashboard-redesign-2026-11 任务块（evidence 六提交/门禁数字）；PLANS/README 状态 🚧 一期动工；roadmap 四文件（根速查+生成日期/views 分支 screen+components 行/tasks 分支 dashboard_stats 行/tests 计数 155 套）。
+- **待用户**：实机浏览器验收（三主题切换/拖拽手感/大屏投影效果）后决定合并 dev 时机；合并与推送 origin 由用户另行决定。
+
 ## 2026-10-31（续四）：验收缺陷修复批（W6-B ①②③④ + P7 V02-F01/V01-F01，5 提交）
 
 - **触发**：用户授权按建议顺序开修七项积压缺陷（含提交授权）。
