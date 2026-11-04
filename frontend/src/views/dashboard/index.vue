@@ -175,17 +175,19 @@
         <InstanceHealthCard :list="dashboard.downloader_list" />
       </template>
       <template #spark>
-        <SpeedSparkCard :ready="speedReady">
-          <span />
-        </SpeedSparkCard>
+        <SpeedSparkCard
+          :samples="speedSamples"
+          :ready="speedReady"
+        />
       </template>
       <template #statusPie>
         <StatusDonutCard :buckets="dashboard.torrents.statusBuckets" />
       </template>
       <template #traffic>
         <DailyTrafficCard
-          :ready="false"
-          :loading="hasDashboardData"
+          :ready="trafficReady"
+          :loading="trafficLoading"
+          :result="trafficResult"
         />
       </template>
       <template #sites>
@@ -262,8 +264,10 @@ import {
 const DASHBOARD_REFRESH_MS = 30000
 const ACTIVE_POLL_MS = 3000
 const TASK_REFRESH_MS = 60000
-/** 速度采样：3s × 60 点（W3 速度曲线消费；W2 先累积） */
+/** 速度采样：3s × 60 点（W3 速度曲线数据源） */
 const SPEED_SAMPLE_MAX = 60
+/** 近 24h 流量刷新（分钟级 raw，高频拉取无意义） */
+const TRAFFIC_REFRESH_MS = 120000
 
 @Component({
   name: 'Dashboard',
@@ -290,8 +294,10 @@ export default class extends Vue {
   private dashboardData: DashboardData | null = null
   private activeTorrents: ActiveTorrentSpeed[] = []
   private taskList: ScheduledTask[] = []
-  /** 速度采样序列 [{t, dl, ul}]（W3 接 echarts 双线渐变面积图） */
-  private speedSamples: Array<{ t: number, dl: number, ul: number }> = []
+  /** 速度采样序列（W3 速度曲线数据源：3s 采样 60 点滚动窗） */
+  private speedSamples: SpeedSample[] = []
+  private trafficResult: HourTrafficResult | null = null
+  private trafficLoading = false
 
   private layout: DashboardLayoutState = defaultLayout()
   private preset: PresetKey = 'overview'
@@ -300,6 +306,7 @@ export default class extends Vue {
   private dashboardTimer: number | null = null
   private activeTimer: number | null = null
   private taskTimer: number | null = null
+  private trafficTimer: number | null = null
 
   private readonly presetOptions: PresetKey[] = ['overview', 'focus', 'pulse', 'custom']
 
@@ -329,9 +336,13 @@ export default class extends Vue {
     return this.dashboardData || this.emptyDashboardData
   }
 
-  /** W3 速度曲线就绪条件：采样点 ≥2；W2 阶段恒为空态占位 */
+  /** W3 速度曲线就绪条件：采样点 ≥2 */
   get speedReady(): boolean {
     return this.speedSamples.length >= 2
+  }
+
+  get trafficReady(): boolean {
+    return (this.trafficResult?.buckets.length || 0) > 0
   }
 
   created() {
@@ -339,6 +350,7 @@ export default class extends Vue {
     this.fetchDashboardData()
     this.fetchActiveTorrents()
     this.fetchTasks()
+    this.fetchTraffic()
     this.startTimers()
   }
 
@@ -394,6 +406,21 @@ export default class extends Vue {
     }
   }
 
+  /** 近 24h 流量：分钟级 raw → 小时分桶积分（M-2 口径） */
+  private async fetchTraffic() {
+    this.trafficLoading = true
+    try {
+      const res = await getReportsSpeedHistory('24h')
+      if (res.code === '200' && res.data?.series) {
+        this.trafficResult = bucketSpeedHistoryByHour(res.data.series)
+      }
+    } catch {
+      // 轮询失败保持上一轮分桶
+    } finally {
+      this.trafficLoading = false
+    }
+  }
+
   private startTimers() {
     this.dashboardTimer = window.setInterval(() => {
       this.fetchDashboardData()
@@ -405,15 +432,19 @@ export default class extends Vue {
     this.taskTimer = window.setInterval(() => {
       this.fetchTasks()
     }, TASK_REFRESH_MS)
+    this.trafficTimer = window.setInterval(() => {
+      this.fetchTraffic()
+    }, TRAFFIC_REFRESH_MS)
   }
 
   private stopTimers() {
-    for (const timer of [this.dashboardTimer, this.activeTimer, this.taskTimer]) {
+    for (const timer of [this.dashboardTimer, this.activeTimer, this.taskTimer, this.trafficTimer]) {
       if (timer) clearInterval(timer)
     }
     this.dashboardTimer = null
     this.activeTimer = null
     this.taskTimer = null
+    this.trafficTimer = null
   }
 
   /** 3s 采样：总速度累积进 60 点滚动窗（W3 速度曲线数据源） */

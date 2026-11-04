@@ -120,13 +120,17 @@ export const dashboard = {
     traffic: {
       title: '近 24h 流量 · 分时',
       loading: '加载中…',
-      empty: '暂无流量数据'
+      empty: '暂无流量数据',
+      rangeEmpty: '--',
+      upload: '上传',
+      download: '下载'
     },
     sites: {
       title: 'Tracker 站点分布',
       empty: '暂无站点数据',
       note: '按 Tracker host 去端口聚合 · 按种子去重计数',
-      other: '其他'
+      other: '其他',
+      countLabel: '种子数'
     },
     hot: {
       title: '热门种子 · 按速度',

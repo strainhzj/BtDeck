@@ -120,13 +120,17 @@ export const dashboard = {
     traffic: {
       title: 'Last 24h traffic',
       loading: 'Loading…',
-      empty: 'No traffic data'
+      empty: 'No traffic data',
+      rangeEmpty: '--',
+      upload: 'Upload',
+      download: 'Download'
     },
     sites: {
       title: 'Tracker site distribution',
       empty: 'No site data',
       note: 'Grouped by tracker host (port-stripped) · deduplicated by torrent',
-      other: 'Other'
+      other: 'Other',
+      countLabel: 'Torrents'
     },
     hot: {
       title: 'Hot torrents · by speed',

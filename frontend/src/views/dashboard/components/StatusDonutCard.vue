@@ -1,46 +1,21 @@
 <template>
-  <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-    <div
-      class="donut-wrap"
-      data-testid="status-donut"
-    >
-      <svg
-        viewBox="0 0 120 120"
-        width="128"
-        height="128"
-        :aria-hidden="true"
-      >
-        <circle
-          cx="60"
-          cy="60"
-          r="48"
-          fill="none"
-          stroke="var(--color-bg-tertiary)"
-          stroke-width="14"
-        />
-        <circle
-          v-for="seg in segments"
-          :key="seg.key"
-          cx="60"
-          cy="60"
-          r="48"
-          fill="none"
-          :stroke="seg.color"
-          stroke-width="14"
-          :stroke-dasharray="seg.dash"
-          :stroke-dashoffset="seg.offset"
-        />
-      </svg>
-      <div class="donut-center">
-        <div class="mono donut-total">
-          {{ total.toLocaleString() }}
-        </div>
-        <div class="dash-muted donut-total-label">
-          {{ $t('dashboard.widgets.statusPie.total') }}
-        </div>
+  <div
+    class="donut-wrap"
+    data-testid="status-donut"
+  >
+    <EChart
+      :option="chartOption"
+      :height="128"
+    />
+    <div class="donut-center">
+      <div class="mono donut-total">
+        {{ total.toLocaleString() }}
+      </div>
+      <div class="dash-muted donut-total-label">
+        {{ $t('dashboard.widgets.statusPie.total') }}
       </div>
     </div>
-    <div class="dash-legend">
+    <div class="dash-legend donut-legend">
       <span
         v-for="seg in legendItems"
         :key="seg.key"
@@ -58,19 +33,18 @@
 
 <script lang="ts">
 /**
- * StatusDonutCard —— 状态分布环形 widget（仪表盘一期 W2）。
+ * StatusDonutCard —— 状态分布环形 widget（仪表盘一期 W3）。
  *
  * 数据源：W1 torrents.statusBuckets（五桶，口径与 /reports/overview
- * statusDist 一致，has_tracker_error 优先判 error）。SVG 环形实现（对齐
- * 验收示意图形态）；W3 若切换 echarts 版本另行记录，数据口径不变。
+ * statusDist 一致）。EChart 环形（pie 内径空心 + 中心总数绝对定位），
+ * 图例用语义化 dash-legend（对齐示意图形态，五桶计数直读）。
  */
 import { Component, Prop, Vue } from 'vue-property-decorator'
+import EChart from '@/components/charts/EChart.vue'
 import { StatusBuckets, StatusBucketKey } from '@/types/dashboard'
 
-const CIRC = 2 * Math.PI * 48
-
 /** 五桶展示顺序与配色（令牌色随三主题） */
-const ORDER: ReadonlyArray<{ key: StatusBucketKey, color: string }> = [
+const ORDER: ReadonlyArray<{ key: StatusBucketKey; color: string }> = [
   { key: 'seeding', color: 'var(--color-success)' },
   { key: 'downloading', color: 'var(--color-info)' },
   { key: 'paused', color: 'var(--color-warning)' },
@@ -78,7 +52,7 @@ const ORDER: ReadonlyArray<{ key: StatusBucketKey, color: string }> = [
   { key: 'other', color: 'var(--color-text-quaternary, #D1D5DB)' }
 ]
 
-@Component({ name: 'StatusDonutCard' })
+@Component({ name: 'StatusDonutCard', components: { EChart } })
 export default class StatusDonutCard extends Vue {
   @Prop({ required: true }) private buckets!: StatusBuckets
 
@@ -86,45 +60,68 @@ export default class StatusDonutCard extends Vue {
     return ORDER.reduce((sum, o) => sum + (this.buckets[o.key] || 0), 0)
   }
 
-  private get segments(): Array<{ key: StatusBucketKey, color: string, dash: string, offset: number }> {
-    let consumed = 0
-    return ORDER.map(o => {
-      const count = this.buckets[o.key] || 0
-      const len = this.total > 0 ? (count / this.total) * CIRC : 0
-      const seg = {
-        key: o.key,
-        color: o.color,
-        dash: `${len.toFixed(1)} ${CIRC.toFixed(1)}`,
-        offset: -consumed
-      }
-      consumed += len
-      return seg
-    }).filter(s => parseFloat(s.dash) > 0)
+  private get legendItems(): Array<{ key: StatusBucketKey; color: string; count: number }> {
+    return ORDER.map(o => ({ key: o.key, color: o.color, count: this.buckets[o.key] || 0 }))
   }
 
-  private get legendItems(): Array<{ key: StatusBucketKey, color: string, count: number }> {
-    return ORDER.map(o => ({ key: o.key, color: o.color, count: this.buckets[o.key] || 0 }))
+  private resolveColor(token: string, fallback: string): string {
+    const name = token.match(/--color-[a-z-]+/)?.[0]
+    if (!name) return token.startsWith('var(') ? fallback : token
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return v || fallback
+  }
+
+  private get chartOption(): Record<string, unknown> | null {
+    const colorMap: Record<string, string> = {
+      seeding: this.resolveColor('var(--color-success)', '#10B981'),
+      downloading: this.resolveColor('var(--color-info)', '#3B82F6'),
+      paused: this.resolveColor('var(--color-warning)', '#F59E0B'),
+      error: this.resolveColor('var(--color-error)', '#EF4444'),
+      other: this.resolveColor('var(--color-text-quaternary)', '#D1D5DB')
+    }
+    const data = ORDER
+      .map(o => ({
+        name: this.$t(`dashboard.widgets.statusPie.${o.key}`).toString(),
+        value: this.buckets[o.key] || 0,
+        itemStyle: { color: colorMap[o.key] }
+      }))
+      .filter(d => d.value > 0)
+    if (data.length === 0) return null
+    return {
+      animation: false,
+      tooltip: { trigger: 'item' },
+      series: [
+        {
+          type: 'pie',
+          radius: ['62%', '82%'],
+          center: ['50%', '50%'],
+          avoidLabelOverlap: false,
+          label: { show: false },
+          emphasis: { scale: false },
+          data
+        }
+      ]
+    }
   }
 }
 </script>
 
 <style lang="scss" scoped>
 .donut-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   position: relative;
-  width: 128px;
-  height: 128px;
-
-  svg {
-    transform: rotate(-90deg);
-  }
 }
 
 .donut-center {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  top: 50px;
+  left: 50%;
+  transform: translate(-50%, -50%);
   text-align: center;
+  pointer-events: none;
 }
 
 .donut-total {
@@ -134,5 +131,9 @@ export default class StatusDonutCard extends Vue {
 
 .donut-total-label {
   font-size: 11px;
+}
+
+.donut-legend {
+  justify-content: center;
 }
 </style>
