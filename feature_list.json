@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.7",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.7，发布流程进行中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.6（2026-09-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-10-28",
+  "last_updated": "2026-11-03",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -8289,6 +8289,67 @@
         "behavior": "AVD btdeck-a35 无头模拟器全链路视觉冒烟 10 屏通过：向导品牌头部与图标卡片、服务器列表翡翠绿 ActionBar + 主按钮、添加表单 OutlinedBox 浮动标签 + 密码切换、http 私有地址自动出现明文确认复选框（TextWatcher 联动）、空名称点确定展示 TextInputLayout 错误且对话框不关闭、列表卡片行（名称/健康胶囊/URL/元信息）、本机服务确认对话框 LAN 勾选联动威胁模型文案、启动进度对话框翡翠绿圆形指示器、服务就绪自动进 WebView 加载本机前端登录页（v1.0.6 · 服务就绪）——原生壳与前端呈现同一翡翠绿视觉。",
         "compat": "Espresso 依赖全部保留：server_list 仍为 AdapterView（ListView）、row_health 文案（未测试/就绪/未就绪/不可达/证书错误）与 ID 不变、菜单/对话框按钮字符串不变、androidTest 源码编译通过；LAN 开关初始态仍从 LocalServerState.lanEnabled 持久化恢复。",
         "regression_tests": "JVM 新增 7 例（HealthUiTest 3：健康文案/语义色映射 + 四组语义色互异；BrandThemeSyncTest 4：colors.xml token 值锁定、values 与 values-v35 主题 item 同步、Light 基底 + materialAlertDialogTheme/colorAccent 挂线、与 frontend theme-variables.scss emerald 块逐 token 同源比对——仓库根不可见时 assume 跳过不阻断）；androidTest 新增 CompanionBrandingUiTest 6 例：colorPrimary 运行时解析 #059669、向导品牌头部/双模式卡、伴侣卡进列表且主操作为 MaterialButton、添加表单四输入框浮动标签 + http 私有地址出明文确认/https 撤回 + 空名提交 TextInputLayout 报错不关框 + 合法输入保存成行、关闭端口→文案与圆点 error 红 #EF4444、LAN 开关联动威胁模型文案。全量 44/44 JVM + 8/8 仪器（含 CompanionOfflineUiTest 存量回归 2 例）通过（AVD btdeck-a35）。为可测性抽出 ui/HealthUi 纯逻辑（adapter 文案/语义色映射收敛），brand_mark 加 ID。"
+      }
+    },
+    {
+      "id": "dashboard-redesign-2026-11",
+      "title": "仪表盘风格改造一期（对齐 BitMatrix 视觉与 Widget 布局）",
+      "status": "done",
+      "scope": "fullstack",
+      "description": "对齐 BitMatrix 首页三层体验、保持 BtDeck 设计语言（翡翠绿三主题/Lucide/Element/Fira/i18n 双语/Vue2 Options API 硬约束）。W1 后端 S 级扩展：DashboardStatsJob 零 DB 查询并入聚合段（AsyncSessionLocal 注入、异常独立降级），五桶 statusBuckets（CASE SQL error 优先，与 /reports/overview statusDist 逐桶对拍钉一致）、siteBuckets（tracker_host 去端口归一后按种子去重计数、TopN8+other、5min 独立节流）、tasks.enabled（dr=0 AND enabled=true 启用口径，决策 #1；现有 total/running/stopped 语义不动，缓存缺失同口径回源）；GET /dashboard torrents+tasks 新键、runtime_context +dashboard_task_stats、active-torrents 三路（qB/TR/补查）响应补 name 键。W2/W3 前端：index.vue 1002 行拆分 16 文件组件族（KpiCard×4 恒显网格外/DashWidget 壳/DashboardGrid 12 列预设四档 overview-focus-pulse-custom/编辑模式原生 HTML5 DnD 排序+列宽 3-4-6-8-12 循环+恢复默认/dashboardLayout.ts 纯函数+localStorage 持久化最后保存者生效）；SpeedSpark 3s×60 点采样 EChart 双线渐变面积、DailyTraffic /reports/speed/history 分钟级 raw 小时分桶积分（近 24h 口径、跨 0 点 Jest 钉死）、StatusDonut 五桶环形、SiteBars host 条形；styles/dashboard-theme.scss 全令牌化皮肤（--color-*/--spacing-*/--radius-*），emoji 全换 Lucide。W4 大屏：/dashboard/screen（hidden 子路由 fixed 覆盖层先例=趣味报告），DataScreen --screen-* 独立深色变量、KPI 六项（无分享率/异常数）、吞吐波浪 waveCanvas 共享三层正弦+RadarCard dark 链路雷达+任务播报+时钟 5s 轮询、Esc/按钮退出。W5 i18n zh/en 全量新键+leftover-guard 20 例过；二期清单（异常待办/ratio/账号级布局/执行态/较昨日/SSE）全部不做。",
+      "files": [
+        "backend/app/tasks/scheduler/dashboard_stats.py",
+        "backend/app/services/dashboard_service.py",
+        "backend/app/core/runtime_context.py",
+        "backend/app/api/endpoints/torrent_speed.py",
+        "backend/tests/tasks/test_dashboard_stats_aggregation.py",
+        "backend/tests/tasks/test_dashboard_stats_job.py",
+        "backend/tests/api/test_dashboard_api.py",
+        "backend/tests/api/test_active_torrents_endpoint.py",
+        "frontend/src/views/dashboard/index.vue",
+        "frontend/src/views/dashboard/screen.vue",
+        "frontend/src/views/dashboard/components/",
+        "frontend/src/styles/dashboard-theme.scss",
+        "frontend/src/styles/index.scss",
+        "frontend/src/types/dashboard.ts",
+        "frontend/src/api/torrents.ts",
+        "frontend/src/i18n/locales/zh-CN/dashboard.ts",
+        "frontend/src/i18n/locales/en/dashboard.ts",
+        "frontend/src/i18n/locales/zh-CN/navigation.ts",
+        "frontend/src/i18n/locales/en/navigation.ts",
+        "frontend/src/components/common/LucideIcon.vue",
+        "frontend/src/router.ts",
+        "frontend/tests/unit/dashboard-layout.spec.ts",
+        "frontend/tests/unit/dashboard-kpi-widget.spec.ts",
+        "frontend/tests/unit/dashboard-cards.spec.ts",
+        "frontend/tests/unit/dashboard-grid.spec.ts",
+        "frontend/tests/unit/dashboard-page.spec.ts",
+        "frontend/tests/unit/dashboard-screen.spec.ts",
+        "frontend/tests/unit/dashboard-i18n-parity.spec.ts",
+        "frontend/tests/unit/dashboard-traffic-binning.spec.ts",
+        "frontend/tests/unit/mobile-dashboard.spec.ts",
+        "PLANS/dashboard-redesign-2026-11.md",
+        "PLANS/README.md",
+        "design-mockups/dashboard-bitmatrix-style.html",
+        "docs/roadmap/README.md",
+        "docs/roadmap/frontend/views/README.md",
+        "docs/roadmap/backend/tasks/README.md",
+        "docs/roadmap/tests/README.md"
+      ],
+      "evidence": {
+        "date": "2026-11-03",
+        "branch": "feature/dashboard-redesign-2026-11",
+        "commits": [
+          "0240b7e 计划入库+mockup",
+          "14e893f W1 后端扩展+契约同步",
+          "5ffaa21 W2 骨架组件族+name 扩展",
+          "6e62c93 W3 图表四卡+gz 实测",
+          "74ff04f W4 大屏"
+        ],
+        "backend": "定向 pytest：test_dashboard_stats_aggregation 12 例（五桶对拍 /reports/overview、多 tracker/辅种/去端口/TopN、enabled 口径、60s+5min 双节流回拨、DB 故障降级）+ test_dashboard_stats_job 3 + test_dashboard_api 30（enabled 键/缓存命中/回源）+ test_active_torrents_endpoint 27（name 契约）全绿；tests/tasks+tests/api 全量 2075 passed/5 skipped；mypy 3 文件 0 错、black/flake8 净",
+        "frontend": "typecheck 0 错、定向 eslint 净（全量 277 错为既有基线，CI 门禁不含 lint）、contract:check 过、build DONE（echarts chunk gz 204093B=199.31KB<200KB 红线实测记录）、全量 Jest 155 套 2128 例全绿（基线≥141）、i18n-leftover-guard 20 例过、键平齐 parity 8 例（\"已启用\"/\"近 24h\"/host 口径钉死）",
+        "env": "./init.sh ci 全过",
+        "verification": "完成前重读计划 §4/§7 逐项核对：13 卡映射全收口（12 一期+issues 二期缓行）、DoD 六条全满足、二期清单零越界（无快照表/无新端点/CommonResponse 未动/无 ratio 展示/无 SSE）"
       }
     }
   ]

@@ -1,0 +1,730 @@
+/**
+ * 仪表盘风格改造一期（PLANS/dashboard-redesign-2026-11.md W2）
+ *
+ * 对齐 BitMatrix 首页视觉的三层体验之 L1 皮肤层 + L2 网格层样式：
+ * - 细描边低阴影卡片（widget/kpi）、KPI 大数值行、12 列网格（--span 变量）；
+ * - 编辑模式：虚线描边 + grip/宽度按钮显隐 + 拖拽 ghost 态；
+ * - 通用小组件：hbar/legend/rowline/status-pill/timeline/quick-action/torrent-row/
+ *   吞吐管道/hero 波浪区；
+ * - 全部颜色走 theme-variables.scss 的 --color-* 三主题体系（翡翠绿/活力橙/
+ *   石墨灰），本文件不写死色值；间距/圆角/阴影分别用 --spacing-* 、
+ *   --radius-* 、--shadow-* 令牌。
+ *
+ * 命名空间 .dashboard-page：仅仪表盘主页消费，避免污染全局。
+ */
+
+.dashboard-page {
+  // ---------- KPI 行（恒显于网格外，不参与预设/编辑） ----------
+  .dash-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-lg, 14px);
+    margin-bottom: var(--spacing-lg, 14px);
+  }
+
+  .dash-kpi {
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg) var(--spacing-lg, 18px) var(--spacing-md);
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition-base);
+    cursor: pointer;
+
+    &:hover {
+      box-shadow: var(--shadow-md);
+    }
+  }
+
+  .dash-kpi-label {
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .lucide-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--color-primary);
+    }
+  }
+
+  .dash-kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+
+    small {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-tertiary);
+      margin-left: 3px;
+    }
+  }
+
+  .dash-kpi-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: var(--spacing-sm, 8px);
+    gap: var(--spacing-sm, 8px);
+  }
+
+  .dash-kpi-chip {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-weight: 500;
+    white-space: nowrap;
+
+    &.up {
+      color: var(--color-success);
+      background: var(--color-success-light);
+    }
+
+    &.down {
+      color: var(--color-error);
+      background: var(--color-error-light);
+    }
+
+    &.flat {
+      color: var(--color-text-tertiary);
+      background: var(--color-bg-tertiary);
+    }
+  }
+
+  .dash-kpi-dual {
+    display: flex;
+    gap: var(--spacing-lg, 14px);
+    margin-top: 6px;
+
+    .kv {
+      flex: 1;
+    }
+
+    .kv .v {
+      font-size: 21px;
+      font-weight: 700;
+    }
+
+    .kv .l {
+      font-size: 11.5px;
+      color: var(--color-text-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+  }
+
+  .dash-kpi-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  // ---------- 12 列 Widget 网格 ----------
+  .dash-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: var(--spacing-lg, 14px);
+    align-items: stretch;
+  }
+
+  .dash-widget {
+    grid-column: span var(--span, 6);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-xl);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    transition: box-shadow var(--transition-base), border-color var(--transition-base);
+
+    &:hover {
+      box-shadow: var(--shadow-sm);
+    }
+
+    &[draggable='true'] {
+      cursor: grab;
+    }
+
+    &.dragging {
+      opacity: 0.45;
+      border-style: dashed;
+      border-color: var(--color-primary);
+    }
+  }
+
+  .dash-page--editing .dash-widget {
+    border-style: dashed;
+
+    &:hover {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px var(--color-primary-lightest);
+    }
+  }
+
+  .dash-widget-head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    padding: 12px var(--spacing-md, 14px) 10px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .dash-widget-grip {
+    color: var(--color-text-quaternary, #d1d5db);
+    display: none;
+    cursor: grab;
+
+    .lucide-icon {
+      width: 15px;
+      height: 15px;
+    }
+  }
+
+  .dash-page--editing .dash-widget-grip {
+    display: block;
+  }
+
+  .dash-widget-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    .lucide-icon {
+      width: 15px;
+      height: 15px;
+      color: var(--color-primary);
+    }
+  }
+
+  .dash-widget-tag {
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: var(--radius-full);
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+
+    &.live {
+      background: var(--color-success-light);
+      color: var(--color-success);
+    }
+  }
+
+  .dash-widget-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+
+  .dash-widget-act {
+    border: 0;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 4px;
+    display: none;
+    line-height: 0;
+    transition: var(--transition-base);
+
+    &:hover {
+      background: var(--color-bg-hover);
+      color: var(--color-primary);
+    }
+
+    .lucide-icon {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  .dash-page--editing .dash-widget-act {
+    display: inline-flex;
+  }
+
+  .dash-widget-body {
+    padding: 12px var(--spacing-md, 14px) var(--spacing-md, 14px);
+    flex: 1;
+    min-height: 0;
+  }
+
+  // ---------- 编辑提示条 ----------
+  .dash-edit-hint {
+    display: none;
+    margin: 0 0 12px;
+    padding: 9px var(--spacing-md, 14px);
+    border-radius: var(--radius-md);
+    background: var(--color-primary-lightest);
+    color: var(--color-primary);
+    font-size: 12.5px;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+
+    .lucide-icon {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+  }
+
+  .dash-page--editing .dash-edit-hint {
+    display: flex;
+  }
+
+  // ---------- 预设分段控件 ----------
+  .dash-seg {
+    display: inline-flex;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .dash-seg button {
+    border: 0;
+    background: transparent;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    font-family: inherit;
+    transition: var(--transition-base);
+
+    &.on {
+      background: var(--color-bg-primary);
+      color: var(--color-primary);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+  }
+
+  // ---------- 通用小组件 ----------
+  .dash-hbar-row {
+    display: grid;
+    grid-template-columns: minmax(60px, 90px) 1fr 56px;
+    gap: 10px;
+    align-items: center;
+    padding: 5px 0;
+    font-size: 12.5px;
+  }
+
+  .dash-hbar-name {
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dash-hbar-track {
+    height: 8px;
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+  }
+
+  .dash-hbar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--color-primary), var(--color-primary-lighter));
+
+    &.muted {
+      background: linear-gradient(90deg, var(--color-info), var(--color-primary-lighter));
+    }
+  }
+
+  .dash-hbar-val {
+    text-align: right;
+    color: var(--color-text-secondary);
+  }
+
+  .dash-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sw {
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+  }
+
+  .dash-rowline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--spacing-sm, 8px) 0;
+    border-bottom: 1px dashed var(--color-border-secondary);
+    font-size: 12.5px;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    .grow {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  .dash-ellip {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dash-muted {
+    color: var(--color-text-tertiary);
+  }
+
+  .dash-status-pill {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    font-weight: 500;
+    white-space: nowrap;
+
+    &.st-online {
+      background: var(--color-success-light);
+      color: var(--color-success);
+    }
+
+    &.st-offline {
+      background: var(--color-bg-tertiary);
+      color: var(--color-text-tertiary);
+    }
+
+    &.st-error {
+      background: var(--color-error-light);
+      color: var(--color-error);
+    }
+
+    &.st-run {
+      background: var(--color-info-light);
+      color: var(--color-info);
+    }
+
+    &.st-warn {
+      background: var(--color-warning-light);
+      color: var(--color-warning);
+    }
+  }
+
+  .dash-mini-ring {
+    width: 34px;
+    height: 34px;
+    transform: rotate(-90deg);
+    flex-shrink: 0;
+  }
+
+  .dash-tl-item {
+    display: flex;
+    gap: 10px;
+    padding: 7px 0;
+    font-size: 12.5px;
+  }
+
+  .dash-tl-time {
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+    width: 44px;
+  }
+
+  .dash-tl-dotcol {
+    width: 2px;
+    border-radius: 2px;
+    background: var(--color-border-primary);
+    position: relative;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 7px;
+      left: -2.5px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--color-primary);
+    }
+  }
+
+  .dash-qa-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .dash-qa {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 14px 6px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    transition: var(--transition-base);
+    background: var(--color-bg-primary);
+
+    &:hover {
+      color: var(--color-primary);
+      border-color: var(--color-primary);
+      background: var(--color-primary-lightest);
+      transform: translateY(-1px);
+    }
+
+    .lucide-icon {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .dash-tor-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12.5px;
+  }
+
+  .dash-tor-rank {
+    color: var(--color-text-tertiary);
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .dash-tor-sp {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    white-space: nowrap;
+
+    .lucide-icon {
+      width: 11px;
+      height: 11px;
+    }
+
+    &.dl {
+      color: var(--color-primary);
+    }
+
+    &.ul {
+      color: var(--color-info);
+    }
+  }
+
+  // ---------- 吞吐管道 ----------
+  .dash-tube-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-lg, 18px);
+  }
+
+  .dash-tube-col {
+    text-align: center;
+  }
+
+  .dash-tube-value {
+    font-weight: 700;
+    font-size: 17px;
+
+    &.dl {
+      color: var(--color-primary);
+    }
+
+    &.ul {
+      color: var(--color-info);
+    }
+  }
+
+  .dash-tube-label {
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .dash-tube {
+    width: 26px;
+    height: 150px;
+    border-radius: 13px;
+    background: var(--color-bg-tertiary);
+    position: relative;
+    overflow: hidden;
+    margin: 0 auto;
+  }
+
+  .dash-tube-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 13px;
+    transition: height 0.6s ease;
+
+    &.dl {
+      background: linear-gradient(180deg, var(--color-primary-lighter), var(--color-primary));
+    }
+
+    &.ul {
+      background: linear-gradient(180deg, #93c5fd, var(--color-info));
+    }
+  }
+
+  .dash-tube-flow {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 10px;
+    top: 0;
+    background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0 4px, transparent 4px 14px);
+    animation: dash-tube-flow 1.2s linear infinite;
+    mix-blend-mode: overlay;
+  }
+
+  // ---------- hero 实时脉搏 ----------
+  .dash-hero {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dash-hero .dash-widget-body {
+    padding: 0;
+  }
+
+  .dash-hero-stats {
+    position: relative;
+    z-index: 2;
+    padding: var(--spacing-lg, 18px) var(--spacing-lg, 18px) var(--spacing-sm, 8px);
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+
+    .hs .v {
+      font-size: 26px;
+      font-weight: 700;
+
+      small {
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
+    }
+
+    .hs .l {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      margin-top: 2px;
+    }
+  }
+
+  .dash-hero-canvas {
+    position: relative;
+    height: 150px;
+    z-index: 1;
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  }
+
+  .dash-hero-ticker {
+    position: relative;
+    z-index: 2;
+    padding: 4px var(--spacing-lg, 18px) 14px;
+  }
+
+  // ---------- 雷达 ----------
+  .dash-radar-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+
+    canvas {
+      width: 100%;
+      height: 230px;
+      display: block;
+    }
+  }
+
+  // ---------- 空态 ----------
+  .dash-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm, 8px);
+    padding: var(--spacing-xl, 24px) 0;
+    color: var(--color-text-tertiary);
+    font-size: 12.5px;
+    min-height: 120px;
+
+    .lucide-icon {
+      width: 22px;
+      height: 22px;
+      opacity: 0.6;
+    }
+  }
+}
+
+@keyframes dash-tube-flow {
+  from {
+    top: -12px;
+  }
+
+  to {
+    top: 100%;
+  }
+}
+
+// ---------- 响应式（对齐示意图断点） ----------
+@media (max-width: 1280px) {
+  .dashboard-page {
+    .dash-kpi-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dash-widget {
+      grid-column: span 6 !important;
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-page {
+    .dash-kpi-row {
+      grid-template-columns: 1fr;
+    }
+
+    .dash-widget {
+      grid-column: span 12 !important;
+    }
+  }
+}

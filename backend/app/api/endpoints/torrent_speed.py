@@ -379,6 +379,7 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
             result.append(
                 {
                     "hash": t.get("hash", ""),
+                    "name": t.get("name", ""),
                     "downloadSpeed": dl_speed,
                     "uploadSpeed": ul_speed,
                     "progress": progress_percent,
@@ -394,6 +395,7 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
 # Transmission 轻量级查询：仅获取速度相关字段，避免拉取全部数据
 _TR_SPEED_FIELDS = [
     "hashString",
+    "name",
     "rateDownload",
     "rateUpload",
     "percentDone",
@@ -424,6 +426,7 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
             result.append(
                 {
                     "hash": str(getattr(t, "hashString", "") or "").strip().lower(),
+                    "name": str(getattr(t, "name", "") or ""),
                     "downloadSpeed": dl_speed,
                     "uploadSpeed": ul_speed,
                     "progress": progress_percent,
@@ -468,6 +471,7 @@ def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, A
         result.append(
             {
                 "hash": t.get("hash", ""),
+                "name": t.get("name", ""),
                 "downloadSpeed": t.get("dlspeed", 0),
                 "uploadSpeed": t.get("upspeed", 0),
                 "progress": progress_percent,
@@ -491,6 +495,7 @@ def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, A
         "peersGettingFromUs",
         "status",
         "error",
+        "name",
     ]
     # Transmission 不支持按 hash 批量查询，需要获取所有再过滤
     # （hash 小写口径：调用方传入的 hash 可能来自大小写混合来源，统一 lower 后比较，P0-D）
@@ -511,6 +516,7 @@ def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, A
         result.append(
             {
                 "hash": h,
+                "name": str(getattr(t, "name", "") or ""),
                 "downloadSpeed": getattr(t, "rate_download", 0) or 0,
                 "uploadSpeed": getattr(t, "rate_upload", 0) or 0,
                 "progress": progress_percent,

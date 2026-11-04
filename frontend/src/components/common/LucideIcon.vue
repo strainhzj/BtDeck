@@ -123,7 +123,15 @@ import {
   Radar,
   PlusCircle,
   File,
-  Loader2
+  Loader2,
+  Waves,
+  PieChart,
+  Flame,
+  History,
+  GripVertical,
+  Maximize2,
+  Globe,
+  CircleDot
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -252,7 +260,15 @@ const ICONS: Record<string, unknown> = {
   radar: Radar,
   'plus-circle': PlusCircle,
   file: File,
-  'loader-2': Loader2
+  'loader-2': Loader2,
+  waves: Waves,
+  'pie-chart': PieChart,
+  flame: Flame,
+  history: History,
+  'grip-vertical': GripVertical,
+  'maximize-2': Maximize2,
+  globe: Globe,
+  'circle-dot': CircleDot
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

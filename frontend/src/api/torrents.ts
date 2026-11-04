@@ -1459,6 +1459,8 @@ export function getTorrentPeers(
  */
 export interface ActiveTorrentSpeed {
   hash: string
+  /** 种子名称（仪表盘一期 W2 扩展；旧快照/兼容路径可能缺省） */
+  name?: string
   downloaderId?: string
   downloader_id?: string
   downloadSpeed: number  // bytes/s

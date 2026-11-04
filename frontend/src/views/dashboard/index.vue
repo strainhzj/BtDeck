@@ -1,5 +1,8 @@
 <template>
-  <div class="dashboard-container">
+  <div
+    class="dashboard-container dashboard-page"
+    :class="{'dash-page--editing': editing}"
+  >
     <!-- 头部 -->
     <div class="dashboard-header">
       <div class="dashboard-header-info">
@@ -7,278 +10,325 @@
         <p class="dashboard-subtitle">{{ $t('dashboard.subtitle', {date: currentDate}) }}</p>
       </div>
       <div class="dashboard-actions">
-        <!-- <el-button @click="refreshData">刷新数据</el-button> -->
-        <!-- <el-button type="primary" @click="exportReport">导出报告</el-button> -->
+        <div
+          class="dash-seg"
+          role="tablist"
+          :aria-label="$t('dashboard.preset.label')"
+        >
+          <button
+            v-for="p in presetOptions"
+            :key="p"
+            type="button"
+            role="tab"
+            :aria-selected="preset === p"
+            :class="{on: preset === p}"
+            @click="choosePreset(p)"
+          >
+            {{ $t(`dashboard.preset.${p}`) }}
+          </button>
+        </div>
+        <el-button
+          size="small"
+          :class="{'is-active': editing}"
+          :data-testid="'edit-layout-btn'"
+          @click="toggleEditing()"
+        >
+          <lucide-icon :icon="editing ? 'check' : 'pencil'" />
+          {{ editing ? $t('dashboard.edit.done') : $t('dashboard.edit.button') }}
+        </el-button>
+        <el-button
+          size="small"
+          type="primary"
+          data-testid="enter-screen-btn"
+          @click="enterScreen()"
+        >
+          <lucide-icon icon="maximize-2" />
+          {{ $t('dashboard.screen.enter') }}
+        </el-button>
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <div class="stats-grid">
-      <div
-        class="stat-card"
-        @click="navigateTo('/downloader/index')"
-        role="button"
-        tabindex="0"
+    <!-- 编辑提示条 -->
+    <div class="dash-edit-hint">
+      <lucide-icon icon="alert-triangle" />
+      <span class="grow">{{ $t('dashboard.edit.hint') }}</span>
+      <el-button
+        size="mini"
+        data-testid="reset-layout-btn"
+        @click="resetLayout()"
+      >
+        {{ $t('dashboard.edit.reset') }}
+      </el-button>
+    </div>
+
+    <!-- KPI 行（恒显于网格外，不参与预设/编辑） -->
+    <section class="dash-kpi-row">
+      <KpiCard
+        :label="$t('dashboard.kpi.downloaders')"
+        icon="server"
+        clickable
         :aria-label="$t('dashboard.aria.viewDownloaders')"
-        @keypress.enter="navigateTo('/downloader/index')"
+        @click="navigateTo('/downloader/index')"
       >
-        <div class="stat-card-header">
-          <span class="stat-card-title">{{ $t('dashboard.card.downloaders') }}</span>
-          <div class="stat-card-icon primary">📡</div>
-        </div>
-        <div class="stat-card-value">{{ formatRatio(dashboard.downloaders.online, dashboard.downloaders.total) }}</div>
-        <div class="stat-card-progress">
-          <div class="stat-card-progress-bar" :style="{width: downloaderProgress + '%'}"></div>
-        </div>
-        <div
-          class="stat-card-trend"
-          :class="{up: hasDashboardData && dashboard.downloaders.online === dashboard.downloaders.total}"
-        >
-          <span v-if="hasDashboardData && dashboard.downloaders.total > 0 && dashboard.downloaders.online === dashboard.downloaders.total">{{ $t('dashboard.allOnline') }}</span>
-          <span v-else-if="hasDashboardData">{{ $t('dashboard.onlineCount', {count: dashboard.downloaders.online}) }}</span>
-          <span v-else>--</span>
-        </div>
-      </div>
+        <template #value>
+          {{ hasDashboardData ? dashboard.downloaders.online : '--' }}<small>/ {{ hasDashboardData ? dashboard.downloaders.total : '--' }}</small>
+        </template>
+        <template #foot>
+          <span
+            v-if="hasDashboardData"
+            :class="['dash-kpi-chip', dashboard.downloaders.online === dashboard.downloaders.total && dashboard.downloaders.total > 0 ? 'up' : 'flat']"
+          >
+            {{ dashboard.downloaders.online === dashboard.downloaders.total && dashboard.downloaders.total > 0 ? $t('dashboard.allOnline') : $t('dashboard.onlineCount', {count: dashboard.downloaders.online}) }}
+          </span>
+          <span
+            v-else
+            class="dash-kpi-chip flat"
+          >--</span>
+        </template>
+      </KpiCard>
 
-      <div
-        class="stat-card"
-        @click="navigateTo('/torrents/index')"
-        role="button"
-        tabindex="0"
+      <KpiCard
+        :label="$t('dashboard.kpi.activeTorrents')"
+        icon="download"
+        clickable
         :aria-label="$t('dashboard.aria.viewTorrents')"
-        @keypress.enter="navigateTo('/torrents/index')"
+        @click="navigateTo('/torrents/index')"
       >
-        <div class="stat-card-header">
-          <span class="stat-card-title">{{ $t('dashboard.card.activeTorrents') }}</span>
-          <div class="stat-card-icon success">📥</div>
-        </div>
-        <div class="stat-card-value">{{ formatStatValue(dashboard.torrents.active) }}</div>
-        <div class="stat-card-progress">
-          <div class="stat-card-progress-bar" :style="{width: torrentProgress + '%'}"></div>
-        </div>
-      </div>
+        <template #value>
+          {{ hasDashboardData ? dashboard.torrents.active : '--' }}
+        </template>
+        <template #foot>
+          <span class="dash-kpi-chip flat">
+            {{ $t('dashboard.kpi.dlSplit', {count: dashboard.torrents.downloading}) }} · {{ $t('dashboard.kpi.sdSplit', {count: dashboard.torrents.seeding}) }}
+          </span>
+        </template>
+      </KpiCard>
 
-      <div
-        class="stat-card"
-        @click="navigateTo('/tasks/index')"
-        role="button"
-        tabindex="0"
+      <KpiCard
+        :label="$t('dashboard.kpi.enabledTasks')"
+        icon="clock"
+        clickable
         :aria-label="$t('dashboard.aria.viewTasks')"
-        @keypress.enter="navigateTo('/tasks/index')"
+        @click="navigateTo('/tasks/index')"
       >
-        <div class="stat-card-header">
-          <span class="stat-card-title">{{ $t('dashboard.card.tasks') }}</span>
-          <div class="stat-card-icon warning">⏰</div>
-        </div>
-        <div class="stat-card-value">{{ formatRatio(dashboard.tasks.running, dashboard.tasks.total) }}</div>
-        <div class="stat-card-progress">
-          <div class="stat-card-progress-bar" :style="{width: taskProgress + '%'}"></div>
-        </div>
-        <div class="stat-card-trend">
-          <span>{{ $t('dashboard.running') }}</span>
-        </div>
-      </div>
+        <template #value>
+          {{ hasDashboardData ? dashboard.tasks.enabled : '--' }}<small> {{ $t('dashboard.kpi.enabledUnit') }}</small>
+        </template>
+        <template #foot>
+          <span class="dash-kpi-chip flat">{{ $t('dashboard.kpi.enabledNote') }}</span>
+        </template>
+      </KpiCard>
 
-      <div class="stat-card">
-        <div class="stat-card-header">
-          <span class="stat-card-title">{{ $t('dashboard.card.system') }}</span>
-          <div class="stat-card-icon info">✓</div>
-        </div>
-        <div class="stat-card-value">{{ systemTotalSpeed }}</div>
-        <div class="stat-card-progress">
-          <div class="stat-card-progress-bar" :style="{width: systemHealth + '%'}"></div>
-        </div>
-        <div class="stat-card-trend up stat-card-trend--column">
-          <span>{{ systemSpeedDetail }}</span>
-          <span class="stat-card-trend-uptime">{{ $t('dashboard.uptime', {duration: systemUptime}) }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 主内容区 -->
-    <div class="main-content">
-      <!-- 下载器状态 -->
-      <div class="content-card">
-        <div class="content-card-header">
-          <h2 class="content-card-title">{{ $t('dashboard.section.downloaderStatus') }}</h2>
-          <el-link type="primary" @click="navigateTo('/downloader/index')">{{ $t('dashboard.section.manage') }}</el-link>
-        </div>
-        <div class="downloader-grid">
-          <div
-            v-for="downloader in dashboard.downloader_list"
-            :key="downloader.downloader_id"
-            class="downloader-card"
-            @click="viewDownloader(downloader)"
-            role="button"
-            tabindex="0"
-            :aria-label="$t('dashboard.aria.viewDownloaderDetail', {name: downloader.nickname})"
-            @keypress.enter="viewDownloader(downloader)"
-          >
-            <div class="downloader-card-header">
-              <div>
-                <div class="downloader-card-name">{{ downloader.nickname }}</div>
-                <span class="downloader-card-type">{{ getDownloaderTypeLabel(downloader.downloader_type) }}</span>
+      <KpiCard
+        :label="$t('dashboard.kpi.systemSpeed')"
+        icon="zap"
+      >
+        <template #value>
+          <span />
+        </template>
+        <template #default>
+          <div class="dash-kpi-dual">
+            <div class="kv">
+              <div
+                class="v mono"
+                style="color:var(--color-primary)"
+              >
+                {{ hasDashboardData ? speedText(dashboard.system.total_download_speed) : '--' }}
               </div>
-              <div class="downloader-status-badge" :class="downloader.status">
-                <span>●</span>
-                <span>{{ downloader.status === 'online' ? $t('dashboard.online') : $t('dashboard.offline') }}</span>
+              <div class="l">
+                <span
+                  class="dash-kpi-dot"
+                  style="background:var(--color-primary)"
+                />
+                {{ $t('dashboard.downloadSpeed') }}
               </div>
             </div>
-            <div v-if="downloader.status === 'online'" class="downloader-card-stats">
-              <div class="downloader-mini-stat">
-                <div class="downloader-mini-stat-value">{{ formatStatValue(downloader.downloading) }}</div>
-                <div class="downloader-mini-stat-label">{{ $t('dashboard.downloading') }}</div>
+            <div class="kv">
+              <div
+                class="v mono"
+                style="color:var(--color-info)"
+              >
+                {{ hasDashboardData ? speedText(dashboard.system.total_upload_speed) : '--' }}
               </div>
-              <div class="downloader-mini-stat">
-                <div class="downloader-mini-stat-value">{{ formatStatValue(downloader.seeding) }}</div>
-                <div class="downloader-mini-stat-label">{{ $t('dashboard.seeding') }}</div>
-              </div>
-              <div class="downloader-mini-stat">
-                <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.download_speed) }}</div>
-                <div class="downloader-mini-stat-label">{{ $t('dashboard.downloadSpeed') }}</div>
-              </div>
-              <div class="downloader-mini-stat">
-                <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.upload_speed) }}</div>
-                <div class="downloader-mini-stat-label">{{ $t('dashboard.uploadSpeed') }}</div>
-              </div>
-            </div>
-            <div v-else class="downloader-card-stats">
-              <div class="downloader-mini-stat">
-                <div class="downloader-mini-stat-value">-</div>
-                <div class="downloader-mini-stat-label">{{ $t('dashboard.offline') }}</div>
+              <div class="l">
+                <span
+                  class="dash-kpi-dot"
+                  style="background:var(--color-info)"
+                />
+                {{ $t('dashboard.uploadSpeed') }}
               </div>
             </div>
           </div>
+        </template>
+      </KpiCard>
+    </section>
 
-          <!-- 添加下载器占位卡片 -->
-          <div
-            class="downloader-card downloader-card-add"
-            @click="navigateTo('/downloader/index')"
-            role="button"
-            tabindex="0"
-            :aria-label="$t('dashboard.aria.addDownloader')"
-            @keypress.enter="navigateTo('/downloader/index')"
-          >
-            <div class="add-icon">➕</div>
-            <div class="add-text">{{ $t('dashboard.quick.addDownloader') }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 活动时间线 -->
-      <div class="content-card">
-        <div class="content-card-header">
-          <h2 class="content-card-title">{{ $t('dashboard.section.recentActivity') }}</h2>
-          <el-link type="primary" @click="viewAllActivities">{{ $t('dashboard.section.viewAll') }}</el-link>
-        </div>
-        <div class="activity-timeline">
-          <div v-if="dashboard.activities.length === 0" class="activity-empty">{{ $t('dashboard.noActivities') }}</div>
-          <div v-else>
-            <div v-for="(activity, index) in dashboard.activities" :key="index" class="activity-item">
-              <div class="activity-time">{{ activity.time }}</div>
-              <div class="activity-content">
-                <span>{{ activity.action }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="content-card quick-actions-section">
-      <div class="content-card-header">
-        <h2 class="content-card-title">{{ $t('dashboard.section.quickActions') }}</h2>
-      </div>
-      <div class="quick-actions">
-        <div
-          class="quick-action-item"
-          @click="navigateTo('/downloader/index')"
-          role="button"
-          tabindex="0"
-          :aria-label="$t('dashboard.aria.addDownloader')"
-          @keypress.enter="navigateTo('/downloader/index')"
-        >
-          <div class="quick-action-icon">➕</div>
-          <div class="quick-action-label">{{ $t('dashboard.quick.addDownloader') }}</div>
-        </div>
-        <div
-          class="quick-action-item"
-          @click="navigateTo('/tasks/index')"
-          role="button"
-          tabindex="0"
-          :aria-label="$t('dashboard.aria.newTask')"
-          @keypress.enter="navigateTo('/tasks/index')"
-        >
-          <div class="quick-action-icon">📥</div>
-          <div class="quick-action-label">{{ $t('dashboard.quick.newTask') }}</div>
-        </div>
-        <div
-          class="quick-action-item"
-          @click="navigateTo('/torrents/index')"
-          role="button"
-          tabindex="0"
-          :aria-label="$t('dashboard.aria.searchTorrents')"
-          @keypress.enter="navigateTo('/torrents/index')"
-        >
-          <div class="quick-action-icon">🔍</div>
-          <div class="quick-action-label">{{ $t('dashboard.quick.searchTorrents') }}</div>
-        </div>
-        <div
-          class="quick-action-item"
-          @click="viewLogs"
-          role="button"
-          tabindex="0"
-          :aria-label="$t('dashboard.aria.viewLogs')"
-          @keypress.enter="viewLogs()"
-        >
-          <div class="quick-action-icon">📝</div>
-          <div class="quick-action-label">{{ $t('dashboard.quick.viewLogs') }}</div>
-        </div>
-      </div>
-    </div>
+    <!-- Widget 网格（12 列 + 预设可见性 + 编辑模式） -->
+    <DashboardGrid
+      :layout="layout"
+      :preset="preset"
+      :editing="editing"
+      @reorder="onReorder"
+      @cycle-width="onCycleWidth"
+    >
+      <template #health>
+        <InstanceHealthCard :list="dashboard.downloader_list" />
+      </template>
+      <template #spark>
+        <SpeedSparkCard
+          :samples="speedSamples"
+          :ready="speedReady"
+        />
+      </template>
+      <template #statusPie>
+        <StatusDonutCard :buckets="dashboard.torrents.statusBuckets" />
+      </template>
+      <template #traffic>
+        <DailyTrafficCard
+          :ready="trafficReady"
+          :loading="trafficLoading"
+          :result="trafficResult"
+        />
+      </template>
+      <template #sites>
+        <SiteBarsCard :buckets="dashboard.torrents.siteBuckets" />
+      </template>
+      <template #hot>
+        <HotTorrentsCard :torrents="activeTorrents" />
+      </template>
+      <template #tasks>
+        <CronTaskCard :tasks="taskList" />
+      </template>
+      <template #activity>
+        <ActivityTimelineCard :activities="dashboard.activities" />
+      </template>
+      <template #quick>
+        <QuickActionsCard />
+      </template>
+      <template #radar>
+        <RadarCard :list="dashboard.downloader_list" />
+      </template>
+      <template #tubes>
+        <ThroughputTubesCard
+          :download-speed="dashboard.system.total_download_speed"
+          :upload-speed="dashboard.system.total_upload_speed"
+        />
+      </template>
+      <template #hero>
+        <HeroPulseCard
+          :download-speed="dashboard.system.total_download_speed"
+          :upload-speed="dashboard.system.total_upload_speed"
+          :downloading="dashboard.torrents.downloading"
+          :seeding="dashboard.torrents.seeding"
+          :active-torrents="activeTorrents"
+        />
+      </template>
+    </DashboardGrid>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
-import { UserModule } from '@/store/modules/user'
 import { getDashboardData } from '@/api/dashboard'
-import { DashboardData, DownloaderListItem } from '@/types/dashboard'
+import { getActiveTorrents, ActiveTorrentSpeed } from '@/api/torrents'
+import { getTaskList } from '@/api/tasks'
+import { ScheduledTask } from '@/api/tasks'
+import { DashboardData } from '@/types/dashboard'
 import { formatSpeed } from '@/utils/formatters'
 import { getLocale } from '@/i18n'
-import { debounce } from 'lodash-es'
-import { Message } from 'element-ui'
+import KpiCard from './components/KpiCard.vue'
+import DashboardGrid from './components/DashboardGrid.vue'
+import InstanceHealthCard from './components/InstanceHealthCard.vue'
+import SpeedSparkCard from './components/SpeedSparkCard.vue'
+import StatusDonutCard from './components/StatusDonutCard.vue'
+import DailyTrafficCard from './components/DailyTrafficCard.vue'
+import SiteBarsCard from './components/SiteBarsCard.vue'
+import HotTorrentsCard from './components/HotTorrentsCard.vue'
+import CronTaskCard from './components/CronTaskCard.vue'
+import ActivityTimelineCard from './components/ActivityTimelineCard.vue'
+import QuickActionsCard from './components/QuickActionsCard.vue'
+import RadarCard from './components/RadarCard.vue'
+import ThroughputTubesCard from './components/ThroughputTubesCard.vue'
+import HeroPulseCard from './components/HeroPulseCard.vue'
+import {
+  DashboardLayoutState,
+  PresetKey,
+  WidgetId,
+  defaultLayout,
+  loadLayout,
+  nextWidth,
+  saveLayout,
+  clearLayout
+} from './components/dashboardLayout'
+
+const DASHBOARD_REFRESH_MS = 30000
+const ACTIVE_POLL_MS = 3000
+const TASK_REFRESH_MS = 60000
+/** 速度采样：3s × 60 点（W3 速度曲线数据源） */
+const SPEED_SAMPLE_MAX = 60
+/** 近 24h 流量刷新（分钟级 raw，高频拉取无意义） */
+const TRAFFIC_REFRESH_MS = 120000
 
 @Component({
-  name: 'Dashboard'
+  name: 'Dashboard',
+  components: {
+    KpiCard,
+    DashboardGrid,
+    InstanceHealthCard,
+    SpeedSparkCard,
+    StatusDonutCard,
+    DailyTrafficCard,
+    SiteBarsCard,
+    HotTorrentsCard,
+    CronTaskCard,
+    ActivityTimelineCard,
+    QuickActionsCard,
+    RadarCard,
+    ThroughputTubesCard,
+    HeroPulseCard
+  }
 })
 export default class extends Vue {
-  // Dashboard data
   private loading = false
   private hasDashboardData = false
   private dashboardData: DashboardData | null = null
-  private refreshTimer: number | null = null
+  private activeTorrents: ActiveTorrentSpeed[] = []
+  private taskList: ScheduledTask[] = []
+  /** 速度采样序列（W3 速度曲线数据源：3s 采样 60 点滚动窗） */
+  private speedSamples: SpeedSample[] = []
+  private trafficResult: HourTrafficResult | null = null
+  private trafficLoading = false
+
+  private layout: DashboardLayoutState = defaultLayout()
+  private preset: PresetKey = 'overview'
+  private editing = false
+
+  private dashboardTimer: number | null = null
+  private activeTimer: number | null = null
+  private taskTimer: number | null = null
+  private trafficTimer: number | null = null
+
+  private readonly presetOptions: PresetKey[] = ['overview', 'focus', 'pulse', 'custom']
+
   private emptyDashboardData: DashboardData = {
     downloaders: { total: 0, online: 0, offline: 0 },
-    torrents: { active: 0, downloading: 0, seeding: 0, paused: 0 },
-    tasks: { total: 0, running: 0, stopped: 0 },
+    torrents: {
+      active: 0,
+      downloading: 0,
+      seeding: 0,
+      paused: 0,
+      statusBuckets: { error: 0, downloading: 0, seeding: 0, paused: 0, other: 0 },
+      siteBuckets: []
+    },
+    tasks: { total: 0, running: 0, stopped: 0, enabled: 0 },
     system: { uptime: 0, uptime_display: '--', version: '--', total_download_speed: 0, total_upload_speed: 0 },
     downloader_list: [],
     activities: []
   }
 
-  get name() {
-    return UserModule.name
-  }
-
-  get roles() {
-    return UserModule.roles
-  }
-
   get currentDate() {
     const now = new Date()
     const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }
-    // 日期格式随界面语言（zh-CN / en-US），语言与时区独立、不改动业务时间语义
     return now.toLocaleDateString(getLocale() === 'en' ? 'en-US' : 'zh-CN', options)
   }
 
@@ -286,73 +336,29 @@ export default class extends Vue {
     return this.dashboardData || this.emptyDashboardData
   }
 
-  get downloaderProgress() {
-    if (!this.hasDashboardData) {
-      return 0
-    }
-    const total = this.dashboard.downloaders.total
-    return total > 0
-      ? Math.round((this.dashboard.downloaders.online / total) * 100)
-      : 0
+  /** W3 速度曲线就绪条件：采样点 ≥2 */
+  get speedReady(): boolean {
+    return this.speedSamples.length >= 2
   }
 
-  get torrentProgress() {
-    if (!this.hasDashboardData) {
-      return 0
-    }
-    const active = this.dashboard.torrents.active
-    return active > 0
-      ? Math.round((this.dashboard.torrents.downloading / active) * 100)
-      : 0
-  }
-
-  get taskProgress() {
-    if (!this.hasDashboardData) {
-      return 0
-    }
-    const total = this.dashboard.tasks.total
-    return total > 0
-      ? Math.round((this.dashboard.tasks.running / total) * 100)
-      : 0
-  }
-
-  get systemUptime() {
-    return this.hasDashboardData ? this.dashboard.system.uptime_display : '--'
-  }
-
-  get systemHealth() {
-    return this.hasDashboardData ? 100 : 0
-  }
-
-  // 系统状态主数值：所有下载器上传+下载速度之和
-  get systemTotalSpeed() {
-    if (!this.hasDashboardData) return '--'
-    const total = (this.dashboard.system.total_download_speed || 0) + (this.dashboard.system.total_upload_speed || 0)
-    return formatSpeed(total) || '0 B/s'
-  }
-
-  // 系统状态副文字：↓下载 ↑上传
-  get systemSpeedDetail() {
-    if (!this.hasDashboardData) return ''
-    const dl = formatSpeed(this.dashboard.system.total_download_speed) || '0 B/s'
-    const ul = formatSpeed(this.dashboard.system.total_upload_speed) || '0 B/s'
-    return `↓${dl} ↑${ul}`
-  }
-
-  private formatSpeedDisplay(value?: number | null): string {
-    if (!this.hasDashboardData) return '--'
-    if (value === null || value === undefined) return '--'
-    return formatSpeed(value) || '0 B/s'
+  get trafficReady(): boolean {
+    return (this.trafficResult?.buckets.length || 0) > 0
   }
 
   created() {
+    this.restoreLayout()
     this.fetchDashboardData()
-    this.startAutoRefresh()
+    this.fetchActiveTorrents()
+    this.fetchTasks()
+    this.fetchTraffic()
+    this.startTimers()
   }
 
   beforeDestroy() {
-    this.stopAutoRefresh()
+    this.stopTimers()
   }
+
+  // ==================== 数据获取 ====================
 
   private async fetchDashboardData() {
     this.loading = true
@@ -365,6 +371,7 @@ export default class extends Vue {
         this.handleEmptyState()
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('获取仪表盘数据失败:', error)
       this.handleEmptyState()
     } finally {
@@ -377,107 +384,151 @@ export default class extends Vue {
     this.hasDashboardData = false
   }
 
-  private startAutoRefresh() {
-    this.refreshTimer = window.setInterval(() => {
-      this.fetchDashboardData()
-    }, 30000)
-  }
-
-  private stopAutoRefresh() {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer)
-      this.refreshTimer = null
-    }
-  }
-
-  // 路由导航
-  private navigateTo(path: string) {
-    this.$router.push(path)
-  }
-
-  // 刷新数据 - 更新仪表盘数据
-  private refreshData = debounce(async() => {
+  private async fetchActiveTorrents() {
     try {
-      await this.fetchDashboardData()
-      Message({
-        message: this.$t('dashboard.msg.refreshSuccess'),
-        type: 'success',
-        duration: 2000
-      })
-    } catch (error) {
-      Message({
-        message: this.$t('dashboard.msg.refreshFailed'),
-        type: 'error',
-        duration: 2000
-      })
+      const res = await getActiveTorrents()
+      if (res.code === '200' && Array.isArray(res.data)) {
+        this.activeTorrents = res.data
+      }
+    } catch {
+      // 轮询失败保持上一轮快照，不打断 UI
     }
-  }, 300)
+  }
 
-  // 导出报告
-  private exportReport() {
-    Message({
-      message: this.$t('dashboard.msg.exportWip'),
-      type: 'info',
-      duration: 2000
+  private async fetchTasks() {
+    try {
+      const res = await getTaskList({ page: 1, limit: 100 })
+      const data = res.data
+      const list = data?.list || data?.data || data?.items || []
+      this.taskList = list
+    } catch {
+      // 静默降级：任务卡显示空态
+    }
+  }
+
+  /** 近 24h 流量：分钟级 raw → 小时分桶积分（M-2 口径） */
+  private async fetchTraffic() {
+    this.trafficLoading = true
+    try {
+      const res = await getReportsSpeedHistory('24h')
+      if (res.code === '200' && res.data?.series) {
+        this.trafficResult = bucketSpeedHistoryByHour(res.data.series)
+      }
+    } catch {
+      // 轮询失败保持上一轮分桶
+    } finally {
+      this.trafficLoading = false
+    }
+  }
+
+  private startTimers() {
+    this.dashboardTimer = window.setInterval(() => {
+      this.fetchDashboardData()
+    }, DASHBOARD_REFRESH_MS)
+    this.activeTimer = window.setInterval(() => {
+      this.fetchActiveTorrents()
+      this.pushSpeedSample()
+    }, ACTIVE_POLL_MS)
+    this.taskTimer = window.setInterval(() => {
+      this.fetchTasks()
+    }, TASK_REFRESH_MS)
+    this.trafficTimer = window.setInterval(() => {
+      this.fetchTraffic()
+    }, TRAFFIC_REFRESH_MS)
+  }
+
+  private stopTimers() {
+    for (const timer of [this.dashboardTimer, this.activeTimer, this.taskTimer, this.trafficTimer]) {
+      if (timer) clearInterval(timer)
+    }
+    this.dashboardTimer = null
+    this.activeTimer = null
+    this.taskTimer = null
+    this.trafficTimer = null
+  }
+
+  /** 3s 采样：总速度累积进 60 点滚动窗（W3 速度曲线数据源） */
+  private pushSpeedSample() {
+    const system = this.dashboard.system
+    this.speedSamples.push({
+      t: Date.now(),
+      dl: system.total_download_speed || 0,
+      ul: system.total_upload_speed || 0
     })
-  }
-
-  // 查看下载器详情
-  private viewDownloader(downloader: DownloaderListItem) {
-    if (downloader.status === 'offline') {
-      Message({
-        message: this.$t('dashboard.msg.offlineNoView'),
-        type: 'warning',
-        duration: 2000
-      })
-      return
+    if (this.speedSamples.length > SPEED_SAMPLE_MAX) {
+      this.speedSamples.shift()
     }
-    this.navigateTo('/downloader/index')
   }
 
-  // 查看全部活动
-  private viewAllActivities() {
-    Message({
-      message: this.$t('dashboard.msg.activitiesWip'),
-      type: 'info',
-      duration: 2000
-    })
+  // ==================== 布局状态机（预设/编辑/持久化） ====================
+
+  private restoreLayout() {
+    const saved = loadLayout(window.localStorage)
+    this.layout = saved || defaultLayout()
+    this.preset = this.layout.preset
+    // 持久化的 custom 预设不自动恢复编辑模式（进入页面总是浏览态）
+    this.editing = false
   }
 
-  // 查看日志
-  private viewLogs() {
-    this.navigateTo('/logs/audit')
+  private persist() {
+    this.layout = { ...this.layout, preset: this.preset }
+    saveLayout(window.localStorage, this.layout)
   }
 
-  private formatStatValue(value?: number | null): string {
-    if (!this.hasDashboardData) {
-      return '--'
+  private choosePreset(p: PresetKey) {
+    this.preset = p
+    if (p === 'custom' && !this.editing) {
+      this.editing = true
     }
-    if (value === null || value === undefined) {
-      return '--'
+    if (p !== 'custom' && this.editing) {
+      this.editing = false
     }
-    return String(value)
+    this.persist()
   }
 
-  private formatRatio(current?: number | null, total?: number | null): string {
-    if (!this.hasDashboardData) {
-      return '--/--'
+  private toggleEditing() {
+    this.editing = !this.editing
+    if (this.editing && this.preset !== 'custom') {
+      this.preset = 'custom'
     }
-    const safeCurrent = current ?? 0
-    const safeTotal = total ?? 0
-    return `${safeCurrent}/${safeTotal}`
+    this.persist()
   }
 
-  private getDownloaderTypeLabel(type: number): string {
-    // 三路显式：未知值不再回退 qBittorrent（rTorrent 接入前置修复）
-    if (type === 0) return 'qBittorrent'
-    if (type === 1) return 'Transmission'
-    if (type === 2) return 'rTorrent'
-    return 'Unknown'
+  private onReorder(order: WidgetId[]) {
+    this.layout = { ...this.layout, order }
+    this.persist()
+  }
+
+  private onCycleWidth(id: WidgetId) {
+    const spans = { ...this.layout.spans }
+    spans[id] = nextWidth(spans[id] || 6)
+    this.layout = { ...this.layout, spans }
+    this.persist()
+  }
+
+  private resetLayout() {
+    clearLayout(window.localStorage)
+    this.layout = defaultLayout()
+    this.preset = 'overview'
+    this.editing = false
+  }
+
+  // ==================== 导航 ====================
+
+  private navigateTo(path: string) {
+    this.$router.push(path).catch(() => undefined)
+  }
+
+  private enterScreen() {
+    // W4 交付沉浸页路由 /dashboard/screen（一期 W2 先落入口按钮）
+    this.navigateTo('/dashboard/screen')
+  }
+
+  private speedText(bytesPerSec: number): string {
+    return formatSpeed(bytesPerSec || 0) || '0 B/s'
   }
 }
 </script>
-
 
 <style lang="scss" scoped>
 .dashboard-container {
@@ -486,517 +537,42 @@ export default class extends Vue {
   padding: var(--spacing-xl);
 }
 
-// 头部
 .dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .dashboard-header-info {
   flex: 1;
+  min-width: 220px;
 }
 
 .dashboard-title {
-  font-size: 32px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: var(--spacing-xs);
 }
 
 .dashboard-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
 
 .dashboard-actions {
   display: flex;
-  gap: var(--spacing-md);
-}
-
-// 统计卡片
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
-}
-
-.stat-card {
-  background: linear-gradient(135deg, var(--color-bg-primary) 0%, var(--color-bg-secondary) 100%);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-lg);
-  transition: all var(--transition-base);
-  cursor: pointer;
-  position: relative;
-  overflow: true;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
-    opacity: 0;
-    transition: opacity var(--transition-base);
-  }
-
-  &:hover::before {
-    opacity: 1;
-  }
-
-  &:hover {
-    box-shadow: var(--shadow-lg);
-    border-color: var(--color-border-focus);
-    transform: translateY(-4px);
-  }
-
-  &:focus {
-    outline: none;
-    border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px var(--color-primary-lightest);
-  }
-}
-
-.stat-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-md);
-}
-
-.stat-card-title {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-.stat-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  box-shadow: var(--shadow-sm);
-
-  &.primary {
-    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
-    color: white;
-  }
-
-  &.success {
-    background: linear-gradient(135deg, var(--color-success), #34D399);
-    color: white;
-  }
-
-  &.warning {
-    background: linear-gradient(135deg, var(--color-warning), #FBBF24);
-    color: white;
-  }
-
-  &.info {
-    background: linear-gradient(135deg, var(--color-info), #60A5FA);
-    color: white;
-  }
-}
-
-.stat-card-value {
-  font-size: 40px;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--color-text-primary), var(--color-primary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: var(--spacing-sm);
-}
-
-.stat-card-progress {
-  height: 6px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  margin-bottom: var(--spacing-sm);
-}
-
-.stat-card-progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
-  border-radius: var(--radius-sm);
-  transition: width 1s ease;
-}
-
-.stat-card-trend {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-
-  &.up {
-    color: var(--color-success);
-  }
-
-  &.down {
-    color: var(--color-error);
-  }
-
-  // 系统状态卡：速度明细与运行时间纵向排列
-  &.stat-card-trend--column {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-}
-
-.stat-card-trend-uptime {
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-}
-
-// 主内容区
-.main-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
-}
-
-.content-card {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
-  box-shadow: var(--shadow-md);
-}
-
-.content-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-lg);
-  padding-bottom: var(--spacing-md);
-  border-bottom: 1px solid var(--color-border-primary);
-}
-
-.content-card-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
   gap: var(--spacing-sm);
-
-  &::before {
-    content: '';
-    width: 4px;
-    height: 20px;
-    background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
-    border-radius: var(--radius-sm);
-  }
-}
-
-// 下载器卡片
-.downloader-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-md);
-}
-
-.downloader-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  transition: all var(--transition-base);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--color-bg-tertiary);
-    border-color: var(--color-primary);
-  }
-
-  &:focus {
-    outline: none;
-    border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px var(--color-primary-lightest);
-  }
-}
-
-.downloader-card-add {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border-style: dashed;
-  min-height: 120px;
+  flex-wrap: wrap;
 
-  .add-icon {
-    font-size: 32px;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .add-text {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-text-secondary);
-  }
-
-  &:hover {
-    border-color: var(--color-primary);
-    background: var(--color-bg-secondary);
-
-    .add-text {
-      color: var(--color-primary);
-    }
-  }
-}
-
-.downloader-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-md);
-}
-
-.downloader-card-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.downloader-card-type {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  background: var(--color-bg-tertiary);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-}
-
-.downloader-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-
-  &.online {
-    background: var(--color-primary-lightest);
-    color: var(--color-primary);
-  }
-
-  &.offline {
-    background: #FEE2E2;
-    color: var(--color-error);
-  }
-}
-
-.downloader-card-stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-sm);
-}
-
-.downloader-mini-stat {
-  background: var(--color-bg-primary);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-}
-
-.downloader-mini-stat-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.downloader-mini-stat-label {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-
-// 活动时间线
-.activity-timeline {
-  position: relative;
-  padding-left: var(--spacing-lg);
-}
-
-.activity-timeline::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-lightest));
-  border-radius: var(--radius-sm);
-}
-
-.activity-item {
-  position: relative;
-  padding-bottom: var(--spacing-lg);
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: -23px;
-    top: 6px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--color-primary);
-    border: 3px solid var(--color-bg-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-lightest);
-  }
-
-  &:last-child {
-    padding-bottom: 0;
-  }
-}
-
-.activity-time {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  margin-bottom: var(--spacing-xs);
-  font-weight: 500;
-}
-
-.activity-content {
-  font-size: 14px;
-  color: var(--color-text-primary);
-  line-height: 1.6;
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-primary);
-
-  .activity-source {
-    font-weight: 600;
-    color: var(--color-primary);
-  }
-
-  .activity-highlight {
-    color: var(--color-primary);
-    font-weight: 700;
-  }
-}
-
-.activity-empty {
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-  padding: var(--spacing-sm) 0;
-}
-
-// 快捷操作
-.quick-actions-section {
-  margin-bottom: var(--spacing-xl);
-}
-
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-md);
-}
-
-.quick-action-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-lg);
-  background: linear-gradient(135deg, var(--color-bg-secondary), var(--color-bg-tertiary));
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  position: relative;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, var(--color-primary-lightest), transparent);
-    opacity: 0;
-    transition: opacity var(--transition-base);
-  }
-
-  &:hover::before {
-    opacity: 1;
-  }
-
-  &:hover {
-    border-color: var(--color-primary);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-  }
-
-  &:focus {
-    outline: none;
-    border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px var(--color-primary-lightest);
-  }
-}
-
-.quick-action-icon {
-  font-size: 36px;
-  margin-bottom: var(--spacing-sm);
-  position: relative;
-  z-index: 1;
-}
-
-.quick-action-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  position: relative;
-  z-index: 1;
-}
-
-// 响应式
-@media (max-width: 1280px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .main-content {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .dashboard-container {
-    padding: var(--spacing-md);
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .quick-actions {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .downloader-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-md);
+  .lucide-icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
   }
 }
 </style>

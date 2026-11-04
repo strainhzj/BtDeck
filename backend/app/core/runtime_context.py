@@ -7,7 +7,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 # 三态哨兵：app.state.torrent_stats「属性不存在」与「属性存在但为 None」在原
 # DashboardService 中行为不同（前者返回零值字典、后者原样返回 None，被
@@ -26,6 +26,9 @@ class RuntimeContext:
     store: Any = None
     torrent_stats: Any = TORRENT_STATS_ABSENT
     start_time: Optional[float] = None
+    # 定时任务启用计数缓存（仪表盘一期 W1 决策 #1）：DashboardStatsJob 60s 刷新；
+    # None=缓存缺失（启动初期），使用方按需回源，无需三态哨兵
+    dashboard_task_stats: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_app(cls, app: Any) -> "RuntimeContext":
@@ -41,4 +44,5 @@ class RuntimeContext:
             store=getattr(state, "store", None),
             torrent_stats=getattr(state, "torrent_stats", TORRENT_STATS_ABSENT),
             start_time=getattr(state, "start_time", None),
+            dashboard_task_stats=getattr(state, "dashboard_task_stats", None),
         )

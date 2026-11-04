@@ -1,3 +1,11 @@
+## 2026-11-03 交接：仪表盘风格改造一期全量交付（W0~W5 5 提交，待用户实机浏览器验收后定合并）
+
+- **分支**：feature/dashboard-redesign-2026-11（基于 dev 6f08a1a）；提交链 0240b7e（计划入库+BitMatrix 验收示意图+PLANS 转一期动工）→ 14e893f（W1 后端）→ 5ffaa21（W2 骨架）→ 6e62c93（W3 图表）→ 74ff04f（W4 大屏）→ 本次 W5（测试+文档收口，待提交）。未合回 dev、未推 origin（边界：合并与推送由用户另行决定）。
+- **交付面**：后端 DashboardStatsJob 五桶 statusBuckets（与 /reports/overview 逐桶对拍钉一致）/siteBuckets（host 归一后按种子去重 TopN8+other，5min 独立节流）/tasks.enabled（启用口径决策 #1），60s 主循环+DB 段异常独立降级；GET /dashboard 新键+runtime_context.dashboard_task_stats；active-torrents name 键三路（qB/TR/补查）。前端 index.vue 1002→578 行拆 16 文件组件族（KPI×4 恒显网格外+12 卡壳 DashWidget/DashboardGrid+dashboardLayout 纯函数），预设四档+custom 自动编辑+HTML5 DnD+列宽 3-4-6-8-12 循环+localStorage（最后保存者生效）；四图表（3s 采样曲线/近 24h 分桶积分/五桶环形/host 条形）复用 EChart 深路径；大屏 /dashboard/screen（--screen-* 深色/KPI 六项/波浪+雷达+播报 5s 轮询/Esc 退出，hidden 子路由先例=趣味报告）；dashboard-theme.scss 全令牌化皮肤；i18n zh/en 全量新键+口径钉死（已启用/近 24h/host）。
+- **验证**：后端受影响面 pytest 全绿（聚合 12+job 3+dashboard_api 30+active_torrents 27+reports_overview；tests/tasks+api 全量 2075 passed/5 skipped）+ mypy/black/flake8 净；tests/mcp+core 1044 passed（test_startup_migration_guard 2 例组合失败为 dev 既有基线——stash 后 dev 同样挂、单独跑全绿）。前端 typecheck 净/定向 eslint 净（全量 277 错为既有基线，CI 门禁不含 lint）/contract:check 过/build DONE（echarts chunk gz 204093B=199.31KB<200KB）/全量 Jest **155 套 2128 例全绿**（新增 8 spec 66 例）/i18n-leftover-guard 20 例过。./init.sh ci 全过。
+- **文档**：feature_list +dashboard-redesign-2026-11 任务（status done，evidence 含提交链/门禁数字/二期零越界核对）；progress.md 2026-11-03 条目；PLANS/README + 计划状态 🚧 一期交付待验收；roadmap 四文件（根速查+生成日期/views screen+components 行/tasks dashboard_stats 行/tests 计数）。
+- **待用户**：①实机浏览器验收（三主题切换/拖拽手感/大屏投影/真实数据态）②验收后决定合并 dev 时机③合并后构建部署镜像另走 Hermes 通道。二期清单（异常待办/ratio/账号级布局持久化/任务执行态/较昨日/SSE）全部未做（决策 #1~#4 硬约束）。
+
 ## 2026-10-31 交接：验收缺陷修复批（W6-B ①②③④+P7 两项，5 提交全绿；T16 自动重启待实机复验）
 
 - **触发**：用户授权按建议顺序开修七项积压缺陷（含提交授权）。

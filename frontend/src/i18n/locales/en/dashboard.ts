@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** 仪表盘文案（dashboard 组，en）。 */
+/** 仪表盘文案（dashboard 组，en；仪表盘风格改造一期 W2 扩展）。 */
 export const dashboard = {
   title: 'Dashboard',
   subtitle: 'Today is {date}',
@@ -40,30 +40,149 @@ export const dashboard = {
   offline: 'Offline',
   downloading: 'Downloading',
   seeding: 'Seeding',
-  downloadSpeed: 'Down speed',
-  uploadSpeed: 'Up speed',
+  downloadSpeed: 'Download speed',
+  uploadSpeed: 'Upload speed',
   quick: {
     addDownloader: 'Add downloader',
     newTask: 'New task',
     searchTorrents: 'Search torrents',
-    viewLogs: 'View logs'
+    viewLogs: 'View logs',
+    addTorrent: 'Add torrent',
+    advancedSearch: 'Advanced search'
   },
   noActivities: 'No recent activity',
   aria: {
     viewDownloaders: 'View downloader management',
     viewTorrents: 'View torrent management',
     viewTasks: 'View scheduled tasks',
-    viewDownloaderDetail: 'View details of {name}',
+    viewDownloaderDetail: 'View {name} details',
     addDownloader: 'Add downloader',
     newTask: 'New task',
     searchTorrents: 'Search torrents',
     viewLogs: 'View logs'
   },
   msg: {
-    refreshSuccess: 'Data refreshed successfully',
+    refreshSuccess: 'Data refreshed',
     refreshFailed: 'Failed to refresh data',
     exportWip: 'Report export is under development',
     offlineNoView: 'Downloader is offline, cannot view',
     activitiesWip: 'Activity details are under development'
+  },
+  preset: {
+    label: 'Layout preset',
+    overview: 'Overview',
+    focus: 'Focus',
+    pulse: 'Pulse',
+    custom: 'Custom'
+  },
+  kpi: {
+    downloaders: 'Downloaders online',
+    activeTorrents: 'Active torrents',
+    enabledTasks: 'Scheduled tasks',
+    systemSpeed: 'System speed',
+    enabledUnit: 'enabled',
+    enabledNote: 'Enabled count (runtime state in phase 2)',
+    dlSplit: 'DL {count}',
+    sdSplit: 'Seed {count}'
+  },
+  edit: {
+    button: 'Edit layout',
+    done: 'Done editing',
+    reset: 'Reset to default',
+    hint: 'Edit mode: drag cards to reorder; the width button cycles columns (3/4/6/8/12). Layout is stored in this browser (last save wins across tabs); account-level sync is phase 2.',
+    cycleWidth: 'Cycle column width'
+  },
+  screen: {
+    enter: 'Data screen',
+    title: 'BtDeck Data Screen',
+    exit: 'Exit (Esc)',
+    uptime: 'Uptime {duration}',
+    onlineCount: '{count} instances online',
+    upload24h: 'Upload (last 24h)',
+    enabledTasks: 'Enabled tasks',
+    uptimeLabel: 'System uptime',
+    radarTitle: 'Instance link radar',
+    waveTitle: 'Throughput · live',
+    tickerTitle: 'Active task ticker',
+    refreshNote: 'Data refreshes every 5s (SSE push is a separate phase-2 project)',
+    brand: 'BtDeck · Data screen',
+    dateLine: '{w}, {m}/{d}/{y}',
+    weekday: {
+      0: 'Sun',
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat'
+    }
+  },
+  widgets: {
+    liveTag: 'Live',
+    health: {
+      title: 'Instance health',
+      empty: 'No downloaders',
+      dlCount: 'DL {count}',
+      sdCount: 'Seed {count}'
+    },
+    spark: {
+      title: 'Speed · 60s',
+      sampling: 'Sampling… (speed chart coming)',
+      note: '3s sampling · live active torrents'
+    },
+    statusPie: {
+      title: 'Status distribution',
+      total: 'Total torrents',
+      error: 'Error',
+      downloading: 'Downloading',
+      seeding: 'Seeding',
+      paused: 'Paused',
+      other: 'Other'
+    },
+    traffic: {
+      title: 'Last 24h traffic',
+      loading: 'Loading…',
+      empty: 'No traffic data',
+      rangeEmpty: '--',
+      upload: 'Upload',
+      download: 'Download'
+    },
+    sites: {
+      title: 'Tracker site distribution',
+      empty: 'No site data',
+      note: 'Grouped by tracker host (port-stripped) · deduplicated by torrent',
+      other: 'Other',
+      countLabel: 'Torrents'
+    },
+    hot: {
+      title: 'Hot torrents · by speed',
+      empty: 'No active speeds right now'
+    },
+    tasks: {
+      title: 'Scheduled tasks',
+      empty: 'No scheduled tasks',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      more: '{count} more tasks'
+    },
+    activity: {
+      title: 'Recent activity'
+    },
+    quick: {
+      title: 'Quick actions'
+    },
+    radar: {
+      title: 'Link radar'
+    },
+    tubes: {
+      title: 'Throughput tubes'
+    },
+    hero: {
+      title: 'Live pulse',
+      activeDownloading: 'Active downloads',
+      activeSeeding: 'Active seeds',
+      downloading: 'Downloading',
+      empty: 'No active downloads'
+    }
   }
 }

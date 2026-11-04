@@ -176,6 +176,16 @@ const router = new Router({
             titleKey: 'navigation.routes.dashboard',
             icon: 'layout-dashboard'
           }
+        },
+        {
+          // 数据大屏沉浸页（仪表盘一期 W4：根元素 fixed 覆盖层，先例=趣味报告）
+          path: 'dashboard/screen',
+          component: () => import(/* webpackChunkName: "dashboard-screen" */ '@/views/dashboard/screen.vue'),
+          meta: {
+            title: '数据大屏',
+            titleKey: 'navigation.routes.dashboardScreen',
+            hidden: true
+          }
         }
       ]
     },

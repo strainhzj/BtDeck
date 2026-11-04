@@ -18,8 +18,15 @@ jest.mock('@/api/dashboard', () => ({
 // （dashboard_stats 任务暂不统计 paused，后端已知限制）
 const makeData = (): DashboardData => ({
   downloaders: { total: 4, online: 3, offline: 1 },
-  torrents: { active: 105, downloading: 2, seeding: 100, paused: 3 },
-  tasks: { total: 5, running: 1, stopped: 4 },
+  torrents: {
+    active: 105,
+    downloading: 2,
+    seeding: 100,
+    paused: 3,
+    statusBuckets: { error: 0, downloading: 2, seeding: 100, paused: 3, other: 0 },
+    siteBuckets: []
+  },
+  tasks: { total: 5, running: 1, stopped: 4, enabled: 5 },
   system: {
     uptime: 905,
     uptime_display: '15分钟',
