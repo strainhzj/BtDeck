@@ -29,12 +29,25 @@ def _dl(nickname, downloading, seeding, paused, fail_time=0):
 
 
 class TestDashboardStatsJobPaused:
-    async def test_paused_aggregated_from_online_downloaders(self):
+    async def test_paused_aggregated_from_online_downloaders(self, monkeypatch):
         """在线下载器 paused 求和；离线下载器（fail_time!=0）整体不计。
 
-        W1 起成功路径附带 DB 聚合段（statusBuckets/siteBuckets/enabled）——
-        隔离文件库为空表时降级为零值（五桶全零 + 空站点），不影响四主键。
+        W1 起 execute 附带 DB 聚合段——本测专验主缓存统计四键，把
+        AsyncSessionLocal 打成失败降级：CI 全量跑时全局隔离库可能被其它
+        测试写入的 cron_task 行污染，enabled 具体值不可断言；降级路径零值确定。
         """
+
+        class _BrokenDB:
+            def __call__(self):
+                return self
+
+            async def __aenter__(self):
+                raise RuntimeError("db down")
+
+            async def __aexit__(self, *args):
+                return False
+
+        monkeypatch.setattr("app.tasks.scheduler.dashboard_stats.AsyncSessionLocal", _BrokenDB())
         app = SimpleNamespace(
             state=SimpleNamespace(
                 store=FakeStore([_dl("a", 1, 10, 2), _dl("b", 0, 5, 3), _dl("off", 9, 9, 9, fail_time=1)])
