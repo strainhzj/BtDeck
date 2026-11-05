@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
@@ -22,25 +22,33 @@ SITE_BUCKET_INTERVAL_SECONDS = 300
 SITE_BUCKET_TOP_N = 8
 
 
-def _in_list(states: Any) -> str:
-    """把小写状态常量集合渲染为 SQL IN 列表（常量来自 torrent_stats_cache，非用户输入）。"""
-    return ", ".join(f"'{s}'" for s in sorted(states))
-
-
 # 五桶 SQL：CASE 优先级与 report_service._status_bucket 完全一致——
 # status='error'（大小写不敏感）或 has_tracker_error 优先判 error 桶，
 # 其余按 DOWNLOADING/SEEDING/PAUSED 状态集合归属，NULL status 落 other。
+# 状态集合经 expanding bindparam 参数化（BTD305 禁 f-string 拼 SQL；集合为
+# torrent_stats_cache 模块常量，展开占位符双方言 SQLite/PG 均支持）。
 _STATUS_BUCKET_SQL = text(
     "SELECT bucket, COUNT(*) AS cnt FROM ("
     "SELECT CASE"
-    f" WHEN LOWER(status) = 'error' OR has_tracker_error THEN 'error'"
-    f" WHEN LOWER(status) IN ({_in_list(DOWNLOADING_STATES)}) THEN 'downloading'"
-    f" WHEN LOWER(status) IN ({_in_list(SEEDING_STATES)}) THEN 'seeding'"
-    f" WHEN LOWER(status) IN ({_in_list(PAUSED_STATES)}) THEN 'paused'"
+    " WHEN LOWER(status) = 'error' OR has_tracker_error THEN 'error'"
+    " WHEN LOWER(status) IN :downloading_states THEN 'downloading'"
+    " WHEN LOWER(status) IN :seeding_states THEN 'seeding'"
+    " WHEN LOWER(status) IN :paused_states THEN 'paused'"
     " ELSE 'other' END AS bucket"
     " FROM torrent_info WHERE dr = 0 AND deleted_at IS NULL"
     ") GROUP BY bucket"
+).bindparams(
+    bindparam("downloading_states", expanding=True),
+    bindparam("seeding_states", expanding=True),
+    bindparam("paused_states", expanding=True),
 )
+
+# 执行参数：排序保证展开顺序确定性（集合无序，便于日志/调试对拍）
+_STATUS_BUCKET_PARAMS = {
+    "downloading_states": sorted(DOWNLOADING_STATES),
+    "seeding_states": sorted(SEEDING_STATES),
+    "paused_states": sorted(PAUSED_STATES),
+}
 
 # 站点行源：DISTINCT (info_id, tracker_host) 先去重——一种子同 host 多 tracker 只计一次、
 # 辅种副本（同 info_id 跨下载器多行）只计一次；host 去端口归一在 Python 侧复用
@@ -166,7 +174,7 @@ class DashboardStatsJob:
 
     async def aggregate_status_buckets(self, db: AsyncSession) -> Dict[str, int]:
         """五桶状态分布（ torrents.statusBuckets，口径=报表 _status_bucket）。"""
-        result = await db.execute(_STATUS_BUCKET_SQL)
+        result = await db.execute(_STATUS_BUCKET_SQL, _STATUS_BUCKET_PARAMS)
         buckets: Dict[str, int] = {k: 0 for k in STATUS_BUCKET_KEYS}
         for row in result.fetchall():
             if row.bucket in buckets:
