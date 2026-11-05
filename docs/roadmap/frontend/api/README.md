@@ -6,7 +6,7 @@
 ## 关键词速查（19 个 .ts，跳过 torrents_patch.txt）
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 与 downloadComplete 兼容字段；`TorrentListParams.tracker_domain` L201 支持 Tracker 主机域名多选，`single_error_only` L205 支持错误单种全局唯一排查，`getTrackerDomains()` L260 读取定时同步已采集的域名；`getActiveTorrents()` L1490 获取 200/206 实时快照，`reconcileRuntimeTorrentStates()` L1501 低频核验复合键终态；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
+| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 与 downloadComplete 兼容字段；`TorrentListParams.tracker_domain` L201 支持 Tracker 主机域名多选，`single_error_only` L205 支持错误单种全局唯一排查，`getTrackerDomains()` L260 读取定时同步已采集的域名；`getActiveTorrents()` L1492 获取 200/206 实时快照（✨2026-11-03 一期：`ActiveTorrentSpeed` L1460 增可选 `name` 键，热门种子显示名支撑），`reconcileRuntimeTorrentStates()` L1503 低频核验复合键终态；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | RSS 订阅 rss ✨2026-09-24（P2 同日扩） | `rss.ts` | Phase 1：订阅源 CRUD/手动刷新/文章分页/推送下载器（savePath/tags/downloaderId 覆盖）；`RssPage<T>` 统一信封；Phase 2：+模式 get/update + 规则 CRUD/match-preview（`RssRuleBackfill` camelCase）+ qB 代理 13 函数（RssQbNode/RssQbArticle/RssQbRule/RssQbPreferences，QB_BASE 前缀）；RssFeed.refreshIntervalMinutes/RssArticle.addedRuleId（feature rss-subscription-phase2-2026-09-24） |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
@@ -21,7 +21,7 @@
 | MCP 配置 mcp-settings ✨2026-09-08 | `mcp-settings.ts` | MCP 配置 GET/PUT（CAS，409 语义注释；能力目录元数据随 GET 下发单一事实源；本行 2026-09-09 补记漂移）；✨2026-09-22 W5：服务密钥 `getMcpApiKey`/`rotateMcpApiKey`（三态视图类型 McpApiKeyView，rotate 带 expectedRevision）+ 能力元数据增 `descriptionEn`（面板按 locale 选取） |
 | MoviePilot 集成 moviepilot ✨2026-09-09 | `moviepilot.ts` | MoviePilot 联动：设置 GET/PUT（CAS）/实例列表/更新/删除、正向关联（downloaderId+hash）、路径反查（src/dest/both）；分页信封 {total,page,pageSize,list} |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
-| 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`） |
+| 仪表盘 dashboard | `dashboard.ts` | 仪表盘聚合数据（仅 `getDashboardData`）；响应契约类型在 `types/dashboard.ts`（✨2026-11-03 一期 W1：TorrentStats+statusBuckets/siteBuckets、TaskStats+enabled） |
 | 统计报表 reports ✨2026-09-25（W4） | `reports.ts` | 统计报表七函数照 dashboard.ts 信封惯例（`res.code==='200' && res.data`）：getReportsOverview / getReportsTrends（period=month|week）/ getReportsSeeding / getReportsTrackers / getReportsFunSummary / getReportsFunYearly（year 可选）/ getReportsSpeedHistory（range=24h|7d|30d，downloaderId 可选）；类型全部来自 `@/types/reports` 纯 JSON 契约（feature statistics-reports-2026-09；消费方 views/statistics 五子页，W5/W6 已交付） |
 | 数据库迁移控制面 database ✨2026-10-30（W4） | `database.ts` | 迁移控制面 11 函数（ApiEnvelope 信封）：getDatabaseStatus / getMigrationStatus / getTargetReadiness / testConnection / startMigration / provideCredentials / cancelMigration / leaveMigration / discardTarget / switchDatabase / clearActivation 等；类型内联契约（DatabaseStatusData/MigrationStatusData/SwitchCommitData/PgMasked/MigrationCasPayload CAS 载荷等；feature database-migration-ui，消费方 settings DatabasePanel；维护页另走 utils/maintenance-client.ts 独立通道同构函数） |
 | 主机能力 platform-capabilities | `platform-capabilities.ts` | 服务端能力矩阵单例缓存；受下载器主机文件系统影响的能力未加载/请求失败时返回 `unknown`（包括强制刷新失败时撤销旧授权），前端入口 fail-closed |

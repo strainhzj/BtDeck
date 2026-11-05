@@ -60,7 +60,7 @@
 | 组件类型 components | `components.ts` | 组件类型：`TableColumn`/`FormRule`/`PaginationConfig`/`SearchFormConfig`/`ActionButton`/`StatisticCard`（P6-5 删除零消费方死数组 TASK_STATUS_OPTIONS/TASK_TYPE_OPTIONS 及 scheduled-tasks 导入） |
 | API 通用类型 api | `api.ts` | API 通用类型：`ApiResponse<T>`/`PaginationParams`/`PaginatedResponse<T>`/`RequestConfig`/`ErrorResponse`/`ApiError`（class extends Error, L63） |
 | 任务日志类型 task-logs | `task-logs.ts` | 任务日志类型：`TaskLog`、列表/删除/统计/清理/导出请求/详情 |
-| 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等 |
+| 仪表盘类型 dashboard | `dashboard.ts` | 仪表盘类型（83 行）：`DownloaderStats`/`TorrentStats`/`TaskStats`/`SystemStats`/`DashboardData` 等；✨2026-11-03 一期 W1：+`StatusBucketKey`/`StatusBuckets`（五桶 L9）/`SiteBucket`（host+count L17），TorrentStats 增 statusBuckets/siteBuckets，TaskStats 增 enabled（契约与后端 dashboard 响应对齐） |
 | 统计报表类型 reports ✨2026-09-25（W4） | `reports.ts` | 265 行纯 JSON 契约（265 行实测），与后端 report_service 七域输出一一对应（Overview/Trends/Seeding/Trackers/FunSummary/FunYearly/SpeedHistory + SizeCount/StatusDist/TimeBucket/AgeBucket/RatioBucket/LiveSpeed/SpeedSeries 等中间结构）；刻意禁 echarts 类型 import（契约类型全放 .ts，SFC 类型不进 CI；feature statistics-reports-2026-09） |
 
 ### constants/
