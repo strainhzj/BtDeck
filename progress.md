@@ -1,3 +1,9 @@
+## 2026-11-05：CI 修复（BTD305 参数化 + 白名单续期 + 测试污染）→ CI 全绿 → 生产严格同步 7f7560e
+
+- **CI 三连失败分析与修复**（用户要求）：①Architecture checks BTD305——dashboard_stats.py 五桶 SQL f-string 拼 IN 列表未登记白名单 fail-closed，改 expanding bindparam 参数化（模块常量集合，双方言等价，五桶对拍 69 例+受影响面 2075 passed）；②secret-allowlist 9 条 2026-11-02 到期（v1.0.7 已知遗留债，测试夹具/占位值类非真实凭据）滚动续期至 2026-12-05；③test_paused_aggregated_from_online_downloaders 在 CI 全量跑被全局隔离库污染（其它测试写入 14 条 cron_task 使 enabled 断言红）——AsyncSessionLocal monkeypatch 失败降级确定性化。CI run 42031211274 三 job 全绿。
+- **生产严格同步**（用户要求）：Hermes 构建+部署一体化（run_f66932fc）——dev@7f7560e 构建 dirty=false 双 tar（backend 336,960,000B sha256 16b9d5e1… / frontend 195,034,112B sha256 8350c2d7…）→ 锚点 backup-pre-7f7560e（=8db992a 旧版）→ wget（拦截 GNU wget 1.25 已存文件落 .1 后缀不覆盖的坑，-O 显式覆盖+双侧 sha 核对）→ remote-deploy 一把过 → /health/live gitSha 全 40 位匹配+dirty=false+alembicHead 不变+双容器 healthy+compose 字节级未动；8401 已关。
+- **现状**：dev=origin=生产 7f7560e；CI 绿；回滚四级锚点（backup-pre-7f7560e→backup-pre-8db992a→backup-2007fc2e→backup-pre-w6）。
+
 ## 2026-11-03（续）：一期合并 dev 推送 + unraid 生产部署（8db992a 双容器 healthy）
 
 - **合并推送**：feature/dashboard-redesign-2026-11 重写历史移除方案文件（用户指示方案文件不入库——PLANS/dashboard-redesign-2026-11.md 与 design-mockups/ 仅本地留存，PLANS/README 索引行保留）后 6 提交 --no-ff 合并 dev（merge 8db992a），origin/dev 推送成功（6f08a1a..8db992a）。
