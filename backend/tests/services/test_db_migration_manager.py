@@ -179,7 +179,11 @@ class TestCancelFlow:
         manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
         assert in_pipeline.wait(timeout=5)
         manager.request_cancel(reason="user")
-        assert manager.status().phase == "cancelling"
+        # 取消受理验证：worker 感知是异步的（runner ≤20ms 一轮 check_cancel），
+        # CI 负载下主线程断言时 worker 可能已完成 cancelling→cancelled 翻转
+        # （2026-11-05 run 42042888907 首跑实测 flake），过渡态容忍两值，
+        # 最终收敛 cancelled 仍由下方轮询+断言钉死。
+        assert manager.status().phase in ("cancelling", "cancelled")
         assert manager.wait_worker_stopped(timeout=10)
         deadline = time.time() + 5
         while time.time() < deadline and manager.status().phase == "cancelling":
@@ -199,9 +203,7 @@ class TestCancelFlow:
         assert in_pipeline.wait(timeout=5)
         status = manager.status()
         with pytest.raises(WorkerNotStopped):
-            manager.leave(
-                expect_epoch=status.epoch, expect_state_version=status.state_version, worker_stop_timeout=0.3
-            )
+            manager.leave(expect_epoch=status.epoch, expect_state_version=status.state_version, worker_stop_timeout=0.3)
         release.set()
         manager.wait_worker_stopped(timeout=5)
 
@@ -317,7 +319,8 @@ class TestRebindProtocol:
         journal = Journal(str(tmp_path))
         manifest = journal.read_manifest(status.attempt_id)
         journal.write_manifest(
-            status.attempt_id, {**manifest, "progress": {"phase": "x"}},
+            status.attempt_id,
+            {**manifest, "progress": {"phase": "x"}},
             expect_state_version=manifest["state_version"],
         )
         with pytest.raises(StateConflict, match="CAS 失败"):
@@ -337,7 +340,8 @@ class TestRebindProtocol:
                 self._raced = True  # type: ignore[attr-defined]
                 bumped = real_read(self, attempt_id)
                 journal.write_manifest(
-                    attempt_id, {**bumped, "progress": {"phase": "raced"}},
+                    attempt_id,
+                    {**bumped, "progress": {"phase": "raced"}},
                     expect_state_version=bumped["state_version"],
                 )
             return data
