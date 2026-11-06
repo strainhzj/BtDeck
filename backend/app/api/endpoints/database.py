@@ -143,15 +143,83 @@ async def target_readiness(request: Request) -> CommonResponse:
     )
 
 
+@router.get(
+    "/deployment-target", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)]
+)
+async def deployment_target() -> CommonResponse:
+    """部署环境 PG 目标回填面（A2：非敏感字段下发，密码永不出服务端，§8）。
+
+    compose/env 以 DB_TYPE=postgresql 部署时，迁移页可据此自动回填目标参数
+    （host/port/user/database/sslmode/池），凭据经请求侧 use_env_password
+    开关在服务端解析（test-connection/migration/start/migration/credentials），
+    本端点只下发 hasEnvPassword 布尔（键风格与 /status 脱敏视图一致）。
+    """
+    from app.core.config import settings
+
+    dialect = (settings.DB_TYPE or "").strip().lower()
+    if dialect != "postgresql":
+        return CommonResponse(
+            status="success",
+            code="200",
+            data={"available": False, "target": None, "hasEnvPassword": False},
+        )
+    return CommonResponse(
+        status="success",
+        code="200",
+        data={
+            "available": True,
+            "target": {
+                "host": settings.DB_HOST,
+                "port": settings.DB_PORT,
+                "user": settings.DB_USER,
+                "database": settings.DB_NAME,
+                "sslmode": settings.DB_SSLMODE,
+                "sslRootCert": settings.DB_SSL_ROOT_CERT,
+                "poolSize": settings.DB_POOL_SIZE,
+                "maxOverflow": settings.DB_MAX_OVERFLOW,
+                "poolTimeout": settings.DB_POOL_TIMEOUT,
+            },
+            "hasEnvPassword": bool(settings.DB_PASSWORD),
+        },
+    )
+
+
+def _resolve_target_password(password: Optional[str], use_env_password: bool) -> str:
+    """迁移面目标凭据解析（A2 部署环境密码开关；密码本体不出容器，§8）。
+
+    use_env_password=True：服务端取部署环境 DB_PASSWORD（缺失 fail-fast）；
+    否则用请求显式密码（必填）。返回明文仅在服务端内存中使用。
+    """
+    from app.core.config import settings
+
+    if use_env_password:
+        env_password = settings.DB_PASSWORD or ""
+        if not env_password:
+            raise ValueError("部署环境未提供 DB_PASSWORD，无法使用环境密码（use_env_password）")
+        return env_password
+    if not password:
+        raise ValueError("password 必填（或改用 use_env_password=true 读取部署环境密码）")
+    return password
+
+
 class TestConnectionRequest(BaseModel):
     dialect: str = Field(pattern="^(sqlite|postgresql)$")
     sqlite_path: Optional[str] = None
     postgresql: Optional[Dict[str, Any]] = None
+    # A2：True 时服务端取部署环境 DB_PASSWORD（postgresql 映射可不含密码）
+    use_env_password: bool = False
 
 
 @router.post("/test-connection", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)])
 async def test_connection(payload: TestConnectionRequest) -> CommonResponse:
     """显式目标连通/版本/TLS/权限探测（只读；不建 schema、不保存密码）。"""
+    # A2：环境密码在进入探测前解析（用法错误 → 400，不落入连接异常汇总）
+    env_password: Optional[str] = None
+    if payload.dialect == "postgresql" and payload.use_env_password:
+        try:
+            env_password = _resolve_target_password(None, True)
+        except ValueError as exc:
+            return CommonResponse(status="error", code="400", msg=str(exc))
     try:
         if payload.dialect == "sqlite":
             import os
@@ -171,7 +239,10 @@ async def test_connection(payload: TestConnectionRequest) -> CommonResponse:
 
         from app.services.db_migration.target_params import build_pg_url, pg_params_from_mapping
 
-        params = pg_params_from_mapping(payload.postgresql or {})
+        mapping = dict(payload.postgresql or {})
+        if env_password is not None:
+            mapping["password"] = env_password
+        params = pg_params_from_mapping(mapping)
         engine = create_engine(build_pg_url(params), poolclass=NullPool, connect_args={"connect_timeout": 8})
         try:
             with engine.connect() as conn:
@@ -206,8 +277,10 @@ async def test_connection(payload: TestConnectionRequest) -> CommonResponse:
 class MigrationStartRequest(BaseModel):
     direction: str = Field(pattern="^(sqlite-to-pg|pg-to-sqlite)$")
     target: Dict[str, Any]
-    password: str = Field(min_length=1, max_length=256)
+    # A2：use_env_password=True 时可省略（服务端取部署环境 DB_PASSWORD）
+    password: Optional[str] = Field(default=None, min_length=1, max_length=256)
     source: Optional[Dict[str, Any]] = None
+    use_env_password: bool = False
 
 
 @router.post("/migration/start", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)])
@@ -215,10 +288,14 @@ async def migration_start(request: Request, payload: MigrationStartRequest) -> C
     """管理器单飞行：关准入→排空→冻结→快照（§5.1/§6.1）。"""
     manager = _manager(request)
     try:
+        password = _resolve_target_password(payload.password, payload.use_env_password)
+    except ValueError as exc:
+        return CommonResponse(status="error", code="400", msg=str(exc))
+    try:
         status = manager.start_migration(
             payload.direction,
             payload.target,
-            password=payload.password,
+            password=password,
             source_desc=payload.source,
         )
         return CommonResponse(status="success", code="200", data=status.as_dict())
@@ -231,8 +308,10 @@ async def migration_start(request: Request, payload: MigrationStartRequest) -> C
 
 class CredentialsRequest(BaseModel):
     attempt_id: str = Field(min_length=1, max_length=96)
-    password: str = Field(min_length=1, max_length=256)
+    # A2：use_env_password=True 时可省略（服务端取部署环境 DB_PASSWORD）
+    password: Optional[str] = Field(default=None, min_length=1, max_length=256)
     target: Dict[str, Any]
+    use_env_password: bool = False
 
 
 @router.post(
@@ -242,7 +321,11 @@ async def migration_credentials(request: Request, payload: CredentialsRequest) -
     """NEEDS_CREDENTIALS 恢复：重输绑定目标凭据（不临时换目标）。"""
     manager = _manager(request)
     try:
-        manager.provide_credentials(payload.attempt_id, password=payload.password, target=payload.target)
+        password = _resolve_target_password(payload.password, payload.use_env_password)
+    except ValueError as exc:
+        return CommonResponse(status="error", code="400", msg=str(exc))
+    try:
+        manager.provide_credentials(payload.attempt_id, password=password, target=payload.target)
         return CommonResponse(status="success", code="200", data=manager.status().as_dict())
     except Exception as exc:  # noqa: BLE001
         return CommonResponse(status="error", code="409", msg=str(exc))
