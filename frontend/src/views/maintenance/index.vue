@@ -112,7 +112,29 @@
                   <el-input v-model="credForm.user" />
                 </el-form-item>
                 <el-form-item :label="$t('database.maintenance.migration.targetPassword')" prop="password">
-                  <el-input v-model="credForm.password" type="password" show-password />
+                  <el-input
+                    v-model="credForm.password"
+                    type="password"
+                    show-password
+                    @focus="onCredPasswordFocus"
+                    @input="onCredPasswordInput"
+                  />
+                  <!-- A2 环境密码：掩码哨兵占位（眼睛可见的仅是占位符本体，真实密码不出服务端）；
+                       手动输入即覆盖，可一键还原 -->
+                  <div v-if="envPasswordAvailable" class="maintenance-password-env">
+                    <span v-if="credEnvPasswordMode" class="maintenance-muted">
+                      {{ $t('database.form.passwordEnvHint') }}
+                    </span>
+                    <el-button
+                      v-else
+                      type="text"
+                      size="mini"
+                      class="maintenance-password-restore"
+                      @click="restoreCredEnvPassword"
+                    >
+                      {{ $t('database.form.passwordRestoreEnv') }}
+                    </el-button>
+                  </div>
                 </el-form-item>
                 <el-form-item :label="$t('database.maintenance.migration.targetDatabase')" prop="database">
                   <el-input v-model="credForm.database" />
@@ -182,6 +204,7 @@ import {
 } from '@/utils/maintenance-client'
 import type {
   CredentialsPayload,
+  DeploymentTargetData,
   MigrationStatusData,
   PgFormInput,
   ReadinessData
@@ -193,6 +216,9 @@ type SslMode = 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verif
 
 /** 需要校验 CA 证书路径（ssl_root_cert）的 verify 档位 */
 const SSL_VERIFY_MODES: readonly SslMode[] = ['verify-ca', 'verify-full']
+
+/** 环境密码掩码哨兵（A2：仅作展示占位；提交时以 use_env_password 开关替代） */
+const ENV_PASSWORD_SENTINEL = '********'
 
 /** el-tag 档位（空串 = 主题默认色） */
 type TagType = 'success' | 'info' | 'warning' | 'danger' | ''
@@ -320,6 +346,11 @@ export default class extends Vue {
   private credError: string | null = null
   private credSuccess = false
 
+  // A2 部署环境目标回填（维护通道拉取；密码本体不出服务端）
+  private deploymentTarget: DeploymentTargetData | null = null
+  /** 环境密码模式：true=提交走 use_env_password；手动输入即切回 */
+  private credEnvPasswordMode = false
+
   private readonly sslmodeOptions: readonly SslMode[] = [
     'disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'
   ]
@@ -335,6 +366,12 @@ export default class extends Vue {
 
   get credFormRef(): ElForm {
     return this.$refs.credFormRef as ElForm
+  }
+
+  /** 部署环境密码可用（available 且服务端有 DB_PASSWORD） */
+  get envPasswordAvailable(): boolean {
+    const t = this.deploymentTarget
+    return !!t && t.available === true && t.hasEnvPassword
   }
 
   get loginRules(): Record<string, Array<Record<string, unknown>>> {
@@ -365,7 +402,8 @@ export default class extends Vue {
       host: [requiredBlur()],
       port: [{ ...requiredBlur(), trigger: 'change' }],
       user: [requiredBlur()],
-      password: [requiredBlur()],
+      // 环境密码模式：服务端自取 DB_PASSWORD，密码框哨兵占位不校验
+      password: this.credEnvPasswordMode ? [] : [requiredBlur()],
       database: [requiredBlur()],
       sslmode: [{ ...requiredBlur(), trigger: 'change' }],
       // verify 档位必填；非 verify 档不要求
@@ -540,6 +578,8 @@ export default class extends Vue {
     this.credError = null
     this.credSuccess = false
     this.credForm.password = ''
+    this.deploymentTarget = null
+    this.credEnvPasswordMode = false
     this.clearPollTimer()
   }
 
@@ -578,6 +618,45 @@ export default class extends Vue {
     } catch {
       // 静默保持旧值
     }
+    try {
+      this.deploymentTarget = await maintenanceRequest<DeploymentTargetData>(
+        'get',
+        '/database/deployment-target'
+      )
+      this.applyDeploymentTarget()
+    } catch {
+      // 静默：回填不可用时退回手动填写
+    }
+  }
+
+  /** 非敏感字段入凭据草稿（schema 保留默认 public）；有环境密码时进入掩码哨兵态 */
+  private applyDeploymentTarget(): void {
+    const target = this.deploymentTarget?.target
+    if (!this.deploymentTarget?.available || !target) return
+    this.credForm.host = target.host
+    this.credForm.port = target.port
+    this.credForm.user = target.user
+    this.credForm.database = target.database
+    const mode = target.sslmode as SslMode
+    if (this.sslmodeOptions.indexOf(mode) >= 0) this.credForm.sslmode = mode
+    this.credForm.sslRootCert = target.sslRootCert || ''
+    if (this.deploymentTarget.hasEnvPassword) this.restoreCredEnvPassword()
+  }
+
+  /** 还原环境密码：掩码哨兵占位 + 提交走 use_env_password */
+  private restoreCredEnvPassword(): void {
+    this.credEnvPasswordMode = true
+    this.credForm.password = ENV_PASSWORD_SENTINEL
+  }
+
+  /** 环境密码态聚焦即清空输入框（保持模式；未输入则提交仍走环境密码） */
+  private onCredPasswordFocus(): void {
+    if (this.credEnvPasswordMode) this.credForm.password = ''
+  }
+
+  /** 实际输入即切回手动密码模式（哨兵值不会混入真实密码） */
+  private onCredPasswordInput(): void {
+    if (this.credEnvPasswordMode) this.credEnvPasswordMode = false
   }
 
   /** NEEDS_CREDENTIALS 恢复：重输绑定目标凭据（snake_case attempt_id/password/target） */
@@ -601,8 +680,12 @@ export default class extends Vue {
     try {
       const payload: CredentialsPayload = {
         attempt_id: attemptId,
-        password: this.credForm.password,
         target: this.buildCredTarget()
+      }
+      if (this.credEnvPasswordMode) {
+        payload.use_env_password = true
+      } else {
+        payload.password = this.credForm.password
       }
       this.migration = await maintenanceRequest<MigrationStatusData>(
         'post',
@@ -621,13 +704,14 @@ export default class extends Vue {
     }
   }
 
-  /** 凭据草稿 → 后端 PgFormInput（snake_case 契约；缺省项由后端补全） */
+  /** 凭据草稿 → 后端 PgFormInput（snake_case 契约；缺省项由后端补全）。
+   * 环境密码模式不外发哨兵值（密码留空 + 请求级 use_env_password 开关） */
   private buildCredTarget(): PgFormInput {
     return {
       host: this.credForm.host.trim(),
       port: this.credForm.port,
       user: this.credForm.user.trim(),
-      password: this.credForm.password,
+      password: this.credEnvPasswordMode ? '' : this.credForm.password,
       database: this.credForm.database.trim(),
       schema: this.credForm.schema.trim() || 'public',
       sslmode: this.credForm.sslmode,
@@ -791,6 +875,20 @@ export default class extends Vue {
 .maintenance-select,
 .maintenance-number {
   width: 100%;
+}
+
+// A2 环境密码：占位提示 / 还原操作行
+.maintenance-password-env {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.maintenance-password-restore {
+  padding: 0;
 }
 
 .maintenance-actions {

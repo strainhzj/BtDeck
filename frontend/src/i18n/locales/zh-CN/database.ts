@@ -58,6 +58,8 @@ export const database = {
     port: '端口',
     user: '用户名',
     password: '密码',
+    passwordEnvHint: '密码已从部署环境变量（DB_PASSWORD）读取；点击眼睛仅显示掩码占位，真实密码不会离开服务端。直接输入可覆盖。',
+    passwordRestoreEnv: '还原为环境密码',
     database: '数据库',
     schema: 'Schema',
     schemaPlaceholder: '默认 public',

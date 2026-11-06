@@ -108,6 +108,27 @@ export interface ReadinessData {
   needsCredentials: boolean
 }
 
+/** 部署环境 PG 目标回填（/deployment-target；非敏感字段，无密码，键风格同 PgMasked） */
+export interface DeploymentTargetInfo {
+  host: string
+  port: number
+  user: string
+  database: string
+  sslmode: string
+  sslRootCert: string | null
+  poolSize: number
+  maxOverflow: number
+  poolTimeout: number
+}
+
+/** GET /deployment-target 数据体（DB_TYPE=postgresql 时 available=true；密码永不下发） */
+export interface DeploymentTargetData {
+  available: boolean
+  target: DeploymentTargetInfo | null
+  /** 服务端存在环境密码（配合请求侧 use_env_password；密码本体不出服务端） */
+  hasEnvPassword: boolean
+}
+
 /** POST /test-connection 数据体（探测结果三态由字段组合表达） */
 export interface TestConnectionData {
   dialect: string
@@ -183,21 +204,29 @@ export interface TestConnectionPayload {
   dialect: DatabaseDialect
   sqlite_path?: string
   postgresql?: PgFormInput
+  /** A2：true 时服务端取部署环境 DB_PASSWORD（postgresql 映射可不含密码） */
+  use_env_password?: boolean
 }
 
 /** POST /migration/start 载荷（单飞行；source 为源描述可选节） */
 export interface MigrationStartPayload {
   direction: MigrationDirection
   target: PgFormInput
-  password: string
+  /** use_env_password=true 时可省略（服务端取部署环境密码） */
+  password?: string
   source?: Record<string, unknown>
+  /** A2：true 时服务端取部署环境 DB_PASSWORD */
+  use_env_password?: boolean
 }
 
 /** POST /migration/credentials 载荷（NEEDS_CREDENTIALS 恢复；只收绑定目标凭据） */
 export interface CredentialsPayload {
   attempt_id: string
-  password: string
+  /** use_env_password=true 时可省略（服务端取部署环境密码） */
+  password?: string
   target: PgFormInput
+  /** A2：true 时服务端取部署环境 DB_PASSWORD */
+  use_env_password?: boolean
 }
 
 /** 维护态 CAS 前提（cancel/leave/switch/clear 共用；后端 CasRequest） */
@@ -241,6 +270,14 @@ export function getMigrationStatus(): Promise<ApiEnvelope<MigrationStatusData>> 
 export function getTargetReadiness(): Promise<ApiEnvelope<ReadinessData>> {
   return request<ApiEnvelope<ReadinessData>>({
     url: '/database/target-readiness',
+    method: 'get'
+  })
+}
+
+/** 部署环境 PG 目标回填（非敏感字段 + hasEnvPassword；密码本体不出服务端） */
+export function getDeploymentTarget(): Promise<ApiEnvelope<DeploymentTargetData>> {
+  return request<ApiEnvelope<DeploymentTargetData>>({
+    url: '/database/deployment-target',
     method: 'get'
   })
 }

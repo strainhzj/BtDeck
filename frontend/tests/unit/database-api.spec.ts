@@ -12,6 +12,7 @@ import request from '@/utils/request'
 import type { ApiEnvelope } from '@/utils/request'
 import {
   getDatabaseStatus,
+  getDeploymentTarget,
   getMigrationStatus,
   getTargetReadiness,
   testConnection,
@@ -23,6 +24,7 @@ import {
   switchDatabase,
   clearActivation,
   DatabaseStatusData,
+  DeploymentTargetData,
   MigrationStatusData,
   ReadinessData,
   TestConnectionData,
@@ -122,6 +124,22 @@ const DISCARD: DiscardTargetData = {
   note: '授权核验通过；清理由维护流程在目标连接执行'
 }
 
+const DEPLOYMENT_TARGET: DeploymentTargetData = {
+  available: true,
+  target: {
+    host: 'postgres',
+    port: 5432,
+    user: 'btdeck',
+    database: 'btdeck',
+    sslmode: 'prefer',
+    sslRootCert: null,
+    poolSize: 10,
+    maxOverflow: 20,
+    poolTimeout: 30
+  },
+  hasEnvPassword: true
+}
+
 const PG_TARGET: PgFormInput = {
   host: 'db.local',
   port: 5433,
@@ -161,6 +179,13 @@ describe('database api：只读组', () => {
     mockRequest.mockResolvedValue(env)
     await expect(getTargetReadiness()).resolves.toBe(env)
     expect(mockRequest).toHaveBeenCalledWith({ url: '/database/target-readiness', method: 'get' })
+  })
+
+  it('getDeploymentTarget → GET /database/deployment-target（非敏感回填面，无密码字段）', async() => {
+    const env = envelope(DEPLOYMENT_TARGET)
+    mockRequest.mockResolvedValue(env)
+    await expect(getDeploymentTarget()).resolves.toBe(env)
+    expect(mockRequest).toHaveBeenCalledWith({ url: '/database/deployment-target', method: 'get' })
   })
 })
 

@@ -23,6 +23,7 @@ import i18n from '@/i18n'
 import DatabasePanel from '@/views/settings/components/DatabasePanel.vue'
 import {
   getDatabaseStatus,
+  getDeploymentTarget,
   getMigrationStatus,
   testConnection,
   clearActivation,
@@ -34,12 +35,14 @@ import { ApiError } from '@/types/api'
 
 jest.mock('@/api/database', () => ({
   getDatabaseStatus: jest.fn(),
+  getDeploymentTarget: jest.fn(),
   getMigrationStatus: jest.fn(),
   testConnection: jest.fn(),
   clearActivation: jest.fn()
 }))
 
 const mockGetStatus = getDatabaseStatus as jest.MockedFunction<typeof getDatabaseStatus>
+const mockGetDeploymentTarget = getDeploymentTarget as jest.MockedFunction<typeof getDeploymentTarget>
 const mockGetMigrationStatus = getMigrationStatus as jest.MockedFunction<typeof getMigrationStatus>
 const mockTestConnection = testConnection as jest.MockedFunction<typeof testConnection>
 const mockClearActivation = clearActivation as jest.MockedFunction<typeof clearActivation>
@@ -63,6 +66,10 @@ interface PanelVm {
     maxOverflow: number
     poolTimeout: number
   }
+  envPasswordMode: boolean
+  onPasswordFocus: () => void
+  onPasswordInput: () => void
+  restoreEnvPassword: () => void
   runTestConnection: () => Promise<void>
   restartPending: boolean
   attemptActive: boolean
@@ -142,6 +149,38 @@ function makeMigrationStatusResponse(opts: {
   } as unknown as Awaited<ReturnType<typeof getMigrationStatus>>
 }
 
+/** GET /database/deployment-target 数据体夹具（A2 部署环境目标回填面） */
+function makeDeploymentTargetResponse(opts: {
+  available?: boolean
+  hasEnvPassword?: boolean
+  target?: Record<string, unknown>
+} = {}) {
+  const available = opts.available ?? true
+  return {
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: {
+      available,
+      target: available
+        ? {
+            host: 'postgres',
+            port: 5432,
+            user: 'btdeck',
+            database: 'btdeck',
+            sslmode: 'prefer',
+            sslRootCert: null,
+            poolSize: 10,
+            maxOverflow: 20,
+            poolTimeout: 30,
+            ...(opts.target ?? {})
+          }
+        : null,
+      hasEnvPassword: opts.hasEnvPassword ?? true
+    }
+  } as unknown as Awaited<ReturnType<typeof getDeploymentTarget>>
+}
+
 function makeApiError(code: string): ApiError {
   return new ApiError('冲突', { code, httpStatus: Number(code) })
 }
@@ -160,13 +199,15 @@ function findButton(wrapper: Wrapper<Vue>, text: string): Wrapper<Vue> {
   return btn
 }
 
-/** 挂载并等待 mounted 内首次 load 完成（默认 PG active 态，可传覆盖） */
+/** 挂载并等待 mounted 内首次 load 完成（默认 PG active 态 + 回填面不可用，可传覆盖） */
 async function mountPanel(
   statusResponse = makeStatusResponse(),
-  migrationResponse = makeMigrationStatusResponse()
+  migrationResponse = makeMigrationStatusResponse(),
+  targetResponse = makeDeploymentTargetResponse({ available: false })
 ): Promise<Wrapper<Vue>> {
   mockGetStatus.mockResolvedValue(statusResponse)
   mockGetMigrationStatus.mockResolvedValue(migrationResponse)
+  mockGetDeploymentTarget.mockResolvedValue(targetResponse)
   const wrapper = mount(DatabasePanel, { localVue, i18n })
   await flushPromises()
   await wrapper.vm.$nextTick()
@@ -333,6 +374,89 @@ describe('DatabasePanel', () => {
     expect(wrapper.text()).toContain('不可连通')
     expect(wrapper.text()).not.toContain('服务器版本')
     expect(wrapper.text()).not.toContain('空库（可迁移）')
+  })
+
+  // ====== A2 部署环境目标回填与环境密码哨兵 ======
+
+  it('A2 回填：available+hasEnvPassword 时自动填非敏感字段，密码为掩码哨兵并提示', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse(),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    expect(vm.pgForm.host).toBe('postgres')
+    expect(vm.pgForm.port).toBe(5432)
+    expect(vm.pgForm.user).toBe('btdeck')
+    expect(vm.pgForm.database).toBe('btdeck')
+    expect(vm.pgForm.sslmode).toBe('prefer')
+    // 哨兵：数位 * 占位 + 环境模式提示（真实密码不出服务端，眼睛仅见占位符）
+    expect(vm.pgForm.password).toBe('********')
+    expect(vm.envPasswordMode).toBe(true)
+    expect(wrapper.text()).toContain('密码已从部署环境变量')
+  })
+
+  it('A2 提交：环境密码模式测试连接载荷带 use_env_password，且不外发哨兵值', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse(),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    mockTestConnection.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200',
+      data: { dialect: 'postgresql', reachable: true, versionOk: true, targetEmpty: true }
+    } as unknown as Awaited<ReturnType<typeof testConnection>>)
+
+    await vm.runTestConnection()
+    await flushPromises()
+
+    expect(mockTestConnection).toHaveBeenCalledTimes(1)
+    const payload = mockTestConnection.mock.calls[0][0]
+    expect(payload.use_env_password).toBe(true)
+    expect(payload.postgresql?.password).toBe('')
+    expect(payload.postgresql?.host).toBe('postgres')
+  })
+
+  it('A2 手动输入即切回手动模式：载荷携带输入密码且无 use_env_password', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse(),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    // 聚焦清空 → 输入真实密码 → 模式切回手动（显示还原入口）
+    vm.onPasswordFocus()
+    expect(vm.pgForm.password).toBe('')
+    vm.pgForm.password = 'typed-pw'
+    vm.onPasswordInput()
+    expect(vm.envPasswordMode).toBe(false)
+    await wrapper.vm.$nextTick()
+    // 手动模式显示还原入口
+    expect(wrapper.text()).toContain('还原为环境密码')
+
+    mockTestConnection.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200',
+      data: { dialect: 'postgresql', reachable: true }
+    } as unknown as Awaited<ReturnType<typeof testConnection>>)
+    await vm.runTestConnection()
+    await flushPromises()
+
+    const payload = mockTestConnection.mock.calls[0][0]
+    expect(payload.use_env_password).toBeUndefined()
+    expect(payload.postgresql?.password).toBe('typed-pw')
+  })
+
+  it('A2 available 但无环境密码：回填非敏感字段，密码留空待手输', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse(),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse({ hasEnvPassword: false })
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    expect(vm.pgForm.host).toBe('postgres')
+    expect(vm.pgForm.password).toBe('')
+    expect(vm.envPasswordMode).toBe(false)
   })
 
   it('B 入口 start 仅指引：普通态点击提示走维护流程，不提交任何迁移', async() => {

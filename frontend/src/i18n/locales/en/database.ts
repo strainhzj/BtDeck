@@ -57,6 +57,8 @@ export const database = {
     port: 'Port',
     user: 'User',
     password: 'Password',
+    passwordEnvHint: 'Password loaded from the deployment environment (DB_PASSWORD); the eye icon only reveals the mask placeholder — the real password never leaves the server. Type to override.',
+    passwordRestoreEnv: 'Restore environment password',
     database: 'Database',
     schema: 'Schema',
     schemaPlaceholder: 'Defaults to public',

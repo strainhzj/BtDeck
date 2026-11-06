@@ -65,6 +65,9 @@ interface PageVm {
     sslmode: string
     sslRootCert: string
   }
+  credEnvPasswordMode: boolean
+  onCredPasswordFocus: () => void
+  onCredPasswordInput: () => void
   pollTimer: number | null
   login: () => Promise<void>
   submitCredentials: () => Promise<void>
@@ -105,9 +108,29 @@ function makeReadiness(overrides: Partial<ReadinessData> = {}): ReadinessData {
   }
 }
 
+/** GET /database/deployment-target 数据体夹具（A2 部署环境目标回填面） */
+function makeDeploymentTarget(): Record<string, unknown> {
+  return {
+    available: true,
+    target: {
+      host: 'postgres',
+      port: 5432,
+      user: 'btdeck',
+      database: 'btdeck',
+      sslmode: 'prefer',
+      sslRootCert: null,
+      poolSize: 10,
+      maxOverflow: 20,
+      poolTimeout: 30
+    },
+    hasEnvPassword: true
+  }
+}
+
 let statusFixture: Record<string, unknown> = makeStatus()
 let migrationFixture: MigrationStatusData = makeMigration()
 let readinessFixture: ReadinessData = makeReadiness()
+let deploymentTargetFixture: Record<string, unknown> = { available: false, target: null, hasEnvPassword: false }
 const credentialsResultFixture: MigrationStatusData = makeMigration({
   phase: 'importing',
   needsCredentials: false
@@ -137,11 +160,13 @@ beforeEach(() => {
   jest.restoreAllMocks()
 
   mockGetToken.mockReturnValue(null)
+  deploymentTargetFixture = { available: false, target: null, hasEnvPassword: false }
   mockLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
   mockGetStatus.mockImplementation(async() => statusFixture as Record<string, unknown> as never)
   mockRequest.mockImplementation(async(method: string, url: string) => {
     if (url === '/database/migration/status') return migrationFixture as never
     if (url === '/database/target-readiness') return readinessFixture as never
+    if (url === '/database/deployment-target') return deploymentTargetFixture as never
     if (url === '/database/migration/credentials') return credentialsResultFixture as never
     throw new Error(`unexpected request: ${method} ${url}`)
   })
@@ -349,5 +374,63 @@ describe('MaintenancePage', () => {
 
     expect(mockSubscribe).toHaveBeenCalledTimes(1)
     expect(mockGetStatus).not.toHaveBeenCalled()
+  })
+
+  // ====== A2 部署环境目标回填与环境密码哨兵 ======
+
+  it('A2 回填：部署环境目标自动填凭据表单，密码为掩码哨兵，提交走 use_env_password', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'NEEDS_CREDENTIALS' })
+    migrationFixture = makeMigration({ phase: 'needs_credentials', needsCredentials: true })
+    readinessFixture = makeReadiness({ needsCredentials: true })
+    deploymentTargetFixture = makeDeploymentTarget()
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+
+    // 非敏感字段回填 + 密码哨兵（真实密码不出服务端，眼睛仅见占位符）
+    expect(vm.credForm.host).toBe('postgres')
+    expect(vm.credForm.user).toBe('btdeck')
+    expect(vm.credForm.database).toBe('btdeck')
+    expect(vm.credForm.password).toBe('********')
+    expect(vm.credEnvPasswordMode).toBe(true)
+
+    await vm.submitCredentials()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const credCall = mockRequest.mock.calls.find(call => call[1] === '/database/migration/credentials')
+    expect(credCall).toBeDefined()
+    const payload = credCall?.[2] as Record<string, unknown>
+    expect(payload.use_env_password).toBe(true)
+    expect(payload.password).toBeUndefined()
+    expect((payload.target as Record<string, unknown>).password).toBe('')
+  })
+
+  it('A2 手动：输入密码后模式切回手动，载荷携带明文密码且不携带 use_env_password', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'NEEDS_CREDENTIALS' })
+    migrationFixture = makeMigration({ phase: 'needs_credentials', needsCredentials: true })
+    readinessFixture = makeReadiness({ needsCredentials: true })
+    deploymentTargetFixture = makeDeploymentTarget()
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+
+    vm.onCredPasswordFocus()
+    expect(vm.credForm.password).toBe('')
+    vm.credForm.password = 'typed-pw'
+    vm.onCredPasswordInput()
+    expect(vm.credEnvPasswordMode).toBe(false)
+
+    await vm.submitCredentials()
+    await flushPromises()
+
+    const credCall = mockRequest.mock.calls.find(call => call[1] === '/database/migration/credentials')
+    const payload = credCall?.[2] as Record<string, unknown>
+    expect(payload.password).toBe('typed-pw')
+    expect(payload.use_env_password).toBeUndefined()
   })
 })

@@ -102,7 +102,27 @@
             <el-input v-model="pgForm.user" />
           </el-form-item>
           <el-form-item :label="$t('database.form.password')" prop="password">
-            <el-input v-model="pgForm.password" type="password" show-password />
+            <el-input
+              v-model="pgForm.password"
+              type="password"
+              show-password
+              @focus="onPasswordFocus"
+              @input="onPasswordInput"
+            />
+            <!-- A2 环境密码：掩码哨兵占位（眼睛可见的仅是占位符本体，真实密码不出服务端）；
+                 手动输入即覆盖，可一键还原 -->
+            <div v-if="envPasswordAvailable" class="db-password-env">
+              <span v-if="envPasswordMode" class="db-muted">{{ $t('database.form.passwordEnvHint') }}</span>
+              <el-button
+                v-else
+                type="text"
+                size="mini"
+                class="db-password-restore"
+                @click="restoreEnvPassword"
+              >
+                {{ $t('database.form.passwordRestoreEnv') }}
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item :label="$t('database.form.database')" prop="database">
             <el-input v-model="pgForm.database" />
@@ -239,6 +259,7 @@ import { Component, Vue } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
 import {
   DatabaseControlSummary,
+  DeploymentTargetData,
   EffectiveSummary,
   HostingCapabilityData,
   MigrationCasPayload,
@@ -249,6 +270,7 @@ import {
   TestConnectionPayload,
   clearActivation,
   getDatabaseStatus,
+  getDeploymentTarget,
   getMigrationStatus,
   testConnection
 } from '@/api/database'
@@ -262,6 +284,9 @@ type SslMode = 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verif
 
 /** 需要校验 CA 证书路径（ssl_root_cert）的 verify 档位 */
 const SSL_VERIFY_MODES: readonly SslMode[] = ['verify-ca', 'verify-full']
+
+/** 环境密码掩码哨兵（A2：仅作展示占位；提交时以 use_env_password 开关替代） */
+const ENV_PASSWORD_SENTINEL = '********'
 
 /** 视为「迁移进行中」的阶段（idle/cancelled/failed/committed 之外全部占住单飞行） */
 const ACTIVE_PHASES: readonly string[] = [
@@ -343,6 +368,11 @@ export default class extends Vue {
     maxOverflow: 20,
     poolTimeout: 30
   }
+
+  // A2 部署环境目标回填：非敏感字段 + hasEnvPassword（密码本体不出服务端）
+  private deploymentTarget: DeploymentTargetData | null = null
+  /** 环境密码模式：true=提交走 use_env_password；手动输入即切回 */
+  private envPasswordMode = false
 
   private readonly sslmodeOptions: readonly SslMode[] = [
     'disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'
@@ -448,6 +478,12 @@ export default class extends Vue {
     return this.$refs.pgFormRef as ElForm
   }
 
+  /** 部署环境密码可用（available 且服务端有 DB_PASSWORD；门控锁定时表单整体禁用不回填交互） */
+  get envPasswordAvailable(): boolean {
+    const t = this.deploymentTarget
+    return !!t && t.available === true && t.hasEnvPassword
+  }
+
   /** verify 档位：CA 路径（ssl_root_cert）必填 */
   get verifySslMode(): boolean {
     return SSL_VERIFY_MODES.indexOf(this.pgForm.sslmode) >= 0
@@ -464,7 +500,8 @@ export default class extends Vue {
       host: [requiredBlur()],
       port: [{ ...requiredBlur(), trigger: 'change' }],
       user: [requiredBlur()],
-      password: [requiredBlur()],
+      // 环境密码模式：服务端自取 DB_PASSWORD，密码框哨兵占位不校验
+      password: this.envPasswordMode ? [] : [requiredBlur()],
       database: [requiredBlur()],
       sslmode: [{ ...requiredBlur(), trigger: 'change' }],
       // verify 档位必填（is-required 标记与错误文案同源）；非 verify 档不要求
@@ -481,6 +518,7 @@ export default class extends Vue {
   mounted(): void {
     this.load()
     this.loadMigrationStatus()
+    void this.loadDeploymentTarget()
   }
 
   beforeDestroy(): void {
@@ -529,6 +567,51 @@ export default class extends Vue {
     }
   }
 
+  /** A2 部署环境目标回填：失败静默退回手动填写（同维护页 fetchMigrationFaces 策略，
+   * 也不新增基线外 lint 噪声）；表单仍可全量手输 */
+  private async loadDeploymentTarget(): Promise<void> {
+    try {
+      const res = await getDeploymentTarget()
+      this.deploymentTarget = res.data
+      this.applyDeploymentTarget()
+    } catch {
+      // 静默：回填不可用（503/维护态/旧镜像）时退回手动填写，不打扰用户
+    }
+  }
+
+  /** 非敏感字段入草稿（schema 保留默认 public）；有环境密码时进入掩码哨兵态 */
+  private applyDeploymentTarget(): void {
+    const target = this.deploymentTarget?.target
+    if (!this.deploymentTarget?.available || !target) return
+    this.pgForm.host = target.host
+    this.pgForm.port = target.port
+    this.pgForm.user = target.user
+    this.pgForm.database = target.database
+    const mode = target.sslmode as SslMode
+    if (this.sslmodeOptions.indexOf(mode) >= 0) this.pgForm.sslmode = mode
+    this.pgForm.sslRootCert = target.sslRootCert || ''
+    this.pgForm.poolSize = target.poolSize
+    this.pgForm.maxOverflow = target.maxOverflow
+    this.pgForm.poolTimeout = target.poolTimeout
+    if (this.deploymentTarget.hasEnvPassword) this.restoreEnvPassword()
+  }
+
+  /** 还原环境密码：掩码哨兵占位 + 提交走 use_env_password */
+  private restoreEnvPassword(): void {
+    this.envPasswordMode = true
+    this.pgForm.password = ENV_PASSWORD_SENTINEL
+  }
+
+  /** 环境密码态聚焦即清空输入框（保持模式；未输入则提交仍走环境密码） */
+  private onPasswordFocus(): void {
+    if (this.envPasswordMode) this.pgForm.password = ''
+  }
+
+  /** 实际输入即切回手动密码模式（哨兵值不会混入真实密码） */
+  private onPasswordInput(): void {
+    if (this.envPasswordMode) this.envPasswordMode = false
+  }
+
   private syncPolling(): void {
     if (this.restartPending) {
       if (this.pollTimer === null) {
@@ -548,13 +631,14 @@ export default class extends Vue {
     }
   }
 
-  /** 草稿 → 后端 PgFormInput（snake_case 契约；缺省项由后端补全） */
+  /** 草稿 → 后端 PgFormInput（snake_case 契约；缺省项由后端补全）。
+   * 环境密码模式不外发哨兵值（密码留空 + 请求级 use_env_password 开关） */
   private buildPgInput(): PgFormInput {
     return {
       host: this.pgForm.host.trim(),
       port: this.pgForm.port,
       user: this.pgForm.user.trim(),
-      password: this.pgForm.password,
+      password: this.envPasswordMode ? '' : this.pgForm.password,
       database: this.pgForm.database.trim(),
       schema: this.pgForm.schema.trim() || 'public',
       sslmode: this.pgForm.sslmode,
@@ -581,6 +665,7 @@ export default class extends Vue {
         dialect: 'postgresql',
         postgresql: this.buildPgInput()
       }
+      if (this.envPasswordMode) payload.use_env_password = true
       const res = await testConnection(payload)
       this.testResult = res.data
     } catch (error) {
@@ -716,6 +801,20 @@ export default class extends Vue {
 .db-muted {
   font-size: 12px;
   color: var(--color-text-secondary, #909399);
+}
+
+// A2 环境密码：占位提示 / 还原操作行（settings-card 样式不穿透，本组件自带）
+.db-password-env {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.db-password-restore {
+  padding: 0;
 }
 
 .db-ok {
