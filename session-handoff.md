@@ -1,3 +1,11 @@
+## 2026-11-06 交接：unraid compose 三容器栈（PG 并入主文件，用户已实机验证）+ 迁移页 A2 环境密码自动回填（全绿未提交）
+
+- **compose**：deploy/unraid/docker-compose.yml 并入 postgres:16-alpine（三容器 backend/frontend/postgres；DB_* env 与 overlay/release 变体同源；postgres healthy 门控 backend；.env DB_PASSWORD 必填；PG 不出宿主机端口）。用户实机验证通过。overlay 文件保留（存量 SQLite 迁移目标场景仍可用）。
+- **A2 环境密码回填**（方案经用户逐轮确认）：后端 +GET /database/deployment-target（DB_* 非敏感回填面，密码永不出服务端）+ test-connection/migration-start/credentials 增 use_env_password（服务端自取 DB_PASSWORD，均缺失 400）；前端 DatabasePanel + 维护页凭据重输表单自动回填：密码框掩码哨兵 `********` 占位（眼睛仅见占位符，真实密码不出服务端）、聚焦清空、输入即切手动、可一键还原、校验规则联动解除；维护页走 maintenanceRequest 通道；zh/en i18n。
+- **验证**：后端 pytest 新 11+存量 22 全绿（新增 tests/api/test_database_deployment_target.py）、mypy/black/flake8 净；前端三 spec 45 例+全量 Jest 155 套 2135 例全绿；npm run lint 280 problems = HEAD worktree 基线逐项一致（净增 0；基线红为环境性存量，CI 门禁不含 lint 同 2026-11-03 记录）。坑：裸 `npx eslint .`（2893）与官方门禁（280）口径不同勿混用。
+- **文档**：roadmap 三处（backend/api 12 路由、frontend/api 12 函数、frontend/views 两面板 974/911 行）；feature_list database-migration-ui evidence +unraid_compose_a2（程序化 JSON 编辑，indent-2 无尾换行确定性已实证，diff 仅 3 行）；progress.md 同日条目。
+- **待用户**：①实机验收迁移页回填效果（compose 栈起后开设置→数据库，应见 host=postgres 等自动填入+密码掩码）②提交/推送时机（未提交）③后续部署需重建镜像（deployment-target/use_env_password 均为 dev 新增，旧镜像 404 时前端静默退回手动填写不阻塞）。
+
 ## 2026-11-03（续）交接：一期已合并 dev 推送 origin 并完成 unraid 生产部署（8db992a 双容器 healthy，三级回滚锚点）
 
 - **git**：feature 分支重写历史移除方案文件（计划 md+mockup 仅本地留存）→ --no-ff 合并 dev（8db992a）→ origin/dev 已推送。
