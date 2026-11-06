@@ -10,6 +10,11 @@
 #      /#/maintenance 不可达（W3-8：维护期静态页必须可达）
 # 3. 新增 BTD_MIGRATION_MANAGED_RESTART=1：迁移提交后 backend 优雅退出，
 #    由 restart: unless-stopped 自动拉起完成激活闭环（runbook §2）
+# 4. PostgreSQL 并入主栈（2026-11-06）：backend/frontend/postgres 三容器，
+#    backend 以 DB_TYPE=postgresql 直连 postgres 服务（DB_* 约定与
+#    docker-compose.postgres.yml / docker-compose.release.postgres.yml 同源）；
+#    凭据经 .env 注入（DB_PASSWORD 必填），数据持久化 ./data/postgres，
+#    postgres healthy 门控 backend 启动
 #
 # ⚠️ 镜像要求：btdeck-backend:latest 必须为 dev≥163deca 构建（v1.0.8 未发版，
 #    /health/control-ready 与 /api/v1/database/* 均为 dev 新增——旧镜像探针 404
@@ -33,6 +38,16 @@ services:
       - LOG_LEVEL=INFO
       # 迁移控制面托管重启 opt-in（提交→退出→本 compose restart 策略拉起→激活 redo）
       - BTD_MIGRATION_MANAGED_RESTART=1
+      # PostgreSQL 数据源（v1.0.8；凭据经 .env 注入，DB_PASSWORD 必填）
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-btdeck}
+      - DB_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-btdeck}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
+      - DB_SSLMODE=${DB_SSLMODE:-prefer}
 
     ports:
       - "5001:5001"  # API 端口
@@ -54,6 +69,11 @@ services:
       - btdeck_network
 
     restart: unless-stopped
+
+    # postgres healthy 门控 backend（backend 自身 control-ready 探针不变）
+    depends_on:
+      postgres:
+        condition: service_healthy
 
     healthcheck:
       # 维护感知探针（W3-8）：迁移冻结期 200+businessReady=false；镜像无 curl 用 python3
@@ -107,6 +127,45 @@ services:
     depends_on:
       backend:
         condition: service_started  # W3-8：维护期 backend 不满足业务 ready 也要起前端（维护页可达）
+
+  # ============================================
+  # PostgreSQL 数据库（v1.0.8 主数据源）
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: btdeck-postgres
+
+    environment:
+      - POSTGRES_USER=${DB_USER:-btdeck}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?需要在 .env 设置 DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-btdeck}
+      - TZ=UTC
+
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+    # NAS 场景资源上限（与 overlay/release 变体同口径）
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    networks:
+      - btdeck_network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-btdeck} -d ${DB_NAME:-btdeck}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
 # ============================================
 # 网络配置
