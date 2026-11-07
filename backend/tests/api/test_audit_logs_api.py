@@ -11,7 +11,7 @@
 
 覆盖范围（41 个测试）：
 - 认证拒绝（含 401 来源 body 断言）/ 空数据（含 msg 排除防 service 降级假通过）
-- 11 维过滤（torrent_name 是唯一 LIKE 模糊维度）+ LIKE 通配符注入已知行为 + 无匹配边界
+- 11 维过滤（torrent_name 是唯一 LIKE 模糊维度）+ 模糊匹配字面量语义 + 无匹配边界
 - 时间范围（start_time / end_time 闭区间）
 - 排序（operation_time DESC，完整序列断言）+ 分页（含 offset 生效/count 解耦双重验证）
 - statistics 内存聚合（含 unknown 桶 + 时间过滤后 stats 字典断言）
@@ -187,19 +187,21 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_filter_by_torrent_name_wildcard_injection(self, client, async_db):
-        """已知行为：torrent_name 直接拼入 LIKE，% 会被当通配符。
+        """% / _ 按字面量处理（2026-11-07 迁 dialect_sql.ci_contains，autoescape 语义）。
 
-        service 用 torrent_name.like(f"%{torrent_name}%")，未对 % / _ 转义。
-        传 "%" 会匹配所有行（非空 torrent_name）。此测试记录该已知行为，
-        若未来 service 加 escape，本测试需同步更新。
+        历史 raw LIKE 直接拼串时 % 曾被当通配符（原断言 "%" 命中全部非空行）；
+        迁移至 ci_contains 后用户输入的 %/_/转义符按字面量匹配——通配符注入面
+        同时被关掉。SQLite/PG 双方言同语义（契约 §4.1）。
         """
         await _add(async_db, torrent_name="movie A", operator="a")
         await _add(async_db, torrent_name="series B", operator="a")
-        await _add(async_db, operator="a")  # torrent_name=None，不应被 % 命中
+        await _add(async_db, operator="a")  # torrent_name=None
+        # "%" 按字面量匹配 → 无名为 "%" 的行 → 0（旧通配符注入行为已封）
         r = client.post(URL_QUERY, json={"torrent_name": "%"})
-        body = r.json()
-        # % 匹配任意非空 torrent_name（2 条）；NULL 不参与 LIKE 匹配
-        assert body["data"]["total"] == 2
+        assert r.json()["data"]["total"] == 0
+        # 普通模糊搜索不受影响，且大小写不敏感（双方言折叠）
+        r = client.post(URL_QUERY, json={"torrent_name": "MOVIE"})
+        assert r.json()["data"]["total"] == 1
 
     @pytest.mark.asyncio
     async def test_filter_no_match_returns_empty(self, client, async_db):
