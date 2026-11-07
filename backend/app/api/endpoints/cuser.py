@@ -134,9 +134,12 @@ def change_password(
         )
 
     new_password = security.get_password_hash(_decode_password(str(user_request.newPassword)))
-    sql = """update users set password=:password, must_change_password=0 where id=:user_id"""
+    # must_change_password 用 bool 参数绑定：raw 字面量 0 在 PG 报 DatatypeMismatch
+    # （boolean = integer 无此 operator，2026-11-07 实机抓出）；bool 经 Boolean
+    # bind_processor 双方言落值（SQLite→0 / PG→false）
+    sql = """update users set password=:password, must_change_password=:must_change_password where id=:user_id"""
     try:
-        db.execute(text(sql), {"password": new_password, "user_id": user.id})
+        db.execute(text(sql), {"password": new_password, "must_change_password": False, "user_id": user.id})
         # 改密后撤销该用户全部 refresh token（安全修复 W9）：旧 token 不再能续期
         db.query(models.RefreshToken).filter(
             models.RefreshToken.user_id == user.id,

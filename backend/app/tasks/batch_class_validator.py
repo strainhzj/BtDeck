@@ -214,7 +214,8 @@ class BatchClassValidator:
 
                 # 生成禁用任务的SQL（临时措施）
                 repair_sql_lines.append("-- 临时禁用问题任务（建议手动修复后重新启用）:")
-                repair_sql_lines.append(f"UPDATE cron_task SET enabled = 0 WHERE task_id = {task_id};")
+                # enabled=false 双方言字面量（SQLite 3.23+/PG；整数 0 在 PG Boolean 列报 DatatypeMismatch）
+                repair_sql_lines.append(f"UPDATE cron_task SET enabled = false WHERE task_id = {task_id};")
                 repair_sql_lines.append("")
 
         return "\n".join(repair_sql_lines)

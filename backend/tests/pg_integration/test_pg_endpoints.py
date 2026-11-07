@@ -147,3 +147,61 @@ class TestDownloaderListBooleanFilter:
             assert off_id in got_false and on_id not in got_false
         finally:
             db.close()
+
+
+class TestUserChangePassword:
+    """端点语义 3：改密 users.must_change_password 布尔写入（2026-11-07 实机抓出）。
+
+    原 raw SQL 整数字面量 ``must_change_password=0`` 在 PG 报 DatatypeMismatch
+    （boolean = integer 无此 operator；SQLite 容忍故全量回归不红）——强制改密
+    流程在 PG 部署下完全不可用。修复为 bool 参数绑定（Boolean bind_processor
+    双方言落值：SQLite→0 / PG→false）。本测试经端点函数直调在真实 PG 上锚定。
+    """
+
+    def test_change_password_bool_param_roundtrip(self, fresh_pg_db: str) -> None:
+        import base64
+        from types import SimpleNamespace
+
+        from app.api.endpoints import cuser
+        from app.api.endpoints.cuser import ChangePasswordRequest
+        from app.auth import security
+        from app.auth.models import User
+        from app.database import SessionLocal
+
+        _init_baseline()
+        suffix = uuid.uuid4().hex[:8]
+        username = f"pg_chg_{suffix}"
+        old_password = f"Old-{suffix}-pass"
+        new_password = f"New-{suffix}-pass"
+        db = SessionLocal()
+        try:
+            user = User(
+                username=username,
+                password=security.get_password_hash(old_password),
+                must_change_password=True,
+            )
+            db.add(user)
+            db.commit()
+            user_id = user.id
+        finally:
+            db.close()
+
+        payload = ChangePasswordRequest(
+            oldPassword=base64.b64encode(old_password.encode()).decode(),
+            newPassword=base64.b64encode(new_password.encode()).decode(),
+            userId=str(user_id),  # 端点绑定 token 用户，body userId 仅契约占位
+        )
+        user_info = SimpleNamespace(user_id=user_id, username=username)
+        response = cuser.change_password(payload, user_info, SessionLocal())
+        assert response.status == "success", response.msg
+
+        db = SessionLocal()
+        try:
+            row = db.query(User).filter(User.id == user_id).first()
+            # PG 读回须为原生 False（布尔语义正确，非整型残留）
+            assert row.must_change_password is False
+            assert security.verify_password(new_password, row.password)
+            # 原密码不再通过校验
+            assert not security.verify_password(old_password, row.password)
+        finally:
+            db.close()
