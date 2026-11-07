@@ -121,7 +121,7 @@ export interface DeploymentTargetInfo {
   poolTimeout: number
 }
 
-/** GET /deployment-target 数据体（DB_TYPE=postgresql 时 available=true；密码永不下发） */
+/** GET /deployment-target 数据体（DB_TYPE=postgresql 或 env 显式 DB_HOST 时 available=true；密码永不下发） */
 export interface DeploymentTargetData {
   available: boolean
   target: DeploymentTargetInfo | null

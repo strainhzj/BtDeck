@@ -8813,3 +8813,47 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **文档**：roadmap 三处同步——backend/api（12 路由 + A2 条款）、frontend/api（12 函数 + DeploymentTargetData）、frontend/views（两面板 974/911 行复测 + A2 标记）；feature_list.json database-migration-ui evidence 增 unraid_compose_a2 键（程序化编辑实证 indent-2 无尾换行确定性，diff 仅 +3/-2 行）。
 - **未提交**（待用户要求）；overlay 文件 deploy/unraid/docker-compose.postgres.yml 保留未删（对存量 SQLite 迁移目标场景仍有用）。
 - **CI**（2026-11-06 补记）：4 提交推 origin dev（1765b7d..d8e1ae8），regression run **42203324977 全绿 14m4s**——Backend pytest **5843 passed / 63 skipped**（含本批新 11 例）、PostgreSQL integration 实库 **44 passed+6 passed / 1 skipped**、Frontend Jest 155 套 **2135 全绿**+build DONE；regen-locks 为按需 job 未触发（正常）。annotations 仅 Node20/ubuntu 迁移弃用警告与已知 pytest event-loop 噪声，非阻塞。沙箱单 job Azure blob 日志被阻断，run 级 logs zip 直连可用（先例复证）。
+
+## 2026-11-06（续）：生产部署 unraid 三容器栈 @e868745（A2 功能上线，六项验证全过）
+
+- **部署**（Hermes run_99ae8cf70b574021848d821a12fe531e，构建 784s + 部署 46s 全自动）：/root/BtDeck 干净检出 e8687452b0fa07a13f2b9be5dd38efa8a9d7b134（gitlab origin 无 dev 分支，按既定路径回退 github/dev）→ --no-cache --quick → 双 tar（backend 336,977,408B sha256 8d334359… / frontend 195,069,952B sha256 ddf76e15…）→ 8401 驻留 → unraid wget 字节核对 → .btdeck-remote-deploy.sh（compose down→load→backend 2 轮 healthy→frontend up）。仅换 backend/frontend 镜像，compose 文件未触碰（sha256 前后一致）。
+- **验证六项全过**：①三容器 Up healthy（backend 21s/frontend 10s/postgres 28s）②/health/live gitSha 全 40 位匹配+build.status=ok+alembicHead e9f0a1b2c3d4 无新迁移 ③前端 /health 200 ④**A2 新端点 /api/v1/database/deployment-target 无 token=401（路由已加载）** ⑤pg_isready accepting connections ⑥compose sha256 93f7134e… 部署前后一致。
+- **回滚锚点**：btdeck-{backend,frontend}:backup-pre-e868745（=1765b7d 旧生产 latest：8425a166b031/645349df6505）；既有锚点链全保留；8401 已关。
+- **重要发现（安全相关，待用户决策）**：远端 unraid compose 与仓库版本唯一差异=凭据行——远端用 `${DB_PASSWORD:-btdeck123}` 默认值兜底（无 .env，postgres 已以此密码运行 7h+），仓库版已收紧为 `:?` 强制 .env。含义：①生产 PG 密码即字面量 btdeck123（LAN 内弱凭据）②后续若按仓库版 compose 重启会因缺 .env 快速失败。**正确修法**（不能只改 .env——密码在 initdb 时已固化进 ./data/postgres）：先 `docker exec btdeck-postgres psql -U btdeck -d btdeck -c "ALTER USER btdeck WITH PASSWORD '<新强密码>'"` → 写远端 .env（DB_PASSWORD=<新强密码>）→ 保持/恢复 compose 的 `:?` 行 → up -d 重建 backend。未代为执行（涉及生产凭据变更，待用户授权）。
+- **记录纪律**：本条目与 session-handoff 更新按「部署后记录不入仓」纪律保留工作区未提交，下次实质提交一并入仓（生产=origin/dev HEAD 严格一致保持到 e868745）。
+
+## 2026-11-07：改密布尔双方言收口（afd0c85，实机抓出）+ 部署因 Hermes 网关 502 阻塞
+
+- **实机缺陷**：e868745 部署后用户在 unraid 生产走强制改密流程即 500——`cuser.py:137` raw SQL `must_change_password=0` 整数字面量打在 Boolean 列（PG `boolean=integer` 无此 operator 报 DatatypeMismatch；SQLite 容忍故全量回归不红）。**根因同类**于 2026-10-27 补漏批（downloader.py），该端点在彼轮审计盲区内（raw SQL 字面量比对/写入面）。
+- **全仓同类扫描收口**：逐命中核列类型——rss enabled/use_regex、dr 全系=Integer（安全）；ORM 路径 int 赋值（torrent_add/torrent_sync enabled=1）经实证 SQLAlchemy Boolean bind_processor 在 PG 方言下 1→True 强转（安全）；users.two_factor_flag=String（安全）；bt_downloaders enabled raw 比较已是 `= TRUE` 正确写法；database_migrator 纯 sqlite3 遗留通道（不涉 PG）。**真雷仅 cuser.py:137**；顺修 batch_class_validator.py:217 人工执行建议串 `enabled=0`→`false`（SQLite 3.23+/PG 双方言）。
+- **修复**（afd0c85，已推 origin/dev）：`must_change_password=:must_change_password` bool 参数绑定（Boolean bind_processor 双方言落值 SQLite→0/PG→false）+ PG 端点级回归 `TestUserChangePassword`（真实 PG 上端点函数直调：改密往返+`must_change_password is False` 布尔读回+新旧密码 verify 双断言）。
+- **验证**：SQLite 侧 test_cuser_business_codes 10 例全绿（无回归）；mypy/black/flake8 净；CI run **42338580062 全绿 11m**——**pg-integration 实库 job `TestUserChangePassword PASSED`**（45+6 全过），真实 PG 16 上锚定修复语义。
+- **部署阻塞**：Hermes 网关 192.168.5.43:8642 持续 502（代理存活、上游不可达）>25 分钟，构建+部署通道中断；沙箱无 SSH/docker 无法绕行。生产仍运行 e868745（旧代码，改密仍会报错）。
+- **临时解法（已告知用户，不等重部署）**：unraid 上 `docker exec btdeck-backend python3 -c "from app.auth.security import get_password_hash; print(get_password_hash('新密码'))"` 取哈希 → `docker exec btdeck-postgres psql -U btdeck -d btdeck -c "UPDATE users SET password='<哈希>', must_change_password=false WHERE id=1;"`（与代码修复完全同语义）。
+- **待办**：网关恢复后部署 afd0c85（锚点 backup-pre-afd0c85）；部署记录继续按纪律留存工作区。
+
+## 2026-11-07（续）：双方言深度审计（子代理）+ 枚举活雷收口（1b5bcfc/a67565b，实库全绿；部署仍阻塞）
+
+- **子代理深度审计**（worker，≈195 执行点五步法：枚举→全块→列型解析→定性→可达性交叉质疑；报告 /tmp/sql_audit_report.md）：运行时 BLOCKER 4 处（同源 downloader_settings.py 保存端点：enable_schedule/override_local/规则 enabled 取自原始 JSON dict 无 Pydantic 校验，int 直通 raw SQL 绑 Boolean 列）+ WARN 8（LIKE 大小写漂移 7、tracker 关键词前缀 1）+ alembic 潜伏族 9（基线 stamp 机制隔离，今日不可达；列入新迁移禁例清单不回改历史）。UNKNOWN 0；六面扫描确认。
+- **审计外实库再炸真雷（CI 首跑抓出）**：`dl/ul_speed_unit` 为 SQLEnum 原生枚举列（speedunitenum，成员名标签），raw text() 无类型信息 int 直通 42804——**PG 下官方前端保存设置即 500**（比布尔面更重；子代理审计也漏了此类，实库测试价值实证）。
+- **收口三提交**：f52d4c9（布尔 4 处 bool() 归一 + SQLite 归一语义测试 + PG 端点级实库回归）→ 1b5bcfc（枚举写标签/读 from_value 归一 + 迁移管线 row_transform SQLEnum 分支 + check_enum_columns 预检 + 测试扩展）→ a67565b（测试同步调用修正）。**坑**：SpeedUnitEnum 双副本（downloader_settings.py 裸 IntEnum vs enums.py 富副本带 from_value）——管线泛化改用 enum_class+__members__+int() 纯通用归一。
+- **验证**：本地 54+205 例绿、mypy/black/flake8 净；CI run 42346100746 **全绿**——pg-integration 实库 `TestDownloaderSettingsBoolBinding PASSED`（int 载荷保存→PG 原生 boolean/枚举标签读回→GET from_value 归一契约全链路）+ TestUserChangePassword 保持绿（46+6）。首轮/二轮失败均为实库真问题或测试自身 bug（await 误加同步端点），非 flake。
+- **部署仍阻塞**：Hermes 网关 502 持续（多次重试未恢复）；生产 e868745 改密+设置保存两处 PG 缺陷待修复版上線。af0/f52/1b5/a675 四提交在 origin/dev 待部署（生产=HEAD 一致性打破，网关恢复后立即部署 a67565b）。
+- **审计遗留建议（未改，待用户决策）**：①LIKE 大小写漂移 5 处迁 dialect_sql.ci_contains（PG 搜索语义变化需产品确认）②alembic 新增迁移双方言禁例纳入检查清单 ③远端 unraid .env/ALTER USER 凭据强化（前条目）。
+
+## 2026-11-07（续二）：生产部署 a67565b（双方言修复批上线，七项验证全过）
+
+- **部署**（Hermes run_a01e0f53466f484288046dbdd1fbfd6c，构建 1045s ≈17.4min + 部署 26s）：/root/BtDeck 干净检出 a67565b2fbd52c8f2c0098bd885461a227955539（porcelain 空）→ --no-cache --quick → 双 tar（backend 336,991,232B sha256 3d84abd6… / frontend 195,180,032B sha256 412dfda9…；frontend manifest 与历版一致——本批纯后端修复）→ 8401 驻留 → unraid wget -O 精确覆盖 + sha256 双侧核对 → .btdeck-remote-deploy.sh rc=0（postgres 随 depends_on 自动重建，数据卷未动）。compose 文件 sha256 93f7134e… 前后一致未触碰；8401 已关。
+- **七项验证全过**：①三容器 Up healthy ②/health/live gitSha 全 40 位匹配+build.status=ok ③前端 /health 200 ④deployment-target 无 token 401 ⑤pg_isready accepting ⑥compose sha256 一致 ⑦backend 日志无 ERROR/Traceback。双镜像 OCI revision label 均=a67565b2…；alembicHead e9f0a1b2c3d4 无新迁移。
+- **回滚锚点**：btdeck-{backend,frontend}:backup-pre-a67565b（=e868745 版：8e10b676d7a3/ba737f9185fd）；既有锚点链全保留。
+- **生产状态**：e868745 → a67565b 上线完成，改密布尔缺陷 + 设置保存布尔/枚举缺陷修复全部生效；生产=origin/dev HEAD 严格一致恢复。Hermes 过程两次脚本自伤（等待条件写错/前台超时杀进程）均发生在远端变更前，无半部署状态。
+- **记录纪律**：本条目留存工作区（生产=HEAD 一致），下次实质提交一并入仓。
+- **用户实机确认（2026-11-07）**：a67565b 生产上强制改密流程验证通过——cuser 布尔修复闭环；同端点族设置保存修复（f52d4c9/1b5bcfc）已由实库测试锚定。
+
+## 2026-11-08：deployment-target 门控放宽（存量 SQLite 旧库迁移回填修复）
+
+- **背景**：用户按正道切 PG（compose `DB_TYPE` 临时改回 sqlite 启动旧库，`DB_*` 留在容器 env），发现迁移页自动回填失效仍需手填——deployment-target 端点 available 死 gate 在 `settings.DB_TYPE=postgresql`（database.py），DB_TYPE=sqlite 时直接 `available=False`，前端 `applyDeploymentTarget()` 首行 return；DatabasePanel 与维护页两消费方同时失效。另确认：env 直切库本身=既定设计（用户认可），守卫提案维持关闭，本批只修回填面。
+- **修复**（子代理对抗审查先行，结论“需修改后可行”已采纳）：available 条件放宽为 `DB_TYPE=postgresql 或 os.environ 显式 DB_HOST`（settings.DB_HOST 默认 localhost 无法区分显式；compose 三变体必设 DB_HOST；纯 SQLite 发布基座 docker-compose.release.yml 确认无 DB_HOST）；docstring 留痕已知盲区（仅 .env 文件配置判不出→降级手填；postgres/pg 方言别名无 DB_HOST 时仍不可用）；`import os` 局部导入；密码面/鉴权面/§8 不变量零变化；前端零功能改动（api/database.ts L124 注释同步）。
+- **验证**：test_database_deployment_target.py **14 例全绿**（11 存量+3 新增：sqlite+env host 回填——setenv 过门+setattr 对齐断言双管，ENV_PASSWORD 不入响应；空白 DB_HOST 不可用锚定 .strip() 分支；无密码态回填）；test_sqlite_unavailable 补 delenv 防残留；test_database_endpoints.py 11 例全绿；black/flake8/mypy 净；前端 database-api/database-settings/maintenance-page 三 spec **45 例全绿**；npm run lint 仅 3 warning 均为工作区 dashboard 在途文件（SiteBarsCard.vue/dashboard-grid.spec.ts，非本批触碰）净增 0。
+- **文档**：roadmap backend/api README database-migration 行追加门控语义；feature_list.json evidence 增 `deployment_target_gate_relax`。
+- **未提交**（待用户要求）；unraid 生产部署未做（待用户明确是否随本批重新部署）。

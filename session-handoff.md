@@ -1,3 +1,32 @@
+## 2026-11-07（续二）交接：生产部署 a67565b 完成（双方言修复批上线，七项验证全过）
+
+- **部署**（Hermes run_a01e0f53466f484288046dbdd1fbfd6c，构建 17.4min+部署 26s）：a67565b 干净检出→双 tar sha256 3d84abd6…/412dfda9…→仅换镜像，compose 未触碰。七项验证全过（三容器 healthy、gitSha 全 40 位、前端 200、deployment-target 401、pg_isready、compose 一致、日志无 ERROR）。
+- **回滚锚点**：btdeck-{backend,frontend}:backup-pre-a67565b（=e868745）。
+- **生产状态**：e868745→a67565b，改密+设置保存（布尔/枚举）缺陷全部修复生效；生产=origin/dev HEAD 一致恢复。用户可立即用 UI 改密（强制改密流程恢复可用）。
+- **记录纪律**：本节留存工作区未提交，下次实质提交一并入仓。
+
+## 2026-11-07（续）交接：深度审计+枚举活雷收口（afd0c85→a67565b 四提交实库全绿）；部署阻塞 Hermes 502 未解
+
+- **子代理审计**：≈195 raw SQL 执行点全量定性（BLOCKER 4 同源 settings 端点 / WARN 8 漂移类 / alembic 潜伏 9 被基线隔离；0 UNKNOWN；六面确认）。
+- **实库再炸真雷**：dl/ul_speed_unit SQLEnum 原生枚举列 int 直通 42804——PG 下官方前端保存设置必 500（审计漏网，CI 实库测试抓出）。
+- **收口**：布尔 bool() 归一 + 枚举写标签/读 from_value 归一 + 迁移管线 SQLEnum 分支与预检（含 SpeedUnitEnum 双副本坑：泛化转换不得依赖模型侧辅助方法）。CI 42346100746 全绿，pg-integration 46+6 全过（布尔+枚举两条实库链路 PASSED）。
+- **阻塞**：Hermes 网关 502 未恢复；生产 e868745 仍带改密+设置保存两处缺陷。网关恢复后部署 a67565b（锚点 backup-pre-a67565b）。临时改密 SQL 解法已在前条目。
+- **待用户决策**：LIKE 漂移 5 处 ci_contains 迁移（PG 搜索语义变化）、alembic 新迁移双方言禁例清单、远端凭据强化。
+
+## 2026-11-07 交接：改密布尔双方言收口（afd0c85 CI 全绿含实库验证）；部署阻塞于 Hermes 网关 502
+
+- **实机缺陷**：PG 部署下强制改密 500（cuser.py:137 raw `must_change_password=0`，PG DatatypeMismatch；2026-10-27 审计盲区同类）。修复=bool 参数绑定 afd0c85（已推 dev）；全仓同类扫描收口（ORM int 经 bind_processor 强转安全实证；真雷仅此一处，顺修 validator 建议串）。
+- **验证**：SQLite 无回归（cuser 10 例）+ CI 42338580062 全绿、pg-integration 实库新测试 PASSED（45+6）。
+- **阻塞**：Hermes 网关 502 >25min，生产仍在 e868745（改密仍报错）。临时解法已告知用户（exec psql UPDATE boolean false + bcrypt 哈希）。网关恢复后部署 afd0c85。
+- **待用户**：①恢复/重启 192.168.5.43 Hermes 网关 ②或先用临时 SQL 解法解锁改密 ③网关恢复后说一声即自动走构建+部署+锚点链。
+
+## 2026-11-06（续）交接：生产部署 unraid 三容器栈 @e868745 全绿（A2 已上线；远端凭据兜底发现待用户决策）
+
+- **部署**（Hermes run_99ae8cf70b574021848d821a12fe531e 全自动，构建 784s+部署 46s）：干净检出 e868745 → 双 tar sha256 8d334359…/ddf76e15… → unraid 仅换 backend/frontend 镜像，compose 未触碰。六项验证全过（三容器 healthy、gitSha 全 40 位、前端 200、A2 端点 401、pg_isready、compose sha256 一致）。
+- **回滚锚点**：btdeck-{backend,frontend}:backup-pre-e868745（=1765b7d）；锚点链完整。
+- **⚠ 待用户决策**：远端 compose 用 `${DB_PASSWORD:-btdeck123}` 兜底且无 .env——生产 PG 密码=字面量 btdeck123（LAN 弱凭据）。正确修法=先 ALTER USER 改密码→写 .env→恢复 `:?` 行→重建 backend（详见 progress.md 2026-11-06 续条目）。
+- **记录纪律**：本节按「部署后记录不入仓」保留未提交，与 progress.md 同批下次实质提交入仓。
+
 ## 2026-11-06 交接：unraid compose 三容器栈（PG 并入主文件，用户已实机验证）+ 迁移页 A2 环境密码自动回填（全绿未提交）
 
 - **compose**：deploy/unraid/docker-compose.yml 并入 postgres:16-alpine（三容器 backend/frontend/postgres；DB_* env 与 overlay/release 变体同源；postgres healthy 门控 backend；.env DB_PASSWORD 必填；PG 不出宿主机端口）。用户实机验证通过。overlay 文件保留（存量 SQLite 迁移目标场景仍可用）。

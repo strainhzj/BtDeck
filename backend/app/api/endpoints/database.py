@@ -149,15 +149,24 @@ async def target_readiness(request: Request) -> CommonResponse:
 async def deployment_target() -> CommonResponse:
     """部署环境 PG 目标回填面（A2：非敏感字段下发，密码永不出服务端，§8）。
 
-    compose/env 以 DB_TYPE=postgresql 部署时，迁移页可据此自动回填目标参数
-    （host/port/user/database/sslmode/池），凭据经请求侧 use_env_password
-    开关在服务端解析（test-connection/migration/start/migration/credentials），
-    本端点只下发 hasEnvPassword 布尔（键风格与 /status 脱敏视图一致）。
+    compose/env 以 DB_TYPE=postgresql 部署、或环境显式提供 DB_HOST 时，迁移页
+    可据此自动回填目标参数（host/port/user/database/sslmode/池），凭据经请求侧
+    use_env_password 开关在服务端解析（test-connection/migration/start/migration/
+    credentials），本端点只下发 hasEnvPassword 布尔（键风格与 /status 脱敏视图一致）。
+
+    门控口径（2026-11-08 存量 SQLite 旧库迁移场景）：settings.DB_HOST 有默认值
+    无法区分显式设置，故读 os.environ 判显式（env 源优先级高于 .env，compose
+    注入必进 os.environ）。已知盲区：仅 .env 文件配置（非容器 env 注入）的
+    DB_HOST 判不出 → 降级手动填写，安全无损；DB_TYPE=postgres/pg 别名本端点
+    一直不识别，显式 DB_HOST 的别名部署经 env 分支放行。
     """
+    import os
+
     from app.core.config import settings
 
     dialect = (settings.DB_TYPE or "").strip().lower()
-    if dialect != "postgresql":
+    explicit_env_host = bool((os.environ.get("DB_HOST") or "").strip())
+    if dialect != "postgresql" and not explicit_env_host:
         return CommonResponse(
             status="success",
             code="200",

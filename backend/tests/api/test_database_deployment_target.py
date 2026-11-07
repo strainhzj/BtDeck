@@ -169,7 +169,9 @@ class TestDeploymentTarget:
         assert client.get("/api/v1/database/deployment-target").status_code == 401
 
     def test_sqlite_unavailable(self, app, tmp_path, monkeypatch):
+        """无 PG 部署参数（delenv 防 CI/同进程残留）→ 不下发回填面。"""
         monkeypatch.setattr(settings, "DB_TYPE", "sqlite", raising=False)
+        monkeypatch.delenv("DB_HOST", raising=False)
         client = _authorized_client(app, tmp_path)
         resp = client.get("/api/v1/database/deployment-target")
         assert resp.status_code == 200
@@ -207,6 +209,52 @@ class TestDeploymentTarget:
         client = _authorized_client(app, tmp_path)
         data = client.get("/api/v1/database/deployment-target").json()["data"]
         assert data["available"] is True
+        assert data["hasEnvPassword"] is False
+
+    def test_sqlite_with_env_host_prefills(self, app, tmp_path, monkeypatch):
+        """存量 SQLite 旧库迁移场景（2026-11-08 门控放宽）：DB_TYPE=sqlite 但
+        env 显式提供 DB_HOST（compose 把 DB_* 留在容器 env、DB_TYPE 临时切回
+        sqlite 启动旧库）→ 照常回填。门控读 os.environ（setenv），target 字段
+        读 settings（setattr 对齐断言）——两者都要打。"""
+        monkeypatch.setattr(settings, "DB_TYPE", "sqlite", raising=False)
+        monkeypatch.setenv("DB_HOST", "postgres")
+        monkeypatch.setattr(settings, "DB_HOST", "postgres", raising=False)
+        monkeypatch.setattr(settings, "DB_PORT", 5432, raising=False)
+        monkeypatch.setattr(settings, "DB_USER", "btdeck", raising=False)
+        monkeypatch.setattr(settings, "DB_PASSWORD", ENV_PASSWORD, raising=False)
+        monkeypatch.setattr(settings, "DB_NAME", "btdeck", raising=False)
+        monkeypatch.setattr(settings, "DB_SSLMODE", "prefer", raising=False)
+        client = _authorized_client(app, tmp_path)
+        resp = client.get("/api/v1/database/deployment-target")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["available"] is True
+        assert data["hasEnvPassword"] is True
+        target = data["target"]
+        assert target["host"] == "postgres"
+        assert target["port"] == 5432
+        assert target["user"] == "btdeck"
+        assert target["database"] == "btdeck"
+        assert ENV_PASSWORD not in resp.text
+
+    def test_sqlite_with_env_host_blank_is_unavailable(self, app, tmp_path, monkeypatch):
+        """纯空白 DB_HOST 不算显式提供（.strip() 分支锚定）。"""
+        monkeypatch.setattr(settings, "DB_TYPE", "sqlite", raising=False)
+        monkeypatch.setenv("DB_HOST", "   ")
+        client = _authorized_client(app, tmp_path)
+        data = client.get("/api/v1/database/deployment-target").json()["data"]
+        assert data == {"available": False, "target": None, "hasEnvPassword": False}
+
+    def test_sqlite_with_env_host_no_password_prefills(self, app, tmp_path, monkeypatch):
+        """环境无密码时仍回填字段，密码走手输（hasEnvPassword=False 态）。"""
+        monkeypatch.setattr(settings, "DB_TYPE", "sqlite", raising=False)
+        monkeypatch.setenv("DB_HOST", "postgres")
+        monkeypatch.setattr(settings, "DB_HOST", "postgres", raising=False)
+        monkeypatch.setattr(settings, "DB_PASSWORD", "", raising=False)
+        client = _authorized_client(app, tmp_path)
+        data = client.get("/api/v1/database/deployment-target").json()["data"]
+        assert data["available"] is True
+        assert data["target"]["host"] == "postgres"
         assert data["hasEnvPassword"] is False
 
 
