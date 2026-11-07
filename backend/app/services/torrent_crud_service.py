@@ -7,6 +7,7 @@ from sqlalchemy import text, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.dialect_sql import ci_contains
 from app.torrents.models import TorrentInfo, TrackerInfo as TrackerInfoModel
 from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
@@ -119,7 +120,7 @@ def get_torrents(
     if status:
         query = query.filter(TorrentInfo.status == status)
     if tags:
-        query = query.filter(TorrentInfo.tags.like(f"%{tags}%"))
+        query = query.filter(ci_contains(TorrentInfo.tags, tags))
     if category:
         query = query.filter(TorrentInfo.category == category)
 
@@ -139,7 +140,7 @@ def search_torrents_by_name(db: Session, name_query: str, skip: int = 0, limit: 
     Returns:
         种子信息对象列表
     """
-    return db.query(TorrentInfo).filter(TorrentInfo.name.like(f"%{name_query}%")).offset(skip).limit(limit).all()
+    return db.query(TorrentInfo).filter(ci_contains(TorrentInfo.name, name_query)).offset(skip).limit(limit).all()
 
 
 def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -> Optional[TorrentInfo]:

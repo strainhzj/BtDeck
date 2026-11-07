@@ -25,6 +25,7 @@ from fastapi import Request, Depends
 
 from app.torrents.audit_models import TorrentAuditLog
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.core.dialect_sql import ci_contains
 from app.core.filename_utils import FilenameUtils
 from app.database import get_async_db
 
@@ -296,8 +297,8 @@ class AuditLogService:
                 conditions.append(TorrentAuditLog.torrent_info_id == torrent_info_id)
 
             if torrent_name:
-                # 🔥 支持 torrent_name 模糊搜索（使用 LIKE）
-                conditions.append(TorrentAuditLog.torrent_name.like(f"%{torrent_name}%"))
+                # 🔥 支持 torrent_name 模糊搜索（双方言大小写不敏感，ci_contains §4.1）
+                conditions.append(ci_contains(TorrentAuditLog.torrent_name, torrent_name))
 
             if operation_type:
                 conditions.append(TorrentAuditLog.operation_type == operation_type)

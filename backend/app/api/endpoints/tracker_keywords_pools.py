@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import logging
 from sqlalchemy import func
+from app.core.dialect_sql import ci_startswith
 
 from app.database import get_db
 from app.api.responseVO import CommonResponse
@@ -417,12 +418,11 @@ def prefix_match_preview(request_data: dict, _user=Depends(require_authenticated
         return _keyword_error("KEYWORD_PREFIX_REQUIRED", "前缀不能为空")
 
     try:
-        # 左匹配转义：先 \ 再 % 再 _（顺序关键，避免二次转义），尾追 % 做前缀匹配
-        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        # 大小写不敏感前缀匹配（双方言 ci_startswith，§4.1；autoescape 转义等价原手写链）
         query = db.query(TrackerKeywordConfig).filter(
             TrackerKeywordConfig.keyword_type == pool_type,
             TrackerKeywordConfig.dr == 0,
-            TrackerKeywordConfig.keyword.like(f"{escaped}%", escape="\\"),
+            ci_startswith(TrackerKeywordConfig.keyword, prefix),
         )
 
         keywords = query.all()

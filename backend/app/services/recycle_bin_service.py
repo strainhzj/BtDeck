@@ -15,6 +15,7 @@ from io import BytesIO
 
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
+from app.core.dialect_sql import ci_contains
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.core.platform_capabilities import require_capability
@@ -119,8 +120,7 @@ class RecycleBinService:
 
             # 添加搜索条件
             if search:
-                search_pattern = f"%{search}%"
-                query = query.filter(TorrentInfo.name.like(search_pattern))
+                query = query.filter(ci_contains(TorrentInfo.name, search))
 
             # 按删除时间倒序排列
             query = query.order_by(TorrentInfo.deleted_at.desc())

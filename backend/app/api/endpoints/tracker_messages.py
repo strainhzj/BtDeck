@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 import logging
 
+from app.core.dialect_sql import ci_contains
 from app.database import get_db
 from app.api.responseVO import CommonResponse
 from app.api.schemas.tracker_messages import (
@@ -50,7 +51,7 @@ def get_messages(
         query = db.query(TrackerMessageLog)
 
         if tracker_host:
-            query = query.filter(TrackerMessageLog.tracker_host.like(f"%{tracker_host}%"))
+            query = query.filter(ci_contains(TrackerMessageLog.tracker_host, tracker_host))
         if is_processed is not None:
             query = query.filter(TrackerMessageLog.is_processed == is_processed)
 

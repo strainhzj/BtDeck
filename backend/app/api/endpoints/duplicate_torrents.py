@@ -16,6 +16,7 @@ import uuid
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
+from app.core.dialect_sql import ci_contains
 from app.core.tracker_keyword_map import load_active_keyword_map
 from app.core.tracker_status_policy import FAILED_DISPLAY_TEXT, tracker_display_failed
 from app.database import get_db
@@ -197,7 +198,7 @@ async def get_duplicate_torrents(
 
         # 应用过滤条件
         if query.name_like:
-            base_conditions.append(TorrentInfo.name.like(f"%{query.name_like}%"))
+            base_conditions.append(ci_contains(TorrentInfo.name, query.name_like))
 
         if query.downloader_id:
             # 支持多选：逗号分隔的字符串
@@ -234,10 +235,10 @@ async def get_duplicate_torrents(
                 base_conditions.append(or_(*status_conditions))
 
         if query.category_like:
-            base_conditions.append(TorrentInfo.category.like(f"%{query.category_like}%"))
+            base_conditions.append(ci_contains(TorrentInfo.category, query.category_like))
 
         if query.tags_like:
-            base_conditions.append(TorrentInfo.tags.like(f"%{query.tags_like}%"))
+            base_conditions.append(ci_contains(TorrentInfo.tags, query.tags_like))
 
         if query.min_size is not None:
             base_conditions.append(TorrentInfo.size >= query.min_size)
