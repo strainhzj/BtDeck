@@ -205,3 +205,93 @@ class TestUserChangePassword:
             assert not security.verify_password(old_password, row.password)
         finally:
             db.close()
+
+
+class TestDownloaderSettingsBoolBinding:
+    """端点语义 4：保存设置布尔请求值归一（2026-11-07 双方言审计 B-1~B-4）。
+
+    该端点直接消费原始 JSON dict（无 Pydantic 校验）：enable_schedule /
+    override_local / 规则 enabled 发整型 1 时，旧实现将 int 直通 raw SQL 绑定
+    → PG 42804 DatatypeMismatch（boolean=integer 无此 operator；官方前端发
+    bool 不触发，第三方客户端踩雷）。bool() 归一后经 Boolean bind_processor
+    落 PG 原生 boolean。
+    """
+
+    async def test_save_with_integer_bool_payload(self, fresh_pg_db: str) -> None:
+        from types import SimpleNamespace
+
+        from sqlalchemy import text
+
+        from app.api.endpoints.downloader_settings import update_downloader_settings
+        from app.database import SessionLocal
+        from app.downloader.models import BtDownloaders
+
+        _init_baseline()
+        dl_id = f"pg_dl_bool_{uuid.uuid4().hex[:8]}"
+        db = SessionLocal()
+        try:
+            db.add(BtDownloaders(downloader_id=dl_id, nickname=f"bool-{uuid.uuid4().hex[:6]}", enabled=True))
+            db.commit()
+        finally:
+            db.close()
+
+        # 整型布尔载荷（旧实现此处 int 直通 → PG 42804；官方前端发 bool 不触发）
+        payload = {
+            "enableSchedule": 1,
+            "overrideLocal": 1,
+            "schedule_rules": [
+                {
+                    "start_time": "09:00",
+                    "end_time": "18:00",
+                    "weekdays": [0, 1, 2],
+                    "enabled": 1,
+                    "download": {"enabled": True, "speed_limit": 2048, "speed_unit": 0},
+                    "upload": {"enabled": True, "speed_limit": 256, "speed_unit": 0},
+                },
+                {
+                    "start_time": "18:00",
+                    "end_time": "23:00",
+                    "weekdays": [5, 6],
+                    "enabled": 0,
+                    "download": {"enabled": False, "speed_limit": 100, "speed_unit": 0},
+                    "upload": {"enabled": False, "speed_limit": 50, "speed_unit": 0},
+                },
+            ],
+        }
+
+        class _FakeRequest:
+            def __init__(self, body: dict) -> None:
+                self._body = body
+
+            async def json(self) -> dict:
+                return self._body
+
+        response = await update_downloader_settings(
+            _FakeRequest(payload),
+            dl_id,
+            SessionLocal(),
+            SimpleNamespace(username="pg-tester"),
+        )
+        assert response.code == "200", f"msg={response.msg}"
+
+        # 修复前：raw SQL 绑定 int → PG 42804 直接 500，以下读回不可达；
+        # 修复后：bool 归一经 Boolean 列落 PG 原生 boolean
+        db = SessionLocal()
+        try:
+            row = db.execute(
+                text("SELECT enable_schedule, override_local FROM downloader_settings WHERE downloader_id = :d"),
+                {"d": dl_id},
+            ).fetchone()
+            assert row.enable_schedule is True
+            assert row.override_local is True
+            rules = db.execute(
+                text(
+                    "SELECT enabled FROM speed_schedule_rules "
+                    "WHERE downloader_setting_id IN (SELECT id FROM downloader_settings WHERE downloader_id = :d) "
+                    "ORDER BY start_time"
+                ),
+                {"d": dl_id},
+            ).fetchall()
+            assert [r.enabled for r in rules] == [True, False]
+        finally:
+            db.close()

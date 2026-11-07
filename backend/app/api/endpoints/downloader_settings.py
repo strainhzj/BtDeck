@@ -484,7 +484,9 @@ async def update_downloader_settings(
                         "ul_speed_limit": rule_ul_speed_limit if ul_enabled else 0,
                         "ul_speed_unit": rule_ul_speed_unit,
                         "days_of_week": days_of_week_str,
-                        "enabled": rule.get("enabled", True),
+                        # bool 归一：原始 JSON dict 无 Pydantic 校验，int 1 直通会以 int 绑定
+                        # Boolean 列（PG 42804 DatatypeMismatch，2026-11-07 双方言审计 B-3/B-4）
+                        "enabled": bool(rule.get("enabled", True)),
                     }
                 )
 
@@ -595,11 +597,13 @@ async def update_downloader_settings(
                     "ul_speed_limit": global_ul_speed_limit,
                     "dl_speed_unit": global_dl_speed_unit,
                     "ul_speed_unit": global_ul_speed_unit,
-                    "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
+                    # bool 归一：int 1 直通会以 int 绑定 Boolean 列（PG 42804，审计 B-1/B-2；
+                    # 同函数 dl_enabled/ul_enabled 已有同款先例）
+                    "enable_schedule": bool(body_data.get("enableSchedule") or body_data.get("enable_schedule", False)),
                     "username": body_data.get("username"),
                     "password": encrypted_password,
                     "advanced_settings": advanced_settings_json,
-                    "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
+                    "override_local": bool(body_data.get("overrideLocal") or body_data.get("override_local", False)),
                     "updated_at": current_time,
                 },
             )
@@ -630,11 +634,12 @@ async def update_downloader_settings(
                     "ul_speed_limit": global_ul_speed_limit,
                     "dl_speed_unit": global_dl_speed_unit,
                     "ul_speed_unit": global_ul_speed_unit,
-                    "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
+                    # bool 归一（同上；审计 B-1/B-2 的 INSERT 分支）
+                    "enable_schedule": bool(body_data.get("enableSchedule") or body_data.get("enable_schedule", False)),
                     "username": body_data.get("username"),
                     "password": encrypted_password,
                     "advanced_settings": advanced_settings_json,
-                    "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
+                    "override_local": bool(body_data.get("overrideLocal") or body_data.get("override_local", False)),
                     "created_at": current_time,
                     "updated_at": current_time,
                 },

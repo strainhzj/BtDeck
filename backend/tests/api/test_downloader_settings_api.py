@@ -386,3 +386,51 @@ class TestNotFoundAndAuth:
             r = c.put(_url(), json={})
         assert r.status_code == 401
         assert r.json()["detail"]["code"] == "401"
+
+
+class TestBooleanIntegerPayload:
+    def test_boolean_fields_accept_integer_payload(self, client, db_session):
+        """整型 0/1 打 Boolean 列被归一为 bool（PG 42804 防线；SQLite 侧锁定归一语义）。
+
+        该端点直接消费原始 JSON dict（无 Pydantic 校验）：enableSchedule /
+        overrideLocal / 规则 enabled 发整型时，旧实现将 int 直通 raw SQL 绑定
+        （PG 上 boolean=integer 报 DatatypeMismatch；官方前端发 bool 不触发，
+        第三方客户端踩雷，2026-11-07 双方言审计 B-1~B-4）。
+        """
+        body = {
+            "enableSchedule": 1,
+            "overrideLocal": 1,
+            "schedule_rules": [
+                {
+                    "start_time": "09:00",
+                    "end_time": "18:00",
+                    "weekdays": [0, 1, 2],
+                    "enabled": 1,
+                    "download": {"enabled": True, "speed_limit": 2048, "speed_unit": 0},
+                    "upload": {"enabled": True, "speed_limit": 256, "speed_unit": 0},
+                },
+                {
+                    "start_time": "18:00",
+                    "end_time": "23:00",
+                    "weekdays": [5, 6],
+                    "enabled": 0,
+                    "download": {"enabled": False, "speed_limit": 100, "speed_unit": 0},
+                    "upload": {"enabled": False, "speed_limit": 50, "speed_unit": 0},
+                },
+            ],
+        }
+        r = client.put(_url(), json=body)
+        assert r.json()["code"] == "200"
+        row = db_session.execute(
+            text("SELECT enable_schedule, override_local FROM downloader_settings WHERE downloader_id='dl-1'")
+        ).fetchone()
+        # bool 归一后经 Boolean 列落库（SQLite 存 0/1；PG 存原生 boolean）
+        assert row[0] == 1 and row[1] == 1
+        rules = db_session.execute(
+            text(
+                "SELECT start_time, enabled FROM speed_schedule_rules "
+                "WHERE downloader_setting_id IN (SELECT id FROM downloader_settings WHERE downloader_id='dl-1') "
+                "ORDER BY start_time"
+            )
+        ).fetchall()
+        assert [(rules[0][0], int(rules[0][1])), (rules[1][0], int(rules[1][1]))] == [("09:00", 1), ("18:00", 0)]
