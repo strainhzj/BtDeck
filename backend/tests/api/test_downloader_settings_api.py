@@ -31,6 +31,7 @@ from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
 from app.models.downloader_settings import DownloaderSetting
+from app.models.enums import SpeedUnitEnum  # 富副本（带 from_value；模型列用裸 IntEnum 副本）
 from app.models.speed_schedule_rules import SpeedScheduleRule  # noqa: F401  (建表注册)
 
 URL = "/api/v1/downloaders/{dl_id}/settings"
@@ -154,7 +155,10 @@ class TestSaveAndReadback:
                 "FROM downloader_settings WHERE downloader_id='dl-1'"
             )
         ).fetchone()
-        assert (global_row[0], global_row[1], int(global_row[2]), int(global_row[3])) == (1024, 512, 0, 1)
+        # 速度单位现为枚举标签存储（PG speedunitenum 对齐）；读侧经 from_value 归一
+        assert (global_row[0], global_row[1]) == (1024, 512)
+        assert SpeedUnitEnum.from_value(global_row[2]).value == 0
+        assert SpeedUnitEnum.from_value(global_row[3]).value == 1
 
     @pytest.mark.parametrize("downloader_type", [0, 1])
     def test_schedule_save_then_apply_uses_global_speed(self, client, db_session, downloader_type):
@@ -398,6 +402,8 @@ class TestBooleanIntegerPayload:
         第三方客户端踩雷，2026-11-07 双方言审计 B-1~B-4）。
         """
         body = {
+            "dlSpeedLimit": 1024,
+            "dlSpeedUnit": 1,
             "enableSchedule": 1,
             "overrideLocal": 1,
             "schedule_rules": [
@@ -426,6 +432,14 @@ class TestBooleanIntegerPayload:
         ).fetchone()
         # bool 归一后经 Boolean 列落库（SQLite 存 0/1；PG 存原生 boolean）
         assert row[0] == 1 and row[1] == 1
+        # 速度单位写枚举标签（PG speedunitenum 原生枚举；int 直通 42804）
+        unit_row = db_session.execute(
+            text("SELECT dl_speed_unit, ul_speed_unit FROM downloader_settings WHERE downloader_id='dl-1'")
+        ).fetchone()
+        assert unit_row[0] == "MB_PER_SEC" and unit_row[1] == "KB_PER_SEC"
+        # GET 读侧经 from_value 归一回前端契约 int（兼容存量 int 与新标签）
+        got = client.get(_url()).json()["data"]
+        assert got["dl_speed_unit"] == 1 and got["ul_speed_unit"] == 0
         rules = db_session.execute(
             text(
                 "SELECT start_time, enabled FROM speed_schedule_rules "

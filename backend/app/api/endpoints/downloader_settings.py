@@ -271,8 +271,10 @@ def get_downloader_settings(
                 "downloader_id": result.downloader_id,
                 "dl_speed_limit": result.dl_speed_limit,
                 "ul_speed_limit": result.ul_speed_limit,
-                "dl_speed_unit": result.dl_speed_unit,
-                "ul_speed_unit": result.ul_speed_unit,
+                # 枚举列读归一：PG 原生 enum 读回为标签字符串（"KB_PER_SEC"），
+                # SQLite 存量为 int/数字串——from_value 全兼容，统一归一到 0/1 前端契约
+                "dl_speed_unit": SpeedUnitEnum.from_value(result.dl_speed_unit).value,
+                "ul_speed_unit": SpeedUnitEnum.from_value(result.ul_speed_unit).value,
                 "enable_schedule": bool(result.enable_schedule),
                 "username": result.username,
                 "password": None,  # 不返回密码
@@ -595,8 +597,10 @@ async def update_downloader_settings(
                     "downloader_id": downloader_id,
                     "dl_speed_limit": global_dl_speed_limit,
                     "ul_speed_limit": global_ul_speed_limit,
-                    "dl_speed_unit": global_dl_speed_unit,
-                    "ul_speed_unit": global_ul_speed_unit,
+                    # 枚举列写标签：raw text() 无类型信息，int 直通在 PG 报 42804
+                    # （speedunitenum 原生枚举，2026-11-07 实库测试抓出）；读侧 from_value 已容错
+                    "dl_speed_unit": SpeedUnitEnum(int(global_dl_speed_unit)).name,
+                    "ul_speed_unit": SpeedUnitEnum(int(global_ul_speed_unit)).name,
                     # bool 归一：int 1 直通会以 int 绑定 Boolean 列（PG 42804，审计 B-1/B-2；
                     # 同函数 dl_enabled/ul_enabled 已有同款先例）
                     "enable_schedule": bool(body_data.get("enableSchedule") or body_data.get("enable_schedule", False)),
@@ -632,8 +636,9 @@ async def update_downloader_settings(
                     "downloader_id": downloader_id,
                     "dl_speed_limit": global_dl_speed_limit,
                     "ul_speed_limit": global_ul_speed_limit,
-                    "dl_speed_unit": global_dl_speed_unit,
-                    "ul_speed_unit": global_ul_speed_unit,
+                    # 枚举列写标签（同上；实库测试抓出的活雷：官方前端发 int 也炸）
+                    "dl_speed_unit": SpeedUnitEnum(int(global_dl_speed_unit)).name,
+                    "ul_speed_unit": SpeedUnitEnum(int(global_ul_speed_unit)).name,
                     # bool 归一（同上；审计 B-1/B-2 的 INSERT 分支）
                     "enable_schedule": bool(body_data.get("enableSchedule") or body_data.get("enable_schedule", False)),
                     "username": body_data.get("username"),

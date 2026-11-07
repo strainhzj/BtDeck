@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from sqlalchemy import JSON, Integer, bindparam, select, text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.types import BigInteger, Boolean, DateTime, Float, String
 
@@ -151,6 +152,32 @@ def check_boolean_columns(source: sqlite3.Connection) -> List[str]:
             ).fetchone()[0]
             if bad:
                 errors.append(f"{table.name}.{col}: {bad} 行取值非 0/1（PG boolean 拒绝）")
+    return errors
+
+
+def check_enum_columns(source: sqlite3.Connection) -> List[str]:
+    """SQLEnum 列取值域校验（SQLite 源 int/数字串/标签须能归一为 PG 枚举标签）。"""
+    register_all_models()
+    errors: List[str] = []
+    for table in business_tables():
+        for col in table.columns:
+            if not isinstance(col.type, SQLEnum):
+                continue
+            enum_cls = getattr(col.type, "enum_class", None)
+            if enum_cls is None:
+                continue
+            bad_values: List[Any] = []
+            for (val,) in source.execute(
+                f"SELECT DISTINCT {col.name} FROM {table.name} WHERE {col.name} IS NOT NULL"
+            ).fetchall():
+                try:
+                    if isinstance(val, enum_cls) or (isinstance(val, str) and val in enum_cls.__members__):
+                        continue
+                    enum_cls(int(val))
+                except (TypeError, ValueError):
+                    bad_values.append(val)
+            if bad_values:
+                errors.append(f"{table.name}.{col}: 不可归一取值 {bad_values!r}（PG 枚举列拒绝）")
     return errors
 
 
@@ -310,6 +337,7 @@ def precheck(
             return errors, [], version
         errors, warnings = check_json_contract(conn, auto_wrap=auto_wrap)
         errors += check_boolean_columns(conn)
+        errors += check_enum_columns(conn)
         errors += check_datetime_text(conn)
         errors += check_search_templates(conn)
         errors += check_external_assets(conn, asset_paths or {})
@@ -337,9 +365,10 @@ def tool_head() -> str:
 
 
 def row_transform(table: Any, row: sqlite3.Row) -> Dict[str, Any]:
-    """按列类型变换 SQLite 原生值为 PG 安全绑定值（Boolean int→bool；DateTime 文本→datetime）。"""
+    """按列类型变换 SQLite 原生值为 PG 安全绑定值（Boolean int→bool；DateTime 文本→datetime；SQLEnum 值→标签）。"""
     out: Dict[str, Any] = {}
     for col in table.columns:
+        enum_cls = getattr(col.type, "enum_class", None) if isinstance(col.type, SQLEnum) else None
         val = row[col.name] if col.name in row.keys() else None
         if val is None:
             out[col.name] = None
@@ -354,6 +383,19 @@ def row_transform(table: Any, row: sqlite3.Row) -> Dict[str, Any]:
             if col.type.timezone and parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             out[col.name] = parsed
+        elif isinstance(col.type, SQLEnum) and enum_cls is not None:
+            # 枚举列（原生 PG enum）：SQLite 源可能存 IntEnum 值/数字串/标签名（历史 raw SQL
+            # 直写 int）——统一归一到成员名标签（PG 只收标签；int 直发 42804）。
+            # 注意不依赖模型侧辅助方法（部分枚举副本无 from_value），纯通用归一
+            if isinstance(val, enum_cls):
+                out[col.name] = val.name
+            elif isinstance(val, str) and val in enum_cls.__members__:
+                out[col.name] = val
+            else:
+                try:
+                    out[col.name] = enum_cls(int(val)).name
+                except (TypeError, ValueError):
+                    out[col.name] = val  # 末路透传：交给预检 check_enum_columns 报告
         else:
             out[col.name] = val
     return out

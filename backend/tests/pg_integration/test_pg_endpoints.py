@@ -222,7 +222,10 @@ class TestDownloaderSettingsBoolBinding:
 
         from sqlalchemy import text
 
-        from app.api.endpoints.downloader_settings import update_downloader_settings
+        from app.api.endpoints.downloader_settings import (
+            get_downloader_settings,
+            update_downloader_settings,
+        )
         from app.database import SessionLocal
         from app.downloader.models import BtDownloaders
 
@@ -237,6 +240,8 @@ class TestDownloaderSettingsBoolBinding:
 
         # 整型布尔载荷（旧实现此处 int 直通 → PG 42804；官方前端发 bool 不触发）
         payload = {
+            "dlSpeedLimit": 1024,
+            "dlSpeedUnit": 1,
             "enableSchedule": 1,
             "overrideLocal": 1,
             "schedule_rules": [
@@ -279,11 +284,16 @@ class TestDownloaderSettingsBoolBinding:
         db = SessionLocal()
         try:
             row = db.execute(
-                text("SELECT enable_schedule, override_local FROM downloader_settings WHERE downloader_id = :d"),
+                text(
+                    "SELECT enable_schedule, override_local, dl_speed_unit "
+                    "FROM downloader_settings WHERE downloader_id = :d"
+                ),
                 {"d": dl_id},
             ).fetchone()
             assert row.enable_schedule is True
             assert row.override_local is True
+            # 枚举列写入标签（int 直通在 PG speedunitenum 上 42804——本测试首跑在 CI 抓出）
+            assert row.dl_speed_unit == "MB_PER_SEC"
             rules = db.execute(
                 text(
                     "SELECT enabled FROM speed_schedule_rules "
@@ -295,3 +305,9 @@ class TestDownloaderSettingsBoolBinding:
             assert [r.enabled for r in rules] == [True, False]
         finally:
             db.close()
+
+        # GET 读侧经 from_value 归一回前端契约 int（兼容 PG 标签与存量 int）
+        got = await get_downloader_settings(dl_id, SessionLocal(), None)
+        assert got.code == "200", f"msg={got.msg}"
+        assert got.data["dl_speed_unit"] == 1
+        assert got.data["ul_speed_unit"] == 0

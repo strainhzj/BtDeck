@@ -191,6 +191,25 @@ class TestRowTransform:
         assert out["created_at"].year == 2026  # 文本 → datetime
         assert out["id"] == 1
 
+    def test_transform_enum_int_to_label(self) -> None:
+        from app.core.model_registry import register_all_models
+        from app.database import Base
+
+        register_all_models()
+        settings = Base.metadata.tables["downloader_settings"]
+
+        class _FakeRow:
+            keys = lambda self: ["id", "dl_speed_unit", "ul_speed_unit"]  # noqa: E731
+
+            def __getitem__(self, k: str) -> Any:
+                return {"id": 1, "dl_speed_unit": 1, "ul_speed_unit": 0}[k]
+
+        out = row_transform(settings, _FakeRow())
+        # SQLEnum 列：SQLite 源 int（历史 raw SQL 直写）→ PG 原生枚举标签
+        # （int 直发 42804 DatatypeMismatch，2026-11-07 双方言收口）
+        assert out["dl_speed_unit"] == "MB_PER_SEC"
+        assert out["ul_speed_unit"] == "KB_PER_SEC"
+
 
 class TestImportAndVerify:
     """导入 + 检查点 + 对账编排（SQLite 替身目标，SQLAlchemy Core 引擎无关路径）。"""
@@ -281,7 +300,6 @@ class TestImportAndVerify:
 def test_checkpoint_failure_rolls_back_import(tmp_path, monkeypatch):
     """检查点失败时不得留下已提交数据，否则 resume 重插会撞主键。"""
     from sqlalchemy import Column, Integer, MetaData, Table, create_engine, select, func
-    from app.core import pg_baseline
 
     table = Table("sample", MetaData(), Column("id", Integer, primary_key=True))
     source = sqlite3.connect(":memory:")
@@ -300,9 +318,7 @@ def test_checkpoint_failure_rolls_back_import(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "set_import_state", fail)
     try:
         with pytest.raises(RuntimeError, match="checkpoint failure"):
-            import_table(
-                source, target, table, ctx=_test_ctx(), migration_id=_TEST_ATTEMPT, source_digest="digest"
-            )
+            import_table(source, target, table, ctx=_test_ctx(), migration_id=_TEST_ATTEMPT, source_digest="digest")
         with target.connect() as conn:
             assert conn.execute(select(func.count()).select_from(table)).scalar() == 0
     finally:
