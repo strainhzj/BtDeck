@@ -307,7 +307,7 @@ class TestDownloaderSettingsBoolBinding:
             db.close()
 
         # GET 读侧经 from_value 归一回前端契约 int（兼容 PG 标签与存量 int）
-        got = await get_downloader_settings(dl_id, SessionLocal(), None)
+        got = get_downloader_settings(dl_id, SessionLocal(), None)
         assert got.code == "200", f"msg={got.msg}"
         assert got.data["dl_speed_unit"] == 1
         assert got.data["ul_speed_unit"] == 0
