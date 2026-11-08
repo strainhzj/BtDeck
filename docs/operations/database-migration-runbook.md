@@ -14,7 +14,7 @@
 | 2. 启动 | 面板入口→进入维护模式 | 业务写冻结（PREPARING→DRAINING→FROZEN）；进度页 `/maintenance` 登录维护账号 |
 | 3. 导入 | IMPORTING/VERIFYING | 无人工动作；进度 done/total+phase 徽标；**卡 NEEDS_CREDENTIALS** → §3 重输 |
 | 4. 校验 | VERIFYING/READY_TO_SWITCH | 只读等待；任一差异自动失败进入回退决策（§5） |
-| 5. 提交 | switch | B=应用托管 / A=env 交接（面板预览 plan.steps）；提交即持久（不可撤销，见 §5 决策树） |
+| 5. 提交 | switch | B=维护页 READY 卡片「提交切换」按钮（二次确认后 POST，固定 B；✨2026-11-08 UI 补口）/ A=env 交接（面板预览 plan.steps，无 UI 执行入口）；提交即持久（不可撤销，见 §5 决策树） |
 | 6. 重启 | RESTART_PENDING | 托管环境（systemd/docker）+ `BTD_MIGRATION_MANAGED_RESTART=1` 自动退出；否则**手动重启进程**；未重启前数据只读安全 |
 | 7. 激活 | 重启后自动 | 目标 ACK → 本地 `ACTIVATED_ACK` → 正常启动（无需人工确认；失败保持维护并显示原因） |
 

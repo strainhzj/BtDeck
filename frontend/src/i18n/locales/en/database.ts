@@ -187,7 +187,7 @@ export const database = {
       ready: 'Ready',
       notReady: 'Not ready',
       readyToSwitchTitle: 'Waiting to commit / waiting for restart',
-      readyToSwitchHint: 'The target database is ready. Switch commit is not executed on this page: finish the commit in the settings panel or the follow-up maintenance flow, then restart the service as prompted.',
+      readyToSwitchHint: 'The target database is ready. You can submit the switch below (the commit is persistent and irreversible); the service will then restart per the managed/manual restart policy.',
       needsCredentialsTitle: 'Credential re-entry required',
       needsCredentialsHint: 'The maintenance flow cannot decrypt the stored target credentials after restart. Re-enter the originally bound target information to continue (temporarily switching targets is not supported).',
       targetHost: 'Target host',
@@ -205,7 +205,13 @@ export const database = {
       submitCredentials: 'Submit credentials',
       submittingCredentials: 'Submitting...',
       credentialsFailed: 'Failed to submit credentials. Please try again later.',
-      credentialsSubmitted: 'Credentials accepted. Status will update on the next poll.'
+      credentialsSubmitted: 'Credentials accepted. Status will update on the next poll.',
+      switchSubmit: 'Submit switch',
+      switchSubmitting: 'Submitting…',
+      switchConfirmTitle: 'Confirm switch commit?',
+      switchConfirmText: 'The commit is persistent and irreversible: the managed config will be published and the service enters the pending-restart state, then restarts to complete activation. Commit with the current attempt?',
+      switchSubmitted: 'Switch committed. The service is now pending restart.',
+      switchFailed: 'Failed to submit the switch. Please try again later.'
     },
     restart: {
       title: 'Restart Pending',

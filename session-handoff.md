@@ -1,3 +1,9 @@
+## 2026-11-07（续三）交接：生产 23ecd1c 上线（LIKE 收口+alembic 守卫；用户批准 sqlite 中间态）
+
+- **生产状态**：23ecd1c 上线（锚点 backup-pre-23ecd1c=a67565b），backend 以 DB_TYPE=sqlite 运行老 app.db 全量真实数据（用户有意批准的中间态）；postgres 容器拉起但不被消费。⚠ 登录用 sqlite 里的历史密码（PG 模式改的密码留在 PG 库）；回 PG 走应用内迁移（管线枚举分支已收口）。
+- **本批内容**：模糊搜索 9 处迁 ci_*（含 duplicate_torrents 3 处审计误标）+ alembic 双方言禁例守卫代码化（tests/core/test_alembic_dialect_guard.py，历史 9 文件冻结+腐化自检+金丝雀变异验证）。CI 42379115320 全绿。
+- **部署波折**：首轮预检门拦停（远端 compose DB_TYPE 被用户改 sqlite）——预检门按设计工作；用户批准后续跑成功。
+
 ## 2026-11-07（续二）交接：生产部署 a67565b 完成（双方言修复批上线，七项验证全过）
 
 - **部署**（Hermes run_a01e0f53466f484288046dbdd1fbfd6c，构建 17.4min+部署 26s）：a67565b 干净检出→双 tar sha256 3d84abd6…/412dfda9…→仅换镜像，compose 未触碰。七项验证全过（三容器 healthy、gitSha 全 40 位、前端 200、deployment-target 401、pg_isready、compose 一致、日志无 ERROR）。
@@ -6031,3 +6037,10 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - 推送范围：`9318adf..3c7d6c0`（35 提交），含合并提交 dbe7f65（双亲 9318adf+53119be）、双语化 213bafa、reasonCode 契约 0314687、P7 证据刷新 3c7d6c0。
 - 直连 github.com 推送成功（本会话未需镜像）。
 - 远端 CI（regression.yml：后端 pytest+覆盖率 / 前端 typecheck+jest+build / lint_btdeck 架构检查）建议关注首轮结果；本地等效门禁已全绿。
+
+## 2026-11-08 交接：deployment-target 门控放宽修复 + 生产部署 83c8437 完成
+
+- **修复**：deployment-target available 死 gate 在 DB_TYPE=postgresql→放宽为「DB_TYPE=postgresql 或 os.environ 显式 DB_HOST」（存量 SQLite 旧库迁移场景自动回填恢复）；提交 83c8437 已推 origin/dev，CI run 42382645388 全绿。
+- **部署**：Hermes run_ffae3c8b96dc4de497281ade0a22e8de，构建 1596s（前端 fork-ts-checker 拉长，非卡死）→双 tar（backend 38cf6ecc…/frontend d2cb28bf…，manifest 不变=前端仅注释）→unraid 部署 37s；七项验证全过；锚点 backup-pre-83c8437=23ecd1c 双镜像。
+- **生产状态**：83c8437=origin/dev HEAD 严格一致；backend 仍 DB_TYPE=sqlite 跑老 app.db（用户批准中间态），postgres healthy 未被消费。**用户下一步：设置→数据库迁移页应能看到 compose PG 参数自动回填（本批修复的功能），从旧库发起 sqlite→pg 即正道切换**。
+- **待办遗留**：远端 compose 凭据行 `${DB_PASSWORD:-btdeck123}` 兜底待强化（ALTER USER→.env→`:?`→重启，回 PG 前做）；dashboard-redesign WIP 仍在工作区未提交（StatusDonutCard/两 spec/PLANS/design-mockups）。

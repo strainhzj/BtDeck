@@ -8857,3 +8857,27 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：test_database_deployment_target.py **14 例全绿**（11 存量+3 新增：sqlite+env host 回填——setenv 过门+setattr 对齐断言双管，ENV_PASSWORD 不入响应；空白 DB_HOST 不可用锚定 .strip() 分支；无密码态回填）；test_sqlite_unavailable 补 delenv 防残留；test_database_endpoints.py 11 例全绿；black/flake8/mypy 净；前端 database-api/database-settings/maintenance-page 三 spec **45 例全绿**；npm run lint 仅 3 warning 均为工作区 dashboard 在途文件（SiteBarsCard.vue/dashboard-grid.spec.ts，非本批触碰）净增 0。
 - **文档**：roadmap backend/api README database-migration 行追加门控语义；feature_list.json evidence 增 `deployment_target_gate_relax`。
 - **未提交**（待用户要求）；unraid 生产部署未做（待用户明确是否随本批重新部署）。
+
+## 2026-11-08（续）：生产部署 83c8437（deployment-target 门控放宽上线，七项验证全过）
+
+- **CI**：run 42382645388 全绿（Backend pytest 8m55s / Frontend 3m13s / PG integration 实库 1m9s；regen-locks 按需未触发）。
+- **部署**（Hermes run_ffae3c8b96dc4de497281ade0a22e8de）：/root/BtDeck 干净检出 83c8437（porcelain 空）→ --no-cache --quick（构建 1596s ≈26.6min，前端 vite 后 fork-ts-checker 类型检查拉长，CPU 活跃非卡死）→ 身份门双镜像 83c84375 dirty=False G1 过 → 双 tar（backend 337,144,832B sha256 38cf6ecc… / frontend 195,180,032B sha256 d2cb28bf…；frontend manifest 仍 d025b95f…——本批前端仅注释）→ 8401 驻留三文件 CURL 200 → unraid wget -O 逐字节 sha256 双侧核对 → .btdeck-remote-deploy.sh rc=0 全程 37s → 8401 已关（PORT_8401_CLOSED）。
+- **七项验证全过**：①三容器 Up healthy ②/health/live gitSha 全 40 位+build.status=ok+alembicHead e9f0a1b2c3d4 无迁移 ③前端 /health 200 ④deployment-target 无 token 401 ⑤pg_isready accepting ⑥compose sha256 前后均 60f3caee…909b 未触碰 ⑦backend 日志 ERROR/Traceback=0。双镜像 OCI revision label 均=83c84375…。
+- **回滚锚点**：btdeck-{backend,frontend}:backup-pre-83c8437（=旧生产 23ecd1c 双镜像 af88f95f/08eea268）；既有锚点链全保留。
+- **生产状态注记**：延续用户批准的中间态——backend 以 DB_TYPE=sqlite 跑老 app.db 全量真实数据（control-ready databaseBackend=sqlite），postgres 容器随 depends_on 拉起且 healthy 但 backend 未连；生产=origin/dev HEAD（83c8437）严格一致。本批修复恰好服务当前场景：迁移页现在可从 compose env（DB_HOST=postgres 仍在容器 env）自动回填 PG 目标，存量 SQLite 切 PG 正道就绪。
+- **记录纪律**：本条目留存工作区（生产=HEAD 一致），下次实质提交一并入仓。
+
+## 2026-11-07（续三）：生产部署 23ecd1c（LIKE 收口+守卫；经用户批准以 sqlite 中间态运行）
+
+- **首跑预检门拦停**：远端 compose DB_TYPE 已被用户有意改为 sqlite（sha 60f3caee…，非基线 93f7134e…）——预检门按设计零变更停手并请示，用户批准按新基线续跑。
+- **部署完成**（run_d650240f2d6f411c93119ea5b2f9e538，沿用上轮构建产物 backend tar sha256 2229229d…/frontend 9df79289…，构建 14.8min）：锚点 backup-pre-23ecd1c（=a67565b：944bb0b4ae6b/67dd13d72954）→ wget 三文件核对 → remote-deploy 36s → 七项验证全过（三容器 healthy、gitSha 全 40 位、前端 200、pg_isready 仅证容器健康、compose 60f3caee… 前后一致、日志无 ERROR、alembicHead e9f0a1b2c3d4 照报）。
+- **生产中间态（用户批准）**：backend 以 DB_TYPE=sqlite 运行老 app.db 全量真实数据；postgres 容器随 depends_on 拉起但不被消费。⚠ 注意：PG 模式期间改的密码留在 PG 库——sqlite 模式登录用旧 app.db 里的历史密码；回 PG 走应用内迁移（管线 SQLEnum 分支已收口，speed_unit int 可安全搬）。
+- **本批内容**（23ecd1c = 70a2e6b + 23ecd1c）：①模糊搜索 9 处迁 dialect_sql ci_*（含 duplicate_torrents 3 处审计误标"已收口"实为裸 like）②alembic 双方言禁例 checklist 代码化守卫（tests/core/test_alembic_dialect_guard.py：sqlite 专有语法/sa.text 布尔默认/SET-WHERE 布尔 int 字面量四规则；列名动态收集；历史 9 文件冻结+名单腐化自检；金丝雀变异验证双向通过）③CI 首跑揪出 audit 用例钉住旧通配符注入语义（docstring 既有预告条款），随迁移更新为字面量语义+大小写不敏感断言。CI run 42379115320 全绿（12m6s）。
+
+## 2026-11-08（续二）：迁移 switch 提交 UI 补口（维护页 READY 卡片提交按钮）
+
+- **缺口**：用户生产走 sqlite→pg 受管迁移到 READY_TO_SWITCH 后无 UI 可提交——`switchDatabase`（api/database.ts L340）全仓无调用方；维护页 READY 态只读等待且提示"在设置面板完成提交"，但设置面板普通令牌在维护态被鉴权分派拒（双向不可互用），提示不可达；用户只能裸 curl（维护令牌+手工 CAS）。
+- **修复**（纯前端+i18n+测试+文档，后端零改动；子代理对抗审查先行，结论"需修改后可行"全采纳——含方案自错纠正：maintenanceRequest 参数 method-first、$confirm 取消路径单独 await 不落错误分支、行内 switchOk/switchError 反馈替代 $message（该页零 toast 设计）、TS 空值守卫照 submitCredentials 先例、存量 L302 对立用例重写）：维护页 READY 卡片加「提交切换」danger 按钮——二次确认后 POST /database/migration/switch（SwitchPayload snake_case CAS + mode 固定 'B'，A=env 交接全仓无执行入口为设计如此；后端不校验 mode/attempt 种类一致性已注释留痕）；成功本地乐观置位 phase='committed'（覆盖托管重启后 refreshAll 静默失败窗口）+ void refreshAll；switchSubmitting 前置防双击；restartPending 按钮禁用。i18n zh/en 各 +6 键 + readyToSwitchHint 文案更新。
+- **验证**：maintenance-page.spec 重写 1+新增 4 例全绿（按钮渲染仅 GET/确认框参数+载荷断言+乐观置位+刷新/取消不发请求不报错/409 行内后端 msg/restartPending 禁用态）；i18n-message-parity + i18n-leftover-guard 双门禁绿；mobile-maintenance 8 例绿；database 域其余 4 套 55 例绿零回归；npm run typecheck 净；npm run lint 仍仅 dashboard 存量 3 warning 净增 0。
+- **文档**：roadmap frontend/views README 两行修正既有漂移（maintenance 行删"取消/A·B 切换操作"不实描述+加提交能力+复测 976 行；DatabasePanel 行修正"switchDatabase 双确认"不实描述）+ database-setup.md 维护页能力句 + runbook §1 阶段5 UI 入口。
+- **未提交**（待用户要求；随下次部署上线后用户迁移即可全程 UI 操作）。

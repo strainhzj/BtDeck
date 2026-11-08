@@ -185,7 +185,7 @@ export const database = {
       ready: '就绪',
       notReady: '未就绪',
       readyToSwitchTitle: '等待提交 / 等待重启',
-      readyToSwitchHint: '目标库已就绪。切换提交不在本页执行：请在设置面板或后续维护流程完成提交，并按提示重启服务。',
+      readyToSwitchHint: '目标库已就绪。可在下方提交切换（提交即持久生效、不可撤销）；提交后服务将按托管/手动策略重启。',
       needsCredentialsTitle: '需要重新输入凭据',
       needsCredentialsHint: '维护流程重启后无法解密已落盘的目标凭据，请重新输入原绑定目标库信息以继续（不支持临时更换目标）。',
       targetHost: '目标主机',
@@ -203,7 +203,13 @@ export const database = {
       submitCredentials: '提交凭据',
       submittingCredentials: '提交中…',
       credentialsFailed: '提交凭据失败，请稍后重试。',
-      credentialsSubmitted: '凭据已受理，状态将随轮询更新。'
+      credentialsSubmitted: '凭据已受理，状态将随轮询更新。',
+      switchSubmit: '提交切换',
+      switchSubmitting: '提交中…',
+      switchConfirmTitle: '确认提交切换？',
+      switchConfirmText: '提交即持久生效且不可撤销：将写入受管配置并进入待重启状态，随后服务重启以完成激活。确认以当前迁移单号提交？',
+      switchSubmitted: '切换已提交，服务进入待重启状态。',
+      switchFailed: '提交切换失败，请稍后重试。'
     },
     restart: {
       title: '待重启生效',

@@ -7,7 +7,9 @@
  * 3. NEEDS_CREDENTIALS 呈现凭据重输表单，提交载荷为 snake_case
  *    attempt_id/password/target（经维护通道 POST /database/migration/credentials）；
  * 4. 进度条显示 done/total，100% 不掩盖未激活：phase 徽标常显；
- * 5. READY_TO_SWITCH 只读等待提示，本页不发起任何 switch 提交（无 POST）；
+ * 5. READY_TO_SWITCH 渲染提交切换按钮（danger）：二次确认后 POST snake_case
+ *    CAS 载荷 + mode 'B'（经维护通道）；取消确认不发请求；成功后乐观置位
+ *    committed 并刷新；失败行内呈现后端 msg；restartPending 时按钮禁用；
  * 6. restartPending 显示「配置已提交，需手动重启」提示文案；
  * 7. 维护会话过期（subscribeAuthExpired 回调）：回登录区、清内存 token、
  *    不弹全局 toast、不触碰普通会话；
@@ -29,6 +31,7 @@ import {
   subscribeAuthExpired
 } from '@/utils/maintenance-client'
 import type { MigrationStatusData, ReadinessData } from '@/api/database'
+import { ApiError } from '@/types/api'
 
 jest.mock('@/utils/maintenance-client', () => ({
   maintenanceLogin: jest.fn(),
@@ -72,6 +75,11 @@ interface PageVm {
   login: () => Promise<void>
   submitCredentials: () => Promise<void>
   refreshAll: () => Promise<void>
+  migration: MigrationStatusData | null
+  switchSubmitting: boolean
+  switchOk: boolean
+  switchError: string | null
+  onSwitchSubmit: () => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +143,12 @@ const credentialsResultFixture: MigrationStatusData = makeMigration({
   phase: 'importing',
   needsCredentials: false
 })
+
+/** POST /migration/switch 成功回执夹具（prepared + commit 两段，形状宽松） */
+const switchResultFixture: Record<string, unknown> = {
+  prepared: { attemptId: 'att-100', mode: 'B', commitPhase: 'COMMITTED' },
+  commit: { attemptId: 'att-100', commitPhase: 'COMMITTED', configPublished: true, restartScheduled: false, restartHint: null, generation: 'gen-1' }
+}
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -299,7 +313,7 @@ describe('MaintenancePage', () => {
     expect(wrapper.text()).toContain('导入中')
   })
 
-  it('READY_TO_SWITCH：只读等待提示，不发起任何 switch 提交（仅 GET）', async() => {
+  it('READY_TO_SWITCH：渲染提交切换按钮，提交前仅 GET', async() => {
     mockGetToken.mockReturnValue('mtk-live')
     migrationFixture = makeMigration({ phase: 'ready_to_switch', detail: undefined })
     readinessFixture = makeReadiness({ phase: 'ready_to_switch', readyToSwitch: true })
@@ -308,11 +322,118 @@ describe('MaintenancePage', () => {
     activeWrapper = wrapper
 
     expect(wrapper.text()).toContain('等待提交 / 等待重启')
-    expect(wrapper.text()).toContain('不在本页执行')
-    // 就绪徽标
+    expect(wrapper.text()).toContain('目标库已就绪')
+    expect(wrapper.text()).not.toContain('不在本页执行')
+    // 就绪徽标 + 提交按钮
     expect(wrapper.text()).toContain('就绪')
-    // 本页只读 + 凭据重输，不出现本地 switch 执行
+    expect(wrapper.text()).toContain('提交切换')
     expect(mockRequest.mock.calls.every(call => call[0] === 'get')).toBe(true)
+  })
+
+  it('提交切换：二次确认后 POST snake_case CAS+mode B，成功后乐观置位 committed 并刷新', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    migrationFixture = makeMigration({ phase: 'ready_to_switch', detail: undefined })
+    readinessFixture = makeReadiness({ phase: 'ready_to_switch', readyToSwitch: true })
+    mockRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/switch') return switchResultFixture as never
+      if (url === '/database/migration/status') return migrationFixture as never
+      if (url === '/database/target-readiness') return readinessFixture as never
+      if (url === '/database/deployment-target') return deploymentTargetFixture as never
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+    const confirmSpy = jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    const refreshSpy = jest.spyOn(vm, 'refreshAll').mockResolvedValue()
+
+    await vm.onSwitchSubmit()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // 确认框：正文+标题+warning 档位
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('不可撤销'),
+      '确认提交切换？',
+      expect.objectContaining({ type: 'warning' })
+    )
+    const switchCall = mockRequest.mock.calls.find(call => call[1] === '/database/migration/switch')
+    expect(switchCall).toBeDefined()
+    expect(switchCall?.[0]).toBe('post')
+    expect(switchCall?.[2]).toEqual({
+      attempt_id: 'att-100',
+      epoch: 'ep-7',
+      state_version: 2,
+      mode: 'B'
+    })
+    // 成功回执 + 本地乐观置位（不依赖刷新成功）+ 触发刷新
+    expect(wrapper.text()).toContain('切换已提交')
+    expect(vm.migration?.phase).toBe('committed')
+    expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('提交切换：取消确认（$confirm reject）不发 POST、不报错', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    migrationFixture = makeMigration({ phase: 'ready_to_switch', detail: undefined })
+    readinessFixture = makeReadiness({ phase: 'ready_to_switch', readyToSwitch: true })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+    jest.spyOn(wrapper.vm, '$confirm').mockRejectedValue('cancel')
+
+    await vm.onSwitchSubmit()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(mockRequest.mock.calls.some(call => call[1] === '/database/migration/switch')).toBe(false)
+    expect(vm.switchError).toBeNull()
+    expect(vm.switchOk).toBe(false)
+  })
+
+  it('提交切换：业务失败（409 未就绪）行内呈现后端 msg', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    migrationFixture = makeMigration({ phase: 'ready_to_switch', detail: undefined })
+    readinessFixture = makeReadiness({ phase: 'ready_to_switch', readyToSwitch: true })
+    mockRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/switch') {
+        throw new ApiError('attempt 未就绪（phase=committed；workerError=无）', { code: '409', httpStatus: 200 })
+      }
+      if (url === '/database/migration/status') return migrationFixture as never
+      if (url === '/database/target-readiness') return readinessFixture as never
+      if (url === '/database/deployment-target') return deploymentTargetFixture as never
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+
+    await vm.onSwitchSubmit()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(vm.switchOk).toBe(false)
+    expect(vm.switchError).toContain('attempt 未就绪')
+    expect(wrapper.text()).toContain('attempt 未就绪')
+    expect(vm.switchSubmitting).toBe(false)
+  })
+
+  it('提交切换：restartPending 组合下按钮禁用（防重提交）', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    migrationFixture = makeMigration({ phase: 'ready_to_switch', restartPending: true, detail: undefined })
+    readinessFixture = makeReadiness({ phase: 'ready_to_switch', readyToSwitch: true })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+
+    // 重启提示块与 READY 卡共存；按钮渲染但禁用（后端就绪门兑底幂等，前端防重提交）
+    expect(wrapper.text()).toContain('待重启生效')
+    const btn = wrapper.findAll('button').wrappers.find(b => b.text().includes('提交切换'))
+    expect(btn).toBeDefined()
+    expect(btn?.attributes('disabled')).toBeDefined()
   })
 
   it('restartPending：显示「配置已提交，需手动重启」提示文案', async() => {

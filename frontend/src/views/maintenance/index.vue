@@ -75,10 +75,23 @@
             <el-progress :percentage="progressPercent" :stroke-width="10" />
           </div>
 
-          <!-- READY_TO_SWITCH：本页只读等待（switch 提交在设置面板 / 后续流程执行） -->
+          <!-- READY_TO_SWITCH：本页提交切换（2026-11-08 UI 补口；提交即持久不可撤销，
+               后端就绪门 409 兑底，通道=maintenanceRequest 维护令牌） -->
           <div v-if="readyToSwitch" class="maintenance-block maintenance-block-info">
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.readyToSwitchTitle') }}</h3>
             <p class="maintenance-hint">{{ $t('database.maintenance.migration.readyToSwitchHint') }}</p>
+            <p v-if="switchOk" class="maintenance-ok">{{ $t('database.maintenance.migration.switchSubmitted') }}</p>
+            <el-button
+              type="danger"
+              :loading="switchSubmitting"
+              :disabled="restartPending"
+              @click="onSwitchSubmit"
+            >
+              {{ switchSubmitting
+                ? $t('database.maintenance.migration.switchSubmitting')
+                : $t('database.maintenance.migration.switchSubmit') }}
+            </el-button>
+            <p v-if="switchError" class="maintenance-warn">{{ switchError }}</p>
           </div>
 
           <!-- NEEDS_CREDENTIALS：凭据重输表单（载荷 snake_case attempt_id/password/target） -->
@@ -207,7 +220,9 @@ import type {
   DeploymentTargetData,
   MigrationStatusData,
   PgFormInput,
-  ReadinessData
+  ReadinessData,
+  SwitchCommitData,
+  SwitchPayload
 } from '@/api/database'
 import { ApiError } from '@/types/api'
 
@@ -313,7 +328,7 @@ interface CredFormDraft {
  *   /database/migration/status 与 /target-readiness（普通 request 通道在维护态
  *   会被 401/503 拦截，这里手动映射信封 data 为 @/api/database 类型）；
  *   NEEDS_CREDENTIALS 显示凭据重输表单（snake_case attempt_id/password/target）；
- *   READY_TO_SWITCH 只读等待提示（switch 提交不在本页执行）；
+ *   READY_TO_SWITCH 本页提交切换（POST /migration/switch，固定 B；提交即持久不可撤销）；
  * - 提示区：restartPending → 手动重启文案。
  */
 @Component({ name: 'MaintenancePage' })
@@ -345,6 +360,9 @@ export default class extends Vue {
   private credSubmitting = false
   private credError: string | null = null
   private credSuccess = false
+  private switchSubmitting = false
+  private switchOk = false
+  private switchError: string | null = null
 
   // A2 部署环境目标回填（维护通道拉取；密码本体不出服务端）
   private deploymentTarget: DeploymentTargetData | null = null
@@ -493,7 +511,7 @@ export default class extends Vue {
     return this.stateCode === 'NEEDS_CREDENTIALS'
   }
 
-  /** READY_TO_SWITCH：只读等待提示（本页不执行 switch 提交） */
+  /** READY_TO_SWITCH：可提交切换（switchCommit 走 maintenanceRequest 通道，提交即持久不可撤销） */
   get readyToSwitch(): boolean {
     if (this.readiness && this.readiness.readyToSwitch) return true
     return this.phaseCode === 'ready_to_switch' || this.stateCode === 'READY_TO_SWITCH'
@@ -716,6 +734,53 @@ export default class extends Vue {
       schema: this.credForm.schema.trim() || 'public',
       sslmode: this.credForm.sslmode,
       ssl_root_cert: this.verifySslMode ? this.credForm.sslRootCert.trim() : null
+    }
+  }
+
+  /** READY_TO_SWITCH 提交切换（POST /migration/switch；提交即持久不可撤销）。
+   * mode 固定 'B'：本页仅服务受管迁移（A=env 交接全仓无执行入口，设计如此）；
+   * 后端不校验 mode 与 attempt 种类一致性，A 轨未来接线时本按钮须 mode 化。
+   * CAS 载荷取自最近一次轮询 status（epoch/state_version 后端 switch 门不消费，
+   * 但保持契约完整）；成功后本地乐观置位 phase='committed'（托管重启后
+   * refreshAll 可能静默失败，按钮随 phase 变 committed 消失，不依赖刷新成功） */
+  private async onSwitchSubmit(): Promise<void> {
+    if (this.switchSubmitting) return
+    const attemptId = this.migration?.attemptId || ''
+    if (!attemptId) {
+      this.switchError = this.$t('database.maintenance.migration.noAttempt').toString()
+      return
+    }
+    this.switchSubmitting = true
+    try {
+      // 二次确认单独 await：用户取消（reject）直接返回，绝不落错误提示
+      try {
+        await this.$confirm(
+          this.$t('database.maintenance.migration.switchConfirmText').toString(),
+          this.$t('database.maintenance.migration.switchConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.switchOk = false
+      this.switchError = null
+      const payload: SwitchPayload = {
+        attempt_id: attemptId,
+        epoch: this.migration?.epoch || '',
+        state_version: this.migration?.stateVersion ?? 0,
+        mode: 'B'
+      }
+      await maintenanceRequest<SwitchCommitData>('post', '/database/migration/switch', payload)
+      this.switchOk = true
+      if (this.migration) this.migration.phase = 'committed'
+      void this.refreshAll()
+    } catch (error) {
+      // 409 未就绪等业务错误：信封 msg 已可读（「attempt 未就绪（phase=…）」），直接展示
+      this.switchError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.maintenance.migration.switchFailed').toString()
+    } finally {
+      this.switchSubmitting = false
     }
   }
 
