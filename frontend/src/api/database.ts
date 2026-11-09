@@ -251,17 +251,38 @@ export interface SwitchPayload extends MigrationCasPayload {
 }
 
 /** 当前有效库/配置来源/托管能力（脱敏） */
-export function getDatabaseStatus(): Promise<ApiEnvelope<DatabaseStatusData>> {
+/** 请求可选控制（迁移控制面用：skipAuthFallback 阻断全局 401 刷新/跳登录） */
+export interface DatabaseRequestOpts {
+  skipAuthFallback?: boolean
+}
+
+export function getDatabaseStatus(opts?: DatabaseRequestOpts): Promise<ApiEnvelope<DatabaseStatusData>> {
   return request<ApiEnvelope<DatabaseStatusData>>({
     url: '/database/status',
-    method: 'get'
+    method: 'get',
+    ...opts
   })
 }
 
 /** attempt/phase/epoch/stateVersion/可用动作（不含凭据） */
-export function getMigrationStatus(): Promise<ApiEnvelope<MigrationStatusData>> {
+export function getMigrationStatus(opts?: DatabaseRequestOpts): Promise<ApiEnvelope<MigrationStatusData>> {
   return request<ApiEnvelope<MigrationStatusData>>({
     url: '/database/migration/status',
+    method: 'get',
+    ...opts
+  })
+}
+
+/** GET /health/control-ready 数据体（维护窗口探测：maintenance=true 即窗口开启） */
+export interface ControlReadyData {
+  businessReady: boolean
+  maintenance?: boolean
+}
+
+/** 维护窗口探测（公开端点；start 超时/不确定态后的权威判定面，2026-11-08） */
+export function probeControlReady(): Promise<ApiEnvelope<ControlReadyData>> {
+  return request<ApiEnvelope<ControlReadyData>>({
+    url: '/health/control-ready',
     method: 'get'
   })
 }
@@ -296,7 +317,11 @@ export function startMigration(payload: MigrationStartPayload): Promise<ApiEnvel
   return request<ApiEnvelope<MigrationStatusData>>({
     url: '/database/migration/start',
     method: 'post',
-    data: payload
+    data: payload,
+    // 后端 start 同步排空最长 30s（manager.py DRAINING 上限），全局 20s 超时不够；
+    // skipAuthFallback：start 期间窗口可能已开，后续重放无意义
+    timeout: 60000,
+    skipAuthFallback: true
   })
 }
 
