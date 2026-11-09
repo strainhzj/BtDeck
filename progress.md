@@ -8881,3 +8881,21 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：maintenance-page.spec 重写 1+新增 4 例全绿（按钮渲染仅 GET/确认框参数+载荷断言+乐观置位+刷新/取消不发请求不报错/409 行内后端 msg/restartPending 禁用态）；i18n-message-parity + i18n-leftover-guard 双门禁绿；mobile-maintenance 8 例绿；database 域其余 4 套 55 例绿零回归；npm run typecheck 净；npm run lint 仍仅 dashboard 存量 3 warning 净增 0。
 - **文档**：roadmap frontend/views README 两行修正既有漂移（maintenance 行删"取消/A·B 切换操作"不实描述+加提交能力+复测 976 行；DatabasePanel 行修正"switchDatabase 双确认"不实描述）+ database-setup.md 维护页能力句 + runbook §1 阶段5 UI 入口。
 - **未提交**（待用户要求；随下次部署上线后用户迁移即可全程 UI 操作）。
+
+## 2026-11-08（续三）：生产部署 b5e92fa（switch 提交 UI 补口上线，七项验证全过）
+
+- **CI**：run 42491520274 全绿（Backend pytest 9m / Frontend 4m / PG integration 实库 1m8s）。
+- **部署**（Hermes run_fb65757f005147b9abae03c3e881bff5）：干净检出 b5e92fa（porcelain 空）→ --no-cache --quick 构建 500s（本批最快；脚本尾部 read EOF 假报 rc=1，四 OK 标记全真按纪律未重跑）→ 双 tar（backend 337,144,832B sha256 129ee1ad…与上批字节一致=纯前端改动的强佐证 / frontend 195,198,464B sha256 85efb483…较上批 +18432B=新 JS bundle）→ 8401 驻留 → unraid rm 旧产物防 wget .1 坑 + wget -O 双侧 sha256 逐字节匹配 → 锚点 backup-pre-b5e92fa（=83c8437 现网镜像 ced66b06/651d6163）先于 load → remote-deploy 重建，backend 2 轮 healthy/frontend ~12s → 8401 已关。
+- **七项验证全过**：①三容器 healthy ②gitSha=b5e92faf 全 40 位+alembicHead e9f0a1b2c3d4 无迁移 ③前端 200 ④deployment-target 无 token 401 ⑤pg_isready accepting ⑥compose sha256 60f3caee… 前后字节级一致 ⑦backend 日志除 1 行 preset_key=error_status 已知误报外 0 条。双镜像 OCI revision=b5e92faf…。
+- **迁移安全**：只换镜像不触碰迁移状态/数据卷/compose，用户迁移前准备不受影响。
+- **生产状态**：b5e92fa=origin/dev HEAD 严格一致；backend 仍 DB_TYPE=sqlite 跑老 app.db（批准中间态）。用户现可全程 UI 完成迁移：/maintenance 登录 → 发起迁移（自动回填）→ READY 后本页「提交切换」→ 重启激活。
+- **记录纪律**：本条目留存工作区（生产=HEAD 一致），下次实质提交一并入仓。
+
+## 2026-11-08（续四）：迁移发起+跟踪+提交一站式收口（设置页直发，/maintenance 降级为恢复面）
+
+- **UI 死锁实证**：用户报 not in maintenance mode——设置页 start 仅指引、维护页登录 409（维护令牌仅窗口开启后签发，而窗口需 start 才开），全仓无 UI 调用 startMigration，迁移无法从界面发起（前批只修了 switch 提交，未查上游 start，教训）。
+- **修复**（用户确认设计：接受 start 后再输维护凭据；/maintenance 保留为恢复面）：设置页 B 入口真发起（确认后 POST start 普通通道，60s 专用超时覆盖后端最长 30s 排空，超时不确定态经 control-ready 探测定夺）→内嵌维护认证→跟踪卡（phase/进度/凭据重输/取消/放弃/提交切换，全走 maintenanceRequest，switch mode B 提交即持久）→窗口关闭自动回退普通通道；普通通道 401→control-ready 探测→进入跟踪面；request.ts 新增 opt-in skipAuthFallback（阻断维护窗口内 401→全局刷新+跳登录）；移动壳入口+跟踪整卡隐藏；维护页登录 409 改友好提示。后端零改动。
+- **审查**（子代理对抗审查 REQUEST_CHANGES 六 P0 全处置）：①普通 401 全局副作用→skipAuthFallback opt-in②start 排空 30s>axios 20s→专用超时+探测③刷新恢复→迁移窗口内刷新本就只能走 /maintenance（文档写明）④后端 CAS 不收口/token binding=既有安全债→另列加固待办⑤移动端复用面板→路由路径判定整卡隐藏⑥维护页与面板重复逻辑→最小侵入各自实现。实现自错两次纠（maintenanceRequest 参数顺序复犯、switch/cancel/leave 误用普通通道包装函数——均测试抓出）。
+- **验证**：database-settings 重写 2+新增 9 例 28 例全绿；database 域 8 套 111 例全绿；全量 Jest 155 套 2148 例全绿（净增 13）；typecheck 净；lint 净增 0；文档四处同步（roadmap views 1527 行复测+api 13 函数、database-setup 流程重写、runbook 阶段 2/5 双入口）。
+- **遗留待办**：后端迁移控制面安全加固（maintenance token 与 attempt/epoch 绑定校验、cancel/switch CAS 实际消费、credentials 目标绑定）——审查发现的既有安全债，待用户排期。
+- **未提交**（本条目随批入仓）。

@@ -203,11 +203,11 @@
       </el-form>
     </div>
 
-    <!-- A/B 双入口卡：B=受管迁移说明 + start 入口（普通态仅指引）；A=env 交接（仅预览） -->
-    <div class="db-card">
+    <!-- A/B 双入口卡（移动壳整卡隐藏：迁移动作面仅桌面提供）：B=一站式发起；A=env 交接（仅预览） -->
+    <div v-if="!isMobileShell" class="db-card">
       <h3 class="db-card-title">{{ $t('database.entry.title') }}</h3>
 
-      <div class="db-entry">
+      <div v-if="!isMobileShell" class="db-entry">
         <div class="db-entry-head">
           <span class="db-entry-badge db-entry-badge-b">B</span>
           <span class="db-entry-name">{{ $t('database.entry.nameB') }}</span>
@@ -220,17 +220,19 @@
             size="small"
             type="primary"
             plain
-            :disabled="restartPending || attemptActive"
+            :loading="startSubmitting"
+            :disabled="restartPending || attemptActive || followMode"
             @click="onStartMigration"
           >
             {{ $t('database.entry.startMigration') }}
           </el-button>
         </div>
+        <p v-if="startError" class="db-entry-note">{{ startError }}</p>
         <p v-if="restartPending" class="db-entry-note">{{ $t('database.entry.startDisabledRestart') }}</p>
-        <p v-if="attemptActive" class="db-entry-note">{{ $t('database.entry.startDisabledAttempt') }}</p>
+        <p v-if="attemptActive && !followMode" class="db-entry-note">{{ $t('database.entry.startDisabledAttempt') }}</p>
       </div>
 
-      <div class="db-entry">
+      <div v-if="!isMobileShell" class="db-entry">
         <div class="db-entry-head">
           <span class="db-entry-badge db-entry-badge-a">A</span>
           <span class="db-entry-name">{{ $t('database.entry.nameA') }}</span>
@@ -251,6 +253,112 @@
         </div>
       </div>
     </div>
+
+    <!-- 一站式迁移跟踪卡（2026-11-08）：start 后内嵌维护认证 + 进度 + 提交；移动壳隐藏 -->
+    <div v-if="followMode && !isMobileShell" class="db-card">
+      <h3 class="db-card-title">{{ $t('database.entry.followTitle') }}</h3>
+
+      <!-- 维护认证：窗口开启后才能签发（独立于登录会话，令牌仅内存 15min） -->
+      <div v-if="!maintenanceAuthenticated" class="db-entry">
+        <p class="db-description">{{ $t('database.entry.followAuthHint') }}</p>
+        <el-form :model="authForm" label-position="top" @submit.native.prevent>
+          <el-form-item :label="$t('database.maintenance.auth.username')">
+            <el-input v-model="authForm.username" />
+          </el-form-item>
+          <el-form-item :label="$t('database.maintenance.auth.password')">
+            <el-input v-model="authForm.password" type="password" show-password />
+          </el-form-item>
+          <el-form-item :label="$t('database.maintenance.auth.twofa')">
+            <el-input v-model="authForm.twofa" />
+          </el-form-item>
+          <div class="db-actions">
+            <el-button
+              type="primary"
+              size="small"
+              :loading="maintenanceSubmitting"
+              @click="loginMaintenance"
+            >
+              {{ maintenanceSubmitting
+                ? $t('database.maintenance.auth.submitting')
+                : $t('database.maintenance.auth.submit') }}
+            </el-button>
+          </div>
+          <p v-if="maintenanceAuthError" class="db-entry-note">{{ maintenanceAuthError }}</p>
+        </el-form>
+      </div>
+
+      <template v-else>
+        <div class="db-status-row">
+          <span class="db-label">{{ $t('database.maintenance.migration.phase') }}</span>
+          <el-tag size="small" :type="followPhaseTagType">{{ followPhaseLabel }}</el-tag>
+          <el-tag v-if="followReadiness" :type="followReadiness.readyToSwitch ? 'success' : 'info'" size="small">
+            {{ followReadiness.readyToSwitch
+              ? $t('database.maintenance.migration.ready')
+              : $t('database.maintenance.migration.notReady') }}
+          </el-tag>
+        </div>
+        <div v-if="followProgress" class="db-hint">
+          <el-progress :percentage="followProgressPercent" :stroke-width="10" />
+          <span>{{ followProgressText }}</span>
+        </div>
+
+        <p v-if="switchOk" class="db-ok">{{ $t('database.maintenance.migration.switchSubmitted') }}</p>
+
+        <!-- 提交切换（READY；提交即持久不可撤销，后端就绪门 409 兑底） -->
+        <div v-if="followReadyToSwitch" class="db-actions">
+          <el-button
+            type="danger"
+            size="small"
+            :loading="switchSubmitting"
+            :disabled="followRestartPending"
+            @click="commitFollowSwitch"
+          >
+            {{ switchSubmitting
+              ? $t('database.maintenance.migration.switchSubmitting')
+              : $t('database.maintenance.migration.switchSubmit') }}
+          </el-button>
+          <el-button v-if="!followRestartPending" size="small" plain @click="requestFollowCancel">
+            {{ $t('database.entry.followCancel') }}
+          </el-button>
+        </div>
+        <p v-if="switchError" class="db-entry-note">{{ switchError }}</p>
+
+        <!-- 已安全停止（取消/失败/挂起）：可放弃回源 -->
+        <div v-if="followLeavable" class="db-actions">
+          <el-button
+            size="small"
+            type="warning"
+            plain
+            :loading="leaveSubmitting"
+            @click="requestFollowLeave"
+          >
+            {{ leaveSubmitting
+              ? $t('database.entry.followLeaving')
+              : $t('database.entry.followLeave') }}
+          </el-button>
+        </div>
+        <p v-if="cancelError" class="db-entry-note">{{ cancelError }}</p>
+        <p v-if="leaveError" class="db-entry-note">{{ leaveError }}</p>
+
+        <!-- NEEDS_CREDENTIALS：复用上方 PG 表单（已回填）提交绑定凭据 -->
+        <div v-if="followNeedsCredentials" class="db-actions">
+          <el-button
+            type="primary"
+            size="small"
+            :loading="credFollowSubmitting"
+            @click="submitFollowCredentials"
+          >
+            {{ credFollowSubmitting
+              ? $t('database.maintenance.migration.submittingCredentials')
+              : $t('database.maintenance.migration.submitCredentials') }}
+          </el-button>
+        </div>
+        <p v-if="credFollowError" class="db-entry-note">{{ credFollowError }}</p>
+
+        <p v-if="followRestartPending" class="db-entry-note">{{ $t('database.maintenance.restart.message') }}</p>
+        <p class="db-hint">{{ $t('database.entry.followAutoRefresh') }}</p>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -262,21 +370,34 @@ import {
   DeploymentTargetData,
   EffectiveSummary,
   HostingCapabilityData,
+  CredentialsPayload,
   MigrationCasPayload,
+  MigrationStartPayload,
   MigrationStatusData,
   PgFormInput,
   PgMasked,
+  ReadinessData,
+  SwitchCommitData,
+  SwitchPayload,
   TestConnectionData,
   TestConnectionPayload,
   clearActivation,
   getDatabaseStatus,
   getDeploymentTarget,
   getMigrationStatus,
+  probeControlReady,
+  startMigration,
   testConnection
 } from '@/api/database'
 import { isCapabilityAvailable } from '@/api/platform-capabilities'
 import { isDemoMode } from '@/demo/config'
 import { isCompanionAppWebView } from '@/utils/ui-mode'
+import {
+  clearMaintenanceToken,
+  maintenanceLogin,
+  maintenanceRequest,
+  subscribeAuthExpired
+} from '@/utils/maintenance-client'
 import { ApiError } from '@/types/api'
 
 /** sslmode 全档（后端 pg_params_from_mapping 契约；技术字面量不翻译） */
@@ -293,6 +414,42 @@ const ACTIVE_PHASES: readonly string[] = [
   'preparing', 'draining', 'frozen', 'importing', 'verifying',
   'ready_to_switch', 'cancelling', 'held'
 ]
+
+/** 跟踪卡 phase 徽标文案键（复用维护页 i18n 键，避免双份翻译漂移） */
+const FOLLOW_PHASE_LABEL_KEYS: Readonly<Record<string, string>> = {
+  idle: 'database.maintenance.migration.phaseIdle',
+  preparing: 'database.maintenance.migration.phasePreparing',
+  draining: 'database.maintenance.migration.phaseDraining',
+  frozen: 'database.maintenance.migration.phaseFrozen',
+  importing: 'database.maintenance.migration.phaseImporting',
+  verifying: 'database.maintenance.migration.phaseVerifying',
+  ready_to_switch: 'database.maintenance.migration.phaseReadyToSwitch',
+  needs_credentials: 'database.maintenance.migration.phaseNeedsCredentials',
+  cancelling: 'database.maintenance.migration.phaseCancelling',
+  cancelled: 'database.maintenance.migration.phaseCancelled',
+  failed: 'database.maintenance.migration.phaseFailed',
+  held: 'database.maintenance.migration.phaseHeld',
+  committed: 'database.maintenance.migration.phaseCommitted'
+}
+
+/** 跟踪卡 phase 徽标色（同维护页口径） */
+const FOLLOW_PHASE_TAG_TYPES: Readonly<Record<string, string>> = {
+  preparing: 'info',
+  draining: 'info',
+  frozen: 'warning',
+  importing: '',
+  verifying: '',
+  ready_to_switch: 'success',
+  needs_credentials: 'warning',
+  cancelling: 'warning',
+  cancelled: 'info',
+  failed: 'danger',
+  held: 'warning',
+  committed: 'success'
+}
+
+/** 已安全停止、可放弃回源（leave）的 phase（COMMITTED 后绝不允许 leave） */
+const FOLLOW_LEAVABLE_PHASES: readonly string[] = ['cancelled', 'failed', 'held']
 
 /** PG 目标表单草稿（组件内 camelCase；提交时映射为后端 snake_case PgFormInput） */
 interface PgTargetDraft {
@@ -387,6 +544,31 @@ export default class extends Vue {
   private pollTimer: number | null = null
   private readonly pollIntervalMs = 10000
 
+  // ====== 一站式迁移流（2026-11-08）：start → 内嵌维护认证 → 跟踪 → 提交 ======
+  // followMode=true 后普通通道 /database/* 调用全部停止（普通令牌在维护窗口内
+  // 必 401，全局拦截器会刷新+跳登录）；一切迁移操作走 maintenanceRequest 通道。
+  private followMode = false
+  private maintenanceAuthenticated = false
+  private maintenanceSubmitting = false
+  private maintenanceAuthError: string | null = null
+  private authForm = { username: '', password: '', twofa: '' }
+  private followStatus: MigrationStatusData | null = null
+  private followReadiness: ReadinessData | null = null
+  private followTimer: number | null = null
+  private followPollInFlight = false
+  private unsubAuthExpired: (() => void) | null = null
+  private startSubmitting = false
+  private startError: string | null = null
+  private switchSubmitting = false
+  private switchOk = false
+  private switchError: string | null = null
+  private cancelSubmitting = false
+  private cancelError: string | null = null
+  private leaveSubmitting = false
+  private leaveError: string | null = null
+  private credFollowSubmitting = false
+  private credFollowError: string | null = null
+
   get pgMasked(): PgMasked | null {
     return this.effective?.postgresql ?? null
   }
@@ -400,6 +582,71 @@ export default class extends Vue {
     const status = this.migrationStatus
     if (!status || !status.attemptId) return false
     return ACTIVE_PHASES.indexOf(status.phase) >= 0
+  }
+
+  /** 移动壳（/m/*）复用桌面设置页：迁移发起/认证/提交动作面仅桌面提供 */
+  get isMobileShell(): boolean {
+    const path = (this.$route && this.$route.path) || ''
+    return path.indexOf('/m/') === 0
+  }
+
+  get followNeedsCredentials(): boolean {
+    const s = this.followStatus
+    if (!s) return false
+    return s.needsCredentials === true || s.phase === 'needs_credentials'
+  }
+
+  get followReadyToSwitch(): boolean {
+    return this.followStatus?.phase === 'ready_to_switch'
+  }
+
+  get followRestartPending(): boolean {
+    return this.followStatus?.restartPending === true
+  }
+
+  get followLeavable(): boolean {
+    const s = this.followStatus
+    if (!s) return false
+    return FOLLOW_LEAVABLE_PHASES.indexOf(s.phase) >= 0
+  }
+
+  get followPhaseLabel(): string {
+    const s = this.followStatus
+    if (!s) return '—'
+    const key = FOLLOW_PHASE_LABEL_KEYS[s.phase]
+    if (!key) {
+      return this.$t('database.maintenance.migration.phaseUnknown', { phase: s.phase }).toString()
+    }
+    return this.$t(key).toString()
+  }
+
+  get followPhaseTagType(): string {
+    return FOLLOW_PHASE_TAG_TYPES[this.followStatus?.phase || ''] ?? 'info'
+  }
+
+  get followProgress(): { done: number, total: number } | null {
+    const p = this.followStatus?.detail?.progress
+    if (!p || typeof p.done !== 'number' || typeof p.total !== 'number') return null
+    return { done: p.done, total: p.total }
+  }
+
+  get followProgressPercent(): number {
+    const p = this.followProgress
+    if (!p || p.total <= 0) return 0
+    return Math.min(100, Math.round((p.done / p.total) * 100))
+  }
+
+  get followProgressText(): string {
+    const p = this.followProgress
+    if (!p) return ''
+    return this.$t('database.maintenance.migration.progressCount', { done: p.done, total: p.total }).toString()
+  }
+
+  /** 跟踪通道 CAS 快照（/migration/status 为权威；epoch/state_version 后端当前不消费但保持契约完整） */
+  get followAttemptPayload(): MigrationCasPayload | null {
+    const s = this.followStatus
+    if (!s || !s.attemptId) return null
+    return { attempt_id: s.attemptId, epoch: s.epoch, state_version: s.stateVersion }
   }
 
   // ====== 平台门控（W4-4；§9 三层拒的页面层：PG 表单/测试连接/A 入口只读化） ======
@@ -519,22 +766,37 @@ export default class extends Vue {
     this.load()
     this.loadMigrationStatus()
     void this.loadDeploymentTarget()
+    // 维护令牌过期（15min）统一分流：窗口仍在→重认证表单；窗口已关→回退普通通道
+    this.unsubAuthExpired = subscribeAuthExpired(() => {
+      if (!this.followMode) return
+      this.maintenanceAuthenticated = false
+      void this.probeMaintenanceWindow().then(maintenance => {
+        if (!maintenance) void this.fallbackToNormalMode()
+      })
+    })
   }
 
   beforeDestroy(): void {
     this.clearPollTimer()
+    this.clearFollowTimer()
+    if (this.unsubAuthExpired) {
+      this.unsubAuthExpired()
+      this.unsubAuthExpired = null
+    }
   }
 
   private async load(): Promise<void> {
     this.loading = true
     try {
-      const res = await getDatabaseStatus()
+      const res = await getDatabaseStatus({ skipAuthFallback: true })
       this.effective = res.data.effective
       this.control = res.data.control
       this.hosting = res.data.hosting
       this.loaded = true
       this.syncPolling()
     } catch (error) {
+      // 401=可能处于迁移维护窗口：探测后进入一站式跟踪（skipAuthFallback 已阻断全局跳登录）
+      if (await this.maybeEnterFollowMode(error)) return
       // 失败保持 !loaded 占位（重试按钮），不弹全局错误（请求层已节流提示）
       this.loaded = false
       console.error('加载数据库状态失败:', error)
@@ -546,13 +808,14 @@ export default class extends Vue {
   /** restartPending 轮询回调：失败保持旧态（不翻转为 false、轮询继续），不打扰用户 */
   private async refreshStatus(): Promise<void> {
     try {
-      const res = await getDatabaseStatus()
+      const res = await getDatabaseStatus({ skipAuthFallback: true })
       this.effective = res.data.effective
       this.control = res.data.control
       this.hosting = res.data.hosting
       this.loaded = true
       this.syncPolling()
     } catch (error) {
+      if (await this.maybeEnterFollowMode(error)) return
       console.error('轮询数据库状态失败:', error)
     }
   }
@@ -560,10 +823,31 @@ export default class extends Vue {
   /** 迁移状态仅服务 start 入口判定；管理器未接线（503）时按未知处理，不阻塞面板 */
   private async loadMigrationStatus(): Promise<void> {
     try {
-      const res = await getMigrationStatus()
+      const res = await getMigrationStatus({ skipAuthFallback: true })
       this.migrationStatus = res.data
     } catch (error) {
+      if (await this.maybeEnterFollowMode(error)) return
       console.error('加载迁移状态失败:', error)
+    }
+  }
+
+  /** 普通通道 401 = 可能处于迁移维护窗口（普通令牌被拒）：探测确认后进入一站式跟踪。
+   * 返回 true=已进入 followMode（调用方不再按普通错误处理） */
+  private async maybeEnterFollowMode(error: unknown): Promise<boolean> {
+    if (!(error instanceof ApiError) || error.code !== '401') return false
+    if (!(await this.probeMaintenanceWindow())) return false
+    this.followMode = true
+    this.maintenanceAuthenticated = false
+    return true
+  }
+
+  /** 维护窗口探测（/health/control-ready 公开端点；maintenance=true 即窗口开启） */
+  private async probeMaintenanceWindow(): Promise<boolean> {
+    try {
+      const res = await probeControlReady()
+      return res.data?.maintenance === true
+    } catch {
+      return false
     }
   }
 
@@ -676,9 +960,68 @@ export default class extends Vue {
     }
   }
 
-  /** start 仅入口暴露：维护态才可 start，普通态提示去维护流程（不实际提交） */
-  private onStartMigration(): void {
-    this.$message.info(this.$t('database.entry.goMaintenanceHint').toString())
+  /** 一站式发起：确认后 POST start（普通通道），后端自动关准入→排空→冻结（暂停所有任务）；
+   * 窗口打开后本面板停止普通通道调用，改走内嵌维护认证 + maintenanceRequest 通道 */
+  private async onStartMigration(): Promise<void> {
+    if (this.startSubmitting || this.migrationEntriesLocked) return
+    if (this.followMode || this.attemptActive) return
+    if ((this.effective?.dialect || '') !== 'sqlite') {
+      this.$message.warning(this.$t('database.entry.startWrongDialect').toString())
+      return
+    }
+    const sqlitePath = this.effective?.sqlitePath || ''
+    if (!sqlitePath) {
+      this.$message.warning(this.$t('database.entry.startNoSourcePath').toString())
+      return
+    }
+    let valid = false
+    try {
+      valid = await this.pgFormRef.validate()
+    } catch {
+      valid = false
+    }
+    if (!valid) return
+    try {
+      await this.$confirm(
+        this.$t('database.entry.startConfirmText').toString(),
+        this.$t('database.entry.startConfirmTitle').toString(),
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+    this.startSubmitting = true
+    this.startError = null
+    // 先停普通通道轮询再发请求：窗口打开后普通令牌必 401（skipAuthFallback 兑底在途请求）
+    this.clearPollTimer()
+    this.followMode = true
+    try {
+      const payload: MigrationStartPayload = {
+        direction: 'sqlite-to-pg',
+        target: this.buildPgInput(),
+        source: { dialect: 'sqlite', path: sqlitePath }
+      }
+      if (this.envPasswordMode) payload.use_env_password = true
+      else payload.password = this.pgForm.password
+      const res = await startMigration(payload)
+      this.followStatus = res.data
+      this.maintenanceAuthenticated = false
+      this.$message.success(this.$t('database.entry.startLaunched').toString())
+    } catch (error) {
+      // 超时/网络错误后结果不确定（后端排空最长 30s）：探测窗口——已开=启动实际成功
+      if (await this.probeMaintenanceWindow()) {
+        this.$message.success(this.$t('database.entry.startLaunched').toString())
+      } else {
+        this.followMode = false
+        this.startError = error instanceof ApiError && error.message
+          ? error.message
+          : this.$t('database.entry.startFailed').toString()
+        void this.loadMigrationStatus()
+        this.syncPolling()
+      }
+    } finally {
+      this.startSubmitting = false
+    }
   }
 
   /**
@@ -740,6 +1083,216 @@ export default class extends Vue {
         this.$message.info(this.$t('database.entry.handoffAckDone').toString())
       })
       .catch(() => undefined)
+  }
+
+  // ====== 一站式迁移跟踪（维护通道；窗口关闭自动回退普通通道） ======
+
+  /** 内嵌维护认证：窗口开启后才能签发；409 NOT_MAINTENANCE=窗口已关，回退普通通道 */
+  private async loginMaintenance(): Promise<void> {
+    if (this.maintenanceSubmitting) return
+    this.maintenanceSubmitting = true
+    this.maintenanceAuthError = null
+    try {
+      await maintenanceLogin(
+        this.authForm.username.trim(),
+        this.authForm.password,
+        this.authForm.twofa.trim() || undefined
+      )
+      this.authForm.password = ''
+      this.authForm.twofa = ''
+      this.maintenanceAuthenticated = true
+      void this.refreshFollowState()
+      this.syncFollowPolling()
+    } catch (error) {
+      // 后端固定文案（maintenance.py）：仅凭 message 匹配（契约常量）
+      if (error instanceof ApiError && error.message === 'not in maintenance mode') {
+        this.$message.info(this.$t('database.entry.followDoneFallback').toString())
+        await this.fallbackToNormalMode()
+      } else {
+        this.maintenanceAuthError = error instanceof ApiError && error.message
+          ? error.message
+          : this.$t('database.maintenance.auth.failed').toString()
+      }
+    } finally {
+      this.maintenanceSubmitting = false
+    }
+  }
+
+  /** 维护窗口已关（重启激活完成/迁移取消）：清维护态、回普通通道并刷新实况 */
+  private async fallbackToNormalMode(): Promise<void> {
+    this.followMode = false
+    this.maintenanceAuthenticated = false
+    this.followStatus = null
+    this.followReadiness = null
+    clearMaintenanceToken()
+    this.clearFollowTimer()
+    await this.loadMigrationStatus()
+    await this.load()
+  }
+
+  private syncFollowPolling(): void {
+    if (this.followMode && this.maintenanceAuthenticated && this.followTimer === null) {
+      this.followTimer = window.setInterval(() => {
+        void this.refreshFollowState()
+      }, this.pollIntervalMs)
+    } else if (!(this.followMode && this.maintenanceAuthenticated)) {
+      this.clearFollowTimer()
+    }
+  }
+
+  private clearFollowTimer(): void {
+    if (this.followTimer !== null) {
+      clearInterval(this.followTimer)
+      this.followTimer = null
+    }
+  }
+
+  /** 跟踪轮询：单飞行（无重叠）；失败保持旧值；401 过期经 subscribeAuthExpired 分流 */
+  private async refreshFollowState(): Promise<void> {
+    if (!this.maintenanceAuthenticated || this.followPollInFlight) return
+    this.followPollInFlight = true
+    try {
+      this.followStatus = await maintenanceRequest<MigrationStatusData>('get', '/database/migration/status')
+      this.followReadiness = await maintenanceRequest<ReadinessData>('get', '/database/target-readiness')
+      this.syncFollowPolling()
+    } catch (error) {
+      console.error('跟踪迁移状态失败:', error)
+    } finally {
+      this.followPollInFlight = false
+    }
+  }
+
+  /** NEEDS_CREDENTIALS：复用上方 PG 表单（已回填）提交绑定凭据（不临时换目标） */
+  private async submitFollowCredentials(): Promise<void> {
+    if (this.credFollowSubmitting || !this.maintenanceAuthenticated) return
+    const snapshot = this.followAttemptPayload
+    if (!snapshot) {
+      this.credFollowError = this.$t('database.maintenance.migration.noAttempt').toString()
+      return
+    }
+    this.credFollowSubmitting = true
+    this.credFollowError = null
+    try {
+      const payload: CredentialsPayload = {
+        attempt_id: snapshot.attempt_id,
+        target: this.buildPgInput()
+      }
+      if (this.envPasswordMode) payload.use_env_password = true
+      else payload.password = this.pgForm.password
+      this.followStatus = await maintenanceRequest<MigrationStatusData>(
+        'post',
+        '/database/migration/credentials',
+        payload
+      )
+      this.$message.success(this.$t('database.maintenance.migration.credentialsSubmitted').toString())
+    } catch (error) {
+      this.credFollowError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.maintenance.migration.credentialsFailed').toString()
+    } finally {
+      this.credFollowSubmitting = false
+    }
+  }
+
+  /** 提交切换（READY；提交即持久不可撤销，后端就绪门 409 兑底；mode 固定 B） */
+  private async commitFollowSwitch(): Promise<void> {
+    if (this.switchSubmitting) return
+    const snapshot = this.followAttemptPayload
+    if (!snapshot) {
+      this.switchError = this.$t('database.maintenance.migration.noAttempt').toString()
+      return
+    }
+    this.switchSubmitting = true
+    try {
+      // 二次确认单独 await：取消（reject）直接返回，不落错误分支
+      try {
+        await this.$confirm(
+          this.$t('database.maintenance.migration.switchConfirmText').toString(),
+          this.$t('database.maintenance.migration.switchConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.switchOk = false
+      this.switchError = null
+      const payload: SwitchPayload = { ...snapshot, mode: 'B' }
+      await maintenanceRequest<SwitchCommitData>('post', '/database/migration/switch', payload)
+      this.switchOk = true
+      // 本地乐观置位：重启后刷新可能静默失败，按钮随 phase 变 committed 消失
+      if (this.followStatus) this.followStatus.phase = 'committed'
+      void this.refreshFollowState()
+    } catch (error) {
+      this.switchError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.maintenance.migration.switchFailed').toString()
+    } finally {
+      this.switchSubmitting = false
+    }
+  }
+
+  /** 协作取消（可逆；worker ACK 前状态为取消中，期间按钮随 phase 消失） */
+  private async requestFollowCancel(): Promise<void> {
+    if (this.cancelSubmitting) return
+    const snapshot = this.followAttemptPayload
+    if (!snapshot) return
+    this.cancelSubmitting = true
+    this.cancelError = null
+    try {
+      try {
+        await this.$confirm(
+          this.$t('database.entry.followCancelConfirmText').toString(),
+          this.$t('database.entry.followCancelConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.followStatus = await maintenanceRequest<MigrationStatusData>(
+        'post',
+        '/database/migration/cancel',
+        snapshot
+      )
+    } catch (error) {
+      this.cancelError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.entry.followCancelFailed').toString()
+    } finally {
+      this.cancelSubmitting = false
+    }
+  }
+
+  /** 放弃回源（仅已安全停止且未 COMMITTED；不可逆，epoch 推进） */
+  private async requestFollowLeave(): Promise<void> {
+    if (this.leaveSubmitting) return
+    const snapshot = this.followAttemptPayload
+    if (!snapshot) return
+    this.leaveSubmitting = true
+    this.leaveError = null
+    try {
+      try {
+        await this.$confirm(
+          this.$t('database.entry.followLeaveConfirmText').toString(),
+          this.$t('database.entry.followLeaveConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.followStatus = await maintenanceRequest<MigrationStatusData>(
+        'post',
+        '/database/migration/leave',
+        snapshot
+      )
+      this.$message.success(this.$t('database.entry.followDoneFallback').toString())
+      await this.fallbackToNormalMode()
+    } catch (error) {
+      this.leaveError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.entry.followLeaveFailed').toString()
+    } finally {
+      this.leaveSubmitting = false
+    }
   }
 }
 </script>

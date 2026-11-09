@@ -23,6 +23,13 @@ const service = axios.create({
   timeout: 20000
 })
 
+/** 迁移控制面 opt-in：401 时不走全局刷新+跳登录（DatabasePanel 一站式迁移流 2026-11-08） */
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipAuthFallback?: boolean
+  }
+}
+
 /** Axios 响应拦截器已解包 response.data；此类型让调用方看到真实业务响应。 */
 export interface ApiEnvelope<T = unknown> {
   status: string
@@ -152,6 +159,13 @@ export async function trySilentRefresh(): Promise<RefreshOutcome> {
  * 登录/refresh 请求豁免（isLoginRequest）；已重放过的请求不再续期（防循环）。
  */
 async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unknown): Promise<never> {
+  // 迁移控制面 opt-in：维护窗口内普通令牌必然 401，若走下方刷新+重放+
+  // redirectToLogin 会把用户登出（skipAuthFallback=true 请求直接以原错误拒绝，
+  // 由调用方自行分流——DatabasePanel 一站式迁移流 2026-11-08）
+  const flagged = (config as AxiosRequestConfig & { skipAuthFallback?: boolean }).skipAuthFallback === true
+  if (flagged) {
+    return Promise.reject(fallbackError)
+  }
   const retried = (config as AxiosRequestConfig & { _retried?: boolean })._retried
   if (!retried && !isLoginRequest(config)) {
     const outcome = await trySilentRefresh()

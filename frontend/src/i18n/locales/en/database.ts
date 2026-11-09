@@ -23,7 +23,7 @@
  */
 export const database = {
   panel: {
-    description: 'Shows the currently effective database configuration (application reality wins; environment variables act as the source only when no managed config exists). Switching databases must go through the maintenance flow (migration + commit).',
+    description: 'Shows the currently effective database configuration (application reality wins; environment variables act as the source only when no managed config exists). The SQLite → PostgreSQL migration can be started and committed right on this page in one stop.',
     loading: 'Loading...',
     loadFailed: 'Failed to load database status.',
     retry: 'Retry'
@@ -52,7 +52,7 @@ export const database = {
   },
   form: {
     title: 'PostgreSQL Migration Target',
-    description: 'Target database parameters used only when starting a migration from the maintenance flow. This page offers a read-only probe (test connection) only; the password is never saved and no migration is submitted here.',
+    description: 'Target database parameters for starting a migration (auto-filled from the deployment environment when available); use "test connection" to probe the target before starting. The password lives in component memory only and is never saved.',
     host: 'Host',
     port: 'Port',
     user: 'User',
@@ -87,13 +87,31 @@ export const database = {
   entry: {
     title: 'Database Switch Entries (A / B)',
     nameB: 'B · App-managed configuration',
-    descB: 'Start a migration and commit the switch through the maintenance flow: the app publishes the managed config and restarts automatically when the hosting supports it. This is the recommended way.',
+    descB: 'Start the migration right here in one stop: tasks pause automatically and the maintenance window opens after confirmation; complete the maintenance authentication to track progress and commit the switch on this page (the commit is persistent and irreversible). This is the recommended way.',
     nameA: 'A · env handoff',
     descA: 'Hand the current managed configuration back to host environment variables (same database only). The button below only generates a plan preview and never executes anything.',
-    startMigration: 'Start migration (entry guide)',
+    startMigration: 'Start migration',
     startDisabledRestart: 'A committed switch is waiting for restart; a new migration cannot start until the restart completes',
     startDisabledAttempt: 'A migration is already in progress',
-    goMaintenanceHint: 'Migrations start and commit in maintenance mode; this settings page never submits one. Follow the maintenance flow (maintenance page).',
+    startConfirmTitle: 'Start migration?',
+    startConfirmText: 'All tasks will be paused automatically and business APIs frozen (normal pages return 503 until the migration completes or is cancelled); do not refresh the page during the import. Start the SQLite → PostgreSQL migration?',
+    startLaunched: 'Migration started and tasks paused. Complete the maintenance authentication below to continue tracking.',
+    startFailed: 'Failed to start the migration.',
+    startWrongDialect: 'The current database is already PostgreSQL; migrating back to SQLite requires the reverse migration (API/upcoming release).',
+    startNoSourcePath: 'Cannot determine the current SQLite database path; migration start is blocked.',
+    followTitle: 'Migration tracking',
+    followAuthHint: 'The migration window is open. Complete the maintenance authentication (independent of your login session; in-memory token, 15 minutes) to track progress and perform the commit.',
+    followCancel: 'Cancel migration',
+    followCancelConfirmTitle: 'Cancel this migration?',
+    followCancelConfirmText: 'The import will be cooperatively stopped and the source unfrozen; the state stays "cancelling" until the worker acknowledges.',
+    followCancelFailed: 'Failed to cancel the migration.',
+    followLeave: 'Abandon migration',
+    followLeaving: 'Abandoning…',
+    followLeaveConfirmTitle: 'Abandon this migration?',
+    followLeaveConfirmText: 'Abandon this migration and fall back to the source (only when safely stopped and not committed; irreversible, the epoch advances).',
+    followLeaveFailed: 'Failed to abandon the migration.',
+    followAutoRefresh: 'Tracking status refreshes every 10 seconds.',
+    followDoneFallback: 'The migration window is closed.',
     envHandoff: 'env handoff (preview only)',
     handoffTitle: 'env Handoff Plan Preview (not executed)',
     handoffSteps: 'Handoff steps',
@@ -146,7 +164,8 @@ export const database = {
       submit: 'Authenticate',
       submitting: 'Authenticating...',
       failed: 'Maintenance authentication failed. Check the account and password, then try again.',
-      sessionExpired: 'The maintenance session has expired. Please authenticate again.'
+      sessionExpired: 'The maintenance session has expired. Please authenticate again.',
+      notMaintenance: 'No migration is currently running; start one from "Settings → Database" first.'
     },
     state: {
       title: 'Maintenance Status',

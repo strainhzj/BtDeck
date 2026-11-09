@@ -231,7 +231,10 @@ describe('database api：动作组（snake_case CAS 载荷）', () => {
     expect(mockRequest).toHaveBeenCalledWith({
       url: '/database/migration/start',
       method: 'post',
-      data: payload
+      data: payload,
+      // 2026-11-08：后端同步排空最长 30s，专用超时；skipAuthFallback 阻断维护窗口内全局跳登录
+      timeout: 60000,
+      skipAuthFallback: true
     })
   })
 

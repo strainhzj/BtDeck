@@ -22,7 +22,7 @@
  */
 export const database = {
   panel: {
-    description: '展示当前实际生效的数据库配置（以应用实况为准；环境变量仅在无受管配置时作为来源）。数据库切换须经维护流程完成迁移与提交。',
+    description: '展示当前实际生效的数据库配置（以应用实况为准；环境变量仅在无受管配置时作为来源）。SQLite → PostgreSQL 迁移可在本页一站式发起与提交。',
     loading: '加载中…',
     loadFailed: '数据库状态加载失败。',
     retry: '重试'
@@ -53,7 +53,7 @@ export const database = {
   },
   form: {
     title: 'PostgreSQL 迁移目标',
-    description: '供维护流程发起迁移时使用的目标库参数；本页仅提供只读探测（测试连接），不保存密码、不提交迁移。',
+    description: '发起迁移所需的目标库参数（可由部署环境自动回填）；提交迁移前可用「测试连接」探测目标。密码仅存组件内存、不保存。',
     host: '主机',
     port: '端口',
     user: '用户名',
@@ -88,13 +88,31 @@ export const database = {
   entry: {
     title: '数据库切换入口（A / B）',
     nameB: 'B · 配置由应用管理',
-    descB: '经维护流程发起迁移并提交切换：应用发布受管配置，托管环境支持时自动重启。这是推荐的切换方式。',
+    descB: '在设置页一站式发起迁移：确认后任务自动暂停并进入维护窗口，完成维护认证后在本页跟踪进度并提交切换（提交即持久不可撤销）。这是推荐的切换方式。',
     nameA: 'A · env 交接',
     descA: '把当前受管配置交还给宿主环境变量管理（仅限同一数据库）。下方按钮只生成交接计划预览，不会执行任何变更。',
-    startMigration: '发起迁移（入口指引）',
+    startMigration: '发起迁移',
     startDisabledRestart: '存在待重启生效的提交，重启完成前不可发起新迁移',
     startDisabledAttempt: '已有迁移在进行中',
-    goMaintenanceHint: '迁移在维护模式下发起与提交，普通设置页不直接提交；请按维护流程进入维护页操作。',
+    startConfirmTitle: '确认发起迁移？',
+    startConfirmText: '发起后所有任务将自动暂停、业务接口冻结（普通页面返回 503，直至迁移完成或取消）；导入期间请勿刷新页面。确认开始 SQLite → PostgreSQL 迁移？',
+    startLaunched: '迁移已发起，任务已暂停。请完成下方维护认证以继续跟踪进度。',
+    startFailed: '发起迁移失败。',
+    startWrongDialect: '当前数据库已是 PostgreSQL；迁回 SQLite 请使用反向迁移（API/后续版本）。',
+    startNoSourcePath: '无法确定当前 SQLite 库路径，禁止发起迁移。',
+    followTitle: '迁移跟踪',
+    followAuthHint: '迁移窗口已开启。请完成维护认证（独立于登录会话，令牌仅内存 15 分钟）以跟踪进度并执行提交。',
+    followCancel: '取消迁移',
+    followCancelConfirmTitle: '确认取消迁移？',
+    followCancelConfirmText: '将协作停止导入并解冻回源；worker 确认前状态为「取消中」。',
+    followCancelFailed: '取消迁移失败。',
+    followLeave: '放弃迁移',
+    followLeaving: '放弃中…',
+    followLeaveConfirmTitle: '确认放弃迁移？',
+    followLeaveConfirmText: '放弃本次迁移并回源（仅限已安全停止且未提交的状态；不可逆，纪元将推进）。',
+    followLeaveFailed: '放弃迁移失败。',
+    followAutoRefresh: '每 10 秒自动刷新跟踪状态。',
+    followDoneFallback: '迁移窗口已关闭。',
     envHandoff: 'env 交接（仅预览）',
     handoffTitle: 'env 交接计划预览（不执行）',
     handoffSteps: '交接步骤',
@@ -144,7 +162,8 @@ export const database = {
       submit: '认证',
       submitting: '认证中…',
       failed: '维护认证失败，请检查账户与密码后重试。',
-      sessionExpired: '维护会话已过期，请重新认证。'
+      sessionExpired: '维护会话已过期，请重新认证。',
+      notMaintenance: '当前没有进行中的迁移；请从「设置 → 数据库」发起迁移后再试。'
     },
     state: {
       title: '维护状态',

@@ -565,9 +565,14 @@ export default class extends Vue {
       void this.refreshAll()
       this.syncPolling()
     } catch (error) {
-      this.loginError = error instanceof ApiError && error.message
-        ? error.message
-        : this.$t('database.maintenance.auth.failed').toString()
+      if (error instanceof ApiError && error.message === 'not in maintenance mode') {
+        // 后端固定文案（maintenance.py 契约常量）：窗口未开=尚无进行中迁移，指回设置页发起
+        this.loginError = this.$t('database.maintenance.auth.notMaintenance').toString()
+      } else {
+        this.loginError = error instanceof ApiError && error.message
+          ? error.message
+          : this.$t('database.maintenance.auth.failed').toString()
+      }
     } finally {
       this.loginLoading = false
     }

@@ -11,10 +11,10 @@
 | 阶段 | 现象 | 操作 |
 |------|------|------|
 | 1. 预检 | 设置 →「数据库」面板 | 目标 PG 表单填五档 TLS（verify-ca/full 需 CA 路径）→「测试连接」三态（版本≥16 / 空库 / 可达）；非空库须先 §6 discard 或换库 |
-| 2. 启动 | 面板入口→进入维护模式 | 业务写冻结（PREPARING→DRAINING→FROZEN）；进度页 `/maintenance` 登录维护账号 |
+| 2. 启动 | 设置页「发起迁移」→确认（✨2026-11-08 一站式；确认后任务自动暂停、业务 503）| 关准入→排空→冻结（PREPARING→DRAINING→FROZEN）自动执行；设置页内嵌维护认证后跟踪进度（也可用 /maintenance 页登录维护账号查看）；导入期间勿刷新页面 |
 | 3. 导入 | IMPORTING/VERIFYING | 无人工动作；进度 done/total+phase 徽标；**卡 NEEDS_CREDENTIALS** → §3 重输 |
 | 4. 校验 | VERIFYING/READY_TO_SWITCH | 只读等待；任一差异自动失败进入回退决策（§5） |
-| 5. 提交 | switch | B=维护页 READY 卡片「提交切换」按钮（二次确认后 POST，固定 B；✨2026-11-08 UI 补口）/ A=env 交接（面板预览 plan.steps，无 UI 执行入口）；提交即持久（不可撤销，见 §5 决策树） |
+| 5. 提交 | switch | B=设置页跟踪卡或维护页 READY 卡「提交切换」按钮（二次确认后 POST，固定 B；✨2026-11-08 双 UI 入口）/ A=env 交接（面板预览 plan.steps，无 UI 执行入口）；提交即持久（不可撤销，见 §5 决策树） |
 | 6. 重启 | RESTART_PENDING | 托管环境（systemd/docker）+ `BTD_MIGRATION_MANAGED_RESTART=1` 自动退出；否则**手动重启进程**；未重启前数据只读安全 |
 | 7. 激活 | 重启后自动 | 目标 ACK → 本地 `ACTIVATED_ACK` → 正常启动（无需人工确认；失败保持维护并显示原因） |
 

@@ -9,8 +9,8 @@
  *    verify-full，后端 sslmode 契约），verify-ca/full 档 CA 路径必填校验联动，
  *    探测载荷映射为 snake_case PgFormInput；
  * 3. 测试连接三态结果（reachable/versionOk/targetEmpty + 版本与协商 TLS）；
- * 4. A/B 双入口均保留：B start 仅入口暴露（disabled 当 restartPending/attempt
- *    进行中，普通态只提示去维护流程）；A env 交接仅 clearActivation 预览
+ * 4. A/B 双入口：B start 一站式真发起（确认后 POST start 载荷断言，start 后
+ *    进入内嵌维护认证；NOT_MAINTENANCE/窗口探测回退），A env 交接仅预览
  *    （计划弹窗展示 steps/confirmToken，确认不执行任何动作）；
  * 5. restartPending 时 10s 轮询启动、状态恢复即停、beforeDestroy 清理定时器。
  */
@@ -22,15 +22,22 @@ import i18n from '@/i18n'
 
 import DatabasePanel from '@/views/settings/components/DatabasePanel.vue'
 import {
+  clearActivation,
   getDatabaseStatus,
   getDeploymentTarget,
   getMigrationStatus,
+  probeControlReady,
+  startMigration,
   testConnection,
-  clearActivation,
   MigrationCasPayload,
   PgMasked,
   TestConnectionData
 } from '@/api/database'
+import {
+  clearMaintenanceToken,
+  maintenanceLogin,
+  maintenanceRequest
+} from '@/utils/maintenance-client'
 import { ApiError } from '@/types/api'
 
 jest.mock('@/api/database', () => ({
@@ -38,7 +45,21 @@ jest.mock('@/api/database', () => ({
   getDeploymentTarget: jest.fn(),
   getMigrationStatus: jest.fn(),
   testConnection: jest.fn(),
-  clearActivation: jest.fn()
+  clearActivation: jest.fn(),
+  startMigration: jest.fn(),
+  provideCredentials: jest.fn(),
+  cancelMigration: jest.fn(),
+  leaveMigration: jest.fn(),
+  switchDatabase: jest.fn(),
+  probeControlReady: jest.fn()
+}))
+
+jest.mock('@/utils/maintenance-client', () => ({
+  maintenanceLogin: jest.fn(),
+  maintenanceRequest: jest.fn(),
+  subscribeAuthExpired: jest.fn((_handler: () => void) => jest.fn()),
+  getMaintenanceToken: jest.fn(),
+  clearMaintenanceToken: jest.fn()
 }))
 
 const mockGetStatus = getDatabaseStatus as jest.MockedFunction<typeof getDatabaseStatus>
@@ -46,6 +67,11 @@ const mockGetDeploymentTarget = getDeploymentTarget as jest.MockedFunction<typeo
 const mockGetMigrationStatus = getMigrationStatus as jest.MockedFunction<typeof getMigrationStatus>
 const mockTestConnection = testConnection as jest.MockedFunction<typeof testConnection>
 const mockClearActivation = clearActivation as jest.MockedFunction<typeof clearActivation>
+const mockStartMigration = startMigration as jest.MockedFunction<typeof startMigration>
+const mockProbeControlReady = probeControlReady as jest.MockedFunction<typeof probeControlReady>
+const mockMaintenanceLogin = maintenanceLogin as jest.MockedFunction<typeof maintenanceLogin>
+const mockMaintenanceRequest = maintenanceRequest as jest.MockedFunction<typeof maintenanceRequest>
+const mockClearMaintenanceToken = clearMaintenanceToken as jest.MockedFunction<typeof clearMaintenanceToken>
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
@@ -73,6 +99,15 @@ interface PanelVm {
   runTestConnection: () => Promise<void>
   restartPending: boolean
   attemptActive: boolean
+  followMode: boolean
+  maintenanceAuthenticated: boolean
+  followStatus: { phase: string, attemptId: string | null, epoch: string, stateVersion: number, restartPending: boolean, needsCredentials: boolean } | null
+  authForm: { username: string, password: string, twofa: string }
+  loginMaintenance: () => Promise<void>
+  onStartMigration: () => Promise<void>
+  commitFollowSwitch: () => Promise<void>
+  requestFollowCancel: () => Promise<void>
+  refreshFollowState: () => Promise<void>
 }
 
 const PG_MASKED: PgMasked = {
@@ -185,11 +220,13 @@ function makeApiError(code: string): ApiError {
   return new ApiError('冲突', { code, httpStatus: Number(code) })
 }
 
-/** 刷净微任务队列（mounted/load 内的 await 链；fake timers 下同样可用） */
+/** 刷净微任务队列（mounted/load 内的 await 链；fake timers 下同样可用）。
+ * 2026-11-08 升级为多轮微任务泵：一站式迁移流存在深 await 链（start→确认→
+ * 探测→回落/进入跟踪），3 轮固定冲刷不足；纯微任务泵在 fake timers 下同样安全 */
 async function flushPromises(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve()
+  }
 }
 
 /** 按文案查找按钮，缺失即抛错（避免非空断言 lint 警告） */
@@ -199,16 +236,18 @@ function findButton(wrapper: Wrapper<Vue>, text: string): Wrapper<Vue> {
   return btn
 }
 
-/** 挂载并等待 mounted 内首次 load 完成（默认 PG active 态 + 回填面不可用，可传覆盖） */
+/** 挂载并等待 mounted 内首次 load 完成（默认 PG active 态 + 回填面不可用，可传覆盖）。
+ * $route mock：面板经路由路径判定移动壳（/m/*），默认给桌面路径 */
 async function mountPanel(
   statusResponse = makeStatusResponse(),
   migrationResponse = makeMigrationStatusResponse(),
-  targetResponse = makeDeploymentTargetResponse({ available: false })
+  targetResponse = makeDeploymentTargetResponse({ available: false }),
+  routePath = '/settings'
 ): Promise<Wrapper<Vue>> {
   mockGetStatus.mockResolvedValue(statusResponse)
   mockGetMigrationStatus.mockResolvedValue(migrationResponse)
   mockGetDeploymentTarget.mockResolvedValue(targetResponse)
-  const wrapper = mount(DatabasePanel, { localVue, i18n })
+  const wrapper = mount(DatabasePanel, { localVue, i18n, mocks: { $route: { path: routePath } } })
   await flushPromises()
   await wrapper.vm.$nextTick()
   return wrapper
@@ -459,22 +498,301 @@ describe('DatabasePanel', () => {
     expect(vm.envPasswordMode).toBe(false)
   })
 
-  it('B 入口 start 仅指引：普通态点击提示走维护流程，不提交任何迁移', async() => {
-    const wrapper = await mountPanel()
-    const infoSpy = jest.spyOn(wrapper.vm.$message, 'info').mockImplementation((() => ({})) as unknown as () => never)
+  it('B start 一站式：确认后 POST start（sqlite 载荷+source 路径），进入内嵌维护认证', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    const confirmSpy = jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
 
-    await findButton(wrapper, '发起迁移（入口指引）').vm.$emit('click')
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
     await flushPromises()
 
-    expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('维护流程'))
-    expect(mockTestConnection).not.toHaveBeenCalled()
-    expect(mockClearActivation).not.toHaveBeenCalled()
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('自动暂停'),
+      '确认发起迁移？',
+      expect.objectContaining({ type: 'warning' })
+    )
+    expect(mockStartMigration).toHaveBeenCalledTimes(1)
+    const payload = mockStartMigration.mock.calls[0][0]
+    expect(payload.direction).toBe('sqlite-to-pg')
+    expect(payload.source).toEqual({ dialect: 'sqlite', path: '/data/app.db' })
+    expect(payload.use_env_password).toBe(true)
+    expect(payload.password).toBeUndefined()
+    expect(payload.target).toEqual(expect.objectContaining({ host: 'postgres', database: 'btdeck' }))
+    // 进入跟踪卡：内嵌维护认证表单可见（窗口已开）
+    expect(vm.followMode).toBe(true)
+    expect(wrapper.text()).toContain('维护认证')
+    wrapper.destroy()
+  })
+
+  it('B start 手动密码：载荷携明文密码、不携 use_env_password', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse({ hasEnvPassword: false })
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    vm.pgForm.password = 'typed-pw'
+
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    const payload = mockStartMigration.mock.calls[0][0]
+    expect(payload.password).toBe('typed-pw')
+    expect(payload.use_env_password).toBeUndefined()
+    wrapper.destroy()
+  })
+
+  it('B start 守卫：当前库已是 PostgreSQL 时拒绝发起', async() => {
+    const wrapper = await mountPanel()
+    const vm = wrapper.vm as unknown as PanelVm
+    const warningSpy = jest.spyOn(wrapper.vm.$message, 'warning').mockImplementation((() => ({})) as unknown as () => never)
+
+    await vm.onStartMigration()
+    await flushPromises()
+
+    expect(mockStartMigration).not.toHaveBeenCalled()
+    expect(warningSpy).toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  it('B start 超时不确定态：探测窗口关闭则失败回落，窗口已开则进入跟踪', async() => {
+    // 窗口关闭 → 失败回落（startError + followMode=false）
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockRejectedValue(new ApiError('请求超时', { code: '500', httpStatus: 500 }))
+    mockProbeControlReady.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { businessReady: true, maintenance: false }
+    } as unknown as Awaited<ReturnType<typeof probeControlReady>>)
+
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    expect(vm.followMode).toBe(false)
+    expect(wrapper.text()).toContain('请求超时')
+    wrapper.destroy()
+
+    // 窗口已开 → 启动实际成功，进入内嵌维护认证
+    const wrapper2 = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm2 = wrapper2.vm as unknown as PanelVm
+    jest.spyOn(wrapper2.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockRejectedValue(new ApiError('请求超时', { code: '500', httpStatus: 500 }))
+    mockProbeControlReady.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { businessReady: false, maintenance: true }
+    } as unknown as Awaited<ReturnType<typeof probeControlReady>>)
+
+    await findButton(wrapper2, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    expect(vm2.followMode).toBe(true)
+    expect(wrapper2.text()).toContain('维护认证')
+    wrapper2.destroy()
+  })
+
+  it('普通通道状态调用携带 skipAuthFallback（阻断维护窗口内全局跳登录）', async() => {
+    await mountPanel()
+    expect(mockGetStatus.mock.calls[0][0]).toEqual({ skipAuthFallback: true })
+    expect(mockGetMigrationStatus.mock.calls[0][0]).toEqual({ skipAuthFallback: true })
+  })
+
+  it('普通通道 401（维护窗口）探测确认后进入跟踪认证面', async() => {
+    mockGetStatus.mockRejectedValueOnce(makeApiError('401'))
+    mockProbeControlReady.mockResolvedValue({
+      status: 'success', msg: 'ok', code: '200', data: { businessReady: false, maintenance: true }
+    } as unknown as Awaited<ReturnType<typeof probeControlReady>>)
+    const wrapper = await mountPanel()
+    const vm = wrapper.vm as unknown as PanelVm
+
+    expect(vm.followMode).toBe(true)
+    expect(wrapper.text()).toContain('维护认证')
+    wrapper.destroy()
+  })
+
+  it('维护认证：成功后开启维护通道轮询；NOT_MAINTENANCE 回退普通通道', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    // 认证成功 → 维护通道轮询开启
+    mockMaintenanceLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
+    mockMaintenanceRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/status') {
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'importing' }).data as never
+      }
+      if (url === '/database/target-readiness') {
+        return { attemptId: 'att-1', phase: 'importing', readyToSwitch: false, needsCredentials: false } as never
+      }
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+    vm.authForm.username = 'admin'
+    vm.authForm.password = 'pw'
+    await vm.loginMaintenance()
+    await flushPromises()
+
+    expect(vm.maintenanceAuthenticated).toBe(true)
+    expect(mockMaintenanceRequest.mock.calls.some(c => c[1] === '/database/migration/status')).toBe(true)
+    wrapper.destroy()
+
+    // 窗口已关（认证 409 NOT_MAINTENANCE）→ 清维护态回退普通通道并重新拉取状态
+    const wrapper2 = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm2 = wrapper2.vm as unknown as PanelVm
+    jest.spyOn(wrapper2.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    await findButton(wrapper2, '发起迁移').vm.$emit('click')
+    await flushPromises()
+    mockMaintenanceLogin.mockRejectedValue(new ApiError('not in maintenance mode', { code: '409', httpStatus: 200 }))
+    const statusCallsBefore = mockGetMigrationStatus.mock.calls.length
+
+    vm2.authForm.username = 'admin'
+    vm2.authForm.password = 'pw'
+    await vm2.loginMaintenance()
+    await flushPromises()
+
+    expect(vm2.followMode).toBe(false)
+    expect(mockClearMaintenanceToken).toHaveBeenCalled()
+    expect(mockGetMigrationStatus.mock.calls.length).toBeGreaterThan(statusCallsBefore)
+    wrapper2.destroy()
+  })
+
+  it('提交切换：确认后经维护通道 POST switch（CAS+mode B），成功乐观置位 committed', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+    mockMaintenanceLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
+    let switched = false
+    mockMaintenanceRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/status') {
+        // 真实后端 switch 后 status 即进入 committed/RESTART_PENDING（乐观置位后被权威刷新覆盖同值）
+        return makeMigrationStatusResponse(
+          switched
+            ? { attemptId: 'att-1', phase: 'committed', restartPending: true }
+            : { attemptId: 'att-1', phase: 'ready_to_switch' }
+        ).data as never
+      }
+      if (url === '/database/target-readiness') {
+        return { attemptId: 'att-1', phase: switched ? 'committed' : 'ready_to_switch', readyToSwitch: !switched, needsCredentials: false } as never
+      }
+      if (url === '/database/migration/switch') {
+        switched = true
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'committed', restartPending: true }).data as never
+      }
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+    vm.authForm.username = 'admin'
+    vm.authForm.password = 'pw'
+    await vm.loginMaintenance()
+    await flushPromises()
+
+    await vm.commitFollowSwitch()
+    await flushPromises()
+
+    const switchCall = mockMaintenanceRequest.mock.calls.find(c => c[1] === '/database/migration/switch')
+    expect(switchCall).toBeDefined()
+    expect(switchCall?.[0]).toBe('post')
+    expect(switchCall?.[2]).toEqual({ attempt_id: 'att-1', epoch: 'epoch-1', state_version: 1, mode: 'B' })
+    expect(vm.followStatus?.phase).toBe('committed')
+    wrapper.destroy()
+  })
+
+  it('取消迁移：确认后经维护通道 POST cancel（CAS）', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'importing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+    mockMaintenanceLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
+    mockMaintenanceRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/status') {
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'importing' }).data as never
+      }
+      if (url === '/database/target-readiness') {
+        return { attemptId: 'att-1', phase: 'importing', readyToSwitch: false, needsCredentials: false } as never
+      }
+      if (url === '/database/migration/cancel') {
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'cancelling' }).data as never
+      }
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+    vm.authForm.username = 'admin'
+    vm.authForm.password = 'pw'
+    await vm.loginMaintenance()
+    await flushPromises()
+
+    await vm.requestFollowCancel()
+    await flushPromises()
+
+    const cancelCall = mockMaintenanceRequest.mock.calls.find(c => c[1] === '/database/migration/cancel')
+    expect(cancelCall).toBeDefined()
+    expect(cancelCall?.[2]).toEqual({ attempt_id: 'att-1', epoch: 'epoch-1', state_version: 1 })
+    expect(vm.followStatus?.phase).toBe('cancelling')
+    wrapper.destroy()
+  })
+
+  it('移动壳（/m/*）：迁移发起与跟踪动作面不渲染', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse(),
+      '/m/settings'
+    )
+    // 动作面不渲染：入口卡（发起迁移按钮所在）与跟踪卡均隐藏；PG 表单说明文案不在断言内
+    expect(wrapper.text()).not.toContain('数据库切换入口')
+    expect(wrapper.text()).not.toContain('提交切换')
+    expect(wrapper.text()).not.toContain('迁移跟踪')
+    wrapper.destroy()
   })
 
   it('B 入口 start 在 restartPending 或迁移进行中时禁用并展示原因', async() => {
     // restartPending：提交待重启生效，入口禁用
     const wrapper = await mountPanel(makeStatusResponse({ restartPending: true }))
-    let startButton = findButton(wrapper, '发起迁移（入口指引）')
+    let startButton = findButton(wrapper, '发起迁移')
     expect(startButton.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('存在待重启生效的提交')
     wrapper.destroy()
@@ -487,7 +805,7 @@ describe('DatabasePanel', () => {
     const vm = wrapper2.vm as unknown as PanelVm
     expect(vm.restartPending).toBe(false)
     expect(vm.attemptActive).toBe(true)
-    startButton = findButton(wrapper2, '发起迁移（入口指引）')
+    startButton = findButton(wrapper2, '发起迁移')
     expect(startButton.attributes('disabled')).toBeDefined()
     expect(wrapper2.text()).toContain('已有迁移在进行中')
     wrapper2.destroy()
