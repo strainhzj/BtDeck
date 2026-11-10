@@ -4,6 +4,17 @@ from sqlalchemy import case, func
 from app.database import SessionLocal
 from app.tasks.models import TaskLogs
 
+# 任务日志正文统一截断预算（Text 列仍需写入口径收敛，防无界增长；
+# 2026-11-10 迁移管线 task_logs.log_detail Text 化配套）
+TASK_LOG_DETAIL_MAX_CHARS = 8000
+
+
+def truncate_log_detail(value: Optional[str]) -> Optional[str]:
+    """任务日志正文统一截断（超预算附截断标记与原始长度）。"""
+    if value is None or len(value) <= TASK_LOG_DETAIL_MAX_CHARS:
+        return value
+    return value[:TASK_LOG_DETAIL_MAX_CHARS] + f"\n[...截断：原始 {len(value)} 字符]"
+
 
 class TaskLogger:
     """任务日志记录器"""
@@ -75,7 +86,7 @@ class TaskLogger:
 
         db = SessionLocal()
         try:
-            log_detail = "\n".join(self.log_details)
+            log_detail = truncate_log_detail("\n".join(self.log_details))
 
             task_log = TaskLogs(
                 task_name=self.task_name,

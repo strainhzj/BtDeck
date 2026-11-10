@@ -62,7 +62,8 @@ c8d9e0f1a2b3 → d4e5f6a7b8c9 → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5
     └─ 副本数快照列、路径维护 disabled_by、refresh_tokens、强制改密标志、
        orphan_purge_job 提交端 IP 列、孤儿 current_detail_id Schema 漂移修复
 
-c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 → 053003337878 → a1f7c9e3d2b4 → 8fabba8687b0 → d4a7f1c9e2b6 → b7d8e9f0a1c2 → c9e0f1a2b3c4 → e9f0a1b2c3d4 ← 当前 HEAD
+c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 → 053003337878 → a1f7c9e3d2b4 → 8fabba8687b0 → d4a7f1c9e2b6 → b7d8e9f0a1c2 → c9e0f1a2b3c4 → e9f0a1b2c3d4
+    → a2b3c4d5e6f7 ← 当前 HEAD(四列类型对齐真实数据：inode_id/total_size Integer→BigInteger（Linux 大存储池 inode 与字节计数超 int32）、seed_transfer_audit_log source/target_downloader_id Integer→String(36)（历史数据即下载器 UUID 文本）、task_logs.log_detail VARCHAR(2000)→Text（脚本日志可超 2000，写入侧 8000 截断）；batch recreate 双方言重建，downgrade 数据性收窄前校验、不可无损即拒绝；2026-11-10，迁移发起面 sqlite_path=None 死锁的后续 schema 契约修正)
     └─ 双语系统预设稳定身份：search_templates.preset_key（P3-2）、
        setting_templates.preset_key（P6-2）；均含按旧中文名一次性回填与
        幂等 init，downgrade 仅 drop 列与索引；
@@ -89,7 +90,7 @@ c1d2e3f4a5b6 → b3e5f7a9c1d2 → d1e2f3a4b5c6 → 053003337878 → a1f7c9e3d2b4
 ```
 
 - 单 head，无分叉
-- `alembic heads` 必须输出且只输出 `e9f0a1b2c3d4`（数据库迁移 UI 协议元数据三表：
+- `alembic heads` 必须输出且只输出 `a2b3c4d5e6f7`（四列类型对齐真实数据；此前 head 链：数据库迁移 UI 协议元数据三表：
   bt_database_identity/bt_database_migration_receipt/bt_database_migration_events
   + 存量库身份 seed，feature database-migration-ui-2026-10-28 W1-1；链尾顺序为
   RSS 五表/两列（8fabba8687b0/d4a7f1c9e2b6）→ 速度采样两表（b7d8e9f0a1c2）

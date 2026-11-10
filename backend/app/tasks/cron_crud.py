@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc, func
 from app.core.database_result import DatabaseResult
 from app.tasks.cron_models import CronTask
+from app.tasks.logger import truncate_log_detail
 from app.tasks.models import TaskLogs
 
 
@@ -276,7 +277,7 @@ class TaskLogsCRUD:
                 success=log_data.get("success"),
                 outcome=log_data.get("outcome"),
                 skip_reason=log_data.get("skip_reason"),
-                log_detail=log_data.get("log_detail"),
+                log_detail=truncate_log_detail(log_data.get("log_detail")),
             )
 
             db.add(task_log)

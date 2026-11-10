@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+
+from tests.core.alembic_head import current_head
 from pathlib import Path
 
 import pytest
@@ -231,7 +233,7 @@ class TestActivatedLibraryUpgradesNormally:
             receipt_status = conn.execute("SELECT status FROM bt_database_migration_receipt").fetchone()[0]
         finally:
             conn.close()
-        assert version == "e9f0a1b2c3d4"  # 正常升级到新 head，不拿历史导入 revision 拒启
+        assert version == current_head()  # 正常升级到当前 head，不拿历史导入 revision 拒启
         assert identity_after == identity_before  # 身份不重生成
         assert receipt_status == "ACTIVATED"  # 历史凭据不被迁移链破坏
 
@@ -259,7 +261,7 @@ class TestExplicitTargetUrl:
         finally:
             conn.close()
         assert count == 46  # 45 + alembic_version
-        assert version == "e9f0a1b2c3d4"
+        assert version == current_head()
 
         # 源库零 DDL：版本保持 head、未被触碰（文件 mtime 语义不可靠，验证内容不变）
         conn = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
@@ -267,4 +269,4 @@ class TestExplicitTargetUrl:
             src_version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         finally:
             conn.close()
-        assert src_version == "e9f0a1b2c3d4"
+        assert src_version == current_head()

@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, cast, Dict, List, Optional
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -54,7 +54,11 @@ class OrphanPurgeJob(Base):
         Integer, nullable=False, default=0, comment="失败数量", server_default="0"
     )
     total_size: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0", comment="成功处理的文件总大小"
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="成功处理的文件总大小（字节数可超 int32，2026-11-10 修正映射）",
     )
     failed_list_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="失败项 JSON 数组")
     hardlink_notes_json: Mapped[Optional[str]] = mapped_column(

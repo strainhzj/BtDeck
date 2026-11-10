@@ -62,7 +62,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L72) + `run_migrations_online`(L96)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS`；v1.0.8：模型经 `app/core/model_registry.py` 单点注册与共享连接、独立升级显式事务提交、PG 空库手工 upgrade 守卫与基线降级下限、SQLite 原链不变 |
-| Alembic revisions versions | `versions/` | **37 个** revision 文件；当前 head 为 `c9e0f1a2b3c4`（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
+| Alembic revisions versions | `versions/` | **39 个** revision 文件；当前 head 为 `a2b3c4d5e6f7`（2026-11-10 四列类型对齐真实数据：inode/字节计数 BigInteger、seed_transfer downloader UUID String(36)、task_logs.log_detail Text+写入侧 8000 截断）（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
 
 `env.py` 经 `app/core/model_registry.py` 单点注册全部 ORM 模型（v1.0.8 归位）以确保 autogenerate 检测全部表。
 
@@ -112,7 +112,7 @@
 | RSS Phase 2 三表两列 rss-phase2 | `d4a7f1c9e2b6_rss_phase2_modes_rules_and_rule_feeds.py` ✨2026-09-24 | 新增 bt_rss_modes / bt_rss_rules / bt_rss_rule_feeds 三表 + bt_rss_articles.added_rule_id / bt_rss_feeds.refresh_interval_minutes 两列；has_table 与列存在双重幂等守卫；downgrade 对称 drop_column/drop_table（feature rss-subscription-phase2-2026-09-24） |
 | hash 小写归一 hash-lowercase | `a1f7c9e3d2b4_hash_lowercase_normalization.py` ✨2026-09-23 | 数据迁移：torrent_info.hash / torrent_file_backup.info_hash / sync_checkpoints.cursor_value 一次性 lower()（qB 路径原生小写幂等；TR 存量大写与 qB 小写同库混存导致唯一索引/复合键两套身份）；UPDATE OR IGNORE 防脏数据冲突、inspector 检查缺表容错（漂移库升级不中断）、downgrade no-op；rTorrent 接入前置 P0-D |
 | 速度采样两表 speed-samples | `b7d8e9f0a1c2_speed_samples.py` ✨2026-09-25 | 新增 downloader_speed_sample（60s 原始，保留 14d）+ downloader_speed_hourly（整点聚合，保留 730d）两表；inspect 幂等守卫；feature statistics-reports-2026-09 W1 |
-| TR added_date 本地化 normalize-tr-added-date | `c9e0f1a2b3c4_normalize_tr_added_date.py` ✨2026-09-25 | 数据迁移（三段式：SELECT JOIN bt_downloaders→Python 侧 replace(tzinfo=utc).astimezone() 本地转换→按复合 PK (info_id, downloader_id, downloader_name) executemany UPDATE）：torrent_info.added_date 从 aware UTC 批量转 naive 本地，与 qB `_parse_qb_epoch` 同构（修复 TR 落库 8h 偏移）；JOIN 不带 dr=0（含软删下载器与回收站行）；downgrade 反向；inspect 守卫 + 文件尾不可重复执行警示；当前 head；feature statistics-reports-2026-09 W2 |
+| TR added_date 本地化 normalize-tr-added-date | `c9e0f1a2b3c4_normalize_tr_added_date.py` ✨2026-09-25 | 数据迁移（三段式：SELECT JOIN bt_downloaders→Python 侧 replace(tzinfo=utc).astimezone() 本地转换→按复合 PK (info_id, downloader_id, downloader_name) executemany UPDATE）：torrent_info.added_date 从 aware UTC 批量转 naive 本地，与 qB `_parse_qb_epoch` 同构（修复 TR 落库 8h 偏移）；JOIN 不带 dr=0（含软删下载器与回收站行）；downgrade 反向；inspect 守卫 + 文件尾不可重复执行警示；feature statistics-reports-2026-09 W2 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

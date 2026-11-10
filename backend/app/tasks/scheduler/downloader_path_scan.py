@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo
+from app.tasks.logger import truncate_log_detail
 from app.tasks.models import TaskLogs
 from app.tasks.resource_guard import admission_controller
 from app.core.path_mapping import PathMappingService
@@ -511,7 +512,9 @@ class DownloaderPathScanTask:
             duration = int((end_time - start_time).total_seconds())
 
             # 构建日志详情
-            log_detail = json.dumps(result, ensure_ascii=False, default=str)[:2000]  # 限制长度
+            log_detail = truncate_log_detail(
+                json.dumps(result, ensure_ascii=False, default=str)
+            )  # 统一 8000 截断（2026-11-10）
 
             task_log = TaskLogs(
                 task_name=self.name,

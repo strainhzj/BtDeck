@@ -8899,3 +8899,28 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：database-settings 重写 2+新增 9 例 28 例全绿；database 域 8 套 111 例全绿；全量 Jest 155 套 2148 例全绿（净增 13）；typecheck 净；lint 净增 0；文档四处同步（roadmap views 1527 行复测+api 13 函数、database-setup 流程重写、runbook 阶段 2/5 双入口）。
 - **遗留待办**：后端迁移控制面安全加固（maintenance token 与 attempt/epoch 绑定校验、cancel/switch CAS 实际消费、credentials 目标绑定）——审查发现的既有安全债，待用户排期。
 - **未提交**（本条目随批入仓）。
+
+## 2026-11-09：生产部署 1955107（一站式迁移流上线，七项验证全过）+ CI 补提教训
+
+- **插曲（提交通道教训）**：65c807c 首推 CI Frontend TypeScript gate 36s 即败——`frontend/src/api/database.ts` 漏加 git add（probeControlReady/DatabaseRequestOpts/timeout+skipAuthFallback 未入仓；本地文件在故 typecheck 全绿，CI 干净检出才炸）。补提 1955107 后 run 42638515145 全绿（Backend 9m41s/Frontend 3m22s/PG 1m3s）。**教训：改动文件清单必须与 git add 逐一对账（git status --short 逐行核对），不能凭记忆拼 add 列表**。单 job Azure blob 日志沙箱阻断→run 级 logs zip 直连可用（先例复证）。
+- **部署**（Hermes run_28e4a724ca284887b8ba318c442f89d4）：干净检出 1955107 → --no-cache --quick 39.2min（npm ci ~30min 网络慢，非卡死）→ 双 tar（backend 337,144,832B sha256 877600c3… 与上批字节数一致但 sha 不同=build-info 内嵌 git_sha 差异，纯前端批符合预期 / frontend 195,355,136B sha256 de7061c7…）→ 锚点 backup-pre-1955107（=b5e92fa 镜像 004445e9/c0b08082）→ remote-deploy rc=0 → 8401 关。
+- **七项验证全过**：①三容器 healthy ②gitSha=19551072134b8c1da7708f0cd0ee3f3210502df2 全 40 位+alembicHead e9f0a1b2c3d4 ③前端 200 ④deployment-target 无 token 401 ⑤pg_isready accepting ⑥compose sha256 60f3caee… 前后一致 ⑦日志除 preset_key 已知误报外 0。
+- **生产状态**：1955107=origin/dev HEAD 严格一致；backend 仍 DB_TYPE=sqlite 跑老 app.db（批准中间态）。一站式迁移流已上线：设置→数据库→发起迁移→内嵌维护认证→跟踪→READY 提交切换→重启激活，全程 UI。
+- **记录纪律**：本条目留存工作区，下次实质提交一并入仓。远端生产目录遗留本批双 tar 待手动清理（非紧急）。
+
+## 2026-11-10：生产部署 3c468db（bootstrap sqlite_path 固定语义修复上线，七项验证全过）
+
+- **用户实测**：1955107 上点「发起迁移」报「无法确定当前 SQLite 库路径，禁止发起迁移」——用户判语：SQLite 路径是项目固定的，不存在用户未配置形态，提示不合理。
+- **根因**：bootstrap env 回退 `_config_from_env` 只认 `DATABASE_PATH` env，未设时 sqlite_path=None——生产容器未设该变量 → /status 下发 sqlitePath=null → 前端 startNoSourcePath 守卫拦发，且 manager source fence 的 effective.sqlite_path 同为 null（即便前端放行后端也会拒）。settings.DATABASE_PATH 真实语义 = DATABASE_PATH env 或 CONFIG_DIR 固定 app.db（生产 /app/config/app.db），bootstrap 未对齐。
+- **修复**（3c468db，后端 2 文件）：`_config_from_env` 增 config_dir 参数，sqlite 分支 `DATABASE_PATH env or CONFIG_DIR/app.db`；resolve 显式 yaml 时 config_dir=父目录（生产均传 settings.YAML_PATH 同目录）。前端守卫保留为 fail-closed 兜底（现不可达）。
+- **验证**：bootstrap 断言更新（env 默认 = yaml 同目录 app.db）+ core/services/api 3760 例全绿；black/flake8/mypy 净；CI run 42750865245 全绿（8m10s/3m55s/1m26s）。
+- **部署**（Hermes run_a169dc6afa41460b98d785bb840ebf54）：构建 34min → 双 tar（backend +512B=实质改动吻合 / frontend 同字节 sha 异=git_sha）→ 锚点 backup-pre-3c468db（=1955107 镜像）→ remote-deploy rc=0 → 七项验证全过（gitSha 40 位/三容器 healthy/compose 60f3caee… 未动/日志净）→ 8401 关。远端遗留双 tar 待手动清理。
+- **生产状态**：3c468db=origin/dev HEAD 严格一致。设置页 SQLite 路径行应显示 /app/config/app.db（用户待实机确认）——一站式迁移流发起死锁全部排除。
+- **记录纪律**：本条目留存工作区，下次实质提交一并入仓。
+
+## 2026-11-10（续）：迁移预检 schema 契约修正（4 模型类型 + alembic a2b3c4d5e6f7）
+
+- **生产实测**：1955107 上发起迁移预检 fail-fast——5 列不满足 PG 目标契约。Hermes 两轮只读盘点坐实三类违规，全部是模型声明与真实数据脱节（非脏数据）：①inode_id 92% 超 int32（Linux 大存储池 inode）②total_size 字节计数超 int32（87GB）③seed_transfer 两列 21 行 UUID 文本放进 INTEGER 列 ④task_logs.log_detail 15 行超 2000（max 64K）。清洗路线不可行（92% 活跃数据）。
+- **修复**（子代理对抗审查「有条件通过」扩大项全处置）：4 模型类型修正（inode_id/total_size→BigInteger、seed_transfer downloader_id→String(36) 对齐 rss 先例与 bt_downloaders 契约、log_detail→Text）+ 新 alembic a2b3c4d5e6f7（batch recreate 双方言重建、降级数据性收窄前置校验不可无损即拒绝，沿用 b6e1c4d9a2f7 受限回滚先例）+ orphan_file_service 两处 CAST(inode, Integer)→BigInteger（PG 侧 >2^31 查询会炸）+ task_logs 写入侧统一 8000 字符截断（logger/cron_crud/cron_crud_async/cron_executor/path_scan 五点 + truncate_log_detail helper）+ seed_transfer 测试改真实 UUID（原数字串是规避 Integer 边界的权宜）+ 迁移链收口（constraints 链尾+head 标记、EXPECTED_HEAD、parity _HEAD、startup_gates 版本断言改 current_head() 动态、roadmap 速查 37→39+infra 行）。
+- **验证**：core/services/api 3760 例全绿；black/flake8/mypy 净；迁移链/parity/dialect guard/seed_transfer/bootstrap 77 例绿；CI run 42750865245 全绿后部署 3c468db。
+- **遗留（审查发现，非本批）**：task_logs API 契约问题（前端 log_content 无后端消费、统计 camelCase/snake_case 错位、/tasks/logs 返回 logs 非统一 list）；inode 候选表 String 与结果表 BigInteger 混合表示的全链路统一。

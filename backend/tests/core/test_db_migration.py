@@ -66,7 +66,9 @@ def _clean_database_path_env():
 #       → c9e0f1a2b3c4(TR added_date UTC→本地回填数据迁移，统计报表 W2；⚠️ 不可重复执行)
 #       → e9f0a1b2c3d4(数据库迁移 UI 协议元数据三表 + 存量身份 seed，database-migration-ui W1-1；
 #         downgrade 受限：receipt/events 存在行时拒绝)
-EXPECTED_HEAD = "e9f0a1b2c3d4"
+#       → a2b3c4d5e6f7(四列类型对齐真实数据 batch recreate：inode_id/total_size BigInteger、
+#         seed_transfer downloader_id String(36)、task_logs.log_detail Text；downgrade 数据性收窄拒绝)
+EXPECTED_HEAD = "a2b3c4d5e6f7"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"

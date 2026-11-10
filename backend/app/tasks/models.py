@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from datetime import datetime
@@ -33,7 +33,11 @@ class TaskLogs(Base):
         nullable=True,
         comment="跳过原因机器码：resource_busy/already_running/outside_budget/downloader_offline（W3-4）",
     )
-    log_detail: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True, comment="执行日志")
+    log_detail: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="执行日志（Text：脚本输出可超 2000，写入侧统一 8000 字符截断，2026-11-10 修正映射）",
+    )
     dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="逻辑删除标识")
 
     def _format_datetime(self, dt):

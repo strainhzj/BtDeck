@@ -68,11 +68,17 @@ class SeedTransferAuditLog(Base):
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="操作用户名")
 
     # 源下载器信息
-    source_downloader_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="源下载器ID")
+    source_downloader_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        nullable=True,
+        comment="源下载器ID（UUID 文本；历史数据即 UUID，Integer 声明与数据脱节，2026-11-10 修正）",
+    )
     source_downloader_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="源下载器昵称")
 
     # 目标下载器信息
-    target_downloader_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="目标下载器ID")
+    target_downloader_id: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True, comment="目标下载器ID（UUID 文本；同上修正）"
+    )
     target_downloader_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="目标下载器昵称")
 
     # 种子信息
@@ -104,9 +110,9 @@ class SeedTransferAuditLog(Base):
         operation_time: Optional[datetime] = None,
         user_id: Optional[int] = None,
         username: Optional[str] = None,
-        source_downloader_id: Optional[int] = None,
+        source_downloader_id: Optional[str] = None,
         source_downloader_name: Optional[str] = None,
-        target_downloader_id: Optional[int] = None,
+        target_downloader_id: Optional[str] = None,
         target_downloader_name: Optional[str] = None,
         torrent_name: Optional[str] = None,
         info_hash: Optional[str] = None,

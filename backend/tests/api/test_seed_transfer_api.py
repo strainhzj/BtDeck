@@ -15,8 +15,9 @@
   → 测试需在全局 app.state 上设 store（或 patch hasattr 检查）。
 - endpoint 和 service 的 _log_transfer_attempt 都用 `from app.database import AsyncSessionLocal`
   模块级导入自建 session → 测试 patch app.database.AsyncSessionLocal 注入测试库。
-- SeedTransferAuditLog.source/target_downloader_id 是 Integer 列，但 schema 传 str。
-  → 测试用纯数字字符串（如 "99999"）规避类型边界（SQLite 容忍）。
+- SeedTransferAuditLog.source/target_downloader_id 自 2026-11-10 起为 String(36)
+  （历史数据即下载器 UUID 文本，Integer 声明与数据脱节已修正）→ 测试用真实形态
+  UUID（36 字符连字符）。
 - 审计日志写入有 try/except 兜底（失败只 logger.error，不让请求 500）。
 """
 
@@ -39,7 +40,13 @@ from app.models.seed_transfer_audit_log import SeedTransferAuditLog
 URL = "/api/v1/torrents/transfer"
 
 
-def _body(*, source="99999", target="88888", info_hash=None, target_path="/downloads/movies"):
+def _body(
+    *,
+    source="0f1e2d3c-4b5a-4988-8776-665544332211",
+    target="aabbccdd-eeff-4a1b-2c3d-4e5f6a7b8c9d",
+    info_hash=None,
+    target_path="/downloads/movies",
+):
     """构造最小合法 SeedTransferRequest body。
 
     downloader_id 用纯数字字符串（SQLite Integer 列容忍，规避类型边界）。
@@ -137,7 +144,7 @@ class TestDownloaderNotFound:
     async def test_source_not_found(self, client, async_engine_factory):
         """源下载器不存在 → code='400'，error_message 含"源下载器不存在"。"""
         engine, factory = async_engine_factory
-        r = client.post(URL, json=_body(source="99999"))
+        r = client.post(URL, json=_body(source="0f1e2d3c-4b5a-4988-8776-665544332211"))
         body = r.json()
         assert body["code"] == "400"
         assert body["status"] == "error"
@@ -148,13 +155,13 @@ class TestDownloaderNotFound:
     @pytest.mark.asyncio
     async def test_source_not_found_writes_failed_audit(self, client, async_engine_factory):
         """源下载器不存在 → 写一条 failed 审计日志（error_message 含"源下载器不存在"+ id 渲染）。"""
-        client.post(URL, json=_body(source="99999"))
+        client.post(URL, json=_body(source="0f1e2d3c-4b5a-4988-8776-665544332211"))
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, status="failed", error_contains="源下载器不存在")
         assert len(logs) == 1
         assert logs[0].transfer_status == "failed"
         # 身份锁定：error_message 须含请求的 id（锁定 id 渲染正确）
-        assert "99999" in logs[0].error_message
+        assert "0f1e2d3c-4b5a-4988-8776-665544332211" in logs[0].error_message
 
     @pytest.mark.asyncio
     async def test_target_not_found(self, client, async_engine_factory):
@@ -174,7 +181,10 @@ class TestDownloaderNotFound:
     @pytest.mark.asyncio
     async def test_both_not_found_goes_source_branch(self, client, async_engine_factory):
         """源和目标都不存在 → 走源分支优先（error_message 是"源下载器不存在"）。"""
-        client.post(URL, json=_body(source="99999", target="88888"))
+        client.post(
+            URL,
+            json=_body(source="0f1e2d3c-4b5a-4988-8776-665544332211", target="aabbccdd-eeff-4a1b-2c3d-4e5f6a7b8c9d"),
+        )
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, error_contains="源下载器不存在")
         assert len(logs) == 1
@@ -185,7 +195,7 @@ class TestDownloaderNotFound:
     @pytest.mark.asyncio
     async def test_audit_records_info_hash_and_user(self, client, async_engine_factory):
         """审计日志记录 info_hash / username / target_path（身份锁定）。"""
-        client.post(URL, json=_body(source="99999", info_hash="b" * 40))
+        client.post(URL, json=_body(source="0f1e2d3c-4b5a-4988-8776-665544332211", info_hash="b" * 40))
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, status="failed")
         assert logs[0].info_hash == "b" * 40

@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -30,7 +30,9 @@ class OrphanHardlinkCopyResult(Base):
     device_id: Mapped[str] = mapped_column(
         String(32), nullable=False, comment="目标文件 st_dev（字符串，Windows 无符号卷号）"
     )
-    inode_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="目标文件 st_ino")
+    inode_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, comment="目标文件 st_ino（Linux 大存储池 inode 可超 int32，2026-11-10 修正映射）"
+    )
     copy_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="扫描时的 st_nlink - 1", server_default="0"
     )

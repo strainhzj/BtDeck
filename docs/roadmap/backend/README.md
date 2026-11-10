@@ -16,7 +16,7 @@
 | 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 41 文件（ORM 23（根 22 含 enums.py + response/ 1）+ repositories 3 + schemas 8 + data 6 + app/enums 1，不计 `__init__.py`；✨2026-09-25 +speed_sample.py 并校准历史漂移） |
 | 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 37 文件（tasks 16 + scheduler 18 + scheduler/torrent_sync 3，不计 `__init__.py`；✨2026-09-25 +speed_sampler.py 并校准历史漂移） |
 | 领域 domain | [domain/README.md](./domain/README.md) | 领域目录 27 文件（downloader 9 + torrents 9 + tracker 1 + auth 7 + user 1） |
-| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 37 个 revision；当前 head `c9e0f1a2b3c4`） |
+| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 39 个 revision；当前 head `a2b3c4d5e6f7`） |
 
 ---
 

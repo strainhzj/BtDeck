@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from app.core.config import settings, is_frozen
 from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
+from app.tasks.logger import truncate_log_detail
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService
@@ -673,7 +674,7 @@ class CronTaskExecutor:
                 # 执行任务
                 result = await self._run_task_script(task)
                 success = result["success"]
-                log_detail = result["log_detail"]
+                log_detail = truncate_log_detail(result["log_detail"]) or ""
 
                 if isinstance(result, dict) and result.get("skipped"):
                     logger.info(f"定时任务已跳过: {task['task_name']}, 原因: {result.get('skip_reason') or '-'}")

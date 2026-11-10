@@ -24,7 +24,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, TypeVar, cast
 
-from sqlalchemy import Integer, and_, case, cast as sql_cast, func, or_, select, text, tuple_, update
+from sqlalchemy import BigInteger, and_, case, cast as sql_cast, func, or_, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import SessionLocal
@@ -985,7 +985,7 @@ class OrphanFileService:
             shared_rows = await self.db.execute(
                 select(OrphanCurrentCandidate.canonical_path).where(
                     OrphanCurrentCandidate.device_id == str(source_identity[0]),
-                    sql_cast(OrphanCurrentCandidate.inode, Integer) == source_identity[1],
+                    sql_cast(OrphanCurrentCandidate.inode, BigInteger) == source_identity[1],
                 )
             )
             for (path_value,) in shared_rows.all():
@@ -1069,7 +1069,7 @@ class OrphanFileService:
                             select(OrphanCurrentCandidate.current_detail_id).where(
                                 OrphanCurrentCandidate.current_detail_id.isnot(None),
                                 OrphanCurrentCandidate.device_id == str(source_identity[0]),
-                                sql_cast(OrphanCurrentCandidate.inode, Integer) == source_identity[1],
+                                sql_cast(OrphanCurrentCandidate.inode, BigInteger) == source_identity[1],
                             )
                         )
                     )
