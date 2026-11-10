@@ -234,8 +234,13 @@ def _config_from_active(active: Mapping[str, Any]) -> EffectiveDatabaseConfig:
     )
 
 
-def _config_from_env(environ: Mapping[str, str]) -> EffectiveDatabaseConfig:
-    """env 回退：与 settings/startup_guard 同源的方言判定与默认值（§2.1 契约）。"""
+def _config_from_env(environ: Mapping[str, str], config_dir: str) -> EffectiveDatabaseConfig:
+    """env 回退：与 settings/startup_guard 同源的方言判定与默认值（§2.1 契约）。
+
+    SQLite 路径为项目固定语义（settings.DATABASE_PATH 同源）：DATABASE_PATH env
+    覆盖，否则 CONFIG_DIR 下固定 app.db——不存在"未配置"形态（迁移发起面需要
+    真实路径；2026-11-09 修正：此前未设 DATABASE_PATH 时回退 None，导致 /status
+    sqlitePath=null 且 start 的 source fence 判定"无 sqlite_path"拒发）。"""
     raw = (environ.get("DB_TYPE") or "sqlite").strip().lower()
     dialect = "postgresql" if raw in ("postgres", "pg") else raw
     if dialect not in VALID_DIALECTS:
@@ -260,7 +265,7 @@ def _config_from_env(environ: Mapping[str, str]) -> EffectiveDatabaseConfig:
             pool_timeout=int(environ.get("DB_POOL_TIMEOUT", "30")),
         )
         return EffectiveDatabaseConfig(source="env", dialect=DIALECT_POSTGRESQL, sqlite_path=None, pg=pg)
-    sqlite_path = environ.get("DATABASE_PATH") or None
+    sqlite_path = environ.get("DATABASE_PATH") or str(Path(config_dir) / "app.db")
     return EffectiveDatabaseConfig(source="env", dialect=DIALECT_SQLITE, sqlite_path=sqlite_path, pg=None)
 
 
@@ -275,10 +280,13 @@ def resolve_effective_database_config(
         # settings 实例化副作用）；生产路径应由调用方显式传入
         config_dir = os.getenv("CONFIG_DIR") or str(Path(__file__).resolve().parents[2] / "config")
         config_path = str(Path(config_dir) / "config.yaml")
+    else:
+        # 显式 yaml 路径的父目录即 CONFIG_DIR（生产调用方均传 settings.YAML_PATH）
+        config_dir = str(Path(config_path).parent)
     active = load_active_config(config_path)
     if active is not None:
         return _config_from_active(active)
-    return _config_from_env(environ if environ is not None else os.environ)
+    return _config_from_env(environ if environ is not None else os.environ, config_dir)
 
 
 # =============================================================================

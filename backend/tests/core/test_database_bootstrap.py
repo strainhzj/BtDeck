@@ -160,9 +160,11 @@ class TestEffectiveConfigActive:
 
 class TestEffectiveConfigEnvFallback:
     def test_env_sqlite_default(self, tmp_path):
+        """SQLite 路径为项目固定语义：DATABASE_PATH 未设时回退 yaml 同目录固定 app.db
+        （settings.DATABASE_PATH 同源；2026-11-09 修正迁移发起面 sqlite_path=None 死锁）"""
         cfg = resolve_effective_database_config(tmp_path / "absent.yaml", environ={})
         assert cfg.source == "env" and cfg.dialect == DIALECT_SQLITE
-        assert cfg.sqlite_path is None and cfg.pg is None
+        assert cfg.sqlite_path == str(tmp_path / "app.db") and cfg.pg is None
 
     def test_env_sqlite_with_path(self, tmp_path):
         cfg = resolve_effective_database_config(tmp_path / "absent.yaml", environ={"DATABASE_PATH": "/x/app.db"})
@@ -298,12 +300,14 @@ class TestStartupDisposition:
         """W3：双 ACK 完成的激活→正常启动；COMMITTED 待重启→维护分支（§4.4）。"""
         effective = resolve_effective_database_config(_write_config(tmp_path, _active_pg_yaml()))
         done = evaluate_startup_disposition(
-            effective, pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+            effective,
+            pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
             pending_commit_phase="ACTIVATED_ACK",
         )
         assert done.normal and done.reason_code == "ACTIVATION_COMPLETE"
         pending = evaluate_startup_disposition(
-            effective, pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+            effective,
+            pending_attempt="sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
             pending_commit_phase="COMMITTED",
         )
         assert not pending.normal and pending.reason_code == "ACTIVATION_PENDING_RESTART"
