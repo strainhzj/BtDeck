@@ -154,6 +154,10 @@ stamp 当前 head）；**今后新增迁移必须同时可迁移 SQLite 已有�
        maintenance-intent.json 崩溃残留）→ 维护分支：不迁移/不 seed/
        无 cron/无后台任务/无下载器初始化；MCP mark_closed；
        /health/ready=503；仅 /api/v1/maintenance/* 控制面（独立维护鉴权）
+       └─ 例外（2026-11-11 孤儿 intent 对账）：PREPARING intent 且 control 无
+          pending、journal 无 manifest 背书（begin_prepare 后崩溃窗口，零受管
+          事实）→ 先审计后归档（maintenance-intent.json.stale-*）按正常启动；
+          审计不可写/归档失败则维持 fail-closed 进维护
 1. init_config_file() + yaml.reload()
 2. migrate_database()   ← 统一迁移入口（编程式 alembic API）
    └─ 未到达目标 head 时立即终止启动，DEV 模式也不得继续
@@ -181,7 +185,13 @@ guide 保留“不降级、不 stamp”的兼容路径。
   父收尾前计数不可降零。维护态（含 HELD）拒绝一切新普通准入。
 - **PREPARING 先持久 intent（`db-migration/maintenance-intent.json`，0600 原子写）
   再关门**；不可等待重任务 → 安全撤销（409）+清 intent；崩溃残留 intent →
-  重启进维护分支（fail-safe）。
+  重启分流：**PREPARING 孤儿（control 无 pending+无 manifest）→ 审计+归档后正常
+  启动**（生产实证：此形态进维护后 leave/cancel/resume 均因无 pending manifest
+  抛 StateConflict，无 API 出口死锁，2026-11-11 修复）；有背书 → 维护分支
+  （fail-safe）。
+- **HELD 人工出口**：维护页对 phase=held 且有 attemptId/epoch 背书者提供「放弃
+  迁移」（POST /migration/leave，CAS + 二次确认）；孤儿 intent（无背书）不渲染
+  （由启动对账兜底）。
 - 排空超时→HELD（未冻结未快照）；有目标副作用或 worker 未收尾时禁止撤销——
   禁止抢先恢复业务。FROZEN 进入条件：计数归零 + fence 令牌在握。
 

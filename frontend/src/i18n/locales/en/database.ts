@@ -230,7 +230,15 @@ export const database = {
       switchConfirmTitle: 'Confirm switch commit?',
       switchConfirmText: 'The commit is persistent and irreversible: the managed config will be published and the service enters the pending-restart state, then restarts to complete activation. Commit with the current attempt?',
       switchSubmitted: 'Switch committed. The service is now pending restart.',
-      switchFailed: 'Failed to submit the switch. Please try again later.'
+      switchFailed: 'Failed to submit the switch. Please try again later.',
+      abandonHeldTitle: 'Migration held (HELD)',
+      abandonHeldHint: 'The migration was interrupted (restart or drain timeout) and is now held. Abandoning it safely returns to the source database and exits maintenance mode; any target-side writes are discarded. You can start a new migration afterwards.',
+      abandonHeld: 'Abandon migration',
+      abandoning: 'Abandoning…',
+      abandonConfirmTitle: 'Abandon this migration?',
+      abandonConfirmText: 'Abandoning voids this attempt and immediately restores normal mode (source unchanged; target residue can be cleaned up later). Confirm abandon?',
+      abandonDone: 'Migration abandoned. Maintenance mode has been exited; you can return to the app.',
+      abandonFailed: 'Failed to abandon the migration. Please try again later.'
     },
     restart: {
       title: 'Restart Pending',

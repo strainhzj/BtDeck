@@ -618,6 +618,25 @@ def read_intent(config_dir: os.PathLike[str] | str) -> Optional[Dict[str, Any]]:
     return data
 
 
+def archive_stale_intent(config_dir: os.PathLike[str] | str, intent: Dict[str, Any]) -> Optional[str]:
+    """孤儿 PREPARING intent 归档（改名保留，不删除）。
+
+    仅适用于无受管事实背书的 PREPARING 残留（control 无 pending、journal 无
+    manifest——begin_prepare 后 manifest/control 持久前的崩溃窗口；排空纯内存，
+    无冻结/无快照/无目标副作用）。改名失败返回 None（调用方维持 fail-closed）。
+    """
+    path = Path(config_dir) / DB_MIGRATION_DIR / INTENT_FILENAME
+    if not path.exists():
+        return None
+    attempt = str(intent.get("attempt_id") or "unknown").replace("/", "_")
+    target = path.with_name(f"{INTENT_FILENAME}.stale-{attempt}-{time.strftime('%Y%m%d-%H%M%S')}")
+    try:
+        path.rename(target)
+    except OSError:
+        return None
+    return target.name
+
+
 # ---------------------------------------------------------------------------
 # 进程级默认控制器（HTTP/MCP/cron/TaskLogger 钩子经此取控制器；lifespan 设置）
 # ---------------------------------------------------------------------------

@@ -192,7 +192,12 @@ class TestStartupGate:
         assert any(r["action"] == "maintenance-boot" for r in audit.replay_events())
         set_default_controller(None)
 
-    def test_crashed_prepare_intent_enters_maintenance(self, tmp_path):
+    def test_orphan_preparing_intent_archived_and_normal_start(self, tmp_path):
+        """孤儿 PREPARING intent（无 control pending/manifest 背书）→ 归档+正常启动。
+
+        生产实证（2026-11-11，attempt 49075d35）：此形态进维护 HELD 后
+        leave/cancel/resume 均因无 pending manifest 抛 StateConflict，无 API 出口。
+        """
         from app.core.database_protocol import DB_MIGRATION_DIR
 
         d = tmp_path / DB_MIGRATION_DIR
@@ -201,9 +206,50 @@ class TestStartupGate:
             '{"version": 1, "state": "PREPARING", "attempt_id": "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"}',
             encoding="utf-8",
         )
+        assert self._gate(tmp_path) is False
+        assert not (d / "maintenance-intent.json").exists()
+        archived = list(d.glob("maintenance-intent.json.stale-*"))
+        assert len(archived) == 1 and "sqlite-to-pg_0f1e2d3c" in archived[0].name
+        # 审计留痕（改名前先落审计；critical 失败即不归档）
+        from app.services.db_migration.local_audit import MaintenanceLocalAudit
+
+        rows = MaintenanceLocalAudit(tmp_path).replay_events()
+        assert any(r["action"] == "stale-intent-archived" for r in rows)
+
+    def test_preparing_intent_with_pending_control_enters_maintenance(self, tmp_path):
+        """PREPARING intent 有 control pending 背书 → 仍进维护（受管事实存在）。"""
+        from app.core.database_protocol import DB_MIGRATION_DIR
+
+        d = tmp_path / DB_MIGRATION_DIR
+        d.mkdir(parents=True)
+        (d / "control.json").write_text(
+            '{"pending_attempt": "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"}',
+            encoding="utf-8",
+        )
+        (d / "maintenance-intent.json").write_text(
+            '{"version": 1, "state": "PREPARING", "attempt_id": "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"}',
+            encoding="utf-8",
+        )
         fake_app = SimpleNamespace(state=SimpleNamespace())
         assert self._gate(tmp_path, app=fake_app) is True
-        assert fake_app.state.maintenance.attempt_id == "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+        assert fake_app.state.maintenance_mode is True
+        assert (d / "maintenance-intent.json").exists()  # 未归档
+        set_default_controller(None)
+
+    def test_non_preparing_orphan_intent_fail_closed(self, tmp_path):
+        """非 PREPARING 态 intent 无背书 → 维持 fail-closed 进维护（不归档）。"""
+        from app.core.database_protocol import DB_MIGRATION_DIR
+
+        d = tmp_path / DB_MIGRATION_DIR
+        d.mkdir(parents=True)
+        (d / "maintenance-intent.json").write_text(
+            '{"version": 1, "state": "FROZEN", "attempt_id": "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"}',
+            encoding="utf-8",
+        )
+        fake_app = SimpleNamespace(state=SimpleNamespace())
+        assert self._gate(tmp_path, app=fake_app) is True
+        assert fake_app.state.maintenance_mode is True
+        assert (d / "maintenance-intent.json").exists()
         set_default_controller(None)
 
     def test_corrupted_control_fail_closed(self, tmp_path):

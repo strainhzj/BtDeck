@@ -80,6 +80,11 @@ interface PageVm {
   switchOk: boolean
   switchError: string | null
   onSwitchSubmit: () => Promise<void>
+  canAbandonHeld: boolean
+  abandonSubmitting: boolean
+  abandonOk: boolean
+  abandonError: string | null
+  onAbandonHeld: () => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +450,61 @@ describe('MaintenancePage', () => {
 
     expect(wrapper.text()).toContain('待重启生效')
     expect(wrapper.text()).toContain('配置已提交，需手动重启服务后生效')
+  })
+
+  it('HELD：放弃迁移按钮可见，二次确认后 POST leave CAS（生产死锁出口）', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'HELD' })
+    migrationFixture = makeMigration({ phase: 'held', detail: undefined })
+    mockRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/leave') return migrationFixture as never
+      if (url === '/database/migration/status') return migrationFixture as never
+      if (url === '/database/target-readiness') return readinessFixture as never
+      if (url === '/database/deployment-target') return deploymentTargetFixture as never
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+    expect(vm.canAbandonHeld).toBe(true)
+    expect(wrapper.text()).toContain('放弃迁移')
+
+    const confirmSpy = jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    const refreshSpy = jest.spyOn(vm, 'refreshAll').mockResolvedValue()
+    await vm.onAbandonHeld()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('作废'),
+      '确认放弃本次迁移？',
+      expect.objectContaining({ type: 'warning' })
+    )
+    const leaveCall = mockRequest.mock.calls.find(call => call[1] === '/database/migration/leave')
+    expect(leaveCall).toBeDefined()
+    expect(leaveCall?.[0]).toBe('post')
+    expect(leaveCall?.[2]).toEqual({
+      attempt_id: 'att-100',
+      epoch: 'ep-7',
+      state_version: 2,
+      reason: 'abandon held from maintenance page'
+    })
+    expect(wrapper.text()).toContain('已放弃迁移')
+    expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('HELD 但无 attemptId（孤儿 intent）：不渲染放弃按钮', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'HELD', attemptId: null })
+    migrationFixture = makeMigration({ attemptId: null, phase: 'idle', detail: undefined })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+
+    expect(vm.canAbandonHeld).toBe(false)
+    expect(wrapper.text()).not.toContain('放弃迁移')
   })
 
   it('维护会话过期：订阅回调回登录区、清内存 token、不弹全局 toast', async() => {

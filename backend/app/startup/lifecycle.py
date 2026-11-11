@@ -310,6 +310,7 @@ def _startup_maintenance_gate(
     from app.services.db_migration.local_audit import KIND_GATE_CHANGE
     from app.services.db_migration.maintenance import (
         MaintenanceController,
+        archive_stale_intent,
         get_default_controller,
         read_intent,
         set_default_controller,
@@ -349,6 +350,45 @@ def _startup_maintenance_gate(
         print(f"[ERROR] journal 受管证据损坏，拒绝启动（fail-closed）: {exc}")
         raise
     pending_commit_phase = authority.commit_phase if authority is not None else None
+
+    # 孤儿 intent 对账（2026-11-11 生产死锁修复）：intent 存在但 control 无
+    # pending、journal 无任何受管事实背书且 intent 停留 PREPARING——begin_prepare
+    # 后 manifest/control 持久前的崩溃残留（排空纯内存：无冻结/无快照/无目标
+    # 副作用/无持久任务暂停）。此前直接进维护 HELD，而 leave/cancel/resume 均要
+    # 求 pending manifest → 无 API 出口死锁（生产实证 49075d35）。归档（改名
+    # 保留）+ 审计后按正常分流；审计不可写/改名失败则维持 fail-closed 进维护。
+    if (
+        intent is not None
+        and authority is not None
+        and authority.pending_attempt is None
+        and not authority.committed_pending_restart
+        and str(intent.get("state") or "") == "PREPARING"
+    ):
+        from app.services.db_migration.local_audit import LocalAuditUnavailable, MaintenanceLocalAudit
+
+        _stale_audit: str | None
+        try:
+            MaintenanceLocalAudit(_config_dir).audit_event(
+                KIND_GATE_CHANGE,
+                operator="system",
+                action="stale-intent-archived",
+                outcome="ok",
+                attempt_id=str(intent.get("attempt_id")) if intent.get("attempt_id") else None,
+                epoch=str(intent.get("epoch")) if intent.get("epoch") else None,
+                detail={"reason": "orphan PREPARING intent without control/manifest backing"},
+            )
+            _stale_audit = "ok"
+        except LocalAuditUnavailable:
+            _stale_audit = None
+        archived = archive_stale_intent(_config_dir, intent) if _stale_audit == "ok" else None
+        if archived is not None:
+            print(
+                f"[WARN] 孤儿维护 intent 已归档（{archived}）："
+                "PREPARING 崩溃残留且无 control/manifest 背书，按正常启动继续"
+            )
+            intent = None
+        else:
+            print("[WARN] 孤儿维护 intent 归档未完成（审计/改名失败），维持 fail-closed 进维护分支")
 
     disposition = bootstrap.evaluate_startup_disposition(
         effective,

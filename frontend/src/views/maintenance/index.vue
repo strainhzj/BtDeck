@@ -94,6 +94,26 @@
             <p v-if="switchError" class="maintenance-warn">{{ switchError }}</p>
           </div>
 
+          <!-- HELD：放弃迁移（boot 重入/排空超时的人工出口；leave 要求 pending manifest
+               背书——attemptId+epoch 在才可点；孤儿 intent 无背书后端 boot 对账自动归档） -->
+          <div v-if="canAbandonHeld" class="maintenance-block maintenance-block-danger">
+            <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.abandonHeldTitle') }}</h3>
+            <p class="maintenance-hint">{{ $t('database.maintenance.migration.abandonHeldHint') }}</p>
+            <p v-if="abandonOk" class="maintenance-ok">{{ $t('database.maintenance.migration.abandonDone') }}</p>
+            <el-button
+              type="danger"
+              plain
+              :loading="abandonSubmitting"
+              :disabled="abandonOk"
+              @click="onAbandonHeld"
+            >
+              {{ abandonSubmitting
+                ? $t('database.maintenance.migration.abandoning')
+                : $t('database.maintenance.migration.abandonHeld') }}
+            </el-button>
+            <p v-if="abandonError" class="maintenance-warn">{{ abandonError }}</p>
+          </div>
+
           <!-- NEEDS_CREDENTIALS：凭据重输表单（载荷 snake_case attempt_id/password/target） -->
           <div v-if="needsCredentials" class="maintenance-block maintenance-block-danger">
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.needsCredentialsTitle') }}</h3>
@@ -218,6 +238,7 @@ import {
 import type {
   CredentialsPayload,
   DeploymentTargetData,
+  MigrationCasPayload,
   MigrationStatusData,
   PgFormInput,
   ReadinessData,
@@ -363,6 +384,9 @@ export default class extends Vue {
   private switchSubmitting = false
   private switchOk = false
   private switchError: string | null = null
+  private abandonSubmitting = false
+  private abandonOk = false
+  private abandonError: string | null = null
 
   // A2 部署环境目标回填（维护通道拉取；密码本体不出服务端）
   private deploymentTarget: DeploymentTargetData | null = null
@@ -515,6 +539,13 @@ export default class extends Vue {
   get readyToSwitch(): boolean {
     if (this.readiness && this.readiness.readyToSwitch) return true
     return this.phaseCode === 'ready_to_switch' || this.stateCode === 'READY_TO_SWITCH'
+  }
+
+  /** HELD 放弃可用：manager phase held 且有 pending manifest 背书（attemptId+epoch 在）。
+   * 孤儿 intent（无背书）后端 boot 对账自动归档，本按钮不出现 */
+  get canAbandonHeld(): boolean {
+    if (this.phaseCode !== 'held') return false
+    return !!(this.migration?.attemptId && this.migration?.epoch)
   }
 
   get restartPending(): boolean {
@@ -786,6 +817,45 @@ export default class extends Vue {
         : this.$t('database.maintenance.migration.switchFailed').toString()
     } finally {
       this.switchSubmitting = false
+    }
+  }
+
+  /** HELD 放弃迁移（POST /migration/leave；安全放弃回源：须未 COMMITTED 且 worker
+   * 已收尾，后端 StateConflict 兜底）。CAS 载荷取自最近一次轮询 status；成功后
+   * 维护窗口关闭、服务恢复普通模式（轮询拉到非维护态；用户经「返回主页」离开） */
+  private async onAbandonHeld(): Promise<void> {
+    if (this.abandonSubmitting) return
+    const attemptId = this.migration?.attemptId || ''
+    if (!attemptId) return
+    this.abandonSubmitting = true
+    try {
+      // 二次确认单独 await：用户取消（reject）直接返回，绝不落错误提示
+      try {
+        await this.$confirm(
+          this.$t('database.maintenance.migration.abandonConfirmText').toString(),
+          this.$t('database.maintenance.migration.abandonConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.abandonOk = false
+      this.abandonError = null
+      const payload: MigrationCasPayload = {
+        attempt_id: attemptId,
+        epoch: this.migration?.epoch || '',
+        state_version: this.migration?.stateVersion ?? 0,
+        reason: 'abandon held from maintenance page'
+      }
+      await maintenanceRequest<MigrationStatusData>('post', '/database/migration/leave', payload)
+      this.abandonOk = true
+      void this.refreshAll()
+    } catch (error) {
+      this.abandonError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.maintenance.migration.abandonFailed').toString()
+    } finally {
+      this.abandonSubmitting = false
     }
   }
 

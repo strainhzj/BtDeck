@@ -8924,3 +8924,19 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修复**（子代理对抗审查「有条件通过」扩大项全处置）：4 模型类型修正（inode_id/total_size→BigInteger、seed_transfer downloader_id→String(36) 对齐 rss 先例与 bt_downloaders 契约、log_detail→Text）+ 新 alembic a2b3c4d5e6f7（batch recreate 双方言重建、降级数据性收窄前置校验不可无损即拒绝，沿用 b6e1c4d9a2f7 受限回滚先例）+ orphan_file_service 两处 CAST(inode, Integer)→BigInteger（PG 侧 >2^31 查询会炸）+ task_logs 写入侧统一 8000 字符截断（logger/cron_crud/cron_crud_async/cron_executor/path_scan 五点 + truncate_log_detail helper）+ seed_transfer 测试改真实 UUID（原数字串是规避 Integer 边界的权宜）+ 迁移链收口（constraints 链尾+head 标记、EXPECTED_HEAD、parity _HEAD、startup_gates 版本断言改 current_head() 动态、roadmap 速查 37→39+infra 行）。
 - **验证**：core/services/api 3760 例全绿；black/flake8/mypy 净；迁移链/parity/dialect guard/seed_transfer/bootstrap 77 例绿；CI run 42750865245 全绿后部署 3c468db。
 - **遗留（审查发现，非本批）**：task_logs API 契约问题（前端 log_content 无后端消费、统计 camelCase/snake_case 错位、/tasks/logs 返回 logs 非统一 list）；inode 候选表 String 与结果表 BigInteger 混合表示的全链路统一。
+
+## 2026-11-10（续二）：生产部署 8220d4a（schema 契约修正上线 + 源库自动迁移完成）
+
+- **CI**：首推 f6f7409 PG integration 失败两处（test_pg_smoke 写死 e9f0 旧 head——基线 stamp 断言 + acceptance_probe 探针 down_revision 造成多 head CommandError）→ 8220d4a 修正（基线断言/probe down_revision current_head() 动态化 + 降级序列补新链级 probe→a2b3c4→e9f0→c9e0 地板）→ run 42823496245 全绿（含真 PG 执行新迁移 batch recreate）。
+- **部署**（Hermes run_1aae732d5c8d416db50036f93b493690）：构建 30min → 双 tar（backend 337,157,120B f58ac901… / frontend 195,671,552B fe443fd4…）→ 锚点 backup-pre-8220d4a（=3c468db 镜像）→ 七项验证全过。
+- **源库自动迁移完成**：backend 启动 upgrade e9f0a1b2c3d4→a2b3c4d5e6f7（batch recreate 四表 3.8s；迁移前自动备份 app.db.pre-migration-20261110-135223 1.26GB 已验证）；四表数据完好（task_logs 179055 / orphan_hardlink_copy 17897 / orphan_purge_job 32 / seed_transfer_audit 21），inode max 31009628274 实证 BigInteger 必要性。
+- **用户侧确认**：failed attempt e6b024c1 已由用户在面板「放弃迁移」（leave 200 OK，窗口关）；alembicHead 现为 a2b3c4d5e6f7（迁移 UI 面板/状态接口会显示新 head，属预期）。可重新「发起迁移」。
+- **记录纪律**：留存工作区，下次实质提交入仓。
+
+## 2026-11-11：维护 HELD 死锁修复（孤儿 intent 启动对账 + 维护页放弃出口）
+
+- **生产事故**：用户发起迁移（attempt 49075d35 停在 PREPARING，零产物落盘——无 manifest/control.pending=null）后重启容器 → boot gate 命中 MAINTENANCE_INTENT_PRESENT 进维护 HELD；而 leave/cancel/resume 均要求 pending manifest → 全部 StateConflict("无进行中 attempt")，维护页亦无放弃动作（前端无 HELD 分支）→ 无 API/UI 出口死锁。用户以移走 intent 文件手动恢复（服务正常，数据无损）。
+- **归因**：begin_prepare 写 intent 先于 manifest/control 持久（manager.start 序列），中间崩溃窗口产生"intent 在、账本空"孤儿态；gate 判定面把 intent 存在当维护触发，但状态机出口全部依赖 pending manifest。
+- **修复**：①lifecycle gate 孤儿对账——PREPARING intent + authority.pending_attempt=None + 非 committed_pending_restart → 先审计（stale-intent-archived，critical 不可写则维持 fail-closed）后归档（archive_stale_intent 改名 stale-<attempt>-<ts> 保留）按正常启动；非 PREPARING 或有背书仍 fail-closed。②维护页 HELD 放弃出口——phase=held 且 attemptId+epoch 在（有 manifest 背书）渲染「放弃迁移」（二次确认 POST /migration/leave snake_case CAS+reason）；孤儿态不渲染（启动对账兜底）。i18n zh/en。
+- **验证**：后端 test_maintenance_barrier 13/13（语义反转重写 test_crashed_prepare_intent_enters_maintenance → archived_and_normal_start + 新增有背书仍维护/非 PREPARING fail-closed 两例）+ startup_gates/bootstrap/manager 72 例绿 + black/flake8/mypy 净；前端 maintenance-page 17/17 + 全量 2150/2150 + typecheck 净 + lint 净增 0（worktree 对照 281=HEAD 基线）。
+- **记录纪律**：constraints/roadmap（backend infra lifecycle 行 + frontend views maintenance 行）已同步；本条目留存工作区下次实质提交入仓。

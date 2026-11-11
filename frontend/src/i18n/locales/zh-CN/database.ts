@@ -228,7 +228,15 @@ export const database = {
       switchConfirmTitle: '确认提交切换？',
       switchConfirmText: '提交即持久生效且不可撤销：将写入受管配置并进入待重启状态，随后服务重启以完成激活。确认以当前迁移单号提交？',
       switchSubmitted: '切换已提交，服务进入待重启状态。',
-      switchFailed: '提交切换失败，请稍后重试。'
+      switchFailed: '提交切换失败，请稍后重试。',
+      abandonHeldTitle: '迁移已挂起（HELD）',
+      abandonHeldHint: '迁移流程被中断（重启或排空超时）且处于挂起态。放弃本次迁移将安全回源并退出维护模式，已产生的目标写入会被丢弃；随后可重新发起迁移。',
+      abandonHeld: '放弃迁移',
+      abandoning: '放弃中…',
+      abandonConfirmTitle: '确认放弃本次迁移？',
+      abandonConfirmText: '放弃后本次迁移单号作废，服务立即恢复普通模式（数据源不变、目标残留可清理）。确认放弃？',
+      abandonDone: '已放弃迁移，维护模式已退出，可返回主页继续使用。',
+      abandonFailed: '放弃迁移失败，请稍后重试。'
     },
     restart: {
       title: '待重启生效',
