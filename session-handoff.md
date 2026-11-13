@@ -6052,3 +6052,10 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - **验证**：后端全量 5860 passed/65 skipped/0 failed + mypy 333/0 + black/flake8 净；前端 Jest 155 套 2152 绿 + typecheck 净 + lint 净增 0（npx eslint HEAD vs worktree 逐文件 diff 证明，-3 为用户在途 dashboard spec 修复）；./init.sh --ci 过。
 - **未做**：Git 提交待用户指令；boot 分支放弃后业务恢复需重启（设计内，UI 已提示）；真实容器 boot HELD 放弃演练随下次部署复验。
 - **归因技巧留档**：lint 归因勿只比总数——临时 worktree 挂 HEAD + symlink node_modules + 同命令 npx eslint 逐文件 diff，可把净增精确归因到文件（本批以此自证净增 0）。
+
+## 2026-11-13 交接：仪表盘移动版二期（feature/dashboard-mobile-2026-11，本分支未推送未合并）
+
+- **交付**：/m/dashboard 重写为消费一期卡片族（KPI 2×2 + 8 卡纵向流，DashWidget 壳 + dashboard-page 皮肤，后端零改动）；D1=3s 活跃轮询（SpeedPollingMixin 后台暂停兜底）；裁 SpeedSpark/Tubes/Radar/QuickActions；mobile-dashboard.spec.ts 9 例（旧 15 例随旧页退役，信封契约/首载失败 toast 两防线移植）。
+- **验证**：typecheck 净 + lint 281=HEAD 基线净增 0 + 全量 Jest 155 套 2146 绿（HEAD worktree 对照 2152 对平）+ build 成功；e2e .m-dashboard 根选择器未动。
+- **Git**：分支基于 dev b8262e6（本地领先 origin/dev 1 提交未推）；用户在途 dashboard 类型注解修复已收编为独立 style 提交；PLANS/dashboard-mobile-2026-11.md 按用户指示入库（破一期先例）。提交与推送/合并待用户指令。
+- **后续候选项**：实机验收（APK 真机 + 手机浏览器）；若用户要求推送后跑 CI（regression.yml 前端三 job）；移动端是否补 quick-actions 卡待用户反馈。

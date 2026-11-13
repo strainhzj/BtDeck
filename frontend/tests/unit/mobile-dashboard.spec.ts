@@ -1,89 +1,124 @@
 /**
- * 移动仪表盘契约（Phase 4 M1）：卡片化展示 /dashboard 数据 + 下拉刷新。
- * 锁定字段映射（torrents/downloaders/system/downloader_list，曾误用
- * torrent_stats/downloader_stats/system_stats 导致全 0）、bytes/s 速度换算、
- * 已暂停统计贯通与下载器卡片穿透 /m/downloader。
+ * 移动仪表盘二期单测（dashboard-mobile-2026-11）。
+ *
+ * 覆盖：一期桌面卡片族复用（4 KPI + 8 widget 卡挂载与 props 映射）、
+ * D1 活跃种子 3s 轮询（SpeedPollingMixin 与桌面一致）、下拉刷新全量并发
+ * 不闪 loading、热门种子「查看全部」跳转、下载器空态 CTA（有/无清单两态）、
+ * beforeDestroy 定时器全清理（3 低频 interval + 轮询链 setTimeout）。
  */
-
-import { shallowMount, Wrapper } from '@vue/test-utils'
+import { shallowMount, createLocalVue, Wrapper } from '@vue/test-utils'
+import Vue, { VNode, CreateElement } from 'vue'
+import VueI18n from 'vue-i18n'
 import MobileDashboard from '@/views/mobile/dashboard.vue'
 import { getDashboardData } from '@/api/dashboard'
-import { DashboardData } from '@/types/dashboard'
+import { getActiveTorrents, ActiveTorrentSpeed } from '@/api/torrents'
+import { getTaskList } from '@/api/tasks'
+import { getReportsSpeedHistory } from '@/api/reports'
+import { DashboardData, DownloaderListItem } from '@/types/dashboard'
+import i18n from '@/i18n'
 
-jest.mock('@/api/dashboard', () => ({
-  getDashboardData: jest.fn()
-}))
+const localVue = createLocalVue()
+// 双语先例（dashboard-page.spec）：挂载安装 i18n 单例提供真实 $t
+localVue.use(VueI18n)
 
-// paused 取 3 用于验证渲染契约（读到字段即显示）；真实后端该值恒为 0
-// （dashboard_stats 任务暂不统计 paused，后端已知限制）
-const makeData = (): DashboardData => ({
-  downloaders: { total: 4, online: 3, offline: 1 },
-  torrents: {
-    active: 105,
-    downloading: 2,
-    seeding: 100,
-    paused: 3,
-    statusBuckets: { error: 0, downloading: 2, seeding: 100, paused: 3, other: 0 },
-    siteBuckets: []
-  },
-  tasks: { total: 5, running: 1, stopped: 4, enabled: 5 },
-  system: {
-    uptime: 905,
-    uptime_display: '15分钟',
-    version: '1.0.6',
-    total_download_speed: 0,
-    total_upload_speed: 286720
-  },
-  downloader_list: [
-    {
-      downloader_id: 'd1',
-      nickname: 'qb-main',
-      downloader_type: 0,
-      status: 'online',
+jest.mock('@/api/dashboard', () => ({ getDashboardData: jest.fn() }))
+jest.mock('@/api/torrents', () => ({ getActiveTorrents: jest.fn() }))
+jest.mock('@/api/tasks', () => ({ getTaskList: jest.fn() }))
+jest.mock('@/api/reports', () => ({ getReportsSpeedHistory: jest.fn() }))
+
+const makeData = (): DashboardData =>
+  ({
+    downloaders: { total: 0, online: 0, offline: 0 },
+    torrents: {
+      active: 10,
       downloading: 2,
-      seeding: 80,
-      paused: 6,
-      download_speed: 0,
-      upload_speed: 1024
+      seeding: 8,
+      paused: 0,
+      statusBuckets: { error: 0, downloading: 2, seeding: 8, paused: 0, other: 0 },
+      siteBuckets: [{ host: 'a.example.com', count: 5 }]
     },
-    {
-      downloader_id: 'd2',
-      nickname: 'tr-batch',
-      downloader_type: 1,
-      status: 'offline',
-      downloading: 0,
-      seeding: 20,
-      paused: 1,
-      download_speed: 0,
-      upload_speed: 0
-    }
-  ],
-  activities: []
-})
+    tasks: { total: 3, running: 0, stopped: 3, enabled: 2 },
+    system: { uptime: 100, uptime_display: '1分钟', version: 'x', total_download_speed: 0, total_upload_speed: 0 },
+    downloader_list: [],
+    activities: []
+  } as DashboardData)
 
-const mountPage = (): Wrapper<Vue> =>
-  shallowMount(MobileDashboard, {
-    mocks: {
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
-      $router: { push: jest.fn(), replace: jest.fn().mockResolvedValue(undefined) }
-    }
-  })
+const TORRENTS: ActiveTorrentSpeed[] = [
+  { hash: 'a', name: 'a.iso', downloadSpeed: 100, uploadSpeed: 0, progress: 50, num_seeds: 1, num_leechs: 1 },
+  { hash: 'b', name: 'b.iso', downloadSpeed: 0, uploadSpeed: 40, progress: 80, num_seeds: 1, num_leechs: 1 }
+]
 
-async function flushLifecycle(): Promise<void> {
-  for (let i = 0; i < 15; i += 1) {
-    await Promise.resolve()
-  }
-  await Promise.resolve()
+const TASK = {
+  taskId: 1,
+  taskName: '同步任务',
+  taskCode: 'c1',
+  taskStatus: 0,
+  taskType: 0,
+  executor: 'echo',
+  enabled: true,
+  lastExecuteTime: null,
+  lastExecuteDuration: null,
+  cronPlan: '0 * * * *',
+  taskStatusName: '',
+  taskTypeName: '',
+  createTime: ''
 }
 
-describe('views/mobile/MobileDashboard', () => {
+const DL: DownloaderListItem = {
+  downloader_id: 'd1',
+  nickname: 'qb-main',
+  downloader_type: 0,
+  status: 'online',
+  downloading: 2,
+  seeding: 80,
+  paused: 0,
+  download_speed: 1024,
+  upload_speed: 512
+}
+
+/** DashWidget 透传 stub：shallowMount 默认 stub 不渲染 slot，卡片须真实挂载才能断言 props */
+const DashWidgetPassthrough = Vue.extend({
+  name: 'DashWidget',
+  render(h: CreateElement): VNode {
+    return h('div', { class: 'dw-passthrough' }, this.$slots.default)
+  }
+})
+
+async function flush(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve()
+  }
+}
+
+function mountPage(): Wrapper<Vue> {
+  return shallowMount(MobileDashboard, {
+    localVue,
+    i18n,
+    stubs: { DashWidget: DashWidgetPassthrough },
+    mocks: {
+      $message: { error: jest.fn(), success: jest.fn(), warning: jest.fn() },
+      $router: {
+        push: jest.fn().mockResolvedValue(undefined),
+        replace: jest.fn().mockResolvedValue(undefined)
+      }
+    }
+  })
+}
+
+describe('views/mobile/dashboard.vue 移动仪表盘二期', () => {
   beforeEach(() => {
     jest.mocked(getDashboardData).mockReset()
-    jest.mocked(getDashboardData).mockResolvedValue({
+    jest.mocked(getDashboardData).mockResolvedValue({ code: '200', status: 'success', msg: 'ok', data: makeData() } as never)
+    jest.mocked(getActiveTorrents).mockReset()
+    jest.mocked(getActiveTorrents).mockResolvedValue({ code: '200', status: 'success', msg: 'ok', data: TORRENTS } as never)
+    jest.mocked(getTaskList).mockReset()
+    jest.mocked(getTaskList).mockResolvedValue({ code: '200', status: 'success', msg: 'ok', data: { list: [TASK] } } as never)
+    jest.mocked(getReportsSpeedHistory).mockReset()
+    jest.mocked(getReportsSpeedHistory).mockResolvedValue({
       code: '200',
       status: 'success',
       msg: 'ok',
-      data: makeData()
+      data: { range: '24h', series: [], samplingActive: true, firstSampleAt: null }
     } as never)
   })
 
@@ -91,231 +126,110 @@ describe('views/mobile/MobileDashboard', () => {
     jest.clearAllMocks()
   })
 
-  it('挂载即拉取并按正确字段渲染统计卡片（曾误读 torrent_stats/downloader_stats 全 0）', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
+  it('首载：loading 提示 → 4 KPI + 8 widget 卡挂载，props 对齐一期桌面语义', async() => {
+    const w = mountPage()
+    expect(w.find('.m-hint').exists()).toBe(true)
+    await flush()
+    expect(w.find('.m-hint').exists()).toBe(false)
+    expect(w.findAllComponents({ name: 'KpiCard' })).toHaveLength(4)
+    expect(w.findAll('.dw-passthrough')).toHaveLength(8)
+    expect(w.findComponent({ name: 'StatusDonutCard' }).props('buckets')).toEqual(makeData().torrents.statusBuckets)
+    expect(w.findComponent({ name: 'HeroPulseCard' }).props('downloading')).toBe(2)
+    expect(w.findComponent({ name: 'HeroPulseCard' }).props('activeTorrents')).toHaveLength(2)
+    expect(w.findComponent({ name: 'SiteBarsCard' }).props('buckets')).toEqual([{ host: 'a.example.com', count: 5 }])
+    expect(w.findComponent({ name: 'HotTorrentsCard' }).props('torrents')).toHaveLength(2)
+    expect(w.findComponent({ name: 'CronTaskCard' }).props('tasks')).toHaveLength(1)
+    expect(w.findComponent({ name: 'DailyTrafficCard' }).props('loading')).toBe(false)
+    expect((w.vm as unknown as { hasData: boolean }).hasData).toBe(true)
+    w.destroy()
+  })
+
+  it('D1：活跃种子轮询 3s（SpeedPollingMixin，首轮延迟一周期防双发）', async() => {
+    const setTimeoutSpy = jest.spyOn(window, 'setTimeout')
+    const w = mountPage()
+    await flush()
+    expect(setTimeoutSpy.mock.calls.filter(c => c[1] === 3000)).toHaveLength(1)
+    setTimeoutSpy.mockRestore()
+    w.destroy()
+  })
+
+  it('下拉刷新：四个数据源并发各 +1 次，不闪 loading', async() => {
+    const w = mountPage()
+    await flush()
     expect(getDashboardData).toHaveBeenCalledTimes(1)
-    const cards = wrapper.findAll('.m-card-value')
-    expect(cards.length).toBe(4)
-    expect(cards.at(0).text()).toBe('2')
-    expect(cards.at(1).text()).toBe('100')
-    expect(cards.at(2).text()).toBe('3')
-    expect(cards.at(3).text()).toBe('3/4')
-  })
-
-  it('速度按 bytes/s 换算：286720 B/s 显示 280.00 KB/s，0 显示 0 B/s（曾把 bytes/s 当 KB/s 错 1024 倍）', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect(wrapper.text()).toContain('280.00 KB/s')
-    expect(wrapper.text()).toContain('0 B/s')
-    expect(wrapper.text()).not.toContain('280.00 MB/s')
-  })
-
-  it('下载器卡片渲染 downloader_list（曾误用 downloaders 统计对象致区块永不渲染）：徽标/类型/计数/速度/离线态与页脚元信息', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const cards = wrapper.findAll('.m-dl-card')
-    expect(cards.length).toBe(2)
-    expect(cards.at(0).text()).toContain('qb-main')
-    expect(cards.at(0).text()).toContain('qBittorrent')
-    expect(cards.at(0).text()).toContain('80')
-    expect(cards.at(0).text()).toContain('6')
-    expect(cards.at(0).text()).toContain('1.00 KB/s')
-    expect(cards.at(0).find('.m-dl-badge.online').exists()).toBe(true)
-    expect(cards.at(1).text()).toContain('tr-batch')
-    expect(cards.at(1).text()).toContain('Transmission')
-    expect(cards.at(1).text()).toContain('离线')
-    expect(cards.at(1).find('.m-dl-badge.offline').exists()).toBe(true)
-    expect(wrapper.text()).toContain('v1.0.6')
-    expect(wrapper.text()).toContain('15分钟')
-  })
-
-  it('穿透：点击下载器卡片（或键盘 Enter）进入 /m/downloader', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    await wrapper.findAll('.m-dl-card').at(0).trigger('click')
-    const vm = wrapper.vm as any
-    expect(vm.$router.push).toHaveBeenCalledWith('/m/downloader')
-    await wrapper.findAll('.m-dl-card').at(1).trigger('keypress.enter')
-    expect(vm.$router.push).toHaveBeenCalledTimes(2)
-  })
-
-  it('下载器卡片统计结构精确锁定：在线卡五列值（下载中/做种/暂停/双向速度）', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const values = wrapper.findAll('.m-dl-card').at(0).findAll('.m-dl-stat-value')
-    expect(values.length).toBe(5)
-    expect(values.at(0).text()).toBe('2')
-    expect(values.at(1).text()).toBe('80')
-    expect(values.at(2).text()).toBe('6')
-    expect(values.at(3).text()).toBe('↓0 B/s')
-    expect(values.at(4).text()).toBe('↑1.00 KB/s')
-  })
-
-  it('离线下载器卡：速度列替换为"离线"占位，不渲染速度文本', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const offlineCard = wrapper.findAll('.m-dl-card').at(1)
-    expect(offlineCard.text()).toContain('离线')
-    expect(offlineCard.text()).not.toContain('B/s')
-  })
-
-  it('源码契约：不再引用 torrent_stats/downloader_stats/system_stats 错误字段', () => {
-    const source = require('fs').readFileSync(require('path').resolve(__dirname, '../../src/views/mobile/dashboard.vue'), 'utf-8')
-    expect(source).not.toContain('torrent_stats')
-    expect(source).not.toContain('downloader_stats')
-    expect(source).not.toContain('system_stats')
-    // vue-jest 用 buble 转译模板 render，不认 ?. / ??（M3 已踩坑），兜底须收敛到 computed
-    const templateBlock = source.slice(source.indexOf('<template>'), source.lastIndexOf('</template>'))
-    expect(templateBlock).not.toContain('?.')
-    expect(templateBlock).not.toContain('??')
-  })
-
-  it('接口失败时提示错误并停留在空态', async() => {
-    jest.mocked(getDashboardData).mockRejectedValue(new Error('boom') as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.$message.error).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('暂无数据')
-    wrapper.destroy()
-  })
-
-  it('旧错误契约负例：响应只含 torrent_stats/downloader_stats/system_stats 旧键时必须显示 0，不得误读（原始 bug 直接锁死）', async() => {
-    jest.mocked(getDashboardData).mockResolvedValue({
-      code: '200',
-      status: 'success',
-      msg: 'ok',
-      data: {
-        torrent_stats: { active: 9, downloading: 9, seeding: 9, paused: 9 },
-        downloader_stats: { total: 9, online: 9, offline: 0 },
-        system_stats: {
-          uptime: 1,
-          uptime_display: '1分钟',
-          version: '9.9.9',
-          total_download_speed: 999,
-          total_upload_speed: 999
-        },
-        downloader_list: []
-      }
-    } as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const cards = wrapper.findAll('.m-card-value')
-    expect(cards.at(0).text()).toBe('0')
-    expect(cards.at(1).text()).toBe('0')
-    expect(cards.at(2).text()).toBe('0')
-    expect(cards.at(3).text()).toBe('0/0')
-    expect(wrapper.text()).toContain('0 B/s')
-    expect(wrapper.text()).not.toContain('9.9.9')
-    expect(wrapper.text()).not.toContain('9/9')
-  })
-
-  it('信封契约：code 非 200 或 data 缺失时停留空态，不渲染 0 假数据也不误报错误', async() => {
-    jest.mocked(getDashboardData).mockResolvedValue({
-      code: '500',
-      status: 'error',
-      msg: '获取失败',
-      data: null
-    } as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect(wrapper.text()).toContain('暂无数据')
-    const vm = wrapper.vm as any
-    expect(vm.$message.error).not.toHaveBeenCalled()
-    expect(vm.data).toBeNull()
-
-    jest.mocked(getDashboardData).mockResolvedValue({
-      code: '200',
-      status: 'success',
-      msg: 'ok',
-      data: null
-    } as never)
-    await vm.load()
-    await flushLifecycle()
-    expect(wrapper.text()).toContain('暂无数据')
-    expect(vm.data).toBeNull()
-  })
-
-  it('刷新链路：下拉刷新 onPullRefresh 重新拉取并渲染新值（silent 不置 loading）', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect(getDashboardData).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('.m-refresh').exists()).toBe(false)
-
-    const updated = makeData()
-    updated.system.total_upload_speed = 1572864
-    jest.mocked(getDashboardData).mockResolvedValue({
-      code: '200',
-      status: 'success',
-      msg: 'ok',
-      data: updated
-    } as never)
-    const vm = wrapper.vm as any
+    const vm = w.vm as unknown as { onPullRefresh(): Promise<void> }
     await vm.onPullRefresh()
-    await flushLifecycle()
     expect(getDashboardData).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('1.50 MB/s')
-    expect(wrapper.text()).not.toContain('280.00 KB/s')
-    // 下拉刷新走 silent：不整页切换到"加载中…"占位
-    expect(vm.loading).toBe(false)
+    expect(getActiveTorrents).toHaveBeenCalledTimes(2)
+    expect(getTaskList).toHaveBeenCalledTimes(2)
+    expect(getReportsSpeedHistory).toHaveBeenCalledTimes(2)
+    expect(w.find('.m-hint').exists()).toBe(false)
+    w.destroy()
   })
 
-  it('15s 自动刷新静默：loadActiveSpeed 不置 loading 且重新拉取', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    await vm.loadActiveSpeed()
-    await flushLifecycle()
-    expect(getDashboardData).toHaveBeenCalledTimes(2)
-    expect(vm.loading).toBe(false)
+  it('热门种子卡「查看全部种子」跳 /m/torrents', async() => {
+    const w = mountPage()
+    await flush()
+    await w.find('.m-view-all').trigger('click')
+    expect((w.vm.$router as unknown as { push: jest.Mock }).push).toHaveBeenCalledWith('/m/torrents')
+    w.destroy()
   })
 
-  it('下载器空列表：显示"去添加下载器"CTA，点击直达 /m/downloader?create=1', async() => {
-    const empty = makeData()
-    empty.downloader_list = []
-    empty.downloaders = { total: 0, online: 0, offline: 0 }
+  it('下载器空态：健康卡不渲染，CTA 直达 /m/downloader?create=1', async() => {
+    const w = mountPage()
+    await flush()
+    expect(w.findComponent({ name: 'InstanceHealthCard' }).exists()).toBe(false)
+    expect(w.find('.m-empty-cta').exists()).toBe(true)
+    await w.find('.m-cta-btn').trigger('click')
+    expect((w.vm.$router as unknown as { replace: jest.Mock }).replace).toHaveBeenCalledWith({
+      path: '/m/downloader',
+      query: { create: '1' }
+    })
+    w.destroy()
+  })
+
+  it('下载器非空：InstanceHealthCard 渲染且空态 CTA 不出现', async() => {
     jest.mocked(getDashboardData).mockResolvedValue({
       code: '200',
       status: 'success',
       msg: 'ok',
-      data: empty
+      data: { ...makeData(), downloader_list: [DL] }
     } as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    expect(wrapper.text()).toContain('还没有下载器')
-    expect(wrapper.text()).toContain('去添加下载器')
-    const vm = wrapper.vm as any
-    vm.goAddDownloader()
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({ path: '/m/downloader', query: { create: '1' } })
+    const w = mountPage()
+    await flush()
+    expect(w.findComponent({ name: 'InstanceHealthCard' }).exists()).toBe(true)
+    expect(w.find('.m-empty-cta').exists()).toBe(false)
+    w.destroy()
   })
 
-  it('formatSpeedDisplay 方法契约（bytes/s 语义）：缺失 -- / 0→0 B/s / KB 与 MB 换算', async() => {
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.formatSpeedDisplay(null)).toBe('--')
-    expect(vm.formatSpeedDisplay(undefined)).toBe('--')
-    expect(vm.formatSpeedDisplay(0)).toBe('0 B/s')
-    expect(vm.formatSpeedDisplay(1024)).toBe('1.00 KB/s')
-    expect(vm.formatSpeedDisplay(286720)).toBe('280.00 KB/s')
-    expect(vm.formatSpeedDisplay(1572864)).toBe('1.50 MB/s')
+  it('信封契约：code 非 200 停留空态不误报错误（旧页契约移植），网络失败才 toast', async() => {
+    jest.mocked(getDashboardData).mockResolvedValue({ code: '500', status: 'error', msg: 'boom', data: null } as never)
+    const w = mountPage()
+    await flush()
+    expect((w.vm as unknown as { hasData: boolean }).hasData).toBe(false)
+    const messageError = (w.vm.$message as unknown as { error: jest.Mock }).error
+    expect(messageError).not.toHaveBeenCalled()
+    w.destroy()
   })
 
-  it('data 为空时 computed 兜底：downloaderList 空数组、统计归零、system 显示占位', async() => {
-    jest.mocked(getDashboardData).mockResolvedValue({
-      code: '500',
-      status: 'error',
-      msg: 'x',
-      data: null
-    } as never)
-    const wrapper = mountPage()
-    await flushLifecycle()
-    const vm = wrapper.vm as any
-    expect(vm.downloaderList).toEqual([])
-    expect(vm.torrentStats).toEqual({ active: 0, downloading: 0, seeding: 0, paused: 0 })
-    expect(vm.downloaderStats).toEqual({ total: 0, online: 0, offline: 0 })
-    expect(vm.systemStats.version).toBe('-')
-    expect(vm.systemStats.uptime_display).toBe('-')
+  it('首载网络失败：提示错误且落空态', async() => {
+    jest.mocked(getDashboardData).mockRejectedValue(new Error('network down'))
+    const w = mountPage()
+    await flush()
+    expect((w.vm.$message as unknown as { error: jest.Mock }).error).toHaveBeenCalled()
+    expect((w.vm as unknown as { hasData: boolean }).hasData).toBe(false)
+    w.destroy()
+  })
+
+  it('销毁：三个低频定时器 + 轮询链 setTimeout 全清理', async() => {
+    const clearIntSpy = jest.spyOn(window, 'clearInterval')
+    const clearTimeoutSpy = jest.spyOn(window, 'clearTimeout')
+    const w = mountPage()
+    await flush()
+    w.destroy()
+    expect(clearIntSpy).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutSpy).toHaveBeenCalled()
+    clearIntSpy.mockRestore()
+    clearTimeoutSpy.mockRestore()
   })
 })

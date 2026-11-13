@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.7",
   "release_note": "产品版本唯一输入为 release/release-config.json（candidate.product_version，当前 1.0.7，发布流程进行中）：backend/app/version.py、frontend/package.json、feature_list.release_version、deploy/btdeck.iss、deploy/build-linux.sh 必须一致，由 scripts/release/generate_build_info.py --check-versions 与 backend/tests/release/ 强制。历史发布 v1.0.6（2026-09-21）。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-11-11",
+  "last_updated": "2026-11-13",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -7950,6 +7950,40 @@
         "report": "PLANS/postgresql-acceptance.md",
         "evidence": "2026-10-03 独立验收通过：SQLite 全量5495 passed/46 skipped；最终核心68 passed；真实PG+TLS 29 passed；无TLS五模式5 passed；mypy/black/flake8/架构、前端typecheck/lint/build、compose三组合、实际Python3.12镜像启动HTTP200、init.sh通过。详见 PLANS/postgresql-acceptance.md；未提交/未发布，正式产物须干净提交重建。"
       }
+    },
+    {
+      "id": "dashboard-mobile-2026-11",
+      "name": "仪表盘移动版二期（/m/dashboard 消费一期卡片族，后端零改动）",
+      "description": "一期桌面改造（dashboard-redesign-2026-11）desktop-only，/m/dashboard 停留在 Phase 4 旧简化页、未消费 statusBuckets/siteBuckets/tasks.enabled/24h 流量/热门种子等一期字段，伴侣 APK（强制 mobile）与一期成果绝缘。本批重写移动仪表盘为纵向卡片流：KPI 2×2 + 8 张一期卡片（hero/状态环/24h 流量/站点分布/热门种子/实例健康/定时任务/最近活动）复用桌面 props 驱动组件与 dashboard-page 皮肤；SpeedPollingMixin 3s 活跃轮询（D1 与桌面一致）+ 30s/60s/120s 低频定时器（document.hidden 门控）+ 下拉刷新全量并发；裁剪速度火花/吞吐管道/链路雷达/快捷操作；移动端不做预设/编辑/拖拽/布局持久化。",
+      "status": "done",
+      "branch": "feature/dashboard-mobile-2026-11",
+      "plan_file": "PLANS/dashboard-mobile-2026-11.md",
+      "tasks": [
+        {
+          "id": "dashboard-mobile.1",
+          "name": "重写 views/mobile/dashboard.vue 为一期卡片流",
+          "description": "复用 KpiCard×4/DashWidget 壳/HeroPulseCard/StatusDonutCard/DailyTrafficCard/SiteBarsCard/HotTorrentsCard/InstanceHealthCard/CronTaskCard/ActivityTimelineCard；根节点挂 dashboard-page class 复用 dashboard-theme.scss；热门种子卡加「查看全部种子」跳 /m/torrents；下载器空态保留 CTA（/m/downloader?create=1）；i18n 新增 dashboard.mobile.* 键 zh/en。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/mobile/dashboard.vue",
+            "frontend/src/i18n/locales/zh-CN/dashboard.ts",
+            "frontend/src/i18n/locales/en/dashboard.ts"
+          ],
+          "evidence": "views/mobile/dashboard.vue 498 行重写完成；typecheck 净；eslint no-fix 4 改动文件 0 问题"
+        },
+        {
+          "id": "dashboard-mobile.2",
+          "name": "单测与门禁收尾",
+          "description": "新增 mobile-dashboard.spec.ts（挂载/props 映射/3s 轮询/下拉刷新/跳转/空态两态/定时器清理 7 例）；全量 Jest 不回退 + lint 净增 0 + build 成功。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/mobile-dashboard.spec.ts"
+          ],
+          "evidence": "mobile-dashboard.spec.ts 9 例全绿（挂载/props 映射/D1 3s 轮询/下拉刷新并发/查看全部跳转/空态两态/信封契约/首载失败 toast/定时器清理）；全量 Jest 155 套 2146 例全绿（HEAD 对照 2152−旧 spec 15+新 9=2146 对平）；lint 281 problems=HEAD 基线净增 0（4 改动文件 0 贡献）；npm run build 成功"
+        }
+      ]
     }
   ],
   "tasks": [
