@@ -31,8 +31,10 @@
 
 ## 4. 取消与放弃（leave / discard）
 
-- **cancel**：进行中取消——worker 协作停止后才落 CANCELLED（期间不重复发请求）。
-- **leave**：放弃迁移回 NORMAL——已冻结源会解冻；**COMMITTED 后禁 leave**（决定已持久，只能走 §2 完成激活）。
+- **cancel**：进行中取消——worker 协作停止后才落 CANCELLED（期间不重复发请求）；
+  worker 已收尾（READY/终态）时后端 409 fail-fast（2026-11-11：取消等不到 ACK
+  会永久停在取消中），此时应提交切换或放弃。
+- **leave**：放弃迁移回 NORMAL——已冻结源会解冻；**COMMITTED 后禁 leave**（决定已持久，只能走 §2 完成激活）；boot HELD（重启维护态）经维护页「放弃迁移」可用（2026-11-11 修复：维护启动分支挂载迁移管理器 + abort_from_held 归位修复），boot 分支放弃后业务面需重启恢复。
 - **discard 目标库**（§6.5）：仅 manifest 固定目标+对象清单+双确认 token；PG 逐对象 DROP **无 CASCADE**；出现外部内容即拒；清理后非空即隔离拒重建。COMMITTED/PREPARED 后禁 discard。
 
 ## 5. 故障决策树

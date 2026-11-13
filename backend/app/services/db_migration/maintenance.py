@@ -340,7 +340,16 @@ class MaintenanceController:
             if self._active:
                 raise TransitionError("仍有未收尾准入（不能确认 worker 已停，保持 HELD，§5.1）")
             self._held_reason = None
-            self.abort_prepare(reason=reason)
+            # 直接归位 NORMAL（2026-11-11 审查修复）：此前委托 abort_prepare，
+            # 但其仅接受 PREPARING/DRAINING——HELD 到这里恒 TransitionError，
+            # leave 从 HELD 永远受阻（boot HELD 与运行期 HELD 同症）。
+            self._state = STATE_NORMAL
+            self._mode = "normal"
+            self._attempt_id = None
+            self._cancel_requested = False
+            self._cancel_ack_event.clear()
+            self._clear_intent()
+            self._cond.notify_all()
 
     def abort_from_frozen(self, *, reason: str = "") -> None:
         """FROZEN → NORMAL：放弃回源（leave；W3-3）。

@@ -49,9 +49,7 @@ def _maintenance_token(client, tmp_path) -> str:
     )
     from app.auth.security import get_password_hash
 
-    conn.execute(
-        "INSERT INTO users VALUES (1, 'admin', ?, NULL, NULL, 1, 0)", (get_password_hash("pw-admin"),)
-    )
+    conn.execute("INSERT INTO users VALUES (1, 'admin', ?, NULL, NULL, 1, 0)", (get_password_hash("pw-admin"),))
     conn.commit()
     conn.close()
     from app.services.db_migration.maintenance_auth import MaintenanceAuthService, sqlite_user_reader
@@ -167,6 +165,35 @@ class TestRuntimeMigrationWindow:
         data = control.json().get("data") or control.json()
         assert data.get("businessReady") is False
         assert data.get("maintenance") is True
+
+
+class TestCancelConflictEnvelope:
+    """cancel 端点状态冲突包装（2026-11-11 审查修复：此前无包装 → 500）。"""
+
+    def test_cancel_state_conflict_409(self, app, tmp_path):
+        from app.services.db_migration.manager import StateConflict
+
+        class _StubManager:
+            def request_cancel(self, *, reason: str = ""):
+                raise StateConflict("worker 已收尾，协作取消无法完成：请提交切换（READY）或放弃迁移（已安全停止态）")
+
+        client = TestClient(app)
+        _enter_maintenance(client, tmp_path)
+        token = _maintenance_token(client, tmp_path)
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        app.state.database_migration_manager = _StubManager()
+        resp = client.post(
+            "/api/v1/database/migration/cancel",
+            json={
+                "attempt_id": "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+                "epoch": "epoch-x",
+                "state_version": 1,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "409"
+        assert "worker 已收尾" in body["msg"]
 
 
 class TestBarrierPathBoundary:

@@ -491,6 +491,7 @@ describe('MaintenancePage', () => {
       reason: 'abandon held from maintenance page'
     })
     expect(wrapper.text()).toContain('已放弃迁移')
+    expect(wrapper.text()).toContain('重启服务')
     expect(refreshSpy).toHaveBeenCalled()
   })
 

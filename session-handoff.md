@@ -6044,3 +6044,11 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - **部署**：Hermes run_ffae3c8b96dc4de497281ade0a22e8de，构建 1596s（前端 fork-ts-checker 拉长，非卡死）→双 tar（backend 38cf6ecc…/frontend d2cb28bf…，manifest 不变=前端仅注释）→unraid 部署 37s；七项验证全过；锚点 backup-pre-83c8437=23ecd1c 双镜像。
 - **生产状态**：83c8437=origin/dev HEAD 严格一致；backend 仍 DB_TYPE=sqlite 跑老 app.db（用户批准中间态），postgres healthy 未被消费。**用户下一步：设置→数据库迁移页应能看到 compose PG 参数自动回填（本批修复的功能），从旧库发起 sqlite→pg 即正道切换**。
 - **待办遗留**：远端 compose 凭据行 `${DB_PASSWORD:-btdeck123}` 兜底待强化（ALTER USER→.env→`:?`→重启，回 PG 前做）；dashboard-redesign WIP 仍在工作区未提交（StatusDonutCard/两 spec/PLANS/design-mockups）。
+
+## 2026-11-11 交接：审查修复批（READY 取消死锁 / boot HELD 放弃出口 / 迁移 downgrade 假成功）——未提交
+
+- **触发**：用户要求 code review dev 最近10提交（a67565b..d9e5c5c）→ 三缺陷确认（两项 P1 真实复现、一项 P2 隔离实证）→ 用户授权修复。
+- **修复**：①manager.request_cancel worker 已收尾 fail-fast（StateConflict）+ cancel 端点 409 包装（此前裸抛 500）+ 前端取消按钮移出 READY（followCancellable 仅 worker 活跃阶段渲染）；②维护启动分支挂迁移管理器（_attach_migration_manager 传既有控制器复用 boot HELD 现场）+ manager.status() 控制器 HELD→phase=held 映射 + abort_from_held 直接归位 NORMAL（原委托 abort_prepare 恒受阻，boot/运行期 HELD leave 既有债同批闭环）+ leave 前置目标副作用守卫（先拒后动 journal）+ 维护页 abandonRestartHint（zh/en）；③a2b3 downgrade 幂等判据改 _is_already_reverted 双向类型比对+长度参与（原单向 isinstance 把 BigInteger/Text 误判已回退——downgrade 假成功 schema 漂移）；顺带清理 f6f7409 两处失效 type: ignore。
+- **验证**：后端全量 5860 passed/65 skipped/0 failed + mypy 333/0 + black/flake8 净；前端 Jest 155 套 2152 绿 + typecheck 净 + lint 净增 0（npx eslint HEAD vs worktree 逐文件 diff 证明，-3 为用户在途 dashboard spec 修复）；./init.sh --ci 过。
+- **未做**：Git 提交待用户指令；boot 分支放弃后业务恢复需重启（设计内，UI 已提示）；真实容器 boot HELD 放弃演练随下次部署复验。
+- **归因技巧留档**：lint 归因勿只比总数——临时 worktree 挂 HEAD + symlink node_modules + 同命令 npx eslint 逐文件 diff，可把净增精确归因到文件（本批以此自证净增 0）。

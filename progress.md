@@ -1,3 +1,15 @@
+## 2026-11-11（续）：审查修复批（最近10提交 code review 三缺陷全闭环，未提交）
+
+- **触发**：用户要求 code review dev 最近10提交（a67565b..d9e5c5c）→ 两路评审代理 + 最小复现确认三项 → 用户授权修复。
+- **P1 READY 取消死锁**：真实 manager/controller/journal 复现——READY 后 worker 已收尾，request_cancel 照常置位但无 ACK 者，status 恒 cancelling、前端提交/放弃双隐藏。修复：manager.request_cancel worker 已收尾 fail-fast（StateConflict→端点 409 包装，此前菗抛 500）+ 前端取消按钮移出 READY（followCancellable：preparing/draining/frozen/importing/verifying 才渲染）。
+- **P1 boot HELD 放弃出口不可达**：复现——pending manifest 重启进维护 HELD 后 manager 未挂载，/migration/status 与 /migration/leave 均 503（d9e5c5c 新增 UI 出口形同虚设）。修复：lifecycle gate 维护分支挂迁移管理器（_attach_migration_manager 传既有控制器复用 HELD 现场）+ manager.status() 控制器 HELD→phase=held 映射（boot idle 与运行期 fence 丢失两态）+ abort_from_held 直接归位 NORMAL（此前委托 abort_prepare 恒 TransitionError——boot/运行期 HELD leave 同症，既有债一并闭环）+ 维护页放弃成功追加 abandonRestartHint（boot 分支业务面需重启恢复，zh/en）。
+- **加固**：leave 在动 journal 前先拒目标副作用（此前 journal 先撤销后控制器受阻留半途状态，重试撞无进行中 attempt）。
+- **P2 迁移 downgrade 假成功**：隔离复现——a2b3 幂等判据单向 isinstance，BigInteger/Text 是 Integer/String 子类被误判已回退，downgrade 返回成功但 inode_id/total_size/log_detail 三列 schema 未回退（版本已退）。修复：_is_already_reverted 双向类型比对+长度参与；隔离验证五列全部真实回退且重放幂等。顺带清理 f6f7409 遗留两处失效 type: ignore（torrent_location_service/seed_transfer_service，mypy warn_unused 触发）。
+- **测试**：+test_column_types_migration 2 例（链级 upgrade 拓宽/downgrade 回退+数值无损/lossy 拒绝版本不前移）+barrier boot 挂 manager 真实 leave 用例+manager 取消守卫/HELD leave/副作用守卫 3 例+端点 cancel 409 信封 1 例+前端 READY 不渲染取消/取消 409 行内错误恢复 2 例+maintenance 放弃提示断言。
+- **验证**：后端全量 pytest 5860 passed/65 skipped/0 failed（350s 单进程）+mypy 333 文件 0 错+black/flake8 净；前端全量 Jest 155 套 2152 绿+typecheck 净+lint 净增 0（npx eslint HEAD vs worktree 逐文件 diff：本批文件违规集零变化，-3 为用户在途 dashboard spec 修复）；./init.sh --ci 过。
+- **文档**：constraints/database-migration.md（HELD 出口/取消 fail-fast 两节）、runbook §4、roadmap 四文件五行同步。
+- **未做**：Git 提交待用户指令；boot 分支放弃后业务恢复需重启（设计内）；真实容器 boot HELD 放弃演练随下次部署复验。
+
 ## 2026-11-05：CI 修复（BTD305 参数化 + 白名单续期 + 测试污染）→ CI 全绿 → 生产严格同步 7f7560e
 
 - **CI 三连失败分析与修复**（用户要求）：①Architecture checks BTD305——dashboard_stats.py 五桶 SQL f-string 拼 IN 列表未登记白名单 fail-closed，改 expanding bindparam 参数化（模块常量集合，双方言等价，五桶对拍 69 例+受影响面 2075 passed）；②secret-allowlist 9 条 2026-11-02 到期（v1.0.7 已知遗留债，测试夹具/占位值类非真实凭据）滚动续期至 2026-12-05；③test_paused_aggregated_from_online_downloaders 在 CI 全量跑被全局隔离库污染（其它测试写入 14 条 cron_task 使 enabled 断言红）——AsyncSessionLocal monkeypatch 失败降级确定性化。CI run 42031211274 三 job 全绿。

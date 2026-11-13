@@ -100,6 +100,7 @@
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.abandonHeldTitle') }}</h3>
             <p class="maintenance-hint">{{ $t('database.maintenance.migration.abandonHeldHint') }}</p>
             <p v-if="abandonOk" class="maintenance-ok">{{ $t('database.maintenance.migration.abandonDone') }}</p>
+            <p v-if="abandonOk" class="maintenance-warn">{{ $t('database.maintenance.migration.abandonRestartHint') }}</p>
             <el-button
               type="danger"
               plain

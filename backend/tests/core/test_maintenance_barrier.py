@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -190,6 +191,52 @@ class TestStartupGate:
         # 本地审计已落 maintenance-boot 事件
         audit = fake_app.state.maintenance_audit
         assert any(r["action"] == "maintenance-boot" for r in audit.replay_events())
+        set_default_controller(None)
+
+    def test_pending_attempt_boot_mounts_manager_and_leave_restores(self, tmp_path):
+        """boot HELD 分支挂载迁移管理器（2026-11-11 审查修复）。
+
+        此前维护启动分支不挂 manager → /migration/status 与 /migration/leave
+        均 503，维护页「放弃迁移」出口在有 pending manifest 的重启维护态不可达
+        （审查实证），原死锁仍在。修复后 status 报 held 视图且 leave 真实可用
+        （journal 撤销 + 控制器 HELD→NORMAL，abort_from_held 修复）。
+        """
+        from app.core.database_protocol import DB_MIGRATION_DIR
+        from app.services.db_migration.journal import Journal
+
+        attempt = "sqlite-to-pg/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+        d = tmp_path / DB_MIGRATION_DIR
+        d.mkdir(parents=True)
+        (d / "control.json").write_text(json.dumps({"pending_attempt": attempt}), encoding="utf-8")
+        attempt_dir = d / "attempts" / attempt.rsplit("/", 1)[1]
+        attempt_dir.mkdir(parents=True)
+        (attempt_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "attempt_id": attempt,
+                    "direction": "sqlite-to-pg",
+                    "operation_kind": "MIGRATE",
+                    "epoch": "epoch-legacy",
+                    "state_version": 3,
+                    "commit_phase": "NONE",
+                }
+            ),
+            encoding="utf-8",
+        )
+        fake_app = SimpleNamespace(state=SimpleNamespace())
+        assert self._gate(tmp_path, app=fake_app) is True
+        manager = getattr(fake_app.state, "database_migration_manager", None)
+        assert manager is not None, "维护启动分支必须挂载迁移管理器（否则控制端点 503）"
+        status = manager.status()
+        assert status.phase == "held"
+        assert status.attempt_id == attempt
+        assert status.epoch == "epoch-legacy"
+        assert status.state_version == 3
+        out = manager.leave(expect_epoch="epoch-legacy", expect_state_version=3)
+        assert out.phase == "idle"
+        assert manager.controller.status().state == "NORMAL"
+        assert Journal(str(tmp_path)).read_control()["pending_attempt"] is None
         set_default_controller(None)
 
     def test_orphan_preparing_intent_archived_and_normal_start(self, tmp_path):

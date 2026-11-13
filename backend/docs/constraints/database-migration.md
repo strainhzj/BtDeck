@@ -191,7 +191,11 @@ guide 保留“不降级、不 stamp”的兼容路径。
   （fail-safe）。
 - **HELD 人工出口**：维护页对 phase=held 且有 attemptId/epoch 背书者提供「放弃
   迁移」（POST /migration/leave，CAS + 二次确认）；孤儿 intent（无背书）不渲染
-  （由启动对账兜底）。
+  （由启动对账兜底）。维护启动分支同样挂载迁移管理器（`_attach_migration_manager`
+  传既有控制器复用 boot HELD 现场，2026-11-11 修复）——否则 /migration/status
+  与 /migration/leave 在 boot HELD 均 503，出口不可达；`abort_from_held` 直接
+  归位 NORMAL（此前委托 abort_prepare 恒受阻，boot/运行期 HELD leave 同症）；
+  boot 分支放弃成功后业务面需重启恢复（维护页 abandonRestartHint 提示）。
 - 排空超时→HELD（未冻结未快照）；有目标副作用或 worker 未收尾时禁止撤销——
   禁止抢先恢复业务。FROZEN 进入条件：计数归零 + fence 令牌在握。
 
@@ -232,6 +236,12 @@ guide 保留“不降级、不 stamp”的兼容路径。
 - `request_cancel` 协作取消 + worker `ack_cancel`（阻塞等 ACK）；epoch 前进
   后晚到回调/ACK 一律拒绝（`StaleEpochError`）；HELD/ABANDONED 无漂移可重绑
   （漂移拒绝保持 HELD）；COMMITTED 终态禁重绑/禁退出。
+- **取消 fail-fast（2026-11-11 审查修复）**：worker 已收尾（READY/终态）时取消
+  永远等不到 ACK——manager 拒绝（StateConflict→端点 409 包装，phase 不被污染，
+  指引提交切换或放弃）；前端协作取消按钮仅在 worker 活跃/即将启动阶段渲染
+  （preparing/draining/frozen/importing/verifying），READY 不渲染。leave 在动
+  journal 前先拒目标副作用（转 §6.5 discard 流程），不留「journal 已撤销/
+  控制器受阻」半途状态。
 
 ### A+B 提交/ACK 与同库交接（W3，§7；强制）
 
