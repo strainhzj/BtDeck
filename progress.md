@@ -1,3 +1,15 @@
+## 2026-11-11（续）：审查修复批（最近10提交 code review 三缺陷全闭环，未提交）
+
+- **触发**：用户要求 code review dev 最近10提交（a67565b..d9e5c5c）→ 两路评审代理 + 最小复现确认三项 → 用户授权修复。
+- **P1 READY 取消死锁**：真实 manager/controller/journal 复现——READY 后 worker 已收尾，request_cancel 照常置位但无 ACK 者，status 恒 cancelling、前端提交/放弃双隐藏。修复：manager.request_cancel worker 已收尾 fail-fast（StateConflict→端点 409 包装，此前菗抛 500）+ 前端取消按钮移出 READY（followCancellable：preparing/draining/frozen/importing/verifying 才渲染）。
+- **P1 boot HELD 放弃出口不可达**：复现——pending manifest 重启进维护 HELD 后 manager 未挂载，/migration/status 与 /migration/leave 均 503（d9e5c5c 新增 UI 出口形同虚设）。修复：lifecycle gate 维护分支挂迁移管理器（_attach_migration_manager 传既有控制器复用 HELD 现场）+ manager.status() 控制器 HELD→phase=held 映射（boot idle 与运行期 fence 丢失两态）+ abort_from_held 直接归位 NORMAL（此前委托 abort_prepare 恒 TransitionError——boot/运行期 HELD leave 同症，既有债一并闭环）+ 维护页放弃成功追加 abandonRestartHint（boot 分支业务面需重启恢复，zh/en）。
+- **加固**：leave 在动 journal 前先拒目标副作用（此前 journal 先撤销后控制器受阻留半途状态，重试撞无进行中 attempt）。
+- **P2 迁移 downgrade 假成功**：隔离复现——a2b3 幂等判据单向 isinstance，BigInteger/Text 是 Integer/String 子类被误判已回退，downgrade 返回成功但 inode_id/total_size/log_detail 三列 schema 未回退（版本已退）。修复：_is_already_reverted 双向类型比对+长度参与；隔离验证五列全部真实回退且重放幂等。顺带清理 f6f7409 遗留两处失效 type: ignore（torrent_location_service/seed_transfer_service，mypy warn_unused 触发）。
+- **测试**：+test_column_types_migration 2 例（链级 upgrade 拓宽/downgrade 回退+数值无损/lossy 拒绝版本不前移）+barrier boot 挂 manager 真实 leave 用例+manager 取消守卫/HELD leave/副作用守卫 3 例+端点 cancel 409 信封 1 例+前端 READY 不渲染取消/取消 409 行内错误恢复 2 例+maintenance 放弃提示断言。
+- **验证**：后端全量 pytest 5860 passed/65 skipped/0 failed（350s 单进程）+mypy 333 文件 0 错+black/flake8 净；前端全量 Jest 155 套 2152 绿+typecheck 净+lint 净增 0（npx eslint HEAD vs worktree 逐文件 diff：本批文件违规集零变化，-3 为用户在途 dashboard spec 修复）；./init.sh --ci 过。
+- **文档**：constraints/database-migration.md（HELD 出口/取消 fail-fast 两节）、runbook §4、roadmap 四文件五行同步。
+- **未做**：Git 提交待用户指令；boot 分支放弃后业务恢复需重启（设计内）；真实容器 boot HELD 放弃演练随下次部署复验。
+
 ## 2026-11-05：CI 修复（BTD305 参数化 + 白名单续期 + 测试污染）→ CI 全绿 → 生产严格同步 7f7560e
 
 - **CI 三连失败分析与修复**（用户要求）：①Architecture checks BTD305——dashboard_stats.py 五桶 SQL f-string 拼 IN 列表未登记白名单 fail-closed，改 expanding bindparam 参数化（模块常量集合，双方言等价，五桶对拍 69 例+受影响面 2075 passed）；②secret-allowlist 9 条 2026-11-02 到期（v1.0.7 已知遗留债，测试夹具/占位值类非真实凭据）滚动续期至 2026-12-05；③test_paused_aggregated_from_online_downloaders 在 CI 全量跑被全局隔离库污染（其它测试写入 14 条 cron_task 使 enabled 断言红）——AsyncSessionLocal monkeypatch 失败降级确定性化。CI run 42031211274 三 job 全绿。
@@ -8940,3 +8952,19 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修复**：①lifecycle gate 孤儿对账——PREPARING intent + authority.pending_attempt=None + 非 committed_pending_restart → 先审计（stale-intent-archived，critical 不可写则维持 fail-closed）后归档（archive_stale_intent 改名 stale-<attempt>-<ts> 保留）按正常启动；非 PREPARING 或有背书仍 fail-closed。②维护页 HELD 放弃出口——phase=held 且 attemptId+epoch 在（有 manifest 背书）渲染「放弃迁移」（二次确认 POST /migration/leave snake_case CAS+reason）；孤儿态不渲染（启动对账兜底）。i18n zh/en。
 - **验证**：后端 test_maintenance_barrier 13/13（语义反转重写 test_crashed_prepare_intent_enters_maintenance → archived_and_normal_start + 新增有背书仍维护/非 PREPARING fail-closed 两例）+ startup_gates/bootstrap/manager 72 例绿 + black/flake8/mypy 净；前端 maintenance-page 17/17 + 全量 2150/2150 + typecheck 净 + lint 净增 0（worktree 对照 281=HEAD 基线）。
 - **记录纪律**：constraints/roadmap（backend infra lifecycle 行 + frontend views maintenance 行）已同步；本条目留存工作区下次实质提交入仓。
+
+## 2026-11-13：仪表盘移动版二期（/m/dashboard 重写消费一期卡片族，后端零改动）
+
+- **背景**：一期改造（dashboard-redesign-2026-11）desktop-only，移动端 /m/dashboard 停留 Phase 4 旧简化页（384 行），未消费 statusBuckets/siteBuckets/tasks.enabled/24h 流量/热门种子任何一期字段；伴侣 APK 强制 mobile 与一期成果绝缘。评估后用户拍板方案 A（移动版二期立项），D1–D3 按默认（active 3s 与桌面一致 / InstanceHealthCard+空态 CTA / 12 卡裁 9），D4 覆盖——方案文件入库（破一期本地留存先例）。
+- **实现**（feature/dashboard-mobile-2026-11，基于 dev b8262e6）：重写 views/mobile/dashboard.vue（384→498 行）——KPI 2×2 + 纵向单列流 8 卡直接复用一期桌面 props 驱动组件族（HeroPulse/StatusDonut/DailyTraffic/SiteBars/HotTorrents/InstanceHealth/CronTask/ActivityTimeline）+ DashWidget 壳 + 根节点挂 dashboard-page class 复用 dashboard-theme.scss；裁 SpeedSpark（hero 覆盖实时速度）/Tubes/Radar/QuickActions（tabbar 覆盖导航）；无预设/编辑/拖拽（移动固定单列流）。轮询：SpeedPollingMixin 3s 活跃（visibilitychange 后台自动暂停）+ dashboard 30s/tasks 60s/traffic 120s（document.hidden 门控）+ PullToRefresh 全量并发不闪 loading。i18n dashboard.mobile.* 四键 zh/en。热门种子卡新增「查看全部种子」跳 /m/torrents；下载器空态 CTA 直达 /m/downloader?create=1（沿用旧页语义）。
+- **顺带收编**：用户在途 dashboard 类型注解 lint 修复（StatusDonutCard+两 spec，分号→逗号）独立 style 提交，不混功能提交。
+- **测试与门禁**：mobile-dashboard.spec.ts 重写 9 例全绿（旧 15 例针对旧页实现缺陷——字段误读/bytes 换算/m-dl-card 结构——已被新实现结构性消除；移植信封契约与首载失败 toast 两防线；新增挂载/props 映射/D1 3s/下拉刷新并发/查看全部跳转/空态两态/定时器清理）。typecheck 净；lint 281 problems=HEAD 基线（4 改动文件 eslint no-fix 0 贡献，净增 0）；全量 Jest 155 套 2146 例全绿（临时 worktree 挂 HEAD 亲测对照 2152，2152−旧 spec 15+新 9=2146 严丝合缝）；npm run build 成功；e2e 断言 .m-dashboard 根选择器保持，路由 /m/dashboard 不变。
+- **文档**：feature_list.json +dashboard-mobile-2026-11 条目（evidence 已回填）；roadmap views 行重写+功能域速查仪表盘行+根 README 最近同步；PLANS/dashboard-mobile-2026-11.md 随功能提交入库。
+
+## 2026-11-13（续）：移动仪表盘评审修复批（6 项 P2 全处置，双端图标全修复）
+
+- **触发**：用户要求对本会话提交（b8262e6..80e09d4）code review——双评审代理 + 主会话真实组件挂载实证，6 项确认缺陷（全部 100% 复现或代码事实）。
+- **修复**：①系统速度 KPI 恒空白——KpiCard 无默认插槽出口，`#default` 双列数值被静默丢弃（根因一期既有，桌面同步受益），KpiCard 补 `<slot />` 出口于 foot 之后；②三张 KPI 点击全失效——裸 `clickable` 传空串而 prop 无运行时 Boolean 类型（桌面同缺陷），KpiCard `@Prop` 显式 `type: Boolean`；③下载器行穿透丢失——InstanceHealthCard 新增 `clickable` prop（Boolean）+ 行级 role=button/click/enter 上抛 `activate(downloader_id)`，桌面不传不受影响，移动页绑定跳 /m/downloader；④慢辅助接口阻塞首屏——initialLoad 改为仅以 dashboard 主数据为 loading 门，active/tasks/traffic 后台并行（各卡自带 loading/空态）；⑤30 处 `lucide-icon icon=` 属性错误全 app（全部集中在 dashboard 域）→ `name=`，ICONS 注册表核对 120 键零缺失（含无引号键）；⑥回前台不补刷——页面级 visibilitychange 监听回前台立即刷新 dashboard/tasks/traffic（活跃种子由 mixin resume 补刷）。
+- **测试**（+9 例 = 2155）：KpiCard 壳 +默认 slot 渲染 +空串 clickable 契约 2 例；InstanceHealthCard +clickable 行 emit（click/enter 带 id）/非 clickable 负例 2 例；mobile spec 交互 stub（渲染 slots+$listeners）+真实 InstanceHealthCard 接入，+速度双列渲染（280.00 KB/s）/KPI 三卡点击穿透/健康行点击穿透/traffic 失败不阻塞首屏/回前台补刷 5 例。教训：评审前 spec 全面 props/计数断言、无渲染值与原生事件断言，正是 P1 漏网结构原因——交互 stub+真实子组件组合补上渲染值与导航链路防线。
+- **验证**：typecheck 净；改动 17 文件 eslint no-fix 0 问题（SiteBarsCard unused-i 为存量基线 warning 不属本批）；lint 全量 281 problems=基线净增 0；全量 Jest 155 套 2155 例全绿（2146+9 对平）；npm run build 成功（hash 746a0c1cc3ddb456）。
+- **遗留观察（评审发现未处置，待用户决策）**：信封失败（code≠200）时移动页渲染"去添加下载器"CTA 误导（旧页为中性"暂无数据"）；成功后轮询失败永久静默保快照与桌面 handleEmptyState 语义分歧（注释标明有意）；InstanceHealthCard 长昵称窄屏可能挤压后列（旧卡有 overflow:hidden）；768–992 外壳断点双轨制（非本批范围）。

@@ -117,6 +117,12 @@ export const dashboard = {
       6: '六'
     }
   },
+  mobile: {
+    loading: '加载中…',
+    viewAllTorrents: '查看全部种子',
+    noDownloaders: '还没有下载器，添加后即可管理种子',
+    addDownloader: '去添加下载器'
+  },
   widgets: {
     liveTag: '实时',
     health: {

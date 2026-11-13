@@ -165,21 +165,27 @@ class MigrationManager:
             phase = self._phase
             if self._controller.cancel_requested and phase not in {"cancelled", "failed"}:
                 phase = "cancelling"
-            return ManagerStatus(
-                attempt_id=manifest.get("attempt_id"),
-                phase=phase,
-                epoch=manifest.get("epoch", self._controller.epoch),
-                state_version=int(manifest.get("state_version", 0)),
-                commit_phase=manifest.get("commit_phase"),
-                worker_generation=self._controller.worker_generation,
-                needs_credentials=self._credentials_lost(manifest),
-                restart_pending=bool((self._journal.read_control() or {}).get("restart_pending", False)),
-                detail={
-                    "progress": self._last_progress,
-                    "target": self._target_desc or manifest.get("target", {}),
-                    **({"workerError": self._worker_error} if self._worker_error else {}),
-                },
-            )
+        # 控制器 HELD → phase=held（2026-11-11 审查修复）：boot HELD 下 manager
+        # 为重启后全新实例（_phase=idle），运行期 fence 丢失时 _phase 仍停留
+        # ready_to_switch——两者都须报 held，维护页 canAbandonHeld 才能渲染
+        # 「放弃迁移」出口（审查实证：不映射 → 出口不可达）。
+        if self._controller.status().state == "HELD":
+            phase = "held"
+        return ManagerStatus(
+            attempt_id=manifest.get("attempt_id"),
+            phase=phase,
+            epoch=manifest.get("epoch", self._controller.epoch),
+            state_version=int(manifest.get("state_version", 0)),
+            commit_phase=manifest.get("commit_phase"),
+            worker_generation=self._controller.worker_generation,
+            needs_credentials=self._credentials_lost(manifest),
+            restart_pending=bool((self._journal.read_control() or {}).get("restart_pending", False)),
+            detail={
+                "progress": self._last_progress,
+                "target": self._target_desc or manifest.get("target", {}),
+                **({"workerError": self._worker_error} if self._worker_error else {}),
+            },
+        )
 
     def _credentials_lost(self, manifest: Dict[str, Any]) -> bool:
         attempt = manifest.get("attempt_id")
@@ -444,6 +450,15 @@ class MigrationManager:
 
     def request_cancel(self, *, reason: str = "") -> ManagerStatus:
         attempt = self._require_pending("cancel")
+        # worker 已收尾（READY/终态）时协作取消永远等不到 ACK——2026-11-11 审查
+        # 实证：READY 点取消 → 永久 cancelling，前端提交/放弃按钮双双隐藏。
+        # fail-fast 409（不污染 phase），指引提交切换或放弃；preparing/draining
+        # 阶段 worker 尚未派生（即将启动，首个取消边界即生效），仍允许受理。
+        with self._lock:
+            worker_alive = self._worker is not None and self._worker.is_alive()
+            worker_pre_start = self._phase in {"preparing", "draining", "frozen"}
+        if not worker_alive and not worker_pre_start:
+            raise StateConflict("worker 已收尾，协作取消无法完成：请提交切换（READY）或放弃迁移（已安全停止态）")
         self._controller.request_cancel(reason=reason)
         self._audit.audit_event(
             "migration",
@@ -471,6 +486,11 @@ class MigrationManager:
         self._assert_cas(manifest, expect_epoch, expect_state_version)
         if manifest.get("commit_phase", COMMIT_PHASE_NONE) != COMMIT_PHASE_NONE:
             raise StateConflict("commit_phase 已推进，leave 拒绝（只能 redo 或 clear 交接）")
+        # 目标副作用已在（§5.1 登记）：放弃须走 discard/ABANDONED 流程——先拒绝
+        # 再动 journal（2026-11-11 审查修复：撤销先于控制器迁移，受阻后留下
+        # journal 已撤销/控制器仍在维护的半途状态，重试只会撞「无进行中 attempt」）
+        if self._controller.status().target_side_effects:
+            raise StateConflict("已存在目标副作用，禁止 leave 直接回源（转 discard/ABANDONED 流程，§6.5）")
         if not self.wait_worker_stopped(timeout=worker_stop_timeout):
             raise WorkerNotStopped("worker 未收尾（等待 ACK 或受控重启；禁止硬杀当成功）")
         attempt = manifest["attempt_id"]

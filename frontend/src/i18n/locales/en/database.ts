@@ -238,6 +238,7 @@ export const database = {
       abandonConfirmTitle: 'Abandon this migration?',
       abandonConfirmText: 'Abandoning voids this attempt and immediately restores normal mode (source unchanged; target residue can be cleaned up later). Confirm abandon?',
       abandonDone: 'Migration abandoned. Maintenance mode has been exited; you can return to the app.',
+      abandonRestartHint: 'If business APIs remain unavailable (maintenance boot branch), restart the service to finish recovery.',
       abandonFailed: 'Failed to abandon the migration. Please try again later.'
     },
     restart: {

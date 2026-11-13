@@ -58,6 +58,25 @@ describe('InstanceHealthCard 实例健康', () => {
     const w = mountCard(InstanceHealthCard, { list: [] })
     expect(w.find('.dash-empty').exists()).toBe(true)
   })
+
+  it('clickable 行：role=button、click/enter 上抛 activate(id)（移动端穿透，2026-11-13 评审修复）', async() => {
+    const w = mountCard(InstanceHealthCard, { list: [dl({}), dl({ downloader_id: 'd2' })], clickable: true })
+    const rows = w.findAll('.dash-rowline')
+    expect(rows.at(0).attributes('role')).toBe('button')
+    await rows.at(0).trigger('click')
+    expect(w.emitted('activate')).toEqual([['d1']])
+    await rows.at(1).trigger('keypress', { key: 'Enter' })
+    const calls = w.emitted('activate')
+    expect(calls).toHaveLength(2)
+    expect(calls?.[1]).toEqual(['d2'])
+  })
+
+  it('默认非 clickable：无 role、click 不上抛（桌面不受影响）', async() => {
+    const w = mountCard(InstanceHealthCard, { list: [dl({})] })
+    expect(w.find('.dash-rowline').attributes('role')).toBeUndefined()
+    await w.find('.dash-rowline').trigger('click')
+    expect(w.emitted('activate')).toBeUndefined()
+  })
 })
 
 describe('HotTorrentsCard 热门种子', () => {
@@ -146,7 +165,7 @@ describe('SiteBarsCard 站点分布', () => {
     const option = (echart.props('option') || {}) as {
       xAxis: unknown
       yAxis: { data: string[] }
-      series: Array<{ data: Array<{ value: number; label?: { formatter?: () => string } }> }>
+      series: Array<{ data: Array<{ value: number, label?: { formatter?: () => string } }> }>
     }
     // inverse 类目轴：数组顺序即展示顺序（已按后端降序传入）
     expect(option.yAxis.data).toEqual(['a.example.com', 'b.example.com', 'dashboard.widgets.sites.other'])

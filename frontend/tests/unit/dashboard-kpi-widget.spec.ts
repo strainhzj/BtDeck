@@ -40,6 +40,19 @@ describe('KpiCard 壳', () => {
     await w.trigger('keypress.enter')
     expect(w.emitted('click')).toBeUndefined()
   })
+
+  it('默认 slot 渲染于 foot 之后（系统速度卡双列数值区契约，2026-11-13 评审修复：此前无出口被静默丢弃）', () => {
+    const w = mountKpi({ label: '系统总速度', icon: 'zap' }, { value: '<span/>', default: '<div class="dual-extra">DL/UL</div>' })
+    expect(w.find('.dual-extra').exists()).toBe(true)
+    expect(w.text()).toContain('DL/UL')
+  })
+
+  it('clickable 空串（模板裸属性形态）经 Boolean 转换等价 true：挂 role 并上抛 click（评审修复）', async() => {
+    const w = mountKpi({ label: 'L', icon: 'server', clickable: '', ariaLabel: 'go' })
+    expect(w.attributes('role')).toBe('button')
+    await w.trigger('keypress.enter')
+    expect(w.emitted('click')).toHaveLength(1)
+  })
 })
 
 describe('DashWidget 壳', () => {

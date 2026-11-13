@@ -6044,3 +6044,25 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - **部署**：Hermes run_ffae3c8b96dc4de497281ade0a22e8de，构建 1596s（前端 fork-ts-checker 拉长，非卡死）→双 tar（backend 38cf6ecc…/frontend d2cb28bf…，manifest 不变=前端仅注释）→unraid 部署 37s；七项验证全过；锚点 backup-pre-83c8437=23ecd1c 双镜像。
 - **生产状态**：83c8437=origin/dev HEAD 严格一致；backend 仍 DB_TYPE=sqlite 跑老 app.db（用户批准中间态），postgres healthy 未被消费。**用户下一步：设置→数据库迁移页应能看到 compose PG 参数自动回填（本批修复的功能），从旧库发起 sqlite→pg 即正道切换**。
 - **待办遗留**：远端 compose 凭据行 `${DB_PASSWORD:-btdeck123}` 兜底待强化（ALTER USER→.env→`:?`→重启，回 PG 前做）；dashboard-redesign WIP 仍在工作区未提交（StatusDonutCard/两 spec/PLANS/design-mockups）。
+
+## 2026-11-11 交接：审查修复批（READY 取消死锁 / boot HELD 放弃出口 / 迁移 downgrade 假成功）——未提交
+
+- **触发**：用户要求 code review dev 最近10提交（a67565b..d9e5c5c）→ 三缺陷确认（两项 P1 真实复现、一项 P2 隔离实证）→ 用户授权修复。
+- **修复**：①manager.request_cancel worker 已收尾 fail-fast（StateConflict）+ cancel 端点 409 包装（此前裸抛 500）+ 前端取消按钮移出 READY（followCancellable 仅 worker 活跃阶段渲染）；②维护启动分支挂迁移管理器（_attach_migration_manager 传既有控制器复用 boot HELD 现场）+ manager.status() 控制器 HELD→phase=held 映射 + abort_from_held 直接归位 NORMAL（原委托 abort_prepare 恒受阻，boot/运行期 HELD leave 既有债同批闭环）+ leave 前置目标副作用守卫（先拒后动 journal）+ 维护页 abandonRestartHint（zh/en）；③a2b3 downgrade 幂等判据改 _is_already_reverted 双向类型比对+长度参与（原单向 isinstance 把 BigInteger/Text 误判已回退——downgrade 假成功 schema 漂移）；顺带清理 f6f7409 两处失效 type: ignore。
+- **验证**：后端全量 5860 passed/65 skipped/0 failed + mypy 333/0 + black/flake8 净；前端 Jest 155 套 2152 绿 + typecheck 净 + lint 净增 0（npx eslint HEAD vs worktree 逐文件 diff 证明，-3 为用户在途 dashboard spec 修复）；./init.sh --ci 过。
+- **未做**：Git 提交待用户指令；boot 分支放弃后业务恢复需重启（设计内，UI 已提示）；真实容器 boot HELD 放弃演练随下次部署复验。
+- **归因技巧留档**：lint 归因勿只比总数——临时 worktree 挂 HEAD + symlink node_modules + 同命令 npx eslint 逐文件 diff，可把净增精确归因到文件（本批以此自证净增 0）。
+
+## 2026-11-13 交接：仪表盘移动版二期（feature/dashboard-mobile-2026-11，本分支未推送未合并）
+
+- **交付**：/m/dashboard 重写为消费一期卡片族（KPI 2×2 + 8 卡纵向流，DashWidget 壳 + dashboard-page 皮肤，后端零改动）；D1=3s 活跃轮询（SpeedPollingMixin 后台暂停兜底）；裁 SpeedSpark/Tubes/Radar/QuickActions；mobile-dashboard.spec.ts 9 例（旧 15 例随旧页退役，信封契约/首载失败 toast 两防线移植）。
+- **验证**：typecheck 净 + lint 281=HEAD 基线净增 0 + 全量 Jest 155 套 2146 绿（HEAD worktree 对照 2152 对平）+ build 成功；e2e .m-dashboard 根选择器未动。
+- **Git**：分支基于 dev b8262e6（本地领先 origin/dev 1 提交未推）；用户在途 dashboard 类型注解修复已收编为独立 style 提交；PLANS/dashboard-mobile-2026-11.md 按用户指示入库（破一期先例）。提交与推送/合并待用户指令。
+- **后续候选项**：实机验收（APK 真机 + 手机浏览器）；若用户要求推送后跑 CI（regression.yml 前端三 job）；移动端是否补 quick-actions 卡待用户反馈。
+
+## 2026-11-13 交接（续）：移动仪表盘评审修复批——同分支第二提交
+
+- **内容**：code review（b8262e6..80e09d4）6 项 P2 全修复：KpiCard 默认 slot 出口（速度 KPI 恒空白，桌面一期同款 bug 同步修复）/clickable 显式 Boolean（裸属性点击失效，桌面同步）/InstanceHealthCard clickable 行穿透/首屏解耦（仅 dashboard 为 loading 门）/dashboard 域 30 处 icon=→name=（LucideIcon 全 app 用量即此域；ICONS 核对零缺失）/回前台 visibilitychange 补刷。
+- **验证**：全量 Jest 155 套 2155 绿（+9 防线）+ typecheck 净 + lint 281 基线净增 0 + build 成功。测试方法论沉淀：浅挂载 props 断言抓不住插槽/裸属性/原生事件缺陷——交互 stub（渲染 slots+$listeners）+真实子组件组合才补上渲染值与导航链路。
+- **Git**：同分支 feature/dashboard-mobile-2026-11 第二提交（评审修复批），推送/合并仍待用户指令。
+- **遗留观察**：信封失败误导 CTA / 失败后永久保快照语义 / 长昵称窄屏挤压——评审已记录未处置，待用户决策。

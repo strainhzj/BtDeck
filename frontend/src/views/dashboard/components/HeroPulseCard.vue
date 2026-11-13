@@ -39,7 +39,7 @@
           {{ nameOf(t) }}
         </div>
         <span class="dash-tor-sp dl">
-          <lucide-icon icon="arrow-down" />
+          <lucide-icon name="arrow-down" />
           <span class="mono">{{ speedText(t.downloadSpeed) }}</span>
         </span>
         <span class="dash-muted mono">{{ Math.round(t.progress) }}%</span>
@@ -48,7 +48,7 @@
         v-if="tickerTorrents.length === 0"
         class="dash-empty"
       >
-        <lucide-icon icon="waves" />
+        <lucide-icon name="waves" />
         <span>{{ $t('dashboard.widgets.hero.empty') }}</span>
       </div>
     </div>

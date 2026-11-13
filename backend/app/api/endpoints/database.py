@@ -351,10 +351,20 @@ class CasRequest(BaseModel):
     "/migration/cancel", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)]
 )
 async def migration_cancel(request: Request, payload: CasRequest) -> CommonResponse:
-    """请求协作取消（CANCELLING；worker ACK 前不报 CANCELLED，§6.4）。"""
+    """请求协作取消（CANCELLING；worker ACK 前不报 CANCELLED，§6.4）。
+
+    worker 已收尾（READY/终态）→ 409 fail-fast（取消永远等不到 ACK，
+    2026-11-11 审查修复；此前无包装直接 StateConflict → 500）。"""
     manager = _manager(request)
-    manager.request_cancel(reason=payload.reason or "")
-    return CommonResponse(status="success", code="200", data=manager.status().as_dict())
+    try:
+        status = manager.request_cancel(reason=payload.reason or "")
+    except Exception as exc:  # noqa: BLE001 - 状态冲突面（对齐 leave 409 语义）
+        from app.services.db_migration.manager import StateConflict
+
+        if isinstance(exc, StateConflict):
+            return CommonResponse(status="error", code="409", msg=str(exc))
+        raise
+    return CommonResponse(status="success", code="200", data=status.as_dict())
 
 
 @router.post("/migration/leave", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)])

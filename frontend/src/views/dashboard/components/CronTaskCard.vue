@@ -19,7 +19,7 @@
       v-if="shown.length === 0"
       class="dash-empty"
     >
-      <lucide-icon icon="clock" />
+      <lucide-icon name="clock" />
       <span>{{ $t('dashboard.widgets.tasks.empty') }}</span>
     </div>
     <div

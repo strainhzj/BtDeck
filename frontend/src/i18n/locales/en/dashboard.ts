@@ -117,6 +117,12 @@ export const dashboard = {
       6: 'Sat'
     }
   },
+  mobile: {
+    loading: 'Loading…',
+    viewAllTorrents: 'View all torrents',
+    noDownloaders: 'No downloaders yet — add one to start managing torrents',
+    addDownloader: 'Add downloader'
+  },
   widgets: {
     liveTag: 'Live',
     health: {

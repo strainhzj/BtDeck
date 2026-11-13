@@ -236,6 +236,7 @@ export const database = {
       abandonConfirmTitle: '确认放弃本次迁移？',
       abandonConfirmText: '放弃后本次迁移单号作废，服务立即恢复普通模式（数据源不变、目标残留可清理）。确认放弃？',
       abandonDone: '已放弃迁移，维护模式已退出，可返回主页继续使用。',
+      abandonRestartHint: '若业务接口仍不可用（维护启动分支恢复），请重启服务完成业务恢复。',
       abandonFailed: '放弃迁移失败，请稍后重试。'
     },
     restart: {

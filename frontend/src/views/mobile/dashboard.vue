@@ -1,384 +1,514 @@
 <template>
-  <div class="m-dashboard">
+  <div class="m-dashboard dashboard-page">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
-    <div v-if="loading" class="m-hint">加载中…</div>
-    <template v-else-if="data">
-      <div class="m-card-grid">
-        <div class="m-card">
-          <div class="m-card-value">{{ torrentStats.downloading }}</div>
-          <div class="m-card-label">下载中</div>
-        </div>
-        <div class="m-card">
-          <div class="m-card-value">{{ torrentStats.seeding }}</div>
-          <div class="m-card-label">做种中</div>
-        </div>
-        <div class="m-card">
-          <div class="m-card-value">{{ torrentStats.paused }}</div>
-          <div class="m-card-label">已暂停</div>
-        </div>
-        <div class="m-card">
-          <div class="m-card-value">{{ downloaderStats.online }}/{{ downloaderStats.total }}</div>
-          <div class="m-card-label">下载器在线</div>
-        </div>
-      </div>
+    <div v-if="loading" class="m-hint">{{ $t('dashboard.mobile.loading') }}</div>
+    <template v-else>
+      <!-- KPI 2×2（恒显于卡片流之外，语义同桌面一期） -->
+      <section class="m-kpi-grid">
+        <kpi-card
+          :label="$t('dashboard.kpi.downloaders')"
+          icon="server"
+          clickable
+          :aria-label="$t('dashboard.aria.viewDownloaders')"
+          @click="navigateTo('/m/downloader')"
+        >
+          <template #value>
+            {{ hasData ? dashboard.downloaders.online : '--' }}<small>/ {{ hasData ? dashboard.downloaders.total : '--' }}</small>
+          </template>
+          <template #foot>
+            <span
+              v-if="hasData"
+              :class="['dash-kpi-chip', allDownloadersOnline ? 'up' : 'flat']"
+            >
+              {{ allDownloadersOnline ? $t('dashboard.allOnline') : $t('dashboard.onlineCount', {count: dashboard.downloaders.online}) }}
+            </span>
+            <span
+              v-else
+              class="dash-kpi-chip flat"
+            >--</span>
+          </template>
+        </kpi-card>
 
-      <div class="m-section">
-        <div class="m-section-title">传输速度</div>
-        <div class="m-speed-row">
-          <span>↓ {{ formatSpeedDisplay(systemStats.total_download_speed) }}</span>
-          <span>↑ {{ formatSpeedDisplay(systemStats.total_upload_speed) }}</span>
-        </div>
-      </div>
+        <kpi-card
+          :label="$t('dashboard.kpi.activeTorrents')"
+          icon="download"
+          clickable
+          :aria-label="$t('dashboard.aria.viewTorrents')"
+          @click="navigateTo('/m/torrents')"
+        >
+          <template #value>
+            {{ hasData ? dashboard.torrents.active : '--' }}
+          </template>
+          <template #foot>
+            <span class="dash-kpi-chip flat">
+              {{ $t('dashboard.kpi.dlSplit', {count: dashboard.torrents.downloading}) }} · {{ $t('dashboard.kpi.sdSplit', {count: dashboard.torrents.seeding}) }}
+            </span>
+          </template>
+        </kpi-card>
 
-      <div class="m-section">
-        <div class="m-section-title">下载器</div>
-        <template v-if="downloaderList.length">
-          <div
-            v-for="d in downloaderList"
-            :key="d.downloader_id"
-            class="m-dl-card"
-            :class="{'is-offline': d.status === 'offline'}"
-            role="button"
-            tabindex="0"
-            :aria-label="`查看${d.nickname}详情`"
-            @click="openDownloader"
-            @keypress.enter="openDownloader"
-          >
-            <div class="m-dl-card-head">
-              <div class="m-dl-card-name">
-                <span class="m-dl-badge" :class="d.status"></span>
-                <span>{{ d.nickname }}</span>
+        <kpi-card
+          :label="$t('dashboard.kpi.enabledTasks')"
+          icon="clock"
+          clickable
+          :aria-label="$t('dashboard.aria.viewTasks')"
+          @click="navigateTo('/m/tasks')"
+        >
+          <template #value>
+            {{ hasData ? dashboard.tasks.enabled : '--' }}<small> {{ $t('dashboard.kpi.enabledUnit') }}</small>
+          </template>
+          <template #foot>
+            <span class="dash-kpi-chip flat">{{ $t('dashboard.kpi.enabledNote') }}</span>
+          </template>
+        </kpi-card>
+
+        <kpi-card :label="$t('dashboard.kpi.systemSpeed')" icon="zap">
+          <template #value>
+            <span />
+          </template>
+          <template #default>
+            <div class="dash-kpi-dual">
+              <div class="kv">
+                <div class="v mono" style="color:var(--color-primary)">
+                  {{ hasData ? speedText(dashboard.system.total_download_speed) : '--' }}
+                </div>
+                <div class="l">
+                  <span class="dash-kpi-dot" style="background:var(--color-primary)" />
+                  {{ $t('dashboard.downloadSpeed') }}
+                </div>
               </div>
-              <span class="m-dl-card-type">{{ getDownloaderTypeLabel(d.downloader_type) }}</span>
-            </div>
-            <div class="m-dl-card-stats">
-              <div class="m-dl-stat">
-                <div class="m-dl-stat-value">{{ d.downloading }}</div>
-                <div class="m-dl-stat-label">下载中</div>
-              </div>
-              <div class="m-dl-stat">
-                <div class="m-dl-stat-value">{{ d.seeding }}</div>
-                <div class="m-dl-stat-label">做种</div>
-              </div>
-              <div class="m-dl-stat">
-                <div class="m-dl-stat-value">{{ d.paused }}</div>
-                <div class="m-dl-stat-label">暂停</div>
-              </div>
-              <div v-if="d.status === 'online'" class="m-dl-stat">
-                <div class="m-dl-stat-value m-dl-stat-value--speed">↓{{ formatSpeedDisplay(d.download_speed) }}</div>
-                <div class="m-dl-stat-value m-dl-stat-value--speed">↑{{ formatSpeedDisplay(d.upload_speed) }}</div>
-                <div class="m-dl-stat-label">速度</div>
-              </div>
-              <div v-else class="m-dl-stat">
-                <div class="m-dl-stat-value">--</div>
-                <div class="m-dl-stat-label">离线</div>
+              <div class="kv">
+                <div class="v mono" style="color:var(--color-info)">
+                  {{ hasData ? speedText(dashboard.system.total_upload_speed) : '--' }}
+                </div>
+                <div class="l">
+                  <span class="dash-kpi-dot" style="background:var(--color-info)" />
+                  {{ $t('dashboard.uploadSpeed') }}
+                </div>
               </div>
             </div>
+          </template>
+        </kpi-card>
+      </section>
+
+      <!-- widget 单列卡片流（dashboard-mobile-2026-11：复用一期桌面卡片族） -->
+      <section class="m-widget-stack">
+        <dash-widget widget-id="hero" :span="12" :title="$t('dashboard.widgets.hero.title')">
+          <hero-pulse-card
+            :download-speed="dashboard.system.total_download_speed"
+            :upload-speed="dashboard.system.total_upload_speed"
+            :downloading="dashboard.torrents.downloading"
+            :seeding="dashboard.torrents.seeding"
+            :active-torrents="activeTorrents"
+          />
+        </dash-widget>
+
+        <dash-widget widget-id="statusPie" :span="12" :title="$t('dashboard.widgets.statusPie.title')">
+          <status-donut-card :buckets="dashboard.torrents.statusBuckets" />
+        </dash-widget>
+
+        <dash-widget widget-id="traffic" :span="12" :title="$t('dashboard.widgets.traffic.title')">
+          <daily-traffic-card
+            :ready="trafficReady"
+            :loading="trafficLoading"
+            :result="trafficResult"
+          />
+        </dash-widget>
+
+        <dash-widget widget-id="sites" :span="12" :title="$t('dashboard.widgets.sites.title')">
+          <site-bars-card :buckets="dashboard.torrents.siteBuckets" />
+        </dash-widget>
+
+        <dash-widget widget-id="hot" :span="12" :title="$t('dashboard.widgets.hot.title')">
+          <hot-torrents-card :torrents="activeTorrents" />
+          <button type="button" class="m-view-all" @click="navigateTo('/m/torrents')">
+            {{ $t('dashboard.mobile.viewAllTorrents') }}
+            <lucide-icon name="chevron-right" />
+          </button>
+        </dash-widget>
+
+        <dash-widget widget-id="health" :span="12" :title="$t('dashboard.widgets.health.title')">
+          <instance-health-card
+            v-if="downloaderList.length"
+            clickable
+            :list="downloaderList"
+            @activate="navigateTo('/m/downloader')"
+          />
+          <div v-else class="m-empty-cta">
+            <div class="m-empty-text">{{ $t('dashboard.mobile.noDownloaders') }}</div>
+            <button type="button" class="m-cta-btn" @click="goAddDownloader">
+              {{ $t('dashboard.mobile.addDownloader') }}
+            </button>
           </div>
-        </template>
-        <!-- 空状态引导：首启用户一步直达新增下载器 -->
-        <div v-else class="m-dl-empty">
-          <div class="m-dl-empty-text">还没有下载器，添加后即可管理种子</div>
-          <el-button size="small" type="primary" plain @click="goAddDownloader">去添加下载器</el-button>
-        </div>
-      </div>
+        </dash-widget>
 
-      <div class="m-footer-meta">
-        v{{ systemStats.version || '-' }} · 运行 {{ systemStats.uptime_display || '-' }}
-      </div>
+        <dash-widget widget-id="tasks" :span="12" :title="$t('dashboard.widgets.tasks.title')">
+          <cron-task-card :tasks="taskList" />
+        </dash-widget>
+
+        <dash-widget widget-id="activity" :span="12" :title="$t('dashboard.widgets.activity.title')">
+          <activity-timeline-card :activities="dashboard.activities" />
+        </dash-widget>
+      </section>
     </template>
-    <div v-else class="m-hint">暂无数据</div>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
 import { getDashboardData } from '@/api/dashboard'
-import { DashboardData, DownloaderListItem, DownloaderStats, SystemStats, TorrentStats } from '@/types/dashboard'
+import { getActiveTorrents, ActiveTorrentSpeed } from '@/api/torrents'
+import { getTaskList, ScheduledTask } from '@/api/tasks'
+import { getReportsSpeedHistory } from '@/api/reports'
+import { DashboardData, DownloaderListItem } from '@/types/dashboard'
 import { extractErrorMessage, formatSpeed } from '@/utils/formatters'
 import SpeedPollingMixin from '@/views/torrents/mixins/speedPolling'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import KpiCard from '@/views/dashboard/components/KpiCard.vue'
+import DashWidget from '@/views/dashboard/components/DashWidget.vue'
+import HeroPulseCard from '@/views/dashboard/components/HeroPulseCard.vue'
+import StatusDonutCard from '@/views/dashboard/components/StatusDonutCard.vue'
+import DailyTrafficCard from '@/views/dashboard/components/DailyTrafficCard.vue'
+import SiteBarsCard from '@/views/dashboard/components/SiteBarsCard.vue'
+import HotTorrentsCard from '@/views/dashboard/components/HotTorrentsCard.vue'
+import InstanceHealthCard from '@/views/dashboard/components/InstanceHealthCard.vue'
+import CronTaskCard from '@/views/dashboard/components/CronTaskCard.vue'
+import ActivityTimelineCard from '@/views/dashboard/components/ActivityTimelineCard.vue'
+import { bucketSpeedHistoryByHour, HourTrafficResult } from '@/views/dashboard/components/trafficBinning'
+
+const DASHBOARD_REFRESH_MS = 30000
+/** D1（用户拍板）：活跃种子轮询与桌面一致 3s（SpeedPollingMixin 后台自动暂停兜底省电） */
+const ACTIVE_POLL_MS = 3000
+const TASK_REFRESH_MS = 60000
+const TRAFFIC_REFRESH_MS = 120000
 
 /**
- * 移动仪表盘（Phase 4 M1）：复用桌面 /dashboard API 的卡片化展示 + 下拉刷新。
+ * 移动仪表盘二期（dashboard-mobile-2026-11）：
  *
- * 2026-08-28 UX 增强：15s 静默自动刷新（SpeedPollingMixin 复用，visibilitychange
- * 后台暂停；silent 不置 loading 防整页闪断）；下载器空列表显示"去添加下载器"
- * CTA（直达 /m/downloader?create=1）；移除底部刷新按钮（下拉+自动刷新覆盖）。
+ * - 一期桌面改造（PLANS/dashboard-redesign-2026-11.md）desktop-only，本页此前为
+ *   Phase 4 旧简化页，未消费一期任何新字段——本版重写为纵向卡片流，直接复用
+ *   一期桌面卡片族（全部 props 驱动）+ DashWidget 卡壳 + dashboard-page 皮肤；
+ * - 数据源与桌面一致：getDashboardData（30s）/ getActiveTorrents（3s）/
+ *   getTaskList（60s）/ /reports/speed/history 24h（120s）+ 下拉刷新全量并发；
+ * - 后端零改动；移动端无预设/编辑/拖拽/布局持久化（固定单列流）；
+ * - 空态引导与"查看全部种子"等页面级新文案走 dashboard.mobile.* i18n 键（zh/en）。
  */
 @Component({
   name: 'MobileDashboard',
-  components: { 'm-pull-indicator': MobilePullIndicator }
+  components: {
+    'm-pull-indicator': MobilePullIndicator,
+    KpiCard,
+    DashWidget,
+    HeroPulseCard,
+    StatusDonutCard,
+    DailyTrafficCard,
+    SiteBarsCard,
+    HotTorrentsCard,
+    InstanceHealthCard,
+    CronTaskCard,
+    ActivityTimelineCard
+  }
 })
 export default class MobileDashboard extends Mixins(PullToRefresh, SpeedPollingMixin) {
   private loading = false
-  private data: DashboardData | null = null
+  private hasData = false
+  private dashboardData: DashboardData | null = null
+  private activeTorrents: ActiveTorrentSpeed[] = []
+  private taskList: ScheduledTask[] = []
+  private trafficResult: HourTrafficResult | null = null
+  private trafficLoading = false
 
-  /** 仪表盘自动刷新节奏（mixin 默认 1s 的省电版） */
-  protected speedPollIntervalMs = 15000
+  private dashboardTimer: number | null = null
+  private taskTimer: number | null = null
+  private trafficTimer: number | null = null
 
-  // 模板经 vue-jest(buble) 编译，不支持 ?. 与 ??，字段兜底须收敛到 computed
-  private get torrentStats(): TorrentStats {
-    return this.data?.torrents ?? { active: 0, downloading: 0, seeding: 0, paused: 0 }
+  protected speedPollIntervalMs = ACTIVE_POLL_MS
+
+  private readonly emptyDashboardData: DashboardData = {
+    downloaders: { total: 0, online: 0, offline: 0 },
+    torrents: {
+      active: 0,
+      downloading: 0,
+      seeding: 0,
+      paused: 0,
+      statusBuckets: { error: 0, downloading: 0, seeding: 0, paused: 0, other: 0 },
+      siteBuckets: []
+    },
+    tasks: { total: 0, running: 0, stopped: 0, enabled: 0 },
+    system: { uptime: 0, uptime_display: '--', version: '--', total_download_speed: 0, total_upload_speed: 0 },
+    downloader_list: [],
+    activities: []
   }
 
-  private get downloaderStats(): DownloaderStats {
-    return this.data?.downloaders ?? { total: 0, online: 0, offline: 0 }
-  }
-
-  private get systemStats(): SystemStats {
-    return this.data?.system ?? {
-      uptime: 0,
-      uptime_display: '-',
-      version: '-',
-      total_download_speed: 0,
-      total_upload_speed: 0
-    }
+  // 模板经 vue-jest(buble) 编译不支持 ?. 与 ??，字段兜底收敛到 computed
+  private get dashboard(): DashboardData {
+    return this.dashboardData || this.emptyDashboardData
   }
 
   private get downloaderList(): DownloaderListItem[] {
-    return this.data?.downloader_list ?? []
+    return this.dashboardData ? this.dashboardData.downloader_list : []
   }
 
-  mounted(): void {
-    this.load()
+  private get allDownloadersOnline(): boolean {
+    const d = this.dashboard.downloaders
+    return d.online === d.total && d.total > 0
+  }
+
+  private get trafficReady(): boolean {
+    return (this.trafficResult?.buckets.length || 0) > 0
+  }
+
+  created(): void {
+    this.initialLoad()
+    this.startTimers()
+    // startSpeedPolling(false)：首轮延迟一个周期，避免与 initialLoad 双发
     this.startSpeedPolling(false)
+    document.addEventListener('visibilitychange', this.onPageVisibilityChange)
   }
 
   beforeDestroy(): void {
+    this.stopTimers()
     this.stopSpeedPolling()
+    document.removeEventListener('visibilitychange', this.onPageVisibilityChange)
   }
 
-  protected async onPullRefresh(): Promise<void> {
-    // 指示条由 pullRefreshing 驱动，不额外置 loading（防整页闪"加载中…"）
-    await this.load(true)
+  // ==================== 数据获取 ====================
+
+  /** 首屏仅以 dashboard 主数据为门（评审修复：慢辅助接口不得阻塞整页，各卡自带 loading/空态） */
+  private async initialLoad(): Promise<void> {
+    this.loading = true
+    try {
+      await this.fetchDashboardData()
+    } finally {
+      this.loading = false
+    }
+    // 辅助源后台并行加载（失败静默落各卡空态）
+    this.fetchActiveTorrents()
+    this.fetchTasks()
+    this.fetchTraffic()
   }
 
-  /** SpeedPollingMixin 轮询体：静默刷新（保留旧数据渲染，不闪 loading） */
+  /** SpeedPollingMixin 轮询体：3s 活跃种子（热门种子/hero 速度共源） */
   protected async loadActiveSpeed(): Promise<boolean> {
-    await this.load(true)
+    await this.fetchActiveTorrents()
     return true
   }
 
-  private async load(silent = false): Promise<void> {
-    if (silent) {
-      await this.fetchData()
-    } else {
-      this.loading = true
-      try {
-        await this.fetchData()
-      } finally {
-        this.loading = false
-      }
-    }
+  /** 下拉刷新：全量并发（不置 loading，保留旧渲染防闪断） */
+  protected async onPullRefresh(): Promise<void> {
+    await Promise.all([
+      this.fetchDashboardData(),
+      this.fetchActiveTorrents(),
+      this.fetchTasks(),
+      this.fetchTraffic()
+    ])
   }
 
-  private async fetchData(): Promise<void> {
+  private async fetchDashboardData(): Promise<void> {
     try {
       const res = await getDashboardData()
       if (res.code === '200' && res.data) {
-        this.data = res.data
+        this.dashboardData = res.data
+        this.hasData = true
       }
     } catch (e) {
-      this.$message.error(extractErrorMessage(e))
+      // 首载失败提示并落空态；轮询失败保持上一轮快照
+      if (!this.hasData) {
+        this.$message.error(extractErrorMessage(e))
+      }
     }
   }
 
-  // 穿透：下载器卡片点击进入移动下载器监控页（测试连接/同步/设置入口）
-  private openDownloader(): void {
-    this.$router.push('/m/downloader')
+  private async fetchActiveTorrents(): Promise<void> {
+    try {
+      const res = await getActiveTorrents()
+      if (res.code === '200' && Array.isArray(res.data)) {
+        this.activeTorrents = res.data
+      }
+    } catch {
+      // 轮询失败保持上一轮快照，不打断 UI
+    }
   }
 
-  // 空状态 CTA：直达下载器页并自动弹新增表单
+  private async fetchTasks(): Promise<void> {
+    try {
+      const res = await getTaskList({ page: 1, limit: 100 })
+      const data = res.data
+      const list = data?.list || data?.data || data?.items || []
+      this.taskList = list
+    } catch {
+      // 静默降级：任务卡显示空态
+    }
+  }
+
+  /** 近 24h 流量：分钟级 raw → 小时分桶积分（与桌面 M-2 口径一致） */
+  private async fetchTraffic(): Promise<void> {
+    this.trafficLoading = true
+    try {
+      const res = await getReportsSpeedHistory('24h')
+      if (res.code === '200' && res.data?.series) {
+        this.trafficResult = bucketSpeedHistoryByHour(res.data.series)
+      }
+    } catch {
+      // 轮询失败保持上一轮分桶
+    } finally {
+      this.trafficLoading = false
+    }
+  }
+
+  // ==================== 定时器 ====================
+
+  private startTimers(): void {
+    // 低频定时器带前台门控（SpeedPollingMixin 只管 3s 链）；回前台补刷见 onPageVisibilityChange
+    this.dashboardTimer = window.setInterval(() => {
+      if (!document.hidden) this.fetchDashboardData()
+    }, DASHBOARD_REFRESH_MS)
+    this.taskTimer = window.setInterval(() => {
+      if (!document.hidden) this.fetchTasks()
+    }, TASK_REFRESH_MS)
+    this.trafficTimer = window.setInterval(() => {
+      if (!document.hidden) this.fetchTraffic()
+    }, TRAFFIC_REFRESH_MS)
+  }
+
+  /** 回前台补刷低频源（评审修复：切后台再回前台不再等下一完整周期；活跃种子由 mixin resume 补刷） */
+  private onPageVisibilityChange = (): void => {
+    if (!document.hidden) {
+      this.fetchDashboardData()
+      this.fetchTasks()
+      this.fetchTraffic()
+    }
+  }
+
+  private stopTimers(): void {
+    for (const timer of [this.dashboardTimer, this.taskTimer, this.trafficTimer]) {
+      if (timer) clearInterval(timer)
+    }
+    this.dashboardTimer = null
+    this.taskTimer = null
+    this.trafficTimer = null
+  }
+
+  // ==================== 导航 ====================
+
+  private navigateTo(path: string): void {
+    this.$router.push(path).catch(() => undefined)
+  }
+
+  /** 空态 CTA：直达下载器页并自动弹新增表单（沿用旧页语义） */
   private goAddDownloader(): void {
     this.$router
       .replace({ path: '/m/downloader', query: { create: '1' } })
       .catch(() => undefined)
   }
 
-  private getDownloaderTypeLabel(type: number): string {
-    // 三路显式：未知值不再回退 qBittorrent（rTorrent 接入前置修复）
-    if (type === 0) return 'qBittorrent'
-    if (type === 1) return 'Transmission'
-    if (type === 2) return 'rTorrent'
-    return 'Unknown'
-  }
-
-  // 后端速度为 bytes/s，复用桌面端 formatSpeed 语义；0 显示 0 B/s
-  private formatSpeedDisplay(value?: number | null): string {
-    if (value === null || value === undefined) return '--'
-    return formatSpeed(value) || '0 B/s'
+  private speedText(bytesPerSec: number): string {
+    return formatSpeed(bytesPerSec || 0) || '0 B/s'
   }
 }
 </script>
 
-<style scoped>
-.m-card-grid {
+<style lang="scss" scoped>
+.m-hint {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-tertiary, #909399);
+}
+
+// KPI 2×2：卡内数值比桌面单行四列收紧一档
+.m-kpi-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.m-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 14px 12px;
-  text-align: center;
+.m-kpi-grid ::v-deep .dash-kpi-value {
+  font-size: 24px;
 }
 
-.m-card-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #303133;
+.m-kpi-grid ::v-deep .dash-kpi-dual {
+  gap: 10px;
+
+  .kv .v {
+    font-size: 17px;
+  }
 }
 
-.m-card-label {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.m-section {
-  margin-top: 12px;
-  background: #fff;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.m-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #606266;
-  margin-bottom: 8px;
-}
-
-.m-speed-row {
+// widget 纵向卡片流
+.m-widget-stack {
   display: flex;
-  justify-content: space-between;
-  font-size: 15px;
-  color: #303133;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
 }
 
-.m-dl-card {
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+.m-widget-stack ::v-deep .dash-widget-body {
+  padding: 10px 12px 12px;
+}
+
+.m-widget-stack ::v-deep .dash-hero-stats {
+  gap: 16px;
+
+  .hs .v {
+    font-size: 22px;
+  }
+}
+
+.m-view-all {
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  background: var(--color-bg-tertiary, #f5f7fa);
+  border-radius: var(--radius-md, 8px);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--color-primary, #059669);
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: var(--transition-base, background 0.2s);
+
+  .lucide-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:active {
+    background: var(--color-bg-hover, #ebeef5);
+  }
 }
 
-.m-dl-card:focus {
-  outline: none;
-  border-color: #059669;
-}
-
-.m-dl-card:last-child {
-  margin-bottom: 0;
-}
-
-.m-dl-card.is-offline {
-  background: #fafafa;
-}
-
-.m-dl-card-head {
+.m-empty-cta {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  margin-bottom: 8px;
+  gap: 10px;
+  padding: 18px 0;
 }
 
-.m-dl-card-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 14px;
-  color: #303133;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.m-dl-badge {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.m-dl-badge.online {
-  background: #059669;
-}
-
-.m-dl-badge.offline {
-  background: #c0c4cc;
-}
-
-.m-dl-card-type {
-  font-size: 11px;
-  color: #909399;
-  background: #f4f4f5;
-  padding: 1px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.m-dl-card-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-
-.m-dl-stat {
-  text-align: center;
-  min-width: 0;
-}
-
-.m-dl-stat-value {
-  font-size: 15px;
-  font-weight: 700;
-  color: #059669;
-}
-
-.m-dl-stat-value--speed {
-  font-size: 11px;
-  font-weight: 600;
-  color: #606266;
-  line-height: 1.4;
-}
-
-.m-dl-stat-label {
-  font-size: 10px;
-  color: #909399;
-  margin-top: 2px;
-}
-
-.m-footer-meta {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 12px;
-  color: #c0c4cc;
-}
-
-/* 下载器空状态引导（首启直达新增） */
-.m-dl-empty {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px 12px;
+.m-empty-text {
+  font-size: 12.5px;
+  color: var(--color-text-tertiary, #909399);
   text-align: center;
 }
 
-.m-dl-empty-text {
+.m-cta-btn {
+  border: 1px solid var(--color-primary, #059669);
+  background: transparent;
+  color: var(--color-primary, #059669);
+  border-radius: var(--radius-md, 8px);
+  padding: 7px 16px;
   font-size: 13px;
-  color: #909399;
-  margin-bottom: 12px;
-}
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition-base, background 0.2s);
 
-.m-hint {
-  text-align: center;
-  color: #909399;
-  padding: 24px 0;
+  &:active {
+    background: var(--color-primary-lightest, rgba(5, 150, 105, 0.08));
+  }
 }
 </style>

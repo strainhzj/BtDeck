@@ -5,7 +5,7 @@
       class="dash-empty"
       data-testid="spark-empty"
     >
-      <lucide-icon icon="activity" />
+      <lucide-icon name="activity" />
       <span>{{ $t('dashboard.widgets.spark.sampling') }}</span>
     </div>
     <template v-else>

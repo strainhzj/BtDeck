@@ -238,6 +238,62 @@ class TestCancelFlow:
         with pytest.raises(StateConflict, match="CAS"):
             manager.leave(expect_epoch="wrong", expect_state_version=1)
 
+    def test_cancel_rejected_when_worker_finished(self, tmp_path):
+        """READY 后 worker 已收尾：取消 fail-fast（StateConflict）且 phase 不被污染。
+
+        此前：request_cancel 照常置位 → status 恒 cancelling（无人 ACK），前端
+        提交/放弃按钮双双隐藏（2026-11-11 审查实证的维护死锁入口）。"""
+        manager = _make_manager(tmp_path, lambda ctx, m: {"database_id": "db-review"})
+        manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+        assert manager.wait_worker_stopped(timeout=5)
+        assert manager.status().phase == "ready_to_switch"
+        with pytest.raises(StateConflict, match="worker 已收尾"):
+            manager.request_cancel(reason="user")
+        assert manager.status().phase == "ready_to_switch"
+
+
+class TestLeaveGuards:
+    def test_leave_from_held_restores_normal(self, tmp_path):
+        """runtime HELD（fence 丢失）leave 可用（abort_from_held 修复）。
+
+        此前 abort_from_held 委托 abort_prepare（仅接受 PREPARING/DRAINING）
+        恒 TransitionError → leave 从 HELD 永远受阻（boot/运行期同症，
+        2026-11-11 审查实证）。"""
+        release = threading.Event()
+
+        def runner(ctx, manifest):
+            release.wait(timeout=5)
+            return {"ok": True}
+
+        manager = _make_manager(tmp_path, runner)
+        manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+        release.wait(timeout=5)
+        manager.wait_worker_stopped(timeout=5)
+        manager.controller.note_fence_lost("review")  # → HELD
+        assert manager.status().phase == "held"  # status() held 映射（含运行期）
+        status = manager.status()
+        out = manager.leave(expect_epoch=status.epoch, expect_state_version=status.state_version)
+        assert out.phase == "idle"
+        assert manager.controller.status().state == "NORMAL"
+        assert Journal(str(tmp_path)).read_control()["pending_attempt"] is None
+
+    def test_leave_rejected_before_journal_when_side_effects(self, tmp_path):
+        """目标副作用已登记：leave 在动 journal 前拒绝（§5.1/§6.5）。
+
+        此前：journal 先撤销（abandoned+pending 清空）后控制器迁移受阻 →
+        半途状态，重试撞「无进行中 attempt」（2026-11-11 审查修复）。"""
+        manager = _make_manager(tmp_path, lambda ctx, m: {"database_id": "db-review"})
+        manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+        assert manager.wait_worker_stopped(timeout=5)
+        manager.controller.note_target_side_effect()
+        status = manager.status()
+        attempt = status.attempt_id
+        with pytest.raises(StateConflict, match="目标副作用"):
+            manager.leave(expect_epoch=status.epoch, expect_state_version=status.state_version)
+        journal = Journal(str(tmp_path))
+        assert journal.read_manifest(attempt).get("abandoned") is not True
+        assert journal.read_control()["pending_attempt"] == attempt
+
 
 class TestCommittedGuards:
     def test_leave_rejected_after_commit(self, tmp_path):

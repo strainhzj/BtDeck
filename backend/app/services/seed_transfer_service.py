@@ -996,12 +996,11 @@ class SeedTransferService:
                     operation_time=datetime.now(),
                     user_id=user_id,
                     username=username,
-                    # 历史遗留：审计表 *_downloader_id 列声明为 Integer，但业务主键是
-                    # UUID 字符串，靠 SQLite 类型亲和以文本形态存取（存量数据同为文本）。
-                    # 列类型矫正需 Alembic 迁移，另行处理；此处按现状存入。
-                    source_downloader_id=source_downloader_id,  # type: ignore[arg-type]
+                    # 审计表 *_downloader_id 列已随 a2b3c4d5e6f7 矫正为 String(36)
+                    # （对齐 bt_downloaders UUID 契约），历史 Integer 声明的 ignore 退役。
+                    source_downloader_id=source_downloader_id,
                     source_downloader_name=source_downloader_name,
-                    target_downloader_id=target_downloader_id,  # type: ignore[arg-type]
+                    target_downloader_id=target_downloader_id,
                     target_downloader_name=target_downloader_name,
                     torrent_name=torrent_name,
                     info_hash=info_hash,

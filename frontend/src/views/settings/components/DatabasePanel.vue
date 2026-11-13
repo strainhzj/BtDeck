@@ -304,7 +304,9 @@
 
         <p v-if="switchOk" class="db-ok">{{ $t('database.maintenance.migration.switchSubmitted') }}</p>
 
-        <!-- 提交切换（READY；提交即持久不可撤销，后端就绪门 409 兑底） -->
+        <!-- 提交切换（READY；提交即持久不可撤销，后端就绪门 409 兑底）。
+             协作取消不放此处：READY 后 worker 已收尾，取消永远等不到 ACK
+             （后端 409 fail-fast）——留在 READY 会造成永久 cancelling 死锁 -->
         <div v-if="followReadyToSwitch" class="db-actions">
           <el-button
             type="danger"
@@ -317,11 +319,15 @@
               ? $t('database.maintenance.migration.switchSubmitting')
               : $t('database.maintenance.migration.switchSubmit') }}
           </el-button>
-          <el-button v-if="!followRestartPending" size="small" plain @click="requestFollowCancel">
+        </div>
+        <p v-if="switchError" class="db-entry-note">{{ switchError }}</p>
+
+        <!-- 协作取消（worker 活跃/即将启动阶段；READY 后不可取消） -->
+        <div v-if="followCancellable && !followRestartPending" class="db-actions">
+          <el-button size="small" plain :loading="cancelSubmitting" @click="requestFollowCancel">
             {{ $t('database.entry.followCancel') }}
           </el-button>
         </div>
-        <p v-if="switchError" class="db-entry-note">{{ switchError }}</p>
 
         <!-- 已安全停止（取消/失败/挂起）：可放弃回源 -->
         <div v-if="followLeavable" class="db-actions">
@@ -450,6 +456,12 @@ const FOLLOW_PHASE_TAG_TYPES: Readonly<Record<string, string>> = {
 
 /** 已安全停止、可放弃回源（leave）的 phase（COMMITTED 后绝不允许 leave） */
 const FOLLOW_LEAVABLE_PHASES: readonly string[] = ['cancelled', 'failed', 'held']
+
+/** 协作取消可用阶段（worker 活跃或即将启动；READY 后 worker 已收尾不可取消，
+ * 后端 fail-fast 409——按钮留在 READY 会造成永久 cancelling 死锁） */
+const FOLLOW_CANCELLABLE_PHASES: readonly string[] = [
+  'preparing', 'draining', 'frozen', 'importing', 'verifying'
+]
 
 /** PG 目标表单草稿（组件内 camelCase；提交时映射为后端 snake_case PgFormInput） */
 interface PgTargetDraft {
@@ -608,6 +620,13 @@ export default class extends Vue {
     const s = this.followStatus
     if (!s) return false
     return FOLLOW_LEAVABLE_PHASES.indexOf(s.phase) >= 0
+  }
+
+  /** 协作取消仅在 worker 活跃/即将启动阶段可用（后端同口径 fail-fast） */
+  get followCancellable(): boolean {
+    const phase = this.followStatus?.phase
+    if (!phase) return false
+    return FOLLOW_CANCELLABLE_PHASES.indexOf(phase) >= 0
   }
 
   get followPhaseLabel(): string {

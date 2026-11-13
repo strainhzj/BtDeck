@@ -149,6 +149,34 @@ def _assert_log_detail_length(bind: sa.engine.Connection) -> None:
         )
 
 
+def _is_already_typed(current: sa.types.TypeEngine | None, target: sa.types.TypeEngine) -> bool:
+    """反射列类型是否已达成 target（幂等跳过判据）。
+
+    upgrade 方向：反射 BIGINT/TEXT/VARCHAR 是 BigInteger/Text/String 的子类，
+    单向 isinstance 即可判定已拓宽。注意 downgrade 不能复用本判据——
+    BigInteger(Text) 同样是 Integer(String) 的子类，会把已升级列误判为
+    「已回退」而静默跳过（2026-11-11 审查实证：downgrade 返回成功但三列
+    schema 未回退，alembic_version 已退 → 版本与 schema 漂移）。"""
+    return current is not None and isinstance(current, type(target))
+
+
+def _is_already_reverted(
+    current: sa.types.TypeEngine | None, new_type: sa.types.TypeEngine, old_type: sa.types.TypeEngine
+) -> bool:
+    """downgrade 幂等判据（2026-11-11 审查修复）：已是旧类型且不再是新类型家族。
+
+    反射 INTEGER 是 Integer 子类且不再是 BigInteger 家族 → 跳过；BIGINT 仍属
+    BigInteger 家族 → 重建。长度参与比对（同 String 家族内 VARCHAR(36)≠
+    VARCHAR(2000)，避免误跳）。"""
+    if current is None:
+        return False
+    if isinstance(current, type(new_type)):
+        return False
+    if not isinstance(current, type(old_type)):
+        return False
+    return getattr(current, "length", None) == getattr(old_type, "length", None)
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     for table, column, new_type, _old_type, nullable in _SPECS:
@@ -156,7 +184,7 @@ def upgrade() -> None:
         current = _column_type(bind, table, column)
         if current is None:
             continue
-        if isinstance(current, type(new_type)) or type(current) is type(new_type):
+        if _is_already_typed(current, new_type):
             # 已是新类型（重复执行/部分完成的幂等保护）
             continue
         with op.batch_alter_table(table, recreate="always") as batch_op:
@@ -172,12 +200,13 @@ def downgrade() -> None:
     _assert_lossless_integer_text(bind, "seed_transfer_audit_log", "target_downloader_id")
     _assert_log_detail_length(bind)
 
-    for table, column, _new_type, old_type, nullable in reversed(_SPECS):
+    for table, column, new_type, old_type, nullable in reversed(_SPECS):
         _recover_stale_batch_table(bind, table)
         current = _column_type(bind, table, column)
         if current is None:
             continue
-        if isinstance(current, type(old_type)) or type(current) is type(old_type):
+        if _is_already_reverted(current, new_type, old_type):
+            # 已是旧类型（重复执行/部分完成的幂等保护；双向比对防子类误判）
             continue
         with op.batch_alter_table(table, recreate="always") as batch_op:
-            batch_op.alter_column(column, existing_type=_new_type, type_=old_type, existing_nullable=nullable)
+            batch_op.alter_column(column, existing_type=new_type, type_=old_type, existing_nullable=nullable)

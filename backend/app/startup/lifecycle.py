@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
@@ -13,6 +13,9 @@ from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
 from app.tasks.scheduler.speed_sampler import SpeedSamplerJob
+
+if TYPE_CHECKING:
+    from app.services.db_migration.maintenance import MaintenanceController
 
 logger = logging.getLogger(__name__)
 
@@ -263,17 +266,28 @@ def _mount_maintenance_control_services(
         app.state.maintenance_auth = None
 
 
-def _attach_migration_manager(app: FastAPI, config_dir: str) -> None:
-    """普通启动末尾挂 app.state.database_migration_manager（W3-3 接线）。
+def _attach_migration_manager(
+    app: FastAPI,
+    config_dir: str,
+    *,
+    controller: "MaintenanceController | None" = None,
+) -> None:
+    """挂 app.state.database_migration_manager（W3-3 接线）。
 
-    /api/v1/database/* 动作组经它编排（单飞行 begin_prepare→drain→freeze）；
-    维护启动分支不挂（只读控制面；迁移只能从普通态发起）。失败仅告警不阻断
-    业务（迁移控制面不可用，其余功能照常）。
+    /api/v1/database/* 动作组经它编排（单飞行 begin_prepare→drain→freeze）。
+    普通启动末尾调用（新建控制器）；维护启动分支同样挂载（2026-11-11 审查
+    修复：不挂则 /migration/status 与 /migration/leave 在 boot HELD 均 503，
+    维护页「放弃迁移」出口不可达）——传入既有控制器复用 boot HELD 现场，
+    管理器仅服务控制端点，不触碰业务库（start 在维护态被 begin_prepare 拒）。
+    失败仅告警不阻断业务（迁移控制面不可用，其余功能照常）。
     """
     try:
         from app.services.db_migration.manager import MigrationManager
 
-        manager = MigrationManager(config_dir)
+        if controller is not None:
+            manager = MigrationManager(config_dir, controller=controller)
+        else:
+            manager = MigrationManager(config_dir)
         from app.services.db_migration.maintenance import set_default_controller
 
         set_default_controller(manager.controller)
@@ -421,6 +435,11 @@ def _startup_maintenance_gate(
 
     # 本地审计 + 维护认证（W6-B 发现②：改用与普通启动同一装载器，两分支能力一致）
     _mount_maintenance_control_services(app, _config_dir, db_path=db_path, secret_key=secret_key)
+    # 维护启动分支同样挂迁移管理器（2026-11-11 审查修复）：不挂则
+    # /database/migration/status 与 /migration/leave 均 503——d9e5c5c 新增的
+    # 维护页「放弃迁移」出口在有 pending manifest 的重启维护态不可达，原
+    # 死锁仍在。复用既有控制器（boot HELD 现场），管理器仅服务控制端点。
+    _attach_migration_manager(app, _config_dir, controller=controller)
     audit = getattr(app.state, "maintenance_audit", None)
     if audit is not None:
         audit.audit_event(

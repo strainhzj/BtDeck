@@ -279,9 +279,9 @@ class TorrentLocationService:
                 user_id=user_id,
                 username=username,
                 operation_type="set_location",  # 新增操作类型
-                source_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同 seed_transfer：Integer 列存 UUID 文本（SQLite 亲和）
+                source_downloader_id=downloader_id,  # 列已矫正 String(36)（a2b3c4d5e6f7），UUID 文本即契约
                 source_downloader_name=downloader_name,
-                target_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同上
+                target_downloader_id=downloader_id,
                 target_downloader_name=downloader_name,
                 torrent_name=f"批量修改保存路径({torrent_count} 个种子)",
                 target_path=target_path,

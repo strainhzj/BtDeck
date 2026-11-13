@@ -107,6 +107,7 @@ interface PanelVm {
   onStartMigration: () => Promise<void>
   commitFollowSwitch: () => Promise<void>
   requestFollowCancel: () => Promise<void>
+  followCancellable: boolean
   refreshFollowState: () => Promise<void>
 }
 
@@ -772,6 +773,88 @@ describe('DatabasePanel', () => {
     expect(cancelCall).toBeDefined()
     expect(cancelCall?.[2]).toEqual({ attempt_id: 'att-1', epoch: 'epoch-1', state_version: 1 })
     expect(vm.followStatus?.phase).toBe('cancelling')
+    wrapper.destroy()
+  })
+
+  it('READY 不渲染取消按钮（worker 已收尾，取消必死锁）；提交切换仍在', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'ready_to_switch' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    mockMaintenanceLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
+    mockMaintenanceRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/status') {
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'ready_to_switch' }).data as never
+      }
+      if (url === '/database/target-readiness') {
+        return { attemptId: 'att-1', phase: 'ready_to_switch', readyToSwitch: true, needsCredentials: false } as never
+      }
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+    vm.authForm.username = 'admin'
+    vm.authForm.password = 'pw'
+    await vm.loginMaintenance()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('提交切换')
+    expect(wrapper.text()).not.toContain('取消迁移')
+    expect(vm.followCancellable).toBe(false)
+    wrapper.destroy()
+  })
+
+  it('取消遇 worker 已收尾（409）：行内报错，轮询到 READY 后提交按钮可恢复', async() => {
+    const wrapper = await mountPanel(
+      makeStatusResponse({ dialect: 'sqlite', sqlitePath: '/data/app.db' }),
+      makeMigrationStatusResponse(),
+      makeDeploymentTargetResponse()
+    )
+    const vm = wrapper.vm as unknown as PanelVm
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    let phase = 'importing'
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-1', phase: 'importing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    mockMaintenanceLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
+    mockMaintenanceRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/status') {
+        return makeMigrationStatusResponse({ attemptId: 'att-1', phase }).data as never
+      }
+      if (url === '/database/target-readiness') {
+        return { attemptId: 'att-1', phase, readyToSwitch: phase === 'ready_to_switch', needsCredentials: false } as never
+      }
+      if (url === '/database/migration/cancel') {
+        // worker 恰在取消受理前完成：后端 fail-fast 409（phase 不被污染）
+        phase = 'ready_to_switch'
+        throw new ApiError(
+          'worker 已收尾，协作取消无法完成：请提交切换（READY）或放弃迁移（已安全停止态）',
+          { code: '409', httpStatus: 409 }
+        )
+      }
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+    vm.authForm.username = 'admin'
+    vm.authForm.password = 'pw'
+    await vm.loginMaintenance()
+    await flushPromises()
+
+    await findButton(wrapper, '取消迁移').vm.$emit('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('worker 已收尾')
+
+    // 模拟轮询拉到最新状态：READY 后提交切换恢复可点（死锁已解除）
+    await vm.refreshFollowState()
+    await flushPromises()
+    expect(wrapper.text()).toContain('提交切换')
+    expect(wrapper.text()).not.toContain('取消迁移')
     wrapper.destroy()
   })
 
