@@ -8952,3 +8952,27 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **修复**：①lifecycle gate 孤儿对账——PREPARING intent + authority.pending_attempt=None + 非 committed_pending_restart → 先审计（stale-intent-archived，critical 不可写则维持 fail-closed）后归档（archive_stale_intent 改名 stale-<attempt>-<ts> 保留）按正常启动；非 PREPARING 或有背书仍 fail-closed。②维护页 HELD 放弃出口——phase=held 且 attemptId+epoch 在（有 manifest 背书）渲染「放弃迁移」（二次确认 POST /migration/leave snake_case CAS+reason）；孤儿态不渲染（启动对账兜底）。i18n zh/en。
 - **验证**：后端 test_maintenance_barrier 13/13（语义反转重写 test_crashed_prepare_intent_enters_maintenance → archived_and_normal_start + 新增有背书仍维护/非 PREPARING fail-closed 两例）+ startup_gates/bootstrap/manager 72 例绿 + black/flake8/mypy 净；前端 maintenance-page 17/17 + 全量 2150/2150 + typecheck 净 + lint 净增 0（worktree 对照 281=HEAD 基线）。
 - **记录纪律**：constraints/roadmap（backend infra lifecycle 行 + frontend views maintenance 行）已同步；本条目留存工作区下次实质提交入仓。
+
+## 2026-11-13：仪表盘移动版二期（/m/dashboard 重写消费一期卡片族，后端零改动）
+
+- **背景**：一期改造（dashboard-redesign-2026-11）desktop-only，移动端 /m/dashboard 停留 Phase 4 旧简化页（384 行），未消费 statusBuckets/siteBuckets/tasks.enabled/24h 流量/热门种子任何一期字段；伴侣 APK 强制 mobile 与一期成果绝缘。评估后用户拍板方案 A（移动版二期立项），D1–D3 按默认（active 3s 与桌面一致 / InstanceHealthCard+空态 CTA / 12 卡裁 9），D4 覆盖——方案文件入库（破一期本地留存先例）。
+- **实现**（feature/dashboard-mobile-2026-11，基于 dev b8262e6）：重写 views/mobile/dashboard.vue（384→498 行）——KPI 2×2 + 纵向单列流 8 卡直接复用一期桌面 props 驱动组件族（HeroPulse/StatusDonut/DailyTraffic/SiteBars/HotTorrents/InstanceHealth/CronTask/ActivityTimeline）+ DashWidget 壳 + 根节点挂 dashboard-page class 复用 dashboard-theme.scss；裁 SpeedSpark（hero 覆盖实时速度）/Tubes/Radar/QuickActions（tabbar 覆盖导航）；无预设/编辑/拖拽（移动固定单列流）。轮询：SpeedPollingMixin 3s 活跃（visibilitychange 后台自动暂停）+ dashboard 30s/tasks 60s/traffic 120s（document.hidden 门控）+ PullToRefresh 全量并发不闪 loading。i18n dashboard.mobile.* 四键 zh/en。热门种子卡新增「查看全部种子」跳 /m/torrents；下载器空态 CTA 直达 /m/downloader?create=1（沿用旧页语义）。
+- **顺带收编**：用户在途 dashboard 类型注解 lint 修复（StatusDonutCard+两 spec，分号→逗号）独立 style 提交，不混功能提交。
+- **测试与门禁**：mobile-dashboard.spec.ts 重写 9 例全绿（旧 15 例针对旧页实现缺陷——字段误读/bytes 换算/m-dl-card 结构——已被新实现结构性消除；移植信封契约与首载失败 toast 两防线；新增挂载/props 映射/D1 3s/下拉刷新并发/查看全部跳转/空态两态/定时器清理）。typecheck 净；lint 281 problems=HEAD 基线（4 改动文件 eslint no-fix 0 贡献，净增 0）；全量 Jest 155 套 2146 例全绿（临时 worktree 挂 HEAD 亲测对照 2152，2152−旧 spec 15+新 9=2146 严丝合缝）；npm run build 成功；e2e 断言 .m-dashboard 根选择器保持，路由 /m/dashboard 不变。
+- **文档**：feature_list.json +dashboard-mobile-2026-11 条目（evidence 已回填）；roadmap views 行重写+功能域速查仪表盘行+根 README 最近同步；PLANS/dashboard-mobile-2026-11.md 随功能提交入库。
+
+## 2026-11-13（续）：移动仪表盘评审修复批（6 项 P2 全处置，双端图标全修复）
+
+- **触发**：用户要求对本会话提交（b8262e6..80e09d4）code review——双评审代理 + 主会话真实组件挂载实证，6 项确认缺陷（全部 100% 复现或代码事实）。
+- **修复**：①系统速度 KPI 恒空白——KpiCard 无默认插槽出口，`#default` 双列数值被静默丢弃（根因一期既有，桌面同步受益），KpiCard 补 `<slot />` 出口于 foot 之后；②三张 KPI 点击全失效——裸 `clickable` 传空串而 prop 无运行时 Boolean 类型（桌面同缺陷），KpiCard `@Prop` 显式 `type: Boolean`；③下载器行穿透丢失——InstanceHealthCard 新增 `clickable` prop（Boolean）+ 行级 role=button/click/enter 上抛 `activate(downloader_id)`，桌面不传不受影响，移动页绑定跳 /m/downloader；④慢辅助接口阻塞首屏——initialLoad 改为仅以 dashboard 主数据为 loading 门，active/tasks/traffic 后台并行（各卡自带 loading/空态）；⑤30 处 `lucide-icon icon=` 属性错误全 app（全部集中在 dashboard 域）→ `name=`，ICONS 注册表核对 120 键零缺失（含无引号键）；⑥回前台不补刷——页面级 visibilitychange 监听回前台立即刷新 dashboard/tasks/traffic（活跃种子由 mixin resume 补刷）。
+- **测试**（+9 例 = 2155）：KpiCard 壳 +默认 slot 渲染 +空串 clickable 契约 2 例；InstanceHealthCard +clickable 行 emit（click/enter 带 id）/非 clickable 负例 2 例；mobile spec 交互 stub（渲染 slots+$listeners）+真实 InstanceHealthCard 接入，+速度双列渲染（280.00 KB/s）/KPI 三卡点击穿透/健康行点击穿透/traffic 失败不阻塞首屏/回前台补刷 5 例。教训：评审前 spec 全面 props/计数断言、无渲染值与原生事件断言，正是 P1 漏网结构原因——交互 stub+真实子组件组合补上渲染值与导航链路防线。
+- **验证**：typecheck 净；改动 17 文件 eslint no-fix 0 问题（SiteBarsCard unused-i 为存量基线 warning 不属本批）；lint 全量 281 problems=基线净增 0；全量 Jest 155 套 2155 例全绿（2146+9 对平）；npm run build 成功（hash 746a0c1cc3ddb456）。
+- **遗留观察（评审发现未处置，待用户决策）**：信封失败（code≠200）时移动页渲染"去添加下载器"CTA 误导（旧页为中性"暂无数据"）；成功后轮询失败永久静默保快照与桌面 handleEmptyState 语义分歧（注释标明有意）；InstanceHealthCard 长昵称窄屏可能挤压后列（旧卡有 overflow:hidden）；768–992 外壳断点双轨制（非本批范围）。
+
+## 2026-11-13：SM4 资产路径默认值修复（迁移预检「缺少可用 SM4 配置」——UI 发起流死路）
+
+- **生产事故**：重新发起迁移 attempt 3ed89647 预检 44s 即失败：「source_config/target_config: 缺少可用 SM4 配置」。根因：源库 bt_downloaders 现含 sm4:% 加密口令（应用侧 SM4Encryption 依 config.yaml security.secret_key 加密，fail-closed），触发 check_external_assets 要求源/目标 config.yaml 密钥同源校验；而 manager._default_pipeline_runner 调 run_sqlite_to_pg **从不传 asset_paths**（UI 发起流也无 config.yaml 入口）→ paths[name] KeyError → 必挂。此前成功迁移未触发因当时源库尚无 sm4:% 行。
+- **修复**（单部署同源切换语义）：默认 runner 传 asset_paths={"source_config": settings.YAML_PATH, "target_config": settings.YAML_PATH}——目标侧发布配置由 config_store 派生自当前 yaml，SM4 密钥必然同源，口令切换后仍可解密；CLI 路径仍可显式覆盖。目标连接参数继续 manifest/凭据仓显式传（不违反 target_params「绝不读写全局 settings」的连接参数约束——yaml 路径是资产校验语义，非连接语义）。
+- **附带发现**：本次失败后业务面再次 503 HELD（intent PREPARING 残留）——但本次 control.pending_attempt 非空且 manifest 在（对照 11-11 孤儿变体），DatabasePanel 跟踪卡 phase=failed 的「放弃」按钮可见可用，属设计内恢复路径。另：本次 manifest.target.database=btdeck（非此前 btdeck_migration_target），目标库实测 0 表干净，与失败无关。
+- **验证**：manager 新增 TestDefaultPipelineRunnerAssetPaths（monkeypatch run_sqlite_to_pg 断言 asset_paths 双键=settings.YAML_PATH）+ manager/migrate_sqlite_to_pg/barrier/startup_gates 71 例绿 + services/core 全量 2197 绿 + black/flake8（变更区域）/mypy 净。
+- **记录纪律**：本条目留存工作区下次实质提交入仓。
