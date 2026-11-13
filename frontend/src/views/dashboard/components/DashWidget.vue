@@ -9,10 +9,10 @@
   >
     <div class="dash-widget-head">
       <span class="dash-widget-grip" :aria-hidden="true">
-        <lucide-icon icon="grip-vertical" />
+        <lucide-icon name="grip-vertical" />
       </span>
       <span class="dash-widget-title">
-        <lucide-icon :icon="meta.icon" />
+        <lucide-icon :name="meta.icon" />
         {{ title }}
       </span>
       <span
@@ -31,7 +31,7 @@
           :aria-label="$t('dashboard.edit.cycleWidth')"
           @click.stop="$emit('cycle-width')"
         >
-          <lucide-icon icon="maximize-2" />
+          <lucide-icon name="maximize-2" />
         </button>
       </span>
     </div>

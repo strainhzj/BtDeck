@@ -7982,6 +7982,22 @@
             "frontend/tests/unit/mobile-dashboard.spec.ts"
           ],
           "evidence": "mobile-dashboard.spec.ts 9 例全绿（挂载/props 映射/D1 3s 轮询/下拉刷新并发/查看全部跳转/空态两态/信封契约/首载失败 toast/定时器清理）；全量 Jest 155 套 2146 例全绿（HEAD 对照 2152−旧 spec 15+新 9=2146 对平）；lint 281 problems=HEAD 基线净增 0（4 改动文件 0 贡献）；npm run build 成功"
+        },
+        {
+          "id": "dashboard-mobile.3",
+          "name": "评审修复批（6 项 P2 + 双端图标全修复）",
+          "description": "code review（双代理+真实挂载实证）后修复：①KpiCard 补默认 slot 出口（系统速度卡恒空白，桌面同步修复）②clickable 显式 Boolean（裸属性三卡点击失效，桌面同步修复）③InstanceHealthCard clickable 行上抛 activate+移动绑定穿透④首屏仅以 dashboard 主数据为门，辅助源后台并行⑤dashboard 域 30 处 lucide-icon icon=→name=（全 app 集中于此域，ICONS 120 键核对零缺失）⑥页面级 visibilitychange 回前台补刷低频源。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/dashboard/components/KpiCard.vue",
+            "frontend/src/views/dashboard/components/InstanceHealthCard.vue",
+            "frontend/src/views/mobile/dashboard.vue",
+            "frontend/tests/unit/dashboard-kpi-widget.spec.ts",
+            "frontend/tests/unit/dashboard-cards.spec.ts",
+            "frontend/tests/unit/mobile-dashboard.spec.ts"
+          ],
+          "evidence": "全量 Jest 155 套 2155 例全绿（2146+9 新防线对平：默认 slot 渲染/空串 clickable 契约/clickable 行 emit/速度双列渲染/KPI 三卡点击穿透/健康行穿透/traffic 失败不阻塞首屏/回前台补刷）；typecheck 净；改动文件 eslint 0；lint 全量 281=基线净增 0；build 成功（746a0c1cc3ddb456）。改名面另含 dashboard 域其余 11 组件+index.vue+screen.vue 的 icon=→name= 机械替换。"
         }
       ]
     }

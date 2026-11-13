@@ -147,7 +147,7 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `dashboard.vue` | 移动仪表盘（498 行）：✨2026-11-13 二期重写（feature `dashboard-mobile-2026-11`，计划 PLANS/dashboard-mobile-2026-11.md 入库）——旧 Phase 4 简化页退役，重写为消费一期卡片族：KPI 2×2（恒显网格外）+ 纵向单列流 8 卡（HeroPulse/StatusDonut/DailyTraffic/SiteBars/HotTorrents+查看全部跳 /m/torrents/InstanceHealth+空态 CTA/CronTask/ActivityTimeline，DashWidget 壳 + dashboard-page 皮肤复用，后端零改动）；SpeedPollingMixin 3s 活跃轮询（D1 与桌面一致）+ dashboard 30s/tasks 60s/traffic 120s（document.hidden 门控）+ PullToRefresh 全量并发；无预设/编辑/拖拽（移动固定流） |
+| `dashboard.vue` | 移动仪表盘（498 行）：✨2026-11-13 二期重写（feature `dashboard-mobile-2026-11`，计划 PLANS/dashboard-mobile-2026-11.md 入库）——旧 Phase 4 简化页退役，重写为消费一期卡片族：KPI 2×2（恒显网格外）+ 纵向单列流 8 卡（HeroPulse/StatusDonut/DailyTraffic/SiteBars/HotTorrents+查看全部跳 /m/torrents/InstanceHealth+行点击穿透 /m/downloader+空态 CTA/CronTask/ActivityTimeline，DashWidget 壳 + dashboard-page 皮肤复用，后端零改动）；SpeedPollingMixin 3s 活跃轮询（D1 与桌面一致）+ dashboard 30s/tasks 60s/traffic 120s（document.hidden 门控）+ PullToRefresh 全量并发；无预设/编辑/拖拽（移动固定流） |
 | `downloader-settings.vue` | 移动下载器设置页（109 行）：整页复用桌面 DownloaderSettingsDialog（fullscreen 近似形态），覆盖基本/速度（含分时段调度）/路径维护/标签管理全部能力 |
 | `login.vue` | 移动登录页（153 行，`MobileLogin extends WideViewport`） |
 | `logs.vue` | 移动审计日志（309 行）：复用 /audit-logs 查询与操作类型 API 的卡片流，操作类型/结果/种子名称筛选与分页加载；导出与统计保留桌面版承载 |

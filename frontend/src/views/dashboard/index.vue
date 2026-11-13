@@ -33,7 +33,7 @@
           :data-testid="'edit-layout-btn'"
           @click="toggleEditing()"
         >
-          <lucide-icon :icon="editing ? 'check' : 'pencil'" />
+          <lucide-icon :name="editing ? 'check' : 'pencil'" />
           {{ editing ? $t('dashboard.edit.done') : $t('dashboard.edit.button') }}
         </el-button>
         <el-button
@@ -42,7 +42,7 @@
           data-testid="enter-screen-btn"
           @click="enterScreen()"
         >
-          <lucide-icon icon="maximize-2" />
+          <lucide-icon name="maximize-2" />
           {{ $t('dashboard.screen.enter') }}
         </el-button>
       </div>
@@ -50,7 +50,7 @@
 
     <!-- 编辑提示条 -->
     <div class="dash-edit-hint">
-      <lucide-icon icon="alert-triangle" />
+      <lucide-icon name="alert-triangle" />
       <span class="grow">{{ $t('dashboard.edit.hint') }}</span>
       <el-button
         size="mini"

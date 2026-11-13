@@ -122,12 +122,17 @@
           <hot-torrents-card :torrents="activeTorrents" />
           <button type="button" class="m-view-all" @click="navigateTo('/m/torrents')">
             {{ $t('dashboard.mobile.viewAllTorrents') }}
-            <lucide-icon icon="chevron-right" />
+            <lucide-icon name="chevron-right" />
           </button>
         </dash-widget>
 
         <dash-widget widget-id="health" :span="12" :title="$t('dashboard.widgets.health.title')">
-          <instance-health-card v-if="downloaderList.length" :list="downloaderList" />
+          <instance-health-card
+            v-if="downloaderList.length"
+            clickable
+            :list="downloaderList"
+            @activate="navigateTo('/m/downloader')"
+          />
           <div v-else class="m-empty-cta">
             <div class="m-empty-text">{{ $t('dashboard.mobile.noDownloaders') }}</div>
             <button type="button" class="m-cta-btn" @click="goAddDownloader">
@@ -258,27 +263,29 @@ export default class MobileDashboard extends Mixins(PullToRefresh, SpeedPollingM
     this.startTimers()
     // startSpeedPolling(false)：首轮延迟一个周期，避免与 initialLoad 双发
     this.startSpeedPolling(false)
+    document.addEventListener('visibilitychange', this.onPageVisibilityChange)
   }
 
   beforeDestroy(): void {
     this.stopTimers()
     this.stopSpeedPolling()
+    document.removeEventListener('visibilitychange', this.onPageVisibilityChange)
   }
 
   // ==================== 数据获取 ====================
 
+  /** 首屏仅以 dashboard 主数据为门（评审修复：慢辅助接口不得阻塞整页，各卡自带 loading/空态） */
   private async initialLoad(): Promise<void> {
     this.loading = true
     try {
-      await Promise.all([
-        this.fetchDashboardData(),
-        this.fetchActiveTorrents(),
-        this.fetchTasks(),
-        this.fetchTraffic()
-      ])
+      await this.fetchDashboardData()
     } finally {
       this.loading = false
     }
+    // 辅助源后台并行加载（失败静默落各卡空态）
+    this.fetchActiveTorrents()
+    this.fetchTasks()
+    this.fetchTraffic()
   }
 
   /** SpeedPollingMixin 轮询体：3s 活跃种子（热门种子/hero 速度共源） */
@@ -352,7 +359,7 @@ export default class MobileDashboard extends Mixins(PullToRefresh, SpeedPollingM
   // ==================== 定时器 ====================
 
   private startTimers(): void {
-    // 低频定时器带前台门控（SpeedPollingMixin 只管 3s 链）
+    // 低频定时器带前台门控（SpeedPollingMixin 只管 3s 链）；回前台补刷见 onPageVisibilityChange
     this.dashboardTimer = window.setInterval(() => {
       if (!document.hidden) this.fetchDashboardData()
     }, DASHBOARD_REFRESH_MS)
@@ -362,6 +369,15 @@ export default class MobileDashboard extends Mixins(PullToRefresh, SpeedPollingM
     this.trafficTimer = window.setInterval(() => {
       if (!document.hidden) this.fetchTraffic()
     }, TRAFFIC_REFRESH_MS)
+  }
+
+  /** 回前台补刷低频源（评审修复：切后台再回前台不再等下一完整周期；活跃种子由 mixin resume 补刷） */
+  private onPageVisibilityChange = (): void => {
+    if (!document.hidden) {
+      this.fetchDashboardData()
+      this.fetchTasks()
+      this.fetchTraffic()
+    }
   }
 
   private stopTimers(): void {

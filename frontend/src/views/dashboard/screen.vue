@@ -7,7 +7,7 @@
     <!-- 头部：标题 + 时钟 + 运行信息 + 退出 -->
     <div class="screen-head">
       <div class="screen-title">
-        <lucide-icon icon="layout-dashboard" />
+        <lucide-icon name="layout-dashboard" />
         <span>{{ $t('dashboard.screen.title') }}</span>
       </div>
       <div
@@ -24,7 +24,7 @@
         data-testid="screen-exit-btn"
         @click="exitScreen()"
       >
-        <lucide-icon icon="x" />
+        <lucide-icon name="x" />
         {{ $t('dashboard.screen.exit') }}
       </button>
     </div>
@@ -67,7 +67,7 @@
     <div class="screen-main">
       <div class="spanel">
         <div class="st">
-          <lucide-icon icon="radar" />
+          <lucide-icon name="radar" />
           <span>{{ $t('dashboard.screen.radarTitle') }}</span>
         </div>
         <RadarCard
@@ -79,7 +79,7 @@
       </div>
       <div class="spanel">
         <div class="st">
-          <lucide-icon icon="waves" />
+          <lucide-icon name="waves" />
           <span>{{ $t('dashboard.screen.waveTitle') }}</span>
         </div>
         <div class="screen-wave-wrap">
@@ -88,7 +88,7 @@
       </div>
       <div class="spanel">
         <div class="st">
-          <lucide-icon icon="upload" />
+          <lucide-icon name="upload" />
           <span>{{ $t('dashboard.screen.tickerTitle') }}</span>
         </div>
         <div class="ticker-list">

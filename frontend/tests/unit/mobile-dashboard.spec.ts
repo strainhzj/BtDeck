@@ -10,6 +10,7 @@ import { shallowMount, createLocalVue, Wrapper } from '@vue/test-utils'
 import Vue, { VNode, CreateElement } from 'vue'
 import VueI18n from 'vue-i18n'
 import MobileDashboard from '@/views/mobile/dashboard.vue'
+import InstanceHealthCard from '@/views/dashboard/components/InstanceHealthCard.vue'
 import { getDashboardData } from '@/api/dashboard'
 import { getActiveTorrents, ActiveTorrentSpeed } from '@/api/torrents'
 import { getTaskList } from '@/api/tasks'
@@ -38,7 +39,7 @@ const makeData = (): DashboardData =>
       siteBuckets: [{ host: 'a.example.com', count: 5 }]
     },
     tasks: { total: 3, running: 0, stopped: 3, enabled: 2 },
-    system: { uptime: 100, uptime_display: '1分钟', version: 'x', total_download_speed: 0, total_upload_speed: 0 },
+    system: { uptime: 100, uptime_display: '1分钟', version: 'x', total_download_speed: 286720, total_upload_speed: 1024 },
     downloader_list: [],
     activities: []
   } as DashboardData)
@@ -84,6 +85,22 @@ const DashWidgetPassthrough = Vue.extend({
   }
 })
 
+/**
+ * KpiCard 交互 stub：渲染 value/foot/default 三个 slot + 转发 $listeners 到根元素——
+ * 评审修复防线：真实页面点击导航链路与速度双列渲染（默认 slot）须在页面级可断言。
+ */
+const KpiCardInteractive = Vue.extend({
+  name: 'KpiCard',
+  props: { clickable: { type: [Boolean, String], default: false } },
+  render(this: { $listeners: Record<string, Function>, $slots: Record<string, VNode[] | undefined> }, h: CreateElement): VNode {
+    return h('div', { class: 'kpi-stub', on: this.$listeners }, [
+      h('div', { class: 'dash-kpi-value' }, this.$slots.value),
+      h('div', { class: 'dash-kpi-foot' }, this.$slots.foot),
+      h('div', { class: 'dash-kpi-extra' }, this.$slots.default)
+    ])
+  }
+})
+
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) {
     await Promise.resolve()
@@ -94,7 +111,7 @@ function mountPage(): Wrapper<Vue> {
   return shallowMount(MobileDashboard, {
     localVue,
     i18n,
-    stubs: { DashWidget: DashWidgetPassthrough },
+    stubs: { DashWidget: DashWidgetPassthrough, KpiCard: KpiCardInteractive, InstanceHealthCard: InstanceHealthCard },
     mocks: {
       $message: { error: jest.fn(), success: jest.fn(), warning: jest.fn() },
       $router: {
@@ -172,6 +189,80 @@ describe('views/mobile/dashboard.vue 移动仪表盘二期', () => {
     await flush()
     await w.find('.m-view-all').trigger('click')
     expect((w.vm.$router as unknown as { push: jest.Mock }).push).toHaveBeenCalledWith('/m/torrents')
+    w.destroy()
+  })
+
+  it('系统速度 KPI 渲染双列数值（默认 slot 契约，评审修复：KpiCard 此前无出口致恒空白）', async() => {
+    const w = mountPage()
+    await flush()
+    const speedCard = w.findAll('.kpi-stub').at(3)
+    expect(speedCard.find('.dash-kpi-extra .dash-kpi-dual').exists()).toBe(true)
+    expect(speedCard.text()).toContain('280.00 KB/s')
+    expect(speedCard.text()).toContain('1.00 KB/s')
+    w.destroy()
+  })
+
+  it('KPI 点击穿透：下载器/种子/任务三卡导航（评审修复：裸 clickable 空串经 Boolean 转换生效）', async() => {
+    const w = mountPage()
+    await flush()
+    const push = (w.vm.$router as unknown as { push: jest.Mock }).push
+    await w.findAll('.kpi-stub').at(0).trigger('click')
+    expect(push).toHaveBeenCalledWith('/m/downloader')
+    await w.findAll('.kpi-stub').at(1).trigger('click')
+    expect(push).toHaveBeenCalledWith('/m/torrents')
+    await w.findAll('.kpi-stub').at(2).trigger('click')
+    expect(push).toHaveBeenCalledWith('/m/tasks')
+    w.destroy()
+  })
+
+  it('下载器行点击/回车进入 /m/downloader（评审修复：恢复旧页穿透语义）', async() => {
+    jest.mocked(getDashboardData).mockResolvedValue({
+      code: '200',
+      status: 'success',
+      msg: 'ok',
+      data: { ...makeData(), downloader_list: [DL] }
+    } as never)
+    const w = mountPage()
+    await flush()
+    const row = w.find('.dash-rowline')
+    expect(row.attributes('role')).toBe('button')
+    await row.trigger('click')
+    expect((w.vm.$router as unknown as { push: jest.Mock }).push).toHaveBeenCalledWith('/m/downloader')
+    await row.trigger('keypress', { key: 'Enter' })
+    expect((w.vm.$router as unknown as { push: jest.Mock }).push).toHaveBeenCalledTimes(2)
+    w.destroy()
+  })
+
+  it('首屏解耦：traffic 失败不阻塞主数据渲染（评审修复：慢辅助接口不再阻塞整页）', async() => {
+    jest.mocked(getReportsSpeedHistory).mockRejectedValue(new Error('slow'))
+    const w = mountPage()
+    await flush()
+    expect(w.find('.m-kpi-grid').exists()).toBe(true)
+    expect(w.find('.m-widget-stack').exists()).toBe(true)
+    expect((w.vm as unknown as { hasData: boolean }).hasData).toBe(true)
+    w.destroy()
+  })
+
+  it('回前台补刷：dashboard/tasks/traffic 立即刷新，活跃种子由 mixin resume 补（评审修复）', async() => {
+    const hiddenSpy = jest.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const w = mountPage()
+    await flush()
+    jest.mocked(getDashboardData).mockClear()
+    jest.mocked(getActiveTorrents).mockClear()
+    jest.mocked(getTaskList).mockClear()
+    jest.mocked(getReportsSpeedHistory).mockClear()
+    hiddenSpy.mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(getDashboardData).not.toHaveBeenCalled()
+    hiddenSpy.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(getDashboardData).toHaveBeenCalledTimes(1)
+    expect(getTaskList).toHaveBeenCalledTimes(1)
+    expect(getReportsSpeedHistory).toHaveBeenCalledTimes(1)
+    expect(getActiveTorrents).toHaveBeenCalledTimes(1)
+    hiddenSpy.mockRestore()
     w.destroy()
   })
 

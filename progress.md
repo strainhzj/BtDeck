@@ -8960,3 +8960,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **顺带收编**：用户在途 dashboard 类型注解 lint 修复（StatusDonutCard+两 spec，分号→逗号）独立 style 提交，不混功能提交。
 - **测试与门禁**：mobile-dashboard.spec.ts 重写 9 例全绿（旧 15 例针对旧页实现缺陷——字段误读/bytes 换算/m-dl-card 结构——已被新实现结构性消除；移植信封契约与首载失败 toast 两防线；新增挂载/props 映射/D1 3s/下拉刷新并发/查看全部跳转/空态两态/定时器清理）。typecheck 净；lint 281 problems=HEAD 基线（4 改动文件 eslint no-fix 0 贡献，净增 0）；全量 Jest 155 套 2146 例全绿（临时 worktree 挂 HEAD 亲测对照 2152，2152−旧 spec 15+新 9=2146 严丝合缝）；npm run build 成功；e2e 断言 .m-dashboard 根选择器保持，路由 /m/dashboard 不变。
 - **文档**：feature_list.json +dashboard-mobile-2026-11 条目（evidence 已回填）；roadmap views 行重写+功能域速查仪表盘行+根 README 最近同步；PLANS/dashboard-mobile-2026-11.md 随功能提交入库。
+
+## 2026-11-13（续）：移动仪表盘评审修复批（6 项 P2 全处置，双端图标全修复）
+
+- **触发**：用户要求对本会话提交（b8262e6..80e09d4）code review——双评审代理 + 主会话真实组件挂载实证，6 项确认缺陷（全部 100% 复现或代码事实）。
+- **修复**：①系统速度 KPI 恒空白——KpiCard 无默认插槽出口，`#default` 双列数值被静默丢弃（根因一期既有，桌面同步受益），KpiCard 补 `<slot />` 出口于 foot 之后；②三张 KPI 点击全失效——裸 `clickable` 传空串而 prop 无运行时 Boolean 类型（桌面同缺陷），KpiCard `@Prop` 显式 `type: Boolean`；③下载器行穿透丢失——InstanceHealthCard 新增 `clickable` prop（Boolean）+ 行级 role=button/click/enter 上抛 `activate(downloader_id)`，桌面不传不受影响，移动页绑定跳 /m/downloader；④慢辅助接口阻塞首屏——initialLoad 改为仅以 dashboard 主数据为 loading 门，active/tasks/traffic 后台并行（各卡自带 loading/空态）；⑤30 处 `lucide-icon icon=` 属性错误全 app（全部集中在 dashboard 域）→ `name=`，ICONS 注册表核对 120 键零缺失（含无引号键）；⑥回前台不补刷——页面级 visibilitychange 监听回前台立即刷新 dashboard/tasks/traffic（活跃种子由 mixin resume 补刷）。
+- **测试**（+9 例 = 2155）：KpiCard 壳 +默认 slot 渲染 +空串 clickable 契约 2 例；InstanceHealthCard +clickable 行 emit（click/enter 带 id）/非 clickable 负例 2 例；mobile spec 交互 stub（渲染 slots+$listeners）+真实 InstanceHealthCard 接入，+速度双列渲染（280.00 KB/s）/KPI 三卡点击穿透/健康行点击穿透/traffic 失败不阻塞首屏/回前台补刷 5 例。教训：评审前 spec 全面 props/计数断言、无渲染值与原生事件断言，正是 P1 漏网结构原因——交互 stub+真实子组件组合补上渲染值与导航链路防线。
+- **验证**：typecheck 净；改动 17 文件 eslint no-fix 0 问题（SiteBarsCard unused-i 为存量基线 warning 不属本批）；lint 全量 281 problems=基线净增 0；全量 Jest 155 套 2155 例全绿（2146+9 对平）；npm run build 成功（hash 746a0c1cc3ddb456）。
+- **遗留观察（评审发现未处置，待用户决策）**：信封失败（code≠200）时移动页渲染"去添加下载器"CTA 误导（旧页为中性"暂无数据"）；成功后轮询失败永久静默保快照与桌面 handleEmptyState 语义分歧（注释标明有意）；InstanceHealthCard 长昵称窄屏可能挤压后列（旧卡有 overflow:hidden）；768–992 外壳断点双轨制（非本批范围）。

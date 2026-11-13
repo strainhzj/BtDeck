@@ -6059,3 +6059,10 @@ G4 AST 守卫+HTTP/MCP 等价契约（含 advanced_search→torrent_helpers 残�
 - **验证**：typecheck 净 + lint 281=HEAD 基线净增 0 + 全量 Jest 155 套 2146 绿（HEAD worktree 对照 2152 对平）+ build 成功；e2e .m-dashboard 根选择器未动。
 - **Git**：分支基于 dev b8262e6（本地领先 origin/dev 1 提交未推）；用户在途 dashboard 类型注解修复已收编为独立 style 提交；PLANS/dashboard-mobile-2026-11.md 按用户指示入库（破一期先例）。提交与推送/合并待用户指令。
 - **后续候选项**：实机验收（APK 真机 + 手机浏览器）；若用户要求推送后跑 CI（regression.yml 前端三 job）；移动端是否补 quick-actions 卡待用户反馈。
+
+## 2026-11-13 交接（续）：移动仪表盘评审修复批——同分支第二提交
+
+- **内容**：code review（b8262e6..80e09d4）6 项 P2 全修复：KpiCard 默认 slot 出口（速度 KPI 恒空白，桌面一期同款 bug 同步修复）/clickable 显式 Boolean（裸属性点击失效，桌面同步）/InstanceHealthCard clickable 行穿透/首屏解耦（仅 dashboard 为 loading 门）/dashboard 域 30 处 icon=→name=（LucideIcon 全 app 用量即此域；ICONS 核对零缺失）/回前台 visibilitychange 补刷。
+- **验证**：全量 Jest 155 套 2155 绿（+9 防线）+ typecheck 净 + lint 281 基线净增 0 + build 成功。测试方法论沉淀：浅挂载 props 断言抓不住插槽/裸属性/原生事件缺陷——交互 stub（渲染 slots+$listeners）+真实子组件组合才补上渲染值与导航链路。
+- **Git**：同分支 feature/dashboard-mobile-2026-11 第二提交（评审修复批），推送/合并仍待用户指令。
+- **遗留观察**：信封失败误导 CTA / 失败后永久保快照语义 / 长昵称窄屏挤压——评审已记录未处置，待用户决策。

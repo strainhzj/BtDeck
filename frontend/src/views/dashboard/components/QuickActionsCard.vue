@@ -8,7 +8,7 @@
       @click="go('/downloader/index')"
       @keypress.enter="go('/downloader/index')"
     >
-      <lucide-icon icon="server" />
+      <lucide-icon name="server" />
       <span>{{ $t('dashboard.quick.addDownloader') }}</span>
     </div>
     <div
@@ -19,7 +19,7 @@
       @click="go('/torrents/index')"
       @keypress.enter="go('/torrents/index')"
     >
-      <lucide-icon icon="download" />
+      <lucide-icon name="download" />
       <span>{{ $t('dashboard.quick.addTorrent') }}</span>
     </div>
     <div
@@ -30,7 +30,7 @@
       @click="go('/query-templates/index')"
       @keypress.enter="go('/query-templates/index')"
     >
-      <lucide-icon icon="list-filter" />
+      <lucide-icon name="list-filter" />
       <span>{{ $t('dashboard.quick.advancedSearch') }}</span>
     </div>
     <div
@@ -41,7 +41,7 @@
       @click="go('/logs/audit')"
       @keypress.enter="go('/logs/audit')"
     >
-      <lucide-icon icon="file-text" />
+      <lucide-icon name="file-text" />
       <span>{{ $t('dashboard.quick.viewLogs') }}</span>
     </div>
   </div>
