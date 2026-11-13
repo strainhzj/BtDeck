@@ -146,7 +146,7 @@ describe('SiteBarsCard 站点分布', () => {
     const option = (echart.props('option') || {}) as {
       xAxis: unknown
       yAxis: { data: string[] }
-      series: Array<{ data: Array<{ value: number; label?: { formatter?: () => string } }> }>
+      series: Array<{ data: Array<{ value: number, label?: { formatter?: () => string } }> }>
     }
     // inverse 类目轴：数组顺序即展示顺序（已按后端降序传入）
     expect(option.yAxis.data).toEqual(['a.example.com', 'b.example.com', 'dashboard.widgets.sites.other'])
