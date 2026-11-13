@@ -691,12 +691,25 @@ class MigrationManager:
                 except Exception as exc:
                     raise ManagerError(f"sqlite-to-pg 目标参数重解析失败（凭据仓不可读）: {exc}") from exc
             from sqlalchemy import create_engine
+            from app.core.config import settings as app_settings
             from app.services.db_migration.target_params import build_pg_url
             from sqlalchemy.pool import NullPool
 
             engine = create_engine(build_pg_url(params), poolclass=NullPool)
             try:
-                return run_sqlite_to_pg(manifest.get("source", {}).get("path", ""), pg_engine=engine, ctx=ctx)
+                # SM4 资产同源校验默认值（check_external_assets）：UI 发起流无
+                # config.yaml 入口，而单部署同源切换下源/目标 config 同为当前
+                # 应用配置——目标侧发布配置由 config_store 派生自当前 yaml，
+                # SM4 密钥必然同源，源库 sm4:% 口令切换后仍可解密（生产实证
+                # 3ed89647：不传则预检报「缺少可用 SM4 配置」）。CLI 路径仍可
+                # 显式传 asset_paths 覆盖。
+                yaml_path = str(app_settings.YAML_PATH)
+                return run_sqlite_to_pg(
+                    manifest.get("source", {}).get("path", ""),
+                    pg_engine=engine,
+                    ctx=ctx,
+                    asset_paths={"source_config": yaml_path, "target_config": yaml_path},
+                )
             finally:
                 engine.dispose()
         if direction == "pg-to-sqlite":

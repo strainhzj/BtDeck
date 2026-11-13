@@ -430,3 +430,51 @@ class TestStaleWorkerCallbacks:
             ctx.cancel_check()
         release.set()
         manager.wait_worker_stopped(timeout=5)
+
+
+class TestDefaultPipelineRunnerAssetPaths:
+    def test_sqlite_to_pg_forwards_sm4_asset_paths(self, tmp_path, monkeypatch):
+        """SM4 资产路径默认值：默认 runner 必须传源/目标 config=当前应用 yaml。
+
+        生产实证（attempt 3ed89647）：源库 bt_downloaders 出现 sm4:% 口令后，
+        check_external_assets 要求源/目标 config.yaml 密钥同源——而 UI 发起流
+        无 config.yaml 入口，不传即预检必挂。单部署同源切换下源/目标 config
+        同为当前应用配置（目标侧发布配置派生自当前 yaml），默认传 YAML_PATH。
+        """
+        from app.core.config import settings as app_settings
+        from app.core.database_bootstrap import PostgresParams
+        from app.services.db_migration.pipeline import PipelineContext
+
+        captured: dict = {}
+
+        def fake_run(source_path, *, pg_engine, ctx, resume=False, auto_wrap=False, asset_paths=None):
+            captured["source_path"] = source_path
+            captured["asset_paths"] = asset_paths
+            return {"ok": 1}
+
+        monkeypatch.setattr("app.services.db_migration.sqlite_to_pg.run_sqlite_to_pg", fake_run)
+        manager = _make_manager(tmp_path, runner=None)
+        params = PostgresParams(
+            host="postgres",
+            port=5432,
+            user="btdeck",
+            password="pw",
+            database="btdeck",
+            schema="public",
+            sslmode="prefer",
+            ssl_root_cert=None,
+            pool_size=1,
+            max_overflow=1,
+            pool_timeout=5,
+        )
+        manifest = {
+            "direction": "sqlite-to-pg",
+            "source": {"path": str(tmp_path / "app.db")},
+            "target": {"_pg_params": params},
+        }
+        ctx = PipelineContext(attempt_id="sqlite-to-pg/3ed89647-test")
+        manager._default_pipeline_runner(ctx, manifest)
+
+        expected = str(app_settings.YAML_PATH)
+        assert captured["asset_paths"] == {"source_config": expected, "target_config": expected}
+        assert captured["source_path"] == str(tmp_path / "app.db")

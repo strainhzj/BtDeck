@@ -8968,3 +8968,11 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **测试**（+9 例 = 2155）：KpiCard 壳 +默认 slot 渲染 +空串 clickable 契约 2 例；InstanceHealthCard +clickable 行 emit（click/enter 带 id）/非 clickable 负例 2 例；mobile spec 交互 stub（渲染 slots+$listeners）+真实 InstanceHealthCard 接入，+速度双列渲染（280.00 KB/s）/KPI 三卡点击穿透/健康行点击穿透/traffic 失败不阻塞首屏/回前台补刷 5 例。教训：评审前 spec 全面 props/计数断言、无渲染值与原生事件断言，正是 P1 漏网结构原因——交互 stub+真实子组件组合补上渲染值与导航链路防线。
 - **验证**：typecheck 净；改动 17 文件 eslint no-fix 0 问题（SiteBarsCard unused-i 为存量基线 warning 不属本批）；lint 全量 281 problems=基线净增 0；全量 Jest 155 套 2155 例全绿（2146+9 对平）；npm run build 成功（hash 746a0c1cc3ddb456）。
 - **遗留观察（评审发现未处置，待用户决策）**：信封失败（code≠200）时移动页渲染"去添加下载器"CTA 误导（旧页为中性"暂无数据"）；成功后轮询失败永久静默保快照与桌面 handleEmptyState 语义分歧（注释标明有意）；InstanceHealthCard 长昵称窄屏可能挤压后列（旧卡有 overflow:hidden）；768–992 外壳断点双轨制（非本批范围）。
+
+## 2026-11-13：SM4 资产路径默认值修复（迁移预检「缺少可用 SM4 配置」——UI 发起流死路）
+
+- **生产事故**：重新发起迁移 attempt 3ed89647 预检 44s 即失败：「source_config/target_config: 缺少可用 SM4 配置」。根因：源库 bt_downloaders 现含 sm4:% 加密口令（应用侧 SM4Encryption 依 config.yaml security.secret_key 加密，fail-closed），触发 check_external_assets 要求源/目标 config.yaml 密钥同源校验；而 manager._default_pipeline_runner 调 run_sqlite_to_pg **从不传 asset_paths**（UI 发起流也无 config.yaml 入口）→ paths[name] KeyError → 必挂。此前成功迁移未触发因当时源库尚无 sm4:% 行。
+- **修复**（单部署同源切换语义）：默认 runner 传 asset_paths={"source_config": settings.YAML_PATH, "target_config": settings.YAML_PATH}——目标侧发布配置由 config_store 派生自当前 yaml，SM4 密钥必然同源，口令切换后仍可解密；CLI 路径仍可显式覆盖。目标连接参数继续 manifest/凭据仓显式传（不违反 target_params「绝不读写全局 settings」的连接参数约束——yaml 路径是资产校验语义，非连接语义）。
+- **附带发现**：本次失败后业务面再次 503 HELD（intent PREPARING 残留）——但本次 control.pending_attempt 非空且 manifest 在（对照 11-11 孤儿变体），DatabasePanel 跟踪卡 phase=failed 的「放弃」按钮可见可用，属设计内恢复路径。另：本次 manifest.target.database=btdeck（非此前 btdeck_migration_target），目标库实测 0 表干净，与失败无关。
+- **验证**：manager 新增 TestDefaultPipelineRunnerAssetPaths（monkeypatch run_sqlite_to_pg 断言 asset_paths 双键=settings.YAML_PATH）+ manager/migrate_sqlite_to_pg/barrier/startup_gates 71 例绿 + services/core 全量 2197 绿 + black/flake8（变更区域）/mypy 净。
+- **记录纪律**：本条目留存工作区下次实质提交入仓。
