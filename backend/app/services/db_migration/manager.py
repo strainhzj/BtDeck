@@ -226,10 +226,27 @@ class MigrationManager:
                     raise StateConflict(f"不可等待重任务在途: {exc}") from exc
                 raise
             self._phase = "preparing"
-            # 2. 排空（超时→HELD，manager 停在 held；人工 leave/恢复）
+            # 2. 排空（超时→安全撤销：PREPARING 阶段零目标副作用——未冻结/未快照/
+            #    无目标写入，manifest/control 也尚未持久（冻结后才写）。原设计停
+            #    held 等人工处置，但人工出口（leave/cancel/resume）全部依赖
+            #    pending manifest，零产物=无 API 出口死锁（生产实证 49075d35/
+            #    954db6f2 两起，同步任务在途时 30 秒排空必超时）。改为
+            #    abort_drain_timeout 归位 NORMAL（在途业务请求自然收尾）+
+            #    intent 由 _clear_intent 清除 + 409 指引稍后重试。
             if not self._controller.run_drain(timeout=30.0):
-                self._phase = "held"
-                raise StateConflict("排空超时→HELD（等待人工处置；不可自动恢复业务）")
+                self._phase = "idle"
+                self._controller.abort_drain_timeout()
+                self._audit.audit_event(
+                    "migration",
+                    action="drain-timeout-selfheal",
+                    outcome="ok",
+                    detail={},
+                    attempt_id=attempt_id,
+                )
+                raise StateConflict(
+                    "有重任务在途，排空 30 秒未完成：已安全撤销本次发起"
+                    "（未冻结/无副作用，业务已恢复正常）；请等待后台任务完成后再发起"
+                )
             self._phase = "draining"
             # 3. 冻结（fence 令牌进 controller；指纹进 manifest）
             try:

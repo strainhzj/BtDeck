@@ -307,3 +307,49 @@ class TestStartupGate:
         (d / "control.json").write_text("{broken", encoding="utf-8")
         with pytest.raises(Exception, match="fail-closed|拒绝"):
             self._gate(tmp_path)
+
+
+class TestAbortDrainTimeout:
+    """排空超时安全撤销（2026-11-14 生产实证 49075d35/954db6f2 孤儿死锁）：
+    不等待在途租约即可归位 NORMAL（在途业务请求自然收尾，无完整性风险），
+    intent 同步清除防孤儿。"""
+
+    def test_aborts_held_with_active_lease_and_clears_intent(self, tmp_path):
+        from app.core.database_protocol import DB_MIGRATION_DIR
+        from app.services.db_migration.maintenance import MaintenanceController
+
+        d = tmp_path / DB_MIGRATION_DIR
+        d.mkdir(parents=True)
+        controller = MaintenanceController(str(tmp_path))
+        # 复刻生产现场：重任务先于发起启动（先取租约），随后关门
+        with controller.admission_slot(kind="heavy_sync"):
+            controller.begin_prepare(attempt_id="sqlite-to-pg/954db6f2-672e-4a1a-9a04-dfe0a6f09fd8")
+            assert (d / "maintenance-intent.json").exists()
+            assert controller.run_drain(timeout=0.05) is False
+            assert controller.status().state == "HELD"
+
+            controller.abort_drain_timeout()
+            assert controller.status().state == "NORMAL"
+            assert not controller.status().in_maintenance
+
+        assert not (d / "maintenance-intent.json").exists()
+        set_default_controller(None)
+
+    def test_rejects_when_target_side_effects_present(self, tmp_path):
+        from app.services.db_migration.maintenance import (
+            MaintenanceController,
+            TransitionError,
+            set_default_controller,
+        )
+
+        controller = MaintenanceController(str(tmp_path))
+        set_default_controller(controller)
+        with controller.admission_slot(kind="heavy_sync"):
+            controller.begin_prepare(attempt_id="sqlite-to-pg/954db6f2-672e-4a1a-9a04-dfe0a6f09fd8")
+            assert controller.run_drain(timeout=0.05) is False
+        assert controller.status().state == "HELD"
+        controller.note_target_side_effect()
+        with pytest.raises(TransitionError, match="目标副作用"):
+            controller.abort_drain_timeout()
+        assert controller.status().state == "HELD"  # 保守拒绝：保持 HELD
+        set_default_controller(None)

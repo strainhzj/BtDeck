@@ -102,6 +102,7 @@ export const database = {
     startNoSourcePath: '无法确定当前 SQLite 库路径，禁止发起迁移。',
     followTitle: '迁移跟踪',
     followAuthHint: '迁移窗口已开启。请完成维护认证（独立于登录会话，令牌仅内存 15 分钟）以跟踪进度并执行提交。',
+    followReadonlyHint: '迁移进行中：上方进度实时自动刷新，无需认证。下方维护认证仅用于执行操作（凭据补交/取消/放弃/提交切换）。',
     followCancel: '取消迁移',
     followCancelConfirmTitle: '确认取消迁移？',
     followCancelConfirmText: '将协作停止导入并解冻回源；worker 确认前状态为「取消中」。',
@@ -163,6 +164,7 @@ export const database = {
       submitting: '认证中…',
       failed: '维护认证失败，请检查账户与密码后重试。',
       sessionExpired: '维护会话已过期，请重新认证。',
+      readonlyHint: '迁移进行中：下方进度实时自动刷新；认证后可执行操作。',
       notMaintenance: '当前没有进行中的迁移；请从「设置 → 数据库」发起迁移后再试。'
     },
     state: {
@@ -183,6 +185,7 @@ export const database = {
     migration: {
       title: '迁移进度',
       noAttempt: '当前没有进行中的迁移。',
+      readonlyIdle: '维护窗口已开启，但当前没有进行中的迁移。',
       phase: '阶段',
       phaseUnknown: '未知阶段（{phase}）',
       phaseIdle: '空闲',

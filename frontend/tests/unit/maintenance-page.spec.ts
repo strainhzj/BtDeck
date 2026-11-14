@@ -2,7 +2,8 @@
  * 维护恢复页回归（database-migration-ui W4-3）。
  *
  * 保护点：
- * 1. 未认证只渲染认证区（用户名/密码/可选 twofa），不发起状态请求、不启动轮询；
+ * 1. 未认证渲染认证区 + 免认证只读进度卡（/maintenance/progress 自动轮询，
+ *    进度不因未认证/令牌失效而不可见）；认证态状态/就绪面仍需认证后拉取；
  * 2. 认证成功进入状态区：粗粒度状态徽标（人类可读文案）+ 迁移状态/就绪面拉取；
  * 3. NEEDS_CREDENTIALS 呈现凭据重输表单，提交载荷为 snake_case
  *    attempt_id/password/target（经维护通道 POST /database/migration/credentials）；
@@ -26,6 +27,7 @@ import {
   maintenanceLogin,
   maintenanceRequest,
   getMaintenanceStatus,
+  getMaintenanceProgress,
   getMaintenanceToken,
   clearMaintenanceToken,
   subscribeAuthExpired
@@ -37,6 +39,7 @@ jest.mock('@/utils/maintenance-client', () => ({
   maintenanceLogin: jest.fn(),
   maintenanceRequest: jest.fn(),
   getMaintenanceStatus: jest.fn(),
+  getMaintenanceProgress: jest.fn(),
   getMaintenanceToken: jest.fn(),
   clearMaintenanceToken: jest.fn(),
   // 订阅即返回独立退订函数（经 mock.results 捕获）
@@ -46,6 +49,7 @@ jest.mock('@/utils/maintenance-client', () => ({
 const mockLogin = maintenanceLogin as jest.MockedFunction<typeof maintenanceLogin>
 const mockRequest = maintenanceRequest as jest.MockedFunction<typeof maintenanceRequest>
 const mockGetStatus = getMaintenanceStatus as jest.MockedFunction<typeof getMaintenanceStatus>
+const mockGetProgress = getMaintenanceProgress as jest.MockedFunction<typeof getMaintenanceProgress>
 const mockGetToken = getMaintenanceToken as jest.MockedFunction<typeof getMaintenanceToken>
 const mockClearToken = clearMaintenanceToken as jest.MockedFunction<typeof clearMaintenanceToken>
 const mockSubscribe = subscribeAuthExpired as jest.MockedFunction<typeof subscribeAuthExpired>
@@ -182,6 +186,7 @@ beforeEach(() => {
   deploymentTargetFixture = { available: false, target: null, hasEnvPassword: false }
   mockLogin.mockResolvedValue({ maintenanceToken: 'mtk-1', tokenType: 'bearer', expiresIn: 300 })
   mockGetStatus.mockImplementation(async() => statusFixture as Record<string, unknown> as never)
+  mockGetProgress.mockRejectedValue(new ApiError('not in maintenance mode', { code: '409', httpStatus: 200 }))
   mockRequest.mockImplementation(async(method: string, url: string) => {
     if (url === '/database/migration/status') return migrationFixture as never
     if (url === '/database/target-readiness') return readinessFixture as never
@@ -199,7 +204,7 @@ afterEach(() => {
 })
 
 describe('MaintenancePage', () => {
-  it('未认证：仅渲染认证区（用户名/密码/可选 twofa），不拉状态、不启动轮询', async() => {
+  it('未认证：渲染认证区 + 免认证进度轮询启动；认证态状态/就绪面仍不拉取', async() => {
     const setIntervalSpy = jest.spyOn(window, 'setInterval')
     const wrapper = await mountPage()
     activeWrapper = wrapper
@@ -213,7 +218,42 @@ describe('MaintenancePage', () => {
     // 不发起任何状态请求，不创建轮询定时器
     expect(mockGetStatus).not.toHaveBeenCalled()
     expect(mockRequest).not.toHaveBeenCalled()
-    expect(setIntervalSpy).not.toHaveBeenCalled()
+    // 免认证进度通道启动（进度自动可见，不依赖认证）
+    expect(mockGetProgress).toHaveBeenCalled()
+    expect(setIntervalSpy).toHaveBeenCalled()
+  })
+
+  it('未认证：免认证进度面驱动只读进度卡（phase 徽标+进度条），操作面隐藏', async() => {
+    mockGetToken.mockReturnValue(null)
+    statusFixture = makeStatus({ state: 'IMPORTING' })
+    mockGetProgress.mockResolvedValue({
+      state: 'IMPORTING',
+      phase: 'importing',
+      attemptId: 'sqlite-to-pg/954db6f2-672e-4a1a-9a04-dfe0a6f09fd8',
+      epoch: 'epoch-x',
+      stateVersion: 2,
+      commitPhase: null,
+      needsCredentials: false,
+      restartPending: false,
+      detail: { progress: { phase: 'importing', done: 30000, total: 178775 } }
+    } as never)
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+
+    // 只读进度卡可见（phase 徽标 + 进度条 + attempt 锚点）
+    expect(wrapper.text()).toContain('导入中')
+    expect(wrapper.find('.el-progress').exists()).toBe(true)
+    expect(wrapper.text()).toContain('30000 / 178775')
+    // 操作面隐藏（未认证）：提交切换/凭据重输不渲染
+    expect(wrapper.text()).not.toContain('提交切换')
+    expect(wrapper.text()).not.toContain('重新输入凭据')
+    // 认证表单仍在（供接管操作）
+    expect(wrapper.findAll('input').length).toBeGreaterThanOrEqual(2)
+    // 认证态端点不拉取（避免 401 误派发会话过期）
+    expect(mockGetStatus).not.toHaveBeenCalled()
+    expect(mockRequest).not.toHaveBeenCalled()
+    statusFixture = makeStatus()
   })
 
   it('认证成功后进入状态区：粗粒度徽标文案 + 迁移状态/就绪面拉取', async() => {

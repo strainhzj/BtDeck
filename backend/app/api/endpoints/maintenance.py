@@ -255,3 +255,49 @@ async def maintenance_status(
             "bootRecovery": status.boot_recovery,
         },
     )
+
+
+@router.get(
+    "/progress",
+    summary="迁移进度（免认证只读；仅维护窗口内有数据）",
+    response_model=CommonResponse,
+)
+async def maintenance_progress(http_request: Request) -> CommonResponse:
+    """免认证只读进度面（2026-11-14 生产实证：发起动作推进 epoch 即作废刚签发
+    的维护 token，进度查看立刻 401——用户诉求“进度自动可见而非重输凭据”）。
+
+    暴露面收口：仅在维护窗口内返回阶段/计数/公开标识（attempt/epoch 是 CAS
+    输入，但操作类端点仍要求维护 token——知道 CAS 三元组无 token 不可行动）；
+    非维护窗口一律 409 NOT_MAINTENANCE，零信息泄露。详见
+    tests/api/test_auth_route_coverage.py 匿名登记。"""
+    controller = get_default_controller()
+    if controller is None:
+        return CommonResponse(
+            status="error", msg="not in maintenance mode", code="409", data={"reasonCode": "NOT_MAINTENANCE"}
+        )
+    status = controller.status()
+    if not status.in_maintenance:
+        return CommonResponse(
+            status="error", msg="not in maintenance mode", code="409", data={"reasonCode": "NOT_MAINTENANCE"}
+        )
+    data: dict[str, Any] = {
+        "state": status.state,
+        "heldReason": status.held_reason,
+        "bootRecovery": status.boot_recovery,
+    }
+    manager = getattr(http_request.app.state, "database_migration_manager", None)
+    if manager is not None:
+        snapshot = manager.status()
+        data.update(
+            {
+                "phase": snapshot.phase,
+                "attemptId": snapshot.attempt_id,
+                "epoch": snapshot.epoch,
+                "stateVersion": snapshot.state_version,
+                "commitPhase": snapshot.commit_phase,
+                "needsCredentials": snapshot.needs_credentials,
+                "restartPending": snapshot.restart_pending,
+                "detail": snapshot.detail,
+            }
+        )
+    return CommonResponse(status="success", msg="ok", code="200", data=data)

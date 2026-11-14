@@ -12,6 +12,19 @@
       <p v-if="sessionExpired" class="maintenance-warn">
         {{ $t('database.maintenance.auth.sessionExpired') }}
       </p>
+      <!-- 免认证只读进度（2026-11-14）：进度不因未认证/令牌失效而不可见 -->
+      <div v-if="publicProgressView" class="maintenance-progress">
+        <div class="maintenance-row">
+          <span class="maintenance-label">{{ $t('database.maintenance.migration.phase') }}</span>
+          <el-tag :type="phaseTagType" size="small">{{ phaseLabel }}</el-tag>
+        </div>
+        <div v-if="progress" class="maintenance-row">
+          <span class="maintenance-label">{{ $t('database.maintenance.migration.progress') }}</span>
+          <span class="maintenance-mono">{{ progressText }}</span>
+        </div>
+        <el-progress v-if="progress" :percentage="progressPercent" :stroke-width="10" />
+        <p class="maintenance-hint">{{ $t('database.maintenance.auth.readonlyHint') }}</p>
+      </div>
       <el-form
         ref="loginFormRef"
         :model="loginForm"
@@ -58,7 +71,7 @@
       <div class="maintenance-card">
         <h2 class="maintenance-card-title">{{ $t('database.maintenance.migration.title') }}</h2>
 
-        <template v-if="migration">
+        <template v-if="publicProgressView">
           <div class="maintenance-row">
             <span class="maintenance-label">{{ $t('database.maintenance.migration.phase') }}</span>
             <el-tag :type="phaseTagType" size="small">{{ phaseLabel }}</el-tag>
@@ -76,8 +89,8 @@
           </div>
 
           <!-- READY_TO_SWITCH：本页提交切换（2026-11-08 UI 补口；提交即持久不可撤销，
-               后端就绪门 409 兑底，通道=maintenanceRequest 维护令牌） -->
-          <div v-if="readyToSwitch" class="maintenance-block maintenance-block-info">
+               后端就绪门 409 兑底，通道=maintenanceRequest 维护令牌）；操作面需认证 -->
+          <div v-if="readyToSwitch && authenticated" class="maintenance-block maintenance-block-info">
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.readyToSwitchTitle') }}</h3>
             <p class="maintenance-hint">{{ $t('database.maintenance.migration.readyToSwitchHint') }}</p>
             <p v-if="switchOk" class="maintenance-ok">{{ $t('database.maintenance.migration.switchSubmitted') }}</p>
@@ -115,8 +128,8 @@
             <p v-if="abandonError" class="maintenance-warn">{{ abandonError }}</p>
           </div>
 
-          <!-- NEEDS_CREDENTIALS：凭据重输表单（载荷 snake_case attempt_id/password/target） -->
-          <div v-if="needsCredentials" class="maintenance-block maintenance-block-danger">
+          <!-- NEEDS_CREDENTIALS：凭据重输表单（载荷 snake_case attempt_id/password/target）；操作面需认证 -->
+          <div v-if="needsCredentials && authenticated" class="maintenance-block maintenance-block-danger">
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.needsCredentialsTitle') }}</h3>
             <p class="maintenance-hint">{{ $t('database.maintenance.migration.needsCredentialsHint') }}</p>
             <p v-if="credSuccess" class="maintenance-ok">
@@ -205,7 +218,11 @@
             <p v-if="credError" class="maintenance-warn">{{ credError }}</p>
           </div>
         </template>
-        <p v-else class="maintenance-hint">{{ $t('database.maintenance.migration.noAttempt') }}</p>
+        <p v-else class="maintenance-hint">
+          {{ publicProgress && publicProgress.state
+            ? $t('database.maintenance.migration.readonlyIdle')
+            : $t('database.maintenance.migration.noAttempt') }}
+        </p>
       </div>
 
       <!-- 提示区：restartPending → 手动重启提示 -->
@@ -230,6 +247,7 @@ import { ElForm } from 'element-ui/types/form'
 import {
   MaintenanceStatusData,
   clearMaintenanceToken,
+  getMaintenanceProgress,
   getMaintenanceStatus,
   getMaintenanceToken,
   maintenanceLogin,
@@ -239,6 +257,7 @@ import {
 import type {
   CredentialsPayload,
   DeploymentTargetData,
+  MaintenanceProgressData,
   MigrationCasPayload,
   MigrationStatusData,
   PgFormInput,
@@ -368,6 +387,8 @@ export default class extends Vue {
   // ---- 迁移操作区（维护通道直调 database 端点，信封 data 手动映射复用类型） ----
   private migration: MigrationStatusData | null = null
   private readiness: ReadinessData | null = null
+  /** 免认证进度面（/maintenance/progress）：未认证时驱动只读进度卡 */
+  private publicProgress: MaintenanceProgressData | null = null
 
   private credForm: CredFormDraft = {
     host: '',
@@ -479,15 +500,33 @@ export default class extends Vue {
   }
 
   get attemptIdText(): string {
-    return this.status?.attemptId || this.migration?.attemptId || ''
+    return this.status?.attemptId || this.migration?.attemptId || this.publicProgressView?.attemptId || ''
   }
 
   get epochText(): string {
-    return this.status?.epoch || this.migration?.epoch || ''
+    return this.status?.epoch || this.migration?.epoch || this.publicProgressView?.epoch || ''
+  }
+
+  /** 免认证只读进度视图：认证后以完整 /migration/status 为权威，未认证回退公开进度面 */
+  get publicProgressView(): MigrationStatusData | null {
+    if (this.migration) return this.migration
+    const p = this.publicProgress
+    if (!p || !p.phase) return null
+    return {
+      attemptId: p.attemptId ?? null,
+      phase: p.phase,
+      epoch: p.epoch ?? '',
+      stateVersion: p.stateVersion ?? 0,
+      commitPhase: p.commitPhase ?? null,
+      workerGeneration: 0,
+      needsCredentials: p.needsCredentials === true,
+      restartPending: p.restartPending === true,
+      detail: p.detail ? { progress: p.detail.progress, target: p.detail.target } : undefined
+    }
   }
 
   get phaseCode(): string {
-    return this.migration ? this.migration.phase : ''
+    return this.publicProgressView?.phase || ''
   }
 
   get phaseLabel(): string {
@@ -506,7 +545,7 @@ export default class extends Vue {
 
   /** 进度（detail.progress {done,total}）；无效/缺失时为 null（不渲染进度条） */
   get progress(): { done: number, total: number } | null {
-    const detail = this.migration ? this.migration.detail : undefined
+    const detail = this.publicProgressView?.detail
     const p = detail ? detail.progress : undefined
     if (!p || typeof p.done !== 'number' || typeof p.total !== 'number' || p.total <= 0) {
       return null
@@ -529,15 +568,17 @@ export default class extends Vue {
     }).toString()
   }
 
-  /** NEEDS_CREDENTIALS：迁移状态 / 就绪面 / 粗粒度状态任一命中即呈现凭据重输 */
+  /** NEEDS_CREDENTIALS：迁移状态 / 就绪面 / 粗粒度状态任一命中即呈现凭据重输（操作面，需认证） */
   get needsCredentials(): boolean {
+    if (!this.authenticated) return false
     if (this.migration && this.migration.needsCredentials) return true
     if (this.readiness && this.readiness.needsCredentials) return true
     return this.stateCode === 'NEEDS_CREDENTIALS'
   }
 
-  /** READY_TO_SWITCH：可提交切换（switchCommit 走 maintenanceRequest 通道，提交即持久不可撤销） */
+  /** READY_TO_SWITCH：可提交切换（提交为操作类动作，需认证） */
   get readyToSwitch(): boolean {
+    if (!this.authenticated) return false
     if (this.readiness && this.readiness.readyToSwitch) return true
     return this.phaseCode === 'ready_to_switch' || this.stateCode === 'READY_TO_SWITCH'
   }
@@ -556,6 +597,7 @@ export default class extends Vue {
 
   mounted(): void {
     this.unsubscribeAuth = subscribeAuthExpired(this.handleAuthExpired)
+    void this.fetchPublicProgress() // 免认证进度立即首拉（未认证也可见）
     // 同页重挂载（如布局重排）时内存 token 仍有效：直接进入已认证视图
     if (getMaintenanceToken()) {
       this.authenticated = true
@@ -645,7 +687,12 @@ export default class extends Vue {
 
   /** 全量刷新：维护状态 + 迁移状态/就绪面（错误静默保持旧值；401 已由通道派发） */
   private async refreshAll(): Promise<void> {
-    await Promise.all([this.fetchMaintenanceStatus(), this.fetchMigrationFaces()])
+    // 免认证进度面始终拉取；认证态状态/就绪面仅认证后拉取（未认证拉 401 会误派发会话过期）
+    const tasks: Array<Promise<void>> = [this.fetchPublicProgress()]
+    if (this.authenticated) {
+      tasks.push(this.fetchMaintenanceStatus(), this.fetchMigrationFaces())
+    }
+    await Promise.all(tasks)
   }
 
   private async fetchMaintenanceStatus(): Promise<void> {
@@ -653,6 +700,15 @@ export default class extends Vue {
       this.status = await getMaintenanceStatus()
     } catch {
       // 静默保持旧值：503/网络抖动不打扰用户；401 已由通道派发 auth expired
+    }
+  }
+
+  /** 免认证进度面：未认证时驱动只读进度卡（认证后以完整 /migration/status 为权威） */
+  private async fetchPublicProgress(): Promise<void> {
+    try {
+      this.publicProgress = await getMaintenanceProgress()
+    } catch {
+      // 静默：非维护窗口（409）/网络抖动保持旧值
     }
   }
 
@@ -861,12 +917,12 @@ export default class extends Vue {
   }
 
   private syncPolling(): void {
-    if (this.authenticated && this.pollTimer === null) {
+    // 免认证进度轮询（2026-11-14）：未认证也持续拉 /maintenance/progress——
+    // 进度自动可见，认证仅用于操作类动作（提交/取消/放弃/凭据补交）
+    if (this.pollTimer === null) {
       this.pollTimer = window.setInterval(() => {
         void this.refreshAll()
       }, this.pollIntervalMs)
-    } else if (!this.authenticated) {
-      this.clearPollTimer()
     }
   }
 

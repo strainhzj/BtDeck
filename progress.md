@@ -8976,3 +8976,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **附带发现**：本次失败后业务面再次 503 HELD（intent PREPARING 残留）——但本次 control.pending_attempt 非空且 manifest 在（对照 11-11 孤儿变体），DatabasePanel 跟踪卡 phase=failed 的「放弃」按钮可见可用，属设计内恢复路径。另：本次 manifest.target.database=btdeck（非此前 btdeck_migration_target），目标库实测 0 表干净，与失败无关。
 - **验证**：manager 新增 TestDefaultPipelineRunnerAssetPaths（monkeypatch run_sqlite_to_pg 断言 asset_paths 双键=settings.YAML_PATH）+ manager/migrate_sqlite_to_pg/barrier/startup_gates 71 例绿 + services/core 全量 2197 绿 + black/flake8（变更区域）/mypy 净。
 - **记录纪律**：本条目留存工作区下次实质提交入仓。
+
+## 2026-11-14（续）：迁移 UX 两根因修复（排空超时自愈 + 免认证进度面）
+
+- **生产事故二连**（attempt 954db6f2）：用户发起迁移时种子信息同步任务在途 → 30 秒排空超时 → 停 HELD，但 manifest/control 尚未持久 → 又一孤儿 intent（无 API 出口）；同时**发起动作推进 epoch 即作废旧维护 token**（日志实锤 06:16:55 进度 200 → 06:16:56 进度 401）→「无法查看进度」。用户 docker restart 恢复（boot 孤儿对账首次实战生效，stale-954db6f2 归档）。
+- **修复 1（排空超时自愈）**：controller 新增 abort_drain_timeout（PREPARING/DRAINING/HELD 且零目标副作用归位 NORMAL，不等待在途租约——迁移 worker 尚未存在、在途业务请求自然收尾，intent 由 _clear_intent 清除防孤儿）；manager 排空超时路径改调它 + 审计 drain-timeout-selfheal + StateConflict 409 指引「有任务在途稍后重试」。原设计停 held 等人工=无出口死锁（两起实证）。
+- **修复 2（免认证进度面，用户诉求「进度自动可见而非重输凭据」）**：后端新增 GET /api/v1/maintenance/progress（免认证只读，仅维护窗口内返回阶段/计数/CAS 公开标识——操作类端点仍要求 token，非窗口 409 零泄露；auth coverage 匿名登记）；前端 maintenance-client 增 getMaintenanceProgress；DatabasePanel 轮询双通道（认证态完整 /migration/status，未认证/令牌失效回退免认证进度——令牌失效不再中断进度可见，followDisplay getter 统一只读显示源）+ 跟踪卡免认证只读进度区（进度条+phase 徽标常显，认证表单仅用于操作）；维护页未认证也渲染只读进度卡（认证卡内嵌）+ syncPolling 全时段（fetchAll 认证态端点仅认证后拉取，避免 401 误派发会话过期）。i18n followReadonlyHint/readonlyIdle/auth.readonlyHint zh/en。
+- **验证**：后端 barrier（abort_drain_timeout 两例：HELD+活跃租约归位 NORMAL+intent 清除/副作用保守拒绝）+ manager（排空超时自愈→409→可立即重新发起+审计留痕）+ endpoints（免认证 200/非窗口 409 信封）+ auth coverage 50 例绿 + black/flake8（app 层净，tests 层 6 处 HEAD 既有）/mypy 净；前端 maintenance-page 18/18（新契约用例改写+未认证只读进度卡用例）+ 全量 2156 绿 + typecheck 净 + eslint 改动文件 0（env -u NODE_ENV）+ lint 基线净增 0。
+- **部署约束**：迁移进行中严禁部署（重启打断导入）——本批在用户本次迁移走完（提交切换/放弃）后部署。
+- **记录纪律**：本条目随本批提交入仓。

@@ -226,3 +226,27 @@ class TestHealthThreeProbes:
         # 普通模式：control-ready 委托业务就绪判定（本测试环境 DB 不可达→503 语义）
         resp = client.get("/health/control-ready")
         assert resp.status_code in (200, 503)
+
+
+class TestMaintenanceProgressPublic:
+    """免认证只读进度面（2026-11-14）：发起推进 epoch 作废旧 token 后，进度查看
+    不再依赖重输凭据。仅维护窗口内有数据；非维护窗口 409 零泄露。"""
+
+    def test_anonymous_ok_in_maintenance(self, app, tmp_path):
+        client = TestClient(app)
+        _enter_maintenance(client, tmp_path)
+        resp = client.get("/api/v1/maintenance/progress")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["state"] == "HELD"  # boot 分支默认 HELD
+        assert data["bootRecovery"] is True
+        # manager 未装载时不含管线字段（零凭据/零操作权暴露）
+        assert "phase" not in data
+
+    def test_409_outside_maintenance_window(self, app):
+        client = TestClient(app)
+        resp = client.get("/api/v1/maintenance/progress")
+        # 本路由约定：业务错误走信封（HTTP 200 + code=409），与 /status 一致
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["data"]["reasonCode"] == "NOT_MAINTENANCE"

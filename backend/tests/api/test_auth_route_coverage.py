@@ -39,14 +39,12 @@ def _iter_app_api_routes(app_obj):
         for route in routes:
             if isinstance(route, (APIRoute, APIWebSocketRoute)):
                 yield route, prefix + route.path
-            elif (
-                type(route).__name__ == "_IncludedRouter"
-                and hasattr(route, "original_router")
-            ):
+            elif type(route).__name__ == "_IncludedRouter" and hasattr(route, "original_router"):
                 ctx_prefix = getattr(getattr(route, "include_context", None), "prefix", "") or ""
                 yield from walk(route.original_router.routes, prefix + ctx_prefix)
 
     yield from walk(app_obj.routes, "")
+
 
 # 鉴权依赖函数名：未来若引入新的鉴权依赖，在此登记，保持口径集中。
 _AUTH_DEPENDENCY_NAMES = frozenset(
@@ -78,6 +76,10 @@ _REQUIRED_PUBLIC_PATHS = frozenset(
         # 密码/TOTP 只读校验 + 失败限流 + 独立短 token（见 maintenance_auth.py）
         "/api/v1/maintenance/auth",
         "/api/v1/maintenance/auth/renew",
+        # 免认证只读进度面（2026-11-14）：仅维护窗口内返回阶段/计数（操作类
+        # 端点仍要求维护 token），非维护窗口一律 409——匿名可达是它存在的意义
+        # （发起推进 epoch 作废旧 token 后，进度查看不再依赖重输凭据）
+        "/api/v1/maintenance/progress",
         "/health/live",
         "/health/ready",
         "/health/control-ready",

@@ -250,3 +250,36 @@ export async function getMaintenanceStatus(): Promise<MaintenanceStatusData> {
   const data = await maintenanceRequest<Record<string, unknown>>('get', '/maintenance/status')
   return mapMaintenanceStatusData(data)
 }
+
+/** 免认证迁移进度数据体（GET /maintenance/progress；仅维护窗口内有数据） */
+export interface MaintenanceProgressData {
+  reasonCode?: string
+  state: string
+  heldReason?: string
+  bootRecovery?: boolean
+  phase?: string
+  attemptId?: string | null
+  epoch?: string
+  stateVersion?: number
+  commitPhase?: string | null
+  needsCredentials?: boolean
+  restartPending?: boolean
+  detail?: {
+    progress?: { phase?: string, done?: number, total?: number }
+    target?: Record<string, unknown>
+    workerError?: string
+  }
+}
+
+/**
+ * GET /maintenance/progress（免认证只读；2026-11-14）：发起动作推进 epoch
+ * 即作废旧 token，进度查看不再依赖重输凭据——本端点匿名可达，仅维护窗口
+ * 内有数据（非窗口以业务 409 信封 NOT_MAINTENANCE 拒绝）。
+ */
+export async function getMaintenanceProgress(): Promise<MaintenanceProgressData> {
+  const data = await requestEnvelope<Record<string, unknown>>(
+    { url: '/maintenance/progress', method: 'get' },
+    { notifyAuthExpired: false }
+  )
+  return data as unknown as MaintenanceProgressData
+}

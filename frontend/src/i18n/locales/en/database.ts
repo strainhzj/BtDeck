@@ -101,6 +101,7 @@ export const database = {
     startNoSourcePath: 'Cannot determine the current SQLite database path; migration start is blocked.',
     followTitle: 'Migration tracking',
     followAuthHint: 'The migration window is open. Complete the maintenance authentication (independent of your login session; in-memory token, 15 minutes) to track progress and perform the commit.',
+    followReadonlyHint: 'Migration in progress: the progress above refreshes automatically without authentication. The maintenance authentication below is only required to perform actions (credentials/cancel/abandon/commit).',
     followCancel: 'Cancel migration',
     followCancelConfirmTitle: 'Cancel this migration?',
     followCancelConfirmText: 'The import will be cooperatively stopped and the source unfrozen; the state stays "cancelling" until the worker acknowledges.',
@@ -165,6 +166,7 @@ export const database = {
       submitting: 'Authenticating...',
       failed: 'Maintenance authentication failed. Check the account and password, then try again.',
       sessionExpired: 'The maintenance session has expired. Please authenticate again.',
+      readonlyHint: 'Migration in progress: the progress below refreshes automatically; authenticate to perform actions.',
       notMaintenance: 'No migration is currently running; start one from "Settings → Database" first.'
     },
     state: {
@@ -185,6 +187,7 @@ export const database = {
     migration: {
       title: 'Migration Progress',
       noAttempt: 'No migration is currently in progress.',
+      readonlyIdle: 'The maintenance window is open, but no migration is currently in progress.',
       phase: 'Phase',
       phaseUnknown: 'Unknown phase ({phase})',
       phaseIdle: 'Idle',

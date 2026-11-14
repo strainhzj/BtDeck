@@ -351,6 +351,31 @@ class MaintenanceController:
             self._clear_intent()
             self._cond.notify_all()
 
+    def abort_drain_timeout(self) -> None:
+        """排空超时安全撤销（2026-11-14 生产实证 49075d35/954db6f2 两起孤儿死锁）：
+        PREPARING/DRAINING/HELD 且零目标副作用时归位 NORMAL。
+
+        与 abort_from_held 的差异：**不等待在途租约归零**——排空超时恰因重任务
+        在途（同步任务可持续数十分钟），若按原设计停 held 等人工处置，人工出口
+        （leave/cancel/resume）全部依赖 pending manifest，而此处 manifest/control
+        尚未持久（冻结后才写）→ 零产物=无 API 出口死锁。迁移 worker 尚未存在
+        （worker 在冻结后才拉起），在途业务请求开门后自然收尾，无完整性风险；
+        intent 由 _clear_intent 清除防孤儿。
+        """
+        with self._cond:
+            if self._state not in (STATE_PREPARING, STATE_DRAINING, STATE_HELD):
+                raise TransitionError(f"仅 PREPARING/DRAINING/HELD 可排空撤销（当前 {self._state}）")
+            if self._target_side_effects:
+                raise TransitionError("已存在目标副作用，禁止排空撤销")
+            self._held_reason = None
+            self._state = STATE_NORMAL
+            self._mode = "normal"
+            self._attempt_id = None
+            self._cancel_requested = False
+            self._cancel_ack_event.clear()
+            self._clear_intent()
+            self._cond.notify_all()
+
     def abort_from_frozen(self, *, reason: str = "") -> None:
         """FROZEN → NORMAL：放弃回源（leave；W3-3）。
 

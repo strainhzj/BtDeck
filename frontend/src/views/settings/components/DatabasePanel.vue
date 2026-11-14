@@ -258,9 +258,22 @@
     <div v-if="followMode && !isMobileShell" class="db-card">
       <h3 class="db-card-title">{{ $t('database.entry.followTitle') }}</h3>
 
-      <!-- 维护认证：窗口开启后才能签发（独立于登录会话，令牌仅内存 15min） -->
+      <!-- 免认证只读进度（2026-11-14）：发起推进 epoch 即作废旧 token，进度查看
+           不再依赖重输凭据——进度条始终自动刷新，操作类动作才需要认证 -->
+      <template v-if="followDisplay">
+        <div class="db-status-row">
+          <span class="db-label">{{ $t('database.maintenance.migration.phase') }}</span>
+          <el-tag size="small" :type="followPhaseTagType">{{ followPhaseLabel }}</el-tag>
+        </div>
+        <div v-if="followProgress" class="db-hint">
+          <el-progress :percentage="followProgressPercent" :stroke-width="10" />
+          <span>{{ followProgressText }}</span>
+        </div>
+      </template>
+
+      <!-- 维护认证：窗口开启后才能签发（独立于登录会话，令牌仅内存 15min）；进度无需认证 -->
       <div v-if="!maintenanceAuthenticated" class="db-entry">
-        <p class="db-description">{{ $t('database.entry.followAuthHint') }}</p>
+        <p class="db-description">{{ $t('database.entry.followReadonlyHint') }}</p>
         <el-form :model="authForm" label-position="top" @submit.native.prevent>
           <el-form-item :label="$t('database.maintenance.auth.username')">
             <el-input v-model="authForm.username" />
@@ -400,6 +413,8 @@ import { isDemoMode } from '@/demo/config'
 import { isCompanionAppWebView } from '@/utils/ui-mode'
 import {
   clearMaintenanceToken,
+  getMaintenanceProgress,
+  MaintenanceProgressData,
   maintenanceLogin,
   maintenanceRequest,
   subscribeAuthExpired
@@ -565,6 +580,8 @@ export default class extends Vue {
   private maintenanceAuthError: string | null = null
   private authForm = { username: '', password: '', twofa: '' }
   private followStatus: MigrationStatusData | null = null
+  /** 免认证进度面：令牌失效/未认证时仍驱动只读进度显示（2026-11-14） */
+  private followProgress: MaintenanceProgressData | null = null
   private followReadiness: ReadinessData | null = null
   private followTimer: number | null = null
   private followPollInFlight = false
@@ -602,35 +619,54 @@ export default class extends Vue {
     return path.indexOf('/m/') === 0
   }
 
+  /** 只读显示源：认证态用完整 /migration/status；令牌失效/未认证回退免认证进度面
+   * （2026-11-14：发起推进 epoch 即作废旧 token，进度查看不得依赖重输凭据） */
+  get followDisplay(): MigrationStatusData | null {
+    if (this.followStatus) return this.followStatus
+    const p = this.followProgress
+    if (!p || !p.phase) return null
+    return {
+      attemptId: p.attemptId ?? null,
+      phase: p.phase,
+      epoch: p.epoch ?? '',
+      stateVersion: p.stateVersion ?? 0,
+      commitPhase: p.commitPhase ?? null,
+      workerGeneration: 0,
+      needsCredentials: p.needsCredentials === true,
+      restartPending: p.restartPending === true,
+      detail: p.detail ? { progress: p.detail.progress, target: p.detail.target } : undefined
+    }
+  }
+
   get followNeedsCredentials(): boolean {
-    const s = this.followStatus
+    const s = this.followDisplay
     if (!s) return false
     return s.needsCredentials === true || s.phase === 'needs_credentials'
   }
 
   get followReadyToSwitch(): boolean {
-    return this.followStatus?.phase === 'ready_to_switch'
+    return this.followDisplay?.phase === 'ready_to_switch'
   }
 
   get followRestartPending(): boolean {
-    return this.followStatus?.restartPending === true
+    return this.followDisplay?.restartPending === true
   }
 
   get followLeavable(): boolean {
-    const s = this.followStatus
+    const s = this.followDisplay
     if (!s) return false
     return FOLLOW_LEAVABLE_PHASES.indexOf(s.phase) >= 0
   }
 
   /** 协作取消仅在 worker 活跃/即将启动阶段可用（后端同口径 fail-fast） */
   get followCancellable(): boolean {
-    const phase = this.followStatus?.phase
+    const phase = this.followDisplay?.phase
     if (!phase) return false
     return FOLLOW_CANCELLABLE_PHASES.indexOf(phase) >= 0
   }
 
   get followPhaseLabel(): string {
-    const s = this.followStatus
+    const s = this.followDisplay
     if (!s) return '—'
     const key = FOLLOW_PHASE_LABEL_KEYS[s.phase]
     if (!key) {
@@ -640,11 +676,11 @@ export default class extends Vue {
   }
 
   get followPhaseTagType(): string {
-    return FOLLOW_PHASE_TAG_TYPES[this.followStatus?.phase || ''] ?? 'info'
+    return FOLLOW_PHASE_TAG_TYPES[this.followDisplay?.phase || ''] ?? 'info'
   }
 
   get followProgress(): { done: number, total: number } | null {
-    const p = this.followStatus?.detail?.progress
+    const p = this.followDisplay?.detail?.progress
     if (!p || typeof p.done !== 'number' || typeof p.total !== 'number') return null
     return { done: p.done, total: p.total }
   }
@@ -789,6 +825,8 @@ export default class extends Vue {
     this.unsubAuthExpired = subscribeAuthExpired(() => {
       if (!this.followMode) return
       this.maintenanceAuthenticated = false
+      // 令牌失效不中断进度可见：立即降级免认证进度通道并保持轮询
+      this.syncFollowPolling()
       void this.probeMaintenanceWindow().then(maintenance => {
         if (!maintenance) void this.fallbackToNormalMode()
       })
@@ -1142,6 +1180,7 @@ export default class extends Vue {
     this.followMode = false
     this.maintenanceAuthenticated = false
     this.followStatus = null
+    this.followProgress = null
     this.followReadiness = null
     clearMaintenanceToken()
     this.clearFollowTimer()
@@ -1150,11 +1189,13 @@ export default class extends Vue {
   }
 
   private syncFollowPolling(): void {
-    if (this.followMode && this.maintenanceAuthenticated && this.followTimer === null) {
+    // 只需 followMode：未认证/令牌失效时走免认证进度通道（进度自动可见），
+    // 认证后自动升格为完整通道（就绪面/操作数据）
+    if (this.followMode && this.followTimer === null) {
       this.followTimer = window.setInterval(() => {
         void this.refreshFollowState()
       }, this.pollIntervalMs)
-    } else if (!(this.followMode && this.maintenanceAuthenticated)) {
+    } else if (!this.followMode) {
       this.clearFollowTimer()
     }
   }
@@ -1166,16 +1207,31 @@ export default class extends Vue {
     }
   }
 
-  /** 跟踪轮询：单飞行（无重叠）；失败保持旧值；401 过期经 subscribeAuthExpired 分流 */
+  /** 跟踪轮询：单飞行（无重叠）；失败保持旧值；401 过期经 subscribeAuthExpired 分流。
+   * 双通道（2026-11-14）：认证态走完整 /migration/status；未认证/令牌失效回退
+   * 免认证 /maintenance/progress（进度自动可见），窗口关闭（409）回退普通通道。 */
   private async refreshFollowState(): Promise<void> {
-    if (!this.maintenanceAuthenticated || this.followPollInFlight) return
+    if (!this.followMode || this.followPollInFlight) return
     this.followPollInFlight = true
     try {
-      this.followStatus = await maintenanceRequest<MigrationStatusData>('get', '/database/migration/status')
-      this.followReadiness = await maintenanceRequest<ReadinessData>('get', '/database/target-readiness')
+      if (this.maintenanceAuthenticated) {
+        this.followStatus = await maintenanceRequest<MigrationStatusData>('get', '/database/migration/status')
+        this.followReadiness = await maintenanceRequest<ReadinessData>('get', '/database/target-readiness')
+      } else {
+        this.followProgress = await getMaintenanceProgress()
+      }
       this.syncFollowPolling()
     } catch (error) {
-      console.error('跟踪迁移状态失败:', error)
+      if (
+        !this.maintenanceAuthenticated &&
+        error instanceof ApiError &&
+        error.message === 'not in maintenance mode'
+      ) {
+        // 免认证进度 409=窗口已关（放弃/完成/撤销）→ 回普通通道
+        await this.fallbackToNormalMode()
+      } else {
+        console.error('跟踪迁移状态失败:', error)
+      }
     } finally {
       this.followPollInFlight = false
     }

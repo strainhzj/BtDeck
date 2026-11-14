@@ -478,3 +478,39 @@ class TestDefaultPipelineRunnerAssetPaths:
         expected = str(app_settings.YAML_PATH)
         assert captured["asset_paths"] == {"source_config": expected, "target_config": expected}
         assert captured["source_path"] == str(tmp_path / "app.db")
+
+
+class TestDrainTimeoutSelfHeal:
+    def test_drain_timeout_aborts_to_normal_and_clears_intent(self, tmp_path, monkeypatch):
+        """排空超时安全撤销（生产实证 49075d35/954db6f2 两起孤儿死锁）：
+        PREPARING 零副作用时不再停 held 等人工（人工出口依赖尚未持久的
+        pending manifest=无 API 出口），改为归位 NORMAL+清 intent+409 指引。"""
+        from app.core.database_protocol import DB_MIGRATION_DIR
+
+        manager = _make_manager(tmp_path, runner=None)
+        real_run_drain = manager.controller.run_drain
+        monkeypatch.setattr(manager.controller, "run_drain", lambda timeout: False)
+
+        abort_calls: list[str] = []
+        real_abort = manager.controller.abort_drain_timeout
+
+        def spy_abort() -> None:
+            abort_calls.append("aborted")
+            real_abort()
+
+        monkeypatch.setattr(manager.controller, "abort_drain_timeout", spy_abort)
+
+        with pytest.raises(StateConflict, match="排空 30 秒未完成"):
+            manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+
+        assert abort_calls == ["aborted"]
+        assert manager.status().phase == "idle"
+        assert not (tmp_path / DB_MIGRATION_DIR / "maintenance-intent.json").exists()
+        # 审计留痕
+        rows = manager._audit.replay_events()
+        assert any(r["action"] == "drain-timeout-selfheal" for r in rows)
+        # 撤销后可立即重新发起（状态机回 NORMAL，单飞行解除）：恢复真实排空
+        monkeypatch.setattr(manager.controller, "run_drain", real_run_drain)
+        started = manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+        assert started.attempt_id
+        manager.wait_worker_stopped(timeout=5)
