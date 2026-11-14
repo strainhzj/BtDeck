@@ -499,18 +499,25 @@ class TestDrainTimeoutSelfHeal:
             real_abort()
 
         monkeypatch.setattr(manager.controller, "abort_drain_timeout", spy_abort)
+        # 缩短内联窗（后台自愈毫秒级完成，无需等 5 秒同步窗）
+        monkeypatch.setattr(MigrationManager, "DRAIN_INLINE_SECONDS", 0.2)
 
-        with pytest.raises(StateConflict, match="排空 30 秒未完成"):
-            manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
-
+        status = manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
+        # 后台自愈毫秒级完成：轮询 phase=failed
+        deadline = time.time() + 5
+        while time.time() < deadline and manager.status().phase != "failed":
+            time.sleep(0.05)
+        assert manager.status().phase == "failed"
         assert abort_calls == ["aborted"]
-        assert manager.status().phase == "idle"
         assert not (tmp_path / DB_MIGRATION_DIR / "maintenance-intent.json").exists()
+        # workerError 状态面可见（免认证进度端点透出 detail.workerError）
+        assert manager.status().detail.get("workerError")
         # 审计留痕
         rows = manager._audit.replay_events()
         assert any(r["action"] == "drain-timeout-selfheal" for r in rows)
         # 撤销后可立即重新发起（状态机回 NORMAL，单飞行解除）：恢复真实排空
         monkeypatch.setattr(manager.controller, "run_drain", real_run_drain)
+        monkeypatch.setattr(MigrationManager, "DRAIN_INLINE_SECONDS", 5.0)
         started = manager.start_migration("sqlite-to-pg", {"host": "pg"}, password="pw")
         assert started.attempt_id
         manager.wait_worker_stopped(timeout=5)

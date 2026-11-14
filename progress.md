@@ -8985,3 +8985,10 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **验证**：后端 barrier（abort_drain_timeout 两例：HELD+活跃租约归位 NORMAL+intent 清除/副作用保守拒绝）+ manager（排空超时自愈→409→可立即重新发起+审计留痕）+ endpoints（免认证 200/非窗口 409 信封）+ auth coverage 50 例绿 + black/flake8（app 层净，tests 层 6 处 HEAD 既有）/mypy 净；前端 maintenance-page 18/18（新契约用例改写+未认证只读进度卡用例）+ 全量 2156 绿 + typecheck 净 + eslint 改动文件 0（env -u NODE_ENV）+ lint 基线净增 0。
 - **部署约束**：迁移进行中严禁部署（重启打断导入）——本批在用户本次迁移走完（提交切换/放弃）后部署。
 - **记录纪律**：本条目随本批提交入仓。
+
+## 2026-11-14（续二）：排空双通道——发起后自动停新任务+耐心等待在途任务完成（220d5b9 续批）
+
+- **用户决策**：发起迁移时自动停止（新）定时任务，并等待运行中的定时任务完成后再迁移——不再「30 秒排空超时→409 稍后重试」（在途同步任务单次可跑数十分钟，稍后重试永远撞墙）。
+- **实现**：manager.start_migration 排空双通道——同步短窗 DRAIN_INLINE_SECONDS=5s 内无任务在途即刻冻结（既有同步契约不变，全部既有测试零改动通过）；有任务在途时短窗到点返回 phase=draining，后台线程耐心排空（上限 DRAIN_TIMEOUT_SECONDS=2h，定时任务超时上限 1h 的两倍），完成后走既有冻结/持久/worker 路径（提取 _finalize_frozen 共用，含完整回滚）；2h 超时按 abort_drain_timeout 零副作用安全撤销（phase=failed+workerError 状态面可见）。锁作用域收缩（排空不再持 manager 锁，status() 排空期可轮询）；新任务准入在 begin_prepare 关门即被拒（=「自动停止新定时任务」）。HTTP 语义约束：在途任务远超代理 60 秒超时，排空不能内联等待。
+- **取消语义**：排空等待期的取消在任务完成后于 worker 首个检查点生效（run_drain 不感知 cancel_requested），文档已注明。
+- **验证**：manager drain 自愈测试改新契约（后台轮询 phase=failed+intent 清除+workerError 可见+可立即重新发起）+ services/core/api 全量 3775 绿 + black/flake8/mypy 净 + constraints 排空双通道文档同步。

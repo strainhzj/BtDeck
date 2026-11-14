@@ -117,6 +117,15 @@ PipelineRunner = Callable[[PipelineContext, Dict[str, Any]], Dict[str, Any]]
 class MigrationManager:
     """单飞行迁移管理器（进程级挂 app.state.database_migration_manager）。"""
 
+    # 排空耐心（2026-11-14 用户决策）：发起后准入关门=自动停新定时任务；
+    # 在途任务（定时任务单次可跑数十分钟）耐心等待完成再迁移，上限 2 小时。
+    # 超时按零副作用安全撤销（abort_drain_timeout），状态面 phase=failed +
+    # workerError 呈现。DRAIN_INLINE_SECONDS=同步短窗：无任务在途的常规路径
+    # 同步完成保持既有契约；有任务在途时短窗到点即返回 phase=draining，
+    # 耐心排空移入后台线程（在途任务远超 HTTP/代理 60 秒超时，不能内联）。
+    DRAIN_TIMEOUT_SECONDS = 7200
+    DRAIN_INLINE_SECONDS = 5.0
+
     def __init__(
         self,
         config_dir: os.PathLike[str] | str,
@@ -226,36 +235,113 @@ class MigrationManager:
                     raise StateConflict(f"不可等待重任务在途: {exc}") from exc
                 raise
             self._phase = "preparing"
-            # 2. 排空（超时→安全撤销：PREPARING 阶段零目标副作用——未冻结/未快照/
-            #    无目标写入，manifest/control 也尚未持久（冻结后才写）。原设计停
-            #    held 等人工处置，但人工出口（leave/cancel/resume）全部依赖
-            #    pending manifest，零产物=无 API 出口死锁（生产实证 49075d35/
-            #    954db6f2 两起，同步任务在途时 30 秒排空必超时）。改为
-            #    abort_drain_timeout 归位 NORMAL（在途业务请求自然收尾）+
-            #    intent 由 _clear_intent 清除 + 409 指引稍后重试。
-            if not self._controller.run_drain(timeout=30.0):
-                self._phase = "idle"
-                self._controller.abort_drain_timeout()
-                self._audit.audit_event(
-                    "migration",
-                    action="drain-timeout-selfheal",
-                    outcome="ok",
-                    detail={},
-                    attempt_id=attempt_id,
-                )
-                raise StateConflict(
-                    "有重任务在途，排空 30 秒未完成：已安全撤销本次发起"
-                    "（未冻结/无副作用，业务已恢复正常）；请等待后台任务完成后再发起"
-                )
+        # 锁外排空（status() 在排空期间保持可轮询）：
+        # 2. 排空双通道（2026-11-14 用户决策：自动停新定时任务+耐心等待在途
+        #    任务完成再迁移）：后台线程耐心排空（上限 DRAIN_TIMEOUT_SECONDS），
+        #    同步短窗（DRAIN_INLINE_SECONDS）内无任务在途的常规路径即刻完成
+        #    保持既有同步契约；有任务在途时短窗到点即返回 phase=draining——
+        #    在途任务远超 HTTP/代理 60 秒超时不能内联等待，进度经免认证进度面
+        #    自动可见（phase=排空中）。原 30 秒排空超时→held 的设计在生产实证
+        #    两起孤儿 intent 死锁（49075d35/954db6f2）：人工出口依赖尚未持久
+        #    的 pending manifest=无 API 出口。后台超时按 abort_drain_timeout
+        #    零副作用安全撤销（phase=failed+workerError 状态面可见）。
+        done = threading.Event()
+        finalize_error: list = []
+        finalize_thread = threading.Thread(
+            target=self._drain_and_finalize,
+            args=(done, finalize_error, attempt_id, direction, target, password, initiated_by, source_desc),
+            name=f"migrate-drain-{attempt_id.rsplit('/', 1)[1]}",
+            daemon=True,
+        )
+        finalize_thread.start()
+        if not done.wait(timeout=self.DRAIN_INLINE_SECONDS):
+            # 仍有任务在途：返回排空中，后台耐心等待
             self._phase = "draining"
-            # 3. 冻结（fence 令牌进 controller；指纹进 manifest）
+            return self.status()
+        if finalize_error:
+            raise finalize_error[0]
+        return self.status()
+
+    def _drain_and_finalize(
+        self,
+        done: threading.Event,
+        finalize_error: list,
+        attempt_id: str,
+        direction: str,
+        target: Dict[str, Any],
+        password: str,
+        initiated_by: str,
+        source_desc: Optional[Dict[str, Any]],
+    ) -> None:
+        """后台耐心排空（上限 DRAIN_TIMEOUT_SECONDS）→ 冻结/持久/worker。
+
+        排空零副作用窗口：超时按 abort_drain_timeout 安全撤销（PREPARING 阶段
+        未冻结/未快照/无目标写入，intent 由 _clear_intent 清除防孤儿；在途业务
+        请求开门后自然收尾），phase=failed + workerError 状态面可见。
+        取消语义：排空等待期的取消在任务完成后于 worker 首个检查点生效。"""
+        drained = False
+        try:
+            drained = self._controller.run_drain(timeout=self.DRAIN_TIMEOUT_SECONDS)
+        except Exception as exc:  # noqa: BLE001 - 状态机异常按撤销兜底
+            self._audit.audit_event(
+                "migration",
+                action="drain-error-selfheal",
+                outcome="ok",
+                detail={"error": str(exc)},
+                attempt_id=attempt_id,
+            )
+        if not drained:
+            self._controller.abort_drain_timeout()
+            self._audit.audit_event(
+                "migration",
+                action="drain-timeout-selfheal",
+                outcome="ok",
+                detail={"timeoutSeconds": self.DRAIN_TIMEOUT_SECONDS},
+                attempt_id=attempt_id,
+            )
+            with self._lock:
+                self._phase = "failed"
+                self._worker_error = (
+                    f"有定时任务长时间未完成（等待 {self.DRAIN_TIMEOUT_SECONDS // 60} 分钟），"
+                    "已安全撤销本次发起（未冻结/无副作用，业务已恢复正常）；请稍后重试"
+                )
+            done.set()
+            return
+        try:
+            self._finalize_frozen(attempt_id, direction, target, password, initiated_by, source_desc)
+        except Exception as exc:  # noqa: BLE001 - 后台路径：回滚已在 _finalize_frozen 内完成，此处留痕
+            self._audit.audit_event(
+                "migration",
+                action="start-failed",
+                outcome="failed",
+                detail={"error": str(exc)},
+                attempt_id=attempt_id,
+            )
+            finalize_error.append(exc)
+        finally:
+            done.set()
+
+    def _finalize_frozen(
+        self,
+        attempt_id: str,
+        direction: str,
+        target: Dict[str, Any],
+        password: str,
+        initiated_by: str,
+        source_desc: Optional[Dict[str, Any]],
+    ) -> ManagerStatus:
+        """冻结（fence 令牌进 controller；指纹进 manifest）→ journal 持久 → worker。
+        排空完成后由同步/后台路径共用；启动编排失败回滚（W6 实跑补）：不留
+        "无 attempt 的楔死维护态"——journal 撤销（若已持久）→ controller 归
+        NORMAL → 回 idle 后重抛。"""
+        with self._lock:
             try:
                 fence = self._acquire_source_fence(direction, source_desc)
                 fence.acquire()  # 取源保护锁+固定指纹（真实 fence 须显式 acquire；§5.1）
                 self._controller.enter_frozen(getattr(fence, "token", None))
                 self._phase = "frozen"
                 fingerprint = getattr(getattr(fence, "token", None), "fingerprint", "")
-                # 4. journal：manifest+control 持久（先持久锚点才允许目标副作用）
+                # journal：manifest+control 持久（先持久锚点才允许目标副作用）
                 self._ctx = PipelineContext(attempt_id=attempt_id, operation_kind=OPERATION_KIND_MIGRATE)
                 manifest = make_manifest_payload(
                     attempt_id=attempt_id,
@@ -286,14 +372,10 @@ class MigrationManager:
                     detail={"direction": direction, "attemptId": attempt_id},
                     attempt_id=attempt_id,
                 )
-                # 5. worker 线程（register_child 继承准入；cancel_check 核 epoch+代次）
+                # worker 线程（register_child 继承准入；cancel_check 核 epoch+代次）
                 self._spawn_worker(manifest)
                 return self.status()
             except Exception as exc:
-                # 启动编排失败回滚（W6 实跑补）：不留"无 attempt 的楔死维护态"——
-                # journal 撤销（若已持久）→ controller 归 NORMAL → 回 idle 后重抛
-                from app.services.db_migration.maintenance import TransitionError as _TE
-
                 try:
                     control = self._journal.read_control() or {}
                     _attempt = control.get("pending_attempt")
@@ -306,6 +388,8 @@ class MigrationManager:
                         self._journal.write_control(lambda c: {**c, "pending_attempt": None})
                 except Exception:  # noqa: BLE001 - 回滚尽力而为，保留原异常
                     pass
+                from app.services.db_migration.maintenance import TransitionError as _TE
+
                 try:
                     _state = self._controller.status().state
                     if _state == "FROZEN":
@@ -315,9 +399,8 @@ class MigrationManager:
                     self._controller.exit_maintenance()
                 except _TE:  # noqa: B014
                     pass
-                with self._lock:
-                    self._phase = "idle"
-                    self._ctx = None
+                self._phase = "idle"
+                self._ctx = None
                 raise
 
     def _acquire_source_fence(self, direction: str, source_desc: Optional[Dict[str, Any]]):

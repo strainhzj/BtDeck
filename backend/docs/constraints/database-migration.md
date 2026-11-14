@@ -196,8 +196,20 @@ guide 保留“不降级、不 stamp”的兼容路径。
   与 /migration/leave 在 boot HELD 均 503，出口不可达；`abort_from_held` 直接
   归位 NORMAL（此前委托 abort_prepare 恒受阻，boot/运行期 HELD leave 同症）；
   boot 分支放弃成功后业务面需重启恢复（维护页 abandonRestartHint 提示）。
-- 排空超时→HELD（未冻结未快照）；有目标副作用或 worker 未收尾时禁止撤销——
-  禁止抢先恢复业务。FROZEN 进入条件：计数归零 + fence 令牌在握。
+- 排空双通道（2026-11-14 用户决策：自动停新定时任务+耐心等待在途任务完成再
+  迁移）：准入关门即“自动停新任务”（在途任务继续），排空上限
+  DRAIN_TIMEOUT_SECONDS=2 小时（定时任务单次可跑数十分钟）；同步短窗
+  5 秒内无任务在途则同步完成（既有契约），仍有在途即返回 phase=draining
+  由后台线程耐心等待（在途任务远超 HTTP/代理 60 秒超时不能内联），进度经
+  免认证进度面自动可见（phase=排空中）。**超时→零副作用安全撤销**
+  （abort_drain_timeout：未冻结未快照/无目标写入，归位 NORMAL+清 intent
+  防孤儿——生产实证 49075d35/954db6f2 两起“held 等人工”死锁：人工出口
+  leave/cancel/resume 依赖尚未持久的 pending manifest=无 API 出口），
+  状态面 phase=failed+workerError 呈现；**有目标副作用或 worker 未收尾时
+  仍禁止撤销**（保守拒绝保持 HELD）。FROZEN 进入条件：计数归零 + fence
+  令牌在握。运维注意：发起前确认无长同步任务在途（否则等待最长 2 小时）。
+- 取消语义：排空等待期的取消在任务完成后于 worker 首个检查点生效
+  （run_drain 不感知 cancel_requested）。
 
 ### 屏障与源保护（§5.2）
 
