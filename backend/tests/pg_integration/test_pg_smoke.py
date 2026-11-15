@@ -154,7 +154,13 @@ class TestSyncAsyncQueries:
 
 
 class TestUpsertPartialIndex:
-    """覆盖 3：活动/软删 upsert 仲裁（postgresql_where 部分唯一索引）。"""
+    """覆盖 3：活动/软删 upsert 仲裁。
+
+    torrent_info：postgresql_where 部分唯一索引（hash+downloader_id，短键不变）。
+    tracker_info（2026-11-15）：去重键收敛到主键 tracker_id=make_tracker_id——
+    tracker_url 实测 930KB 超 PG btree 2704B 行上限，(torrent_info_id, tracker_url)
+    部分唯一索引退场（SQLite 无此限制故仅 PG 暴露），冲突目标统一主键。
+    """
 
     def test_softdelete_coexist_and_upsert(self, fresh_pg_db: str) -> None:
         from sqlalchemy import text as sa_text
@@ -163,6 +169,7 @@ class TestUpsertPartialIndex:
         from app.core import pg_baseline
         from app.core.model_registry import register_all_models
         from app.database import Base
+        from app.torrents.models import make_tracker_id
 
         register_all_models()
         engine = pg_baseline.pg_sync_engine()
@@ -180,32 +187,39 @@ class TestUpsertPartialIndex:
                 cfg.attributes.pop("connection", None)
 
         tracker = Base.metadata.tables["tracker_info"]
+        url = "http://" + "tracker" + "." + "example" + "/announce"  # 与源库 tracker_url 形态一致（含查询串时更长）
+        key = make_tracker_id("tpk1", url)
         row = {
-            "tracker_id": "tk-1",
+            "tracker_id": key,
             "torrent_info_id": "tpk1",
-            "tracker_url": "http://tracker.example/announce",
+            "tracker_url": url,
             "tracker_name": "t",
             "dr": 0,
         }
         try:
             with engine.begin() as conn:
                 conn.execute(tracker.insert(), row)
-                # 软删同键：dr=1 行与活动行共存（partial index 仅约束 dr=0）
-                conn.execute(tracker.insert(), {**row, "tracker_id": "tk-2", "dr": 1})
+                # 历史软删行（迁移回填前随机 id 形态）：dr=1 共存，不参与主键仲裁
+                conn.execute(tracker.insert(), {**row, "tracker_id": "tk-legacy-soft", "dr": 1})
                 # upsert 仲裁：on_conflict_do_update 命中 dr=0 部分索引
                 stmt = (
                     dialect_insert(tracker)
-                    .values({**row, "tracker_id": "tk-1", "tracker_name": "t2"})
+                    .values({**row, "tracker_name": "t2"})
                     .on_conflict_do_update(
-                        index_elements=["torrent_info_id", "tracker_url"],
-                        index_where=sa_text("dr = 0"),
+                        index_elements=["tracker_id"],
                         set_={"tracker_name": sa_text("excluded.tracker_name")},
                     )
                 )
                 conn.execute(stmt)
             with engine.connect() as conn:
-                names = [r[0] for r in conn.execute(sa_text("SELECT tracker_name FROM tracker_info WHERE dr = 0"))]
-                assert names == ["t2"]  # upsert 更新而非插入
+                rows = conn.execute(
+                    sa_text(
+                        "SELECT tracker_name, dr FROM tracker_info "
+                        "WHERE torrent_info_id = 'tpk1' ORDER BY tracker_id"
+                    )
+                ).all()
+                # 主键冲突原地更新（t2, dr=0）；legacy 软删行共存不受影响
+                assert rows == [("t2", 0), ("t", 1)]
             torrent = Base.metadata.tables["torrent_info"]
             active = {
                 "info_id": "active",
@@ -605,7 +619,11 @@ def test_real_incremental_upgrade_commits_and_downgrade_floor(fresh_pg_db, tmp_p
         command.downgrade(cfg, "-1")
         with engine.connect() as conn:
             assert pg_baseline.read_pg_alembic_version(conn) == current_head()
-        # 地板=PG_MINIMUM_REVISION c9f0：退到地板允许，越地板拒绝
+        # 地板=PG_MINIMUM_REVISION c9e0：逐级退到地板允许，越地板拒绝
+        # （链：acceptance_probe → d5e6f7a8b9c0 → a2b3c4d5e6f7 → e9f0 → c9e0 地板）
+        command.downgrade(cfg, "-1")
+        with engine.connect() as conn:
+            assert pg_baseline.read_pg_alembic_version(conn) == "a2b3c4d5e6f7"
         command.downgrade(cfg, "-1")
         with engine.connect() as conn:
             assert pg_baseline.read_pg_alembic_version(conn) == "e9f0a1b2c3d4"
