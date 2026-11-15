@@ -44,7 +44,7 @@ import EChart from '@/components/charts/EChart.vue'
 import { StatusBuckets, StatusBucketKey } from '@/types/dashboard'
 
 /** 五桶展示顺序与配色（令牌色随三主题） */
-const ORDER: ReadonlyArray<{ key: StatusBucketKey; color: string }> = [
+const ORDER: ReadonlyArray<{ key: StatusBucketKey, color: string }> = [
   { key: 'seeding', color: 'var(--color-success)' },
   { key: 'downloading', color: 'var(--color-info)' },
   { key: 'paused', color: 'var(--color-warning)' },
@@ -60,7 +60,7 @@ export default class StatusDonutCard extends Vue {
     return ORDER.reduce((sum, o) => sum + (this.buckets[o.key] || 0), 0)
   }
 
-  private get legendItems(): Array<{ key: StatusBucketKey; color: string; count: number }> {
+  private get legendItems(): Array<{ key: StatusBucketKey, color: string, count: number }> {
     return ORDER.map(o => ({ key: o.key, color: o.color, count: this.buckets[o.key] || 0 }))
   }
 

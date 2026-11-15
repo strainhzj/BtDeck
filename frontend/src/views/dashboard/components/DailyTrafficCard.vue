@@ -5,7 +5,7 @@
       class="dash-empty"
       data-testid="traffic-empty"
     >
-      <lucide-icon icon="bar-chart-3" />
+      <lucide-icon name="bar-chart-3" />
       <span>{{ loading ? $t('dashboard.widgets.traffic.loading') : $t('dashboard.widgets.traffic.empty') }}</span>
     </div>
     <template v-else>

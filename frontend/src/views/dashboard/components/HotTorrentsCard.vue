@@ -13,11 +13,11 @@
         {{ nameOf(t) }}
       </div>
       <span class="dash-tor-sp dl">
-        <lucide-icon icon="arrow-down" />
+        <lucide-icon name="arrow-down" />
         <span class="mono">{{ speedText(t.downloadSpeed) }}</span>
       </span>
       <span class="dash-tor-sp ul">
-        <lucide-icon icon="arrow-up" />
+        <lucide-icon name="arrow-up" />
         <span class="mono">{{ speedText(t.uploadSpeed) }}</span>
       </span>
     </div>
@@ -25,7 +25,7 @@
       v-if="top5.length === 0"
       class="dash-empty"
     >
-      <lucide-icon icon="flame" />
+      <lucide-icon name="flame" />
       <span>{{ $t('dashboard.widgets.hot.empty') }}</span>
     </div>
   </div>

@@ -15,7 +15,7 @@
       v-if="activities.length === 0"
       class="dash-empty"
     >
-      <lucide-icon icon="history" />
+      <lucide-icon name="history" />
       <span>{{ $t('dashboard.noActivities') }}</span>
     </div>
   </div>

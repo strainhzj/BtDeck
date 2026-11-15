@@ -10,7 +10,7 @@
       v-else
       class="dash-empty"
     >
-      <lucide-icon icon="globe" />
+      <lucide-icon name="globe" />
       <span>{{ $t('dashboard.widgets.sites.empty') }}</span>
     </div>
     <div class="dash-muted sites-note">

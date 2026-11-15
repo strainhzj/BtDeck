@@ -20,7 +20,7 @@ import {
   visibleWidgetIds
 } from '@/views/dashboard/components/dashboardLayout'
 
-function makeStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
+function makeStorage(): { getItem: (k: string) => string | null, setItem: (k: string, v: string) => void, removeItem: (k: string) => void } {
   const store = new Map<string, string>()
   return {
     getItem: k => (store.has(k) ? (store.get(k) as string) : null),

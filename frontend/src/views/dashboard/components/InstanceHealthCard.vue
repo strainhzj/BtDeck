@@ -4,6 +4,11 @@
       v-for="dl in list"
       :key="dl.downloader_id"
       class="dash-rowline"
+      :class="{'is-clickable': clickable}"
+      :role="clickable ? 'button' : undefined"
+      :tabindex="clickable ? 0 : undefined"
+      @click="clickable && $emit('activate', dl.downloader_id)"
+      @keypress.enter="clickable && $emit('activate', dl.downloader_id)"
     >
       <svg
         class="dash-mini-ring"
@@ -40,11 +45,11 @@
       <div style="text-align:right">
         <div>
           <span class="dash-tor-sp dl">
-            <lucide-icon icon="arrow-down" />
+            <lucide-icon name="arrow-down" />
             <span class="mono">{{ speedText(dl.download_speed) }}</span>
           </span>
           <span class="dash-tor-sp ul">
-            <lucide-icon icon="arrow-up" />
+            <lucide-icon name="arrow-up" />
             <span class="mono">{{ speedText(dl.upload_speed) }}</span>
           </span>
         </div>
@@ -62,7 +67,7 @@
       v-if="list.length === 0"
       class="dash-empty"
     >
-      <lucide-icon icon="server" />
+      <lucide-icon name="server" />
       <span>{{ $t('dashboard.widgets.health.empty') }}</span>
     </div>
   </div>
@@ -75,6 +80,8 @@
  * 数据源：GET /dashboard 的 downloader_list（snake_case 契约）。
  * 健康环（决策 #4：无实际分享率）：在线状态 + 速度活跃度前端推导——
  * 在线且速度>0 → 满环绿色；在线零速 → 中环黄色（警示）；离线 → 空环灰。
+ * clickable（移动仪表盘二期评审修复）：行级 role=button + click/enter
+ * 上抛 activate(downloader_id)，桌面不传不受影响。
  */
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import { DownloaderListItem } from '@/types/dashboard'
@@ -85,6 +92,8 @@ const RING_CIRC = 2 * Math.PI * 13
 @Component({ name: 'InstanceHealthCard' })
 export default class InstanceHealthCard extends Vue {
   @Prop({ required: true }) private list!: DownloaderListItem[]
+  /** 行可点击穿透（Boolean 显式声明使裸属性形态正确转换） */
+  @Prop({ type: Boolean, default: false }) private clickable!: boolean
 
   private activity(dl: DownloaderListItem): number {
     if (dl.status !== 'online') return 0
@@ -126,5 +135,9 @@ export default class InstanceHealthCard extends Vue {
 .download-seed-line {
   font-size: 11px;
   margin-top: 2px;
+}
+
+.is-clickable {
+  cursor: pointer;
 }
 </style>
