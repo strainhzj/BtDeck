@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.torrents.models import TrackerInfo as trackerInfoModel
+from app.torrents.models import TrackerInfo as trackerInfoModel, make_tracker_id
 
 
 @pytest.fixture
@@ -48,9 +48,11 @@ async def tracker_db():
 
 
 def _make_row(info_id: str, url: str, *, announce_msg: str = "ok", host: str = "h", name: str = "n") -> dict:
-    """构造单个 tracker row dict。"""
+    """构造单个 tracker row dict（确定性 id=迁移后形态）。"""
+    from app.torrents.models import make_tracker_id
+
     return {
-        "tracker_id": str(uuid.uuid4()),
+        "tracker_id": make_tracker_id(info_id, url),
         "torrent_info_id": info_id,
         "tracker_name": name,
         "tracker_url": url,
@@ -118,7 +120,7 @@ class TestSyncTrackersBatchChangeDetection:
 
         info_id = "info-2"
         old_row = trackerInfoModel(
-            tracker_id=str(uuid.uuid4()),
+            tracker_id=make_tracker_id(info_id, "http://t/announce"),
             torrent_info_id=info_id,
             tracker_name="t",
             tracker_url="http://t/announce",
@@ -166,7 +168,7 @@ class TestSyncTrackersBatchSoftDeleteNoResurrect:
         url = "http://t3/announce"
         # 插入软删行
         soft_row = trackerInfoModel(
-            tracker_id=str(uuid.uuid4()),
+            tracker_id=make_tracker_id(info_id, url),
             torrent_info_id=info_id,
             tracker_name="t3",
             tracker_url=url,

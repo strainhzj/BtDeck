@@ -8992,3 +8992,12 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **实现**：manager.start_migration 排空双通道——同步短窗 DRAIN_INLINE_SECONDS=5s 内无任务在途即刻冻结（既有同步契约不变，全部既有测试零改动通过）；有任务在途时短窗到点返回 phase=draining，后台线程耐心排空（上限 DRAIN_TIMEOUT_SECONDS=2h，定时任务超时上限 1h 的两倍），完成后走既有冻结/持久/worker 路径（提取 _finalize_frozen 共用，含完整回滚）；2h 超时按 abort_drain_timeout 零副作用安全撤销（phase=failed+workerError 状态面可见）。锁作用域收缩（排空不再持 manager 锁，status() 排空期可轮询）；新任务准入在 begin_prepare 关门即被拒（=「自动停止新定时任务」）。HTTP 语义约束：在途任务远超代理 60 秒超时，排空不能内联等待。
 - **取消语义**：排空等待期的取消在任务完成后于 worker 首个检查点生效（run_drain 不感知 cancel_requested），文档已注明。
 - **验证**：manager drain 自愈测试改新契约（后台轮询 phase=failed+intent 清除+workerError 可见+可立即重新发起）+ services/core/api 全量 3775 绿 + black/flake8/mypy 净 + constraints 排空双通道文档同步。
+
+## 2026-11-15：tracker_info 去重键收敛到主键（btree 行上限第 5 坑，d5e6f7a8b9c0）
+
+- **生产失败**（attempt 35b37138）：排空双通道首秀即工作（秒级过、无卡死）→ 导入 29/42 表 → tracker_info 挂：PG btree v4 索引行上限 2704B 被 tracker_url（含 passkey 长 URL，实测 2856B/最坏 930KB）撑爆。源库全面审计（116 索引列）：仅 tracker_info.tracker_name/tracker_url 两列超限（同源 930KB 垃圾行——同步故障把超长内容写进两列，数据质量疑点单独记档），其余 114 列 ≤317B 安全。
+- **修复设计**：去重键收敛到主键——tracker_id=make_tracker_id(torrent_info_id|tracker_url)（确定性 md5），URL/name/msg 列上的 4 个普通索引与 idx_tracker_unique_url 部分唯一索引退场；upsert 冲突目标统一 ON CONFLICT (tracker_id)（PG/SQLite 统一，行大小恒 32B 永不受 btree 上限约束）。8 个写入点换 helper（未配对行回退 uuid 与历史行为一致）。
+- **迁移 d5e6f7a8b9c0**（down=a2b3c4d5e6f7）：回填确定性主键（同对 dr=1 残留保留首行删后行，与原唯一索引语义一致；可空部件行保留原 uuid）+ 删 6 索引（含 PK 冗余 ix_tracker_info_tracker_id）；upgrade/downgrade 均重放安全（stamp 回旧版本重放的启动模式 T01 实测需要）+ inspect 可降级守卫（假连接测试替身 fallback 到守卫引入前的既有语义）。链尾 a2b3c4d5e6f7→d5e6f7a8b9c0、EXPECTED_HEAD/parity _HEAD/startup_gates（current_head 动态无需改）、constraints 链尾、roadmap 40 个 revision 同步。
+- **测试适配**：column_types roundtrip/refusal 降级目标显式 e9f0（-1 现落在 tracker 批）；governance/count_activation 夹具改确定性 id（迁移后形态）；新迁移回归 4 例（回填/去重/长值无损/未配对保留/索引退场/重放/降级重建+重随机化）。
+- **验证**：services/core/api 全量 3778 绿（唯一失败=dev 既有 autoincrement 组合 flake，无本批改动复现确认）；black/flake8/mypy 净。
+- **生产路径**：部署后用户放弃 failed attempt（35b37138，有背书可正常放弃）→ 重置目标库（旧索引残留在目标库，必须 DROP/CREATE）→ 重新发起（29 表已验证导入秒级，全程预计数分钟）。

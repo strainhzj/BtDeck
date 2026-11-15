@@ -81,8 +81,10 @@ class TestColumnTypesRoundtrip:
         assert _column_decls(db, "task_logs")["log_detail"] == "TEXT"
 
         # 回归锚点：downgrade 必须真实回退列类型（修复前误跳过仍报成功，
-        # 版本已退而 BIGINT/TEXT 残留 → schema 漂移）
-        command.downgrade(cfg, "-1")
+        # 版本已退而 BIGINT/TEXT 残留 → schema 漂移）。
+        # d5e6f7a8b9c0（tracker 去重键）加入链后 -1 落在 tracker 批——
+        # 显式降级到 e9f0 才会经过 a2b3 的列类型回退。
+        command.downgrade(cfg, "e9f0a1b2c3d4")
         assert _column_decls(db, "orphan_hardlink_copy_result")["inode_id"] == "INTEGER"
         assert _column_decls(db, "orphan_purge_job")["total_size"] == "INTEGER"
         assert _column_decls(db, "seed_transfer_audit_log")["source_downloader_id"] == "INTEGER"
@@ -117,7 +119,7 @@ class TestColumnTypesRoundtrip:
             )
         conn.close()
         with pytest.raises(Exception, match="不可无损转换|拒绝自动回滚"):
-            command.downgrade(cfg, "-1")
+            command.downgrade(cfg, "e9f0a1b2c3d4")
         conn = sqlite3.connect(str(db))
         try:
             version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]

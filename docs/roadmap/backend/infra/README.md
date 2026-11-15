@@ -62,7 +62,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L72) + `run_migrations_online`(L96)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS`；v1.0.8：模型经 `app/core/model_registry.py` 单点注册与共享连接、独立升级显式事务提交、PG 空库手工 upgrade 守卫与基线降级下限、SQLite 原链不变 |
-| Alembic revisions versions | `versions/` | **39 个** revision 文件；当前 head 为 `a2b3c4d5e6f7`（2026-11-10 四列类型对齐真实数据：inode/字节计数 BigInteger、seed_transfer downloader UUID String(36)、task_logs.log_detail Text+写入侧 8000 截断）（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
+| Alembic revisions versions | `versions/` | **40 个** revision 文件；当前 head 为 `d5e6f7a8b9c0`（2026-11-15 tracker_info 去重键收敛到主键：tracker_url/name 实测 930KB 超 PG btree 2704B 行上限——确定性主键回填+4 无界长值列索引与部分唯一索引退场，upsert 统一 ON CONFLICT (tracker_id)；前一节 a2b3c4d5e6f7=2026-11-10 四列类型对齐真实数据：inode/字节计数 BigInteger、seed_transfer downloader UUID String(36)、task_logs.log_detail Text+写入侧 8000 截断）（见下表；HEAD 声明由 `tests/core/test_db_migration.py` 校验防漂移；末两位为统计报表批迁移——b7d8e9f0a1c2 速度采样两表 → c9e0f1a2b3c4 TR added_date 本地化数据回填（feature statistics-reports-2026-09，均带 inspect 幂等守卫）） |
 
 `env.py` 经 `app/core/model_registry.py` 单点注册全部 ORM 模型（v1.0.8 归位）以确保 autogenerate 检测全部表。
 

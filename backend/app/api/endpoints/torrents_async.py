@@ -32,7 +32,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.dialect_sql import dialect_insert
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
+from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel, make_tracker_id
 from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
@@ -831,7 +831,7 @@ def extract_tracker_rows_from_torrent(
                 current_tracker_urls.add(url)
                 tracker_rows.append(
                     {
-                        "tracker_id": str(uuid.uuid4()),
+                        "tracker_id": make_tracker_id(torrent_info_id, url),
                         "torrent_info_id": torrent_info_id,
                         "tracker_name": url,
                         "tracker_url": url,
@@ -866,7 +866,7 @@ def extract_tracker_rows_from_torrent(
             current_tracker_urls.add(tracker_url)
             tracker_rows.append(
                 {
-                    "tracker_id": str(uuid.uuid4()),
+                    "tracker_id": make_tracker_id(torrent_info_id, tracker_url),
                     "torrent_info_id": torrent_info_id,
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
@@ -913,7 +913,7 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
     Returns:
         stats dict：{insert, update, skip, removed}。
     """
-    from sqlalchemy import delete, tuple_, text as sa_text
+    from sqlalchemy import delete, tuple_
     from sqlalchemy import exists as sa_exists
     from app.services.sync_db_write import has_tracker_changes
     from app.tasks.resource_guard import admission_controller
@@ -999,8 +999,7 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
         if rows_to_upsert:
             stmt = dialect_insert(trackerInfoModel).values(rows_to_upsert)
             stmt = stmt.on_conflict_do_update(
-                index_elements=["torrent_info_id", "tracker_url"],
-                index_where=sa_text("dr = 0"),
+                index_elements=["tracker_id"],
                 set_={
                     "tracker_name": stmt.excluded.tracker_name,
                     "tracker_host": stmt.excluded.tracker_host,
@@ -1098,7 +1097,7 @@ async def sync_add_tracker_async(
                 current_tracker_urls.add(url)
                 tracker_rows.append(
                     {
-                        "tracker_id": str(uuid.uuid4()),
+                        "tracker_id": make_tracker_id(torrent_info_id, url),
                         "torrent_info_id": torrent_info_id,
                         "tracker_name": url,
                         "tracker_url": url,
@@ -1133,7 +1132,7 @@ async def sync_add_tracker_async(
             current_tracker_urls.add(tracker_url)
             tracker_rows.append(
                 {
-                    "tracker_id": str(uuid.uuid4()),
+                    "tracker_id": make_tracker_id(torrent_info_id, tracker_url),
                     "torrent_info_id": torrent_info_id,
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
@@ -1215,13 +1214,9 @@ async def sync_add_tracker_async(
                 )
 
             # 插入新记录或更新现有记录
-            # 使用 index_where 参数指定部分索引的WHERE条件（SQLAlchemy 2.0语法）
-            from sqlalchemy import text as sa_text
-
             stmt = dialect_insert(trackerInfoModel).values(tracker_rows)
             stmt = stmt.on_conflict_do_update(
-                index_elements=["torrent_info_id", "tracker_url"],
-                index_where=sa_text("dr = 0"),  # 指定部分索引的WHERE条件
+                index_elements=["tracker_id"],  # 指定部分索引的WHERE条件
                 set_={
                     "tracker_name": stmt.excluded.tracker_name,
                     "last_announce_succeeded": stmt.excluded.last_announce_succeeded,

@@ -28,7 +28,7 @@ from app.core.model_registry import register_all_models
 from app.database import Base
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-_HEAD = "a2b3c4d5e6f7"
+_HEAD = "d5e6f7a8b9c0"
 
 _WS = re.compile(r"\s+")
 

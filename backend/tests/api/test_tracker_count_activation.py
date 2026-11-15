@@ -189,8 +189,10 @@ class TestTrRowConstruction:
 
 
 def _row(info_id, url, *, seeder=None, leecher=None, downloaded=None):
+    from app.torrents.models import make_tracker_id
+
     return {
-        "tracker_id": str(uuid.uuid4()),
+        "tracker_id": make_tracker_id(info_id, url),
         "torrent_info_id": info_id,
         "tracker_name": url,
         "tracker_url": url,

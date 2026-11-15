@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.dialect_sql import ci_contains
-from app.torrents.models import TorrentInfo, TrackerInfo as TrackerInfoModel
+from app.torrents.models import TorrentInfo, TrackerInfo as TrackerInfoModel, make_tracker_id
 from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
 logger = logging.getLogger(__name__)
@@ -256,9 +256,11 @@ def create_tracker(db: Session, tracker_data: Dict[str, Any]) -> TrackerInfoMode
     Returns:
         新创建的 tracker 记录
     """
-    # 如果没有提供 tracker_id，生成一个 UUID
+    # 如果没有提供 tracker_id（配对行确定性派生：去重键=主键）
     if "tracker_id" not in tracker_data:
-        tracker_data["tracker_id"] = str(uuid.uuid4())
+        tracker_data["tracker_id"] = make_tracker_id(
+            tracker_data.get("torrent_info_id"), tracker_data.get("tracker_url")
+        )
 
     # 设置默认值
     if "dr" not in tracker_data:

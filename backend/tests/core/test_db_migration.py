@@ -68,7 +68,7 @@ def _clean_database_path_env():
 #         downgrade 受限：receipt/events 存在行时拒绝)
 #       → a2b3c4d5e6f7(四列类型对齐真实数据 batch recreate：inode_id/total_size BigInteger、
 #         seed_transfer downloader_id String(36)、task_logs.log_detail Text；downgrade 数据性收窄拒绝)
-EXPECTED_HEAD = "a2b3c4d5e6f7"
+EXPECTED_HEAD = "d5e6f7a8b9c0"
 PREV_HEAD = "e6d8a20c41f3"
 PRESET_KEY_PREV = "c1d2e3f4a5b6"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"

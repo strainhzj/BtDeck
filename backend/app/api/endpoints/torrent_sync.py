@@ -6,7 +6,6 @@ from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text as sa_text
 from sqlalchemy import update, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, aliased
@@ -18,7 +17,7 @@ from app.database import get_async_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
-from app.torrents.models import TrackerInfo as trackerInfoModel
+from app.torrents.models import TrackerInfo as trackerInfoModel, make_tracker_id
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import (
     extract_tracker_host,
@@ -652,7 +651,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
             current_tracker_urls.add(url)
             tracker_rows.append(
                 {
-                    "tracker_id": str(uuid.uuid4()),
+                    "tracker_id": make_tracker_id(torrent_info_id, url),
                     "torrent_info_id": torrent_info_id,
                     "tracker_name": url,
                     "tracker_url": url,
@@ -678,7 +677,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
             current_tracker_urls.add(tracker_url)
             tracker_rows.append(
                 {
-                    "tracker_id": str(uuid.uuid4()),
+                    "tracker_id": make_tracker_id(torrent_info_id, tracker_url),
                     "torrent_info_id": torrent_info_id,
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
@@ -745,8 +744,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
         # 同步"成功"但 0 行；异步路径 torrents_async 同款已带）
         stmt = dialect_insert(trackerInfoModel).values(tracker_rows)
         stmt = stmt.on_conflict_do_update(
-            index_elements=["torrent_info_id", "tracker_url"],
-            index_where=sa_text("dr = 0"),
+            index_elements=["tracker_id"],
             set_={
                 "tracker_name": stmt.excluded.tracker_name,
                 "last_announce_succeeded": stmt.excluded.last_announce_succeeded,

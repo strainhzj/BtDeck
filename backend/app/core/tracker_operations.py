@@ -5,10 +5,9 @@ This module contains refactored tracker-related database operations that use
 the standardized DatabaseResult return format.
 """
 
-import uuid
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from app.torrents.models import TrackerInfo
+from app.torrents.models import TrackerInfo, make_tracker_id
 from app.core.database_result import DatabaseResult
 
 
@@ -28,9 +27,11 @@ def create_tracker(db: Session, tracker_data: Dict[str, Any]) -> DatabaseResult[
         if not tracker_data.get("tracker_url"):
             return DatabaseResult.validation_error_result("Tracker URL is required")
 
-        # Generate ID if not provided
+        # Generate ID if not provided（配对行确定性派生：去重键=主键）
         if "tracker_id" not in tracker_data:
-            tracker_data["tracker_id"] = str(uuid.uuid4())
+            tracker_data["tracker_id"] = make_tracker_id(
+                tracker_data.get("torrent_info_id"), tracker_data.get("tracker_url")
+            )
 
         db_tracker = TrackerInfo(**tracker_data)
         db.add(db_tracker)

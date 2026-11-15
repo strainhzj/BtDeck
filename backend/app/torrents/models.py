@@ -1,4 +1,5 @@
 from typing import Any, Optional
+import hashlib
 import uuid
 from datetime import datetime
 
@@ -273,14 +274,14 @@ class TorrentInfo(Base):
 class TrackerInfo(Base):
     __tablename__ = "tracker_info"
 
-    tracker_id: Mapped[str] = mapped_column(String, primary_key=True, index=True, comment="主键")
+    tracker_id: Mapped[str] = mapped_column(String, primary_key=True, comment="主键（确定性派生，见 make_tracker_id）")
     torrent_info_id: Mapped[Optional[str]] = mapped_column(String, index=True, comment="关联种子主键")
-    tracker_name: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker名称")
-    tracker_url: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker地址")
+    tracker_name: Mapped[Optional[str]] = mapped_column(String, comment="tracker名称")
+    tracker_url: Mapped[Optional[str]] = mapped_column(String, comment="tracker地址")
     last_announce_succeeded: Mapped[Optional[int]] = mapped_column(Integer, comment="请求结果")
-    last_announce_msg: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker最后一次请求信息")
+    last_announce_msg: Mapped[Optional[str]] = mapped_column(String, comment="tracker最后一次请求信息")
     last_scrape_succeeded: Mapped[Optional[int]] = mapped_column(Integer, comment="汇报结果")
-    last_scrape_msg: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker最后一次汇报信息")
+    last_scrape_msg: Mapped[Optional[str]] = mapped_column(String, comment="tracker最后一次汇报信息")
     tracker_host: Mapped[Optional[str]] = mapped_column(
         String(256), nullable=True, default=None, comment="tracker主机地址"
     )
@@ -298,18 +299,10 @@ class TrackerInfo(Base):
     dr: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
     version: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="乐观锁版本号")
 
-    # 唯一约束：防止同一种子的相同tracker重复（仅限未删除记录）
-    # 双方言（v1.0.8 任务1.3）：双 where 声明，语义同 idx_torrent_hash_unique
-    __table_args__ = (
-        Index(
-            "idx_tracker_unique_url",
-            "torrent_info_id",
-            "tracker_url",
-            unique=True,
-            sqlite_where=dr == 0,
-            postgresql_where=dr == 0,
-        ),
-    )
+    # 去重键说明（2026-11-15）：唯一约束 idx_tracker_unique_url 退场——tracker_url
+    # 实测 930KB 超 PG btree 2704B 行上限，去重收敛到主键 tracker_id=
+    # make_tracker_id(种子, tracker_url)（PG/SQLite 统一 ON CONFLICT (tracker_id)；
+    # SQLite 侧原部分唯一索引由迁移 d5e6f7a8b9c0 删除）。
 
     def to_dict(self):
         return {
@@ -334,6 +327,19 @@ class TrackerInfo(Base):
             "dr": self.dr,
             "version": self.version,
         }
+
+
+def make_tracker_id(torrent_info_id: Optional[str], tracker_url: Optional[str]) -> str:
+    """确定性 tracker 主键：md5(torrent_info_id|tracker_url)。
+
+    2026-11-15 btree 行上限修复：tracker_url 实测 930KB 超 PG btree v4 2704B
+    索引行上限（SQLite 无此限制），URL 列上的普通索引与唯一约束全部退场，
+    去重语义收敛到主键——同一种子+同一 tracker 必得同一 id，upsert 以
+    ON CONFLICT (tracker_id) 表达。未配对行（无种子关联/无 URL）回退 uuid
+    （与历史行为一致：此类行本就无唯一约束保护）。"""
+    if torrent_info_id and tracker_url:
+        return hashlib.md5(f"{torrent_info_id}|{tracker_url}".encode("utf-8")).hexdigest()
+    return str(uuid.uuid4())
 
 
 class TrackerKeywordConfig(Base):
