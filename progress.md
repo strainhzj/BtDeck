@@ -1,3 +1,11 @@
+## 2026-11-15：迁移流程审查 → 复核修复批 W1（后端 9ca6f42）+ W2（前端/roadmap 8f8cec2）
+
+- **触发**：用户要求 review SQLite⇄PG 双向迁移全流程（只读）→ 三路代理审查 + 隔离探针 + 真 PG16.2 本地复验（pgserver wheel `--python-version 3.12 --platform manylinux` 下载解包，非 UTC 时区/T19 往返/fence/枚举四反例）→ 用户确认结论并要求实施 → 分两批提交。
+- **W1 后端（12 项审查缺陷修复）**：反向 verify 有主键表不再跳过全列摘要（原 continue 位于主键相同分支内，同计数同 PK 改非 PK 仍 VERIFIED）+ finalize 前摘要覆盖断言；反向 aware datetime 转 UTC-naive（真 PG 实测 Asia/Shanghai 下 users.created_at +28800s 且双向报成功）；正向 verify 目标侧枚举归一成员名（downloader_settings 误报）；FenceOwner 单线程持有源 fence（原局部变量 GC 后独立写源成功仍 IMPORTING）+ PG verify 绑定本 PID+逐表 OID/granted（原累计任意会话锁可被他者持锁误报）；conclude_pipeline 取消/READY 原子裁决（verify 中取消→CANCELLED 内置 ACK；READY 发布后取消 409，消除永久 cancelling）；cancel/switch 真正消费 CAS；credentials 只许改密码（堵导入 A 期间补交 B 产出 B 候选）；新增 POST /database/migration/resume（boot HELD 重新取锁→核源指纹→目标 epoch CAS 重绑→派 worker）；激活代次 G 于 PREPARED 固定+发布前候选 hash 核验+complete_activation 改 目标ACK→归档→本地ACK+默认 ACK 显式候选目标/条件 UPDATE 恰好一行（冷启动实测：redo 曾向旧源 ACK 零行仍假成功且业务 Session 写回旧库）；ACTIVATION_COMPLETE 启动前核 identity/receipt/代次绑定（历史缺 generation 容忍）；redo 后配置漂移不继续普通启动；异步引擎 TLS/池与 active 同源（实测 require→prefer 降级）；反向 final_path 绝对路径强制。
+- **W2 前端**：发起方向化（PG 源=受控目标目录入参发起 pg-to-sqlite，不再拒绝）；target 类型方向化联合；跟踪卡+维护页 HELD 凭据在位渲染「恢复迁移」（二次确认 POST resume CAS；反馈随 resumeOk 保持可见）；i18n zh/en 新增键；database-settings 重写反向用例 2 例+维护页 resume 2 例；roadmap 八文件同步（services 六行/bootstrap/infra/api/views/计数/根最近同步，行数复测 1177/1690）。
+- **验证**：后端新增 test_db_migration_review_fixes.py 12 例；定向迁移面 164+105=269 passed/0 failed；改动面 black/flake8/mypy 净；前端 typecheck 净/全量 Jest 155 套 2159 例全绿/lint 净增 0；两提交均未推送（origin 待用户指令）。
+- **未做（后续批次）**：R4 深水区（业务引擎前早期启动决议 StartupResolution 重构、历史 v1 记录兼容工具/一次性对账）；真实 PG 往返+TLS+时区+浏览器双向验收（可复用 /tmp pgserver 复核脚本）；推送与部署。修后验收门禁见 /tmp/btdeck-migration-final-repair-plan.md §4。
+
 ## 2026-11-11（续）：审查修复批（最近10提交 code review 三缺陷全闭环，未提交）
 
 - **触发**：用户要求 code review dev 最近10提交（a67565b..d9e5c5c）→ 两路评审代理 + 最小复现确认三项 → 用户授权修复。
