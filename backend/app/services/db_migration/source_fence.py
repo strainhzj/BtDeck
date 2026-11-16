@@ -27,12 +27,15 @@ ORM 元数据/协议常量，按 BTD305 白名单先例使用 f-string（同 pg_
 from __future__ import annotations
 
 import hashlib
+import concurrent.futures as futures
 import os
+import queue
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
@@ -182,6 +185,8 @@ class PgSourceFence:
         self._engine: Optional[Engine] = None
         self._conn: Optional[Connection] = None
         self._token: Optional[FenceToken] = None
+        self._backend_pid: Optional[int] = None
+        self._lock_oids: Dict[str, int] = {}
 
     @property
     def token(self) -> Optional[FenceToken]:
@@ -200,6 +205,19 @@ class PgSourceFence:
                 # 表名来自注入的固定清单（BTD305 白名单先例：标识符常量）
                 conn.exec_driver_sql(f'LOCK TABLE "{name}" IN SHARE MODE')
             fingerprint = self._fingerprint_on(conn)
+            # 2026-11-15 复核加固：verify 必须证明「本连接仍持全部锁」——记录
+            # 本 backend PID 与逐表 OID；原实现累计任意会话 ShareLock，自身
+            # rollback 后其他会话持锁也会误报有效（真 PG 实测）。
+            _pid = conn.execute(text("SELECT pg_backend_pid()")).scalar()
+            if _pid is None:
+                raise SourceFenceError("pg_backend_pid 返回空——连接异常，放弃取锁")
+            self._backend_pid = int(_pid)
+            self._lock_oids = {}
+            for name in self._table_names:
+                _oid = conn.execute(text("SELECT (:tbl)::regclass::oid"), {"tbl": name}).scalar()
+                if _oid is None:
+                    raise SourceFenceError(f"to_regclass 解析 OID 失败: {name}")
+                self._lock_oids[name] = int(_oid)
         except Exception as exc:
             try:
                 conn.close()
@@ -230,21 +248,29 @@ class PgSourceFence:
         return _digest_pairs([("alembic", version)] + counts)
 
     def verify(self) -> bool:
-        """连接存活 + ShareLock 数量核对（锁丢失即 False → note_fence_lost）。"""
-        if self._conn is None or self._token is None:
+        """本连接存活且逐表仍持本 PID 的已授予 ShareLock（2026-11-15 加固）。
+
+        逐表核对 pid=本连接、relation=登记 OID、granted、mode；任一表缺失或
+        连接/事务已失效即 False（原累计任意会话锁数的实现可被他者持锁误报，
+        真 PG 实测：自身 rollback、另一 PID 持 SHARE 时旧 verify 仍 True）。
+        """
+        if self._conn is None or self._token is None or self._backend_pid is None:
             return False
         try:
-            expected = len(self._table_names)
-            got = 0
-            for name in self._table_names:
-                # 逐表计数：(:tbl)::regclass 形态的绑定安全（x::cast 紧跟绑定名会令
-                # SQLAlchemy 2.0 误判字面量，真 PG 实测 SyntaxError → verify 假阴性）
-                n = self._conn.execute(
-                    text("SELECT count(*) FROM pg_locks WHERE mode = 'ShareLock' AND relation = (:tbl)::regclass"),
-                    {"tbl": name},
+            current_pid = self._conn.execute(text("SELECT pg_backend_pid()")).scalar()
+            if current_pid is None or int(current_pid) != self._backend_pid:
+                return False  # 连接已被池回收/重连：旧锁资格不得继承
+            for name, oid in self._lock_oids.items():
+                held = self._conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_locks WHERE pid = :pid AND relation = :oid "
+                        "AND mode = 'ShareLock' AND granted"
+                    ),
+                    {"pid": self._backend_pid, "oid": oid},
                 ).scalar()
-                got += int(n if n is not None else 0)
-            return got >= expected
+                if int(held or 0) < 1:
+                    return False
+            return True
         except Exception:
             return False
 
@@ -255,6 +281,7 @@ class PgSourceFence:
 
     def release(self) -> None:
         conn, engine, self._conn, self._engine, self._token = self._conn, self._engine, None, None, None
+        self._backend_pid, self._lock_oids = None, {}
         if conn is not None:
             try:
                 conn.rollback()  # 释放全部 SHARE 表锁
@@ -273,6 +300,89 @@ class PgSourceFence:
 
 def _ms(seconds: float) -> int:
     return max(1, int(seconds * 1000))
+
+
+# ---------------------------------------------------------------------------
+# FenceOwner：单线程执行器（2026-11-15 复核修复：fence 持久所有者）
+# ---------------------------------------------------------------------------
+
+
+class FenceOwner:
+    """fence 的持久所有者：连接相关操作全部在同一条专用线程串行执行。
+
+    背景：SQLite fence 连接在创建它的线程之外使用会触发 sqlite3
+    ``check_same_thread`` 错误；manager 原实现把 fence 当局部变量，编排返回
+    后对象可被 GC，锁静默丢失（实测 GC 后独立写源成功而状态仍 IMPORTING）。
+
+    - manager 强持有 owner（长生命周期），连接 acquire/verify/release 全部
+      经命令队列在 owner 线程执行，API 线程只提交并等结果（有界超时）；
+    - ``verify``/``release`` 结果不吞异常：释放失败不得宣称已释放。
+    """
+
+    def __init__(self, factory: Callable[[], Any], *, command_timeout: float = 30.0) -> None:
+        self._factory = factory
+        self._command_timeout = command_timeout
+        self._fence: Any = None
+        self._queue: queue.Queue = queue.Queue()
+        self._closed = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="fence-owner", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._closed.is_set():
+            try:
+                action, fn, done = self._queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if action == "close":
+                self._closed.set()
+                done.set_result(None)
+                continue
+            try:
+                if action == "acquire":
+                    self._fence = fn()
+                    token = self._fence.acquire()
+                    done.set_result(token)
+                else:
+                    if self._fence is None:
+                        raise SourceFenceError("fence 未持有（owner 未 acquire 或已释放）")
+                    result = fn(self._fence)
+                    done.set_result(result)
+            except BaseException as exc:  # noqa: BLE001 - 原样回传调用方
+                done.set_exception(exc)
+
+    def _submit(self, action: str, fn: Callable) -> Any:
+        done: futures.Future = futures.Future()
+        self._queue.put((action, fn, done))
+        try:
+            return done.result(timeout=self._command_timeout)
+        except futures.TimeoutError as exc:
+            raise SourceFenceError(f"fence {action} 超时（owner 线程无响应）") from exc
+
+    def acquire(self) -> FenceToken:
+        token = self._submit("acquire", self._factory)
+        if token is None:
+            raise SourceFenceError("fence acquire 未返回令牌")
+        return token
+
+    @property
+    def token(self) -> Optional[FenceToken]:
+        fence = self._fence
+        return getattr(fence, "token", None) if fence is not None else None
+
+    def verify(self) -> bool:
+        return bool(self._submit("verify", lambda fence: fence.verify()))
+
+    def verify_against(self, expected_fingerprint: str) -> bool:
+        return bool(self._submit("verify_against", lambda fence: fence.verify_against(expected_fingerprint)))
+
+    def release(self) -> None:
+        if not self._thread.is_alive():
+            raise SourceFenceError("fence owner 线程已退出，无法确定性释放（保持 HELD，不得宣称释放）")
+        try:
+            self._submit("release", lambda fence: fence.release())
+        finally:
+            self._queue.put(("close", lambda: None, futures.Future()))
 
 
 # ---------------------------------------------------------------------------

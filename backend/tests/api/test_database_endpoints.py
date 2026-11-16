@@ -174,7 +174,14 @@ class TestCancelConflictEnvelope:
         from app.services.db_migration.manager import StateConflict
 
         class _StubManager:
-            def request_cancel(self, *, reason: str = ""):
+            def request_cancel(
+                self,
+                *,
+                reason: str = "",
+                expect_attempt_id=None,
+                expect_epoch=None,
+                expect_state_version=None,
+            ):
                 raise StateConflict("worker 已收尾，协作取消无法完成：请提交切换（READY）或放弃迁移（已安全停止态）")
 
         client = TestClient(app)

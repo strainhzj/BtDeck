@@ -28,6 +28,9 @@
 
 - 现象：维护页出现凭据重输表单（源或目标密码未持久，只保存在内存/受保护候选）。
 - 处理：表单重输后恢复；丢失且无法提供 → cancel 迁移（CANCELLING→worker 确认→CANCELLED）→ 回 §1 或 §5。
+  重输成功仅代表凭据已接收，不等于迁移已恢复——重启后的续跑须显式调
+  `POST /api/v1/database/migration/resume`（CAS；重新取源锁→核源指纹→目标
+  epoch 重绑→续跑 checkpoint，2026-11-15 复核修复新增）。
 
 ## 4. 取消与放弃（leave / discard）
 

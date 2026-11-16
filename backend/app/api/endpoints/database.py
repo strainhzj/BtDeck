@@ -357,7 +357,13 @@ async def migration_cancel(request: Request, payload: CasRequest) -> CommonRespo
     2026-11-11 审查修复；此前无包装直接 StateConflict → 500）。"""
     manager = _manager(request)
     try:
-        status = manager.request_cancel(reason=payload.reason or "")
+        # 2026-11-15 复核修复：真正消费请求侧 CAS（attempt/epoch/state_version）
+        status = manager.request_cancel(
+            reason=payload.reason or "",
+            expect_attempt_id=payload.attempt_id,
+            expect_epoch=payload.epoch,
+            expect_state_version=payload.state_version,
+        )
     except Exception as exc:  # noqa: BLE001 - 状态冲突面（对齐 leave 409 语义）
         from app.services.db_migration.manager import StateConflict
 
@@ -365,6 +371,29 @@ async def migration_cancel(request: Request, payload: CasRequest) -> CommonRespo
             return CommonResponse(status="error", code="409", msg=str(exc))
         raise
     return CommonResponse(status="success", code="200", data=status.as_dict())
+
+
+@router.post(
+    "/migration/resume", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)]
+)
+async def migration_resume(request: Request, payload: CasRequest) -> CommonResponse:
+    """boot HELD 安全续跑（2026-11-15 复核修复）。
+
+    重新取源锁→核源指纹→目标 epoch CAS 重绑→派 worker 续跑 checkpoint；
+    补凭据成功不等于恢复完成，恢复必须经本端点显式发起。
+    """
+    manager = _manager(request)
+    try:
+        status = manager.resume_pending_attempt(expect_epoch=payload.epoch, expect_state_version=payload.state_version)
+        return CommonResponse(status="success", code="200", data=status.as_dict())
+    except Exception as exc:  # noqa: BLE001 - 状态冲突面（对齐 leave/cancel 409 语义）
+        from app.services.db_migration.manager import ManagerError, NeedsCredentials, StateConflict, WorkerNotStopped
+
+        if isinstance(exc, (StateConflict, WorkerNotStopped, ManagerError)):
+            return CommonResponse(status="error", code="409", msg=str(exc))
+        if isinstance(exc, NeedsCredentials):
+            return CommonResponse(status="error", code="401", msg=str(exc))
+        raise
 
 
 @router.post("/migration/leave", response_model=CommonResponse, dependencies=[Depends(require_database_control_access)])
@@ -449,6 +478,12 @@ async def migration_switch(request: Request, payload: SwitchRequest) -> CommonRe
         manifest = service.manifest(payload.attempt_id)
         if not manifest.get("candidate_active"):
             return CommonResponse(status="error", code="409", msg="manifest 无 candidate_active（worker 未产出候选）")
+        # 2026-11-15 复核修复：真正消费 epoch/state_version CAS（原实现仅核
+        # attempt+phase，请求侧代次/版本不匹配仍可提交）。
+        if manifest.get("epoch") != payload.epoch or int(manifest.get("state_version", 0)) != payload.state_version:
+            return CommonResponse(
+                status="error", code="409", msg="CAS 失败（epoch/state_version 与当前 attempt 不符），请刷新后重试"
+            )
         identity = {
             "expected_database_id": (manifest.get("target", {}) or {}).get("database_id"),
             "receipt_attempt_id": payload.attempt_id,

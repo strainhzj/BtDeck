@@ -162,7 +162,13 @@ class ActivationService:
         manifest["candidate_config_digest"] = cand["sha256"]
         manifest["prior_config_digest"] = prior["sha256"]
         manifest["switch_mode"] = mode
-        manifest["identity"] = dict(identity)
+        manifest["identity"] = {
+            **dict(identity),
+            # 2026-11-15 复核修复：激活代次 G 在 PREPARED 固定一次（取候选自身
+            # generation）；COMMITTED/发布/control/目标 ACK 全链同一 G，不可重新
+            # 生成（原实现 commit 每次新 uuid，重复提交漂移且 receipt 无代次可核）。
+            "generation": str(candidate_active.get("generation") or identity.get("generation") or uuid.uuid4()),
+        }
         manifest["candidate_active"] = dict(candidate_active)
         self._journal.write_manifest(attempt_id, manifest, expect_state_version=manifest["state_version"])
         self._journal.advance_commit_phase(attempt_id, expected=COMMIT_PHASE_NONE, new=COMMIT_PHASE_PREPARED)
@@ -192,8 +198,9 @@ class ActivationService:
         # 2. 幂等发布：candidate 已在 PREPARED 持久，按候选摘要核验后发布
         mode = manifest.get("switch_mode", SWITCH_MODE_B)
         published = self._publish_if_needed(attempt_id, manifest, mode)
-        # 3. control：RESTART_PENDING + 新代次
-        generation = str(uuid.uuid4())
+        # 3. control：RESTART_PENDING + 激活代次（2026-11-15 复核修复：复用
+        #    PREPARED 固定的 G；原实现每次 commit 重新生成 uuid，重复 commit 漂移）
+        generation = str((manifest.get("identity") or {}).get("generation") or uuid.uuid4())
         self._journal.write_control(
             lambda c: {**c, "restart_pending": True, "generation": generation, "pending_attempt": attempt_id}
         )
@@ -219,6 +226,15 @@ class ActivationService:
         from app.services.db_migration.config_store import read_candidate_config
 
         candidate_tree = read_candidate_config(self._config_dir, attempt_id)
+        # 2026-11-15 复核修复：发布前重算候选 hash 与 PREPARED 绑定比对
+        # （原实现候选被篡改仍 COMMITTED+发布篡改树，实测复现）。
+        from app.services.db_migration.config_store import yaml_digest
+
+        if (
+            manifest.get("candidate_config_digest")
+            and yaml_digest(candidate_tree) != manifest["candidate_config_digest"]
+        ):
+            raise ActivationError("候选配置与 PREPARED 摘要不符（候选被篡改或损坏）——拒绝发布")
         yaml_path = self._resolve_yaml()
         with config_lock(yaml_path):
             from app.services.db_migration.config_store import write_yaml_atomic
@@ -263,19 +279,24 @@ class ActivationService:
         manifest = self._journal.read_manifest(attempt_id)
         phase = manifest.get("commit_phase", COMMIT_PHASE_NONE)
         if phase == COMMIT_PHASE_ACTIVATED_ACK:
+            if archive_audit is not None:
+                # 2026-11-15 复核修复：幂等重放补归档（回放按 event_id 去重安全）；
+                # 失败上抛保持维护语义，不静默跳过已本地 ACK 的未归档事件。
+                archive_audit(attempt_id)
             return {"attemptId": attempt_id, "commitPhase": phase, "idempotent": True}
         if phase != COMMIT_PHASE_COMMITTED:
             raise ActivationError(f"commit_phase={phase}，不可 ACK")
         identity = manifest.get("identity", {})
         generation = (self._journal.read_control() or {}).get("generation") or identity.get("generation", "")
-        # 1. 目标先 ACK（单连接事务；幂等同 ACK 重放）
+        # 1. 目标先 ACK（显式提交候选目标；同事务严格核验，见 default writer）
         self._target_ack(attempt_id, str(generation))
-        # 2. 本地后 ACK（journal 持久）
-        self._journal.advance_commit_phase(attempt_id, expected=COMMIT_PHASE_COMMITTED, new=COMMIT_PHASE_ACTIVATED_ACK)
-        # 3. 审计归档（与去重行同事务语义由 archive_audit 实现；cursor 推进）
+        # 2. 审计归档（2026-11-15 复核修复：先于本地 ACK——原实现本地 ACK 先行，
+        #    归档失败后下次启动见 ACK 直接正常启动，spool 永不归档；实测复现）
         archived = 0
         if archive_audit is not None:
             archived = int(archive_audit(attempt_id))
+        # 3. 本地后 ACK（journal 持久；失败保持 COMMITTED，重复启动补同一决定）
+        self._journal.advance_commit_phase(attempt_id, expected=COMMIT_PHASE_COMMITTED, new=COMMIT_PHASE_ACTIVATED_ACK)
         # 4. 清 RESTART_PENDING；pending 保留（控制锚点与历史证据，§7.2.8）
         self._journal.write_control(lambda c: {**c, "restart_pending": False})
         return {"attemptId": attempt_id, "commitPhase": COMMIT_PHASE_ACTIVATED_ACK, "archivedEvents": archived}
@@ -291,33 +312,69 @@ class ActivationService:
             write_yaml_atomic(yaml_path, tree)
 
     def _default_target_ack_writer(self, attempt_id: str, generation: str) -> None:
-        """目标库 activated_at/generation ACK（§7.2.7；单连接事务）。
+        """目标库 ACK（§7.2.7；显式提交候选目标，严格事务核验）。
 
-        MIGRATE：目标 receipt 表补 activated_at/generation（同连接 UPDATE）；
-        HANDOFF_SAME_DB：核旧 generation → CAS 新 generation（W3-7 覆盖，
-        同一 BEGIN IMMEDIATE 连接完成，禁跨连接自锁）。
+        2026-11-15 复核修复：原实现经导入期缓存的 ``build_database_url()`` 连接
+        「当前有效库」——COMMITTED 未发布即崩溃的重启窗口里那仍是旧源库，UPDATE
+        不核行数不核身份，零行也当成功（冷启动实测：候选 PG 从未连接而本地推进
+        ACTIVATED_ACK）。现从 manifest.candidate_active 显式构造目标连接，同一
+        事务内核身份/receipt/nonce 后条件 UPDATE，恰好一行才算 ACK。
         """
-        manifest = self._journal.read_manifest(attempt_id)
+        try:
+            manifest = self._journal.read_manifest(attempt_id)
+        except Exception as exc:
+            # 2026-11-15 复核修复：manifest 缺失/损坏不属 ACK 授权（原实现抛
+            # JournalCorrupted 穿透成 500；统一转 ActivationError 409 面）
+            raise ActivationError(f"manifest 不可读（{attempt_id!r}）: {exc}") from exc
         kind = manifest.get("operation_kind", "MIGRATE")
         if kind == "HANDOFF_SAME_DB":
             raise ActivationError("HANDOFF_SAME_DB 的 ACK 由同库单连接专径完成（§7.3），不走本默认实现")
-        # MIGRATE：写目标 receipt（默认经当前有效连接；表名以协议常量为准——
-        # 实跑曾用复数字面量致 pg-to-sqlite 激活 ACK 永远 no such table）
-        from app.core.database_protocol import RECEIPT_TABLE
-        from app.database import build_database_url
+        candidate = dict(manifest.get("candidate_active") or {})
+        dialect = candidate.get("dialect")
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
 
-        engine = create_engine(build_database_url(), poolclass=NullPool)
+        from app.core.database_protocol import RECEIPT_TABLE
+        from app.core.pg_baseline import read_database_identity, verify_receipt_ownership
+
+        if dialect == "sqlite":
+            path = str(candidate.get("sqlite_path") or "")
+            if not path or not os.path.isabs(path):
+                raise ActivationError(f"候选 sqlite_path 缺失/非绝对: {path!r}——拒绝 ACK")
+            url = f"sqlite:///{path}"
+        elif dialect == "postgresql":
+            from app.services.db_migration.target_params import build_pg_url, pg_params_from_mapping
+
+            url = build_pg_url(pg_params_from_mapping(dict(candidate.get("postgresql") or {})))
+        else:
+            raise ActivationError(f"候选方言非法: {dialect!r}——拒绝 ACK")
+        expected_identity = str(candidate.get("expected_database_id") or "")
+        nonce = str(manifest.get("ownership_nonce") or "")
+        engine = create_engine(url, poolclass=NullPool)
         try:
             with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"UPDATE {RECEIPT_TABLE} SET status = 'ACTIVATED', activated_at = :now "
-                        "WHERE attempt_id = :aid"
-                    ),
-                    {"now": _now(), "aid": attempt_id},
-                )
+                try:
+                    identity = read_database_identity(conn)
+                    if not identity or identity != expected_identity:
+                        raise ActivationError(f"目标身份不符（{identity!r} ≠ 期望 {expected_identity!r}）——拒绝 ACK")
+                    receipt = verify_receipt_ownership(
+                        conn, attempt_id, ownership_nonce=nonce, target_database_id=identity
+                    )
+                    if receipt.get("status") != "VERIFIED":
+                        raise ActivationError(f"目标 receipt 状态 {receipt.get('status')!r} 非 VERIFIED——拒绝 ACK")
+                    result = conn.execute(
+                        text(
+                            f"UPDATE {RECEIPT_TABLE} SET status = 'ACTIVATED', activated_at = :now, "
+                            "activation_generation = :gen WHERE attempt_id = :aid AND status = 'VERIFIED'"
+                        ),
+                        {"now": _now(), "gen": generation, "aid": attempt_id},
+                    )
+                    if (result.rowcount or 0) != 1:
+                        raise ActivationError("目标 ACK 条件更新影响 0 行——拒绝（目标状态与提交决定不一致）")
+                except ActivationError:
+                    raise
+                except Exception as exc:
+                    raise ActivationError(f"目标 ACK 事务失败: {exc}") from exc
         finally:
             engine.dispose()
 

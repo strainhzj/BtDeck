@@ -310,6 +310,47 @@ guide 保留“不降级、不 stamp”的兼容路径。
 - BTD306：`app/` 新文件禁止裸 `asyncio.create_task/to_thread`（存量白名单
   盘点登记）；新代码须走 lifecycle 准入包装或 `register_child` 登记。
 
+### 复核修复批（2026-11-15，审查 W1，强制）
+
+针对 2026-11-15 迁移流程审查（真 PG 实证）的修复批；行为变更点：
+
+- **数据面**：反向 verify 有主键表不再跳过全列内容摘要（原 continue 位于
+  主键相同分支内，同计数同 PK 改非 PK 列仍 VERIFIED，真 PG 实测）；finalize
+  前断言 counts/digests 覆盖全部业务表（双方言对称）；反向导入 aware
+  datetime 先转 UTC-naive（修复非 UTC 会话时区 +8h 数据漂移，真 PG 实测
+  users.created_at 偏移 28800s）；正向 verify 目标侧枚举列归一为成员名（与
+  源 row_transform 同口径，修复 downloader_settings 正常数据误报不一致）。
+- **fence**：manager 强持有 `FenceOwner`（单线程 acquire/verify/release，规避
+  SQLite 跨线程限制与 GC 丢锁）；worker READY 前 verify，锁丢失/释放失败 →
+  HELD；`PgSourceFence.verify` 改为绑定本 backend PID + 逐表 OID/granted（原
+  累计任意会话 ShareLock 可被他者持锁误报，真 PG 实测）。
+- **取消与 READY**：`MaintenanceController.conclude_pipeline()` 原子裁决——
+  取消先受理 → CANCELLED（内置 ACK）；否则原子发布 READY，此后取消请求 409
+  （消除「verify 中取消后 worker 正常完成」的永久 cancelling 竞态）；
+  `/migration/cancel` 真正消费 attempt/epoch/state_version CAS。
+- **凭据**：`/migration/credentials` 只允许更新密码；非敏感目标字段与
+  manifest 固定目标逐字段比对，不一致 409（原实现可整体覆写 target 且候选
+  从凭据仓重读，导致候选指向未导入库）。
+- **resume**：新增 `POST /api/v1/database/migration/resume`（CAS）：boot HELD
+  重新取 fence → 核源指纹（与冻结快照比对）→ 目标 epoch CAS 重绑 → 派
+  worker 续跑 checkpoint；补凭据成功 ≠ 恢复完成。
+- **反向目标**：final_path 必须绝对路径（发起面拒绝；缺省=配置目录，非 CWD）。
+- **激活**：激活代次 G 在 PREPARED 固定（=候选 generation），control/
+  receipt.activation_generation/active 同链一致，重复 commit/redo 幂等同 G；
+  发布前重算候选 hash 与 PREPARED 摘要比对；`complete_activation` 顺序改为
+  目标 ACK → 审计归档 → 本地 ACK（原实现本地 ACK 先行，归档失败后永不补）；
+  默认 ACK 从 candidate_active 显式构造目标连接（不再读导入期缓存的
+  build_database_url），同一事务核 identity/receipt VERIFIED/nonce 后条件
+  UPDATE 恰好一行；幂等重放补归档。
+- **启动**：ACTIVATION_COMPLETE 正常启动前核 identity/receipt/generation
+  绑定（历史激活缺 generation 容忍并如实返回，不伪造历史验证）；redo 后进程
+  缓存配置与已发布不一致 → 不继续普通启动（托管退出重启进新配置，或回维护
+  RESTART_PENDING）——防止业务 Session 写回旧源（冷启动实测）。
+- **异步引擎**：TLS/CA/池参数与同步侧同源（active 优先，原实现读 env，实测
+  active=require → async=prefer、pool 3→10）。
+- 回归：`tests/services/test_db_migration_review_fixes.py`（12 例）+ 定向
+  164 passed；真 PG 往返/TLS/UI 验收仍以 CI pg-integration 与实机为准。
+
 ### SQLite 大库与中断恢复约束
 
 - 纯 `ADD COLUMN` 使用 SQLite 原生加列能力，一次迁移不得为多个新增列逐列调用

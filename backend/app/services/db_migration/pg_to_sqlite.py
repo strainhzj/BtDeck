@@ -31,7 +31,7 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -52,6 +52,7 @@ from app.core.pg_baseline import (
 )
 from app.models.database_migration import PROTOCOL_TABLE_NAMES, business_tables
 from app.services.db_migration import canonical, pipeline
+from app.services.db_migration.maintenance import ControllerCancellation
 from app.services.db_migration.pipeline import (
     CheckpointIncompatible,
     MigrationCancelled,
@@ -253,7 +254,13 @@ def begin_receipt_on_staging(staging_engine: Engine, ctx: PipelineContext, *, so
 
 
 def _normalize_by_column_type(table: Any, row: Mapping[str, Any]) -> Dict[str, Any]:
-    """列类型归一（双向对称）：Boolean→bool；DateTime 文本→datetime；其余原样。"""
+    """列类型归一（双向对称）：Boolean→bool；DateTime→UTC naive；其余原样。
+
+    2026-11-15 复核修复：PG ``timestamptz`` 返回带 tzinfo 的 aware datetime，
+    原实现原样写入 SQLite——SQLite 存储丢弃 offset 保留墙上时间，源 naive UTC
+    经非 UTC 会话（如 Asia/Shanghai）反向后整体 +8h（真 PG 实测：
+    users.created_at 偏移 28800s，双向均报成功）。aware 值必须先转 UTC naive。
+    """
     out: Dict[str, Any] = {}
     for col in table.columns:
         value = row.get(col.name)
@@ -261,8 +268,12 @@ def _normalize_by_column_type(table: Any, row: Mapping[str, Any]) -> Dict[str, A
             out[col.name] = None
         elif isinstance(col.type, Boolean):
             out[col.name] = bool(value)
-        elif isinstance(col.type, DateTime) and isinstance(value, str):
-            out[col.name] = datetime.fromisoformat(value.replace("T", " "))
+        elif isinstance(col.type, DateTime):
+            if isinstance(value, str):
+                value = datetime.fromisoformat(value.replace("T", " "))
+            if isinstance(value, datetime) and value.tzinfo is not None:
+                value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            out[col.name] = value
         else:
             out[col.name] = value
     return out
@@ -339,11 +350,14 @@ def verify_pg_vs_sqlite(
             # 只选主键列（与正向 sqlite_to_pg.verify 同源）：此前误用 table.select()
             # 全列行喂 digest_pk_tuples，跨库存储格式差异（datetime 文本/布尔等）
             # 造成"主键集合不一致"假阳性（W6 实跑抓出）
+            # 全表排序表达式提前初始化（原实现仅在有主键分支内赋值，无主键表
+            # 走摘要分支时会 NameError；2026-11-15 复核顺带消除）
+            ordering = canonical.pg_pk_order_expr(table)
+            sqlite_ordering = canonical.sqlite_pk_order_expr(table)
             pk_columns = list(table.primary_key.columns)
             if pk_columns:
                 from sqlalchemy import select as sa_select
 
-                ordering = canonical.pg_pk_order_expr(table)
                 p_pks = (
                     pg_conn.execution_options(stream_results=True)
                     .execute(sa_select(*pk_columns).order_by(*ordering))
@@ -357,7 +371,11 @@ def verify_pg_vs_sqlite(
                 )
                 if canonical.digest_pk_tuples(p_pks) != canonical.digest_pk_tuples(s_pks):
                     problems.append(f"{table.name}: 主键集合不一致")
-                continue
+                    # 2026-11-15 复核修复：仅主键不一致才跳过本表——原 continue
+                    # 位于主键相同分支内，导致有主键表（全部业务表）永不执行
+                    # 全列内容摘要，同计数同 PK 篡改非 PK 列仍 VERIFIED（真 PG
+                    # 实测）。
+                    continue
 
             def _pg_rows():
                 sel = table.select().order_by(*ordering) if ordering else table.select()
@@ -459,6 +477,14 @@ def run_pg_to_sqlite(
                 raise MigrationInterrupted(f"对账未通过：{problems[0]}（共 {len(problems)} 项）")
             logger.info("[核对] 全部 %d 表行数/主键集合/内容摘要一致", len(tables))
 
+        # 2026-11-15 复核加固：finalize 前断言摘要覆盖全部业务表（对称于正向；
+        # 原实现可产出空 digests 的 VERIFIED 凭据）。
+        missing_digests = [t.name for t in tables if t.name not in digests]
+        if missing_digests:
+            raise MigrationInterrupted(
+                f"内容摘要覆盖不完整（缺 {missing_digests[:5]}）：拒绝 finalize（2026-11-15 复核修复）"
+            )
+
         # 阶段 6：finalize（同事务 VERIFIED + 清 marker）
         with staging_engine.begin() as conn:
             identity = read_database_identity(conn)
@@ -480,8 +506,12 @@ def run_pg_to_sqlite(
             "final": str(staging),
             "tables": len(tables),
             "counts": counts,
+            "revision": tool_head(),  # 真实链 head（candidate.revision_at_import 用）
             "database_id": identity,  # staging 自身身份（activation 候选 expected_database_id）
         }
+    except ControllerCancellation:
+        # 2026-11-15 复核修复：取消语义不得被通用包装吞掉（manager 依赖原始类型 ACK）
+        raise
     except MigrationCancelled as exc:
         raise MigrationInterrupted(f"协作取消：{exc}") from exc
     except (PrecheckFailed, TargetInvalid):

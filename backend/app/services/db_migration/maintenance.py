@@ -173,6 +173,7 @@ class MaintenanceController:
         self._held_reason: Optional[str] = None
         self._cancel_requested = False
         self._cancel_ack_event = threading.Event()
+        self._ready_published = False  # READY 已原子发布：此后取消只能 409（提交或放弃）
         self._target_side_effects = False
         self._boot_recovery = False
         self._worker_generation = 0  # W3-3：worker 代次（晚回调拒绝过期 worker）
@@ -242,13 +243,19 @@ class MaintenanceController:
         with self._cond:
             if self._state != STATE_NORMAL or self._mode != "normal":
                 raise TransitionError(f"当前 state={self._state}，只有 NORMAL 可进入维护准备")
-            # 1) 先持久 intent（fail-closed：写失败不关门）
-            self._persist_intent(STATE_PREPARING, attempt_id, now=now)
-            # 2) 关闭新普通准入
+            # 1) 先刷新维护代次再持久 intent（2026-11-15 复核修正：原实现先以旧
+            #    epoch 写 intent 再换新 epoch，崩溃现场投影与运行窗口不一致）；
+            #    intent 落盘成功才关门（fail-closed：写失败不关门）。epoch 前进
+            #    不可逆：撤销路径只回 NORMAL，不回滚 epoch。
             self._attempt_id = attempt_id
             self._epoch = f"epoch-{uuid.uuid4().hex[:16]}"
+            self._persist_intent(STATE_PREPARING, attempt_id, now=now)
+            # 2) 关闭新普通准入
             self._state = STATE_PREPARING
             self._mode = "maintenance"
+            self._ready_published = False
+            self._cancel_requested = False
+            self._cancel_ack_event.clear()
             # 3) 再检查重任务（不可等待 → 安全撤销本次准备）
             blockers = sorted({k for k in self.active_kinds() for bad in non_waitable_kinds if k.startswith(bad)})
             if blockers:
@@ -348,6 +355,7 @@ class MaintenanceController:
             self._attempt_id = None
             self._cancel_requested = False
             self._cancel_ack_event.clear()
+            self._ready_published = False
             self._clear_intent()
             self._cond.notify_all()
 
@@ -450,6 +458,7 @@ class MaintenanceController:
                 self._attempt_id = None
                 self._cancel_requested = False
                 self._cancel_ack_event.clear()
+                self._ready_published = False
                 self._boot_recovery = False
                 self._clear_intent()
             self._cond.notify_all()
@@ -495,6 +504,8 @@ class MaintenanceController:
         with self._cond:
             if self._mode != "maintenance" or self._state in (STATE_NORMAL, STATE_COMMITTED, STATE_ABANDONED):
                 raise TransitionError(f"当前 {self._state} 不可请求取消")
+            if self._ready_published:
+                raise TransitionError("READY 已发布（2026-11-15 取消原子裁决）：取消窗口已关闭——请提交切换或放弃迁移")
             self._cancel_requested = True
             self._cond.notify_all()
 
@@ -525,6 +536,43 @@ class MaintenanceController:
             self._cancel_ack_event.set()
             self._cond.notify_all()
             return True
+
+    def conclude_pipeline(self) -> str:
+        """管线终态原子裁决（2026-11-15 复核修复）：取消与 READY 共享同一线性化边界。
+
+        worker 在最后一次管线取消检查后调用：若取消已受理，本方法置位 ACK 并
+        返回 ``CANCELLED``（此后不再进入 READY/发布候选）；否则原子发布
+        READY_TO_SWITCH 并返回 ``READY``——发布后 ``_ready_published=True``，
+        迟到取消请求一律拒绝（消除「取消后 worker 正常完成 READY」的永久
+        cancelling 竞态，原实现两侧各有检查点但无共享原子边界）。
+        """
+        with self._cond:
+            if self._state not in (STATE_IMPORTING, STATE_VERIFYING):
+                raise TransitionError(f"只有 IMPORTING/VERIFYING 可裁决管线终态（当前 {self._state}）")
+            if self._cancel_requested:
+                self._cancel_ack_event.set()
+                self._cond.notify_all()
+                return "CANCELLED"
+            self._state = STATE_READY_TO_SWITCH
+            self._ready_published = True
+            self._cond.notify_all()
+            return "READY"
+
+    def resume_pipeline(self) -> None:
+        """boot HELD 恢复（2026-11-15 resume 接线）：重绑完成后 HELD → FROZEN。
+
+        前置由调用方（manager.resume_pending_attempt）保证：源 fence 已重新取得
+        并核验、目标资格 epoch 已 CAS 重绑。此后 worker 按 FROZEN→IMPORTING
+        既有合法转移继续；未走本方法前禁止派生 worker。
+        """
+        with self._cond:
+            if self._state != STATE_HELD:
+                raise TransitionError(f"只有 HELD 可恢复管线（当前 {self._state}）")
+            if self._cancel_requested:
+                raise TransitionError("取消已受理，禁止恢复管线（先完成取消收尾）")
+            self._state = STATE_FROZEN
+            self._held_reason = None
+            self._cond.notify_all()
 
     def enter_rebind(
         self,
@@ -557,6 +605,7 @@ class MaintenanceController:
             self._held_reason = None
             self._cancel_requested = False
             self._cancel_ack_event.clear()
+            self._ready_published = False
             self._cond.notify_all()
             return self._epoch
 

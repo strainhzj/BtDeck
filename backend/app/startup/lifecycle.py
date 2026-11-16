@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -216,11 +217,55 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
 
     try:
         outcome = service.complete_activation(attempt_id, archive_audit=_archive)
-        print(f"[OK] 激活 redo：{outcome}")
-        return True
     except Exception as exc:  # noqa: BLE001 - redo 失败保持维护
         print(f"[WARN] 激活 redo 未完成（保持维护分支）: {exc}")
         return False
+    # 2026-11-15 复核修复：redo 发生在导入期缓存之后——业务引擎/URL 工厂仍按
+    # 旧有效配置创建，补发布只改磁盘文件（冷启动实测：redo 报成功、发布
+    # postgresql、缓存仍 sqlite，业务 Session 照写旧源）。配置发生实际切换时
+    # 绝不允许本进程继续普通启动：调度托管退出交编排器重启进新配置；无法
+    # 调度则回到维护分支（restartPending 提示），不能沿用旧引擎对外服务。
+    from app.core import database_bootstrap as _bootstrap
+    from app.database import get_effective_database_config
+
+    cached = get_effective_database_config()
+    published = _bootstrap.resolve_effective_database_config(str(settings.YAML_PATH))
+
+    def _same_effective(a, b) -> bool:  # noqa: ANN001 - 模块内比较器
+        if a.dialect != b.dialect:
+            return False
+        if (a.sqlite_path or None) != (b.sqlite_path or None):
+            return False
+        if a.pg is not None and b.pg is not None:
+            return (
+                a.pg.host == b.pg.host
+                and int(a.pg.port) == int(b.pg.port)
+                and a.pg.user == b.pg.user
+                and a.pg.database == b.pg.database
+            )
+        return a.pg is None and b.pg is None
+
+    if _same_effective(cached, published):
+        print(f"[OK] 激活 redo：{outcome}")
+        return True
+    from app.services.db_migration.journal import Journal as _Journal
+
+    _Journal(config_dir).write_control(lambda c: {**c, "restart_pending": True})
+    from app.services.db_migration.restart_adapter import detect_hosting, schedule_graceful_exit
+
+    opt_in = (os.environ.get("BTD_MIGRATION_MANAGED_RESTART") or "").strip().lower() in {"1", "true", "yes"}
+    if (
+        opt_in
+        and detect_hosting() != "unknown"
+        and schedule_graceful_exit(delay_seconds=1.5, reason="activation-redo-restart")
+    ):
+        print("[OK] 激活 redo 完成；进程配置已切换，调度托管退出以重启进新配置（RESTART_PENDING）")
+        return True
+    print(
+        "[WARN] 激活 redo 已完成但进程仍缓存旧配置，且无法调度托管退出："
+        "回维护分支（RESTART_PENDING），需手动重启以切换运行库，不得继续普通启动"
+    )
+    return False
 
 
 def _mount_maintenance_control_services(
@@ -414,7 +459,10 @@ def _startup_maintenance_gate(
     if disposition.normal and intent is None:
         return False
     if disposition.reason_code == bootstrap.REASON_ACTIVATION_COMPLETE:
-        # 双 ACK 完成的激活：正常启动（合法旧 revision 交 migrate_database 升级）
+        # 双 ACK 完成的激活：正常启动（合法旧 revision 交 migrate_database 升级）。
+        # 2026-11-15 复核加固：先核当前库身份/激活凭据绑定（原实现仅凭本地
+        # ACTIVATED_ACK 放行，未核 identity/receipt/generation 一致）。
+        bootstrap.verify_active_database_binding(effective)
         print("=== 受管激活已完成（ACTIVATED_ACK）：按正常启动继续（§4.4）===")
         return False
     if authority is not None and authority.committed_pending_restart:

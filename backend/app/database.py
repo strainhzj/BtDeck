@@ -53,16 +53,26 @@ def _pg_ssl_args(*, async_driver: bool) -> Dict[str, Any]:
         return {}  # 同步侧走 URL 查询参数
     import ssl as _ssl
 
-    mode = (settings.DB_SSLMODE or "prefer").strip().lower()
+    # 2026-11-15 复核修复：异步侧 TLS 必须与同步同源——active 存在时用其
+    # sslmode/CA（原实现读 settings/env，active=require 可被 env prefer 覆盖
+    # 为允许明文回退；实测 active=require → async prefer）。
+    effective = get_effective_database_config()
+    active_pg = effective.pg if effective.source == "active" else None
+    if active_pg is not None:
+        mode = (active_pg.sslmode or "prefer").strip().lower()
+        ca_file = active_pg.ssl_root_cert
+    else:
+        mode = (settings.DB_SSLMODE or "prefer").strip().lower()
+        ca_file = settings.DB_SSL_ROOT_CERT
     if mode == "disable":
         return {"ssl": False}
     if mode in ("prefer", "require"):
         # prefer：asyncpg 模式串允许回退明文；require：无 CA 校验但强制 TLS
         return {"ssl": mode}
     # verify-ca / verify-full：加载 CA 的上下文
-    if not settings.DB_SSL_ROOT_CERT:
-        raise ValueError(f"DB_SSLMODE={mode} 需要 DB_SSL_ROOT_CERT 指向 CA 证书路径")
-    ctx = _ssl.create_default_context(cafile=settings.DB_SSL_ROOT_CERT)
+    if not ca_file:
+        raise ValueError(f"DB_SSLMODE={mode} 需要 CA 证书路径（DB_SSL_ROOT_CERT / active.ssl_root_cert）")
+    ctx = _ssl.create_default_context(cafile=ca_file)
     if mode == "verify-ca":
         ctx.check_hostname = False
     # verify-full：保持 check_hostname=True（create_default_context 默认）
@@ -196,11 +206,14 @@ ASYNC_SQLALCHEMY_DATABASE_URL = build_database_url(async_driver=True)
 # 创建异步引擎（契约 §2.2：PG 用默认 AsyncAdaptedQueuePool——普通 QueuePool 不兼容 asyncio）
 # SQLite 路径与历史行为一致（NullPool + timeout=15 + PRAGMA 事件）。
 if DIALECT == "postgresql":
+    # 2026-11-15 复核修复：active 存在时池参数从有效配置取（完整覆盖 env，
+    # 与同步侧同源；原实现读 settings，实测 active pool_size=3 → 实际 10）
+    _active_pg = _EFFECTIVE_DATABASE_CONFIG.pg if _EFFECTIVE_DATABASE_CONFIG.source == "active" else None
     async_engine = create_async_engine(
         ASYNC_SQLALCHEMY_DATABASE_URL,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW,
-        pool_timeout=settings.DB_POOL_TIMEOUT,
+        pool_size=_active_pg.pool_size if _active_pg else settings.DB_POOL_SIZE,
+        max_overflow=_active_pg.max_overflow if _active_pg else settings.DB_MAX_OVERFLOW,
+        pool_timeout=_active_pg.pool_timeout if _active_pg else settings.DB_POOL_TIMEOUT,
         pool_pre_ping=True,
         echo=settings.DB_ECHO,
         connect_args=_pg_ssl_args(async_driver=True),

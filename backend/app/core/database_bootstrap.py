@@ -495,3 +495,88 @@ def evaluate_startup_disposition(
             "以防 seed/后台任务修改半成品数据；请重跑迁移或显式放弃。",
         )
     return StartupDisposition(DISPOSITION_NORMAL, "", "")
+
+
+def verify_active_database_binding(effective: EffectiveDatabaseConfig) -> Dict[str, Any]:
+    """正常激活启动前的绑定核验（2026-11-15 复核加固；§4.4/§7）。
+
+    核当前库 identity == active.expected_database_id、指定 receipt 存在且状态
+    ACTIVATED；receipt 已写 activation_generation 时必须等于 active.generation。
+    历史激活（generation 为空）容忍并如实返回，不伪造历史内容已验证。不符即
+    ManagedStateError（fail-closed，拒绝普通启动交恢复面处置）。
+    """
+    if effective.source != "active":
+        return {"skipped": "not-active"}
+    expected_id = effective.expected_database_id or ""
+    attempt = effective.receipt_attempt_id or ""
+    generation = effective.generation or ""
+    if effective.dialect == DIALECT_SQLITE:
+        path = effective.sqlite_path or ""
+        if not path or not Path(path).exists():
+            raise ManagedStateError(f"激活库文件不存在: {path!r}")
+        conn = _sqlite_ro_connect(path)
+        try:
+            has_identity = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bt_database_identity'"
+            ).fetchone()
+            identity = (
+                conn.execute("SELECT database_id FROM bt_database_identity").fetchone()[0] if has_identity else None
+            )
+            receipt_row = None
+            has_receipt = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bt_database_migration_receipt'"
+            ).fetchone()
+            if has_receipt and attempt:
+                receipt_row = conn.execute(
+                    "SELECT status, activation_generation FROM bt_database_migration_receipt WHERE attempt_id=?",
+                    (attempt,),
+                ).fetchone()
+        finally:
+            conn.close()
+    else:
+        from sqlalchemy import URL, create_engine, text
+        from sqlalchemy.pool import NullPool
+
+        pg = effective.pg
+        if pg is None:
+            raise ManagedStateError("active 指向 postgresql 但参数缺失（配置不完整）")
+        query: Dict[str, Any] = {"sslmode": pg.sslmode}
+        if pg.sslmode in ("verify-ca", "verify-full") and pg.ssl_root_cert:
+            query["sslrootcert"] = pg.ssl_root_cert
+        url = URL.create(
+            drivername="postgresql+psycopg2",
+            username=pg.user,
+            password=pg.password,
+            host=pg.host,
+            port=pg.port,
+            database=pg.database,
+            query=query,
+        )
+        engine = create_engine(
+            url.render_as_string(hide_password=False), poolclass=NullPool, connect_args={"connect_timeout": 8}
+        )
+        try:
+            with engine.connect() as pg_conn:
+                row = pg_conn.execute(text("SELECT database_id FROM bt_database_identity")).fetchone()
+                identity = row[0] if row else None
+                receipt_row = None
+                if attempt:
+                    receipt_row = pg_conn.execute(
+                        text(
+                            "SELECT status, activation_generation FROM bt_database_migration_receipt "
+                            "WHERE attempt_id = :a"
+                        ),
+                        {"a": attempt},
+                    ).fetchone()
+        finally:
+            engine.dispose()
+    if not identity or identity != expected_id:
+        raise ManagedStateError(f"激活库身份不符（{identity!r} ≠ active.expected_database_id {expected_id!r}）")
+    if receipt_row is None:
+        raise ManagedStateError(f"激活凭据缺失（receipt attempt={attempt!r} 不在当前库）")
+    status, receipt_generation = receipt_row[0], receipt_row[1]
+    if status != "ACTIVATED":
+        raise ManagedStateError(f"激活凭据状态 {status!r} 非 ACTIVATED")
+    if receipt_generation and generation and str(receipt_generation) != str(generation):
+        raise ManagedStateError(f"激活代次不符（receipt={receipt_generation!r} ≠ active.generation {generation!r}）")
+    return {"identity": identity, "status": status, "generation": receipt_generation or None}

@@ -63,6 +63,16 @@ CREDENTIALS_FILENAME = "target-credentials.json"
 _REBIND_RECORDS_KEY = "rebind_records"
 
 
+def _locked_value_matches(expected: Any, supplied: Any) -> bool:
+    """固定目标字段比对（端口等数值字段容忍 int/str 形态差异，其余精确字符串比对）。"""
+    if isinstance(expected, bool) or isinstance(supplied, bool):
+        return bool(expected) == bool(supplied)
+    try:
+        return int(expected) == int(supplied)
+    except (TypeError, ValueError):
+        return str(expected) == str(supplied)
+
+
 class ManagerError(RuntimeError):
     """管理器基类。"""
 
@@ -149,6 +159,7 @@ class MigrationManager:
         self._last_progress: Dict[str, Any] = {}
         self._target_desc: Dict[str, Any] = {}
         self._ctx: Optional[PipelineContext] = None
+        self._fence_owner: Optional[Any] = None  # 2026-11-15 复核修复：fence 持久所有者
 
     # ------------------------------------------------------------------
     # 视图
@@ -221,6 +232,13 @@ class MigrationManager:
     ) -> ManagerStatus:
         if direction not in {"sqlite-to-pg", "pg-to-sqlite"}:
             raise ManagerError(f"未知方向: {direction!r}")
+        if direction == "pg-to-sqlite":
+            final = target.get("final_path")
+            if final is not None and str(final).strip() and not os.path.isabs(str(final)):
+                # 2026-11-15 复核修复：相对目录会被原样写进 candidate_active，提交后
+                # bootstrap 拒启（active.sqlite_path 必须绝对）——发起面先拒，不
+                # 留到不可撤销之后（隐式落 CWD 已同批移除，见 default runner）。
+                raise ManagerError(f"反向目标目录必须为绝对路径: {final!r}")
         with self._lock:
             if self._phase not in {"idle", "cancelled", "failed"}:
                 raise StateConflict(f"单飞行约束：attempt 进行中（phase={self._phase}）")
@@ -336,11 +354,18 @@ class MigrationManager:
         NORMAL → 回 idle 后重抛。"""
         with self._lock:
             try:
-                fence = self._acquire_source_fence(direction, source_desc)
-                fence.acquire()  # 取源保护锁+固定指纹（真实 fence 须显式 acquire；§5.1）
-                self._controller.enter_frozen(getattr(fence, "token", None))
+                from app.services.db_migration.source_fence import FenceOwner
+
+                # 2026-11-15 复核修复：fence 由 manager 强持有的单线程 owner 管理——
+                # 原实现 fence 仅为局部变量，编排返回后可被 GC，源锁静默丢失
+                # （实测 GC 后独立写源成功而状态仍 IMPORTING）。连接相关操作全部
+                # 在 owner 线程执行，规避 sqlite3 跨线程限制。
+                owner = FenceOwner(lambda: self._acquire_source_fence(direction, source_desc))
+                token = owner.acquire()
+                self._fence_owner = owner
+                self._controller.enter_frozen(token)
                 self._phase = "frozen"
-                fingerprint = getattr(getattr(fence, "token", None), "fingerprint", "")
+                fingerprint = getattr(token, "fingerprint", "")
                 # journal：manifest+control 持久（先持久锚点才允许目标副作用）
                 self._ctx = PipelineContext(attempt_id=attempt_id, operation_kind=OPERATION_KIND_MIGRATE)
                 manifest = make_manifest_payload(
@@ -376,6 +401,12 @@ class MigrationManager:
                 self._spawn_worker(manifest)
                 return self.status()
             except Exception as exc:
+                # 2026-11-15 复核修复：启动失败路径确定性释放 fence owner
+                stale_owner: Any = self._fence_owner
+                self._fence_owner = None
+                if stale_owner is not None:
+                    with contextlib.suppress(Exception):
+                        stale_owner.release()
                 try:
                     control = self._journal.read_control() or {}
                     _attempt = control.get("pending_attempt")
@@ -469,10 +500,29 @@ class MigrationManager:
                 self._worker_result = result
                 self._phase = "verifying"
                 controller.set_pipeline_state("VERIFYING")
-                controller.set_pipeline_state("READY_TO_SWITCH")
-                self._phase = "ready_to_switch"
+                # fence 存活核验（2026-11-15 复核修复）：锁失效不得进入 READY
+                owner = self._fence_owner
+                if owner is not None and not owner.verify():
+                    from app.services.db_migration.source_fence import SourceFenceError
+
+                    raise SourceFenceError("源 fence 失效（verify 失败）——不得进入 READY")
+                # 终态原子裁决（2026-11-15 复核修复）：取消先受理→CANCELLED
+                # （conclude 内置 ACK）；否则原子发布 READY，此后取消请求被控制器
+                # 拒绝——消除「取消后 worker 正常完成 READY」的永久 cancelling 竞态。
+                outcome = controller.conclude_pipeline()
+                if outcome != "READY":
+                    self._phase = "cancelled"
+                    self._audit.audit_event(
+                        "migration",
+                        action="worker-cancelled",
+                        outcome="ok",
+                        detail={"attemptId": attempt_id},
+                        attempt_id=attempt_id,
+                    )
+                    return
                 # 候选 active 持久（switch 端点经 manifest.candidate_active 提交；§7.2）
                 self._persist_candidate_active(manifest, result or {})
+                self._phase = "ready_to_switch"
                 self._audit.audit_event(
                     "migration",
                     action="verify-done",
@@ -480,13 +530,27 @@ class MigrationManager:
                     detail={"attemptId": attempt_id},
                     attempt_id=attempt_id,
                 )
+            except ControllerCancellation as exc:
+                self._worker_error = str(exc)
+                self._phase = "cancelled"
+                # 2026-11-15 复核修复：先审计后 ACK（管线异常路径已保证事务回滚/
+                # 句柄关闭；原实现批间取消被包装成 failed，ACK 永不发生）
+                self._audit.audit_event(
+                    "migration",
+                    action="worker-exit",
+                    outcome="failed",
+                    detail={"attemptId": attempt_id, "error": str(exc)[:200]},
+                    attempt_id=attempt_id,
+                )
+                controller.ack_cancel(epoch=runtime_epoch)
             except BaseException as exc:  # noqa: BLE001 - worker 兜底记录
                 self._worker_error = str(exc)
-                if isinstance(exc, (ControllerCancellation, StaleEpochError)) and isinstance(
-                    exc, ControllerCancellation
-                ):
-                    self._phase = "cancelled"
-                    controller.ack_cancel(epoch=runtime_epoch)
+                from app.services.db_migration.source_fence import SourceFenceError
+
+                if isinstance(exc, SourceFenceError):
+                    # 锁丢失/验证失败 → HELD（不继续宣称冻结，§5.2）
+                    controller.note_fence_lost(str(exc)[:200])
+                    self._phase = "held"
                 else:
                     self._phase = "failed"
                     with contextlib.suppress(TransitionError):
@@ -538,18 +602,60 @@ class MigrationManager:
         atomic_write_json(path, {"attempt_id": attempt_id, "target": target, "password": password})
 
     def provide_credentials(self, attempt_id: str, *, password: str, target: Dict[str, Any]) -> None:
-        """恢复路径重输凭据（校验 attempt 一致后限权落盘）。"""
+        """恢复路径重输凭据（2026-11-15 复核修复：只允许更新秘密，不得换目标）。
+
+        原实现仅核 manifest 自述 attempt_id，任意阶段可整体覆写 target，而
+        worker 恢复路径与 candidate 构造都从凭据仓重读 target——导入目标 A
+        期间补交 B 会产出指向 B 的候选（实测复现）。现对非敏感连接描述逐字段
+        对比 manifest 固定目标，不一致即拒。
+        """
         manifest = self._journal.read_manifest(attempt_id)
         if manifest.get("attempt_id") != attempt_id:
             raise StateConflict("attempt 不一致")
+        if manifest.get("abandoned"):
+            raise StateConflict("attempt 已放弃，禁止补凭据")
+        if manifest.get("commit_phase", COMMIT_PHASE_NONE) != COMMIT_PHASE_NONE:
+            raise StateConflict("commit_phase 已推进，禁止补凭据（只能按原目标 redo）")
+        locked = manifest.get("target") or {}
+        for fname in (
+            "dialect",
+            "host",
+            "port",
+            "user",
+            "database",
+            "schema",
+            "sslmode",
+            "ssl_root_cert",
+            "path",
+            "final_path",
+        ):
+            expected = locked.get(fname)
+            supplied = target.get(fname)
+            if expected in (None, "") or supplied in (None, ""):
+                continue
+            if not _locked_value_matches(expected, supplied):
+                raise StateConflict(f"目标 {fname} 与固定目标不符（{supplied!r} ≠ {expected!r}）——凭据补交不可换目标")
         self._store_credentials(attempt_id, target, password)
 
     # ------------------------------------------------------------------
     # cancel / leave（§6.4：先 ACK 后状态；leave 先撤销资格+推进 epoch）
     # ------------------------------------------------------------------
 
-    def request_cancel(self, *, reason: str = "") -> ManagerStatus:
-        attempt = self._require_pending("cancel")
+    def request_cancel(
+        self,
+        *,
+        reason: str = "",
+        expect_attempt_id: Optional[str] = None,
+        expect_epoch: Optional[str] = None,
+        expect_state_version: Optional[int] = None,
+    ) -> ManagerStatus:
+        manifest = self._require_pending("cancel")
+        # 2026-11-15 复核修复：真正消费请求侧 CAS（原实现声明全量 CAS 但一个
+        # 字段都不消费——持陈旧页面的操作者可取消到后续新 attempt）。
+        if expect_attempt_id is not None and manifest.get("attempt_id") != expect_attempt_id:
+            raise StateConflict(f"CAS 失败: attempt={manifest.get('attempt_id')!r} ≠ 请求 {expect_attempt_id!r}")
+        if expect_epoch is not None or expect_state_version is not None:
+            self._assert_cas(manifest, expect_epoch or "", expect_state_version or 0)
         # worker 已收尾（READY/终态）时协作取消永远等不到 ACK——2026-11-11 审查
         # 实证：READY 点取消 → 永久 cancelling，前端提交/放弃按钮双双隐藏。
         # fail-fast 409（不污染 phase），指引提交切换或放弃；preparing/draining
@@ -559,13 +665,17 @@ class MigrationManager:
             worker_pre_start = self._phase in {"preparing", "draining", "frozen"}
         if not worker_alive and not worker_pre_start:
             raise StateConflict("worker 已收尾，协作取消无法完成：请提交切换（READY）或放弃迁移（已安全停止态）")
-        self._controller.request_cancel(reason=reason)
+        try:
+            self._controller.request_cancel(reason=reason)
+        except TransitionError as exc:
+            # READY 已原子发布（conclude_pipeline）→ 取消窗口关闭（2026-11-15）
+            raise StateConflict(f"取消窗口已关闭：{exc}") from exc
         self._audit.audit_event(
             "migration",
             action="cancel-request",
             outcome="ok",
-            detail={"attemptId": attempt, "reason": reason},
-            attempt_id=str(attempt),
+            detail={"attemptId": manifest.get("attempt_id"), "reason": reason},
+            attempt_id=str(manifest.get("attempt_id")),
         )
         return self.status()
 
@@ -599,6 +709,17 @@ class MigrationManager:
         manifest["epoch"] = f"epoch-{uuid.uuid4().hex[:16]}"  # 资格作废代次
         self._journal.write_manifest(attempt, manifest, expect_state_version=manifest["state_version"])
         self._journal.write_control(lambda c: {**c, "pending_attempt": None})
+        # 1.5 源锁确定性释放（2026-11-15 复核修复：资格已持久作废后再解锁；
+        # 释放失败保持 HELD，不得带锁退出维护也不得丢句柄后宣称已释放）
+        owner = self._fence_owner
+        if owner is not None:
+            try:
+                owner.release()
+                self._fence_owner = None
+            except Exception as release_exc:  # noqa: BLE001 - 释放失败 → HELD
+                self._controller.note_fence_lost(f"release 失败: {release_exc}")
+                self._phase = "held"
+                raise StateConflict(f"源锁释放失败（保持 HELD）: {release_exc}") from release_exc
         # 2. controller 侧同源推进 + 退出维护（journal 守卫：COMMITTED 拒回 NORMAL）
         try:
             state = self._controller.status().state
@@ -734,7 +855,7 @@ class MigrationManager:
             "generation": str(uuid.uuid4()),
             "expected_database_id": database_id,
             "receipt_attempt_id": attempt_id,
-            "revision_at_import": manifest.get("tool_version", ""),
+            "revision_at_import": str(result.get("revision") or manifest.get("tool_version") or ""),
         }
         if manifest.get("direction") == "pg-to-sqlite":
             final = str(result.get("final") or "")
@@ -768,6 +889,161 @@ class MigrationManager:
         merged["candidate_active"] = candidate
         self._journal.write_manifest(attempt_id, merged, expect_state_version=merged["state_version"])
 
+    # ------------------------------------------------------------------
+    # boot HELD 安全续跑（2026-11-15 复核修复，§6.3）
+    # ------------------------------------------------------------------
+
+    def resume_pending_attempt(
+        self,
+        *,
+        expect_epoch: str,
+        expect_state_version: int,
+        worker_stop_timeout: float = 5.0,
+    ) -> ManagerStatus:
+        """重启后安全续跑：重新取锁→核源→重绑→派 worker；不是仅补密码。
+
+        前置：boot HELD/idle（controller HELD）、pending manifest、凭据在位、
+        commit_phase=NONE（COMMITTED 只能按原目标 redo）。源指纹与冻结快照
+        不符即拒绝（counts 相同不构成无漂移）；目标 epoch CAS 失败保持 HELD。
+        """
+        with self._lock:
+            if self._phase not in {"idle", "held"}:
+                raise StateConflict(f"仅 boot HELD/idle 可恢复（phase={self._phase}）")
+            if self._worker is not None and self._worker.is_alive():
+                raise StateConflict("已有活跃 worker，禁止重复恢复")
+        manifest = self._require_pending("resume")
+        self._assert_cas(manifest, expect_epoch, expect_state_version)
+        attempt_id = manifest["attempt_id"]
+        if manifest.get("abandoned"):
+            raise StateConflict("attempt 已放弃，禁止恢复")
+        if manifest.get("commit_phase", COMMIT_PHASE_NONE) != COMMIT_PHASE_NONE:
+            raise StateConflict(f"commit_phase={manifest.get('commit_phase')}：只能按原目标 redo，禁止恢复管线")
+        if not self.wait_worker_stopped(timeout=worker_stop_timeout):
+            raise WorkerNotStopped("worker 未收尾，禁止恢复")
+        if not self._credentials_path(attempt_id).exists():
+            raise NeedsCredentials("凭据缺失：先补交凭据再恢复（needsCredentials=true）")
+        direction = str(manifest.get("direction") or "")
+        # 1. 重新取得源 fence（owner 持有；重启后绝不继承旧锁资格）
+        from app.services.db_migration.source_fence import FenceOwner
+
+        owner: Any = FenceOwner(lambda: self._acquire_source_fence(direction, manifest.get("source")))
+        token = owner.acquire()
+        fingerprint = getattr(token, "fingerprint", "")
+        expected_fp = (manifest.get("source_snapshot") or {}).get("fingerprint", "")
+        if expected_fp and fingerprint != expected_fp:
+            owner.release()
+            self._controller.note_fence_lost("源指纹漂移（重启后重取与快照不符）")
+            raise StateConflict("源内容与冻结快照不一致——保持 HELD（counts 相同不构成无漂移）")
+        old_owner = self._fence_owner
+        self._fence_owner = owner
+        if old_owner is not None:
+            with contextlib.suppress(Exception):
+                old_owner.release()
+        # 2. epoch 重绑三段式（REBIND_PREPARED→目标 CAS→REBIND_ACK；ACK 前不派 worker）
+        self.rebind_epoch(
+            expect_epoch=manifest["epoch"],
+            expect_state_version=int(manifest["state_version"]),
+            proof_hash=fingerprint,
+            target_cas=lambda old_ep, new_ep: self._rebind_target_epoch(manifest, old_ep, new_ep),
+        )
+        # 3. 重建管线上下文（绑定持久 nonce/epoch）并派生 worker
+        fresh = self._journal.read_manifest(attempt_id)
+        fresh["resume"] = True
+        fresh["worker_generation"] = self._controller.next_worker_generation()
+        self._journal.write_manifest(attempt_id, fresh, expect_state_version=fresh["state_version"])
+        ctx = PipelineContext(
+            attempt_id=attempt_id,
+            operation_kind=OPERATION_KIND_MIGRATE,
+            ownership_nonce=str(fresh.get("ownership_nonce") or ""),
+            origin_epoch=str(fresh.get("origin_epoch") or fresh.get("epoch") or ""),
+            eligible_epoch=str(fresh.get("epoch") or ""),
+        )
+        self._ctx = ctx
+        self._controller.resume_pipeline()
+        self._phase = "frozen"
+        self._spawn_worker(fresh)
+        self._audit.audit_event(
+            "migration",
+            action="resume",
+            outcome="ok",
+            detail={"attemptId": attempt_id, "direction": direction},
+            attempt_id=attempt_id,
+        )
+        return self.status()
+
+    def _pg_params_from_credentials(self, attempt_id: str):
+        """凭据仓 → PostgresParams（worker 重解析/rebind CAS 共用；不可读即拒）。"""
+        import json as _json
+
+        from app.services.db_migration.target_params import pg_params_from_mapping
+
+        try:
+            cred = _json.loads(self._credentials_path(attempt_id).read_text(encoding="utf-8"))
+            mapping = {**(cred.get("target") or {}), "password": cred.get("password", "")}
+            mapping.pop("_pg_params", None)
+            return pg_params_from_mapping(mapping)
+        except Exception as exc:
+            raise ManagerError(f"目标参数重解析失败（凭据仓不可读）: {exc}") from exc
+
+    def _rebind_target_epoch(self, manifest: Dict[str, Any], old_epoch: str, new_epoch: str) -> bool:
+        """目标事务内 CAS receipt.eligible_epoch + marker/checkpoint epoch（§6.3）。"""
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
+
+        from app.core.database_protocol import RECEIPT_TABLE
+        from app.core.pg_baseline import get_import_state, set_import_state
+
+        direction = manifest.get("direction")
+        if direction == "sqlite-to-pg":
+            try:
+                from app.services.db_migration.target_params import build_pg_url
+
+                params = manifest.get("target", {}).get("_pg_params")
+                from app.services.db_migration.target_params import PostgresParams
+
+                if not isinstance(params, PostgresParams):
+                    params = self._pg_params_from_credentials(manifest["attempt_id"])
+                url = build_pg_url(params)
+            except Exception:
+                return False
+        elif direction == "pg-to-sqlite":
+            staging = manifest.get("final_path") or ""
+            if not staging or not os.path.isabs(str(staging)):
+                return False
+            url = f"sqlite:///{staging}"
+        else:
+            return False
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text(f"SELECT eligible_epoch FROM {RECEIPT_TABLE} WHERE attempt_id = :aid"),
+                    {"aid": manifest["attempt_id"]},
+                ).fetchone()
+                if row is None or row[0] != old_epoch:
+                    return False
+                result = conn.execute(
+                    text(
+                        f"UPDATE {RECEIPT_TABLE} SET eligible_epoch = :new "
+                        "WHERE attempt_id = :aid AND eligible_epoch = :old"
+                    ),
+                    {"new": new_epoch, "aid": manifest["attempt_id"], "old": old_epoch},
+                )
+                if (result.rowcount or 0) != 1:
+                    return False
+                marker = get_import_state(conn)
+                checkpoint = (marker or {}).get("checkpoint") or {}
+                if marker is not None and checkpoint.get("eligible_epoch") == old_epoch:
+                    checkpoint["eligible_epoch"] = new_epoch
+                    set_import_state(
+                        conn, marker["migration_id"], marker["source_digest"], marker["tool_version"], checkpoint
+                    )
+            return True
+        except Exception:
+            return False
+        finally:
+            engine.dispose()
+
     def _default_pipeline_runner(self, ctx: PipelineContext, manifest: Dict[str, Any]) -> Dict[str, Any]:
         direction = manifest.get("direction")
         if direction == "sqlite-to-pg":
@@ -779,17 +1055,7 @@ class MigrationManager:
             if not isinstance(params, PostgresParams):
                 # 重解析（W6 实跑补）：manifest 保持 JSON-safe 不落对象——
                 # 目标参数=manifest.target（无密码描述）∪ 受保护凭据仓密码
-                import json as _json
-
-                from app.services.db_migration.target_params import pg_params_from_mapping
-
-                try:
-                    cred = _json.loads(self._credentials_path(manifest["attempt_id"]).read_text(encoding="utf-8"))
-                    mapping = {**(cred.get("target") or {}), "password": cred.get("password", "")}
-                    mapping.pop("_pg_params", None)
-                    params = pg_params_from_mapping(mapping)
-                except Exception as exc:
-                    raise ManagerError(f"sqlite-to-pg 目标参数重解析失败（凭据仓不可读）: {exc}") from exc
+                params = self._pg_params_from_credentials(manifest["attempt_id"])
             from sqlalchemy import create_engine
             from app.core.config import settings as app_settings
             from app.services.db_migration.target_params import build_pg_url
@@ -808,6 +1074,7 @@ class MigrationManager:
                     manifest.get("source", {}).get("path", ""),
                     pg_engine=engine,
                     ctx=ctx,
+                    resume=bool(manifest.get("resume")),
                     asset_paths={"source_config": yaml_path, "target_config": yaml_path},
                 )
             finally:
@@ -833,7 +1100,20 @@ class MigrationManager:
 
             engine = create_engine(build_pg_url(params), poolclass=NullPool)
             try:
-                return run_pg_to_sqlite(engine, target_dir=manifest.get("final_path") or ".", ctx=ctx)
+                # 2026-11-15 复核修复：目标目录必须绝对（缺省=配置目录，非 CWD——
+                # 原实现回退 "."，产物以相对路径进 candidate_active，提交后拒启）；
+                # resume 场景传入固定 staging 路径（final 与 staging 同名）。
+                from app.services.db_migration.pg_to_sqlite import staging_path
+
+                final_raw = str(manifest.get("final_path") or "").strip()
+                if final_raw:
+                    if not os.path.isabs(final_raw):
+                        raise ManagerError(f"反向目标目录必须为绝对路径: {final_raw!r}")
+                    target_dir = final_raw
+                else:
+                    target_dir = str(Path(self._config_dir).resolve())
+                resume_staging = staging_path(target_dir, ctx) if manifest.get("resume") else None
+                return run_pg_to_sqlite(engine, target_dir=target_dir, ctx=ctx, resume_staging=resume_staging)
             finally:
                 engine.dispose()
         raise ManagerError(f"未知方向: {direction!r}")

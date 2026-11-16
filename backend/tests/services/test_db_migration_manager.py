@@ -59,6 +59,12 @@ class _FakeFence:
         self.acquired = True
         return self.token
 
+    def verify(self) -> bool:
+        return True
+
+    def verify_against(self, expected: str) -> bool:
+        return self.token.fingerprint == expected
+
     def release(self) -> None:
         self.released = True
 

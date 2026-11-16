@@ -50,6 +50,7 @@ from app.core.pg_baseline import (
 from app.database import Base
 from app.models.database_migration import business_tables
 from app.services.db_migration import canonical, pipeline
+from app.services.db_migration.maintenance import ControllerCancellation
 from app.services.db_migration.pipeline import (
     CheckpointIncompatible,
     MigrationCancelled,
@@ -498,6 +499,33 @@ def calibrate_sequences(pg_engine: Engine) -> List[str]:
 # ==================== 5. verify（canonical-v1） ====================
 
 
+def _normalize_target_row(table: Any, row: Mapping[str, Any]) -> Dict[str, Any]:
+    """目标侧行归一（2026-11-15 复核修复）：与源 row_transform 同口径的枚举标签。
+
+    SQLAlchemy 类型化 SELECT 会把 SQLEnum 列读回枚举成员（IntEnum 被
+    canonical-v1 编码为整数），而源侧 row_transform 归一为成员名——downloader_settings
+    等正常数据两侧摘要必然不同（真 PG 实测误报内容不一致）。按列声明统一归一。
+    """
+    out: Dict[str, Any] = {}
+    for col in table.columns:
+        value = row.get(col.name)
+        if value is None:
+            out[col.name] = None
+        elif isinstance(col.type, SQLEnum) and getattr(col.type, "enum_class", None) is not None:
+            enum_cls = col.type.enum_class
+            if enum_cls is None:  # mypy 窄化（getattr 判定不传导类型收窄）
+                out[col.name] = str(value)
+            elif isinstance(value, enum_cls):
+                out[col.name] = value.name
+            elif isinstance(value, str) and value in enum_cls.__members__:
+                out[col.name] = value
+            else:
+                out[col.name] = str(value)
+        else:
+            out[col.name] = value
+    return out
+
+
 def verify_counts_and_digests(
     sqlite_conn: sqlite3.Connection, pg_engine: Engine, tables: Sequence[Any]
 ) -> Tuple[List[str], Dict[str, int], Dict[str, str]]:
@@ -554,11 +582,7 @@ def verify_counts_and_digests(
             target_normalized = []
             for row in target_rows.mappings():
                 row_dict = dict(row)
-                for name in json_columns:
-                    if row_dict.get(name) is None and row_dict.get(canonical.SQL_NULL_FLAG_PREFIX + name) is False:
-                        # SQL NULL 为假 + 值 None → JSON null（边注区分，值域归一 None）
-                        pass
-                target_normalized.append(row_dict)
+                target_normalized.append(_normalize_target_row(table, row_dict))
             s_digest = canonical.digest_rows(source_rows)
             p_digest = canonical.digest_rows(target_normalized)
             digests[table.name] = s_digest
@@ -604,6 +628,11 @@ def run_sqlite_to_pg(
                 auto_wrap=auto_wrap,
                 asset_paths=asset_paths,
             )
+    except ControllerCancellation:
+        # 2026-11-15 复核修复：维护控制器取消不得被包装成普通中断——manager
+        # 依赖原始取消类型做 ACK/终态裁决（原实现落入通用包装，phase=failed
+        # 且取消永不 ACK）。MigrationCancelled 仍按 CLI 语义包装（退出码 3）。
+        raise
     except MigrationCancelled as exc:
         raise MigrationInterrupted(f"协作取消：{exc}") from exc
     except (PrecheckFailed, TargetInvalid):
@@ -742,6 +771,15 @@ def _run_snapshot(
         raise MigrationInterrupted(f"对账未通过：{problems[0]}（共 {len(problems)} 项）")
     logger.info("[核对] 全部 %d 表行数/主键集合/内容摘要一致", len(tables))
 
+    # 2026-11-15 复核加固：finalize 前断言摘要/计数覆盖全部业务表。反向管线
+    # 曾因跳过有主键表摘要而以空 digests finalize VERIFIED（可产出未验证凭据），
+    # 此处为正向对称防线：任何表缺失即拒绝 finalize。
+    missing_digests = [t.name for t in tables if t.name not in digests]
+    if missing_digests:
+        raise MigrationInterrupted(
+            f"内容摘要覆盖不完整（缺 {missing_digests[:5]}）：拒绝 finalize（2026-11-15 复核修复）"
+        )
+
     # 阶段 6：finalize（同事务 receipt VERIFIED + 清 marker）
     from app.core.pg_baseline import finalize_receipt_verified
 
@@ -761,6 +799,7 @@ def _run_snapshot(
         "tables": len(tables),
         "rows": total_rows,
         "counts": counts,
+        "revision": chain_head,  # 真实导入 revision（candidate.revision_at_import 用，非工具版本）
         "database_id": _target_identity(pg_engine),  # 目标自身身份（activation 候选）
     }
 
