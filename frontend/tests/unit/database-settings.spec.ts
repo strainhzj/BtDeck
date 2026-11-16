@@ -105,6 +105,7 @@ interface PanelVm {
   authForm: { username: string, password: string, twofa: string }
   loginMaintenance: () => Promise<void>
   onStartMigration: () => Promise<void>
+  reverseTargetDir: string
   commitFollowSwitch: () => Promise<void>
   requestFollowCancel: () => Promise<void>
   followCancellable: boolean
@@ -551,9 +552,38 @@ describe('DatabasePanel', () => {
     wrapper.destroy()
   })
 
-  it('B start 守卫：当前库已是 PostgreSQL 时拒绝发起', async() => {
+  it('B start 反向（PG 源）：方向 pg-to-sqlite、受控目录载荷、无密码面（2026-11-15 反向入口）', async() => {
     const wrapper = await mountPanel()
     const vm = wrapper.vm as unknown as PanelVm
+    vm.reverseTargetDir = '/data2/backups'
+    const confirmSpy = jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-r1', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('PostgreSQL → SQLite'),
+      '确认发起反向迁移？',
+      expect.objectContaining({ type: 'warning' })
+    )
+    expect(mockStartMigration).toHaveBeenCalledTimes(1)
+    const payload = mockStartMigration.mock.calls[0][0]
+    expect(payload.direction).toBe('pg-to-sqlite')
+    expect(payload.target).toEqual({ final_path: '/data2/backups' })
+    expect(payload.source).toEqual({ dialect: 'postgresql' })
+    expect(payload.password).toBeUndefined()
+    expect(payload.use_env_password).toBeUndefined()
+    expect(vm.followMode).toBe(true)
+    wrapper.destroy()
+  })
+
+  it('B start 反向：目录留空=服务端默认（无 final_path），相对路径被拒', async() => {
+    const wrapper = await mountPanel()
+    const vm = wrapper.vm as unknown as PanelVm
+    vm.reverseTargetDir = 'rel/dir'
     const warningSpy = jest.spyOn(wrapper.vm.$message, 'warning').mockImplementation((() => ({})) as unknown as () => never)
 
     await vm.onStartMigration()
@@ -561,6 +591,18 @@ describe('DatabasePanel', () => {
 
     expect(mockStartMigration).not.toHaveBeenCalled()
     expect(warningSpy).toHaveBeenCalled()
+
+    vm.reverseTargetDir = ''
+    jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    mockStartMigration.mockResolvedValue(
+      makeMigrationStatusResponse({ attemptId: 'att-r2', phase: 'preparing' }) as unknown as Awaited<ReturnType<typeof startMigration>>
+    )
+    await findButton(wrapper, '发起迁移').vm.$emit('click')
+    await flushPromises()
+
+    const payload = mockStartMigration.mock.calls[0][0]
+    expect(payload.direction).toBe('pg-to-sqlite')
+    expect(payload.target).toEqual({})
     wrapper.destroy()
   })
 

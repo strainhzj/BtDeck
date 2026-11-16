@@ -215,6 +215,15 @@
         <p class="db-description">
           {{ $t('database.entry.descB') }}
         </p>
+        <!-- 反向（PG 源）：受控目标目录（绝对路径；留空=服务端配置目录） -->
+        <el-input
+          v-if="isReverseStart"
+          v-model="reverseTargetDir"
+          size="small"
+          class="db-reverse-dir"
+          :placeholder="$t('database.entry.reverseDirPlaceholder')"
+        />
+        <p v-if="isReverseStart" class="db-hint">{{ $t('database.entry.reverseDirHint') }}</p>
         <div class="db-actions">
           <el-button
             size="small"
@@ -359,6 +368,23 @@
         <p v-if="cancelError" class="db-entry-note">{{ cancelError }}</p>
         <p v-if="leaveError" class="db-entry-note">{{ leaveError }}</p>
 
+        <!-- boot HELD 安全续跑（2026-11-15）：重新取锁→核源指纹→epoch 重绑→派 worker；
+             凭据缺失时先补交（needsCredentials 时本块隐藏） -->
+        <div v-if="followResumable" class="db-actions">
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="resumeSubmitting"
+            @click="requestFollowResume"
+          >
+            {{ resumeSubmitting
+              ? $t('database.entry.followResuming')
+              : $t('database.entry.followResume') }}
+          </el-button>
+        </div>
+        <p v-if="resumeError" class="db-entry-note">{{ resumeError }}</p>
+
         <!-- NEEDS_CREDENTIALS：复用上方 PG 表单（已回填）提交绑定凭据 -->
         <div v-if="followNeedsCredentials" class="db-actions">
           <el-button
@@ -396,6 +422,7 @@ import {
   PgFormInput,
   PgMasked,
   ReadinessData,
+  SqliteTargetInput,
   SwitchCommitData,
   SwitchPayload,
   TestConnectionData,
@@ -588,6 +615,10 @@ export default class extends Vue {
   private unsubAuthExpired: (() => void) | null = null
   private startSubmitting = false
   private startError: string | null = null
+  /** 反向（PG→SQLite）受控目标目录（绝对路径；留空=服务端配置目录） */
+  private reverseTargetDir = ''
+  private resumeSubmitting = false
+  private resumeError: string | null = null
   private switchSubmitting = false
   private switchOk = false
   private switchError: string | null = null
@@ -638,6 +669,11 @@ export default class extends Vue {
     }
   }
 
+  /** 反向发起：当前有效方言为 postgresql（2026-11-15 反向入口） */
+  get isReverseStart(): boolean {
+    return (this.effective?.dialect || '') === 'postgresql'
+  }
+
   get followNeedsCredentials(): boolean {
     const s = this.followDisplay
     if (!s) return false
@@ -663,6 +699,13 @@ export default class extends Vue {
     const phase = this.followDisplay?.phase
     if (!phase) return false
     return FOLLOW_CANCELLABLE_PHASES.indexOf(phase) >= 0
+  }
+
+  /** HELD 且凭据在位：可安全续跑（后端 resume 重新取锁/核源/重绑/派 worker） */
+  get followResumable(): boolean {
+    const s = this.followDisplay
+    if (!s || !this.followAttemptPayload) return false
+    return s.phase === 'held' && !this.followNeedsCredentials
   }
 
   get followPhaseLabel(): string {
@@ -697,7 +740,7 @@ export default class extends Vue {
     return this.$t('database.maintenance.migration.progressCount', { done: p.done, total: p.total }).toString()
   }
 
-  /** 跟踪通道 CAS 快照（/migration/status 为权威；epoch/state_version 后端当前不消费但保持契约完整） */
+  /** 跟踪通道 CAS 快照（/migration/status 为权威；epoch/state_version 已被后端 cancel/switch/resume 消费） */
   get followAttemptPayload(): MigrationCasPayload | null {
     const s = this.followStatus
     if (!s || !s.attemptId) return null
@@ -1017,31 +1060,37 @@ export default class extends Vue {
     }
   }
 
-  /** 一站式发起：确认后 POST start（普通通道），后端自动关准入→排空→冻结（暂停所有任务）；
+  /** 一站式发起（2026-11-15 方向化）：SQLite→PG（PG 表单）/ PG→SQLite（受控目录）；
+   * 确认后 POST start（普通通道），后端自动关准入→排空→冻结（暂停所有任务）；
    * 窗口打开后本面板停止普通通道调用，改走内嵌维护认证 + maintenanceRequest 通道 */
   private async onStartMigration(): Promise<void> {
     if (this.startSubmitting || this.migrationEntriesLocked) return
     if (this.followMode || this.attemptActive) return
-    if ((this.effective?.dialect || '') !== 'sqlite') {
-      this.$message.warning(this.$t('database.entry.startWrongDialect').toString())
-      return
+    const reverse = this.isReverseStart
+    if (!reverse) {
+      const sqlitePath = this.effective?.sqlitePath || ''
+      if (!sqlitePath) {
+        this.$message.warning(this.$t('database.entry.startNoSourcePath').toString())
+        return
+      }
+      let forwardValid = false
+      try {
+        forwardValid = await this.pgFormRef.validate()
+      } catch {
+        forwardValid = false
+      }
+      if (!forwardValid) return
+    } else {
+      const dir = this.reverseTargetDir.trim()
+      if (dir && !dir.startsWith('/')) {
+        this.$message.warning(this.$t('database.entry.reverseDirInvalid').toString())
+        return
+      }
     }
-    const sqlitePath = this.effective?.sqlitePath || ''
-    if (!sqlitePath) {
-      this.$message.warning(this.$t('database.entry.startNoSourcePath').toString())
-      return
-    }
-    let valid = false
-    try {
-      valid = await this.pgFormRef.validate()
-    } catch {
-      valid = false
-    }
-    if (!valid) return
     try {
       await this.$confirm(
-        this.$t('database.entry.startConfirmText').toString(),
-        this.$t('database.entry.startConfirmTitle').toString(),
+        this.$t(reverse ? 'database.entry.reverseConfirmText' : 'database.entry.startConfirmText').toString(),
+        this.$t(reverse ? 'database.entry.reverseConfirmTitle' : 'database.entry.startConfirmTitle').toString(),
         { type: 'warning' }
       )
     } catch {
@@ -1053,19 +1102,27 @@ export default class extends Vue {
     this.clearPollTimer()
     this.followMode = true
     try {
-      const payload: MigrationStartPayload = {
-        direction: 'sqlite-to-pg',
-        target: this.buildPgInput(),
-        source: { dialect: 'sqlite', path: sqlitePath }
+      const payload: MigrationStartPayload = reverse
+        ? {
+            direction: 'pg-to-sqlite',
+            target: (this.reverseTargetDir.trim() ? { final_path: this.reverseTargetDir.trim() } : {}) as SqliteTargetInput,
+            source: { dialect: 'postgresql' }
+          }
+        : {
+            direction: 'sqlite-to-pg',
+            target: this.buildPgInput(),
+            source: { dialect: 'sqlite', path: this.effective?.sqlitePath || '' }
+          }
+      if (!reverse) {
+        if (this.envPasswordMode) payload.use_env_password = true
+        else payload.password = this.pgForm.password
       }
-      if (this.envPasswordMode) payload.use_env_password = true
-      else payload.password = this.pgForm.password
       const res = await startMigration(payload)
       this.followStatus = res.data
       this.maintenanceAuthenticated = false
       this.$message.success(this.$t('database.entry.startLaunched').toString())
     } catch (error) {
-      // 超时/网络错误后结果不确定（后端排空最长 30s）：探测窗口——已开=启动实际成功
+      // 超时/网络错误后结果不确定（后端排空已改为后台耐心等待）：探测窗口——已开=启动实际成功
       if (await this.probeMaintenanceWindow()) {
         this.$message.success(this.$t('database.entry.startLaunched').toString())
       } else {
@@ -1266,6 +1323,37 @@ export default class extends Vue {
         : this.$t('database.maintenance.migration.credentialsFailed').toString()
     } finally {
       this.credFollowSubmitting = false
+    }
+  }
+
+  /** boot HELD 安全续跑（2026-11-15）：CAS POST resume；凭据缺失时先补交（按钮随 followResumable 隐藏） */
+  private async requestFollowResume(): Promise<void> {
+    if (this.resumeSubmitting) return
+    const snapshot = this.followAttemptPayload
+    if (!snapshot) return
+    try {
+      await this.$confirm(
+        this.$t('database.entry.followResumeConfirmText').toString(),
+        this.$t('database.entry.followResumeConfirmTitle').toString(),
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+    this.resumeSubmitting = true
+    this.resumeError = null
+    try {
+      this.followStatus = await maintenanceRequest<MigrationStatusData>(
+        'post',
+        '/database/migration/resume',
+        snapshot
+      )
+    } catch (error) {
+      this.resumeError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.entry.followResumeFailed').toString()
+    } finally {
+      this.resumeSubmitting = false
     }
   }
 

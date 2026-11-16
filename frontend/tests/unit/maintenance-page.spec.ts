@@ -89,6 +89,8 @@ interface PageVm {
   abandonOk: boolean
   abandonError: string | null
   onAbandonHeld: () => Promise<void>
+  canResumeHeld: boolean
+  onResumeHeld: () => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -546,6 +548,57 @@ describe('MaintenancePage', () => {
 
     expect(vm.canAbandonHeld).toBe(false)
     expect(wrapper.text()).not.toContain('放弃迁移')
+  })
+
+  it('HELD 且凭据在位：恢复迁移按钮可见，二次确认后 POST resume CAS（2026-11-15 resume 接线）', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'HELD' })
+    migrationFixture = makeMigration({ phase: 'held', detail: undefined })
+    const resumed = makeMigration({ phase: 'importing', detail: undefined })
+    mockRequest.mockImplementation(async(method: string, url: string) => {
+      if (url === '/database/migration/resume') return resumed as never
+      if (url === '/database/migration/status') return migrationFixture as never
+      if (url === '/database/target-readiness') return readinessFixture as never
+      if (url === '/database/deployment-target') return deploymentTargetFixture as never
+      throw new Error(`unexpected request: ${method} ${url}`)
+    })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+    expect(vm.canResumeHeld).toBe(true)
+    expect(wrapper.text()).toContain('恢复迁移')
+
+    const confirmSpy = jest.spyOn(wrapper.vm, '$confirm').mockResolvedValue('confirm')
+    const refreshSpy = jest.spyOn(vm, 'refreshAll').mockResolvedValue()
+    await vm.onResumeHeld()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining('冻结'),
+      '确认恢复迁移？',
+      expect.objectContaining({ type: 'warning' })
+    )
+    const resumeCall = mockRequest.mock.calls.find(call => call[1] === '/database/migration/resume')
+    expect(resumeCall).toBeDefined()
+    expect(resumeCall?.[0]).toBe('post')
+    expect(resumeCall?.[2]).toEqual({ attempt_id: 'att-100', epoch: 'ep-7', state_version: 2 })
+    expect(wrapper.text()).toContain('恢复已受理')
+    expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('HELD 但凭据缺失：恢复按钮不渲染（先补凭据，补交≠恢复）', async() => {
+    mockGetToken.mockReturnValue('mtk-live')
+    statusFixture = makeStatus({ state: 'HELD' })
+    migrationFixture = makeMigration({ phase: 'held', needsCredentials: true, detail: undefined })
+
+    const wrapper = await mountPage()
+    activeWrapper = wrapper
+    const vm = wrapper.vm as unknown as PageVm
+
+    expect(vm.canResumeHeld).toBe(false)
+    expect(wrapper.text()).not.toContain('恢复迁移（安全续跑）')
   })
 
   it('维护会话过期：订阅回调回登录区、清内存 token、不弹全局 toast', async() => {

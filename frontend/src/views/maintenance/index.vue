@@ -128,6 +128,27 @@
             <p v-if="abandonError" class="maintenance-warn">{{ abandonError }}</p>
           </div>
 
+          <!-- HELD 可恢复（2026-11-15 resume 接线）：凭据已在位 → 显式安全续跑
+               （重新取源锁→核源指纹→epoch 重绑→派 worker；补凭据≠恢复完成）；
+               resume 成功后 phase 已离开 held，反馈随 resumeOk 保持可见 -->
+          <div v-if="(canResumeHeld || resumeOk) && authenticated" class="maintenance-block">
+            <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.resumeTitle') }}</h3>
+            <p class="maintenance-hint">{{ $t('database.maintenance.migration.resumeHint') }}</p>
+            <p v-if="resumeOk" class="maintenance-ok">{{ $t('database.maintenance.migration.resumeAccepted') }}</p>
+            <el-button
+              type="primary"
+              plain
+              :loading="resumeSubmitting"
+              :disabled="resumeOk"
+              @click="onResumeHeld"
+            >
+              {{ resumeSubmitting
+                ? $t('database.maintenance.migration.resuming')
+                : $t('database.maintenance.migration.resumeHeld') }}
+            </el-button>
+            <p v-if="resumeError" class="maintenance-warn">{{ resumeError }}</p>
+          </div>
+
           <!-- NEEDS_CREDENTIALS：凭据重输表单（载荷 snake_case attempt_id/password/target）；操作面需认证 -->
           <div v-if="needsCredentials && authenticated" class="maintenance-block maintenance-block-danger">
             <h3 class="maintenance-block-title">{{ $t('database.maintenance.migration.needsCredentialsTitle') }}</h3>
@@ -409,6 +430,9 @@ export default class extends Vue {
   private abandonSubmitting = false
   private abandonOk = false
   private abandonError: string | null = null
+  private resumeSubmitting = false
+  private resumeOk = false
+  private resumeError: string | null = null
 
   // A2 部署环境目标回填（维护通道拉取；密码本体不出服务端）
   private deploymentTarget: DeploymentTargetData | null = null
@@ -587,6 +611,14 @@ export default class extends Vue {
    * 孤儿 intent（无背书）后端 boot 对账自动归档，本按钮不出现 */
   get canAbandonHeld(): boolean {
     if (this.phaseCode !== 'held') return false
+    return !!(this.migration?.attemptId && this.migration?.epoch)
+  }
+
+  /** HELD 可恢复（2026-11-15）：凭据已在位且有 pending manifest 背书；
+   * 恢复是显式动作——重新取锁/核源/重绑/派 worker，而非补凭据的隐式副作用 */
+  get canResumeHeld(): boolean {
+    if (this.phaseCode !== 'held') return false
+    if (this.needsCredentials) return false
     return !!(this.migration?.attemptId && this.migration?.epoch)
   }
 
@@ -913,6 +945,43 @@ export default class extends Vue {
         : this.$t('database.maintenance.migration.abandonFailed').toString()
     } finally {
       this.abandonSubmitting = false
+    }
+  }
+
+  /** HELD 安全续跑（2026-11-15 resume 接线）：CAS POST resume；派 worker 续跑 checkpoint */
+  private async onResumeHeld(): Promise<void> {
+    if (this.resumeSubmitting) return
+    const snapshot: MigrationCasPayload | null = this.migration?.attemptId && this.migration?.epoch
+      ? {
+          attempt_id: this.migration.attemptId,
+          epoch: this.migration.epoch,
+          state_version: this.migration.stateVersion
+        }
+      : null
+    if (!snapshot) return
+    this.resumeSubmitting = true
+    try {
+      // 二次确认单独 await：取消（reject）直接返回，不落错误分支
+      try {
+        await this.$confirm(
+          this.$t('database.maintenance.migration.resumeConfirmText').toString(),
+          this.$t('database.maintenance.migration.resumeConfirmTitle').toString(),
+          { type: 'warning' }
+        )
+      } catch {
+        return
+      }
+      this.resumeOk = false
+      this.resumeError = null
+      this.migration = await maintenanceRequest<MigrationStatusData>('post', '/database/migration/resume', snapshot)
+      this.resumeOk = true
+      void this.refreshAll()
+    } catch (error) {
+      this.resumeError = error instanceof ApiError && error.message
+        ? error.message
+        : this.$t('database.maintenance.migration.resumeFailed').toString()
+    } finally {
+      this.resumeSubmitting = false
     }
   }
 

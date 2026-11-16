@@ -199,6 +199,12 @@ export interface PgFormInput {
   pool_timeout?: number
 }
 
+/** 反向迁移（PG → SQLite）目标输入：受控父目录（绝对路径；留空=服务端配置目录）。
+ * 产物为该目录下独立文件 app.db.<attempt>.sqlite，不覆盖任何旧库（2026-11-15 反向入口） */
+export interface SqliteTargetInput {
+  final_path?: string
+}
+
 /** POST /test-connection 载荷（显式目标；不建 schema、不保存密码） */
 export interface TestConnectionPayload {
   dialect: DatabaseDialect
@@ -211,7 +217,8 @@ export interface TestConnectionPayload {
 /** POST /migration/start 载荷（单飞行；source 为源描述可选节） */
 export interface MigrationStartPayload {
   direction: MigrationDirection
-  target: PgFormInput
+  /** 方向化目标（2026-11-15）：正向=PG 表单；反向=SQLite 受控父目录（绝对路径，留空=服务端配置目录） */
+  target: PgFormInput | SqliteTargetInput
   /** use_env_password=true 时可省略（服务端取部署环境密码） */
   password?: string
   source?: Record<string, unknown>
