@@ -21,10 +21,21 @@ import uvicorn as uvicorn
 from uvicorn import Config
 
 from app.core.config import is_frozen, settings
-from app.core.migration import migrate_database
-from app.core.startup_guard import StartupGuardError, log_startup_manifest, validate_from_env
-from app.factory import app
-from app.database import init_config_file
+
+# 复核修复批 W3（R4 深水区）：激活 redo 决议提前到**业务引擎模块导入之前**——
+# app.database 在导入期按当时有效配置建引擎池；COMMITTED 待 ACK 的重启若在
+# lifespan 才补发布，进程仍连旧源（W1 只能托管退出兜底）。此处先幂等完成
+# 发布+目标 ACK+归档+本地 ACK，随后的 factory/database 导入即解析到新配置，
+# 无漂移、无需托管重启。失败绝不阻塞导入：lifespan gate 见 COMMITTED 仍进
+# 维护分支兜底（同一幂等实现）。
+from app.startup.resolution import resolve_and_prepare_startup
+
+resolve_and_prepare_startup(settings.YAML_PATH)
+
+from app.core.migration import migrate_database  # noqa: E402
+from app.core.startup_guard import StartupGuardError, log_startup_manifest, validate_from_env  # noqa: E402
+from app.factory import app  # noqa: E402
+from app.database import init_config_file  # noqa: E402
 
 # 配置日志
 logger = logging.getLogger(__name__)

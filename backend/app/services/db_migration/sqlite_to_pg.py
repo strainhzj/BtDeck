@@ -523,6 +523,12 @@ def _normalize_target_row(table: Any, row: Mapping[str, Any]) -> Dict[str, Any]:
                 out[col.name] = str(value)
         else:
             out[col.name] = value
+    # canonical-v1 JSON 判空旗标列（__sql_null__*）非 table.columns——原样保留。
+    # （W3 修复：W1 枚举归一重写时误丢，JSON 列表两侧摘要必不一致，
+    # tests/core native_json 用例抓出）
+    for key, value in row.items():
+        if isinstance(key, str) and key.startswith(canonical.SQL_NULL_FLAG_PREFIX):
+            out[key] = value
     return out
 
 

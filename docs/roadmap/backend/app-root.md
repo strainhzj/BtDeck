@@ -12,7 +12,7 @@
 | 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L56) 初始化配置并在迁移失败时拒绝启动后台 API |
 | 异常处理 exception | `exception_handlers.py` | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
 | 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
-| 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |
+| 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；✨2026-11-15 复核修复批 W3（R4 深水区）：模块顶部（仅 stdlib/config 导入后）调 `startup/resolution.resolve_and_prepare_startup(settings.YAML_PATH)`——COMMITTED 待 ACK 的激活 redo 提前到引擎模块导入前（无漂移、不再依赖托管退出），失败不阻塞导入（lifespan 维护分支兑底）；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |
 | 版本 version | `version.py` | 版本信息集中管理（`get_version_info` / `get_current_version` / `get_version_content` / `VERSION_HISTORY` 常量） |
 | YAML 配置 yaml | `yamlConfig.py` | `Yaml` 配置类（点表示法访问嵌套配置，封装 pyyaml） |
 

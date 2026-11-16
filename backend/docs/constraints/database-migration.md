@@ -150,6 +150,11 @@ stamp 当前 head）；**今后新增迁移必须同时可迁移 SQLite 已有�
 
 **启动顺序**（FastAPI lifespan，`app/startup/lifecycle.py`）：
 ```
+0   早期启动决议（复核修复批 W3，app/startup/resolution.py）
+    └─ app/main.py 顶部（引擎模块导入之前）：resolve_and_prepare_startup()
+       COMMITTED 待 ACK → 幂等补发布 + 严格目标 ACK + 审计归档 + 本地
+       ACTIVATED_ACK；完成后 factory/database 才导入——进程以新配置建引擎，
+       无漂移、无需托管重启。失败/异常不阻塞导入（交 0.5 维护分支兜底）
 0.5 维护启动分流 _startup_maintenance_gate()（database-migration-ui W2-2）
     └─ 命中受管态（database.active/未完成 attempt/SQLite 半成品标记/
        maintenance-intent.json 崩溃残留）→ 维护分支：不迁移/不 seed/
@@ -172,6 +177,20 @@ seed、孤儿对账和调度器之前终止应用启动；未知未来版本的�
 guide 保留“不降级、不 stamp”的兼容路径。
 
 ## 维护模式运行时约束（database-migration-ui W2，强制）
+
+### 历史记录一次性对账（复核修复批 W3，只读）
+
+升级到 2026-11-15 修复版后，可对历史 attempt 做一次对账（只读，不改任何状态）：
+
+```bash
+python -m app.services.db_migration.legacy_audit [--config-dir DIR] [--yaml PATH] [--json OUT]
+```
+
+- 旗标语义：`legacy-ack-unprovable`（严格 ACK writer 之前提交/ACK，目标真实性不可证明）、
+  `digest-version-mismatch`（verify 结果与现行算法不可比）、`identity-missing`、
+  `schema-version-mismatch`、`pre-strict-ack-window`（ACK 早于 2026-11-15，弱于现行口径）。
+- 退出码：0=扫描完成；2=journal 损坏（fail-closed，与 bootstrap 语义一致）。
+- 存在旗标不自动处置：按建议对现役目标重跑迁移或人工复核（重跑会以严格 writer 重出全部证据）。
 
 详细设计见 `PLANS/database-migration-ui.md` §5；实现层约束：
 

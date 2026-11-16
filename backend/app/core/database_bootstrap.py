@@ -497,6 +497,29 @@ def evaluate_startup_disposition(
     return StartupDisposition(DISPOSITION_NORMAL, "", "")
 
 
+def pg_sync_url(pg: PostgresParams) -> str:
+    """同步 psycopg2 连接 URL（契约 §2.3 sslmode 查询参数；启动期无引擎模块依赖）。
+
+    本模块保持"无引擎导入"纪律：sqlalchemy 延迟导入仅用 URL.create 构造，
+    不建引擎。供 verify_active_database_binding / startup.resolution 等早期
+    消费方统一构造（防各自内联漂移）。
+    """
+    from sqlalchemy import URL
+
+    query: Dict[str, Any] = {"sslmode": pg.sslmode}
+    if pg.sslmode in ("verify-ca", "verify-full") and pg.ssl_root_cert:
+        query["sslrootcert"] = pg.ssl_root_cert
+    return URL.create(
+        drivername="postgresql+psycopg2",
+        username=pg.user,
+        password=pg.password,
+        host=pg.host,
+        port=pg.port,
+        database=pg.database,
+        query=query,
+    ).render_as_string(hide_password=False)
+
+
 def verify_active_database_binding(effective: EffectiveDatabaseConfig) -> Dict[str, Any]:
     """正常激活启动前的绑定核验（2026-11-15 复核加固；§4.4/§7）。
 
@@ -534,27 +557,13 @@ def verify_active_database_binding(effective: EffectiveDatabaseConfig) -> Dict[s
         finally:
             conn.close()
     else:
-        from sqlalchemy import URL, create_engine, text
+        from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
 
         pg = effective.pg
         if pg is None:
             raise ManagedStateError("active 指向 postgresql 但参数缺失（配置不完整）")
-        query: Dict[str, Any] = {"sslmode": pg.sslmode}
-        if pg.sslmode in ("verify-ca", "verify-full") and pg.ssl_root_cert:
-            query["sslrootcert"] = pg.ssl_root_cert
-        url = URL.create(
-            drivername="postgresql+psycopg2",
-            username=pg.user,
-            password=pg.password,
-            host=pg.host,
-            port=pg.port,
-            database=pg.database,
-            query=query,
-        )
-        engine = create_engine(
-            url.render_as_string(hide_password=False), poolclass=NullPool, connect_args={"connect_timeout": 8}
-        )
+        engine = create_engine(pg_sync_url(pg), poolclass=NullPool, connect_args={"connect_timeout": 8})
         try:
             with engine.connect() as pg_conn:
                 row = pg_conn.execute(text("SELECT database_id FROM bt_database_identity")).fetchone()

@@ -156,80 +156,31 @@ async def _run_gated_once(kind: str, factory) -> Any:
             admission_cm.__exit__(None, None, None)
 
 
-def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
-    """COMMITTED 待 ACK 的幂等 redo（§7.2.6-8）→ True=激活完成可正常启动。
+def _startup_activation_redo(app: FastAPI, config_dir: str, *, yaml_path: str | None = None) -> bool:
+    """COMMITTED 待 ACK 的幂等 redo **兜底位**（§7.2.6-8）→ True=可正常启动。
 
-    顺序：读持久决定 → 幂等补配置发布 → **目标 ACK 先**（activated_at/
-    generation，单连接事务）→ 本地 ACTIVATED_ACK → 审计归档（cursor）→
-    清 RESTART_PENDING。任一步失败 → False（保持维护分支，绝不回旧库）。
+    生产主路径已提前到 ``app.main`` 导入前（startup/resolution
+    ``resolve_and_prepare_startup``）——引擎实例化前完成发布+ACK，进程天然
+    指向新配置。本兜底覆盖未经 main 入口的进程（测试/替代入口）：复用同一
+    实现完成幂等 redo，然后核**进程缓存**漂移——配置实际切换而导入期缓存
+    仍旧时（冷启动实测：业务 Session 照写旧源），绝不继续普通启动：调度
+    托管退出交编排器重启进新配置；无法调度则回维护分支（restartPending）。
     """
-    from app.services.db_migration.activation import ActivationService
-    from app.services.db_migration.local_audit import MaintenanceLocalAudit
+    from app.startup.resolution import REDO_COMPLETED, run_pending_activation_redo
 
-    service = ActivationService(config_dir)
-    redo = service.redo_pending_activation()
-    if redo is None or not redo.get("awaitingTargetAck"):
+    outcome = run_pending_activation_redo(config_dir, yaml_path=yaml_path or str(settings.YAML_PATH))
+    if outcome != REDO_COMPLETED:
+        if outcome == "failed":
+            print("[WARN] 激活 redo 未完成（保持维护分支，绝不回旧库）")
         return False
-    attempt_id = str(redo["attemptId"])
-
-    def _archive(attempt: str) -> int:
-        audit = MaintenanceLocalAudit(config_dir)
-        from app.database import build_database_url
-        from sqlalchemy import create_engine, text
-        from sqlalchemy.pool import NullPool
-
-        rows, token = audit.snapshot_for_archive()
-        engine = create_engine(build_database_url(), poolclass=NullPool)
-        archived = 0
-        try:
-            with engine.begin() as conn:
-                from datetime import datetime, timezone
-
-                def _created(value: Any) -> Any:
-                    # spool ts 为 epoch 数值；PG created_at 为 timestamp——归一 naive UTC
-                    if isinstance(value, (int, float)):
-                        return datetime.fromtimestamp(float(value), tz=timezone.utc).replace(tzinfo=None)
-                    return value
-
-                for row in rows:
-                    if row.get("attempt_id") not in (None, attempt):
-                        continue
-                    result = conn.execute(
-                        text(
-                            "INSERT INTO bt_database_migration_events (event_id, attempt_id, seq, summary, created_at) "
-                            "VALUES (:eid, :aid, :seq, :summary, :created) ON CONFLICT (event_id) DO NOTHING"
-                        ),
-                        {
-                            "eid": row.get("event_id"),
-                            "aid": attempt,
-                            "seq": row.get("seq", 0),
-                            "summary": str(row.get("summary", row.get("kind", "event")))[:512],
-                            "created": _created(row.get("ts")),
-                        },
-                    )
-                    archived += max(result.rowcount or 0, 0)
-        finally:
-            engine.dispose()
-        if rows:
-            service.advance_archive_cursor(str(rows[-1].get("event_id", "")))
-            audit.clear_if_unchanged(token)
-        return archived
-
-    try:
-        outcome = service.complete_activation(attempt_id, archive_audit=_archive)
-    except Exception as exc:  # noqa: BLE001 - redo 失败保持维护
-        print(f"[WARN] 激活 redo 未完成（保持维护分支）: {exc}")
-        return False
-    # 2026-11-15 复核修复：redo 发生在导入期缓存之后——业务引擎/URL 工厂仍按
-    # 旧有效配置创建，补发布只改磁盘文件（冷启动实测：redo 报成功、发布
-    # postgresql、缓存仍 sqlite，业务 Session 照写旧源）。配置发生实际切换时
-    # 绝不允许本进程继续普通启动：调度托管退出交编排器重启进新配置；无法
-    # 调度则回到维护分支（restartPending 提示），不能沿用旧引擎对外服务。
+    # 导入后才运行的兜底位：引擎/URL 工厂仍按导入期缓存创建，补发布只改磁盘
+    # 文件。配置发生实际切换时绝不允许本进程继续普通启动。
     from app.core import database_bootstrap as _bootstrap
     from app.database import get_effective_database_config
 
     cached = get_effective_database_config()
-    published = _bootstrap.resolve_effective_database_config(str(settings.YAML_PATH))
+    _yaml = yaml_path or str(settings.YAML_PATH)
+    published = _bootstrap.resolve_effective_database_config(_yaml)
 
     def _same_effective(a, b) -> bool:  # noqa: ANN001 - 模块内比较器
         if a.dialect != b.dialect:
@@ -246,7 +197,7 @@ def _startup_activation_redo(app: FastAPI, config_dir: str) -> bool:
         return a.pg is None and b.pg is None
 
     if _same_effective(cached, published):
-        print(f"[OK] 激活 redo：{outcome}")
+        print("[OK] 激活 redo 兜底完成（进程缓存与发布配置一致）")
         return True
     from app.services.db_migration.journal import Journal as _Journal
 

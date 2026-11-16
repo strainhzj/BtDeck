@@ -91,6 +91,9 @@ ALLOWLIST: dict[str, set[str]] = {
         # （表名，非用户输入；标识符无法参数化）；行值一律绑定参数。
         "app/services/db_migration/activation.py",
         "app/services/db_migration/handoff.py",
+        # resume/epoch 重绑（复核修复批 W1）：f-string 仅插值协议常量
+        # RECEIPT_TABLE（表名）；行值一律绑定参数（:aid/:old/:new）。
+        "app/services/db_migration/manager.py",
     },
     "BTD306": {
         # 存量裸 asyncio.create_task/to_thread 盘点（database-migration-ui W2-8，

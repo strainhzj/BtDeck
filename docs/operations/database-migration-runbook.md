@@ -16,12 +16,14 @@
 | 4. 校验 | VERIFYING/READY_TO_SWITCH | 只读等待；任一差异自动失败进入回退决策（§5） |
 | 5. 提交 | switch | B=设置页跟踪卡或维护页 READY 卡「提交切换」按钮（二次确认后 POST，固定 B；✨2026-11-08 双 UI 入口）/ A=env 交接（面板预览 plan.steps，无 UI 执行入口）；提交即持久（不可撤销，见 §5 决策树） |
 | 6. 重启 | RESTART_PENDING | 托管环境（systemd/docker）+ `BTD_MIGRATION_MANAGED_RESTART=1` 自动退出；否则**手动重启进程**；未重启前数据只读安全 |
-| 7. 激活 | 重启后自动 | 目标 ACK → 本地 `ACTIVATED_ACK` → 正常启动（无需人工确认；失败保持维护并显示原因） |
+| 7. 激活 | 重启后自动 | 目标 ACK → 本地 `ACTIVATED_ACK` → 正常启动（无需人工确认；失败保持维护并显示原因）。✨2026-11-15 修复批 W3：激活 redo 提前到引擎加载前（`app.main` 导入前决议，startup/resolution）——重启后进程直接以新配置建引擎，无漂移、不再需要托管退出；仅当经旧入口/兜底位完成且进程缓存仍旧配置时才可能出现 RESTART_PENDING（此时不可继续服务，重启/托管退出） |
 
 ## 2. 提交后未重启（COMMITTED 待 ACK）
 
 - 现象：维护页显示「配置已提交，需手动重启」；业务保持只读。
 - 处理：直接重启即可——重启路径幂等 redo（补发布配置+目标 ACK+本地 ACK），重复重启安全。
+- ✨2026-11-15：redo 已提前到进程引擎加载前（startup/resolution），正常重启即无漂移激活；若见到 RESTART_PENDING 持续（兜底位漂移），说明进程在旧引擎上面向新配置，**不得继续服务**，重启即可。
+- 升级到修复版后建议跑一次历史记录对账（只读）：`python -m app.services.db_migration.legacy_audit`——历史 attempt（2026-11-15 前）的 ACK 真实性/摘要可比性会逐条旗标化，按建议处置；退出码 2 = journal 损坏（fail-closed，联系维护）。
 - **绝不**手工改 `config.yaml` / `db-migration/` 任何文件（journal 是唯一写者；外部改动导致 fail-closed 拒绝启动）。
 
 ## 3. 凭据丢失（NEEDS_CREDENTIALS）
