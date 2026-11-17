@@ -40,15 +40,18 @@ def test_calibrate_sequences_handles_max_zero(fresh_pg_db: str) -> None:  # noqa
         BtDownloaders.__table__.create(engine)
         DownloaderSetting.__table__.create(engine)
         with engine.begin() as conn:
-            conn.execute(text("INSERT INTO bt_downloaders (downloader_id) VALUES ('d1')"))
-            conn.execute(text("INSERT INTO downloader_settings (id, downloader_id) VALUES (0, 'd1')"))
+            # core table.insert() 会应用 Column 级 default（downloader_type/dl_speed_unit 等
+            # NOT NULL 无 server_default 列）；裸 text() INSERT 绕过 ORM 默认值，
+            # 真 PG NOT NULL 硬约束即拒（run 44015948169 实抓）
+            conn.execute(BtDownloaders.__table__.insert().values(downloader_id="d1"))
+            conn.execute(DownloaderSetting.__table__.insert().values(id=0, downloader_id="d1"))
 
         calibrated = calibrate_sequences(engine)
         assert any(row.startswith("downloader_settings.id→max0") for row in calibrated), calibrated
 
         # 下次自增从 1 起（等价空表语义）
         with engine.begin() as conn:
-            conn.execute(text("INSERT INTO downloader_settings (downloader_id) VALUES ('d2')"))
+            conn.execute(DownloaderSetting.__table__.insert().values(downloader_id="d2"))
             new_id = conn.execute(text("SELECT MAX(id) FROM downloader_settings")).scalar()
         assert new_id == 1, f"自增应从 1 起，实得 {new_id!r}"
     finally:
