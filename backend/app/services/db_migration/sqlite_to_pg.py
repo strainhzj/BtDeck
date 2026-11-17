@@ -484,6 +484,13 @@ def calibrate_sequences(pg_engine: Engine) -> List[str]:
             if not (len(pk_cols) == 1 and isinstance(pk_cols[0].type, Integer) and pk_cols[0].autoincrement):
                 continue
             pk = pk_cols[0].name
+            # 部分 schema 容错（W4 CI 实抓 run 44017996522）：PG 对缺失 relation 的
+            # pg_get_serial_sequence 抛 UndefinedTable 而非返回 NULL——生产路径恒全量
+            # schema 不触发，但校准前先 to_regclass 预检更稳（与 source_fence 同款，
+            # 避免 x::regclass 字面量误判的绑定形态）
+            exists = conn.execute(text("SELECT to_regclass(:t)"), {"t": table.name}).scalar()
+            if exists is None:
+                continue
             seq_row = conn.execute(text("SELECT pg_get_serial_sequence(:t, :c)"), {"t": table.name, "c": pk}).scalar()
             if not seq_row:
                 continue
