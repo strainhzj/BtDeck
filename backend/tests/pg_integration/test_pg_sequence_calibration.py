@@ -49,8 +49,10 @@ def test_calibrate_sequences_handles_max_zero(fresh_pg_db: str) -> None:  # noqa
         calibrated = calibrate_sequences(engine)
         assert any(row.startswith("downloader_settings.id→max0") for row in calibrated), calibrated
 
-        # 下次自增从 1 起（等价空表语义）
+        # 下次自增从 1 起（等价空表语义；真 PG 强制 FK——先补 d2 父行，SQLite 不强制
+        # 所以 W4 探针未暴露此层，run 44019301194 实抓）
         with engine.begin() as conn:
+            conn.execute(BtDownloaders.__table__.insert().values(downloader_id="d2"))
             conn.execute(DownloaderSetting.__table__.insert().values(downloader_id="d2"))
             new_id = conn.execute(text("SELECT MAX(id) FROM downloader_settings")).scalar()
         assert new_id == 1, f"自增应从 1 起，实得 {new_id!r}"
