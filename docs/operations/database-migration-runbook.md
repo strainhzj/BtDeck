@@ -65,7 +65,8 @@
 
 ## 8. 证据与测试索引
 
-- 单元/注入面：`backend/tests/services/test_db_migration_{journal,config_store,manager,activation,failure_matrix}.py`
+- 单元/注入面：`backend/tests/services/test_db_migration_{journal,config_store,manager,activation,failure_matrix,startup_resolution,legacy_audit}.py`
 - 端点鉴权矩阵：`backend/tests/api/test_database_endpoints.py`
-- 真 PG 实库（CI pg-integration job）：`backend/tests/pg_integration/test_pg_{fence,migration_flow,tls}.py`——本地 skip 不计通过，以 CI 执行为准
+- 真 PG 实库（CI pg-integration job）：`backend/tests/pg_integration/test_pg_{fence,migration_flow,tls,sequence_calibration}.py`——本地 skip 不计通过，以 CI 执行为准
+- 单机真 PG 全链探针（复核修复批 W4 固化，可复用）：`backend/scripts/acceptance_pg_roundtrip.py`——pgserver wheel 本机 PG16；双向往返/时区 ±8h/导入前决议（redo 子进程不加载引擎模块）/严格 ACK/绑定核验/legacy_audit 对账/序列 max0 校准；`ACCEPTANCE=PASS` 为迁移链发布前门禁；无 SSL 构建下 TLS 矩阵自动跳过（需带 SSL 的 PG 构建补验）
 - 前端：`frontend/tests/unit/{database-api,maintenance-client,database-settings,maintenance-page,database-platform-gating,mobile-maintenance}.spec.ts`

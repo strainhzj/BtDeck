@@ -105,7 +105,8 @@ def _committed_fixture(tmp_path: Path, target: Path) -> str:
         restart_scheduler=lambda _info: False,
     )
     service.prepare_switch(attempt, mode="B", candidate_active=candidate, identity={})
-    journal.advance_commit_phase(attempt, expected="PREPARED", new="COMMITTED")
+    # 生产路径：COMMITTED+发布+control.generation←候选 G（commit_switch 同步代次双源）
+    service.commit_switch(attempt)
     return attempt
 
 
@@ -169,6 +170,23 @@ def test_import_time_redo_failure_keeps_committed(tmp_path: Path) -> None:
 
 def test_noop_when_nothing_pending(tmp_path: Path) -> None:
     assert run_pending_activation_redo(str(tmp_path), yaml_path=str(tmp_path / "config.yaml")) == REDO_NOTHING_PENDING
+
+
+def test_generation_dual_source_mismatch_fails_fast(tmp_path: Path) -> None:
+    """代次双源错位（W4 真 PG 验收纵深）：control≠manifest.identity → 拒绝 ACK 保 COMMITTED。"""
+    target = tmp_path / "target.sqlite"
+    attempt = _committed_fixture(tmp_path, target)
+    journal = Journal(str(tmp_path))
+    # 非标准写入：打乱 control.generation（正常流由 commit_switch 同步）
+    journal.write_control(lambda c: {**c, "generation": str(uuid.uuid4())})
+
+    outcome = run_pending_activation_redo(str(tmp_path), yaml_path=str(tmp_path / "config.yaml"))
+    assert outcome == "failed"
+    assert Journal(str(tmp_path)).read_manifest(attempt)["commit_phase"] == COMMIT_PHASE_COMMITTED
+    conn = sqlite3.connect(target)
+    status = conn.execute(f"SELECT status FROM {RECEIPT_TABLE} WHERE attempt_id=?", (attempt,)).fetchone()[0]
+    conn.close()
+    assert status == "VERIFIED", "错位时绝不能给目标盖 ACK"
 
 
 def test_resolve_and_prepare_startup_never_raises(tmp_path: Path) -> None:

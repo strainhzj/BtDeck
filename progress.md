@@ -1,3 +1,13 @@
+## 2026-11-17：复核修复批 W3（R4 深水区 d58cc88）+ W4（真 PG 验收收口，本批提交）
+
+- **W3（d58cc88，已提交）**：早期启动决议 startup/resolution.py（激活 redo 提前到 app.main 导入前，子进程不加载引擎模块，无漂移/无托管退出；lifecycle `_startup_activation_redo` 改兑底位委托同一实现）+ 历史记录一次性对账 legacy_audit.py（只读 CLI，五类旗标）+ W1 回归修复 2 项（正向 verify 丢 __sql_null__ 旗标——tests/core native_json 抓出；manager.py BTD305 白名单登记）；全量 5893 绿。
+- **W4（本批）**：真 PG16 验收探针固化 `backend/scripts/acceptance_pg_roundtrip.py`（pgserver wheel 本机 PG16，单机自足；探针迭代 8 轮修复自身缺陷后 20/20 检查点 ACCEPTANCE=PASS）。
+  - **验收抓出并修复的产品缺陷 3 项**：①`calibrate_sequences` 源表显式 id=0 → setval(seq,0) 超下界必炸（真 PG 实抓，等价空表语义 setval(1,false)；+pg_integration/test_pg_sequence_calibration.py CI 实库回归）；②`pg_baseline` 模块级 `from app.database import` 传递加载引擎模块，击穿导入前决议纪律（改懒加载，sys.modules 断言回归）；③`complete_activation` ACK 代次取自 control 无交叉核验（+代次双源错位 fail-fast，错位保 COMMITTED；+单测）。
+  - **验收覆盖**：双向往返（42 表）/时区 +8h 回归（Asia/Shanghai）/JSON-in-Text 逐字节保真/枚举一致/导入前决议（redo 子进程 sys.modules 无 app.database）/严格 ACK+代次/绑定核验/重放幂等/legacy_audit 对账；TargetInvalid 三状态规则负面路径实证。
+  - **已知边界**：pgserver wheel 构建无 SSL——TLS 矩阵自动跳过（映射逻辑单测覆盖），真 TLS 验收需带 SSL 的 PG 构建（待补）。
+- **门禁**：全量 5894 passed/66 skipped；改动面 black/flake8/mypy 净。
+- **待用户决策**：推送 origin（9ca6f42/8f8cec2/6d58fb0/d58cc88/本批）与部署演练（Hermes 机器构建）。迁移可用性结论不变：**发起新迁移前先在隔离栈复跑本探针**。
+
 ## 2026-11-15：迁移流程审查 → 复核修复批 W1（后端 9ca6f42）+ W2（前端/roadmap 8f8cec2）
 
 - **触发**：用户要求 review SQLite⇄PG 双向迁移全流程（只读）→ 三路代理审查 + 隔离探针 + 真 PG16.2 本地复验（pgserver wheel `--python-version 3.12 --platform manylinux` 下载解包，非 UTC 时区/T19 往返/fence/枚举四反例）→ 用户确认结论并要求实施 → 分两批提交。

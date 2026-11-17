@@ -51,7 +51,6 @@ from app.core.database_protocol import (
     RECEIPT_TABLE,
     is_valid_attempt_id,
 )
-from app.database import build_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,15 @@ PG_MINIMUM_REVISION = "c9e0f1a2b3c4"
 
 
 def pg_sync_engine() -> Engine:
-    """构造 PG 同步引擎（psycopg2；基线/版本读取/迁移工具专用，NullPool 用后即弃）。"""
+    """构造 PG 同步引擎（psycopg2；基线/版本读取/迁移工具专用，NullPool 用后即弃）。
+
+    2026-11-17 W4 验收修正：``build_database_url`` 改函数内懒加载——原模块级
+    导入使本模块（引导层契约：启动决议/早期可消费）传递加载 ``app.database``
+    （引擎副作用模块），击穿 ``startup.resolution`` 导入前决议纪律（真 PG
+    探针 D 段实抓：redo 严格 ACK 一执行 ``app.database`` 即入 sys.modules）。
+    """
+    from app.database import build_database_url
+
     return create_engine(build_database_url(), poolclass=NullPool)
 
 

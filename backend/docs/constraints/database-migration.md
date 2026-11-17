@@ -192,6 +192,17 @@ python -m app.services.db_migration.legacy_audit [--config-dir DIR] [--yaml PATH
 - 退出码：0=扫描完成；2=journal 损坏（fail-closed，与 bootstrap 语义一致）。
 - 存在旗标不自动处置：按建议对现役目标重跑迁移或人工复核（重跑会以严格 writer 重出全部证据）。
 
+### 真 PG 验收门禁（复核修复批 W4 固化）
+
+```bash
+backend/venv/bin/python backend/scripts/acceptance_pg_roundtrip.py
+```
+
+单机自足真 PG16（pgserver wheel）：双向往返 + 时区 +8h 回归 + 导入前决议
+（redo 子进程不得加载引擎模块）+ 严格 ACK + 绑定核验 + 序列 max0 校准 +
+legacy_audit 对账；`ACCEPTANCE=PASS` 方可视为迁移链验收通过。无 SSL 构建
+（pgserver wheel 默认）TLS 矩阵自动跳过，真 TLS 验收需带 SSL 的 PG 构建。
+
 详细设计见 `PLANS/database-migration-ui.md` §5；实现层约束：
 
 ### 状态机与准入 lease（§5.1）

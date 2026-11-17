@@ -287,7 +287,15 @@ class ActivationService:
         if phase != COMMIT_PHASE_COMMITTED:
             raise ActivationError(f"commit_phase={phase}，不可 ACK")
         identity = manifest.get("identity", {})
-        generation = (self._journal.read_control() or {}).get("generation") or identity.get("generation", "")
+        control = self._journal.read_control() or {}
+        generation = control.get("generation") or identity.get("generation", "")
+        # W4 真 PG 验收纵深：代次双源交叉核验。正常流由 commit_switch 把
+        # control.generation 同步为 PREPARED 固定的候选 G；两源错位（非标准写入/
+        # 崩溃残留）时不给目标盖错代次的 ACK——fail-fast 保持 COMMITTED 交维护面。
+        id_gen = str(identity.get("generation") or "")
+        ctl_gen = str(control.get("generation") or "")
+        if id_gen and ctl_gen and id_gen != ctl_gen:
+            raise ActivationError(f"激活代次双源错位（control={ctl_gen!r} ≠ manifest.identity={id_gen!r}）——拒绝 ACK")
         # 1. 目标先 ACK（显式提交候选目标；同事务严格核验，见 default writer）
         self._target_ack(attempt_id, str(generation))
         # 2. 审计归档（2026-11-15 复核修复：先于本地 ACK——原实现本地 ACK 先行，

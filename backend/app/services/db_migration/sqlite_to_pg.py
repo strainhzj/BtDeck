@@ -490,6 +490,12 @@ def calibrate_sequences(pg_engine: Engine) -> List[str]:
             max_id = conn.execute(text(f'SELECT MAX("{pk}") FROM "{table.name}"')).scalar()
             if max_id is None:
                 conn.execute(text("SELECT setval(:s, 1, false)"), {"s": seq_row})
+            elif int(max_id) < 1:
+                # 真实 SQLite 源允许显式 id=0（探针 W4 实抓）：setval(seq,0) 超 PG 序列
+                # 下界必炸 NumericValueOutOfRange——等价空表语义（下次自增从 1 起）。
+                conn.execute(text("SELECT setval(:s, 1, false)"), {"s": seq_row})
+                calibrated.append(f"{table.name}.{pk}→max0(1,false)")
+                continue
             else:
                 conn.execute(text("SELECT setval(:s, :m)"), {"s": seq_row, "m": int(max_id)})
             calibrated.append(f"{table.name}.{pk}→{max_id if max_id is not None else 'empty(1,false)'}")
