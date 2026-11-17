@@ -14,6 +14,7 @@ import os
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 _ADMIN_DSN = os.getenv("BTDECK_PG_TEST_ADMIN_DSN", "")
 pytestmark = pytest.mark.skipif(
@@ -22,14 +23,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_calibrate_sequences_handles_max_zero(fresh_pg_db) -> None:  # noqa: F811 - fixture 再导出
+def test_calibrate_sequences_handles_max_zero(fresh_pg_db: str) -> None:  # noqa: F811 - fixture 再导出
+    """fresh_pg_db yield 裸库名（非 URL）——经 make_url 换 database 分量成完整 DSN。
+
+    （run 44013492510 教训：本地 skip 只在 CI 暴露的确定性 fixture 误用。）
+    """
+    from sqlalchemy.engine.url import make_url
+
     from app.downloader.models import BtDownloaders
     from app.models.downloader_settings import DownloaderSetting
-    from app.core.model_registry import register_all_models
     from app.services.db_migration.sqlite_to_pg import calibrate_sequences
 
-    register_all_models()
-    engine = create_engine(fresh_pg_db)
+    url = make_url(_ADMIN_DSN).set(database=fresh_pg_db)
+    engine = create_engine(url.render_as_string(hide_password=False), poolclass=NullPool)
     try:
         BtDownloaders.__table__.create(engine)
         DownloaderSetting.__table__.create(engine)

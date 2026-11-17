@@ -18,6 +18,7 @@ CI 实际执行为准）。
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
@@ -202,47 +203,86 @@ class TestActivationRealPg:
     def test_commit_and_target_ack_roundtrip(
         self, tmp_path: Path, pg_url: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import app.database as database_module
+        """W1 严格 ACK writer 契约的真 PG 实证（显式候选目标 + nonce/身份核验）。
 
+        W5 旧形态（candidate 无 postgresql 参数映射 + monkeypatch build_database_url）
+        在 W1 显式参数契约下必然连 localhost 默认值（CI scram 拒绝，run 44013492510
+        实抓）——随 W1 契约重写：candidate 携带完整连接参数 + 真实身份/nonce/代次。
+        """
+        from sqlalchemy.engine.url import make_url
+
+        u = make_url(pg_url)
         journal = _attempt(tmp_path)
-        # 目标库建 receipt 表（activated_at 为空 → 待 ACK）
         engine = create_engine(pg_url, poolclass=NullPool)
+        nonce = uuid.uuid4().hex
         with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE bt_database_identity (database_id TEXT PRIMARY KEY)"))
+            conn.execute(text("INSERT INTO bt_database_identity VALUES (:d)"), {"d": DB_ID})
             conn.execute(
                 text(
-                    "CREATE TABLE bt_database_migration_receipt "
-                    "(attempt_id TEXT PRIMARY KEY, status TEXT, activated_at TEXT)"
+                    "CREATE TABLE bt_database_migration_receipt ("
+                    "attempt_id TEXT PRIMARY KEY, operation_kind TEXT, source_database_id TEXT, "
+                    "target_database_id TEXT, deployment_id TEXT, ownership_nonce TEXT, "
+                    "revision_at_import TEXT, digest_version TEXT, table_counts TEXT, table_digests TEXT, "
+                    "schema_fingerprint TEXT, origin_epoch TEXT, eligible_epoch TEXT, status TEXT, "
+                    "activation_generation TEXT, activated_at TEXT)"
                 )
             )
             conn.execute(
-                text("INSERT INTO bt_database_migration_receipt VALUES (:aid, 'VERIFIED', NULL)"), {"aid": ATTEMPT}
+                text(
+                    "INSERT INTO bt_database_migration_receipt VALUES "
+                    "(:aid,'MIGRATE','src',:tid,'d1',:nonce,'a2b3c4d5e6f7','btdeck-canonical-v1',"
+                    "'{}','{}','fp','epoch-o','epoch-o','VERIFIED',NULL,NULL)"
+                ),
+                {"aid": ATTEMPT, "tid": DB_ID, "nonce": nonce},
             )
-        monkeypatch.setattr(database_module, "build_database_url", lambda: pg_url, raising=True)
+        candidate = {
+            "dialect": "postgresql",
+            "generation": "g1",
+            "postgresql": {
+                "host": u.host,
+                "port": u.port,
+                "user": u.username,
+                "password": u.password,
+                "database": u.database,
+                "schema": "public",
+                "sslmode": "disable",
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 20,
+            },
+            "expected_database_id": DB_ID,
+        }
         svc = ActivationService(str(tmp_path), yaml_path=str(tmp_path / "config.yaml"))
         # PREPARED：候选/前代先持久
         prepared = svc.prepare_switch(
             ATTEMPT,
             mode=SWITCH_MODE_B,
-            candidate_active={"dialect": "postgresql", "expected_database_id": DB_ID},
+            candidate_active=candidate,
             identity={"generation": "g1"},
         )
         assert prepared.commit_phase == "PREPARED"
+        # ownership_nonce 以真实 receipt nonce 为准（prepare 后回写 manifest）
+        manifest = journal.read_manifest(ATTEMPT)
+        manifest["ownership_nonce"] = nonce
+        journal.write_manifest(ATTEMPT, manifest, expect_state_version=manifest["state_version"])
         # COMMITTED：fsync 决定先于发布；发布 RESTART_PENDING
         committed = svc.commit_switch(ATTEMPT)
         assert committed["configPublished"] is True and committed["restartScheduled"] is False
         assert (journal.read_control() or {}).get("restart_pending") is True
-        # 目标 ACK（真 PG receipt）先 → 本地 ACTIVATED_ACK 后 → 清 RESTART_PENDING
+        # 目标 ACK（真 PG receipt，显式候选目标连接）先 → 本地 ACTIVATED_ACK 后 → 清 RESTART_PENDING
         done = svc.complete_activation(ATTEMPT)
         assert done["commitPhase"] == "ACTIVATED_ACK"
         assert (journal.read_control() or {}).get("restart_pending") is False
         with engine.connect() as conn:
-            assert (
-                conn.execute(
-                    text("SELECT activated_at IS NOT NULL FROM bt_database_migration_receipt WHERE attempt_id = :a"),
-                    {"a": ATTEMPT},
-                ).scalar()
-                is True
-            )
+            row = conn.execute(
+                text(
+                    "SELECT status, activation_generation, activated_at IS NOT NULL FROM "
+                    "bt_database_migration_receipt WHERE attempt_id = :a"
+                ),
+                {"a": ATTEMPT},
+            ).fetchone()
+        assert row[0] == "ACTIVATED" and row[1] == "g1" and row[2] is True
         # 幂等重放
         replay = svc.complete_activation(ATTEMPT)
         assert replay.get("idempotent") is True

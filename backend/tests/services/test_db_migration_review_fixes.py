@@ -322,6 +322,35 @@ def _minimal_sqlite_target(path: Path, *, attempt: str, nonce: str, identity: st
     conn.close()
 
 
+def test_strict_ack_rejects_incomplete_pg_candidate(tmp_path: Path) -> None:
+    """候选 PG 目标缺参数 → fail-fast 拒绝 ACK（禁止隐式回退 localhost 默认值）。
+
+    W4 CI 实抓（run 44013492510）：旧测试仅传 expected_database_id 且 monkeypatch
+    build_database_url，W1 显式参数契约下静默兜底 localhost——据此加产品侧门禁。
+    """
+    attempt = "sqlite-to-pg/" + str(uuid.uuid4())
+    journal = Journal(str(tmp_path))
+    journal.write_control(lambda c: {**c, "pending_attempt": attempt}, deployment_id="d1")
+    manifest = make_manifest_payload(
+        attempt_id=attempt,
+        direction="sqlite-to-pg",
+        operation_kind="MIGRATE",
+        epoch="epoch-1",
+        source={"dialect": "sqlite"},
+        target={"dialect": "postgresql"},
+        tool_version="2.0.0",
+        digest_version="btdeck-canonical-v1",
+    )
+    manifest["ownership_nonce"] = "n1"
+    manifest["candidate_active"] = {"dialect": "postgresql", "expected_database_id": str(uuid.uuid4())}
+    journal.write_manifest(attempt, manifest)
+    service = ActivationService(
+        str(tmp_path), yaml_path=str(tmp_path / "config.yaml"), restart_scheduler=lambda _i: False
+    )
+    with pytest.raises(ActivationError, match="候选 PG 目标参数缺失"):
+        service._default_target_ack_writer(attempt, "G-1")  # noqa: SLF001 - 直接验证门禁
+
+
 def test_strict_default_ack_sqlite_target(tmp_path: Path) -> None:
     identity = str(uuid.uuid4())
     target = tmp_path / "target.sqlite"

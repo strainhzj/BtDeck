@@ -339,6 +339,18 @@ class ActivationService:
             raise ActivationError("HANDOFF_SAME_DB 的 ACK 由同库单连接专径完成（§7.3），不走本默认实现")
         candidate = dict(manifest.get("candidate_active") or {})
         dialect = candidate.get("dialect")
+        if dialect == "postgresql":
+            pg_section = dict(candidate.get("postgresql") or {})
+            if not (
+                str(pg_section.get("host") or "").strip()
+                and str(pg_section.get("database") or "").strip()
+                and str(pg_section.get("user") or "").strip()
+            ):
+                # W4 CI 实抓（run 44013492510）：pg_params_from_mapping 会静默兜底
+                # localhost/btdeck 空密码——候选目标不完整必须 fail-fast，禁止隐式默认值
+                raise ActivationError(
+                    f"候选 PG 目标参数缺失（host/user/database 不可为空: {sorted(pg_section)}）——拒绝 ACK"
+                )
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
 
